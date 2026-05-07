@@ -174,6 +174,23 @@ def build_chart(candles, price, nodes):
     )
     return fig
 
+
+def _build_clock_inline():
+    from datetime import datetime
+    now = datetime.now()
+    minutes = now.hour * 60 + now.minute
+    in_sess = 570 <= minutes <= 960
+    phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes < 630
+             else "Midday Auction" if minutes < 840 else "Closing Auction")
+    pc = TEAL_DIM if in_sess else MUTED
+    return [
+        metric_tile("Clock", now.strftime("%I:%M:%S %p")),
+        html.Div(style={"height":"8px"}),
+        metric_tile("Session Phase", phase, pc),
+        html.Div(style={"height":"10px"}),
+        note_box("Future: economic releases, auction windows, proprietary cycle layers."),
+    ]
+
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]
     decision = live["decision"]
@@ -286,7 +303,7 @@ def build_command_tab(live, candles, symbol, tf):
 
             card([
                 html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-                html.Div(id="clock-body"),
+                *_build_clock_inline(),
             ],sx={"flex":"1"}),
 
             card([
@@ -490,7 +507,7 @@ app.layout = html.Div([
                         "padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES
                 ],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                           "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button(id="btn-live",n_clicks=0,style={
+                html.Button("Use Live Alpaca Feed",id="btn-live",n_clicks=0,style={
                     "background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px",
                     "padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
