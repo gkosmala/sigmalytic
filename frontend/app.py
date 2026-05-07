@@ -893,5 +893,4 @@ def update_clock(_):
 # ── Entry point ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8050))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=False, host="0.0.0.0", port=8050)
