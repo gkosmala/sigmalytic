@@ -1,0 +1,13 @@
+# ── Backend (FastAPI) ──────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+websockets==12.0
+requests==2.31.0
+python-dotenv==1.0.1
+
+# ── Frontend (Dash) ────────────────────────────────────────────────────────
+dash==2.17.0
+plotly==5.22.0
+
+# ── Shared ────────────────────────────────────────────────────────────────
+# No extra deps — shared/engine.py uses stdlib only
