@@ -1,6 +1,6 @@
 """
-Sigmalytic Quant Corporation — Decision Intelligence Platform
-Institutional-Grade Frontend · Dash + Plotly
+Sigmalytic Quant Corporation ΓÇö Decision Intelligence Platform
+Institutional-Grade Frontend ┬╖ Dash + Plotly
 Matches original React app layout + Sigmalytic brand upgrade
 """
 
@@ -184,10 +184,10 @@ def build_command_tab(live, candles, symbol, tf):
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
         live_age = ts.strftime("%I:%M:%S %p")
-    except: live_age = "—"
+    except: live_age = "ΓÇö"
     sc    = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size  = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
-    top   = nodes[0] if nodes else {"public_label":"—","score":0}
+    top   = nodes[0] if nodes else {"public_label":"ΓÇö","score":0}
     vs    = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
     cp    = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
     pp    = max(8,min(92,100-cp))
@@ -204,9 +204,9 @@ def build_command_tab(live, candles, symbol, tf):
             card([
                 html.Div([
                     html.Div([
-                        html.H2(f"📊 {symbol}  ·  Smart Chart + Live Levels",
+                        html.H2(f"≡ƒôè {symbol}  ┬╖  Smart Chart + Live Levels",
                                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                        html.P(f"Last update {live_age}  ·  Vol {live['volume']:,}  ·  {tf}",
+                        html.P(f"Last update {live_age}  ┬╖  Vol {live['volume']:,}  ┬╖  {tf}",
                                style={"fontSize":"12px","color":TEXT}),
                     ]),
                     html.Div([
@@ -240,7 +240,7 @@ def build_command_tab(live, candles, symbol, tf):
                     slabel("Execution Directive"),
                     html.Div(decision["next_action"],style={"color":WHITE,"fontSize":"13px",
                                                              "fontWeight":"700","lineHeight":"1.5","marginBottom":"6px"}),
-                    html.P(f"${price:.2f}  ·  {top.get('public_label','—')} {top.get('score',0)}%",
+                    html.P(f"${price:.2f}  ┬╖  {top.get('public_label','ΓÇö')} {top.get('score',0)}%",
                            style={"fontSize":"11px","color":TEXT}),
                 ],style={"borderRadius":"14px","background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
                           "padding":"14px","marginTop":"14px"}),
@@ -257,7 +257,7 @@ def build_command_tab(live, candles, symbol, tf):
         # Row 2: 4 cards
         html.Div([
             card([
-                html.H2("🎯 Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("≡ƒÄ» Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 metric_tile("Bias",decision["bias"],sc),
                 html.Div(style={"height":"8px"}),
                 metric_tile("Setup",decision["status"],sc),
@@ -269,28 +269,28 @@ def build_command_tab(live, candles, symbol, tf):
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("🪜 Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("≡ƒ¬£ Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
-                html.P(f"Level ${nodes[0]['level']:.2f}  ·  Current ${price:.2f}" if nodes else "",
+                html.P(f"Level ${nodes[0]['level']:.2f}  ┬╖  Current ${price:.2f}" if nodes else "",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
-                html.P(f"Level ${nodes[1]['level']:.2f}  ·  Current ${price:.2f}" if len(nodes)>1 else "",
+                html.P(f"Level ${nodes[1]['level']:.2f}  ┬╖  Current ${price:.2f}" if len(nodes)>1 else "",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Hold / Balance", score, "neutral"),
-                html.P(f"Level ${kl.confirm:.2f}  ·  Current ${price:.2f}",
+                html.P(f"Level ${kl.confirm:.2f}  ┬╖  Current ${price:.2f}",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Failure Gate", 100-score, "down"),
-                html.P(f"Level ${kl.fail:.2f}  ·  Current ${price:.2f}",
+                html.P(f"Level ${kl.fail:.2f}  ┬╖  Current ${price:.2f}",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","paddingLeft":"2px"}),
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("ΓÅ▒∩╕Å Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Div(id="clock-body"),
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("≡ƒöö Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Div(as_,style={
                     "borderRadius":"14px","padding":"18px","textAlign":"center","fontWeight":"900",
                     "fontSize":"14px","letterSpacing":".06em","textTransform":"uppercase",
@@ -306,7 +306,7 @@ def build_command_tab(live, candles, symbol, tf):
         card([
             html.Div([
                 html.Div([
-                    html.H2("🧱 Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                    html.H2("≡ƒº▒ Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                     html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
                            style={"fontSize":"12px","color":TEXT}),
                 ]),
@@ -319,7 +319,7 @@ def build_command_tab(live, candles, symbol, tf):
                 zcard("Gamma Pivot", "280",  f"{gp}% dealer sensitivity",    YELLOW_DIM),
                 zcard("Vol Trigger", "LIVE", f"{vs}% expansion energy",      TEAL_DIM),
             ],style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
-            note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+            note_box("Synthetic options layer ΓÇö connect Tradier or CBOE for live institutional flow data.","blue"),
         ],sx={"marginBottom":"16px"}),
 
         # Summary strip
@@ -338,7 +338,7 @@ def build_feed_tab(live, live_mode):
     return card([
         html.Div([
             html.Div([
-                html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                html.H2("≡ƒöî Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                 html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":MUTED}),
             ]),
             badge("Connected" if live_mode else "Synthetic","teal" if live_mode else "gray"),
@@ -362,7 +362,7 @@ def build_performance_tab(live):
     score    = decision["score"]
     sc       = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     return card([
-        html.H2("📈 Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("≡ƒôê Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Div([
             metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Setup",decision["status"],sc),
@@ -374,18 +374,18 @@ def build_performance_tab(live):
 
 def build_setup_tab():
     return card([
-        html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("≡ƒº⌐ Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Pre(
-            f"Frontend  : Dash (Python)  →  Render\n"
-            f"Backend   : FastAPI        →  Render\n"
+            f"Frontend  : Dash (Python)  ΓåÆ  Render\n"
+            f"Backend   : FastAPI        ΓåÆ  Render\n"
             f"Data      : Alpaca IEX (free) / SIP (paid)\n"
             f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n\n"
             f"Env vars:\n"
-            f"  ALPACA_API_KEY     — Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  — Alpaca secret\n"
-            f"  BACKEND_URL        — HTTP base URL\n"
-            f"  BACKEND_WS_URL     — WebSocket base URL",
+            f"  ALPACA_API_KEY     ΓÇö Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  ΓÇö Alpaca secret\n"
+            f"  BACKEND_URL        ΓÇö HTTP base URL\n"
+            f"  BACKEND_WS_URL     ΓÇö WebSocket base URL",
             style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"},
@@ -411,7 +411,7 @@ LOGO = html.Div([
 
 app = dash.Dash(
     __name__,
-    title="Sigmalytic Quant Corporation — Decision Intelligence",
+    title="Sigmalytic Quant Corporation ΓÇö Decision Intelligence",
     update_title=None,
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
                {"name":"theme-color","content":NAVY}],
@@ -465,9 +465,9 @@ app.layout = html.Div([
                 html.Div(style={"width":"120px"}),
             ],style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                       "width":"100%","marginBottom":"6px"}),
-            html.P("Real-time decision intelligence — scores, interprets, and projects market behavior via multi-layer confluence.",
+            html.P("Real-time decision intelligence ΓÇö scores, interprets, and projects market behavior via multi-layer confluence.",
                    style={"fontSize":"12px","color":MUTED,"textAlign":"center","maxWidth":"640px","margin":"0 auto"}),
-            html.P("Powered by Confluence Engine · Expansion Node Modeling · Forward Projection Layer",
+            html.P("Powered by Confluence Engine ┬╖ Expansion Node Modeling ┬╖ Forward Projection Layer",
                    style={"fontSize":"11px","color":"#475569","textAlign":"center","letterSpacing":".06em","marginTop":"4px"}),
             html.Hr(style={"border":"none","height":"1px","background":BORDER,"width":"60%","margin":"12px auto 0"}),
             html.Div([
@@ -519,8 +519,8 @@ app.layout = html.Div([
 def toggle_live(_,current):
     new=not current
     return new,("Use Synthetic Feed" if new else "Use Live Alpaca Feed"),\
-           ("LIVE MARKET FEED · ALPACA IEX · SYNTHETIC OPTIONS INTELLIGENCE" if new
-            else "SIMULATION MODE · SYNTHETIC FEED · CONTROLLED ENVIRONMENT")
+           ("LIVE MARKET FEED ┬╖ ALPACA IEX ┬╖ SYNTHETIC OPTIONS INTELLIGENCE" if new
+            else "SIMULATION MODE ┬╖ SYNTHETIC FEED ┬╖ CONTROLLED ENVIRONMENT")
 
 @app.callback(Output("s-symbol","data"),Output("ticker-input","value"),
               Input("btn-load","n_clicks"),State("ticker-input","value"),prevent_initial_call=True)
@@ -596,7 +596,7 @@ def update_badges(live,live_mode):
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
               State("s-symbol","data"),State("s-tf","data"))
 def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
-    if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    if not live: return html.Div("InitializingΓÇª",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -620,3 +620,5 @@ def update_clock(_):
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
+
+
