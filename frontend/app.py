@@ -394,7 +394,7 @@ def build_setup_tab():
 
 # Logo
 LOGO = html.Div([
-    html.Svg([
+    html.Div([
         html.Polygon(points="2,2 18,2 10,11 18,20 2,20",fill="none",stroke=TEAL_DIM,
                      strokeWidth="2.5",strokeLinejoin="round"),
         html.Rect(x="21",y="14",width="3",height="6",fill=TEAL_DIM),
