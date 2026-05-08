@@ -1,16 +1,23 @@
 """
 Sigmalytic Decision Engine — Shared Core Logic
 Used by both the backend (FastAPI) and frontend (Dash).
+Includes behavioral modeling and options bias scoring via Alpaca delayed data.
 """
 
 from __future__ import annotations
 import math
 import re
+import os
+import requests
 from datetime import datetime, timezone
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Literal
 
 Tone = Literal["up", "down", "neutral"]
+
+ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
+ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
+ALPACA_DATA_URL   = "https://data.alpaca.markets"
 
 
 # ─────────────────────────────────────────────
@@ -19,13 +26,33 @@ Tone = Literal["up", "down", "neutral"]
 
 @dataclass
 class KeyLevels:
-    breakout:  float
+    breakout:   float
     prior_high: float
-    expansion: float
-    confirm:   float
-    trigger:   float
-    trap:      float
-    fail:      float
+    expansion:  float
+    confirm:    float
+    trigger:    float
+    trap:       float
+    fail:       float
+
+
+@dataclass
+class BehavioralScore:
+    body_ratio:       float   # candle conviction score 0-100
+    rejection_score:  float   # wick rejection strength 0-100
+    velocity_score:   float   # price momentum strength 0-100
+    herding_index:    float   # crowd directional lean 0-100
+    composite:        int     # final blended behavioral score 0-100
+    label:            str     # human-readable behavioral label
+
+
+@dataclass
+class Optionsbias:
+    put_call_ratio:   float   # >1 = bearish crowd, <1 = bullish crowd
+    gamma_level:      float   # dominant gamma strike near price
+    iv_skew:          float   # put IV minus call IV — positive = fear
+    net_bias:         str     # BULLISH / BEARISH / NEUTRAL
+    confidence:       int     # 0-100 confidence in options signal
+    source:           str     # LIVE / DELAYED / SYNTHETIC
 
 
 @dataclass
@@ -51,18 +78,19 @@ class ConfluenceNode:
 
 @dataclass
 class LiveUpdate:
-    type:       str
-    symbol:     str
-    price:      float
-    volume:     int
-    timestamp:  str
-    sequence:   int
-    decision:   Decision
-    confluence: list[ConfluenceNode]
+    type:             str
+    symbol:           str
+    price:            float
+    volume:           int
+    timestamp:        str
+    sequence:         int
+    decision:         Decision
+    confluence:       list[ConfluenceNode]
+    behavioral_score: BehavioralScore = field(default=None)
+    options_bias:     Optionsbias     = field(default=None)
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
+        return asdict(self)
 
 
 @dataclass
@@ -71,7 +99,7 @@ class Candle:
     h: float
     l: float
     c: float
-    t: str = ""   # ISO timestamp, optional
+    t: str = ""
 
 
 # ─────────────────────────────────────────────
@@ -95,53 +123,385 @@ def get_key_levels(price: float) -> KeyLevels:
     )
 
 
-def run_decision(price: float, volume_confirm: bool) -> Decision:
-    kl = get_key_levels(price)
+# ─────────────────────────────────────────────
+# Behavioral Modeling
+# ─────────────────────────────────────────────
 
-    if price >= kl.confirm and volume_confirm:
-        score = 82
-    elif price >= kl.trigger:
-        score = 49
+def calculate_behavioral_score(candles: list[dict]) -> BehavioralScore:
+    """
+    Derives market psychology from candle structure.
+    Inputs: list of candle dicts with keys o, h, l, c
+    """
+    if not candles or len(candles) < 3:
+        return BehavioralScore(
+            body_ratio=50, rejection_score=50, velocity_score=50,
+            herding_index=50, composite=50, label="Insufficient Data"
+        )
+
+    # ── Candle Body Ratio ──────────────────────────────────────────
+    # Measures conviction — high ratio = directional confidence
+    body_ratios = []
+    for c in candles[-10:]:
+        total_range = c["h"] - c["l"]
+        if total_range == 0:
+            continue
+        body = abs(c["c"] - c["o"])
+        body_ratios.append(body / total_range)
+    body_ratio = round((sum(body_ratios) / len(body_ratios)) * 100, 1) if body_ratios else 50.0
+
+    # ── Rejection Score ────────────────────────────────────────────
+    # Long wicks at key levels = institutional rejection signal
+    rejection_scores = []
+    for c in candles[-10:]:
+        total_range = c["h"] - c["l"]
+        if total_range == 0:
+            continue
+        upper_wick = c["h"] - max(c["o"], c["c"])
+        lower_wick = min(c["o"], c["c"]) - c["l"]
+        # High upper wick on up-candle = rejection of highs (bearish)
+        # High lower wick on down-candle = rejection of lows (bullish)
+        if c["c"] > c["o"]:
+            rejection_scores.append((lower_wick / total_range) * 100)
+        else:
+            rejection_scores.append((upper_wick / total_range) * 100)
+    rejection_score = round(sum(rejection_scores) / len(rejection_scores), 1) if rejection_scores else 50.0
+
+    # ── Velocity Score ─────────────────────────────────────────────
+    # Price momentum — how fast and consistently price is moving
+    closes = [c["c"] for c in candles[-10:]]
+    if len(closes) >= 2:
+        moves = [abs(closes[i] - closes[i-1]) / closes[i-1] * 100
+                 for i in range(1, len(closes))]
+        avg_move = sum(moves) / len(moves)
+        # Normalize to 0-100 — 1% average move = 100 score
+        velocity_score = round(min(100, avg_move * 100), 1)
     else:
-        score = 38
+        velocity_score = 50.0
 
-    above_trigger = price >= kl.trigger
-    return Decision(
-        status="A LONG" if score >= 80 else ("B TACTICAL LONG" if score >= 45 else "STANDDOWN"),
-        bias="LONG" if score >= 45 else "NEUTRAL",
-        grade="A" if score >= 80 else ("B" if score >= 45 else "C"),
-        confidence="HIGH" if score >= 80 else ("MEDIUM" if score >= 45 else "LOW"),
-        mode="Expansion Confirmed" if score >= 80 else "Retest / Hold Zone",
-        score=score,
-        next_action=(
-            "Price is above the anchor but below full confirmation; protect failure levels."
-            if above_trigger
-            else "Wait for reclaim above the trigger anchor."
-        ),
-        behavior="ABOVE GAP OPEN ANCHOR" if above_trigger else "WAITING / DIGESTION",
+    # ── Herding Index ──────────────────────────────────────────────
+    # Consecutive same-direction candles = crowd is leaning one way
+    same_direction = 0
+    for i in range(1, min(6, len(candles))):
+        c = candles[-(i)]
+        prev = candles[-(i+1)]
+        if (c["c"] > c["o"]) == (prev["c"] > prev["o"]):
+            same_direction += 1
+        else:
+            break
+    # Scale: 5 consecutive same-direction = 100 herding
+    herding_index = round(min(100, same_direction * 20), 1)
+
+    # ── Composite Score ────────────────────────────────────────────
+    composite = int(
+        body_ratio      * 0.35 +
+        rejection_score * 0.25 +
+        velocity_score  * 0.20 +
+        herding_index   * 0.20
+    )
+    composite = max(0, min(100, composite))
+
+    # ── Label ──────────────────────────────────────────────────────
+    if composite >= 75:
+        label = "Strong Directional Conviction"
+    elif composite >= 55:
+        label = "Moderate Momentum"
+    elif composite >= 40:
+        label = "Indecision / Absorption"
+    else:
+        label = "Exhaustion / Reversal Risk"
+
+    return BehavioralScore(
+        body_ratio=body_ratio,
+        rejection_score=rejection_score,
+        velocity_score=velocity_score,
+        herding_index=herding_index,
+        composite=composite,
+        label=label,
     )
 
 
-def build_confluence_nodes(price: float) -> list[ConfluenceNode]:
+# ─────────────────────────────────────────────
+# Options Bias (Alpaca Delayed Data)
+# ─────────────────────────────────────────────
+
+def fetch_options_bias(symbol: str, price: float) -> Optionsbias:
+    """
+    Fetches delayed options chain from Alpaca and derives
+    put/call ratio, gamma level, IV skew, and net bias.
+    Falls back to synthetic if API unavailable.
+    """
+    if not ALPACA_API_KEY or not ALPACA_API_SECRET:
+        return _synthetic_options_bias(price)
+
+    try:
+        headers = {
+            "APCA-API-KEY-ID":     ALPACA_API_KEY,
+            "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+        }
+
+        # Fetch options snapshot for symbol
+        url = f"{ALPACA_DATA_URL}/v1beta1/options/snapshots/{symbol}"
+        params = {"feed": "indicative", "limit": 100}
+        resp = requests.get(url, headers=headers, params=params, timeout=5)
+
+        if resp.status_code != 200:
+            return _synthetic_options_bias(price)
+
+        data = resp.json()
+        snapshots = data.get("snapshots", {})
+
+        if not snapshots:
+            return _synthetic_options_bias(price)
+
+        # ── Parse options chain ────────────────────────────────────
+        call_volume = 0
+        put_volume  = 0
+        call_iv_sum = 0.0
+        put_iv_sum  = 0.0
+        call_count  = 0
+        put_count   = 0
+        gamma_strikes = {}
+
+        for contract, snap in snapshots.items():
+            greeks     = snap.get("greeks", {})
+            quote      = snap.get("latestQuote", {})
+            trade      = snap.get("latestTrade", {})
+            iv         = snap.get("impliedVolatility", 0) or 0
+            gamma      = greeks.get("gamma", 0) or 0
+            volume     = trade.get("s", 0) or 0  # size = volume proxy
+
+            # Determine call or put from contract name
+            # Alpaca contract format: AAPL250117C00150000
+            is_call = "C" in contract.split(symbol)[-1][:10]
+
+            if is_call:
+                call_volume += volume
+                call_iv_sum += iv
+                call_count  += 1
+            else:
+                put_volume  += volume
+                put_iv_sum  += iv
+                put_count   += 1
+
+            # Track gamma by strike for gamma level detection
+            strike_str = contract[-8:]
+            try:
+                strike = int(strike_str) / 1000
+                if abs(strike - price) < price * 0.05:  # within 5% of price
+                    gamma_strikes[strike] = gamma_strikes.get(strike, 0) + abs(gamma)
+            except Exception:
+                pass
+
+        # ── Put/Call Ratio ─────────────────────────────────────────
+        total_volume = call_volume + put_volume
+        if total_volume == 0:
+            return _synthetic_options_bias(price)
+
+        put_call_ratio = round(put_volume / max(call_volume, 1), 3)
+
+        # ── IV Skew ────────────────────────────────────────────────
+        avg_call_iv = call_iv_sum / max(call_count, 1)
+        avg_put_iv  = put_iv_sum  / max(put_count,  1)
+        iv_skew     = round(avg_put_iv - avg_call_iv, 4)
+
+        # ── Gamma Level ────────────────────────────────────────────
+        if gamma_strikes:
+            gamma_level = max(gamma_strikes, key=gamma_strikes.get)
+        else:
+            gamma_level = round(price, 2)
+
+        # ── Net Bias ───────────────────────────────────────────────
+        if put_call_ratio > 1.2 and iv_skew > 0.02:
+            net_bias    = "BEARISH"
+            confidence  = min(100, int(put_call_ratio * 40 + iv_skew * 100))
+        elif put_call_ratio < 0.8 and iv_skew < -0.02:
+            net_bias    = "BULLISH"
+            confidence  = min(100, int((1 - put_call_ratio) * 60 + abs(iv_skew) * 100))
+        else:
+            net_bias    = "NEUTRAL"
+            confidence  = 40
+
+        return Optionsbias(
+            put_call_ratio=put_call_ratio,
+            gamma_level=round(gamma_level, 2),
+            iv_skew=iv_skew,
+            net_bias=net_bias,
+            confidence=confidence,
+            source="DELAYED",
+        )
+
+    except Exception:
+        return _synthetic_options_bias(price)
+
+
+def _synthetic_options_bias(price: float) -> Optionsbias:
+    """
+    Fallback synthetic options bias when API is unavailable.
+    Derives approximate values from price structure only.
+    """
+    kl = get_key_levels(price)
+    above_confirm = price >= kl.confirm
+    put_call_ratio = 0.85 if above_confirm else 1.15
+    iv_skew        = -0.01 if above_confirm else 0.02
+    net_bias       = "BULLISH" if above_confirm else "BEARISH"
+    gamma_level    = round(kl.confirm, 2)
+    return Optionsbias(
+        put_call_ratio=put_call_ratio,
+        gamma_level=gamma_level,
+        iv_skew=iv_skew,
+        net_bias=net_bias,
+        confidence=35,
+        source="SYNTHETIC",
+    )
+
+
+# ─────────────────────────────────────────────
+# Decision Engine v2
+# ─────────────────────────────────────────────
+
+def run_decision(price: float, volume_confirm: bool,
+                 behavioral: BehavioralScore = None,
+                 options: Optionsbias = None) -> Decision:
+    """
+    Enhanced decision engine that blends price, behavioral,
+    and options signals into a single scored output.
+    """
+    kl = get_key_levels(price)
+
+    # ── Base price score ───────────────────────────────────────────
+    if price >= kl.confirm and volume_confirm:
+        base_score = 72
+    elif price >= kl.trigger:
+        base_score = 49
+    else:
+        base_score = 32
+
+    # ── Behavioral adjustment ──────────────────────────────────────
+    behavioral_adj = 0
+    if behavioral:
+        b = behavioral.composite
+        if b >= 70:
+            behavioral_adj = +10
+        elif b >= 50:
+            behavioral_adj = +5
+        elif b < 35:
+            behavioral_adj = -8
+
+    # ── Options bias adjustment ────────────────────────────────────
+    options_adj = 0
+    if options:
+        if options.net_bias == "BULLISH":
+            options_adj = +8
+        elif options.net_bias == "BEARISH":
+            options_adj = -8
+        # Scale by confidence
+        options_adj = int(options_adj * (options.confidence / 100))
+
+    # ── Final score ────────────────────────────────────────────────
+    score = max(0, min(100, base_score + behavioral_adj + options_adj))
+
+    above_trigger = price >= kl.trigger
+
+    # ── Behavioral label for behavior field ────────────────────────
+    beh_label = behavioral.label if behavioral else "STANDARD"
+
+    return Decision(
+        status=(
+            "A LONG"          if score >= 80 else
+            "B TACTICAL LONG" if score >= 55 else
+            "C PROBE"         if score >= 40 else
+            "STANDDOWN"
+        ),
+        bias=(
+            "LONG"    if score >= 55 else
+            "NEUTRAL" if score >= 40 else
+            "SHORT BIAS"
+        ),
+        grade=(
+            "A" if score >= 80 else
+            "B" if score >= 55 else
+            "C" if score >= 40 else
+            "D"
+        ),
+        confidence=(
+            "HIGH"   if score >= 80 else
+            "MEDIUM" if score >= 55 else
+            "LOW"
+        ),
+        mode=(
+            "Expansion Confirmed" if score >= 80 else
+            "Retest / Hold Zone"  if score >= 55 else
+            "Caution / Digestion"
+        ),
+        score=score,
+        next_action=(
+            "Price is above anchor with behavioral confirmation — expansion likely."
+            if score >= 80 else
+            "Price is above trigger but below full confirmation; protect failure levels."
+            if above_trigger else
+            "Wait for reclaim above the trigger anchor."
+        ),
+        behavior=f"ABOVE GAP OPEN ANCHOR · {beh_label}" if above_trigger
+                 else f"WAITING / DIGESTION · {beh_label}",
+    )
+
+
+def build_confluence_nodes(price: float,
+                            behavioral: BehavioralScore = None,
+                            options: Optionsbias = None) -> list[ConfluenceNode]:
+    """
+    Enhanced confluence nodes that adjust scores based on
+    behavioral and options signals.
+    """
     kl = get_key_levels(price)
     above_trigger = price > kl.trigger
+
     raw = [
-        ConfluenceNode("Expansion Node 1", "Expansion Node",  kl.breakout,   63, "up"),
+        ConfluenceNode("Expansion Node 1", "Expansion Node",   kl.breakout,   63, "up"),
         ConfluenceNode("Liquidity Retest", "Liquidity Retest", kl.prior_high, 60, "up"),
-        ConfluenceNode("Expansion Node 2", "Expansion Node",  kl.expansion,  57, "up"),
-        ConfluenceNode("Failure Node",     "Failure Node",    kl.fail,       53, "down"),
+        ConfluenceNode("Expansion Node 2", "Expansion Node",   kl.expansion,  57, "up"),
+        ConfluenceNode("Failure Node",     "Failure Node",     kl.fail,       53, "down"),
     ]
+
     for node in raw:
-        bonus = 5 if above_trigger and node.tone == "up" else 0
+        bonus = 0
+
+        # Price position bonus
+        if above_trigger and node.tone == "up":
+            bonus += 5
+
+        # Behavioral bonus
+        if behavioral:
+            if behavioral.composite >= 70 and node.tone == "up":
+                bonus += 6
+            elif behavioral.composite < 35 and node.tone == "down":
+                bonus += 6
+
+        # Options bias bonus
+        if options:
+            if options.net_bias == "BULLISH" and node.tone == "up":
+                bonus += int(4 * options.confidence / 100)
+            elif options.net_bias == "BEARISH" and node.tone == "down":
+                bonus += int(4 * options.confidence / 100)
+
         node.score = max(35, min(94, node.score + bonus))
+
     return raw
 
 
 def create_live_update(
-    symbol: str, price: float, volume: int, sequence: int
+    symbol: str, price: float, volume: int, sequence: int,
+    candles: list[dict] = None,
 ) -> LiveUpdate:
-    decision   = run_decision(price, volume > 1_500_000)
-    confluence = build_confluence_nodes(price)
+    """
+    Creates a full live update with behavioral and options scoring.
+    Pass candles list for behavioral modeling — falls back gracefully if absent.
+    """
+    behavioral = calculate_behavioral_score(candles) if candles else None
+    options    = fetch_options_bias(symbol, price)
+    decision   = run_decision(price, volume > 1_500_000, behavioral, options)
+    confluence = build_confluence_nodes(price, behavioral, options)
+
     return LiveUpdate(
         type="LIVE_UPDATE",
         symbol=symbol,
@@ -151,6 +511,8 @@ def create_live_update(
         sequence=sequence,
         decision=decision,
         confluence=confluence,
+        behavioral_score=behavioral,
+        options_bias=options,
     )
 
 
