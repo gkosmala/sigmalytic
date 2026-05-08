@@ -177,7 +177,7 @@ def build_chart(candles, price, nodes):
 
 def _build_clock_inline():
     from datetime import datetime, timezone, timedelta
-    EST = timezone(timedelta(hours=-5))  # EST = UTC-5
+    EST = timezone(timedelta(hours=-4))  # EDT = UTC-4 (Daylight Saving Time)
     now = datetime.now(EST)
     minutes = now.hour * 60 + now.minute
     in_sess = 570 <= minutes <= 960
