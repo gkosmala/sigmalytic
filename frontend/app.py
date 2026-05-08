@@ -201,7 +201,7 @@ def build_command_tab(live, candles, symbol, tf):
     score    = decision["score"]
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
-        live_age = ts.strftime("%I:%M:%S %p")
+        from datetime import timedelta
     except: live_age = "—"
     sc    = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size  = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
