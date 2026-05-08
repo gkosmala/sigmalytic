@@ -621,7 +621,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
 def update_clock(_):
-    now=datetime.now(); minutes=now.hour*60+now.minute
+    from datetime import timedelta; EST=timezone(timedelta(hours=-5)); now=datetime.now(EST); minutes=now.hour*60+now.minute
     in_sess=570<=minutes<=960
     phase=("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
            else "Midday Auction" if minutes<840 else "Closing Auction")
