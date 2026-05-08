@@ -7,7 +7,7 @@ Matches original React app layout + Sigmalytic brand upgrade
 from __future__ import annotations
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import dash
 from dash import dcc, html, Input, Output, State, no_update, callback_context
@@ -176,7 +176,6 @@ def build_chart(candles, price, nodes):
 
 
 def _build_clock_inline():
-    from datetime import datetime, timezone, timedelta
     EST = timezone(timedelta(hours=-4))  # EDT = UTC-4 (Daylight Saving Time)
     now = datetime.now(EST)
     minutes = now.hour * 60 + now.minute
@@ -185,7 +184,7 @@ def _build_clock_inline():
              else "Midday Auction" if minutes < 840 else "Closing Auction")
     pc = TEAL_DIM if in_sess else MUTED
     return [
-        metric_tile("Clock", now.strftime("%I:%M:%S %p") + " EST"),
+        metric_tile("Clock", now.strftime("%I:%M:%S %p") + " ET"),
         html.Div(style={"height":"8px"}),
         metric_tile("Session Phase", phase, pc),
         html.Div(style={"height":"10px"}),
@@ -201,8 +200,10 @@ def build_command_tab(live, candles, symbol, tf):
     score    = decision["score"]
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
-        from datetime import timedelta
-    except: live_age = "—"
+        ts = ts.astimezone(timezone(timedelta(hours=-4)))
+        live_age = ts.strftime("%I:%M:%S %p")
+    except:
+        live_age = "—"
     sc    = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size  = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
     top   = nodes[0] if nodes else {"public_label":"—","score":0}
@@ -621,15 +622,17 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
 def update_clock(_):
-    from datetime import timedelta; EST=timezone(timedelta(hours=-5)); now=datetime.now(EST); minutes=now.hour*60+now.minute
-    in_sess=570<=minutes<=960
-    phase=("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
-           else "Midday Auction" if minutes<840 else "Closing Auction")
-    pc=TEAL_DIM if in_sess else MUTED
+    EST = timezone(timedelta(hours=-4))
+    now = datetime.now(EST)
+    minutes = now.hour * 60 + now.minute
+    in_sess = 570 <= minutes <= 960
+    phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes < 630
+             else "Midday Auction" if minutes < 840 else "Closing Auction")
+    pc = TEAL_DIM if in_sess else MUTED
     return html.Div([
-        metric_tile("Clock",now.strftime("%I:%M:%S %p")),
+        metric_tile("Clock", now.strftime("%I:%M:%S %p") + " ET"),
         html.Div(style={"height":"8px"}),
-        metric_tile("Session Phase",phase,pc),
+        metric_tile("Session Phase", phase, pc),
         html.Div(style={"height":"10px"}),
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
