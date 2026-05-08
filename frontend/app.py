@@ -575,7 +575,7 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
         volume=round(500_000+random.random()*5_000_000)
     else: return no_update,no_update,no_update
     new_seq=(seq or 0)+1
-    new_live=create_live_update(symbol,price,volume,new_seq).to_dict()
+    new_live=create_live_update(symbol,price,volume,new_seq,candles).to_dict()
     if candles:
         prior=candles[-1]
         new_c={"o":prior["c"],"h":round(max(prior["c"],price)+0.12,2),
