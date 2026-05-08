@@ -176,15 +176,16 @@ def build_chart(candles, price, nodes):
 
 
 def _build_clock_inline():
-    from datetime import datetime
-    now = datetime.now()
+    from datetime import datetime, timezone, timedelta
+    EST = timezone(timedelta(hours=-5))  # EST = UTC-5
+    now = datetime.now(EST)
     minutes = now.hour * 60 + now.minute
     in_sess = 570 <= minutes <= 960
     phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes < 630
              else "Midday Auction" if minutes < 840 else "Closing Auction")
     pc = TEAL_DIM if in_sess else MUTED
     return [
-        metric_tile("Clock", now.strftime("%I:%M:%S %p")),
+        metric_tile("Clock", now.strftime("%I:%M:%S %p") + " EST"),
         html.Div(style={"height":"8px"}),
         metric_tile("Session Phase", phase, pc),
         html.Div(style={"height":"10px"}),
