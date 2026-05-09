@@ -1,12 +1,12 @@
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
-Matches original React app layout + Sigmalytic brand upgrade
 """
 
 from __future__ import annotations
 import json
 import os
+import random
 from datetime import datetime, timezone, timedelta
 
 import dash
@@ -17,14 +17,18 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles,
-    get_key_levels, build_confluence_nodes, run_decision,
+    get_key_levels,
 )
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 
-# Brand tokens
+TF_VOLATILITY = {"1m": 0.25, "5m": 0.60, "15m": 1.10, "1H": 2.00, "1D": 4.50, "1W": 9.00}
+TF_INTERVAL   = {"1m": 60,   "5m": 300,  "15m": 900,  "1H": 3600, "1D": 86400, "1W": 604800}
+TF_TICKFMT    = {"1m": "%H:%M", "5m": "%H:%M", "15m": "%H:%M",
+                 "1H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
+
 NAVY      = "#0d1b2e"
 NAVY_CARD = "#111f35"
 NAVY_MID  = "#0f172a"
@@ -52,6 +56,33 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input{{font-family:inherit;outline:none;}}
 """
+
+# ── Candle helpers ────────────────────────────────────────────────────────────
+
+def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
+    vol      = TF_VOLATILITY.get(tf, 0.60)
+    interval = TF_INTERVAL.get(tf, 300)
+    base     = generate_initial_candles(anchor_price)
+    n        = len(base)
+    now      = datetime.now(timezone.utc)
+    out      = []
+    for i, c in enumerate(base):
+        mid  = (c.o + c.c) / 2
+        body = (c.c - c.o) * vol
+        rng  = (c.h - c.l) * vol
+        o    = round(mid - body / 2, 2)
+        cl   = round(mid + body / 2, 2)
+        ts   = now - timedelta(seconds=interval * (n - 1 - i))
+        out.append({
+            "o": o,
+            "h": round(max(o, cl) + rng / 2, 2),
+            "l": round(min(o, cl) - rng / 2, 2),
+            "c": cl,
+            "t": ts.isoformat(),
+        })
+    return out
+
+# ── UI primitives ─────────────────────────────────────────────────────────────
 
 def badge(text, color="teal"):
     palettes = {
@@ -89,8 +120,8 @@ def note_box(text, variant=""):
     s = {"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
          "padding":"12px 14px","color":TEXT,"fontSize":"12px","lineHeight":"1.6"}
     if variant=="yellow": s.update({"borderColor":"rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":"#fef3c7"})
-    elif variant=="blue": s.update({"borderColor":"rgba(59,130,246,.25)","background":"rgba(59,130,246,.08)","color":"#dbeafe"})
-    elif variant=="teal": s.update({"borderColor":BORDER_T,"background":TEAL_GLOW,"color":"#d1fae5"})
+    elif variant=="blue":  s.update({"borderColor":"rgba(59,130,246,.25)","background":"rgba(59,130,246,.08)","color":"#dbeafe"})
+    elif variant=="teal":  s.update({"borderColor":BORDER_T,"background":TEAL_GLOW,"color":"#d1fae5"})
     return html.Div(text, style=s)
 
 def slabel(text):
@@ -131,52 +162,76 @@ def zcard(name, level, desc, color):
     ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"14px",
                "padding":"14px","textAlign":"center"})
 
-def build_chart(candles, price, nodes):
-    kl = get_key_levels(price)
-    opens  = [c["o"] for c in candles]
-    highs  = [c["h"] for c in candles]
-    lows   = [c["l"] for c in candles]
-    closes = [c["c"] for c in candles]
-    xs     = list(range(len(candles)))
+def _tf_btn_style(tf, active_tf):
+    active = tf == active_tf
+    return {
+        "background": TEAL_GLOW if active else "transparent",
+        "color": TEAL_DIM if active else TEXT,
+        "border": f"1px solid {BORDER_T}" if active else "none",
+        "borderRadius": "10px",
+        "padding": "8px 12px",
+        "fontSize": "12px",
+        "fontWeight": "800" if active else "700",
+        "cursor": "pointer",
+        "fontFamily": "inherit",
+    }
+
+# ── Chart ─────────────────────────────────────────────────────────────────────
+
+def build_chart(candles, price, nodes, tf="5m"):
+    kl      = get_key_levels(price)
+    opens   = [c["o"] for c in candles]
+    highs   = [c["h"] for c in candles]
+    lows    = [c["l"] for c in candles]
+    closes  = [c["c"] for c in candles]
+    xs      = [c["t"] for c in candles]
+    tickfmt = TF_TICKFMT.get(tf, "%H:%M")
+
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
-        x=xs,open=opens,high=highs,low=lows,close=closes,name="Price",
-        increasing=dict(line=dict(color=TEAL_DIM,width=1),fillcolor=TEAL_DIM),
-        decreasing=dict(line=dict(color=RED_DIM,width=1),fillcolor=RED_DIM),
+        x=xs, open=opens, high=highs, low=lows, close=closes, name="Price",
+        increasing=dict(line=dict(color=TEAL_DIM, width=1), fillcolor=TEAL_DIM),
+        decreasing=dict(line=dict(color=RED_DIM,  width=1), fillcolor=RED_DIM),
     ))
-    lvls = [
-        (kl.breakout,  f"  {kl.breakout:.2f} Breakout",  TEAL_DIM, "dash"),
-        (kl.prior_high,f"  {kl.prior_high:.2f} Liquidity",TEAL_DIM,"dot"),
-        (kl.expansion, f"  {kl.expansion:.2f} Expansion", TEAL_DIM,"dashdot"),
-        (kl.confirm,   f"  {kl.confirm:.2f} Live Anchor", YELLOW_DIM,"solid"),
-        (kl.trigger,   f"  {kl.trigger:.2f} Trigger",     YELLOW_DIM,"dash"),
-        (kl.trap,      f"  {kl.trap:.2f} Trap Door",      RED_DIM,"dot"),
-        (kl.fail,      f"  {kl.fail:.2f} Fail Gate",      RED_DIM,"dash"),
-    ]
-    for level,label,color,dash in lvls:
-        fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
-                      annotation_text=label,annotation_position="right",
-                      annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
-    fig.add_hline(y=price,line_color=BLUE_DIM,line_dash="solid",line_width=1.5,opacity=1,
-                  annotation_text=f"  ${price:.2f} LIVE",annotation_position="right",
-                  annotation_font=dict(color=BLUE_DIM,size=11,family="DM Sans"))
+    for level, label, color, dash in [
+        (kl.breakout,   f"  {kl.breakout:.2f} Breakout",   TEAL_DIM,   "dash"),
+        (kl.prior_high, f"  {kl.prior_high:.2f} Liquidity", TEAL_DIM,   "dot"),
+        (kl.expansion,  f"  {kl.expansion:.2f} Expansion",  TEAL_DIM,   "dashdot"),
+        (kl.confirm,    f"  {kl.confirm:.2f} Live Anchor",  YELLOW_DIM, "solid"),
+        (kl.trigger,    f"  {kl.trigger:.2f} Trigger",      YELLOW_DIM, "dash"),
+        (kl.trap,       f"  {kl.trap:.2f} Trap Door",       RED_DIM,    "dot"),
+        (kl.fail,       f"  {kl.fail:.2f} Fail Gate",       RED_DIM,    "dash"),
+    ]:
+        fig.add_hline(y=level, line_color=color, line_dash=dash, line_width=1, opacity=0.75,
+                      annotation_text=label, annotation_position="right",
+                      annotation_font=dict(color=color, size=10, family="DM Mono, monospace"))
+    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5,
+                  annotation_text=f"  ${price:.2f} LIVE", annotation_position="right",
+                  annotation_font=dict(color=BLUE_DIM, size=11, family="DM Sans"))
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
-        font=dict(family="DM Sans",color=TEXT,size=11),
-        xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,
-                   showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,
-                   color=MUTED,side="right",tickformat=".2f"),
-        margin=dict(l=0,r=130,t=12,b=12),height=390,showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
+        font=dict(family="DM Sans", color=TEXT, size=11),
+        xaxis=dict(
+            type="date",
+            showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
+            rangeslider=dict(visible=False), color=MUTED,
+            showticklabels=True,
+            tickformat=tickfmt,
+            tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
+            title=dict(text=f"{tf} · {len(candles)} candles",
+                       font=dict(color=MUTED, size=10)),
+        ),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
+                   color=MUTED, side="right", tickformat=".2f"),
+        margin=dict(l=0, r=130, t=12, b=36), height=390, showlegend=False,
         hovermode="x unified",
-        hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),
+        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
     )
     return fig
 
-
 def _build_clock_inline():
-    EST = timezone(timedelta(hours=-4))  # EDT = UTC-4 (Daylight Saving Time)
+    EST = timezone(timedelta(hours=-4))
     now = datetime.now(EST)
     minutes = now.hour * 60 + now.minute
     in_sess = 570 <= minutes <= 960
@@ -190,6 +245,8 @@ def _build_clock_inline():
         html.Div(style={"height":"10px"}),
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ]
+
+# ── Tab builders ──────────────────────────────────────────────────────────────
 
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]
@@ -214,11 +271,10 @@ def build_command_tab(live, candles, symbol, tf):
     fb    = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
     as_   = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa    = as_ != "Monitoring"
-    fig   = build_chart(candles, price, nodes)
+    fig   = build_chart(candles, price, nodes, tf)
     ROW   = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
     return html.Div([
-        # Row 1: Chart + Decision Hero
         html.Div([
             card([
                 html.Div([
@@ -241,7 +297,6 @@ def build_command_tab(live, candles, symbol, tf):
                                   "displaylogo":False},
                           style={"borderRadius":"12px","overflow":"hidden"}),
             ],sx={"flex":"1.4","minWidth":"0"}),
-
             card([
                 slabel("Decision Engine"),
                 html.Div(decision["status"],style={"color":sc,"fontSize":"40px","fontWeight":"900",
@@ -272,8 +327,6 @@ def build_command_tab(live, candles, symbol, tf):
                 ],style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"8px","marginTop":"14px"}),
             ],sx={"flex":"1","minWidth":"0"}),
         ],style={**ROW,"alignItems":"start"}),
-
-        # Row 2: 4 cards
         html.Div([
             card([
                 html.H2("🎯 Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
@@ -286,7 +339,6 @@ def build_command_tab(live, candles, symbol, tf):
                 note_box("Entry logic: tactical only above trigger; A-grade requires live-volume expansion.","yellow"),
                 html.P(f"Reference: ${price:.2f}",style={"fontSize":"11px","color":MUTED,"marginTop":"8px"}),
             ],sx={"flex":"1"}),
-
             card([
                 html.H2("🪜 Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
@@ -302,12 +354,10 @@ def build_command_tab(live, candles, symbol, tf):
                 html.P(f"Level ${kl.fail:.2f}  ·  Current ${price:.2f}",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","paddingLeft":"2px"}),
             ],sx={"flex":"1"}),
-
             card([
                 html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 *_build_clock_inline(),
             ],sx={"flex":"1"}),
-
             card([
                 html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Div(as_,style={
@@ -320,8 +370,6 @@ def build_command_tab(live, candles, symbol, tf):
                        style={"fontSize":"11px","color":MUTED,"marginTop":"10px"}),
             ],sx={"flex":"1"}),
         ],style={**ROW,"alignItems":"start"}),
-
-        # Options Matrix
         card([
             html.Div([
                 html.Div([
@@ -340,13 +388,11 @@ def build_command_tab(live, candles, symbol, tf):
             ],style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
             note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
         ],sx={"marginBottom":"16px"}),
-
-        # Summary strip
         card([
             html.Div([
-                metric_tile("Symbol",      symbol,         BLUE_DIM),
-                metric_tile("Live Price",  f"${price:.2f}",TEAL_DIM),
-                metric_tile("Engine Score",f"{score}%",    sc),
+                metric_tile("Symbol",      symbol,          BLUE_DIM),
+                metric_tile("Live Price",  f"${price:.2f}", TEAL_DIM),
+                metric_tile("Engine Score",f"{score}%",     sc),
                 metric_tile("Regime",      decision["mode"],YELLOW_DIM),
             ],style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"}),
         ]),
@@ -411,13 +457,11 @@ def build_setup_tab():
         ),
     ])
 
-# Logo
+# ── App setup ─────────────────────────────────────────────────────────────────
+
 LOGO = html.Div([
-    html.Div("Σ", style={
-        "fontSize":"28px","fontWeight":"900","color":TEAL_DIM,
-        "lineHeight":"1","fontFamily":"Georgia, serif",
-        "marginRight":"4px","flexShrink":"0",
-    }),
+    html.Div("Σ", style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,
+                          "lineHeight":"1","fontFamily":"Georgia, serif","marginRight":"4px","flexShrink":"0"}),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,
                                        "letterSpacing":".08em","lineHeight":"1"}),
@@ -452,9 +496,12 @@ app.index_string = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-_init_live = create_live_update("AAPL",280.15,750_000,0).to_dict()
-_init_candles = [{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)}
-                 for i,c in enumerate(generate_initial_candles(280.15))]
+_init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
+_init_candles = _scaled_candles(280.15, "5m")
+
+# ── Layout ────────────────────────────────────────────────────────────────────
+# TF buttons use plain string IDs — no pattern matching, no dynamic container.
+# The TF store is the single source of truth; the header re-renders from it.
 
 app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
@@ -464,20 +511,21 @@ app.layout = html.Div([
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="command"),
-    dcc.Store(id="s-price-text",data="280.15"),
-    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
+    dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
+    dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
 
     html.Div([html.Div([
         html.Header([
             html.Div([
                 LOGO,
                 html.Div([
-                    html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",style={"fontSize":"10px","fontWeight":"800",
-                              "textTransform":"uppercase","letterSpacing":".32em","color":TEAL_DIM}),
-                    html.Div(id="sim-label",style={"fontSize":"10px","fontWeight":"700","textTransform":"uppercase",
-                              "letterSpacing":".18em","color":BLUE_DIM,"marginTop":"3px"}),
+                    html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",
+                             style={"fontSize":"10px","fontWeight":"800","textTransform":"uppercase",
+                                    "letterSpacing":".32em","color":TEAL_DIM}),
+                    html.Div(id="sim-label",
+                             style={"fontSize":"10px","fontWeight":"700","textTransform":"uppercase",
+                                    "letterSpacing":".18em","color":BLUE_DIM,"marginTop":"3px"}),
                 ],style={"textAlign":"center"}),
                 html.Div(style={"width":"120px"}),
             ],style={"display":"flex","justifyContent":"space-between","alignItems":"center",
@@ -488,39 +536,44 @@ app.layout = html.Div([
                    style={"fontSize":"11px","color":"#475569","textAlign":"center","letterSpacing":".06em","marginTop":"4px"}),
             html.Hr(style={"border":"none","height":"1px","background":BORDER,"width":"60%","margin":"12px auto 0"}),
             html.Div([
-                html.H1("Decision Command Center",style={"fontSize":"30px","fontWeight":"900",
-                          "lineHeight":"1","letterSpacing":"-.02em","color":WHITE}),
+                html.H1("Decision Command Center",
+                        style={"fontSize":"30px","fontWeight":"900","lineHeight":"1",
+                               "letterSpacing":"-.02em","color":WHITE}),
                 html.Span(id="b-connected"),
                 html.Span(id="b-feed"),
                 html.Span(id="b-tick"),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
             html.Div([
-                dcc.Input(id="ticker-input",value="AAPL",debounce=False,
+                dcc.Input(id="ticker-input", value="AAPL", debounce=False,
                           style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
                                  "borderRadius":"12px","padding":"10px 14px","width":"120px",
                                  "fontSize":"14px","fontWeight":"700"}),
-                html.Button("Load Symbol",id="btn-load",n_clicks=0,style={
+                html.Button("Load Symbol", id="btn-load", n_clicks=0, style={
                     "background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                     "borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
                 html.Div(id="price-ctrl"),
+                # ── TF bar: plain IDs, static in DOM, styles updated by callback ──
                 html.Div([
-                    html.Button(tf,id={"type":"tf","index":tf},n_clicks=0,style={
-                        "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
-                        "padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES
-                ],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
-                          "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button("Use Live Alpaca Feed",id="btn-live",n_clicks=0,style={
+                    html.Button("1m",  id="tf-1m",  n_clicks=0, style=_tf_btn_style("1m",  "5m")),
+                    html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m",  "5m")),
+                    html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m", "5m")),
+                    html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H",  "5m")),
+                    html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D",  "5m")),
+                    html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
+                ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
+                           "border":f"1px solid {BORDER}","borderRadius":"12px"}),
+                html.Button("Use Live Alpaca Feed", id="btn-live", n_clicks=0, style={
                     "background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px",
                     "padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
         ],style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
 
         html.Nav([
-            html.Button(label,id=f"tab-{key}",n_clicks=0,style={
-                "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
-                "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
-            for key,label in [("command","Command Center"),("feed","Live Feed"),
-                               ("performance","Performance"),("setup","Setup")]
+            html.Button(label, id=f"tab-{key}", n_clicks=0,
+                        style={"background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
+                               "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
+            for key, label in [("command","Command Center"),("feed","Live Feed"),
+                                ("performance","Performance"),("setup","Setup")]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -531,111 +584,204 @@ app.layout = html.Div([
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
 ],style={"margin":"0","background":NAVY})
 
-@app.callback(Output("s-live-mode","data"),Output("btn-live","children"),Output("sim-label","children"),
-              Input("btn-live","n_clicks"),State("s-live-mode","data"),prevent_initial_call=True)
-def toggle_live(_,current):
-    new=not current
-    return new,("Use Synthetic Feed" if new else "Use Live Alpaca Feed"),\
-           ("LIVE MARKET FEED · ALPACA IEX · SYNTHETIC OPTIONS INTELLIGENCE" if new
+# ── Callbacks ─────────────────────────────────────────────────────────────────
+
+# Single callback handles ALL six TF buttons — plain string IDs, no pattern matching.
+# allow_duplicate=True on s-candles and s-seq because tick() also writes them.
+@app.callback(
+    Output("s-tf",      "data"),
+    Output("s-candles", "data", allow_duplicate=True),
+    Output("s-seq",     "data", allow_duplicate=True),
+    Output("tf-1m",  "style"),
+    Output("tf-5m",  "style"),
+    Output("tf-15m", "style"),
+    Output("tf-1H",  "style"),
+    Output("tf-1D",  "style"),
+    Output("tf-1W",  "style"),
+    Input("tf-1m",  "n_clicks"),
+    Input("tf-5m",  "n_clicks"),
+    Input("tf-15m", "n_clicks"),
+    Input("tf-1H",  "n_clicks"),
+    Input("tf-1D",  "n_clicks"),
+    Input("tf-1W",  "n_clicks"),
+    State("s-live", "data"),
+    prevent_initial_call=True,
+)
+def select_tf(_1m, _5m, _15m, _1H, _1D, _1W, live):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+    btn_id = ctx.triggered[0]["prop_id"].split(".")[0]  # "tf-1D"
+    new_tf = btn_id.replace("tf-", "")                 # "1D"
+    price  = live["price"] if live else 280.15
+    fresh  = _scaled_candles(price, new_tf)
+    s0 = _tf_btn_style("1m",  new_tf)
+    s1 = _tf_btn_style("5m",  new_tf)
+    s2 = _tf_btn_style("15m", new_tf)
+    s3 = _tf_btn_style("1H",  new_tf)
+    s4 = _tf_btn_style("1D",  new_tf)
+    s5 = _tf_btn_style("1W",  new_tf)
+    return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
+
+
+@app.callback(
+    Output("s-live-mode","data"),
+    Output("btn-live","children"),
+    Output("sim-label","children"),
+    Input("btn-live","n_clicks"),
+    State("s-live-mode","data"),
+    prevent_initial_call=True,
+)
+def toggle_live(_, current):
+    new = not current
+    return (new,
+            "Use Synthetic Feed" if new else "Use Live Alpaca Feed",
+            "LIVE MARKET FEED · ALPACA IEX · SYNTHETIC OPTIONS INTELLIGENCE" if new
             else "SIMULATION MODE · SYNTHETIC FEED · CONTROLLED ENVIRONMENT")
 
-@app.callback(Output("s-symbol","data"),Output("ticker-input","value"),
-              Input("btn-load","n_clicks"),State("ticker-input","value"),prevent_initial_call=True)
-def load_symbol(_,ticker):
-    clean=sanitize_symbol(ticker or "")
-    return (clean,clean) if clean else (no_update,no_update)
 
-@app.callback(Output("s-tab","data"),
-              Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
-              Input("tab-performance","n_clicks"),Input("tab-setup","n_clicks"),prevent_initial_call=True)
-def set_tab(*_):
-    ctx=callback_context
-    if not ctx.triggered: return no_update
-    return ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
+@app.callback(
+    Output("s-symbol",    "data"),
+    Output("ticker-input","value"),
+    Input("btn-load","n_clicks"),
+    State("ticker-input","value"),
+    prevent_initial_call=True,
+)
+def load_symbol(_, ticker):
+    clean = sanitize_symbol(ticker or "")
+    return (clean, clean) if clean else (no_update, no_update)
 
-@app.callback(Output("s-live","data"),Output("s-seq","data"),Output("s-candles","data"),
-              Input("i-synth","n_intervals"),Input("i-alpaca","n_intervals"),
-              State("s-live","data"),State("s-seq","data"),State("s-candles","data"),
-              State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"))
-def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
-    import random
-    ctx=callback_context
-    if not ctx.triggered: return no_update,no_update,no_update
-    trigger=ctx.triggered[0]["prop_id"].split(".")[0]
-    if live_mode and trigger=="i-alpaca":
+
+@app.callback(
+    Output("s-live",    "data"),
+    Output("s-seq",     "data", allow_duplicate=True),
+    Output("s-candles", "data", allow_duplicate=True),
+    Input("i-synth",  "n_intervals"),
+    Input("i-alpaca", "n_intervals"),
+    State("s-live",      "data"),
+    State("s-seq",       "data"),
+    State("s-candles",   "data"),
+    State("s-live-mode", "data"),
+    State("s-symbol",    "data"),
+    State("s-tf",        "data"),
+    prevent_initial_call=True,
+)
+def tick(_, __, current, seq, candles, live_mode, symbol, tf):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    vol     = TF_VOLATILITY.get(tf, 0.60)
+
+    if live_mode and trigger == "i-alpaca":
         try:
             import requests as req
-            r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=4)
+            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
             r.raise_for_status()
-            data=r.json(); price=float(data["price"]); volume=int(data.get("volume",0))
-        except: return no_update,no_update,no_update
-    elif not live_mode and trigger=="i-synth":
-        prev=current["price"] if current else float(price_text or 280.15)
-        price=round(max(1.0,prev+(random.random()-0.45)*1.25),2)
-        volume=round(500_000+random.random()*5_000_000)
-    else: return no_update,no_update,no_update
-    new_seq=(seq or 0)+1
-    new_live=create_live_update(symbol,price,volume,new_seq,candles).to_dict()
+            d = r.json()
+            price  = float(d["price"])
+            volume = int(d.get("volume", 0))
+        except:
+            return no_update, no_update, no_update
+    elif not live_mode and trigger == "i-synth":
+        prev   = current["price"] if current else 280.15
+        price  = round(max(1.0, prev + (random.random() - 0.45) * vol), 2)
+        volume = round(500_000 + random.random() * 5_000_000)
+    else:
+        return no_update, no_update, no_update
+
+    new_seq  = (seq or 0) + 1
+    new_live = create_live_update(symbol, price, volume, new_seq, candles).to_dict()
+
     if candles:
-        prior=candles[-1]
-        new_c={"o":prior["c"],"h":round(max(prior["c"],price)+0.12,2),
-               "l":round(min(prior["c"],price)-0.12,2),"c":price,"t":str(new_seq)}
-        new_candles=candles[-49:]+[new_c]
-    else: new_candles=_init_candles
-    return new_live,new_seq,new_candles
+        prior    = candles[-1]
+        interval = TF_INTERVAL.get(tf, 300)
+        try:
+            last_ts = datetime.fromisoformat(prior["t"])
+        except Exception:
+            last_ts = datetime.now(timezone.utc) - timedelta(seconds=interval)
+        new_ts = last_ts + timedelta(seconds=interval)
+        new_c  = {
+            "o": prior["c"],
+            "h": round(max(prior["c"], price) + 0.12 * vol, 2),
+            "l": round(min(prior["c"], price) - 0.12 * vol, 2),
+            "c": price,
+            "t": new_ts.isoformat(),
+        }
+        new_candles = candles[-49:] + [new_c]
+    else:
+        new_candles = _init_candles
 
-@app.callback(Output("price-ctrl","children"),Input("s-live-mode","data"),
-              Input("s-live","data"),State("s-price-text","data"))
-def render_price_ctrl(live_mode,live,price_text):
-    if live_mode:
-        price=live["price"] if live else 0
-        return html.Div([
-            html.Span("Live Price",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                                          "textTransform":"uppercase","letterSpacing":".12em"}),
-            html.Strong(f"${price:.2f}",style={"fontSize":"17px","color":TEAL_DIM,"fontWeight":"900"}),
-        ],style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}","borderRadius":"12px",
-                  "padding":"8px 14px","width":"130px","minHeight":"50px",
-                  "display":"flex","flexDirection":"column","justifyContent":"center"})
-    return dcc.Input(id={"type":"price-in","index":"0"},value=price_text or "280.15",debounce=True,
-                     style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
-                            "borderRadius":"12px","padding":"10px 14px","width":"120px","fontSize":"14px"})
+    return new_live, new_seq, new_candles
 
-@app.callback(Output("b-connected","children"),Output("b-feed","children"),Output("b-tick","children"),
-              Input("s-live","data"),Input("s-live-mode","data"))
-def update_badges(live,live_mode):
-    seq=live["sequence"] if live else 0
-    return (badge("LIVE" if live_mode else "SIM","teal" if live_mode else "gray"),
-            badge("Alpaca IEX" if live_mode else "Synthetic Feed","blue"),
-            badge(f"Tick #{seq}","yellow"))
 
-@app.callback(Output("main-content","children"),
-              Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
-              Input("s-live-mode","data"),Input("i-clock","n_intervals"),
-              State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
-    if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
-    if tab=="feed":        return build_feed_tab(live,live_mode)
-    if tab=="performance": return build_performance_tab(live)
-    if tab=="setup":       return build_setup_tab()
+@app.callback(
+    Output("price-ctrl","children"),
+    Input("s-live-mode","data"),
+    Input("s-live","data"),
+)
+def render_price_ctrl(live_mode, live):
+    price  = live["price"] if live else 280.15
+    color  = TEAL_DIM if live_mode else BLUE_DIM
+    border = BORDER_T if live_mode else BORDER
+    label  = "Live Price" if live_mode else "Sim Price"
+    return html.Div([
+        html.Span(label, style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                                "textTransform":"uppercase","letterSpacing":".12em"}),
+        html.Strong(f"${price:.2f}", style={"fontSize":"17px","color":color,"fontWeight":"900"}),
+    ], style={"background":NAVY_MID,"border":f"1px solid {border}","borderRadius":"12px",
+               "padding":"8px 14px","width":"130px","minHeight":"50px",
+               "display":"flex","flexDirection":"column","justifyContent":"center"})
+
+
+@app.callback(
+    Output("b-connected","children"),
+    Output("b-feed","children"),
+    Output("b-tick","children"),
+    Input("s-live","data"),
+    Input("s-live-mode","data"),
+)
+def update_badges(live, live_mode):
+    seq = live["sequence"] if live else 0
+    return (badge("LIVE" if live_mode else "SIM", "teal" if live_mode else "gray"),
+            badge("Alpaca IEX" if live_mode else "Synthetic Feed", "blue"),
+            badge(f"Tick #{seq}", "yellow"))
+
+
+@app.callback(
+    Output("s-tab","data"),
+    Input("tab-command","n_clicks"),
+    Input("tab-feed","n_clicks"),
+    Input("tab-performance","n_clicks"),
+    Input("tab-setup","n_clicks"),
+    prevent_initial_call=True,
+)
+def set_tab(*_):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
+    return ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
+
+
+@app.callback(
+    Output("main-content","children"),
+    Input("s-live",      "data"),
+    Input("s-candles",   "data"),
+    Input("s-tab",       "data"),
+    Input("s-live-mode", "data"),
+    Input("i-clock",     "n_intervals"),
+    State("s-symbol","data"),
+    State("s-tf",    "data"),
+)
+def render_main(live, candles, tab, live_mode, _clock, symbol, tf):
+    if not live:
+        return html.Div("Initializing…", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    if tab == "command":     return build_command_tab(live, candles or _init_candles, symbol, tf)
+    if tab == "feed":        return build_feed_tab(live, live_mode)
+    if tab == "performance": return build_performance_tab(live)
+    if tab == "setup":       return build_setup_tab()
     return html.Div("Unknown tab")
 
-@app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
-def update_clock(_):
-    EST = timezone(timedelta(hours=-4))
-    now = datetime.now(EST)
-    minutes = now.hour * 60 + now.minute
-    in_sess = 570 <= minutes <= 960
-    phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes < 630
-             else "Midday Auction" if minutes < 840 else "Closing Auction")
-    pc = TEAL_DIM if in_sess else MUTED
-    return html.Div([
-        metric_tile("Clock", now.strftime("%I:%M:%S %p") + " ET"),
-        html.Div(style={"height":"8px"}),
-        metric_tile("Session Phase", phase, pc),
-        html.Div(style={"height":"10px"}),
-        note_box("Future: economic releases, auction windows, proprietary cycle layers."),
-    ])
 
-if __name__=="__main__":
-    app.run(debug=False,host="0.0.0.0",port=8050)
+if __name__ == "__main__":
+    app.run(debug=False, host="0.0.0.0", port=8050)
