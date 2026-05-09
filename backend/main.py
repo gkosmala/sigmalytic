@@ -38,6 +38,9 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles
 )
 
+# ── Behavioral Intelligence Router ─────────────────────────────────────────
+from behavior import behavior_router
+
 # ── Config ─────────────────────────────────────────────────────────────────
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
@@ -251,6 +254,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(behavior_router)
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
