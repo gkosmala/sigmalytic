@@ -259,69 +259,70 @@ def _build_clock_inline():
             note_box("Future: economic releases, auction windows, proprietary cycle layers.")]
 
 # ── Trade Plan Panel ───────────────────────────────────────────────────────────
+# The INPUT components (buttons, fields) live in the permanent layout via their IDs.
+# This function only builds the card SHELL — the inputs are defined once in the layout.
 
-def build_trade_plan_panel(live):
+def _build_trade_plan_contents(live):
+    """Returns the trade plan card. Input IDs are permanent — never recreated."""
     price  = live.get("price", 0)
     symbol = live.get("symbol", "")
-    score  = live.get("decision",{}).get("score", 0)
-    regime = _regime_from_live(live)
     return card([
         html.Div([
             html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
             html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
-
         html.Div([
-            # Direction — three toggle buttons instead of dropdown
+            # Direction buttons
             html.Div([
                 slabel("Direction"),
                 html.Div([
                     html.Button("Long",    id="dir-long",    n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"800","cursor":"pointer","fontFamily":"inherit",
-                               "borderRadius":"8px 0 0 8px","border":f"1px solid {BORDER_T}",
-                               "background":TEAL_GLOW,"color":TEAL_DIM}),
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"800",
+                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"8px 0 0 8px",
+                               "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM}),
                     html.Button("Short",   id="dir-short",   n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700","cursor":"pointer","fontFamily":"inherit",
-                               "borderRadius":"0","border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
+                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"0",
+                               "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
                                "background":"transparent","color":TEXT}),
                     html.Button("Neutral", id="dir-neutral", n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700","cursor":"pointer","fontFamily":"inherit",
-                               "borderRadius":"0 8px 8px 0","border":f"1px solid {BORDER}",
-                               "background":"transparent","color":TEXT}),
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
+                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"0 8px 8px 0",
+                               "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}),
                 ], style={"display":"flex","width":"100%"}),
-                dcc.Store(id="tp-direction", data="long"),
             ], style={"marginBottom":"12px"}),
-
+            # Entry / Stop
             html.Div([
-                html.Div([slabel("Entry Price"), dcc.Input(id="tp-entry", value=str(round(price,2)), debounce=True, style=_input_style())], style={"flex":"1"}),
-                html.Div([slabel("Stop"),        dcc.Input(id="tp-stop",  value=str(round(price*0.99,2)), debounce=True, style=_input_style())], style={"flex":"1"}),
+                html.Div([slabel("Entry Price"),
+                          dcc.Input(id="tp-entry", value=str(round(price,2)), debounce=True, style=_input_style())],
+                         style={"flex":"1"}),
+                html.Div([slabel("Stop"),
+                          dcc.Input(id="tp-stop", value=str(round(price*0.99,2)), debounce=True, style=_input_style())],
+                         style={"flex":"1"}),
             ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
-
+            # Target / Size
             html.Div([
-                html.Div([slabel("Target"),  dcc.Input(id="tp-target", value=str(round(price*1.015,2)), debounce=True, style=_input_style())], style={"flex":"1"}),
-                html.Div([slabel("Size"),    dcc.Input(id="tp-size",   value="100", debounce=True, style=_input_style())], style={"flex":"1"}),
+                html.Div([slabel("Target"),
+                          dcc.Input(id="tp-target", value=str(round(price*1.015,2)), debounce=True, style=_input_style())],
+                         style={"flex":"1"}),
+                html.Div([slabel("Size"),
+                          dcc.Input(id="tp-size", value="100", debounce=True, style=_input_style())],
+                         style={"flex":"1"}),
             ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
-
+            # Notes
             html.Div([
                 slabel("Setup Notes"),
                 dcc.Textarea(id="tp-notes", value="", placeholder="Why this setup?",
                     style={**_input_style(),"height":"60px","resize":"vertical","lineHeight":"1.5"}),
             ], style={"marginBottom":"16px"}),
-
+            # Buttons
             html.Div([
                 _btn("💾 Save Plan",   "btn-save-plan"),
                 _btn("🚀 Enter Trade", "btn-enter-trade",
-                     color=WHITE, bg=WHITE, border=BORDER,
-                     extra={"color":NAVY}),
+                     color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
             ], style={"display":"flex","gap":"10px"}),
-
             html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
         ]),
-
-        # Hidden stores for plan context
-        dcc.Store(id="s-current-plan-id", data=None),
-        dcc.Store(id="s-plan-score",      data=score),
-        dcc.Store(id="s-plan-regime",     data=regime),
     ])
 
 # ── Active Trade Panel ─────────────────────────────────────────────────────────
@@ -673,11 +674,8 @@ def build_command_tab(live, candles, symbol, tf):
             ], sx={"flex":"1"}),
         ], style={**ROW,"alignItems":"start"}),
 
-        # Trade plan + active trade row
-        html.Div([
-            build_trade_plan_panel(live),
-            build_active_trade_panel(open_trade, price) if open_trade else html.Div(style={"flex":"1"}),
-        ], style={**ROW,"alignItems":"start"}),
+        # Trade plan row — rendered separately in permanent layout, shown via callback
+        html.Div(id="trade-row-placeholder"),
 
         # Options Matrix
         card([
@@ -849,12 +847,23 @@ app.layout = html.Div([
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="command"),
-    dcc.Store(id="s-alert-score", data=0),
-    dcc.Store(id="s-alerts-on",   data=True),
+    dcc.Store(id="s-alert-score",    data=0),
+    dcc.Store(id="s-alerts-on",      data=True),
+    dcc.Store(id="s-current-plan-id",data=None),
+    dcc.Store(id="s-plan-score",     data=0),
+    dcc.Store(id="s-plan-regime",    data="neutral"),
+    dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
+
+    # ── Permanent trade plan inputs (outside render cycle so they don't reset) ──
+    html.Div([
+        html.Div(id="trade-plan-panel"),
+        html.Div(id="active-trade-panel"),
+    ], id="trade-panels-row",
+       style={"display":"none"}),  # shown/hidden by tab callback
 
     html.Div([html.Div([
         html.Header([
@@ -1061,7 +1070,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     Output("tp-status","children"),
     Output("s-current-plan-id","data"),
     Input("btn-save-plan","n_clicks"),
-    State("tp-direction","value"), State("tp-entry","value"),
+    State("tp-direction","data"), State("tp-entry","value"),
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"), State("tp-notes","value"),
     State("s-live","data"), prevent_initial_call=True,
@@ -1089,7 +1098,7 @@ def save_plan(n,direction,entry,stop,target,size,notes,live):
 @app.callback(
     Output("tp-status","children",allow_duplicate=True),
     Input("btn-enter-trade","n_clicks"),
-    State("tp-direction","value"), State("tp-entry","value"),
+    State("tp-direction","data"), State("tp-entry","value"),
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"),
     State("s-current-plan-id","data"),
