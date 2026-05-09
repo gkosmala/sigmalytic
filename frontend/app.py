@@ -91,15 +91,33 @@ def _post(path, body):
         return {}
 
 def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
-    vol = TF_VOLATILITY.get(tf, 0.60); interval = TF_INTERVAL.get(tf, 300)
-    base = generate_initial_candles(anchor_price); n = len(base)
-    now = datetime.now(timezone.utc); out = []
+    """
+    Generate historical candles with proper OHLC structure.
+    - Open  : locked at candle start
+    - High  : max(open, close) + realistic wick scaled to TF volatility
+    - Low   : min(open, close) - realistic wick scaled to TF volatility
+    - Close : end price of that period
+    - Timestamp: real UTC time anchored so last candle = now
+    """
+    vol      = TF_VOLATILITY.get(tf, 0.60)
+    interval = TF_INTERVAL.get(tf, 300)
+    base     = generate_initial_candles(anchor_price)
+    n        = len(base)
+    now      = datetime.now(timezone.utc)
+    out      = []
     for i, c in enumerate(base):
-        mid = (c.o + c.c) / 2; body = (c.c - c.o) * vol; rng = (c.h - c.l) * vol
-        o = round(mid - body / 2, 2); cl = round(mid + body / 2, 2)
-        ts = now - timedelta(seconds=interval * (n - 1 - i))
-        out.append({"o": o, "h": round(max(o,cl)+rng/2,2),
-                    "l": round(min(o,cl)-rng/2,2), "c": cl, "t": ts.isoformat()})
+        # Scale body by TF volatility
+        body  = (c.c - c.o) * vol
+        mid   = (c.o + c.c) / 2
+        o     = round(mid - body / 2, 2)
+        cl    = round(mid + body / 2, 2)
+        # Wick = 30% of body on each side, minimum 0.05% of price
+        wick  = max(abs(body) * 0.3, anchor_price * 0.0005)
+        h     = round(max(o, cl) + wick, 2)
+        l     = round(min(o, cl) - wick, 2)
+        # Timestamp: last candle = now, walk backwards
+        ts    = now - timedelta(seconds=interval * (n - 1 - i))
+        out.append({"o": o, "h": h, "l": l, "c": cl, "t": ts.isoformat()})
     return out
 
 def _regime_from_live(live: dict) -> str:
@@ -1007,21 +1025,61 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
             d = r.json(); price=float(d["price"]); volume=int(d.get("volume",0))
         except: return no_update,no_update,no_update
     elif not live_mode and trigger=="i-synth":
-        prev  = current["price"] if current else 280.15
-        price = round(max(1.0, prev+(random.random()-0.45)*vol), 2)
-        volume= round(500_000+random.random()*5_000_000)
+        prev = current["price"] if current else 280.15
+        # Scale per-tick price movement to TF — a 1W candle moves more than a 1m
+        # but each individual synthetic tick should be small (it's just updating
+        # the close). The accumulated high/low range grows naturally over time.
+        tick_scale = {
+            "1m": 0.05, "5m": 0.08, "15m": 0.12,
+            "1H": 0.18, "1D": 0.30, "1W":  0.50,
+        }.get(tf, 0.08)
+        price  = round(max(1.0, prev + (random.random() - 0.48) * tick_scale), 2)
+        volume = round(500_000 + random.random() * 5_000_000)
     else: return no_update,no_update,no_update
     new_seq  = (seq or 0)+1
     new_live = create_live_update(symbol,price,volume,new_seq,candles).to_dict()
     if candles:
-        prior    = candles[-1]; interval = TF_INTERVAL.get(tf,300)
+        prior    = candles[-1]
+        interval = TF_INTERVAL.get(tf, 300)
+        now_utc  = datetime.now(timezone.utc)
+
         try:    last_ts = datetime.fromisoformat(prior["t"])
-        except: last_ts = datetime.now(timezone.utc)-timedelta(seconds=interval)
-        new_ts = last_ts+timedelta(seconds=interval)
-        new_c  = {"o":prior["c"],"h":round(max(prior["c"],price)+0.12*vol,2),
-                  "l":round(min(prior["c"],price)-0.12*vol,2),"c":price,"t":new_ts.isoformat()}
-        new_candles = candles[-49:]+[new_c]
-    else: new_candles=_init_candles
+        except: last_ts = now_utc - timedelta(seconds=interval)
+
+        # Only open a NEW candle if enough real time has passed for this TF.
+        # Otherwise update the current candle in-place (high/low/close update,
+        # timestamp stays fixed). This prevents weekly/daily candles from
+        # printing dates far into the future.
+        elapsed = (now_utc - last_ts).total_seconds()
+
+        if elapsed >= interval:
+            # Enough real time has passed — open a fresh candle.
+            # New candle: open = prior close, high = low = open (price hasn't moved yet),
+            # close = current price. No artificial offset on high/low at open.
+            new_ts  = last_ts + timedelta(seconds=interval)
+            o_price = prior["c"]          # open is prior close
+            new_c   = {
+                "o": o_price,
+                "h": round(max(o_price, price), 2),   # true high so far
+                "l": round(min(o_price, price), 2),   # true low so far
+                "c": price,
+                "t": new_ts.isoformat(),
+            }
+            new_candles = candles[-49:] + [new_c]
+        else:
+            # Still within the current candle period — update in-place.
+            # Open is permanently locked to candle start.
+            # High only moves up, low only moves down, close is latest price.
+            updated_last = {
+                "o": prior["o"],                         # LOCKED — never changes
+                "h": round(max(prior["h"], price), 2),   # only moves up
+                "l": round(min(prior["l"], price), 2),   # only moves down
+                "c": price,                              # always latest
+                "t": prior["t"],                         # timestamp locked to open
+            }
+            new_candles = candles[:-1] + [updated_last]
+    else:
+        new_candles = _init_candles
     return new_live, new_seq, new_candles
 
 @app.callback(
