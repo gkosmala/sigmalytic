@@ -858,13 +858,6 @@ app.layout = html.Div([
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
 
-    # ── Permanent trade plan inputs (outside render cycle so they don't reset) ──
-    html.Div([
-        html.Div(id="trade-plan-panel"),
-        html.Div(id="active-trade-panel"),
-    ], id="trade-panels-row",
-       style={"display":"none"}),  # shown/hidden by tab callback
-
     html.Div([html.Div([
         html.Header([
             html.Div([
@@ -919,6 +912,13 @@ app.layout = html.Div([
                    "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
+
+        # ── Trade plan + active trade — permanent DOM, never recreated by tick ──
+        html.Div([
+            html.Div(id="trade-plan-panel",   style={"flex":"1","minWidth":"0"}),
+            html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
+        ], id="trade-panels-row",
+           style={"display":"none","gap":"16px","alignItems":"start"}),
 
     ], style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
@@ -1050,19 +1050,35 @@ def update_badges(live, live_mode):
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
-    Output("main-content","children"),
+    Output("main-content",       "children"),
+    Output("trade-panels-row",   "style"),
+    Output("trade-plan-panel",   "children"),
+    Output("active-trade-panel", "children"),
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
     Input("s-live-mode","data"), Input("i-clock","n_intervals"),
     State("s-symbol","data"), State("s-tf","data"),
 )
 def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
-    if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
-    if tab=="feed":        return build_feed_tab(live,live_mode)
-    if tab=="performance": return build_performance_tab(live)
-    if tab=="behavior":    return build_behavior_tab()
-    if tab=="setup":       return build_setup_tab()
-    return html.Div("Unknown tab")
+    HIDDEN = {"display":"none"}
+    SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
+
+    if not live:
+        return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
+                HIDDEN, no_update, no_update)
+
+    if tab == "command":
+        open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
+        trade_plan  = _build_trade_plan_contents(live)
+        active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
+        return (build_command_tab(live, candles or _init_candles, symbol, tf),
+                SHOWN, trade_plan, active_pane)
+
+    if tab=="feed":          main = build_feed_tab(live,live_mode)
+    elif tab=="performance": main = build_performance_tab(live)
+    elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="setup":       main = build_setup_tab()
+    else:                    main = html.Div("Unknown tab")
+    return main, HIDDEN, no_update, no_update
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
 
