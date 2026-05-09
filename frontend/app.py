@@ -49,6 +49,16 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
 ::-webkit-scrollbar-thumb{{background:{TEAL};border-radius:2px;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input,textarea,select{{font-family:inherit;outline:none;}}
+.Select-control,.Select-menu-outer,.Select--single>.Select-control .Select-value,
+.Select-placeholder,.Select-value-label{{background:{NAVY_MID} !important;color:{WHITE} !important;}}
+.Select-menu-outer{{border:1px solid {BORDER} !important;border-radius:10px !important;overflow:hidden;z-index:9999 !important;}}
+.Select-option{{background:{NAVY_MID} !important;color:{TEXT} !important;padding:10px 14px !important;font-size:13px !important;}}
+.Select-option:hover,.Select-option.is-focused{{background:{TEAL_GLOW} !important;color:{WHITE} !important;}}
+.Select-option.is-selected{{background:rgba(45,143,111,.3) !important;color:{TEAL_DIM} !important;font-weight:700;}}
+.Select-arrow{{border-color:{MUTED} transparent transparent !important;}}
+.Select-control{{border:1px solid {BORDER} !important;border-radius:10px !important;min-height:40px !important;}}
+.Select-control:hover{{border-color:{BORDER_T} !important;}}
+.is-open .Select-control{{border-color:{BORDER_T} !important;border-radius:10px 10px 0 0 !important;}}
 """
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -262,15 +272,24 @@ def build_trade_plan_panel(live):
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
 
         html.Div([
-            # Direction
+            # Direction — three toggle buttons instead of dropdown
             html.Div([
                 slabel("Direction"),
-                dcc.Dropdown(id="tp-direction", options=[
-                    {"label":"Long","value":"long"},
-                    {"label":"Short","value":"short"},
-                    {"label":"Neutral","value":"neutral"},
-                ], value="long", clearable=False,
-                style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}","borderRadius":"10px"}),
+                html.Div([
+                    html.Button("Long",    id="dir-long",    n_clicks=0,
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"800","cursor":"pointer","fontFamily":"inherit",
+                               "borderRadius":"8px 0 0 8px","border":f"1px solid {BORDER_T}",
+                               "background":TEAL_GLOW,"color":TEAL_DIM}),
+                    html.Button("Short",   id="dir-short",   n_clicks=0,
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700","cursor":"pointer","fontFamily":"inherit",
+                               "borderRadius":"0","border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
+                               "background":"transparent","color":TEXT}),
+                    html.Button("Neutral", id="dir-neutral", n_clicks=0,
+                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700","cursor":"pointer","fontFamily":"inherit",
+                               "borderRadius":"0 8px 8px 0","border":f"1px solid {BORDER}",
+                               "background":"transparent","color":TEXT}),
+                ], style={"display":"flex","width":"100%"}),
+                dcc.Store(id="tp-direction", data="long"),
             ], style={"marginBottom":"12px"}),
 
             html.Div([
@@ -627,15 +646,30 @@ def build_command_tab(live, candles, symbol, tf):
             card([html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                   *_build_clock_inline()], sx={"flex":"1"}),
             card([
-                html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.Div([
+                    html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
+                    html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
+                        style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
+                               "borderRadius":"20px","padding":"4px 12px","fontSize":"11px","fontWeight":"800","cursor":"pointer"}),
+                ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"14px"}),
                 html.Div(as_,style={
                     "borderRadius":"14px","padding":"18px","textAlign":"center","fontWeight":"900",
                     "fontSize":"14px","letterSpacing":".06em","textTransform":"uppercase",
                     **({"border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM} if aa
                        else {"border":"1px solid rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM}),
                 }),
-                html.P("Visual triggers active. Audio alerts after severity rules are finalized.",
-                       style={"fontSize":"11px","color":MUTED,"marginTop":"10px"}),
+                html.Div([
+                    html.Div(f"Score: {score}",
+                        style={"fontSize":"12px","color":TEXT,"marginTop":"10px"}),
+                    html.Div(
+                        "🔴 Trap Door Active" if score < 35 else
+                        ("🟢 A-Grade Signal — Audio Active" if score >= 80 else
+                         "🟡 B-Grade Signal — Audio Active" if score >= 55 else
+                         "⚪ Monitoring"),
+                        style={"fontSize":"11px","fontWeight":"700",
+                               "color": RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED),
+                               "marginTop":"4px"}),
+                ]),
             ], sx={"flex":"1"}),
         ], style={**ROW,"alignItems":"start"}),
 
@@ -743,7 +777,58 @@ server = app.server
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
 <style>{GLOBAL_CSS}</style></head>
-<body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}</body></html>"""
+<body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}
+<script>
+window._sigmaAudioCtx = null;
+function _getAudioCtx() {{
+    if (!window._sigmaAudioCtx) {{
+        window._sigmaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }}
+    return window._sigmaAudioCtx;
+}}
+function sigmaBeep(freq, duration, gain) {{
+    try {{
+        var ctx = _getAudioCtx();
+        var osc = ctx.createOscillator();
+        var vol = ctx.createGain();
+        osc.connect(vol);
+        vol.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        vol.gain.setValueAtTime(gain || 0.3, ctx.currentTime);
+        vol.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + duration);
+    }} catch(e) {{ console.warn('Audio error:', e); }}
+}}
+function sigmaAlert(level) {{
+    if (level === 'A') {{
+        // Three rising tones — A grade signal
+        sigmaBeep(523, 0.15, 0.4);
+        setTimeout(function(){{ sigmaBeep(659, 0.15, 0.4); }}, 160);
+        setTimeout(function(){{ sigmaBeep(784, 0.3,  0.5); }}, 320);
+    }} else if (level === 'B') {{
+        // Two tones — B tactical
+        sigmaBeep(440, 0.15, 0.3);
+        setTimeout(function(){{ sigmaBeep(554, 0.25, 0.35); }}, 180);
+    }} else if (level === 'warn') {{
+        // Single low tone — warning / trap door
+        sigmaBeep(220, 0.4, 0.3);
+    }}
+}}
+// Called by Dash clientside callback
+window.dash_clientside = window.dash_clientside || {{}};
+window.dash_clientside.sigmalytic = {{
+    fireAlert: function(score, prev_score, alerts_on) {{
+        if (!alerts_on) return window.dash_clientside.no_update;
+        if (score >= 80 && prev_score < 80) {{ sigmaAlert('A'); }}
+        else if (score >= 55 && prev_score < 55) {{ sigmaAlert('B'); }}
+        else if (score < 35 && prev_score >= 35) {{ sigmaAlert('warn'); }}
+        return score;
+    }}
+}};
+</script>
+</body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = _scaled_candles(280.15, "5m")
@@ -764,6 +849,9 @@ app.layout = html.Div([
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-alert-score", data=0),
+    dcc.Store(id="s-alerts-on",   data=True),
+    html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
@@ -1059,6 +1147,82 @@ def exit_trade(n,trade_id,flags,notes,live):
                 f"Score: {scores.get('composite',0):.0f} · Flag: {resp.get('behavior_flag','—')}")
     except Exception as e:
         return f"❌ Error: {e}"
+
+# ── Direction toggle buttons ─────────────────────────────────────────────────
+@app.callback(
+    Output("tp-direction", "data"),
+    Output("dir-long",    "style"),
+    Output("dir-short",   "style"),
+    Output("dir-neutral", "style"),
+    Input("dir-long",    "n_clicks"),
+    Input("dir-short",   "n_clicks"),
+    Input("dir-neutral", "n_clicks"),
+    prevent_initial_call=True,
+)
+def select_direction(_l, _s, _n):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update, no_update, no_update
+    btn = ctx.triggered[0]["prop_id"].split(".")[0]
+    direction = btn.replace("dir-", "")
+
+    base = {"flex":"1","padding":"9px 0","fontSize":"13px","cursor":"pointer","fontFamily":"inherit"}
+    active_long    = {**base,"fontWeight":"800","borderRadius":"8px 0 0 8px",
+                      "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM}
+    active_short   = {**base,"fontWeight":"800","borderRadius":"0",
+                      "border":f"1px solid rgba(239,68,68,.35)","borderLeft":"none","borderRight":"none",
+                      "background":RED_GLOW,"color":RED_DIM}
+    active_neutral = {**base,"fontWeight":"800","borderRadius":"0 8px 8px 0",
+                      "border":f"1px solid rgba(245,158,11,.35)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM}
+    idle_long    = {**base,"fontWeight":"700","borderRadius":"8px 0 0 8px",
+                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}
+    idle_short   = {**base,"fontWeight":"700","borderRadius":"0",
+                   "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
+                   "background":"transparent","color":TEXT}
+    idle_neutral = {**base,"fontWeight":"700","borderRadius":"0 8px 8px 0",
+                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}
+
+    if direction == "long":
+        return "long",    active_long,  idle_short,   idle_neutral
+    elif direction == "short":
+        return "short",   idle_long,    active_short,  idle_neutral
+    else:
+        return "neutral", idle_long,    idle_short,    active_neutral
+
+
+# ── Audio alert clientside callback ──────────────────────────────────────────
+app.clientside_callback(
+    """
+    function(score, prev_score, alerts_on) {
+        if (window.dash_clientside && window.dash_clientside.sigmalytic) {
+            return window.dash_clientside.sigmalytic.fireAlert(score, prev_score, alerts_on);
+        }
+        return score;
+    }
+    """,
+    Output("s-alert-score", "data"),
+    Input("s-live", "data"),
+    State("s-alert-score", "data"),
+    State("s-alerts-on", "data"),
+)
+
+@app.callback(
+    Output("s-alerts-on", "data"),
+    Output("btn-alerts-toggle", "children"),
+    Output("btn-alerts-toggle", "style"),
+    Input("btn-alerts-toggle", "n_clicks"),
+    State("s-alerts-on", "data"),
+    prevent_initial_call=True,
+)
+def toggle_alerts(n, currently_on):
+    new_on = not currently_on
+    label  = "🔔 ON"  if new_on else "🔕 OFF"
+    style  = {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
+               "borderRadius":"20px","padding":"4px 12px","fontSize":"11px","fontWeight":"800","cursor":"pointer"}
+    if not new_on:
+        style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":MUTED})
+    return new_on, label, style
+
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
