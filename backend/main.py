@@ -39,7 +39,8 @@ from shared.engine import (
 )
 
 # ── Behavioral Intelligence Router ─────────────────────────────────────────
-from behavior import behavior_router
+from behavior   import behavior_router
+from csv_import import csv_router
 
 # ── Config ─────────────────────────────────────────────────────────────────
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
@@ -256,6 +257,7 @@ app.add_middleware(
 )
 
 app.include_router(behavior_router)
+app.include_router(csv_router)
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────

@@ -355,6 +355,251 @@ def build_active_trade_panel(trade: dict, current_price: float):
         dcc.Store(id="s-active-trade-id", data=trade.get("trade_id")),
     ])
 
+
+# ── CSV Import Tab ─────────────────────────────────────────────────────────────
+
+BROKER_INFO = {
+    "alpaca":       {"name": "Alpaca",                  "icon": "📊", "priority": "HIGH",   "color": TEAL_DIM},
+    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "🏦", "priority": "HIGH",   "color": TEAL_DIM},
+    "ibkr":         {"name": "Interactive Brokers",     "icon": "🌐", "priority": "HIGH",   "color": TEAL_DIM},
+    "robinhood":    {"name": "Robinhood",               "icon": "🪶", "priority": "HIGH",   "color": TEAL_DIM},
+    "webull":       {"name": "Webull",                  "icon": "🐂", "priority": "MEDIUM", "color": YELLOW_DIM},
+    "generic":      {"name": "Generic CSV",             "icon": "📄", "priority": "ALWAYS", "color": BLUE_DIM},
+}
+
+EXPORT_INSTRUCTIONS = {
+    "alpaca": [
+        "Log in to Alpaca dashboard",
+        "Go to Account → Activity",
+        "Select date range → Export CSV",
+        "Upload the downloaded file here",
+    ],
+    "tdameritrade": [
+        "Log in to thinkorswim or TDA web",
+        "Go to My Account → History & Statements",
+        "Select Trade History → Export to CSV",
+        "Upload the downloaded file here",
+    ],
+    "ibkr": [
+        "Log in to Client Portal or TWS",
+        "Go to Reports → Flex Query",
+        "Create a Trade Confirmation Flex Query",
+        "Export as CSV and upload here",
+    ],
+    "robinhood": [
+        "Log in to Robinhood web (not mobile)",
+        "Go to Account → Statements & History",
+        "Download Account Statement CSV",
+        "Upload the downloaded file here",
+    ],
+    "webull": [
+        "Log in to Webull desktop app",
+        "Go to Orders → Order History",
+        "Click Export in top right",
+        "Upload the downloaded CSV here",
+    ],
+    "generic": [
+        "Export your trade history from any broker",
+        "Ensure CSV has: Symbol, Side (buy/sell), Quantity, Price, Date",
+        "Upload and map columns if needed",
+    ],
+}
+
+def build_import_tab():
+    # Fetch latest analysis if exists
+    analysis = _get(f"/api/import/analysis/{USER_ID}")
+
+    ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
+
+    # ── Broker cards ──────────────────────────────────────────────────────────
+    broker_cards = []
+    for key, info in BROKER_INFO.items():
+        priority_color = (TEAL_DIM if info["priority"]=="HIGH"
+                         else YELLOW_DIM if info["priority"]=="MEDIUM"
+                         else BLUE_DIM)
+        broker_cards.append(html.Div([
+            html.Div([
+                html.Span(info["icon"], style={"fontSize":"24px"}),
+                html.Div([
+                    html.Div(info["name"],
+                             style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
+                    html.Span(info["priority"],
+                              style={"fontSize":"10px","fontWeight":"800","color":priority_color,
+                                     "letterSpacing":".1em"}),
+                ]),
+            ], style={"display":"flex","alignItems":"center","gap":"10px","marginBottom":"10px"}),
+            *[html.P(f"• {step}",
+                     style={"fontSize":"11px","color":MUTED,"marginBottom":"4px","lineHeight":"1.5"})
+              for step in EXPORT_INSTRUCTIONS[key]],
+        ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+                   "borderRadius":"14px","padding":"14px","flex":"1","minWidth":"200px"}))
+
+    # ── Upload section ────────────────────────────────────────────────────────
+    upload_section = card([
+        html.H2("📤 Upload Brokerage History",
+                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
+        html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
+               style={"fontSize":"12px","color":MUTED,"marginBottom":"16px"}),
+
+        # Broker cards
+        html.Div(broker_cards,
+                 style={"display":"flex","flexWrap":"wrap","gap":"12px","marginBottom":"20px"}),
+
+        # Upload widget
+        html.Div([
+            dcc.Upload(
+                id="csv-upload",
+                children=html.Div([
+                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("Drag & drop your CSV here, or click to browse",
+                             style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
+                    html.Div("Supports: Alpaca · TD Ameritrade · Schwab · IBKR · Robinhood · Webull · Generic CSV",
+                             style={"fontSize":"11px","color":MUTED}),
+                ], style={"textAlign":"center","padding":"20px"}),
+                style={
+                    "border":f"2px dashed {BORDER_T}",
+                    "borderRadius":"16px",
+                    "background":TEAL_GLOW,
+                    "cursor":"pointer",
+                    "marginBottom":"14px",
+                    "transition":"border-color .2s",
+                },
+                accept=".csv",
+                multiple=False,
+            ),
+            html.Div(id="csv-upload-status",
+                     style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
+        ]),
+    ])
+
+    # ── Analysis display ──────────────────────────────────────────────────────
+    if not analysis:
+        analysis_section = card([
+            note_box("No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.", "blue")
+        ])
+    else:
+        total   = analysis.get("total_trades", 0)
+        wr      = analysis.get("win_rate", 0)
+        pnl     = analysis.get("total_pnl", 0)
+        avg_win = analysis.get("avg_win", 0)
+        avg_loss= analysis.get("avg_loss", 0)
+        rr      = analysis.get("rr_ratio", 0)
+        edge    = analysis.get("edge_score", 0)
+        hold    = analysis.get("avg_hold_time", "—")
+        best_d  = analysis.get("best_day")
+        worst_d = analysis.get("worst_day")
+        best_s  = analysis.get("best_symbol")
+        worst_s = analysis.get("worst_symbol")
+        flags   = analysis.get("behavioral_flags", [])
+        overtrade = analysis.get("overtrade_rate", 0)
+        sym_perf  = analysis.get("symbol_performance", {})
+        day_perf  = analysis.get("day_performance", {})
+
+        wr_color  = TEAL_DIM if wr>=55 else (YELLOW_DIM if wr>=45 else RED_DIM)
+        pnl_color = TEAL_DIM if pnl>=0 else RED_DIM
+        edge_color= TEAL_DIM if edge>0 else RED_DIM
+        rr_color  = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
+
+        # Mathematical edge insight
+        if edge > 0:
+            edge_insight = f"Your system has a positive mathematical edge of ${edge:.2f} per trade."
+        else:
+            edge_insight = f"Your system has a negative edge of ${edge:.2f} per trade — the math works against you long-term."
+
+        # Top symbols table
+        top_syms = sorted(sym_perf.items(), key=lambda x: x[1]["total_pnl"], reverse=True)[:8]
+        sym_rows = []
+        for sym, sp in top_syms:
+            c = TEAL_DIM if sp["total_pnl"]>=0 else RED_DIM
+            sym_rows.append(html.Tr([
+                html.Td(sym, style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
+                html.Td(str(sp["trades"]), style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"{sp['win_rate']:.0f}%", style={"color":TEAL_DIM if sp['win_rate']>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"${sp['total_pnl']:+.2f}", style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
+            ], style={"borderBottom":f"1px solid {BORDER}"}))
+
+        analysis_section = html.Div([
+            # Score cards
+            card([
+                html.H2("📊 Historical Behavioral Snapshot",
+                        style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+                html.Div([
+                    metric_tile("Total Trades",    str(total),          WHITE),
+                    metric_tile("Win Rate",        f"{wr}%",            wr_color),
+                    metric_tile("Total P&L",       f"${pnl:+,.2f}",     pnl_color),
+                    metric_tile("Avg Win",         f"${avg_win:+.2f}",  TEAL_DIM),
+                    metric_tile("Avg Loss",        f"${avg_loss:+.2f}", RED_DIM),
+                    metric_tile("Risk/Reward",     f"{rr:.2f}x",        rr_color),
+                    metric_tile("Avg Hold Time",   hold,                BLUE_DIM),
+                    metric_tile("Overtrade Rate",  f"{overtrade:.0f}%", YELLOW_DIM if overtrade>20 else TEXT),
+                ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"10px","marginBottom":"16px"}),
+
+                # Mathematical edge
+                html.Div([
+                    html.Span("⚡ Mathematical Edge: ",
+                              style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
+                    html.Span(edge_insight, style={"color":TEXT,"fontSize":"12px"}),
+                ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
+                           "border":f"1px solid {BORDER}","marginBottom":"12px"}),
+
+                # Best/worst
+                html.Div([
+                    html.Div([
+                        html.Span("🟢 Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span(best_d or "—",      style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("   🔴 Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span(worst_d or "—",     style={"color":WHITE,"fontSize":"12px"}),
+                    ]),
+                    html.Div([
+                        html.Span("🟢 Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span(best_s or "—",        style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("   🔴 Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span(worst_s or "—",       style={"color":WHITE,"fontSize":"12px"}),
+                    ], style={"marginTop":"6px"}),
+                ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
+                           "border":f"1px solid {BORDER}"}),
+            ]),
+
+            html.Div(style={"height":"16px"}),
+
+            html.Div([
+                # Behavioral flags
+                card([
+                    html.H2("🚩 Behavioral Flags",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+                    *([html.Div([
+                        html.Span("✅ " if any(w in f for w in ["Strong","Above","positive","discipline"])
+                                  else "⚠️ ",
+                                  style={"fontSize":"14px"}),
+                        html.Span(f, style={"fontSize":"12px","color":TEXT,"lineHeight":"1.6"}),
+                    ], style={"padding":"8px 12px","borderRadius":"10px","marginBottom":"6px",
+                               "background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}"})
+                      for f in flags]
+                     if flags else [note_box("No behavioral flags detected yet.", "blue")]),
+                ], sx={"flex":"1"}),
+
+                # Symbol performance table
+                card([
+                    html.H2("📈 Symbol Performance",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+                    html.Table([
+                        html.Thead(html.Tr([
+                            html.Th("Symbol",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"left"}),
+                            html.Th("Trades",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
+                            html.Th("Win %",   style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
+                            html.Th("Total P&L",style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"right"}),
+                        ])),
+                        html.Tbody(sym_rows if sym_rows
+                                   else [html.Tr([html.Td("No data",colSpan=4,
+                                                           style={"color":MUTED,"padding":"16px","textAlign":"center"})])]),
+                    ], style={"width":"100%","borderCollapse":"collapse"}),
+                ], sx={"flex":"1"}),
+            ], style={**ROW,"alignItems":"start"}),
+        ])
+
+    return html.Div([upload_section, html.Div(style={"height":"16px"}), analysis_section])
+
+
 # ── Behavioral Dashboard Tab ───────────────────────────────────────────────────
 
 def build_behavior_tab():
@@ -802,6 +1047,7 @@ ALL_TABS = [
     ("feed",       "Live Feed"),
     ("performance","Performance"),
     ("behavior",   "Behavioral Intelligence"),
+    ("import",     "Import History"),
     ("setup",      "Setup"),
 ]
 
@@ -997,7 +1243,8 @@ def load_symbol(_, ticker, live):
     Output("s-tab","data"),
     Input("tab-command","n_clicks"), Input("tab-feed","n_clicks"),
     Input("tab-performance","n_clicks"), Input("tab-behavior","n_clicks"),
-    Input("tab-setup","n_clicks"), prevent_initial_call=True,
+    Input("tab-import","n_clicks"), Input("tab-setup","n_clicks"),
+    prevent_initial_call=True,
 )
 def set_tab(*_):
     ctx = callback_context
@@ -1133,6 +1380,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="import":      main = build_import_tab()
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
@@ -1273,6 +1521,47 @@ def select_direction(_l, _s, _n):
     direction = btn.replace("dir-", "")
     sl, ss, sn = _dir_styles(direction)
     return direction, sl, ss, sn
+
+
+# ── CSV upload callback ──────────────────────────────────────────────────────
+@app.callback(
+    Output("csv-upload-status", "children"),
+    Input("csv-upload", "contents"),
+    State("csv-upload", "filename"),
+    prevent_initial_call=True,
+)
+def handle_csv_upload(contents, filename):
+    if not contents:
+        return no_update
+    import base64, io as _io
+    try:
+        # Decode base64 data URI
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        # POST to backend
+        resp = req.post(
+            f"{BACKEND_HTTP}/api/import/upload",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            timeout=30,
+        )
+        if resp.ok:
+            data = resp.json()
+            a    = data.get("analysis", {})
+            return html.Div([
+                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
+                          style={"color":TEAL_DIM,"fontWeight":"800"}),
+                html.Span(f"{data.get('trades_closed',0)} trades imported · "
+                          f"Win rate: {a.get('win_rate',0)}% · "
+                          f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
+                          style={"color":TEXT}),
+                html.Br(),
+                html.Span("Switch to the Behavioral Intelligence tab to see your full profile.",
+                          style={"color":MUTED,"fontSize":"11px"}),
+            ])
+        else:
+            return f"❌ Upload failed: {resp.text[:200]}"
+    except Exception as e:
+        return f"❌ Error: {str(e)[:200]}"
 
 
 # ── Audio alert clientside callback ──────────────────────────────────────────
