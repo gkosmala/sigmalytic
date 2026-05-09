@@ -1149,6 +1149,30 @@ def exit_trade(n,trade_id,flags,notes,live):
         return f"❌ Error: {e}"
 
 # ── Direction toggle buttons ─────────────────────────────────────────────────
+def _dir_styles(active):
+    base = {"flex":"1","padding":"9px 0","fontSize":"13px","cursor":"pointer","fontFamily":"inherit"}
+    styles = {
+        "long":    {**base,"fontWeight":"800","borderRadius":"8px 0 0 8px",
+                    "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM},
+        "short":   {**base,"fontWeight":"800","borderRadius":"0",
+                    "border":f"1px solid rgba(239,68,68,.35)","borderLeft":"none","borderRight":"none",
+                    "background":RED_GLOW,"color":RED_DIM},
+        "neutral": {**base,"fontWeight":"800","borderRadius":"0 8px 8px 0",
+                    "border":f"1px solid rgba(245,158,11,.35)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM},
+    }
+    idle = {
+        "long":    {**base,"fontWeight":"700","borderRadius":"8px 0 0 8px",
+                    "border":f"1px solid {BORDER}","background":"transparent","color":TEXT},
+        "short":   {**base,"fontWeight":"700","borderRadius":"0",
+                    "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
+                    "background":"transparent","color":TEXT},
+        "neutral": {**base,"fontWeight":"700","borderRadius":"0 8px 8px 0",
+                    "border":f"1px solid {BORDER}","background":"transparent","color":TEXT},
+    }
+    return (styles["long"]    if active=="long"    else idle["long"],
+            styles["short"]   if active=="short"   else idle["short"],
+            styles["neutral"] if active=="neutral" else idle["neutral"])
+
 @app.callback(
     Output("tp-direction", "data"),
     Output("dir-long",    "style"),
@@ -1157,37 +1181,17 @@ def exit_trade(n,trade_id,flags,notes,live):
     Input("dir-long",    "n_clicks"),
     Input("dir-short",   "n_clicks"),
     Input("dir-neutral", "n_clicks"),
-    prevent_initial_call=True,
 )
 def select_direction(_l, _s, _n):
     ctx = callback_context
-    if not ctx.triggered:
-        return no_update, no_update, no_update, no_update
+    # Default to long on initial load
+    if not ctx.triggered or ctx.triggered[0]["value"] == 0:
+        sl, ss, sn = _dir_styles("long")
+        return "long", sl, ss, sn
     btn = ctx.triggered[0]["prop_id"].split(".")[0]
     direction = btn.replace("dir-", "")
-
-    base = {"flex":"1","padding":"9px 0","fontSize":"13px","cursor":"pointer","fontFamily":"inherit"}
-    active_long    = {**base,"fontWeight":"800","borderRadius":"8px 0 0 8px",
-                      "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM}
-    active_short   = {**base,"fontWeight":"800","borderRadius":"0",
-                      "border":f"1px solid rgba(239,68,68,.35)","borderLeft":"none","borderRight":"none",
-                      "background":RED_GLOW,"color":RED_DIM}
-    active_neutral = {**base,"fontWeight":"800","borderRadius":"0 8px 8px 0",
-                      "border":f"1px solid rgba(245,158,11,.35)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM}
-    idle_long    = {**base,"fontWeight":"700","borderRadius":"8px 0 0 8px",
-                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}
-    idle_short   = {**base,"fontWeight":"700","borderRadius":"0",
-                   "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
-                   "background":"transparent","color":TEXT}
-    idle_neutral = {**base,"fontWeight":"700","borderRadius":"0 8px 8px 0",
-                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}
-
-    if direction == "long":
-        return "long",    active_long,  idle_short,   idle_neutral
-    elif direction == "short":
-        return "short",   idle_long,    active_short,  idle_neutral
-    else:
-        return "neutral", idle_long,    idle_short,    active_neutral
+    sl, ss, sn = _dir_styles(direction)
+    return direction, sl, ss, sn
 
 
 # ── Audio alert clientside callback ──────────────────────────────────────────
