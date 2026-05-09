@@ -263,67 +263,15 @@ def _build_clock_inline():
 # This function only builds the card SHELL — the inputs are defined once in the layout.
 
 def _build_trade_plan_contents(live):
-    """Returns the trade plan card. Input IDs are permanent — never recreated."""
+    """Only updates the header label — buttons/inputs are permanent in layout."""
     price  = live.get("price", 0)
     symbol = live.get("symbol", "")
-    return card([
-        html.Div([
-            html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
-            html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
-        html.Div([
-            # Direction buttons
-            html.Div([
-                slabel("Direction"),
-                html.Div([
-                    html.Button("Long",    id="dir-long",    n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"800",
-                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"8px 0 0 8px",
-                               "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM}),
-                    html.Button("Short",   id="dir-short",   n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
-                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"0",
-                               "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
-                               "background":"transparent","color":TEXT}),
-                    html.Button("Neutral", id="dir-neutral", n_clicks=0,
-                        style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
-                               "cursor":"pointer","fontFamily":"inherit","borderRadius":"0 8px 8px 0",
-                               "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}),
-                ], style={"display":"flex","width":"100%"}),
-            ], style={"marginBottom":"12px"}),
-            # Entry / Stop
-            html.Div([
-                html.Div([slabel("Entry Price"),
-                          dcc.Input(id="tp-entry", value=str(round(price,2)), debounce=True, style=_input_style())],
-                         style={"flex":"1"}),
-                html.Div([slabel("Stop"),
-                          dcc.Input(id="tp-stop", value=str(round(price*0.99,2)), debounce=True, style=_input_style())],
-                         style={"flex":"1"}),
-            ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
-            # Target / Size
-            html.Div([
-                html.Div([slabel("Target"),
-                          dcc.Input(id="tp-target", value=str(round(price*1.015,2)), debounce=True, style=_input_style())],
-                         style={"flex":"1"}),
-                html.Div([slabel("Size"),
-                          dcc.Input(id="tp-size", value="100", debounce=True, style=_input_style())],
-                         style={"flex":"1"}),
-            ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
-            # Notes
-            html.Div([
-                slabel("Setup Notes"),
-                dcc.Textarea(id="tp-notes", value="", placeholder="Why this setup?",
-                    style={**_input_style(),"height":"60px","resize":"vertical","lineHeight":"1.5"}),
-            ], style={"marginBottom":"16px"}),
-            # Buttons
-            html.Div([
-                _btn("💾 Save Plan",   "btn-save-plan"),
-                _btn("🚀 Enter Trade", "btn-enter-trade",
-                     color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
-            ], style={"display":"flex","gap":"10px"}),
-            html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
-        ]),
-    ])
+    return html.Div([
+        html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
+        html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
+    ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
+
+
 
 # ── Active Trade Panel ─────────────────────────────────────────────────────────
 
@@ -913,9 +861,60 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
-        # ── Trade plan + active trade — permanent DOM, never recreated by tick ──
+        # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
         html.Div([
-            html.Div(id="trade-plan-panel",   style={"flex":"1","minWidth":"0"}),
+            # Trade plan card — header updates, inputs are static
+            html.Div([
+                html.Div(id="trade-plan-panel", style={"marginBottom":"16px"}),
+                html.Div([
+                    slabel("Direction"),
+                    html.Div([
+                        html.Button("Long",    id="dir-long",    n_clicks=0,
+                            style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"800",
+                                   "cursor":"pointer","fontFamily":"inherit","borderRadius":"8px 0 0 8px",
+                                   "border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM}),
+                        html.Button("Short",   id="dir-short",   n_clicks=0,
+                            style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
+                                   "cursor":"pointer","fontFamily":"inherit","borderRadius":"0",
+                                   "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
+                                   "background":"transparent","color":TEXT}),
+                        html.Button("Neutral", id="dir-neutral", n_clicks=0,
+                            style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
+                                   "cursor":"pointer","fontFamily":"inherit","borderRadius":"0 8px 8px 0",
+                                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}),
+                    ], style={"display":"flex","width":"100%"}),
+                ], style={"marginBottom":"12px"}),
+                html.Div([
+                    html.Div([slabel("Entry Price"),
+                              dcc.Input(id="tp-entry", value="0.00", debounce=True, style=_input_style())],
+                             style={"flex":"1"}),
+                    html.Div([slabel("Stop"),
+                              dcc.Input(id="tp-stop",  value="0.00", debounce=True, style=_input_style())],
+                             style={"flex":"1"}),
+                ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
+                html.Div([
+                    html.Div([slabel("Target"),
+                              dcc.Input(id="tp-target", value="0.00", debounce=True, style=_input_style())],
+                             style={"flex":"1"}),
+                    html.Div([slabel("Size"),
+                              dcc.Input(id="tp-size",   value="100",  debounce=True, style=_input_style())],
+                             style={"flex":"1"}),
+                ], style={"display":"flex","gap":"12px","marginBottom":"12px"}),
+                html.Div([
+                    slabel("Setup Notes"),
+                    dcc.Textarea(id="tp-notes", value="", placeholder="Why this setup?",
+                        style={**_input_style(),"height":"60px","resize":"vertical","lineHeight":"1.5"}),
+                ], style={"marginBottom":"16px"}),
+                html.Div([
+                    _btn("💾 Save Plan",   "btn-save-plan"),
+                    _btn("🚀 Enter Trade", "btn-enter-trade",
+                         color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
+                ], style={"display":"flex","gap":"10px"}),
+                html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
+            ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
+                       "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
+
+            # Active trade panel
             html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"start"}),
@@ -1206,13 +1205,12 @@ def _dir_styles(active):
     Input("dir-long",    "n_clicks"),
     Input("dir-short",   "n_clicks"),
     Input("dir-neutral", "n_clicks"),
+    prevent_initial_call=True,
 )
 def select_direction(_l, _s, _n):
     ctx = callback_context
-    # Default to long on initial load
-    if not ctx.triggered or ctx.triggered[0]["value"] == 0:
-        sl, ss, sn = _dir_styles("long")
-        return "long", sl, ss, sn
+    if not ctx.triggered:
+        return no_update, no_update, no_update, no_update
     btn = ctx.triggered[0]["prop_id"].split(".")[0]
     direction = btn.replace("dir-", "")
     sl, ss, sn = _dir_styles(direction)
