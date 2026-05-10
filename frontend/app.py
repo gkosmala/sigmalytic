@@ -65,7 +65,6 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 
 def _track(event_type, symbol, price=None, timeframe=None, regime=None,
            decision_score=None, decision_status=None, metadata=None):
-    """Fire-and-forget behavioral event to backend."""
     try:
         req.post(f"{BACKEND_HTTP}/api/behavior/event", json={
             "user_id": USER_ID, "event_type": event_type, "symbol": symbol,
@@ -91,14 +90,6 @@ def _post(path, body):
         return {}
 
 def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
-    """
-    Generate historical candles with proper OHLC structure.
-    - Open  : locked at candle start
-    - High  : max(open, close) + realistic wick scaled to TF volatility
-    - Low   : min(open, close) - realistic wick scaled to TF volatility
-    - Close : end price of that period
-    - Timestamp: real UTC time anchored so last candle = now
-    """
     vol      = TF_VOLATILITY.get(tf, 0.60)
     interval = TF_INTERVAL.get(tf, 300)
     base     = generate_initial_candles(anchor_price)
@@ -106,16 +97,13 @@ def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
     now      = datetime.now(timezone.utc)
     out      = []
     for i, c in enumerate(base):
-        # Scale body by TF volatility
         body  = (c.c - c.o) * vol
         mid   = (c.o + c.c) / 2
         o     = round(mid - body / 2, 2)
         cl    = round(mid + body / 2, 2)
-        # Wick = 30% of body on each side, minimum 0.05% of price
         wick  = max(abs(body) * 0.3, anchor_price * 0.0005)
         h     = round(max(o, cl) + wick, 2)
         l     = round(min(o, cl) - wick, 2)
-        # Timestamp: last candle = now, walk backwards
         ts    = now - timedelta(seconds=interval * (n - 1 - i))
         out.append({"o": o, "h": h, "l": l, "c": cl, "t": ts.isoformat()})
     return out
@@ -277,19 +265,14 @@ def _build_clock_inline():
             note_box("Future: economic releases, auction windows, proprietary cycle layers.")]
 
 # ── Trade Plan Panel ───────────────────────────────────────────────────────────
-# The INPUT components (buttons, fields) live in the permanent layout via their IDs.
-# This function only builds the card SHELL — the inputs are defined once in the layout.
 
 def _build_trade_plan_contents(live):
-    """Only updates the header label — buttons/inputs are permanent in layout."""
     price  = live.get("price", 0)
     symbol = live.get("symbol", "")
     return html.Div([
         html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
         html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
     ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
-
-
 
 # ── Active Trade Panel ─────────────────────────────────────────────────────────
 
@@ -309,7 +292,6 @@ def build_active_trade_panel(trade: dict, current_price: float):
         unreal_pct = ((entry - current_price) / entry * 100) if entry else 0
 
     pnl_color = TEAL_DIM if unreal_pnl >= 0 else RED_DIM
-    entry_time = trade.get("entry_time", "")
 
     return card([
         html.Div([
@@ -329,7 +311,6 @@ def build_active_trade_panel(trade: dict, current_price: float):
             metric_tile("Size",   str(size),        TEXT),
         ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"8px","marginBottom":"14px"}),
 
-        # Exit review fields
         html.Div([
             slabel("Exit Review"),
             html.Div([
@@ -406,12 +387,10 @@ EXPORT_INSTRUCTIONS = {
 }
 
 def build_import_tab():
-    # Fetch latest analysis if exists
     analysis = _get(f"/api/import/analysis/{USER_ID}")
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
-    # ── Broker cards ──────────────────────────────────────────────────────────
     broker_cards = []
     for key, info in BROKER_INFO.items():
         priority_color = (TEAL_DIM if info["priority"]=="HIGH"
@@ -434,18 +413,15 @@ def build_import_tab():
         ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
                    "borderRadius":"14px","padding":"14px","flex":"1","minWidth":"200px"}))
 
-    # ── Upload section ────────────────────────────────────────────────────────
     upload_section = card([
         html.H2("📤 Upload Brokerage History",
                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
         html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
                style={"fontSize":"12px","color":MUTED,"marginBottom":"16px"}),
 
-        # Broker cards
         html.Div(broker_cards,
                  style={"display":"flex","flexWrap":"wrap","gap":"12px","marginBottom":"20px"}),
 
-        # Upload widget
         html.Div([
             dcc.Upload(
                 id="csv-upload",
@@ -472,7 +448,6 @@ def build_import_tab():
         ]),
     ])
 
-    # ── Analysis display ──────────────────────────────────────────────────────
     if not analysis:
         analysis_section = card([
             note_box("No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.", "blue")
@@ -500,13 +475,11 @@ def build_import_tab():
         edge_color= TEAL_DIM if edge>0 else RED_DIM
         rr_color  = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
 
-        # Mathematical edge insight
         if edge > 0:
             edge_insight = f"Your system has a positive mathematical edge of ${edge:.2f} per trade."
         else:
             edge_insight = f"Your system has a negative edge of ${edge:.2f} per trade — the math works against you long-term."
 
-        # Top symbols table
         top_syms = sorted(sym_perf.items(), key=lambda x: x[1]["total_pnl"], reverse=True)[:8]
         sym_rows = []
         for sym, sp in top_syms:
@@ -519,7 +492,6 @@ def build_import_tab():
             ], style={"borderBottom":f"1px solid {BORDER}"}))
 
         analysis_section = html.Div([
-            # Score cards
             card([
                 html.H2("📊 Historical Behavioral Snapshot",
                         style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
@@ -534,7 +506,6 @@ def build_import_tab():
                     metric_tile("Overtrade Rate",  f"{overtrade:.0f}%", YELLOW_DIM if overtrade>20 else TEXT),
                 ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"10px","marginBottom":"16px"}),
 
-                # Mathematical edge
                 html.Div([
                     html.Span("⚡ Mathematical Edge: ",
                               style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
@@ -542,7 +513,6 @@ def build_import_tab():
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
                            "border":f"1px solid {BORDER}","marginBottom":"12px"}),
 
-                # Best/worst
                 html.Div([
                     html.Div([
                         html.Span("🟢 Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
@@ -563,7 +533,6 @@ def build_import_tab():
             html.Div(style={"height":"16px"}),
 
             html.Div([
-                # Behavioral flags
                 card([
                     html.H2("🚩 Behavioral Flags",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
@@ -578,7 +547,6 @@ def build_import_tab():
                      if flags else [note_box("No behavioral flags detected yet.", "blue")]),
                 ], sx={"flex":"1"}),
 
-                # Symbol performance table
                 card([
                     html.H2("📈 Symbol Performance",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
@@ -631,7 +599,6 @@ def build_behavior_tab():
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
-    # Section 1 — Profile scores
     section1 = card([
         html.H2("🧠 Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
         html.Div([
@@ -655,7 +622,6 @@ def build_behavior_tab():
         ]),
     ])
 
-    # Section 2 — Adaptive warnings
     def warn_box(w):
         variant = "teal" if w["type"]=="strength" else "yellow"
         icon    = "✅" if w["type"]=="strength" else "⚠️"
@@ -680,7 +646,6 @@ def build_behavior_tab():
         ]),
     ])
 
-    # Section 3 — Regime table
     regime_rows_html = []
     for r in regimes:
         wr_color  = TEAL_DIM if r["win_rate"]>=60 else (YELLOW_DIM if r["win_rate"]>=40 else RED_DIM)
@@ -702,19 +667,18 @@ def build_behavior_tab():
         html.H2("📊 Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
         html.Table([
             html.Thead(html.Tr([
-                html.Th("Regime",           style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
-                html.Th("Trades",           style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Win Rate",         style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Avg Score",        style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Common Pattern",   style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
+                html.Th("Regime",         style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
+                html.Th("Trades",         style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Win Rate",       style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Avg Score",      style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Common Pattern", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
             ])),
             html.Tbody(regime_rows_html if regime_rows_html
                        else [html.Tr([html.Td("No regime data yet.",
                                                colSpan=5,style={"color":MUTED,"padding":"20px","textAlign":"center"})])]),
         ], style={"width":"100%","borderCollapse":"collapse"}),
-    ]) if True else html.Div()
+    ])
 
-    # Section 4 — Recent scorecards
     def scorecard_row(s):
         c = TEAL_DIM if s["composite_decision_score"]>=70 else (YELLOW_DIM if s["composite_decision_score"]>=45 else RED_DIM)
         pnl = s.get("pnl_percent")
@@ -772,7 +736,6 @@ def build_command_tab(live, candles, symbol, tf):
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
-    # Fetch open trade for active panel
     open_trade = _get(f"/api/behavior/open-trade/{USER_ID}")
 
     return html.Div([
@@ -830,7 +793,6 @@ def build_command_tab(live, candles, symbol, tf):
             ], sx={"flex":"1","minWidth":"0"}),
         ], style={**ROW,"alignItems":"start"}),
 
-        # Row 2
         html.Div([
             card([
                 html.H2("🎯 Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
@@ -885,10 +847,8 @@ def build_command_tab(live, candles, symbol, tf):
             ], sx={"flex":"1"}),
         ], style={**ROW,"alignItems":"start"}),
 
-        # Trade plan row — rendered separately in permanent layout, shown via callback
         html.Div(id="trade-row-placeholder"),
 
-        # Options Matrix
         card([
             html.Div([
                 html.Div([html.H2("🧱 Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
@@ -1012,20 +972,16 @@ function sigmaBeep(freq, duration, gain) {{
 }}
 function sigmaAlert(level) {{
     if (level === 'A') {{
-        // Three rising tones — A grade signal
         sigmaBeep(523, 0.15, 0.4);
         setTimeout(function(){{ sigmaBeep(659, 0.15, 0.4); }}, 160);
         setTimeout(function(){{ sigmaBeep(784, 0.3,  0.5); }}, 320);
     }} else if (level === 'B') {{
-        // Two tones — B tactical
         sigmaBeep(440, 0.15, 0.3);
         setTimeout(function(){{ sigmaBeep(554, 0.25, 0.35); }}, 180);
     }} else if (level === 'warn') {{
-        // Single low tone — warning / trap door
         sigmaBeep(220, 0.4, 0.3);
     }}
 }}
-// Called by Dash clientside callback
 window.dash_clientside = window.dash_clientside || {{}};
 window.dash_clientside.sigmalytic = {{
     fireAlert: function(score, prev_score, alerts_on) {{
@@ -1065,6 +1021,8 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-score",     data=0),
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
+    # ── NEW: store for generic CSV retry ──────────────────────────────────────
+    dcc.Store(id="csv-generic-pending", data=None),
     html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
@@ -1125,9 +1083,7 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
-        # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
         html.Div([
-            # Trade plan card — header updates, inputs are static
             html.Div([
                 html.Div(id="trade-plan-panel", style={"marginBottom":"16px"}),
                 html.Div([
@@ -1178,7 +1134,6 @@ app.layout = html.Div([
             ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
 
-            # Active trade panel
             html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"start"}),
@@ -1206,7 +1161,6 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     new_tf = btn_id.replace("tf-","")
     price  = live["price"] if live else 280.15
     fresh  = _scaled_candles(price, new_tf)
-    # Track event
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
                regime=_regime_from_live(live),
@@ -1265,7 +1219,6 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
     ctx = callback_context
     if not ctx.triggered: return no_update,no_update,no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-    vol = TF_VOLATILITY.get(tf, 0.60)
     if live_mode and trigger=="i-alpaca":
         try:
             r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4); r.raise_for_status()
@@ -1273,9 +1226,6 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
         except: return no_update,no_update,no_update
     elif not live_mode and trigger=="i-synth":
         prev = current["price"] if current else 280.15
-        # Scale per-tick price movement to TF — a 1W candle moves more than a 1m
-        # but each individual synthetic tick should be small (it's just updating
-        # the close). The accumulated high/low range grows naturally over time.
         tick_scale = {
             "1m": 0.05, "5m": 0.08, "15m": 0.12,
             "1H": 0.18, "1D": 0.30, "1W":  0.50,
@@ -1289,40 +1239,27 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
         prior    = candles[-1]
         interval = TF_INTERVAL.get(tf, 300)
         now_utc  = datetime.now(timezone.utc)
-
         try:    last_ts = datetime.fromisoformat(prior["t"])
         except: last_ts = now_utc - timedelta(seconds=interval)
-
-        # Only open a NEW candle if enough real time has passed for this TF.
-        # Otherwise update the current candle in-place (high/low/close update,
-        # timestamp stays fixed). This prevents weekly/daily candles from
-        # printing dates far into the future.
         elapsed = (now_utc - last_ts).total_seconds()
-
         if elapsed >= interval:
-            # Enough real time has passed — open a fresh candle.
-            # New candle: open = prior close, high = low = open (price hasn't moved yet),
-            # close = current price. No artificial offset on high/low at open.
             new_ts  = last_ts + timedelta(seconds=interval)
-            o_price = prior["c"]          # open is prior close
+            o_price = prior["c"]
             new_c   = {
                 "o": o_price,
-                "h": round(max(o_price, price), 2),   # true high so far
-                "l": round(min(o_price, price), 2),   # true low so far
+                "h": round(max(o_price, price), 2),
+                "l": round(min(o_price, price), 2),
                 "c": price,
                 "t": new_ts.isoformat(),
             }
             new_candles = candles[-49:] + [new_c]
         else:
-            # Still within the current candle period — update in-place.
-            # Open is permanently locked to candle start.
-            # High only moves up, low only moves down, close is latest price.
             updated_last = {
-                "o": prior["o"],                         # LOCKED — never changes
-                "h": round(max(prior["h"], price), 2),   # only moves up
-                "l": round(min(prior["l"], price), 2),   # only moves down
-                "c": price,                              # always latest
-                "t": prior["t"],                         # timestamp locked to open
+                "o": prior["o"],
+                "h": round(max(prior["h"], price), 2),
+                "l": round(min(prior["l"], price), 2),
+                "c": price,
+                "t": prior["t"],
             }
             new_candles = candles[:-1] + [updated_last]
     else:
@@ -1353,16 +1290,18 @@ def update_badges(live, live_mode):
             badge("Alpaca IEX" if live_mode else "Synthetic Feed","blue"),
             badge(f"Tick #{seq}","yellow"))
 
+
+# ── Main render — NO clock input (prevents import tab from being destroyed) ───
 @app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
+    Input("s-live-mode","data"),
     State("s-symbol","data"), State("s-tf","data"),
 )
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(live, candles, tab, live_mode, symbol, tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -1377,13 +1316,34 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
         return (build_command_tab(live, candles or _init_candles, symbol, tf),
                 SHOWN, trade_plan, active_pane)
 
-    if tab=="feed":          main = build_feed_tab(live,live_mode)
+    if tab=="feed":          main = build_feed_tab(live, live_mode)
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="import":      main = build_import_tab()
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
+
+
+# ── Clock tick — only refreshes command tab time display ─────────────────────
+@app.callback(
+    Output("main-content", "children", allow_duplicate=True),
+    Input("i-clock", "n_intervals"),
+    State("s-tab", "data"),
+    State("s-live", "data"),
+    State("s-candles", "data"),
+    State("s-symbol", "data"),
+    State("s-tf", "data"),
+    prevent_initial_call=True,
+)
+def clock_tick(_, tab, live, candles, symbol, tf):
+    # Only rebuild the command tab on clock ticks (for the live clock display).
+    # All other tabs are left alone so dcc.Upload and other components
+    # are not destroyed every second.
+    if tab != "command" or not live:
+        return no_update
+    return build_command_tab(live, candles or _init_candles, symbol, tf)
+
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
 
@@ -1478,7 +1438,8 @@ def exit_trade(n,trade_id,flags,notes,live):
     except Exception as e:
         return f"❌ Error: {e}"
 
-# ── Direction toggle buttons ─────────────────────────────────────────────────
+# ── Direction toggle buttons ──────────────────────────────────────────────────
+
 def _dir_styles(active):
     base = {"flex":"1","padding":"9px 0","fontSize":"13px","cursor":"pointer","fontFamily":"inherit"}
     styles = {
@@ -1523,45 +1484,145 @@ def select_direction(_l, _s, _n):
     return direction, sl, ss, sn
 
 
-# ── CSV upload callback ──────────────────────────────────────────────────────
+# ── CSV upload callback ───────────────────────────────────────────────────────
 @app.callback(
     Output("csv-upload-status", "children"),
+    Output("csv-generic-pending", "data"),
     Input("csv-upload", "contents"),
     State("csv-upload", "filename"),
     prevent_initial_call=True,
 )
 def handle_csv_upload(contents, filename):
     if not contents:
-        return no_update
+        return no_update, no_update
     import base64, io as _io
     try:
-        # Decode base64 data URI
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
-        # POST to backend
+
         resp = req.post(
             f"{BACKEND_HTTP}/api/import/upload",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             timeout=30,
         )
-        if resp.ok:
-            data = resp.json()
-            a    = data.get("analysis", {})
-            return html.Div([
-                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
-                          style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"{data.get('trades_closed',0)} trades imported · "
-                          f"Win rate: {a.get('win_rate',0)}% · "
-                          f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
-                          style={"color":TEXT}),
+
+        if not resp.ok:
+            return (
+                html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
+                          style={"color": RED_DIM}),
+                None,
+            )
+
+        data = resp.json()
+
+        # Backend couldn't detect broker — queue a generic retry
+        if data.get("needs_mapping"):
+            cols = data.get("columns", [])
+            return (
+                html.Div([
+                    html.Span("⚠️ Broker format not recognized — retrying as generic CSV…",
+                              style={"color": YELLOW_DIM, "fontWeight": "800"}),
+                    html.Br(),
+                    html.Span("Detected columns: " + ", ".join(str(c) for c in cols[:12]),
+                              style={"color": MUTED, "fontSize": "11px"}),
+                ]),
+                {"contents": contents, "filename": filename},
+            )
+
+        # Success
+        a = data.get("analysis", {})
+        trades_count = data.get("trades_closed", 0)
+
+        if trades_count == 0:
+            return (
+                html.Span(
+                    "⚠️ File parsed but 0 trades reconstructed. "
+                    "Ensure your CSV has both buy AND sell rows (FIFO matching requires both sides).",
+                    style={"color": YELLOW_DIM}
+                ),
+                None,
+            )
+
+        return (
+            html.Div([
+                html.Span(f"✅ {data.get('broker_name', 'Unknown')} detected · ",
+                          style={"color": TEAL_DIM, "fontWeight": "800"}),
+                html.Span(
+                    f"{trades_count} trades imported · "
+                    f"Win rate: {a.get('win_rate', 0)}% · "
+                    f"Total P&L: ${a.get('total_pnl', 0):+,.2f}",
+                    style={"color": TEXT}
+                ),
                 html.Br(),
                 html.Span("Switch to the Behavioral Intelligence tab to see your full profile.",
-                          style={"color":MUTED,"fontSize":"11px"}),
-            ])
-        else:
-            return f"❌ Upload failed: {resp.text[:200]}"
+                          style={"color": MUTED, "fontSize": "11px"}),
+            ]),
+            None,
+        )
+
     except Exception as e:
-        return f"❌ Error: {str(e)[:200]}"
+        return (
+            html.Span(f"❌ Exception: {str(e)[:300]}", style={"color": RED_DIM}),
+            None,
+        )
+
+
+# ── Generic CSV retry callback ────────────────────────────────────────────────
+@app.callback(
+    Output("csv-upload-status", "children", allow_duplicate=True),
+    Input("csv-generic-pending", "data"),
+    prevent_initial_call=True,
+)
+def handle_generic_retry(pending):
+    if not pending:
+        return no_update
+    import base64, io as _io
+    try:
+        contents = pending["contents"]
+        filename = pending["filename"]
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+
+        resp = req.post(
+            f"{BACKEND_HTTP}/api/import/upload-generic",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            data={"user_id": USER_ID},
+            timeout=30,
+        )
+
+        if not resp.ok:
+            return html.Span(
+                f"❌ Generic upload failed ({resp.status_code}): {resp.text[:300]}",
+                style={"color": RED_DIM}
+            )
+
+        data = resp.json()
+        a = data.get("analysis", {})
+        trades_count = data.get("trades_closed", 0)
+
+        if trades_count == 0:
+            return html.Span(
+                "⚠️ Generic import: 0 trades reconstructed. "
+                "Ensure your CSV has columns named: symbol, side (buy/sell), qty, price, date.",
+                style={"color": YELLOW_DIM}
+            )
+
+        return html.Div([
+            html.Span("✅ Generic CSV imported · ",
+                      style={"color": TEAL_DIM, "fontWeight": "800"}),
+            html.Span(
+                f"{trades_count} trades · "
+                f"Win rate: {a.get('win_rate', 0)}% · "
+                f"P&L: ${a.get('total_pnl', 0):+,.2f}",
+                style={"color": TEXT}
+            ),
+            html.Br(),
+            html.Span("Switch to the Behavioral Intelligence tab to see your full profile.",
+                      style={"color": MUTED, "fontSize": "11px"}),
+        ])
+
+    except Exception as e:
+        return html.Span(f"❌ {str(e)[:300]}", style={"color": RED_DIM})
 
 
 # ── Audio alert clientside callback ──────────────────────────────────────────
