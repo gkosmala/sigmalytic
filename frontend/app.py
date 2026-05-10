@@ -618,55 +618,6 @@ def update_clock(_):
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
 
-
-@app.callback(
-    Output("csv-upload-status", "children"),
-    Input("csv-upload", "contents"),
-    State("csv-upload", "filename"),
-    prevent_initial_call=True,
-)
-def handle_csv_upload(contents, filename):
-    if not contents:
-        return no_update
-    import base64, io as _io
-    try:
-        content_type, content_string = contents.split(",")
-        decoded = base64.b64decode(content_string)
-        resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload",
-            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
-            timeout=30,
-        )
-        if not resp.ok:
-            return html.Span(f"Upload failed ({resp.status_code}): {resp.text[:300]}", style={"color": RED_DIM})
-        data = resp.json()
-        if data.get("needs_mapping"):
-            cols = data.get("columns", [])
-            file_bytes = _io.BytesIO(decoded)
-            resp2 = req.post(
-                f"{BACKEND_HTTP}/api/import/upload-generic",
-                files={"file": (filename, file_bytes, "text/csv")},
-                data={"user_id": USER_ID},
-                timeout=30,
-            )
-            if not resp2.ok:
-                return html.Span(f"Generic upload failed: {resp2.text[:300]}", style={"color": RED_DIM})
-            data = resp2.json()
-        a = data.get("analysis", {})
-        trades_count = data.get("trades_closed", 0)
-        if trades_count == 0:
-            return html.Span(
-                "0 trades reconstructed. Ensure your CSV has both buy AND sell rows.",
-                style={"color": YELLOW_DIM}
-            )
-        return html.Div([
-            html.Span(f"? {data.get('broker_name', 'Generic CSV')} · ",
-                      style={"color": TEAL_DIM, "fontWeight": "800"}),
-            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate', 0)}% · P&L: ${a.get('total_pnl', 0):+,.2f}",
-                      style={"color": TEXT}),
-        ])
-    except Exception as e:
-        return html.Span(f"Error: {str(e)[:300]}", style={"color": RED_DIM})
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
 $code = @'
@@ -726,4 +677,3 @@ $content = Get-Content $filePath -Raw
 $content = $content -replace "if __name__==""__main__"":", ($code + "`nif __name__==`"__main__`":")
 Set-Content $filePath $content
 Write-Host "Done"
-
