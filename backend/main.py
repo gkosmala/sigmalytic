@@ -31,9 +31,12 @@ try:
 except ImportError:
     pass
 
-# ── Shared engine ──────────────────────────────────────────────────────────
+# ── Path setup — ensures sibling modules resolve on Render ─────────────────
 import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent))         # backend/ itself
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))  # project root
+
+# ── Shared engine ──────────────────────────────────────────────────────────
 from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles
 )
@@ -46,7 +49,7 @@ from csv_import import csv_router
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
-ALPACA_WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"   # IEX free tier
+ALPACA_WS_URL     = "wss://stream.data.alpaca.markets/v2/iex"
 IS_PAPER          = os.getenv("ALPACA_PAPER", "true").lower() == "true"
 
 log = logging.getLogger("sigmalytic")
@@ -59,7 +62,6 @@ class ConnectionManager:
     """Tracks all active frontend WebSocket clients per symbol."""
 
     def __init__(self):
-        # symbol → set of websockets
         self._clients: dict[str, set[WebSocket]] = {}
 
     async def connect(self, ws: WebSocket, symbol: str):
@@ -101,11 +103,6 @@ def _alpaca_headers() -> dict:
 
 
 def fetch_latest_quote(symbol: str) -> dict[str, Any]:
-    """
-    Fetch latest trade + quote from Alpaca data API.
-    Returns dict with keys: symbol, price, volume, bid, ask, timestamp
-    Falls back gracefully if API key not set.
-    """
     if not ALPACA_API_KEY:
         raise HTTPException(503, "Alpaca API key not configured")
 
@@ -129,9 +126,7 @@ def fetch_latest_quote(symbol: str) -> dict[str, Any]:
 
 
 def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[dict]:
-    """Fetch OHLCV bars from Alpaca."""
     if not ALPACA_API_KEY:
-        # Return synthetic candles as fallback
         candles = generate_initial_candles(280.15)
         return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
 
@@ -165,11 +160,6 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
 # ── Alpaca WebSocket stream (per symbol) ──────────────────────────────────
 
 async def alpaca_stream(symbol: str):
-    """
-    Connects to Alpaca WebSocket and forwards real-time trades
-    to all subscribed frontend clients via ConnectionManager.
-    Automatically reconnects on disconnect.
-    """
     import websockets
 
     sequence = 0
@@ -179,16 +169,14 @@ async def alpaca_stream(symbol: str):
         try:
             log.info(f"Connecting to Alpaca stream for {symbol}…")
             async with websockets.connect(ALPACA_WS_URL, ping_interval=20) as ws:
-                backoff = 1  # reset on successful connect
+                backoff = 1
 
-                # Authenticate
                 await ws.send(json.dumps({
                     "action": "auth",
                     "key":    ALPACA_API_KEY,
                     "secret": ALPACA_API_SECRET,
                 }))
 
-                # Subscribe to trades
                 await ws.send(json.dumps({
                     "action": "subscribe",
                     "trades": [symbol],
@@ -199,7 +187,7 @@ async def alpaca_stream(symbol: str):
                     for msg in messages:
                         msg_type = msg.get("T")
 
-                        if msg_type == "t":   # trade tick
+                        if msg_type == "t":
                             price  = float(msg.get("p", 0))
                             volume = int(msg.get("s", 0))
                             sequence += 1
@@ -222,7 +210,6 @@ _active_streams: dict[str, asyncio.Task] = {}
 
 
 def ensure_stream(symbol: str):
-    """Start a background Alpaca stream task for symbol if not already running."""
     if symbol not in _active_streams or _active_streams[symbol].done():
         task = asyncio.create_task(alpaca_stream(symbol))
         _active_streams[symbol] = task
@@ -235,7 +222,6 @@ def ensure_stream(symbol: str):
 async def lifespan(app: FastAPI):
     log.info("Sigmalytic backend starting…")
     yield
-    # Cancel all stream tasks on shutdown
     for task in _active_streams.values():
         task.cancel()
     log.info("Sigmalytic backend stopped.")
@@ -251,7 +237,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # restrict to your frontend domain in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -301,16 +287,13 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
 
     await manager.connect(ws, clean)
 
-    # Start Alpaca stream for this symbol if not running
     if ALPACA_API_KEY:
         ensure_stream(clean)
     else:
-        # No API key — send synthetic ticks so UI still works
         asyncio.create_task(_synthetic_feed(ws, clean))
 
     try:
         while True:
-            # Keep connection alive; real data arrives via manager.broadcast
             await asyncio.sleep(30)
             await ws.send_json({"type": "PING"})
     except WebSocketDisconnect:
@@ -318,7 +301,6 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
 
 
 async def _synthetic_feed(ws: WebSocket, symbol: str):
-    """Fallback synthetic feed when no Alpaca key is present."""
     import random
     price    = 280.15
     sequence = 0
