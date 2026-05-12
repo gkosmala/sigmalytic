@@ -372,6 +372,155 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_behavior_tab():
+    import requests as _req
+    # Fetch latest analysis from backend
+    analysis = {}
+    try:
+        r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/default_user", timeout=5)
+        if r.ok:
+            analysis = r.json()
+    except Exception:
+        pass
+
+    # ── Upload section (always visible) ───────────────────────────────────────
+    upload_section = card([
+        html.H2("🧠 Behavioral Intelligence",
+                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.P("Upload your brokerage CSV to generate a full behavioral profile — win rate, edge score, symbol breakdown, and pattern flags.",
+               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
+        html.Div([
+            dcc.Upload(
+                id="csv-upload-behavior",
+                children=html.Div([
+                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("Drag & drop your CSV here, or click to browse",
+                             style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
+                    html.Div("Generic CSV · date, symbol, action, qty, price columns",
+                             style={"fontSize":"11px","color":MUTED}),
+                ], style={"textAlign":"center","padding":"30px 20px"}),
+                style={
+                    "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                    "background":TEAL_GLOW,"cursor":"pointer","marginBottom":"14px",
+                },
+                accept=".csv", multiple=False,
+            ),
+            html.Div(id="csv-upload-behavior-status",
+                     style={"fontSize":"13px","minHeight":"20px"}),
+        ]),
+    ])
+
+    # ── Analysis section ───────────────────────────────────────────────────────
+    if not analysis or not analysis.get("total_trades"):
+        analysis_section = card([
+            note_box("No import history yet. Upload your CSV above or use the Import History tab to generate your behavioral snapshot.", "blue")
+        ])
+    else:
+        total    = analysis.get("total_trades", 0)
+        wr       = analysis.get("win_rate", 0)
+        pnl      = analysis.get("total_pnl", 0)
+        avg_win  = analysis.get("avg_win", 0)
+        avg_loss = analysis.get("avg_loss", 0)
+        rr       = analysis.get("rr_ratio", 0)
+        edge     = analysis.get("edge_score", 0)
+        hold     = analysis.get("avg_hold_time", "—")
+        best_s   = analysis.get("best_symbol", "—")
+        worst_s  = analysis.get("worst_symbol", "—")
+        best_d   = analysis.get("best_day", "—")
+        worst_d  = analysis.get("worst_day", "—")
+        flags    = analysis.get("behavioral_flags", [])
+        overtrade= analysis.get("overtrade_rate", 0)
+        sym_perf = analysis.get("symbol_performance", {})
+
+        wr_color   = TEAL_DIM if wr>=55 else (YELLOW_DIM if wr>=45 else RED_DIM)
+        pnl_color  = TEAL_DIM if pnl>=0 else RED_DIM
+        edge_color = TEAL_DIM if edge>0 else RED_DIM
+        rr_color   = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
+
+        edge_insight = (f"Positive mathematical edge of ${edge:.2f} per trade." if edge>0
+                        else f"Negative edge of ${edge:.2f} per trade — math works against you long-term.")
+
+        # Symbol performance table
+        top_syms = sorted(sym_perf.items(), key=lambda x: x[1].get("total_pnl",0), reverse=True)[:8]
+        sym_rows = []
+        for sym, sp in top_syms:
+            c = TEAL_DIM if sp.get("total_pnl",0)>=0 else RED_DIM
+            sym_rows.append(html.Tr([
+                html.Td(sym,                                    style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
+                html.Td(str(sp.get("trades",0)),               style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"{sp.get('win_rate',0):.0f}%",        style={"color":TEAL_DIM if sp.get("win_rate",0)>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"${sp.get('total_pnl',0):+.2f}",     style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
+            ], style={"borderBottom":f"1px solid {BORDER}"}))
+
+        analysis_section = html.Div([
+            # Row 1: Key metrics
+            card([
+                html.H2("📊 Behavioral Snapshot",
+                        style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+                html.Div([
+                    metric_tile("Total Trades",   str(total),           WHITE),
+                    metric_tile("Win Rate",       f"{wr}%",             wr_color),
+                    metric_tile("Total P&L",      f"${pnl:+,.2f}",      pnl_color),
+                    metric_tile("Avg Win",        f"${avg_win:+.2f}",   TEAL_DIM),
+                    metric_tile("Avg Loss",       f"${avg_loss:+.2f}",  RED_DIM),
+                    metric_tile("R:R Ratio",      f"{rr:.2f}",          rr_color),
+                    metric_tile("Edge Score",     f"${edge:.2f}",       edge_color),
+                    metric_tile("Avg Hold",       hold,                 BLUE_DIM),
+                ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
+                note_box(edge_insight, "teal" if edge>0 else "yellow"),
+            ], sx={"marginBottom":"16px"}),
+
+            # Row 2: Flags + best/worst
+            html.Div([
+                card([
+                    html.H2("🚩 Behavioral Flags",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    html.Div([
+                        html.Div([
+                            html.Span("⚠️ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower()
+                                      else "✅ ",
+                                      style={"marginRight":"6px"}),
+                            html.Span(f, style={"fontSize":"12px","color":TEXT}),
+                        ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}"})
+                        for f in flags
+                    ]) if flags else note_box("No behavioral flags generated yet.", "blue"),
+                ], sx={"flex":"1"}),
+
+                card([
+                    html.H2("🏆 Best & Worst",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    metric_tile("Best Symbol",  best_s,  TEAL_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Worst Symbol", worst_s, RED_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Best Day",     best_d,  TEAL_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Worst Day",    worst_d, RED_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Overtrade Rate", f"{overtrade}%", YELLOW_DIM if overtrade>30 else TEXT),
+                ], sx={"flex":"1"}),
+            ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
+
+            # Row 3: Symbol table
+            card([
+                html.H2("📋 Symbol Performance",
+                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.Table([
+                    html.Thead(html.Tr([
+                        html.Th("Symbol", style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"left"}),
+                        html.Th("Trades", style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"center"}),
+                        html.Th("Win %",  style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"center"}),
+                        html.Th("P&L",    style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"right"}),
+                    ], style={"borderBottom":f"1px solid {BORDER}"})),
+                    html.Tbody(sym_rows),
+                ], style={"width":"100%","borderCollapse":"collapse"})
+                if sym_rows else note_box("No symbol data available.", "blue"),
+            ]),
+        ])
+
+    return html.Div([upload_section, analysis_section])
+
+
 def build_import_tab():
     return card([
         html.H2("📂 Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
@@ -557,7 +706,8 @@ app.layout = html.Div([
                 "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
                 "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key,label in [("command","Command Center"),("feed","Live Feed"),
-                               ("performance","Performance"),("import","Import History"),("setup","Setup")]
+                               ("performance","Performance"),("behavior","Behavioral Intelligence"),
+                               ("import","Import History"),("setup","Setup")]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -584,7 +734,8 @@ def load_symbol(_,ticker):
 
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
-              Input("tab-performance","n_clicks"),Input("tab-import","n_clicks"),
+              Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
+              Input("tab-import","n_clicks"),
               Input("tab-setup","n_clicks"),prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
@@ -655,6 +806,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
+    if tab=="behavior":    return build_behavior_tab()
     if tab=="import":      return build_import_tab()
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
@@ -673,6 +825,41 @@ def update_clock(_):
         html.Div(style={"height":"10px"}),
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
+
+@app.callback(Output("csv-upload-behavior-status","children"),
+              Input("csv-upload-behavior","contents"),
+              State("csv-upload-behavior","filename"),
+              prevent_initial_call=True)
+def handle_csv_upload_behavior(contents, filename):
+    if not contents:
+        return no_update
+    import base64, io as _io, requests as _req
+    try:
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        resp = _req.post(
+            f"{BACKEND_HTTP}/api/import/upload-generic",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
+                  "price_col":"price","timestamp_col":"date"},
+            timeout=30,
+        )
+        if not resp.ok:
+            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:200]}",
+                             style={"color":RED_DIM})
+        data = resp.json()
+        trades_count = data.get("trades_closed", 0)
+        if trades_count == 0:
+            return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
+                             style={"color":YELLOW_DIM})
+        a = data.get("analysis", {})
+        return html.Div([
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f} · Refresh tab to see full analysis.",
+                      style={"color":TEXT}),
+        ])
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)[:200]}", style={"color":RED_DIM})
 
 @app.callback(Output("csv-upload-status","children"),
               Input("csv-upload","contents"),
