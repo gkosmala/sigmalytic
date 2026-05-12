@@ -390,6 +390,18 @@ def build_setup_tab():
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"},
         ),
+        html.Hr(style={"borderColor":"#2a2f45","margin":"24px 0"}),
+        html.H4("🧪 Lab Tools",style={"color":"#888","fontSize":"13px",
+                "letterSpacing":"1px","marginBottom":"8px"}),
+        html.P("Reset all imported trade history. Use this in the lab to start fresh.",
+               style={"color":"#666","fontSize":"12px","marginBottom":"12px"}),
+        html.Button("🗑️ Reset Import History",id="reset-trades-btn",
+            n_clicks=0,
+            style={"backgroundColor":"#8B0000","color":"white",
+                   "border":"none","padding":"10px 24px",
+                   "borderRadius":"6px","cursor":"pointer",
+                   "fontSize":"13px","fontWeight":"600"}),
+        html.Div(id="reset-trades-output",style={"marginTop":"10px","fontSize":"13px"}),
     ])
 
 # Logo
@@ -618,62 +630,23 @@ def update_clock(_):
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
 
+@app.callback(Output("reset-trades-output","children"),
+              Input("reset-trades-btn","n_clicks"),
+              prevent_initial_call=True)
+def reset_trade_history(n_clicks):
+    if not n_clicks:
+        return ""
+    import requests as _req
+    try:
+        r = _req.delete(f"{BACKEND_HTTP}/api/trades/reset", timeout=10)
+        if r.status_code == 200:
+            return html.Span("✅ Trade history cleared. Refresh the page to see updated counts.",
+                             style={"color":"#00ff88"})
+        else:
+            return html.Span(f"❌ Reset failed (status {r.status_code}). Try again.",
+                             style={"color":"#ff4444"})
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)}", style={"color":"#ff4444"})
+
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
-$code = @'
-
-@app.callback(
-    Output("csv-upload-status", "children"),
-    Input("csv-upload", "contents"),
-    State("csv-upload", "filename"),
-    prevent_initial_call=True,
-)
-def handle_csv_upload(contents, filename):
-    if not contents:
-        return no_update
-    import base64, io as _io
-    try:
-        content_type, content_string = contents.split(",")
-        decoded = base64.b64decode(content_string)
-        resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload",
-            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
-            timeout=30,
-        )
-        if not resp.ok:
-            return html.Span(f"Upload failed ({resp.status_code}): {resp.text[:300]}", style={"color": RED_DIM})
-        data = resp.json()
-        if data.get("needs_mapping"):
-            cols = data.get("columns", [])
-            file_bytes = _io.BytesIO(decoded)
-            resp2 = req.post(
-                f"{BACKEND_HTTP}/api/import/upload-generic",
-                files={"file": (filename, file_bytes, "text/csv")},
-                data={"user_id": USER_ID},
-                timeout=30,
-            )
-            if not resp2.ok:
-                return html.Span(f"Generic upload failed: {resp2.text[:300]}", style={"color": RED_DIM})
-            data = resp2.json()
-        a = data.get("analysis", {})
-        trades_count = data.get("trades_closed", 0)
-        if trades_count == 0:
-            return html.Span(
-                "0 trades reconstructed. Ensure your CSV has both buy AND sell rows.",
-                style={"color": YELLOW_DIM}
-            )
-        return html.Div([
-            html.Span(f"✅ {data.get('broker_name', 'Generic CSV')} · ",
-                      style={"color": TEAL_DIM, "fontWeight": "800"}),
-            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate', 0)}% · P&L: ${a.get('total_pnl', 0):+,.2f}",
-                      style={"color": TEXT}),
-        ])
-    except Exception as e:
-        return html.Span(f"Error: {str(e)[:300]}", style={"color": RED_DIM})
-'@
-
-$filePath = "C:\Users\owner\Desktop\Claude\sigmalytic\frontend\app.py"
-$content = Get-Content $filePath -Raw
-$content = $content -replace "if __name__==""__main__"":", ($code + "`nif __name__==`"__main__`":")
-Set-Content $filePath $content
-Write-Host "Done"

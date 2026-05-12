@@ -300,6 +300,27 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
         manager.disconnect(ws, clean)
 
 
+@app.delete("/api/trades/reset")
+def reset_trades():
+    """Lab reset — clears all imported trade history from the database."""
+    try:
+        import sqlite3, os as _os
+        db_path = _os.environ.get("DB_PATH", "sigmalytic.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("DELETE FROM trades")
+        # Also clear derived tables if they exist
+        for tbl in ["decision_scorecards", "behavioral_events", "regime_memory"]:
+            try:
+                conn.execute(f"DELETE FROM {tbl}")
+            except Exception:
+                pass
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "message": "Trade history cleared successfully."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 async def _synthetic_feed(ws: WebSocket, symbol: str):
     import random
     price    = 280.15
