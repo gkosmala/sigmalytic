@@ -372,6 +372,54 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_import_tab():
+    return card([
+        html.H2("📂 Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.P("Upload a CSV file containing your trade history. The file should include columns for symbol, side (buy/sell), quantity, price, and date/time.",
+               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
+        html.Div([
+            html.Div([
+                slabel("Required columns (any order, flexible naming)"),
+                html.Div([
+                    html.Span(col, style={"background":"rgba(45,143,111,.15)","border":f"1px solid {BORDER_T}",
+                                          "borderRadius":"6px","padding":"4px 10px","fontSize":"11px",
+                                          "color":TEAL_DIM,"fontWeight":"700","fontFamily":"DM Mono, monospace"})
+                    for col in ["symbol","side / action","qty / quantity","price","date / time"]
+                ], style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"16px"}),
+                dcc.Upload(
+                    id="csv-upload",
+                    children=html.Div([
+                        html.Div("📁", style={"fontSize":"32px","marginBottom":"8px"}),
+                        html.Div("Drag & drop your CSV here, or click to browse",
+                                 style={"color":WHITE,"fontWeight":"700","fontSize":"14px","marginBottom":"4px"}),
+                        html.Div("Supports generic broker exports · .csv files only",
+                                 style={"color":MUTED,"fontSize":"12px"}),
+                    ], style={"textAlign":"center","padding":"40px 20px"}),
+                    style={
+                        "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                        "background":"rgba(45,143,111,.05)","cursor":"pointer",
+                        "transition":"border-color .2s",
+                    },
+                    accept=".csv",
+                    multiple=False,
+                ),
+                html.Div(id="csv-upload-status", style={"marginTop":"16px","fontSize":"13px"}),
+            ], style={"flex":"1.2","minWidth":"0"}),
+
+            html.Div([
+                slabel("Import Tips"),
+                note_box("• Export your trades as CSV from your broker platform.\n"
+                         "• Include both BUY and SELL rows — trades are reconstructed as pairs.\n"
+                         "• Date formats like 2024-01-15 or 01/15/2024 are both fine.\n"
+                         "• Column names are matched flexibly (e.g. 'Action', 'Side', 'B/S' all work).",
+                         variant="blue"),
+                html.Div(style={"height":"12px"}),
+                note_box("After uploading, use the Reset button in the Setup tab to clear all history and start fresh.",
+                         variant="yellow"),
+            ], style={"flex":"1","minWidth":"0"}),
+        ], style={"display":"flex","gap":"20px","alignItems":"flex-start","flexWrap":"wrap"}),
+    ])
+
 def build_setup_tab():
     return card([
         html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
@@ -509,7 +557,7 @@ app.layout = html.Div([
                 "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
                 "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key,label in [("command","Command Center"),("feed","Live Feed"),
-                               ("performance","Performance"),("setup","Setup")]
+                               ("performance","Performance"),("import","Import History"),("setup","Setup")]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -536,7 +584,8 @@ def load_symbol(_,ticker):
 
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
-              Input("tab-performance","n_clicks"),Input("tab-setup","n_clicks"),prevent_initial_call=True)
+              Input("tab-performance","n_clicks"),Input("tab-import","n_clicks"),
+              Input("tab-setup","n_clicks"),prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
     if not ctx.triggered: return no_update
@@ -606,6 +655,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
+    if tab=="import":      return build_import_tab()
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
 
@@ -623,6 +673,39 @@ def update_clock(_):
         html.Div(style={"height":"10px"}),
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
+
+@app.callback(Output("csv-upload-status","children"),
+              Input("csv-upload","contents"),
+              State("csv-upload","filename"),
+              prevent_initial_call=True)
+def handle_csv_upload(contents, filename):
+    if not contents:
+        return no_update
+    import base64, io as _io, requests as _req
+    try:
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        resp = _req.post(
+            f"{BACKEND_HTTP}/api/import/upload-generic",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            timeout=30,
+        )
+        if not resp.ok:
+            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
+                             style={"color":RED_DIM})
+        data = resp.json()
+        a = data.get("analysis", {})
+        trades_count = data.get("trades_closed", 0)
+        if trades_count == 0:
+            return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
+                             style={"color":YELLOW_DIM})
+        return html.Div([
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f}",
+                      style={"color":TEXT}),
+        ])
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
 
 @app.callback(Output("reset-trades-output","children"),
               Input("reset-trades-btn","n_clicks"),
