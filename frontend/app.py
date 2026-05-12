@@ -372,16 +372,9 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
-def build_behavior_tab():
-    import requests as _req
-    # Fetch latest analysis from backend
-    analysis = {}
-    try:
-        r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=5)
-        if r.ok:
-            analysis = r.json()
-    except Exception:
-        pass
+def build_behavior_tab(analysis=None):
+    if analysis is None:
+        analysis = {}
 
     # ── Upload section (always visible) ───────────────────────────────────────
     upload_section = card([
@@ -651,6 +644,7 @@ app.layout = html.Div([
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="command"),
     dcc.Store(id="s-price-text",data="280.15"),
+    dcc.Store(id="s-analysis",  data={}),
     dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
@@ -799,11 +793,10 @@ def update_badges(live,live_mode):
 
 @app.callback(Output("main-content","children"),
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
-              Input("s-live-mode","data"),Input("i-clock","n_intervals"),
+              Input("s-live-mode","data"),Input("i-clock","n_intervals"),Input("s-analysis","data"),
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,analysis,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    # For static tabs, only rebuild when tab/mode changes — not on every clock tick
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
@@ -811,7 +804,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
-    if tab=="behavior":    return build_behavior_tab()
+    if tab=="behavior":    return build_behavior_tab(analysis or {})
     if tab=="import":      return build_import_tab()
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
@@ -831,13 +824,13 @@ def update_clock(_):
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
 
-@app.callback(Output("csv-upload-behavior-status","children"),
+@app.callback(Output("csv-upload-behavior-status","children"),Output("s-analysis","data"),
               Input("csv-upload-behavior","contents"),
               State("csv-upload-behavior","filename"),
               prevent_initial_call=True)
 def handle_csv_upload_behavior(contents, filename):
     if not contents:
-        return no_update
+        return no_update, no_update
     import base64, io as _io, requests as _req
     try:
         content_type, content_string = contents.split(",")
@@ -852,28 +845,28 @@ def handle_csv_upload_behavior(contents, filename):
         )
         if not resp.ok:
             return html.Span(f"❌ Backend error {resp.status_code}: {resp.text[:300]}",
-                             style={"color":RED_DIM})
+                             style={"color":RED_DIM}), no_update
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
+        analysis = data.get("analysis", {})
         if trades_count == 0:
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
-                             style={"color":YELLOW_DIM})
-        a = data.get("analysis", {})
+                             style={"color":YELLOW_DIM}), no_update
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f} · Navigate away and back to refresh.",
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Click Behavioral Intelligence tab to see full dashboard.",
                       style={"color":TEXT}),
-        ])
+        ]), analysis
     except Exception as e:
-        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update
 
-@app.callback(Output("csv-upload-status","children"),
+@app.callback(Output("csv-upload-status","children"),Output("s-analysis","data"),
               Input("csv-upload","contents"),
               State("csv-upload","filename"),
               prevent_initial_call=True)
 def handle_csv_upload(contents, filename):
     if not contents:
-        return no_update
+        return no_update, no_update
     import base64, io as _io, requests as _req
     try:
         content_type, content_string = contents.split(",")
@@ -887,20 +880,20 @@ def handle_csv_upload(contents, filename):
         )
         if not resp.ok:
             return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
-                             style={"color":RED_DIM})
+                             style={"color":RED_DIM}), no_update
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
+        analysis = data.get("analysis", {})
         if trades_count == 0:
-            return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
-                             style={"color":YELLOW_DIM})
-        a = data.get("analysis", {})
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
+                             style={"color":YELLOW_DIM}), no_update
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f}",
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Click Behavioral Intelligence to see full dashboard.",
                       style={"color":TEXT}),
-        ])
+        ]), analysis
     except Exception as e:
-        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update
 
 @app.callback(Output("reset-trades-output","children"),
               Input("reset-trades-btn","n_clicks"),
