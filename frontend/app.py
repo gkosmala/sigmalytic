@@ -685,20 +685,49 @@ def handle_csv_upload(contents, filename):
     try:
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
+
+        # First try auto-detect via /upload
         resp = _req.post(
-            f"{BACKEND_HTTP}/api/import/upload-generic",
+            f"{BACKEND_HTTP}/api/import/upload",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             timeout=30,
         )
-        if not resp.ok:
-            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
+        if resp.ok:
+            data = resp.json()
+            if not data.get("needs_mapping"):
+                trades_count = data.get("trades_closed", 0)
+                if trades_count == 0:
+                    return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
+                                     style={"color":YELLOW_DIM})
+                a = data.get("analysis", {})
+                return html.Div([
+                    html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+                    html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f}",
+                              style={"color":TEXT}),
+                ])
+
+        # Fall back to generic with explicit column mapping
+        resp2 = _req.post(
+            f"{BACKEND_HTTP}/api/import/upload-generic",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            data={
+                "symbol_col":    "symbol",
+                "side_col":      "action",
+                "qty_col":       "qty",
+                "price_col":     "price",
+                "timestamp_col": "date",
+            },
+            timeout=30,
+        )
+        if not resp2.ok:
+            return html.Span(f"❌ Upload failed ({resp2.status_code}): {resp2.text[:300]}",
                              style={"color":RED_DIM})
-        data = resp.json()
-        a = data.get("analysis", {})
+        data = resp2.json()
         trades_count = data.get("trades_closed", 0)
         if trades_count == 0:
             return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
                              style={"color":YELLOW_DIM})
+        a = data.get("analysis", {})
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
             html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f}",
