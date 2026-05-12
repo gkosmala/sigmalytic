@@ -406,13 +406,7 @@ def build_setup_tab():
 
 # Logo
 LOGO = html.Div([
-    html.Svg([
-        html.Polygon(points="2,2 18,2 10,11 18,20 2,20",fill="none",stroke=TEAL_DIM,
-                     strokeWidth="2.5",strokeLinejoin="round"),
-        html.Rect(x="21",y="14",width="3",height="6",fill=TEAL_DIM),
-        html.Rect(x="25",y="10",width="3",height="10",fill="#1a4f8a"),
-        html.Rect(x="29",y="6", width="3",height="14",fill=TEAL_DIM),
-    ],viewBox="0 0 34 22",style={"width":"34px","height":"22px","flexShrink":"0"}),
+    html.Div(dangerouslySetInnerHTML={"__html": f'<svg viewBox="0 0 34 22" style="width:34px;height:22px;flex-shrink:0"><polygon points="2,2 18,2 10,11 18,20 2,20" fill="none" stroke="{TEAL_DIM}" stroke-width="2.5" stroke-linejoin="round"/><rect x="21" y="14" width="3" height="6" fill="{TEAL_DIM}"/><rect x="25" y="10" width="3" height="10" fill="#1a4f8a"/><rect x="29" y="6" width="3" height="14" fill="{TEAL_DIM}"/></svg>'}),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,
                                        "letterSpacing":".08em","lineHeight":"1"}),
