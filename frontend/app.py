@@ -803,6 +803,11 @@ def update_badges(live,live_mode):
               State("s-symbol","data"),State("s-tf","data"))
 def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    # For static tabs, only rebuild when tab/mode changes — not on every clock tick
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+    if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
+        return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -837,29 +842,30 @@ def handle_csv_upload_behavior(contents, filename):
     try:
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
+        url = f"{BACKEND_HTTP}/api/import/upload-generic"
         resp = _req.post(
-            f"{BACKEND_HTTP}/api/import/upload-generic",
+            url,
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
                   "price_col":"price","timestamp_col":"date"},
             timeout=30,
         )
         if not resp.ok:
-            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:200]}",
+            return html.Span(f"❌ Backend error {resp.status_code}: {resp.text[:300]}",
                              style={"color":RED_DIM})
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
         if trades_count == 0:
-            return html.Span("⚠️ 0 trades reconstructed. Ensure your CSV has both BUY and SELL rows.",
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM})
         a = data.get("analysis", {})
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f} · Refresh tab to see full analysis.",
+            html.Span(f"{trades_count} trades · Win rate: {a.get('win_rate',0)}% · P&L: ${a.get('total_pnl',0):+,.2f} · Navigate away and back to refresh.",
                       style={"color":TEXT}),
         ])
     except Exception as e:
-        return html.Span(f"❌ Error: {str(e)[:200]}", style={"color":RED_DIM})
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
 
 @app.callback(Output("csv-upload-status","children"),
               Input("csv-upload","contents"),
