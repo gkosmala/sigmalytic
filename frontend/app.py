@@ -793,9 +793,9 @@ def update_badges(live,live_mode):
 
 @app.callback(Output("main-content","children"),
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
-              Input("s-live-mode","data"),Input("i-clock","n_intervals"),
-              State("s-symbol","data"),State("s-tf","data"),State("s-analysis","data"))
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf,analysis):
+              Input("s-live-mode","data"),Input("i-clock","n_intervals"),Input("s-analysis","data"),
+              State("s-symbol","data"),State("s-tf","data"))
+def render_main(live,candles,tab,live_mode,_clock,analysis,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
@@ -854,7 +854,7 @@ def handle_csv_upload_behavior(contents, filename):
                              style={"color":YELLOW_DIM}), no_update
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Click Behavioral Intelligence tab to see full dashboard.",
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Scroll down to see full dashboard.",
                       style={"color":TEXT}),
         ]), analysis
     except Exception as e:
