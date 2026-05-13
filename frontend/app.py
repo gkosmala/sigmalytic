@@ -793,9 +793,9 @@ def update_badges(live,live_mode):
 
 @app.callback(Output("main-content","children"),
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
-              Input("s-live-mode","data"),Input("i-clock","n_intervals"),Input("s-analysis","data"),
-              State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,analysis,symbol,tf):
+              Input("s-live-mode","data"),Input("i-clock","n_intervals"),
+              State("s-symbol","data"),State("s-tf","data"),State("s-analysis","data"))
+def render_main(live,candles,tab,live_mode,_clock,symbol,tf,analysis):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
