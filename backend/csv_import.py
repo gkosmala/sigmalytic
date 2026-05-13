@@ -345,6 +345,12 @@ async def upload_generic(
     df.columns = [c.lower().strip() for c in df.columns]
     df = df.rename(columns={k.lower(): v for k, v in col_map.items()})
 
+    # Fallback: if 'side' still missing, try common alternatives
+    for alt in ["action", "type", "direction", "transaction"]:
+        if "side" not in df.columns and alt in df.columns:
+            df = df.rename(columns={alt: "side"})
+            break
+
     rows = []
     for _, row in df.iterrows():
         price = clean_price(row.get("price"))
