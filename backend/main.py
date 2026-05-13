@@ -341,6 +341,7 @@ async def csv_test():
 
 
 
+@app.delete("/api/trades/reset")
 def reset_trades():
     """Lab reset — clears all imported trade history from the database."""
     try:
