@@ -860,13 +860,13 @@ def handle_csv_upload_behavior(contents, filename):
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update
 
-@app.callback(Output("csv-upload-status","children"),Output("s-analysis","data"),
+@app.callback(Output("csv-upload-status","children"),
               Input("csv-upload","contents"),
               State("csv-upload","filename"),
               prevent_initial_call=True)
 def handle_csv_upload(contents, filename):
     if not contents:
-        return no_update, no_update
+        return no_update
     import base64, io as _io, requests as _req
     try:
         content_type, content_string = contents.split(",")
@@ -880,20 +880,20 @@ def handle_csv_upload(contents, filename):
         )
         if not resp.ok:
             return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
-                             style={"color":RED_DIM}), no_update
+                             style={"color":RED_DIM})
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
         analysis = data.get("analysis", {})
         if trades_count == 0:
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
-                             style={"color":YELLOW_DIM}), no_update
+                             style={"color":YELLOW_DIM})
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Click Behavioral Intelligence to see full dashboard.",
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Go to Behavioral Intelligence tab to see full dashboard.",
                       style={"color":TEXT}),
-        ]), analysis
+        ])
     except Exception as e:
-        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
 
 @app.callback(Output("reset-trades-output","children"),
               Input("reset-trades-btn","n_clicks"),
