@@ -852,10 +852,22 @@ def build_main_app():
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
 @app.callback(Output("page-content","children"),
-              Input("s-page","data"), Input("s-session","data"))
-def route_page(page, session):
+              Input("s-session","data"),
+              State("s-page","data"))
+def route_page(session, page):
     if session and session.get("user_id"):
         return build_main_app()
+    if page == "signup":
+        return build_signup_page()
+    return build_login_page()
+
+@app.callback(Output("page-content","children", allow_duplicate=True),
+              Input("s-page","data"),
+              State("s-session","data"),
+              prevent_initial_call=True)
+def route_page_switch(page, session):
+    if session and session.get("user_id"):
+        return no_update
     if page == "signup":
         return build_signup_page()
     return build_login_page()
