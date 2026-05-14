@@ -644,7 +644,131 @@ _init_live = create_live_update("AAPL",280.15,750_000,0).to_dict()
 _init_candles = [{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)}
                  for i,c in enumerate(generate_initial_candles(280.15))]
 
+SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+
+def build_login_page(error=""):
+    return html.Div([
+        html.Div([
+            # Logo
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            # Login card
+            html.Div([
+                html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+
+                # Email
+                html.Div([
+                    html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="login-email", type="email", placeholder="you@example.com",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"16px"}),
+
+                # Password
+                html.Div([
+                    html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"24px"}),
+
+                # Error message
+                html.Div(error, id="login-error",
+                         style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center",
+                                "display":"block" if error else "none"}),
+
+                # Sign in button
+                html.Button("Sign In", id="login-btn", n_clicks=0,
+                    style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                           "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"16px"}),
+
+                # Divider
+                html.Div([
+                    html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                    html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
+                    html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
+
+                # Demo button
+                html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                    style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
+                           "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
+                           "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
+
+                # Sign up link
+                html.Div([
+                    html.Span("Don't have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                    html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
+                        style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                               "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                ], style={"textAlign":"center"}),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
+def build_signup_page(error=""):
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            html.Div([
+                html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+
+                html.Div([
+                    html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"16px"}),
+
+                html.Div([
+                    html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"24px"}),
+
+                html.Div(error, id="signup-error",
+                         style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center",
+                                "display":"block" if error else "none"}),
+
+                html.Button("Create Account", id="signup-btn", n_clicks=0,
+                    style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                           "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"24px"}),
+
+                html.Div([
+                    html.Span("Already have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                    html.Button("Sign In", id="goto-login-btn", n_clicks=0,
+                        style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                               "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                ], style={"textAlign":"center"}),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
 app.layout = html.Div([
+    dcc.Store(id="s-session",    data=None, storage_type="session"),
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
@@ -655,11 +779,16 @@ app.layout = html.Div([
     dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",  data={}),
     dcc.Store(id="s-refresh",   data=0),
+    dcc.Store(id="s-page",      data="login"),
     dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
 
-    html.Div([html.Div([
+    html.Div(id="page-content"),
+])
+
+def build_main_app():
+    return html.Div([html.Div([
         html.Header([
             html.Div([
                 LOGO,
@@ -719,10 +848,81 @@ app.layout = html.Div([
         html.Main(id="main-content"),
 
     ],style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
-    style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
-],style={"margin":"0","background":NAVY})
+    style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
-@app.callback(Output("s-live-mode","data"),Output("btn-live","children"),Output("sim-label","children"),
+@app.callback(Output("page-content","children"),
+              Input("s-page","data"), Input("s-session","data"))
+def route_page(page, session):
+    if session and session.get("user_id"):
+        return build_main_app()
+    if page == "signup":
+        return build_signup_page()
+    return build_login_page()
+
+@app.callback(Output("s-session","data"),Output("s-page","data"),
+              Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
+              Input("signup-btn","n_clicks"),
+              Input("goto-signup-btn","n_clicks"),Input("goto-login-btn","n_clicks"),
+              State("login-email","value"),State("login-password","value"),
+              State("signup-email","value"),State("signup-password","value"),
+              prevent_initial_call=True)
+def handle_auth(login_clicks, demo_clicks, signup_clicks, goto_signup, goto_login,
+                login_email, login_password, signup_email, signup_password):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "demo-btn":
+        return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
+
+    if trigger == "goto-signup-btn":
+        return no_update, "signup"
+
+    if trigger == "goto-login-btn":
+        return no_update, "login"
+
+    if trigger == "login-btn":
+        if not login_email or not login_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":login_email,"password":login_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    if trigger == "signup-btn":
+        if not signup_email or not signup_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/signup",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":signup_email,"password":signup_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    return no_update, no_update
+
+# ── Main app callbacks ────────────────────────────────────────────────────────
+
+@app.callback(Output("s-live-mode","data"),
+Output("btn-live","children"),Output("sim-label","children"),
               Input("btn-live","n_clicks"),State("s-live-mode","data"),prevent_initial_call=True)
 def toggle_live(_,current):
     new=not current
