@@ -345,17 +345,17 @@ async def csv_test():
 def reset_trades():
     """Lab reset — clears all imported trade history from the database."""
     try:
-        import sqlite3, os as _os
-        db_path = _os.environ.get("DB_PATH", "sigmalytic.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("DELETE FROM trades")
-        # Also clear derived tables if they exist
-        for tbl in ["decision_scorecards", "behavioral_events", "regime_memory"]:
+        import psycopg2, os as _os
+        db_url = _os.environ.get("DATABASE_URL", "")
+        conn = psycopg2.connect(db_url)
+        cur  = conn.cursor()
+        for tbl in ["decision_scorecards", "behavioral_events", "regime_memory", "trades"]:
             try:
-                conn.execute(f"DELETE FROM {tbl}")
+                cur.execute(f"DELETE FROM {tbl}")
             except Exception:
                 pass
         conn.commit()
+        cur.close()
         conn.close()
         return {"status": "ok", "message": "Trade history cleared successfully."}
     except Exception as e:
