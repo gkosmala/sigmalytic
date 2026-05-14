@@ -243,16 +243,18 @@ def analyze_behavior(trades):
 
 
 def persist_trades(trades, user_id, analysis):
-    con = get_db()
+    conn = get_db()
+    cur  = conn.cursor()
     for t in trades:
         trade_id = "trade_" + uuid.uuid4().hex[:12]
         t["trade_id"] = trade_id
-        con.execute("""
-            INSERT OR IGNORE INTO trades
+        cur.execute("""
+            INSERT INTO trades
             (trade_id,user_id,symbol,direction,entry_price,exit_price,
              size,entry_time,exit_time,pnl,pnl_percent,
              market_regime_entry,signal_score_entry,status)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,'neutral',50,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'neutral',50,%s)
+            ON CONFLICT (trade_id) DO NOTHING
         """, (trade_id, user_id, t.get("symbol",""), t.get("direction","long"),
               t.get("entry_price",0), t.get("exit_price",0), t.get("size",0),
               t.get("entry_time"), t.get("exit_time"),
@@ -262,26 +264,28 @@ def persist_trades(trades, user_id, analysis):
             execution = calculate_execution_quality(85.0, 80.0, risk)
             composite = calculate_composite(60.0, execution, 80.0, risk)
             flag      = "plan_followed" if t["pnl_percent"] > 0 else "neutral"
-            con.execute("""
-                INSERT OR IGNORE INTO decision_scorecards
+            cur.execute("""
+                INSERT INTO decision_scorecards
                 (scorecard_id,user_id,trade_id,symbol,
                  setup_quality_score,execution_quality_score,discipline_score,
                  timing_score,risk_management_score,confidence_calibration_score,
                  composite_decision_score,primary_behavior_flag,notes,timestamp)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (scorecard_id) DO NOTHING
             """, ("sc_"+uuid.uuid4().hex[:12], user_id, trade_id, t["symbol"],
                   60.0, round(execution,1), 80.0, 85.0, round(risk,1), 80.0,
                   round(composite,1), flag, "Imported from brokerage CSV",
                   t.get("exit_time") or datetime.now(timezone.utc).isoformat()))
-            update_regime_memory(con, user_id, "neutral", t["symbol"],
+            update_regime_memory(conn, user_id, "neutral", t["symbol"],
                                  t.get("pnl_percent",0), 60.0, flag)
-    con.execute("""
+    cur.execute("""
         INSERT INTO behavioral_events
         (event_id,user_id,event_type,symbol,timestamp,metadata)
-        VALUES (?,?,'csv_imported','PORTFOLIO',datetime('now'),?)
+        VALUES (%s,%s,'csv_imported','PORTFOLIO',NOW(),%s)
     """, ("evt_"+uuid.uuid4().hex[:12], user_id, json.dumps(analysis)))
-    con.commit()
-    con.close()
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -377,12 +381,14 @@ async def upload_generic(
 @csv_router.get("/analysis/{user_id}")
 def get_analysis(user_id: str):
     try:
-        con = get_db()
-        row = con.execute("""
+        conn = get_db()
+        cur  = conn.cursor()
+        cur.execute("""
             SELECT metadata FROM behavioral_events
-            WHERE user_id=? AND event_type='csv_imported'
+            WHERE user_id=%s AND event_type='csv_imported'
             ORDER BY timestamp DESC LIMIT 1
-        """, (user_id,)).fetchone()
-        con.close()
+        """, (user_id,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
         return json.loads(row[0]) if row else {}
     except: return {}
