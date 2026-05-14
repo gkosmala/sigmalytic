@@ -373,6 +373,15 @@ def build_performance_tab(live):
     ])
 
 def build_behavior_tab(analysis=None):
+    if not analysis or not analysis.get("total_trades"):
+        # Try fetching cumulative from backend
+        import requests as _req
+        try:
+            r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=5)
+            if r.ok and r.json():
+                analysis = r.json()
+        except Exception:
+            pass
     if analysis is None:
         analysis = {}
 
@@ -850,15 +859,22 @@ def handle_csv_upload_behavior(contents, filename, refresh):
                              style={"color":RED_DIM}), no_update, no_update
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
-        analysis = data.get("analysis", {})
         if trades_count == 0:
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM}), no_update, no_update
+
+        # Fetch cumulative analysis from Supabase instead of using this batch only
+        try:
+            r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=10)
+            cumulative = r2.json() if r2.ok and r2.json() else data.get("analysis", {})
+        except Exception:
+            cumulative = data.get("analysis", {})
+
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Dashboard loading below…",
+            html.Span(f"{trades_count} trades added · Cumulative: {cumulative.get('total_trades',0)} trades · Win rate: {cumulative.get('win_rate',0)}% · P&L: ${cumulative.get('total_pnl',0):+,.2f}",
                       style={"color":TEXT}),
-        ]), analysis, (refresh or 0) + 1
+        ]), cumulative, (refresh or 0) + 1
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update, no_update
 

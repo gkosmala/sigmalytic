@@ -383,12 +383,35 @@ def get_analysis(user_id: str):
     try:
         conn = get_db()
         cur  = conn.cursor()
+        # Fetch all closed trades for this user and recompute analysis
         cur.execute("""
-            SELECT metadata FROM behavioral_events
-            WHERE user_id=%s AND event_type='csv_imported'
-            ORDER BY timestamp DESC LIMIT 1
+            SELECT symbol, entry_price, exit_price, size, entry_time, exit_time,
+                   pnl, pnl_percent, status
+            FROM trades
+            WHERE user_id=%s AND status='closed'
+            ORDER BY entry_time ASC
         """, (user_id,))
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        return json.loads(row[0]) if row else {}
-    except: return {}
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            return {}
+
+        # Convert to trade dicts and run analyze_behavior
+        trades = []
+        for r in rows:
+            trades.append({
+                "symbol":      r[0],
+                "entry_price": r[1],
+                "exit_price":  r[2],
+                "size":        r[3],
+                "entry_time":  r[4].isoformat() if r[4] else None,
+                "exit_time":   r[5].isoformat() if r[5] else None,
+                "pnl":         r[6],
+                "pnl_percent": r[7],
+                "status":      r[8],
+            })
+        return analyze_behavior(trades)
+    except Exception as e:
+        return {}
