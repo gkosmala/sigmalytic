@@ -372,6 +372,205 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_behavior_tab(analysis=None):
+    if not analysis or not analysis.get("total_trades"):
+        # Try fetching cumulative from backend
+        import requests as _req
+        try:
+            r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=5)
+            if r.ok and r.json():
+                analysis = r.json()
+        except Exception:
+            pass
+    if analysis is None:
+        analysis = {}
+
+    # ── Upload section (always visible) ───────────────────────────────────────
+    upload_section = card([
+        html.H2("🧠 Behavioral Intelligence",
+                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.P("Upload your brokerage CSV to generate a full behavioral profile — win rate, edge score, symbol breakdown, and pattern flags.",
+               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
+        html.Div([
+            dcc.Upload(
+                id="csv-upload-behavior",
+                children=html.Div([
+                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("Drag & drop your CSV here, or click to browse",
+                             style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
+                    html.Div("Generic CSV · date, symbol, action, qty, price columns",
+                             style={"fontSize":"11px","color":MUTED}),
+                ], style={"textAlign":"center","padding":"30px 20px"}),
+                style={
+                    "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                    "background":TEAL_GLOW,"cursor":"pointer","marginBottom":"14px",
+                },
+                accept=".csv", multiple=False,
+            ),
+            html.Div(id="csv-upload-behavior-status",
+                     style={"fontSize":"13px","minHeight":"20px"}),
+        ]),
+    ])
+
+    # ── Analysis section ───────────────────────────────────────────────────────
+    if not analysis or not analysis.get("total_trades"):
+        analysis_section = card([
+            note_box("No import history yet. Upload your CSV above or use the Import History tab to generate your behavioral snapshot.", "blue")
+        ])
+    else:
+        total    = analysis.get("total_trades", 0)
+        wr       = analysis.get("win_rate", 0)
+        pnl      = analysis.get("total_pnl", 0)
+        avg_win  = analysis.get("avg_win", 0)
+        avg_loss = analysis.get("avg_loss", 0)
+        rr       = analysis.get("rr_ratio", 0)
+        edge     = analysis.get("edge_score", 0)
+        hold     = analysis.get("avg_hold_time", "—")
+        best_s   = analysis.get("best_symbol", "—")
+        worst_s  = analysis.get("worst_symbol", "—")
+        best_d   = analysis.get("best_day", "—")
+        worst_d  = analysis.get("worst_day", "—")
+        flags    = analysis.get("behavioral_flags", [])
+        overtrade= analysis.get("overtrade_rate", 0)
+        sym_perf = analysis.get("symbol_performance", {})
+
+        wr_color   = TEAL_DIM if wr>=55 else (YELLOW_DIM if wr>=45 else RED_DIM)
+        pnl_color  = TEAL_DIM if pnl>=0 else RED_DIM
+        edge_color = TEAL_DIM if edge>0 else RED_DIM
+        rr_color   = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
+
+        edge_insight = (f"Positive mathematical edge of ${edge:.2f} per trade." if edge>0
+                        else f"Negative edge of ${edge:.2f} per trade — math works against you long-term.")
+
+        # Symbol performance table
+        top_syms = sorted(sym_perf.items(), key=lambda x: x[1].get("total_pnl",0), reverse=True)[:8]
+        sym_rows = []
+        for sym, sp in top_syms:
+            c = TEAL_DIM if sp.get("total_pnl",0)>=0 else RED_DIM
+            sym_rows.append(html.Tr([
+                html.Td(sym,                                    style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
+                html.Td(str(sp.get("trades",0)),               style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"{sp.get('win_rate',0):.0f}%",        style={"color":TEAL_DIM if sp.get("win_rate",0)>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"${sp.get('total_pnl',0):+.2f}",     style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
+            ], style={"borderBottom":f"1px solid {BORDER}"}))
+
+        analysis_section = html.Div([
+            # Row 1: Key metrics
+            card([
+                html.H2("📊 Behavioral Snapshot",
+                        style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+                html.Div([
+                    metric_tile("Total Trades",   str(total),           WHITE),
+                    metric_tile("Win Rate",       f"{wr}%",             wr_color),
+                    metric_tile("Total P&L",      f"${pnl:+,.2f}",      pnl_color),
+                    metric_tile("Avg Win",        f"${avg_win:+.2f}",   TEAL_DIM),
+                    metric_tile("Avg Loss",       f"${avg_loss:+.2f}",  RED_DIM),
+                    metric_tile("R:R Ratio",      f"{rr:.2f}",          rr_color),
+                    metric_tile("Edge Score",     f"${edge:.2f}",       edge_color),
+                    metric_tile("Avg Hold",       hold,                 BLUE_DIM),
+                ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
+                note_box(edge_insight, "teal" if edge>0 else "yellow"),
+            ], sx={"marginBottom":"16px"}),
+
+            # Row 2: Flags + best/worst
+            html.Div([
+                card([
+                    html.H2("🚩 Behavioral Flags",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    html.Div([
+                        html.Div([
+                            html.Span("⚠️ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower()
+                                      else "✅ ",
+                                      style={"marginRight":"6px"}),
+                            html.Span(f, style={"fontSize":"12px","color":TEXT}),
+                        ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}"})
+                        for f in flags
+                    ]) if flags else note_box("No behavioral flags generated yet.", "blue"),
+                ], sx={"flex":"1"}),
+
+                card([
+                    html.H2("🏆 Best & Worst",
+                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    metric_tile("Best Symbol",  best_s,  TEAL_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Worst Symbol", worst_s, RED_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Best Day",     best_d,  TEAL_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Worst Day",    worst_d, RED_DIM),
+                    html.Div(style={"height":"8px"}),
+                    metric_tile("Overtrade Rate", f"{overtrade}%", YELLOW_DIM if overtrade>30 else TEXT),
+                ], sx={"flex":"1"}),
+            ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
+
+            # Row 3: Symbol table
+            card([
+                html.H2("📋 Symbol Performance",
+                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.Table([
+                    html.Thead(html.Tr([
+                        html.Th("Symbol", style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"left"}),
+                        html.Th("Trades", style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"center"}),
+                        html.Th("Win %",  style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"center"}),
+                        html.Th("P&L",    style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"right"}),
+                    ], style={"borderBottom":f"1px solid {BORDER}"})),
+                    html.Tbody(sym_rows),
+                ], style={"width":"100%","borderCollapse":"collapse"})
+                if sym_rows else note_box("No symbol data available.", "blue"),
+            ]),
+        ])
+
+    return html.Div([upload_section, analysis_section])
+
+
+def build_import_tab():
+    return card([
+        html.H2("📂 Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.P("Upload a CSV file containing your trade history. The file should include columns for symbol, side (buy/sell), quantity, price, and date/time.",
+               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
+        html.Div([
+            html.Div([
+                slabel("Required columns (any order, flexible naming)"),
+                html.Div([
+                    html.Span(col, style={"background":"rgba(45,143,111,.15)","border":f"1px solid {BORDER_T}",
+                                          "borderRadius":"6px","padding":"4px 10px","fontSize":"11px",
+                                          "color":TEAL_DIM,"fontWeight":"700","fontFamily":"DM Mono, monospace"})
+                    for col in ["symbol","side / action","qty / quantity","price","date / time"]
+                ], style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"16px"}),
+                dcc.Upload(
+                    id="csv-upload",
+                    children=html.Div([
+                        html.Div("📁", style={"fontSize":"32px","marginBottom":"8px"}),
+                        html.Div("Drag & drop your CSV here, or click to browse",
+                                 style={"color":WHITE,"fontWeight":"700","fontSize":"14px","marginBottom":"4px"}),
+                        html.Div("Supports generic broker exports · .csv files only",
+                                 style={"color":MUTED,"fontSize":"12px"}),
+                    ], style={"textAlign":"center","padding":"40px 20px"}),
+                    style={
+                        "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                        "background":"rgba(45,143,111,.05)","cursor":"pointer",
+                        "transition":"border-color .2s",
+                    },
+                    accept=".csv",
+                    multiple=False,
+                ),
+                html.Div(id="csv-upload-status", style={"marginTop":"16px","fontSize":"13px"}),
+            ], style={"flex":"1.2","minWidth":"0"}),
+
+            html.Div([
+                slabel("Import Tips"),
+                note_box("• Export your trades as CSV from your broker platform.\n"
+                         "• Include both BUY and SELL rows — trades are reconstructed as pairs.\n"
+                         "• Date formats like 2024-01-15 or 01/15/2024 are both fine.\n"
+                         "• Column names are matched flexibly (e.g. 'Action', 'Side', 'B/S' all work).",
+                         variant="blue"),
+                html.Div(style={"height":"12px"}),
+                note_box("After uploading, use the Reset button in the Setup tab to clear all history and start fresh.",
+                         variant="yellow"),
+            ], style={"flex":"1","minWidth":"0"}),
+        ], style={"display":"flex","gap":"20px","alignItems":"flex-start","flexWrap":"wrap"}),
+    ])
+
 def build_setup_tab():
     return card([
         html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
@@ -390,17 +589,23 @@ def build_setup_tab():
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"},
         ),
+        html.Hr(style={"borderColor":"#2a2f45","margin":"24px 0"}),
+        html.H4("🧪 Lab Tools",style={"color":"#888","fontSize":"13px",
+                "letterSpacing":"1px","marginBottom":"8px"}),
+        html.P("Reset all imported trade history. Use this in the lab to start fresh.",
+               style={"color":"#666","fontSize":"12px","marginBottom":"12px"}),
+        html.Button("🗑️ Reset Import History",id="reset-trades-btn",
+            n_clicks=0,
+            style={"backgroundColor":"#8B0000","color":"white",
+                   "border":"none","padding":"10px 24px",
+                   "borderRadius":"6px","cursor":"pointer",
+                   "fontSize":"13px","fontWeight":"600"}),
+        html.Div(id="reset-trades-output",style={"marginTop":"10px","fontSize":"13px"}),
     ])
 
 # Logo
 LOGO = html.Div([
-    html.Svg([
-        html.Polygon(points="2,2 18,2 10,11 18,20 2,20",fill="none",stroke=TEAL_DIM,
-                     strokeWidth="2.5",strokeLinejoin="round"),
-        html.Rect(x="21",y="14",width="3",height="6",fill=TEAL_DIM),
-        html.Rect(x="25",y="10",width="3",height="10",fill="#1a4f8a"),
-        html.Rect(x="29",y="6", width="3",height="14",fill=TEAL_DIM),
-    ],viewBox="0 0 34 22",style={"width":"34px","height":"22px","flexShrink":"0"}),
+    html.Div("Σ", style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1","flexShrink":"0"}),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,
                                        "letterSpacing":".08em","lineHeight":"1"}),
@@ -413,6 +618,7 @@ app = dash.Dash(
     __name__,
     title="Sigmalytic Quant Corporation — Decision Intelligence",
     update_title=None,
+    suppress_callback_exceptions=True,
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
                {"name":"theme-color","content":NAVY}],
 )
@@ -439,20 +645,131 @@ _init_live = create_live_update("AAPL",280.15,750_000,0).to_dict()
 _init_candles = [{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)}
                  for i,c in enumerate(generate_initial_candles(280.15))]
 
-app.layout = html.Div([
-    dcc.Store(id="s-live",      data=_init_live),
-    dcc.Store(id="s-candles",   data=_init_candles),
-    dcc.Store(id="s-seq",       data=0),
-    dcc.Store(id="s-live-mode", data=False),
-    dcc.Store(id="s-symbol",    data="AAPL"),
-    dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
-    dcc.Store(id="s-price-text",data="280.15"),
-    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
+SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
-    html.Div([html.Div([
+def build_login_page(error=""):
+    return html.Div([
+        html.Div([
+            # Logo
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            # Login card
+            html.Div([
+                html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+
+                # Email
+                html.Div([
+                    html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="login-email", type="email", placeholder="you@example.com",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"16px"}),
+
+                # Password
+                html.Div([
+                    html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"24px"}),
+
+                # Error message
+                html.Div(error, id="login-error",
+                         style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center",
+                                "display":"block" if error else "none"}),
+
+                # Sign in button
+                html.Button("Sign In", id="login-btn", n_clicks=0,
+                    style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                           "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"16px"}),
+
+                # Divider
+                html.Div([
+                    html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                    html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
+                    html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
+
+                # Demo button
+                html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                    style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
+                           "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
+                           "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
+
+                # Sign up link
+                html.Div([
+                    html.Span("Don't have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                    html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
+                        style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                               "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                ], style={"textAlign":"center"}),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
+def build_signup_page(error=""):
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            html.Div([
+                html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+
+                html.Div([
+                    html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"16px"}),
+
+                html.Div([
+                    html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"24px"}),
+
+                html.Div(error, id="signup-error",
+                         style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center",
+                                "display":"block" if error else "none"}),
+
+                html.Button("Create Account", id="signup-btn", n_clicks=0,
+                    style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                           "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"24px"}),
+
+                html.Div([
+                    html.Span("Already have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                    html.Button("Sign In", id="goto-login-btn", n_clicks=0,
+                        style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                               "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                ], style={"textAlign":"center"}),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
+def build_main_app():
+    return html.Div([html.Div([
         html.Header([
             html.Div([
                 LOGO,
@@ -503,7 +820,8 @@ app.layout = html.Div([
                 "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
                 "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key,label in [("command","Command Center"),("feed","Live Feed"),
-                               ("performance","Performance"),("setup","Setup")]
+                               ("performance","Performance"),("behavior","Behavioral Intelligence"),
+                               ("import","Import History"),("setup","Setup")]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -511,10 +829,109 @@ app.layout = html.Div([
         html.Main(id="main-content"),
 
     ],style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
-    style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
-],style={"margin":"0","background":NAVY})
+    style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
-@app.callback(Output("s-live-mode","data"),Output("btn-live","children"),Output("sim-label","children"),
+app.layout = html.Div([
+    dcc.Store(id="s-session",    data=None, storage_type="session"),
+    dcc.Store(id="s-live",      data=_init_live),
+    dcc.Store(id="s-candles",   data=_init_candles),
+    dcc.Store(id="s-seq",       data=0),
+    dcc.Store(id="s-live-mode", data=False),
+    dcc.Store(id="s-symbol",    data="AAPL"),
+    dcc.Store(id="s-tf",        data="5m"),
+    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-price-text",data="280.15"),
+    dcc.Store(id="s-analysis",  data={}),
+    dcc.Store(id="s-refresh",   data=0),
+    dcc.Store(id="s-page",      data="login"),
+    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
+
+    html.Div(id="auth-overlay", children=build_login_page(),
+             style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}),
+    html.Div(id="app-container", children=build_main_app()),
+])
+
+@app.callback(Output("auth-overlay","style"),
+              Output("auth-overlay","children"),
+              Input("s-session","data"),
+              Input("s-page","data"))
+def route_page(session, page):
+    overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    hidden = {"display":"none"}
+    if session and session.get("user_id"):
+        return hidden, []
+    if page == "signup":
+        return overlay_base, build_signup_page().children
+    return overlay_base, build_login_page().children
+
+@app.callback(Output("s-session","data"),Output("s-page","data"),
+              Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
+              Input("signup-btn","n_clicks"),
+              Input("goto-signup-btn","n_clicks"),Input("goto-login-btn","n_clicks"),
+              State("login-email","value"),State("login-password","value"),
+              State("signup-email","value"),State("signup-password","value"),
+              prevent_initial_call=True)
+def handle_auth(login_clicks, demo_clicks, signup_clicks, goto_signup, goto_login,
+                login_email, login_password, signup_email, signup_password):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "demo-btn":
+        return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
+
+    if trigger == "goto-signup-btn":
+        return no_update, "signup"
+
+    if trigger == "goto-login-btn":
+        return no_update, "login"
+
+    if trigger == "login-btn":
+        if not login_email or not login_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":login_email,"password":login_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    if trigger == "signup-btn":
+        if not signup_email or not signup_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/signup",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":signup_email,"password":signup_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    return no_update, no_update
+
+# ── Main app callbacks ────────────────────────────────────────────────────────
+
+@app.callback(Output("s-live-mode","data"),
+Output("btn-live","children"),Output("sim-label","children"),
               Input("btn-live","n_clicks"),State("s-live-mode","data"),prevent_initial_call=True)
 def toggle_live(_,current):
     new=not current
@@ -530,7 +947,9 @@ def load_symbol(_,ticker):
 
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
-              Input("tab-performance","n_clicks"),Input("tab-setup","n_clicks"),prevent_initial_call=True)
+              Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
+              Input("tab-import","n_clicks"),
+              Input("tab-setup","n_clicks"),prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
     if not ctx.triggered: return no_update
@@ -594,12 +1013,19 @@ def update_badges(live,live_mode):
 @app.callback(Output("main-content","children"),
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
+              Input("s-analysis","data"),Input("s-refresh","data"),
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    ctx = callback_context
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
+    if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
+        return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
+    if tab=="behavior":    return build_behavior_tab(analysis or {})
+    if tab=="import":      return build_import_tab()
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
 
@@ -617,6 +1043,102 @@ def update_clock(_):
         html.Div(style={"height":"10px"}),
         note_box("Future: economic releases, auction windows, proprietary cycle layers."),
     ])
+
+@app.callback(Output("csv-upload-behavior-status","children"),Output("s-analysis","data"),Output("s-refresh","data"),
+              Input("csv-upload-behavior","contents"),
+              State("csv-upload-behavior","filename"),State("s-refresh","data"),
+              prevent_initial_call=True)
+def handle_csv_upload_behavior(contents, filename, refresh):
+    if not contents:
+        return no_update, no_update, no_update
+    import base64, io as _io, requests as _req
+    try:
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        url = f"{BACKEND_HTTP}/api/import/upload-generic"
+        resp = _req.post(
+            url,
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
+                  "price_col":"price","timestamp_col":"date"},
+            timeout=30,
+        )
+        if not resp.ok:
+            return html.Span(f"❌ Backend error {resp.status_code}: {resp.text[:300]}",
+                             style={"color":RED_DIM}), no_update, no_update
+        data = resp.json()
+        trades_count = data.get("trades_closed", 0)
+        if trades_count == 0:
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
+                             style={"color":YELLOW_DIM}), no_update, no_update
+
+        # Fetch cumulative analysis from Supabase instead of using this batch only
+        try:
+            r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=10)
+            cumulative = r2.json() if r2.ok and r2.json() else data.get("analysis", {})
+        except Exception:
+            cumulative = data.get("analysis", {})
+
+        return html.Div([
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades added · Cumulative: {cumulative.get('total_trades',0)} trades · Win rate: {cumulative.get('win_rate',0)}% · P&L: ${cumulative.get('total_pnl',0):+,.2f}",
+                      style={"color":TEXT}),
+        ]), cumulative, (refresh or 0) + 1
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update, no_update
+
+@app.callback(Output("csv-upload-status","children"),
+              Input("csv-upload","contents"),
+              State("csv-upload","filename"),
+              prevent_initial_call=True)
+def handle_csv_upload(contents, filename):
+    if not contents:
+        return no_update
+    import base64, io as _io, requests as _req
+    try:
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        resp = _req.post(
+            f"{BACKEND_HTTP}/api/import/upload-generic",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
+                  "price_col":"price","timestamp_col":"date"},
+            timeout=30,
+        )
+        if not resp.ok:
+            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
+                             style={"color":RED_DIM})
+        data = resp.json()
+        trades_count = data.get("trades_closed", 0)
+        analysis = data.get("analysis", {})
+        if trades_count == 0:
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
+                             style={"color":YELLOW_DIM})
+        return html.Div([
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Go to Behavioral Intelligence tab to see full dashboard.",
+                      style={"color":TEXT}),
+        ])
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
+
+@app.callback(Output("reset-trades-output","children"),
+              Input("reset-trades-btn","n_clicks"),
+              prevent_initial_call=True)
+def reset_trade_history(n_clicks):
+    if not n_clicks:
+        return ""
+    import requests as _req
+    try:
+        r = _req.delete(f"{BACKEND_HTTP}/api/trades/reset", timeout=10)
+        if r.status_code == 200:
+            return html.Span("✅ Trade history cleared. Refresh the page to see updated counts.",
+                             style={"color":"#00ff88"})
+        else:
+            return html.Span(f"❌ Reset failed (status {r.status_code}). Try again.",
+                             style={"color":"#ff4444"})
+    except Exception as e:
+        return html.Span(f"❌ Error: {str(e)}", style={"color":"#ff4444"})
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
