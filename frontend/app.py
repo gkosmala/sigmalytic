@@ -768,26 +768,6 @@ def build_signup_page(error=""):
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
 
-app.layout = html.Div([
-    dcc.Store(id="s-session",    data=None, storage_type="session"),
-    dcc.Store(id="s-live",      data=_init_live),
-    dcc.Store(id="s-candles",   data=_init_candles),
-    dcc.Store(id="s-seq",       data=0),
-    dcc.Store(id="s-live-mode", data=False),
-    dcc.Store(id="s-symbol",    data="AAPL"),
-    dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
-    dcc.Store(id="s-price-text",data="280.15"),
-    dcc.Store(id="s-analysis",  data={}),
-    dcc.Store(id="s-refresh",   data=0),
-    dcc.Store(id="s-page",      data="login"),
-    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
-
-    html.Div(id="page-content"),
-])
-
 def build_main_app():
     return html.Div([html.Div([
         html.Header([
@@ -851,26 +831,42 @@ def build_main_app():
     ],style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
-@app.callback(Output("page-content","children"),
-              Input("s-session","data"),
-              State("s-page","data"))
-def route_page(session, page):
-    if session and session.get("user_id"):
-        return build_main_app()
-    if page == "signup":
-        return build_signup_page()
-    return build_login_page()
+app.layout = html.Div([
+    dcc.Store(id="s-session",    data=None, storage_type="session"),
+    dcc.Store(id="s-live",      data=_init_live),
+    dcc.Store(id="s-candles",   data=_init_candles),
+    dcc.Store(id="s-seq",       data=0),
+    dcc.Store(id="s-live-mode", data=False),
+    dcc.Store(id="s-symbol",    data="AAPL"),
+    dcc.Store(id="s-tf",        data="5m"),
+    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-price-text",data="280.15"),
+    dcc.Store(id="s-analysis",  data={}),
+    dcc.Store(id="s-refresh",   data=0),
+    dcc.Store(id="s-page",      data="login"),
+    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
 
-@app.callback(Output("page-content","children", allow_duplicate=True),
-              Input("s-page","data"),
-              State("s-session","data"),
-              prevent_initial_call=True)
-def route_page_switch(page, session):
+    html.Div(id="auth-overlay", children=build_login_page(),
+             style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}),
+    html.Div(id="app-container", children=build_main_app()),
+])
+
+@app.callback(Output("auth-overlay","style"),
+              Output("auth-overlay","children"),
+              Input("s-session","data"),
+              Input("s-page","data"))
+def route_page(session, page):
+    overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    hidden = {"display":"none"}
     if session and session.get("user_id"):
-        return no_update
+        return hidden, []
     if page == "signup":
-        return build_signup_page()
-    return build_login_page()
+        return overlay_base, build_signup_page().children
+    return overlay_base, build_login_page().children
 
 @app.callback(Output("s-session","data"),Output("s-page","data"),
               Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
