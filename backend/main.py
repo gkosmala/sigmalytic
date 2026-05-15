@@ -300,68 +300,6 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
         manager.disconnect(ws, clean)
 
 
-@app.get("/api/debug/csv-test")
-async def csv_test():
-    """Debug endpoint — tests CSV parsing inline with hardcoded sample data."""
-    import io as _io
-    import pandas as pd
-    from csv_import import clean_price, clean_qty, normalize_side, parse_timestamp, reconstruct_trades, analyze_behavior
-
-    sample = """date,time,symbol,action,qty,price
-01/01/2025 09:43:00,09:43:00,AAPL,buy,67,160.2
-01/01/2025 14:52:00,14:52:00,AAPL,sell,67,158.68
-01/03/2025 09:35:00,09:35:00,AAPL,buy,127,154.7
-01/03/2025 12:25:00,12:25:00,AAPL,sell,127,160.01
-"""
-    df = pd.read_csv(_io.StringIO(sample), skip_blank_lines=True)
-    col_map = {"symbol":"symbol","action":"side","qty":"qty","price":"price","date":"timestamp"}
-    df.columns = [c.lower().strip() for c in df.columns]
-    df = df.rename(columns={k.lower(): v for k, v in col_map.items()})
-
-    rows = []
-    for _, row in df.iterrows():
-        price = clean_price(row.get("price"))
-        qty, is_sell = clean_qty(row.get("qty"))
-        side = normalize_side(str(row.get("side","")), qty_negative=(is_sell or False))
-        symbol = str(row.get("symbol","")).strip().upper()
-        ts = parse_timestamp(row.get("timestamp"))
-        if symbol and price and qty:
-            rows.append({"symbol":symbol,"side":side,"qty":qty,"price":price,"timestamp":ts})
-
-    trades, _ = reconstruct_trades(rows)
-    analysis = analyze_behavior(trades)
-
-    return {
-        "rows_parsed": len(rows),
-        "sides": list(set(r["side"] for r in rows)),
-        "timestamps": [str(r["timestamp"]) for r in rows[:2]],
-        "trades_closed": len(trades),
-        "analysis_keys": list(analysis.keys()),
-    }
-
-
-
-@app.delete("/api/trades/reset")
-def reset_trades():
-    """Lab reset — clears all imported trade history from the database."""
-    try:
-        import psycopg2, os as _os
-        db_url = _os.environ.get("DATABASE_URL", "")
-        conn = psycopg2.connect(db_url)
-        cur  = conn.cursor()
-        for tbl in ["decision_scorecards", "behavioral_events", "regime_memory", "trades"]:
-            try:
-                cur.execute(f"DELETE FROM {tbl}")
-            except Exception:
-                pass
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"status": "ok", "message": "Trade history cleared successfully."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
 async def _synthetic_feed(ws: WebSocket, symbol: str):
     import random
     price    = 280.15
