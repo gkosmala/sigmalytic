@@ -199,7 +199,6 @@ def build_command_tab(live, candles, symbol, tf):
     ROW   = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
     return html.Div([
-        # Row 1: Chart + Decision Hero
         html.Div([
             card([
                 html.Div([
@@ -254,7 +253,6 @@ def build_command_tab(live, candles, symbol, tf):
             ],sx={"flex":"1","minWidth":"0"}),
         ],style={**ROW,"alignItems":"start"}),
 
-        # Row 2: 4 cards
         html.Div([
             card([
                 html.H2("🎯 Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
@@ -302,7 +300,6 @@ def build_command_tab(live, candles, symbol, tf):
             ],sx={"flex":"1"}),
         ],style={**ROW,"alignItems":"start"}),
 
-        # Options Matrix
         card([
             html.Div([
                 html.Div([
@@ -322,7 +319,6 @@ def build_command_tab(live, candles, symbol, tf):
             note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
         ],sx={"marginBottom":"16px"}),
 
-        # Summary strip
         card([
             html.Div([
                 metric_tile("Symbol",      symbol,         BLUE_DIM),
@@ -372,9 +368,13 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
-def build_behavior_tab(analysis=None):
+def build_behavior_tab(analysis=None, perms=None):
+    # ── Permission check ───────────────────────────────────────────────────────
+    # perms is the dict from /api/v1/permissions/{user_id}
+    # If perms is None (not loaded yet) we default to showing everything (safe fallback)
+    can_upload = (perms or {}).get("behavioral_intel_csv_upload", True)
+
     if not analysis or not analysis.get("total_trades"):
-        # Try fetching cumulative from backend
         import requests as _req
         try:
             r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=5)
@@ -385,13 +385,9 @@ def build_behavior_tab(analysis=None):
     if analysis is None:
         analysis = {}
 
-    # ── Upload section (always visible) ───────────────────────────────────────
-    upload_section = card([
-        html.H2("🧠 Behavioral Intelligence",
-                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
-        html.P("Upload your brokerage CSV to generate a full behavioral profile — win rate, edge score, symbol breakdown, and pattern flags.",
-               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
-        html.Div([
+    # ── Upload section ─────────────────────────────────────────────────────────
+    if can_upload:
+        upload_content = html.Div([
             dcc.Upload(
                 id="csv-upload-behavior",
                 children=html.Div([
@@ -409,7 +405,31 @@ def build_behavior_tab(analysis=None):
             ),
             html.Div(id="csv-upload-behavior-status",
                      style={"fontSize":"13px","minHeight":"20px"}),
-        ]),
+        ])
+    else:
+        # Upgrade prompt for free_trial users
+        upload_content = html.Div([
+            html.Div([
+                html.Div("🔒", style={"fontSize":"32px","marginBottom":"8px"}),
+                html.Div("CSV Upload — Premium Feature",
+                         style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
+                html.Div("Upgrade to Premium Beta to upload your trade history and unlock full behavioral analysis.",
+                         style={"fontSize":"11px","color":MUTED}),
+            ], style={"textAlign":"center","padding":"30px 20px"}),
+            # Hidden upload component so callbacks don't break
+            dcc.Upload(id="csv-upload-behavior", children=html.Div(), style={"display":"none"}),
+            html.Div(id="csv-upload-behavior-status", style={"display":"none"}),
+        ], style={
+            "border":f"2px dashed {BORDER}","borderRadius":"16px",
+            "background":"rgba(0,0,0,.2)","marginBottom":"14px","opacity":"0.7",
+        })
+
+    upload_section = card([
+        html.H2("🧠 Behavioral Intelligence",
+                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.P("Upload your brokerage CSV to generate a full behavioral profile — win rate, edge score, symbol breakdown, and pattern flags.",
+               style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
+        upload_content,
     ])
 
     # ── Analysis section ───────────────────────────────────────────────────────
@@ -442,7 +462,6 @@ def build_behavior_tab(analysis=None):
         edge_insight = (f"Positive mathematical edge of ${edge:.2f} per trade." if edge>0
                         else f"Negative edge of ${edge:.2f} per trade — math works against you long-term.")
 
-        # Symbol performance table
         top_syms = sorted(sym_perf.items(), key=lambda x: x[1].get("total_pnl",0), reverse=True)[:8]
         sym_rows = []
         for sym, sp in top_syms:
@@ -455,7 +474,6 @@ def build_behavior_tab(analysis=None):
             ], style={"borderBottom":f"1px solid {BORDER}"}))
 
         analysis_section = html.Div([
-            # Row 1: Key metrics
             card([
                 html.H2("📊 Behavioral Snapshot",
                         style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
@@ -472,7 +490,6 @@ def build_behavior_tab(analysis=None):
                 note_box(edge_insight, "teal" if edge>0 else "yellow"),
             ], sx={"marginBottom":"16px"}),
 
-            # Row 2: Flags + best/worst
             html.Div([
                 card([
                     html.H2("🚩 Behavioral Flags",
@@ -503,7 +520,6 @@ def build_behavior_tab(analysis=None):
                 ], sx={"flex":"1"}),
             ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
 
-            # Row 3: Symbol table
             card([
                 html.H2("📋 Symbol Performance",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
@@ -658,7 +674,6 @@ def build_login_page(error=""):
             ], style={"textAlign":"center","marginBottom":"40px"}),
 
             html.Div([
-                # Login section
                 html.Div(id="login-section", children=[
                     html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
                     html.Div([
@@ -697,7 +712,6 @@ def build_login_page(error=""):
                     ], style={"textAlign":"center"}),
                 ]),
 
-                # Signup section (hidden initially)
                 html.Div(id="signup-section", style={"display":"none"}, children=[
                     html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
                     html.Div([
@@ -797,27 +811,47 @@ def build_main_app():
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
 app.layout = html.Div([
-    dcc.Store(id="s-session",    data=None, storage_type="session"),
-    dcc.Store(id="s-live",      data=_init_live),
-    dcc.Store(id="s-candles",   data=_init_candles),
-    dcc.Store(id="s-seq",       data=0),
-    dcc.Store(id="s-live-mode", data=False),
-    dcc.Store(id="s-symbol",    data="AAPL"),
-    dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
-    dcc.Store(id="s-price-text",data="280.15"),
-    dcc.Store(id="s-analysis",  data={}),
-    dcc.Store(id="s-refresh",   data=0),
-    dcc.Store(id="s-page",      data="login"),
-    dcc.Interval(id="i-synth",  interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca", interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000,n_intervals=0),
+    dcc.Store(id="s-session",      data=None, storage_type="session"),
+    dcc.Store(id="s-live",         data=_init_live),
+    dcc.Store(id="s-candles",      data=_init_candles),
+    dcc.Store(id="s-seq",          data=0),
+    dcc.Store(id="s-live-mode",    data=False),
+    dcc.Store(id="s-symbol",       data="AAPL"),
+    dcc.Store(id="s-tf",           data="5m"),
+    dcc.Store(id="s-tab",          data="command"),
+    dcc.Store(id="s-price-text",   data="280.15"),
+    dcc.Store(id="s-analysis",     data={}),
+    dcc.Store(id="s-refresh",      data=0),
+    dcc.Store(id="s-page",         data="login"),
+    dcc.Store(id="s-permissions",  data={}),   # ← NEW: holds feature permission map
+    dcc.Interval(id="i-synth",     interval=1_400,n_intervals=0),
+    dcc.Interval(id="i-alpaca",    interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-clock",     interval=1_000,n_intervals=0),
 
     html.Div(id="auth-overlay", children=build_login_page(),
              style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
                     "zIndex":9999,"background":NAVY,"overflowY":"auto"}),
     html.Div(id="app-container", children=build_main_app()),
 ])
+
+# ── NEW: Fetch permissions on login ──────────────────────────────────────────
+@app.callback(
+    Output("s-permissions", "data"),
+    Input("s-session", "data"),
+    prevent_initial_call=True,
+)
+def load_permissions(session):
+    if not session or not session.get("user_id"):
+        return {}
+    user_id = session["user_id"]
+    import requests as _req
+    try:
+        r = _req.get(f"{BACKEND_HTTP}/api/v1/permissions/{user_id}", timeout=5)
+        if r.ok:
+            return r.json()
+    except Exception:
+        pass
+    return {}
 
 @app.callback(Output("auth-overlay","style"),
               Input("s-session","data"))
@@ -979,8 +1013,9 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),
+              Input("s-permissions","data"),                           # ← NEW
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,perms,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
@@ -989,7 +1024,7 @@ def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf):
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
-    if tab=="behavior":    return build_behavior_tab(analysis or {})
+    if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {})  # ← NEW: passes perms
     if tab=="import":      return build_import_tab()
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
@@ -1037,7 +1072,6 @@ def handle_csv_upload_behavior(contents, filename, refresh):
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM}), no_update, no_update
 
-        # Fetch cumulative analysis from Supabase instead of using this batch only
         try:
             r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=10)
             cumulative = r2.json() if r2.ok and r2.json() else data.get("analysis", {})
