@@ -1,7 +1,6 @@
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
-Matches original React app layout + Sigmalytic brand upgrade
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles,
     get_key_levels, build_confluence_nodes, run_decision,
 )
+from billing_ui import build_billing_tab, register_billing_callbacks
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
@@ -369,9 +369,6 @@ def build_performance_tab(live):
     ])
 
 def build_behavior_tab(analysis=None, perms=None):
-    # ── Permission check ───────────────────────────────────────────────────────
-    # perms is the dict from /api/v1/permissions/{user_id}
-    # If perms is None (not loaded yet) we default to showing everything (safe fallback)
     can_upload = (perms or {}).get("behavioral_intel_csv_upload", True)
 
     if not analysis or not analysis.get("total_trades"):
@@ -385,7 +382,6 @@ def build_behavior_tab(analysis=None, perms=None):
     if analysis is None:
         analysis = {}
 
-    # ── Upload section ─────────────────────────────────────────────────────────
     if can_upload:
         upload_content = html.Div([
             dcc.Upload(
@@ -403,11 +399,9 @@ def build_behavior_tab(analysis=None, perms=None):
                 },
                 accept=".csv", multiple=False,
             ),
-            html.Div(id="csv-upload-behavior-status",
-                     style={"fontSize":"13px","minHeight":"20px"}),
+            html.Div(id="csv-upload-behavior-status", style={"fontSize":"13px","minHeight":"20px"}),
         ])
     else:
-        # Upgrade prompt for free_trial users
         upload_content = html.Div([
             html.Div([
                 html.Div("🔒", style={"fontSize":"32px","marginBottom":"8px"}),
@@ -416,7 +410,6 @@ def build_behavior_tab(analysis=None, perms=None):
                 html.Div("Upgrade to Premium Beta to upload your trade history and unlock full behavioral analysis.",
                          style={"fontSize":"11px","color":MUTED}),
             ], style={"textAlign":"center","padding":"30px 20px"}),
-            # Hidden upload component so callbacks don't break
             dcc.Upload(id="csv-upload-behavior", children=html.Div(), style={"display":"none"}),
             html.Div(id="csv-upload-behavior-status", style={"display":"none"}),
         ], style={
@@ -432,7 +425,6 @@ def build_behavior_tab(analysis=None, perms=None):
         upload_content,
     ])
 
-    # ── Analysis section ───────────────────────────────────────────────────────
     if not analysis or not analysis.get("total_trades"):
         analysis_section = card([
             note_box("No import history yet. Upload your CSV above or use the Import History tab to generate your behavioral snapshot.", "blue")
@@ -458,7 +450,6 @@ def build_behavior_tab(analysis=None, perms=None):
         pnl_color  = TEAL_DIM if pnl>=0 else RED_DIM
         edge_color = TEAL_DIM if edge>0 else RED_DIM
         rr_color   = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
-
         edge_insight = (f"Positive mathematical edge of ${edge:.2f} per trade." if edge>0
                         else f"Negative edge of ${edge:.2f} per trade — math works against you long-term.")
 
@@ -467,38 +458,34 @@ def build_behavior_tab(analysis=None, perms=None):
         for sym, sp in top_syms:
             c = TEAL_DIM if sp.get("total_pnl",0)>=0 else RED_DIM
             sym_rows.append(html.Tr([
-                html.Td(sym,                                    style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
-                html.Td(str(sp.get("trades",0)),               style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
-                html.Td(f"{sp.get('win_rate',0):.0f}%",        style={"color":TEAL_DIM if sp.get("win_rate",0)>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
-                html.Td(f"${sp.get('total_pnl',0):+.2f}",     style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
+                html.Td(sym, style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
+                html.Td(str(sp.get("trades",0)), style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"{sp.get('win_rate',0):.0f}%", style={"color":TEAL_DIM if sp.get("win_rate",0)>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(f"${sp.get('total_pnl',0):+.2f}", style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
             ], style={"borderBottom":f"1px solid {BORDER}"}))
 
         analysis_section = html.Div([
             card([
-                html.H2("📊 Behavioral Snapshot",
-                        style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+                html.H2("📊 Behavioral Snapshot", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
                 html.Div([
-                    metric_tile("Total Trades",   str(total),           WHITE),
-                    metric_tile("Win Rate",       f"{wr}%",             wr_color),
-                    metric_tile("Total P&L",      f"${pnl:+,.2f}",      pnl_color),
-                    metric_tile("Avg Win",        f"${avg_win:+.2f}",   TEAL_DIM),
-                    metric_tile("Avg Loss",       f"${avg_loss:+.2f}",  RED_DIM),
-                    metric_tile("R:R Ratio",      f"{rr:.2f}",          rr_color),
-                    metric_tile("Edge Score",     f"${edge:.2f}",       edge_color),
-                    metric_tile("Avg Hold",       hold,                 BLUE_DIM),
+                    metric_tile("Total Trades",  str(total),          WHITE),
+                    metric_tile("Win Rate",      f"{wr}%",            wr_color),
+                    metric_tile("Total P&L",     f"${pnl:+,.2f}",     pnl_color),
+                    metric_tile("Avg Win",       f"${avg_win:+.2f}",  TEAL_DIM),
+                    metric_tile("Avg Loss",      f"${avg_loss:+.2f}", RED_DIM),
+                    metric_tile("R:R Ratio",     f"{rr:.2f}",         rr_color),
+                    metric_tile("Edge Score",    f"${edge:.2f}",      edge_color),
+                    metric_tile("Avg Hold",      hold,                BLUE_DIM),
                 ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
                 note_box(edge_insight, "teal" if edge>0 else "yellow"),
             ], sx={"marginBottom":"16px"}),
 
             html.Div([
                 card([
-                    html.H2("🚩 Behavioral Flags",
-                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    html.H2("🚩 Behavioral Flags", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                     html.Div([
                         html.Div([
-                            html.Span("⚠️ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower()
-                                      else "✅ ",
-                                      style={"marginRight":"6px"}),
+                            html.Span("⚠️ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower() else "✅ ", style={"marginRight":"6px"}),
                             html.Span(f, style={"fontSize":"12px","color":TEXT}),
                         ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}"})
                         for f in flags
@@ -506,8 +493,7 @@ def build_behavior_tab(analysis=None, perms=None):
                 ], sx={"flex":"1"}),
 
                 card([
-                    html.H2("🏆 Best & Worst",
-                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                    html.H2("🏆 Best & Worst", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                     metric_tile("Best Symbol",  best_s,  TEAL_DIM),
                     html.Div(style={"height":"8px"}),
                     metric_tile("Worst Symbol", worst_s, RED_DIM),
@@ -521,8 +507,7 @@ def build_behavior_tab(analysis=None, perms=None):
             ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
 
             card([
-                html.H2("📋 Symbol Performance",
-                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("📋 Symbol Performance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Table([
                     html.Thead(html.Tr([
                         html.Th("Symbol", style={"color":MUTED,"fontSize":"11px","fontWeight":"700","textTransform":"uppercase","padding":"8px 12px","textAlign":"left"}),
@@ -542,7 +527,7 @@ def build_behavior_tab(analysis=None, perms=None):
 def build_import_tab():
     return card([
         html.H2("📂 Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
-        html.P("Upload a CSV file containing your trade history. The file should include columns for symbol, side (buy/sell), quantity, price, and date/time.",
+        html.P("Upload a CSV file containing your trade history.",
                style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
         html.Div([
             html.Div([
@@ -562,27 +547,20 @@ def build_import_tab():
                         html.Div("Supports generic broker exports · .csv files only",
                                  style={"color":MUTED,"fontSize":"12px"}),
                     ], style={"textAlign":"center","padding":"40px 20px"}),
-                    style={
-                        "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
-                        "background":"rgba(45,143,111,.05)","cursor":"pointer",
-                        "transition":"border-color .2s",
-                    },
-                    accept=".csv",
-                    multiple=False,
+                    style={"border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                           "background":"rgba(45,143,111,.05)","cursor":"pointer"},
+                    accept=".csv", multiple=False,
                 ),
                 html.Div(id="csv-upload-status", style={"marginTop":"16px","fontSize":"13px"}),
             ], style={"flex":"1.2","minWidth":"0"}),
-
             html.Div([
                 slabel("Import Tips"),
                 note_box("• Export your trades as CSV from your broker platform.\n"
                          "• Include both BUY and SELL rows — trades are reconstructed as pairs.\n"
                          "• Date formats like 2024-01-15 or 01/15/2024 are both fine.\n"
-                         "• Column names are matched flexibly (e.g. 'Action', 'Side', 'B/S' all work).",
-                         variant="blue"),
+                         "• Column names are matched flexibly.", variant="blue"),
                 html.Div(style={"height":"12px"}),
-                note_box("After uploading, use the Reset button in the Setup tab to clear all history and start fresh.",
-                         variant="yellow"),
+                note_box("After uploading, use the Reset button in the Setup tab to clear all history.", variant="yellow"),
             ], style={"flex":"1","minWidth":"0"}),
         ], style={"display":"flex","gap":"20px","alignItems":"flex-start","flexWrap":"wrap"}),
     ])
@@ -606,27 +584,19 @@ def build_setup_tab():
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"},
         ),
         html.Hr(style={"borderColor":"#2a2f45","margin":"24px 0"}),
-        html.H4("🧪 Lab Tools",style={"color":"#888","fontSize":"13px",
-                "letterSpacing":"1px","marginBottom":"8px"}),
-        html.P("Reset all imported trade history. Use this in the lab to start fresh.",
-               style={"color":"#666","fontSize":"12px","marginBottom":"12px"}),
-        html.Button("🗑️ Reset Import History",id="reset-trades-btn",
-            n_clicks=0,
-            style={"backgroundColor":"#8B0000","color":"white",
-                   "border":"none","padding":"10px 24px",
-                   "borderRadius":"6px","cursor":"pointer",
-                   "fontSize":"13px","fontWeight":"600"}),
+        html.H4("🧪 Lab Tools",style={"color":"#888","fontSize":"13px","letterSpacing":"1px","marginBottom":"8px"}),
+        html.P("Reset all imported trade history.",style={"color":"#666","fontSize":"12px","marginBottom":"12px"}),
+        html.Button("🗑️ Reset Import History",id="reset-trades-btn",n_clicks=0,
+            style={"backgroundColor":"#8B0000","color":"white","border":"none","padding":"10px 24px",
+                   "borderRadius":"6px","cursor":"pointer","fontSize":"13px","fontWeight":"600"}),
         html.Div(id="reset-trades-output",style={"marginTop":"10px","fontSize":"13px"}),
     ])
 
-# Logo
 LOGO = html.Div([
     html.Div("Σ", style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1","flexShrink":"0"}),
     html.Div([
-        html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,
-                                       "letterSpacing":".08em","lineHeight":"1"}),
-        html.Span("QUANT CORPORATION",style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,
-                                              "letterSpacing":".22em","display":"block","marginTop":"2px"}),
+        html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
+        html.Span("QUANT CORPORATION",style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em","display":"block","marginTop":"2px"}),
     ]),
 ],style={"display":"flex","alignItems":"center","gap":"10px"})
 
@@ -798,9 +768,15 @@ def build_main_app():
             html.Button(label,id=f"tab-{key}",n_clicks=0,style={
                 "background":"transparent","color":TEXT,"border":"none","borderRadius":"10px",
                 "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
-            for key,label in [("command","Command Center"),("feed","Live Feed"),
-                               ("performance","Performance"),("behavior","Behavioral Intelligence"),
-                               ("import","Import History"),("setup","Setup")]
+            for key,label in [
+                ("command","Command Center"),
+                ("feed","Live Feed"),
+                ("performance","Performance"),
+                ("behavior","Behavioral Intelligence"),
+                ("import","Import History"),
+                ("billing","Billing"),
+                ("setup","Setup"),
+            ]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -823,7 +799,7 @@ app.layout = html.Div([
     dcc.Store(id="s-analysis",     data={}),
     dcc.Store(id="s-refresh",      data=0),
     dcc.Store(id="s-page",         data="login"),
-    dcc.Store(id="s-permissions",  data={}),   # ← NEW: holds feature permission map
+    dcc.Store(id="s-permissions",  data={}),
     dcc.Interval(id="i-synth",     interval=1_400,n_intervals=0),
     dcc.Interval(id="i-alpaca",    interval=5_000,n_intervals=0),
     dcc.Interval(id="i-clock",     interval=1_000,n_intervals=0),
@@ -834,7 +810,6 @@ app.layout = html.Div([
     html.Div(id="app-container", children=build_main_app()),
 ])
 
-# ── NEW: Fetch permissions on login ──────────────────────────────────────────
 @app.callback(
     Output("s-permissions", "data"),
     Input("s-session", "data"),
@@ -853,14 +828,12 @@ def load_permissions(session):
         pass
     return {}
 
-@app.callback(Output("auth-overlay","style"),
-              Input("s-session","data"))
+@app.callback(Output("auth-overlay","style"), Input("s-session","data"))
 def route_page(session):
     overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
                     "zIndex":9999,"background":NAVY,"overflowY":"auto"}
-    hidden = {"display":"none"}
     if session and session.get("user_id"):
-        return hidden
+        return {"display":"none"}
     return overlay_base
 
 @app.callback(Output("login-section","style"), Output("signup-section","style"),
@@ -927,10 +900,7 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
 
     return no_update, no_update
 
-# ── Main app callbacks ────────────────────────────────────────────────────────
-
-@app.callback(Output("s-live-mode","data"),
-Output("btn-live","children"),Output("sim-label","children"),
+@app.callback(Output("s-live-mode","data"),Output("btn-live","children"),Output("sim-label","children"),
               Input("btn-live","n_clicks"),State("s-live-mode","data"),prevent_initial_call=True)
 def toggle_live(_,current):
     new=not current
@@ -947,7 +917,7 @@ def load_symbol(_,ticker):
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
               Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
-              Input("tab-import","n_clicks"),
+              Input("tab-import","n_clicks"),Input("tab-billing","n_clicks"),
               Input("tab-setup","n_clicks"),prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
@@ -1013,19 +983,21 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),
-              Input("s-permissions","data"),                           # ← NEW
+              Input("s-permissions","data"),
+              State("s-session","data"),
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,perms,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,perms,session,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
+    if tab in ("behavior","import","billing","setup","performance","feed") and trigger == "i-clock":
         return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
-    if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {})  # ← NEW: passes perms
+    if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {})
     if tab=="import":      return build_import_tab()
+    if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
 
@@ -1055,9 +1027,8 @@ def handle_csv_upload_behavior(contents, filename, refresh):
     try:
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
-        url = f"{BACKEND_HTTP}/api/import/upload-generic"
         resp = _req.post(
-            url,
+            f"{BACKEND_HTTP}/api/import/upload-generic",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
                   "price_col":"price","timestamp_col":"date"},
@@ -1071,13 +1042,11 @@ def handle_csv_upload_behavior(contents, filename, refresh):
         if trades_count == 0:
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM}), no_update, no_update
-
         try:
             r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=10)
             cumulative = r2.json() if r2.ok and r2.json() else data.get("analysis", {})
         except Exception:
             cumulative = data.get("analysis", {})
-
         return html.Div([
             html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
             html.Span(f"{trades_count} trades added · Cumulative: {cumulative.get('total_trades',0)} trades · Win rate: {cumulative.get('win_rate',0)}% · P&L: ${cumulative.get('total_pnl',0):+,.2f}",
@@ -1131,13 +1100,13 @@ def reset_trade_history(n_clicks):
     try:
         r = _req.delete(f"{BACKEND_HTTP}/api/trades/reset", timeout=10)
         if r.status_code == 200:
-            return html.Span("✅ Trade history cleared. Refresh the page to see updated counts.",
-                             style={"color":"#00ff88"})
-        else:
-            return html.Span(f"❌ Reset failed (status {r.status_code}). Try again.",
-                             style={"color":"#ff4444"})
+            return html.Span("✅ Trade history cleared.",style={"color":"#00ff88"})
+        return html.Span(f"❌ Reset failed (status {r.status_code}).",style={"color":"#ff4444"})
     except Exception as e:
-        return html.Span(f"❌ Error: {str(e)}", style={"color":"#ff4444"})
+        return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
+
+# ── Register billing callbacks ─────────────────────────────────────────────
+register_billing_callbacks(app)
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)

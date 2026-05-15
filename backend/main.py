@@ -1,4 +1,3 @@
-
 """
 Sigmalytic Backend — FastAPI + Alpaca Real-Time
 ------------------------------------------------
@@ -8,6 +7,8 @@ Endpoints:
   GET  /api/candles/{symbol}          — historical bars
   WS   /ws/{symbol}                   — real-time price stream
   GET  /api/v1/permissions/{user_id}  — role-based feature permissions
+  GET  /api/v1/billing/{user_id}      — billing state
+  POST /api/v1/billing/{user_id}/upgrade — simulate upgrade
 
 Run:
   uvicorn backend.main:app --reload --port 8000
@@ -43,9 +44,10 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles
 )
 
-# ── Behavioral Intelligence Router ─────────────────────────────────────────
-from behavior   import behavior_router
-from csv_import import csv_router
+# ── Routers ────────────────────────────────────────────────────────────────
+from behavior     import behavior_router
+from csv_import   import csv_router
+from billing_stub import billing_router
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
@@ -249,6 +251,7 @@ app.add_middleware(
 
 app.include_router(behavior_router)
 app.include_router(csv_router)
+app.include_router(billing_router)
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
