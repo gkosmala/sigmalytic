@@ -6,14 +6,16 @@ Institutional-Grade Frontend · Dash + Plotly
 from __future__ import annotations
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
 import dash
 from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 
 import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent))         # frontend/ itself  ← FIX
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))  # project root
+
 from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles,
     get_key_levels, build_confluence_nodes, run_decision,
@@ -393,10 +395,8 @@ def build_behavior_tab(analysis=None, perms=None):
                     html.Div("Generic CSV · date, symbol, action, qty, price columns",
                              style={"fontSize":"11px","color":MUTED}),
                 ], style={"textAlign":"center","padding":"30px 20px"}),
-                style={
-                    "border":f"2px dashed {BORDER_T}","borderRadius":"16px",
-                    "background":TEAL_GLOW,"cursor":"pointer","marginBottom":"14px",
-                },
+                style={"border":f"2px dashed {BORDER_T}","borderRadius":"16px",
+                       "background":TEAL_GLOW,"cursor":"pointer","marginBottom":"14px"},
                 accept=".csv", multiple=False,
             ),
             html.Div(id="csv-upload-behavior-status", style={"fontSize":"13px","minHeight":"20px"}),
@@ -412,10 +412,8 @@ def build_behavior_tab(analysis=None, perms=None):
             ], style={"textAlign":"center","padding":"30px 20px"}),
             dcc.Upload(id="csv-upload-behavior", children=html.Div(), style={"display":"none"}),
             html.Div(id="csv-upload-behavior-status", style={"display":"none"}),
-        ], style={
-            "border":f"2px dashed {BORDER}","borderRadius":"16px",
-            "background":"rgba(0,0,0,.2)","marginBottom":"14px","opacity":"0.7",
-        })
+        ], style={"border":f"2px dashed {BORDER}","borderRadius":"16px",
+                  "background":"rgba(0,0,0,.2)","marginBottom":"14px","opacity":"0.7"})
 
     upload_section = card([
         html.H2("🧠 Behavioral Intelligence",
@@ -818,10 +816,9 @@ app.layout = html.Div([
 def load_permissions(session):
     if not session or not session.get("user_id"):
         return {}
-    user_id = session["user_id"]
     import requests as _req
     try:
-        r = _req.get(f"{BACKEND_HTTP}/api/v1/permissions/{user_id}", timeout=5)
+        r = _req.get(f"{BACKEND_HTTP}/api/v1/permissions/{session['user_id']}", timeout=5)
         if r.ok:
             return r.json()
     except Exception:
