@@ -74,7 +74,7 @@ FEATURE_MAP: Dict[str, List[str]] = {
 # Duplicated here so this module is self-contained during development.
 
 BETA_USER_DB: Dict[str, dict] = {
-    "demo_user_001": {"tier": "free_trial"},
+    "demo_user_001": {"tier": "premium_beta"},
     "user_123":      {"tier": "free_trial"},
     "user_456":      {"tier": "past_due"},
 }
