@@ -315,7 +315,13 @@ def build_radar_row(sym):
                           f"E:{sym.get('expansion_node',0):.0f} "
                           f"RS:{sym.get('relative_strength',0):.0f}",
                           style={"fontSize":"10px","color":sc,
-                                 "fontFamily":"DM Mono, monospace","fontWeight":"600"}),
+                                 "fontFamily":"DM Mono, monospace","fontWeight":"600",
+                                 "display":"block"}),
+                html.Span(f"VP:{sym.get('volume_pressure',0):.0f} "
+                          f"B:{sym.get('behavioral',0):.0f}",
+                          style={"fontSize":"10px","color":sc,
+                                 "fontFamily":"DM Mono, monospace","fontWeight":"600",
+                                 "display":"block","marginTop":"2px"}),
             ], style={"flex":"2","minWidth":"130px"}),
 
         ], style={"display":"flex","alignItems":"center","gap":"12px"}),
@@ -448,6 +454,10 @@ def build_radar_tab(radar_data=None, status_filter="all"):
                 "padding":"8px 16px","borderBottom":f"1px solid {BORDER}",
                 "marginBottom":"4px",
             }),
+            html.Div([
+                html.Span("C=Confluence · E=Expansion · RS=Rel.Strength · VP=Vol.Pressure · B=Behavioral",
+                          style={"fontSize":"9px","color":MUTED,"paddingLeft":"16px","fontFamily":"DM Mono, monospace"}),
+            ], style={"paddingBottom":"6px"}),
             html.Div([
                 html.Span("▲ Bull / ◆ Neutral / ▼ Bear projection paths shown below each symbol",
                           style={"fontSize":"10px","color":WHITE,"fontStyle":"italic","paddingLeft":"16px"}),
