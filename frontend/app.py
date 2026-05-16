@@ -416,11 +416,11 @@ def build_radar_tab(radar_data=None, status_filter="all"):
             # Summary tiles
             html.Div([
                 metric_tile("Symbols Scanned", str(len(all_symbols)), BLUE_DIM),
-                metric_tile("🔺 Long",    str(long_ct),  TEAL_DIM),
+                metric_tile("▲ Long",    str(long_ct),  TEAL_DIM),
                 metric_tile("Armed",      str(armed),    TEAL_DIM),
                 metric_tile("Building",   str(building), YELLOW_DIM),
                 metric_tile("Triggered",  str(triggered),BLUE_DIM),
-                metric_tile("🔻 Short",   str(shorting), RED_DIM),
+                metric_tile("▼ Short",   str(shorting), RED_DIM),
                 metric_tile("Avoid",      str(avoid),    RED_DIM),
                 metric_tile("Avg Score",  f"{avg_score}",_score_color(avg_score)),
             ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"12px"}),
@@ -440,7 +440,7 @@ def build_radar_tab(radar_data=None, status_filter="all"):
                     })
                     for key, label in [
                         ("all","All"),("armed","Armed"),("building","Building"),
-                        ("triggered","Triggered"),("long","🔺 Long"),("short","🔻 Short"),
+                        ("triggered","Triggered"),("long","▲ Long"),("short","▼ Short"),
                         ("watching","Watching"),("avoid","Avoid"),
                     ]
                 ],
