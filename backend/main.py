@@ -273,6 +273,19 @@ async def health():
     }
 
 
+@app.get("/api/radar/test-alert")
+async def test_alert():
+    """Send a test alert email to verify Resend is working."""
+    from radar_alerts import send_alert
+    from radar_service import RADAR_CACHE
+    if not RADAR_CACHE:
+        return {"ok": False, "error": "Radar cache empty — wait for first scan"}
+    # Use top symbol
+    top = sorted(RADAR_CACHE.values(), key=lambda x: x.get("composite_score", 0), reverse=True)[0]
+    sent = send_alert(top, "Watching", "Armed")
+    return {"ok": sent, "symbol": top.get("symbol"), "email": "greg.kosmala@gmail.com"}
+
+
 @app.get("/api/v1/permissions/{user_id}")
 async def user_permissions(user_id: str):
     """Returns the full feature permission map for a user."""

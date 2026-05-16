@@ -38,6 +38,7 @@ from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from supabase_isolation import get_user_id_from_request
+from radar_alerts import maybe_send_alert, send_daily_summary
 
 log = logging.getLogger("radar")
 
@@ -541,6 +542,8 @@ def _process_events(scored: list):
                 "invalidation":   s["invalidation"],
                 "notes":          f"{s['setup_type']} · {s['regime']}",
             })
+            # Send email alert for important status changes
+            maybe_send_alert(s, prev, status)
         _prev_statuses[sym] = status
 
         # Score threshold crossing — only log once per 5 min per symbol
@@ -650,6 +653,14 @@ def start_radar_scheduler():
         seconds=SCAN_INTERVAL_SECONDS,
         id="radar_scan",
         next_run_time=datetime.now(timezone.utc),   # run immediately on start
+    )
+    # Daily summary — sends at 8:00 AM ET (12:00 UTC)
+    _scheduler.add_job(
+        lambda: send_daily_summary(list(RADAR_CACHE.values())),
+        trigger="cron",
+        hour=12,
+        minute=0,
+        id="daily_summary",
     )
     _scheduler.start()
     log.info("Radar scheduler started")
