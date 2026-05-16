@@ -273,6 +273,34 @@ async def health():
     }
 
 
+@app.get("/api/options/test/{symbol}")
+async def test_options(symbol: str):
+    """Debug — test Alpaca options chain endpoint."""
+    sym = symbol.upper().strip()
+    try:
+        # Test option chain endpoint
+        r = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/chains",
+            headers={
+                "APCA-API-KEY-ID":     ALPACA_API_KEY,
+                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+            },
+            params={
+                "underlying_symbol": sym,
+                "feed":              "indicative",
+                "limit":             10,
+            },
+            timeout=10,
+        )
+        return {
+            "status_code": r.status_code,
+            "symbol":      sym,
+            "response":    r.json() if r.status_code == 200 else r.text[:500],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/radar/test-alert")
 async def test_alert():
     """Send a test alert email to verify Resend is working."""
