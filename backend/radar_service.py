@@ -583,6 +583,13 @@ def start_radar_scheduler():
     SYMBOLS = load_russell1000()
     log.info(f"Radar scheduler starting with {len(SYMBOLS)} symbols")
 
+    # Pre-fetch historical bars BEFORE first scan so setup classification works immediately
+    if ALPACA_API_KEY:
+        try:
+            _refresh_historical_bars()
+        except Exception as e:
+            log.warning(f"Startup bar fetch failed: {e}")
+
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(
         run_radar_scan,
