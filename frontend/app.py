@@ -450,7 +450,7 @@ def build_radar_tab(radar_data=None, status_filter="all"):
             }),
             html.Div([
                 html.Span("▲ Bull / ◆ Neutral / ▼ Bear projection paths shown below each symbol",
-                          style={"fontSize":"10px","color":TEXT,"fontStyle":"italic","paddingLeft":"16px"}),
+                          style={"fontSize":"10px","color":WHITE,"fontStyle":"italic","paddingLeft":"16px"}),
             ], style={"paddingBottom":"8px"}),
 
             # Rows
