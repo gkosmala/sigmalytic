@@ -13,7 +13,7 @@ from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 
 import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent))         # frontend/ itself  ← FIX
+sys.path.insert(0, str(pathlib.Path(__file__).parent))         # frontend/ itself
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))  # project root
 
 from shared.engine import (
@@ -54,6 +54,21 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input{{font-family:inherit;outline:none;}}
 """
+
+# ── Auth header helpers ────────────────────────────────────────────────────────
+
+def _auth_headers(session: dict) -> dict:
+    """Returns Authorization header for real users. Demo returns empty dict."""
+    if not session:
+        return {}
+    token = session.get("access_token", "")
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+def _user_id(session: dict) -> str:
+    return (session or {}).get("user_id", "demo_user_001")
+
 
 def badge(text, color="teal"):
     palettes = {
@@ -370,13 +385,15 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
-def build_behavior_tab(analysis=None, perms=None):
+def build_behavior_tab(analysis=None, perms=None, session=None):
     can_upload = (perms or {}).get("behavioral_intel_csv_upload", True)
+    uid = _user_id(session)
 
     if not analysis or not analysis.get("total_trades"):
         import requests as _req
         try:
-            r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=5)
+            r = _req.get(f"{BACKEND_HTTP}/api/import/analysis/{uid}",
+                         headers=_auth_headers(session), timeout=5)
             if r.ok and r.json():
                 analysis = r.json()
         except Exception:
@@ -857,6 +874,7 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if trigger == "demo-btn":
+        # No access_token — backend falls back to demo_user_001
         return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
 
     if trigger == "login-btn":
@@ -871,8 +889,12 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
             if r.ok:
                 data = r.json()
                 user = data.get("user",{})
-                return {"user_id":user.get("id",""),"email":user.get("email",""),
-                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+                return {
+                    "user_id":      user.get("id",""),
+                    "email":        user.get("email",""),
+                    "access_token": data.get("access_token",""),
+                    "is_demo":      False,
+                }, "app"
         except Exception:
             pass
         return no_update, no_update
@@ -889,8 +911,12 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
             if r.ok:
                 data = r.json()
                 user = data.get("user",{})
-                return {"user_id":user.get("id",""),"email":user.get("email",""),
-                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+                return {
+                    "user_id":      user.get("id",""),
+                    "email":        user.get("email",""),
+                    "access_token": data.get("access_token",""),
+                    "is_demo":      False,
+                }, "app"
         except Exception:
             pass
         return no_update, no_update
@@ -992,7 +1018,7 @@ def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,perms,sessio
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
-    if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {})
+    if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {}, session)
     if tab=="import":      return build_import_tab()
     if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
@@ -1016,11 +1042,14 @@ def update_clock(_):
 @app.callback(Output("csv-upload-behavior-status","children"),Output("s-analysis","data"),Output("s-refresh","data"),
               Input("csv-upload-behavior","contents"),
               State("csv-upload-behavior","filename"),State("s-refresh","data"),
+              State("s-session","data"),
               prevent_initial_call=True)
-def handle_csv_upload_behavior(contents, filename, refresh):
+def handle_csv_upload_behavior(contents, filename, refresh, session):
     if not contents:
         return no_update, no_update, no_update
     import base64, io as _io, requests as _req
+    uid     = _user_id(session)
+    headers = _auth_headers(session)
     try:
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
@@ -1029,6 +1058,7 @@ def handle_csv_upload_behavior(contents, filename, refresh):
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
                   "price_col":"price","timestamp_col":"date"},
+            headers=headers,
             timeout=30,
         )
         if not resp.ok:
@@ -1040,7 +1070,8 @@ def handle_csv_upload_behavior(contents, filename, refresh):
             return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM}), no_update, no_update
         try:
-            r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/demo_user_001", timeout=10)
+            r2 = _req.get(f"{BACKEND_HTTP}/api/import/analysis/{uid}",
+                          headers=headers, timeout=10)
             cumulative = r2.json() if r2.ok and r2.json() else data.get("analysis", {})
         except Exception:
             cumulative = data.get("analysis", {})
@@ -1055,11 +1086,13 @@ def handle_csv_upload_behavior(contents, filename, refresh):
 @app.callback(Output("csv-upload-status","children"),
               Input("csv-upload","contents"),
               State("csv-upload","filename"),
+              State("s-session","data"),
               prevent_initial_call=True)
-def handle_csv_upload(contents, filename):
+def handle_csv_upload(contents, filename, session):
     if not contents:
         return no_update
     import base64, io as _io, requests as _req
+    headers = _auth_headers(session)
     try:
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
@@ -1068,6 +1101,7 @@ def handle_csv_upload(contents, filename):
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             data={"symbol_col":"symbol","side_col":"action","qty_col":"qty",
                   "price_col":"price","timestamp_col":"date"},
+            headers=headers,
             timeout=30,
         )
         if not resp.ok:

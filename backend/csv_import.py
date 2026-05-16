@@ -15,16 +15,15 @@ from typing import Optional
 from collections import defaultdict
 
 import pandas as pd
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 
 from behavior import get_db, update_regime_memory, \
     calculate_risk_score, calculate_execution_quality, \
     calculate_composite
+from supabase_isolation import get_user_id_from_request
 
 csv_router = APIRouter(prefix="/api/import", tags=["import"])
-
-USER_ID = "demo_user_001"
 
 BROKER_SIGNATURES = {
     "alpaca":       {"required": ["symbol","side","qty","filled_avg_price"], "optional": ["filled_at","created_at"], "name": "Alpaca"},
@@ -291,7 +290,11 @@ def persist_trades(trades, user_id, analysis):
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @csv_router.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_user_id_from_request),
+):
     if not file.filename.endswith(".csv"):
         raise HTTPException(400, "File must be a .csv")
     contents = await file.read()
@@ -322,7 +325,7 @@ async def upload_csv(file: UploadFile = File(...)):
     if not rows: raise HTTPException(400, "No valid rows found")
     trades, open_pos = reconstruct_trades(rows)
     analysis = analyze_behavior(trades)
-    try: persist_trades(trades, USER_ID, analysis)
+    try: persist_trades(trades, user_id, analysis)
     except: pass
     return {"ok":True,"broker":broker,"broker_name":broker_name,"raw_rows":len(rows),
             "trades_closed":len(trades),"trades_open":len(open_pos),"analysis":analysis}
@@ -330,12 +333,14 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @csv_router.post("/upload-generic")
 async def upload_generic(
+    request: Request,
     file: UploadFile = File(...),
     symbol_col:    str = "symbol",
     side_col:      str = "side",
     qty_col:       str = "qty",
     price_col:     str = "price",
     timestamp_col: str = "date",
+    user_id: str = Depends(get_user_id_from_request),
 ):
     contents = await file.read()
     try:
@@ -349,7 +354,6 @@ async def upload_generic(
     df.columns = [c.lower().strip() for c in df.columns]
     df = df.rename(columns={k.lower(): v for k, v in col_map.items()})
 
-    # Fallback: if 'side' still missing, try common alternatives
     for alt in ["action", "type", "direction", "transaction"]:
         if "side" not in df.columns and alt in df.columns:
             df = df.rename(columns={alt: "side"})
@@ -370,7 +374,7 @@ async def upload_generic(
 
     trades, open_pos = reconstruct_trades(rows)
     analysis = analyze_behavior(trades)
-    try: persist_trades(trades, USER_ID, analysis)
+    try: persist_trades(trades, user_id, analysis)
     except: pass
 
     return {"ok":True,"broker":"generic","broker_name":"Generic CSV",
@@ -383,7 +387,6 @@ def get_analysis(user_id: str):
     try:
         conn = get_db()
         cur  = conn.cursor()
-        # Fetch all closed trades for this user and recompute analysis
         cur.execute("""
             SELECT symbol, entry_price, exit_price, size, entry_time, exit_time,
                    pnl, pnl_percent, status
@@ -398,7 +401,6 @@ def get_analysis(user_id: str):
         if not rows:
             return {}
 
-        # Convert to trade dicts and run analyze_behavior
         trades = []
         for r in rows:
             trades.append({
