@@ -636,17 +636,62 @@ def radar_status():
 
 @radar_router.get("/debug/bars")
 def debug_bars():
-    """Debug — shows bar data for first symbol to verify fetch is working."""
-    if not _historical_bars:
-        return {"bars_loaded": 0, "error": "No bars in cache"}
-    first_sym = list(_historical_bars.keys())[0]
-    bars = _historical_bars[first_sym]
+    """Debug — tests bar fetch directly and shows raw Alpaca response."""
+    if not ALPACA_API_KEY:
+        return {"error": "No Alpaca API key"}
+
+    # Test single symbol first
+    test_sym = "AAPL"
+    try:
+        r = _req.get(
+            f"{ALPACA_BASE_URL}/v2/stocks/{test_sym}/bars",
+            headers={
+                "APCA-API-KEY-ID":     ALPACA_API_KEY,
+                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+            },
+            params={
+                "timeframe": "1Day",
+                "limit":     10,
+                "feed":      ALPACA_FEED,
+                "sort":      "asc",
+            },
+            timeout=10,
+        )
+        single_result = {
+            "status_code": r.status_code,
+            "response":    r.json() if r.status_code == 200 else r.text[:300],
+        }
+    except Exception as e:
+        single_result = {"error": str(e)}
+
+    # Test multi-symbol
+    try:
+        r2 = _req.get(
+            f"{ALPACA_BASE_URL}/v2/stocks/bars",
+            headers={
+                "APCA-API-KEY-ID":     ALPACA_API_KEY,
+                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+            },
+            params={
+                "symbols":   "AAPL,MSFT,XOM",
+                "timeframe": "1Day",
+                "limit":     5,
+                "feed":      ALPACA_FEED,
+                "sort":      "asc",
+            },
+            timeout=10,
+        )
+        multi_result = {
+            "status_code": r2.status_code,
+            "response":    r2.json() if r2.status_code == 200 else r2.text[:300],
+        }
+    except Exception as e:
+        multi_result = {"error": str(e)}
+
     return {
-        "bars_loaded":  len(_historical_bars),
-        "sample_symbol": first_sym,
-        "bar_count":    len(bars),
-        "first_bar":    bars[0] if bars else None,
-        "last_bar":     bars[-1] if bars else None,
+        "bars_in_cache":  len(_historical_bars),
+        "single_symbol":  single_result,
+        "multi_symbol":   multi_result,
     }
 
 
