@@ -275,27 +275,36 @@ async def health():
 
 @app.get("/api/options/test/{symbol}")
 async def test_options(symbol: str):
-    """Debug — test Alpaca options chain endpoint."""
+    """Debug — test Alpaca options snapshot endpoint."""
     sym = symbol.upper().strip()
     try:
-        # Test option chain endpoint
+        from datetime import datetime, timedelta
+        # Get contracts expiring in next 60 days
+        exp_gte = datetime.now().strftime("%Y-%m-%d")
+        exp_lte = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
+
         r = requests.get(
-            f"https://data.alpaca.markets/v1beta1/options/chains",
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
             headers={
                 "APCA-API-KEY-ID":     ALPACA_API_KEY,
                 "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
             },
             params={
-                "underlying_symbol": sym,
-                "feed":              "indicative",
-                "limit":             10,
+                "feed":                "indicative",
+                "limit":               20,
+                "expiration_date_gte": exp_gte,
+                "expiration_date_lte": exp_lte,
             },
             timeout=10,
         )
+        data = r.json() if r.status_code == 200 else {}
+        snapshots = data.get("snapshots", {})
         return {
-            "status_code": r.status_code,
-            "symbol":      sym,
-            "response":    r.json() if r.status_code == 200 else r.text[:500],
+            "status_code":    r.status_code,
+            "symbol":         sym,
+            "contracts_found": len(snapshots),
+            "sample":         list(snapshots.items())[:3] if snapshots else [],
+            "error":          r.text[:300] if r.status_code != 200 else None,
         }
     except Exception as e:
         return {"error": str(e)}
