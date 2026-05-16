@@ -9,6 +9,9 @@ Endpoints:
   GET  /api/v1/permissions/{user_id}  — role-based feature permissions
   GET  /api/v1/billing/{user_id}      — billing state
   POST /api/v1/billing/{user_id}/upgrade — simulate upgrade
+  GET  /api/radar/scores              — top 100 radar symbols
+  GET  /api/radar/symbol/{symbol}     — single symbol detail
+  GET  /api/radar/status              — radar service health
 
 Run:
   uvicorn backend.main:app --reload --port 8000
@@ -48,6 +51,7 @@ from shared.engine import (
 from behavior     import behavior_router
 from csv_import   import csv_router
 from billing_stub import billing_router
+from radar_service import radar_router, start_radar_scheduler, stop_radar_scheduler
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
@@ -228,7 +232,9 @@ def ensure_stream(symbol: str):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("Sigmalytic backend starting…")
+    start_radar_scheduler()          # ← starts radar scan on startup
     yield
+    stop_radar_scheduler()           # ← stops radar scan on shutdown
     for task in _active_streams.values():
         task.cancel()
     log.info("Sigmalytic backend stopped.")
@@ -252,6 +258,7 @@ app.add_middleware(
 app.include_router(behavior_router)
 app.include_router(csv_router)
 app.include_router(billing_router)
+app.include_router(radar_router)
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -268,10 +275,7 @@ async def health():
 
 @app.get("/api/v1/permissions/{user_id}")
 async def user_permissions(user_id: str):
-    """
-    Returns the full feature permission map for a user.
-    Called by Dash on login to drive show/hide logic on all tabs.
-    """
+    """Returns the full feature permission map for a user."""
     return get_permissions(user_id)
 
 
