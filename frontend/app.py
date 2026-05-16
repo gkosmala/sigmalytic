@@ -154,6 +154,8 @@ def _status_color(status):
         "Armed":     TEAL_DIM,
         "Building":  YELLOW_DIM,
         "Triggered": BLUE_DIM,
+        "Confirmed": TEAL_DIM,
+        "Failed":    RED_DIM,
         "Watching":  TEXT,
         "Avoid":     RED_DIM,
     }.get(status, TEXT)
@@ -287,12 +289,16 @@ def build_radar_row(sym):
                 style={"flex":"1","minWidth":"80px"},
             ),
 
-            # Trigger
+            # Trigger + proximity
             html.Div([
                 html.Span("Trigger", style={"fontSize":"10px","color":MUTED,"display":"block"}),
                 html.Span(f"${trigger:,.2f}", style={
                     "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700",
                 }),
+                html.Span(
+                    f"{sym.get('trigger_proximity', 0):+.1f}%" if sym.get('trigger_proximity', 0) != 0 else "",
+                    style={"fontSize":"10px","color":MUTED,"display":"block"},
+                ),
             ], style={"flex":"1","minWidth":"80px"}),
 
             # Regime
@@ -342,6 +348,8 @@ def build_radar_tab(radar_data=None, status_filter="all"):
     status_filter = (status_filter or "all").lower()
     if status_filter == "all":
         symbols = all_symbols
+    elif status_filter == "triggered":
+        symbols = [s for s in all_symbols if s.get("status","").lower() in ("triggered","confirmed")]
     else:
         symbols = [s for s in all_symbols if s.get("status","").lower() == status_filter]
 
@@ -356,10 +364,11 @@ def build_radar_tab(radar_data=None, status_filter="all"):
         scan_label = "—"
 
     # Summary counts — always based on full universe
-    armed    = sum(1 for s in all_symbols if s.get("status") == "Armed")
-    building = sum(1 for s in all_symbols if s.get("status") == "Building")
-    avoid    = sum(1 for s in all_symbols if s.get("status") == "Avoid")
-    avg_score= round(sum(s.get("composite_score",0) for s in all_symbols) / len(all_symbols), 1) if all_symbols else 0
+    armed     = sum(1 for s in all_symbols if s.get("status") == "Armed")
+    building  = sum(1 for s in all_symbols if s.get("status") == "Building")
+    triggered = sum(1 for s in all_symbols if s.get("status") in ("Triggered","Confirmed"))
+    avoid     = sum(1 for s in all_symbols if s.get("status") == "Avoid")
+    avg_score = round(sum(s.get("composite_score",0) for s in all_symbols) / len(all_symbols), 1) if all_symbols else 0
 
     delay_color = YELLOW_DIM if delay == "15min" else TEAL_DIM
     delay_label = "15-Min Delayed" if delay == "15min" else "Live"
@@ -391,12 +400,13 @@ def build_radar_tab(radar_data=None, status_filter="all"):
 
             # Summary tiles
             html.Div([
-                metric_tile("Symbols Scanned", str(len(symbols)), BLUE_DIM),
-                metric_tile("Armed",    str(armed),    TEAL_DIM),
-                metric_tile("Building", str(building), YELLOW_DIM),
-                metric_tile("Avoid",    str(avoid),    RED_DIM),
-                metric_tile("Avg Score",f"{avg_score}", _score_color(avg_score)),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(5,1fr)","gap":"12px"}),
+                metric_tile("Symbols Scanned", str(len(all_symbols)), BLUE_DIM),
+                metric_tile("Armed",     str(armed),     TEAL_DIM),
+                metric_tile("Building",  str(building),  YELLOW_DIM),
+                metric_tile("Triggered", str(triggered), BLUE_DIM),
+                metric_tile("Avoid",     str(avoid),     RED_DIM),
+                metric_tile("Avg Score", f"{avg_score}", _score_color(avg_score)),
+            ], style={"display":"grid","gridTemplateColumns":"repeat(6,1fr)","gap":"12px"}),
         ], sx={"marginBottom":"16px"}),
 
         # ── Filter bar ───────────────────────────────────────────────────────
@@ -413,7 +423,7 @@ def build_radar_tab(radar_data=None, status_filter="all"):
                     })
                     for key, label in [
                         ("all","All"),("armed","Armed"),("building","Building"),
-                        ("watching","Watching"),("avoid","Avoid"),
+                        ("triggered","Triggered"),("watching","Watching"),("avoid","Avoid"),
                     ]
                 ],
                 html.Div(style={"flex":"1"}),
@@ -1273,6 +1283,7 @@ def set_tab(*_):
     Input("radar-filter-all","n_clicks"),
     Input("radar-filter-armed","n_clicks"),
     Input("radar-filter-building","n_clicks"),
+    Input("radar-filter-triggered","n_clicks"),
     Input("radar-filter-watching","n_clicks"),
     Input("radar-filter-avoid","n_clicks"),
     prevent_initial_call=True,

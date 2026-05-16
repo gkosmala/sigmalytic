@@ -309,7 +309,12 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     )
 
     # ── Status ─────────────────────────────────────────────────────────────────
-    status = _determine_status(composite, expansion, rel_vol, change_pct)
+    prev_status = _prev_statuses.get(symbol, "")
+    status = _determine_status(
+        composite, expansion, rel_vol, change_pct,
+        price=price, trigger=trigger, invalidation=invalidation,
+        prev_status=prev_status,
+    )
 
     # ── Trigger and invalidation levels ───────────────────────────────────────
     trigger      = round(day_high + atr * 0.1, 2)  if atr > 0 else round(price * 1.005, 2)
@@ -347,6 +352,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "low_52w":         round(low_52w, 2),
         "updated_at":      datetime.now(timezone.utc).isoformat(),
         "data_delay":      "15min" if ALPACA_FEED == "iex" else "live",
+        "trigger_proximity": round((trigger - price) / price * 100, 2) if price > 0 and trigger > 0 else 0,
     }
 
 
@@ -388,11 +394,50 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
     return "Monitoring"
 
 
-def _determine_status(composite, expansion, rel_vol, change_pct) -> str:
-    if composite >= 82 and expansion >= 70:    return "Armed"
-    if composite >= 75:                        return "Building"
-    if composite >= 60:                        return "Watching"
-    if change_pct < -3:                        return "Avoid"
+def _determine_status(composite, expansion, rel_vol, change_pct,
+                      price=0, trigger=0, invalidation=0, prev_status="") -> str:
+    """
+    Status state machine with 6 states:
+    Armed     — setup is ready, trigger is imminent
+    Triggered — price has crossed trigger level
+    Confirmed — price held above trigger on volume
+    Building  — conditions improving, not yet ready
+    Watching  — monitoring, setup forming
+    Avoid     — poor conditions, high risk
+    """
+    # Triggered — price crossed above trigger
+    if trigger > 0 and price >= trigger:
+        if rel_vol >= 1.2:
+            return "Triggered"
+
+    # Confirmed — was Triggered and held (prev status check)
+    if prev_status == "Triggered" and price >= trigger * 0.998:
+        return "Confirmed"
+
+    # Failed — was Triggered but dropped below invalidation
+    if prev_status in ("Triggered", "Confirmed") and invalidation > 0 and price < invalidation:
+        return "Failed"
+
+    # Armed — score ≥ 75, expansion ≥ 60, within 1.5% of trigger
+    if composite >= 75 and expansion >= 60:
+        if trigger > 0 and price > 0:
+            dist_to_trigger = (trigger - price) / price
+            if dist_to_trigger <= 0.015:   # within 1.5% of trigger
+                return "Armed"
+        else:
+            return "Armed"
+
+    # Building — good score, improving
+    if composite >= 68:
+        return "Building"
+
+    # Avoid — down hard or poor conditions
+    if change_pct < -3:
+        return "Avoid"
+    if composite < 45:
+        return "Avoid"
+
+    # Watching — everything else
     return "Watching"
 
 
