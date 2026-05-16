@@ -378,6 +378,7 @@ def build_radar_tab(radar_data=None, status_filter="all"):
     armed     = sum(1 for s in all_symbols if s.get("status") == "Armed")
     building  = sum(1 for s in all_symbols if s.get("status") == "Building")
     triggered = sum(1 for s in all_symbols if s.get("status") in ("Triggered","Confirmed"))
+    long_ct   = armed + triggered  # Armed + Triggered + Confirmed = active long setups
     shorting  = sum(1 for s in all_symbols if s.get("status") in ("Short Trigger","Short Confirmed","Short Armed"))
     avoid     = sum(1 for s in all_symbols if s.get("status") == "Avoid")
     avg_score = round(sum(s.get("composite_score",0) for s in all_symbols) / len(all_symbols), 1) if all_symbols else 0
@@ -413,13 +414,14 @@ def build_radar_tab(radar_data=None, status_filter="all"):
             # Summary tiles
             html.Div([
                 metric_tile("Symbols Scanned", str(len(all_symbols)), BLUE_DIM),
-                metric_tile("Armed",     str(armed),     TEAL_DIM),
-                metric_tile("Building",  str(building),  YELLOW_DIM),
-                metric_tile("Triggered", str(triggered), BLUE_DIM),
-                metric_tile("🔻 Short",  str(shorting),  RED_DIM),
-                metric_tile("Avoid",     str(avoid),     RED_DIM),
-                metric_tile("Avg Score", f"{avg_score}", _score_color(avg_score)),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(7,1fr)","gap":"12px"}),
+                metric_tile("🟢 Long",    str(long_ct),  TEAL_DIM),
+                metric_tile("Armed",      str(armed),    TEAL_DIM),
+                metric_tile("Building",   str(building), YELLOW_DIM),
+                metric_tile("Triggered",  str(triggered),BLUE_DIM),
+                metric_tile("🔻 Short",   str(shorting), RED_DIM),
+                metric_tile("Avoid",      str(avoid),    RED_DIM),
+                metric_tile("Avg Score",  f"{avg_score}",_score_color(avg_score)),
+            ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"12px"}),
         ], sx={"marginBottom":"16px"}),
 
         # ── Filter bar ───────────────────────────────────────────────────────
