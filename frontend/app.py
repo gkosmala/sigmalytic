@@ -359,6 +359,8 @@ def build_radar_tab(radar_data=None, status_filter="all"):
         symbols = all_symbols
     elif status_filter == "triggered":
         symbols = [s for s in all_symbols if s.get("status","").lower() in ("triggered","confirmed")]
+    elif status_filter == "long":
+        symbols = [s for s in all_symbols if s.get("status","") in ("Armed","Triggered","Confirmed")]
     elif status_filter == "short":
         symbols = [s for s in all_symbols if s.get("status","") in ("Short Trigger","Short Confirmed","Short Armed")]
     else:
@@ -438,7 +440,7 @@ def build_radar_tab(radar_data=None, status_filter="all"):
                     })
                     for key, label in [
                         ("all","All"),("armed","Armed"),("building","Building"),
-                        ("triggered","Triggered"),("short","🔻 Short"),
+                        ("triggered","Triggered"),("long","🟢 Long"),("short","🔻 Short"),
                         ("watching","Watching"),("avoid","Avoid"),
                     ]
                 ],
@@ -1390,6 +1392,7 @@ def set_tab(*_):
     Input("radar-filter-armed","n_clicks"),
     Input("radar-filter-building","n_clicks"),
     Input("radar-filter-triggered","n_clicks"),
+    Input("radar-filter-long","n_clicks"),
     Input("radar-filter-short","n_clicks"),
     Input("radar-filter-watching","n_clicks"),
     Input("radar-filter-avoid","n_clicks"),
