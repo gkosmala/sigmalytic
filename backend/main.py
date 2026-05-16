@@ -275,39 +275,70 @@ async def health():
 
 @app.get("/api/options/test/{symbol}")
 async def test_options(symbol: str):
-    """Debug — test Alpaca options snapshot endpoint."""
+    """Debug — test Alpaca options snapshot endpoint with multiple param combos."""
     sym = symbol.upper().strip()
+    results = {}
+
+    # Test 1: No filters, indicative feed
+    try:
+        r1 = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
+            params={"feed": "indicative", "limit": 5},
+            timeout=10,
+        )
+        data1 = r1.json() if r1.status_code == 200 else {}
+        results["test1_no_filter"] = {
+            "status": r1.status_code,
+            "contracts": len(data1.get("snapshots", {})),
+            "raw": r1.text[:300] if r1.status_code != 200 else "OK",
+        }
+    except Exception as e:
+        results["test1_no_filter"] = {"error": str(e)}
+
+    # Test 2: No feed param (let Alpaca default)
+    try:
+        r2 = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
+            params={"limit": 5},
+            timeout=10,
+        )
+        data2 = r2.json() if r2.status_code == 200 else {}
+        results["test2_no_feed"] = {
+            "status": r2.status_code,
+            "contracts": len(data2.get("snapshots", {})),
+            "raw": r2.text[:300] if r2.status_code != 200 else "OK",
+        }
+    except Exception as e:
+        results["test2_no_feed"] = {"error": str(e)}
+
+    # Test 3: Calls only, near term
     try:
         from datetime import datetime, timedelta
-        # Get contracts expiring in next 60 days
-        exp_gte = datetime.now().strftime("%Y-%m-%d")
-        exp_lte = (datetime.now() + timedelta(days=60)).strftime("%Y-%m-%d")
-
-        r = requests.get(
+        r3 = requests.get(
             f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
-            headers={
-                "APCA-API-KEY-ID":     ALPACA_API_KEY,
-                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-            },
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
             params={
-                "feed":                "indicative",
-                "limit":               20,
-                "expiration_date_gte": exp_gte,
-                "expiration_date_lte": exp_lte,
+                "feed": "indicative",
+                "type": "call",
+                "limit": 5,
+                "expiration_date_gte": datetime.now().strftime("%Y-%m-%d"),
+                "expiration_date_lte": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d"),
             },
             timeout=10,
         )
-        data = r.json() if r.status_code == 200 else {}
-        snapshots = data.get("snapshots", {})
-        return {
-            "status_code":    r.status_code,
-            "symbol":         sym,
-            "contracts_found": len(snapshots),
-            "sample":         list(snapshots.items())[:3] if snapshots else [],
-            "error":          r.text[:300] if r.status_code != 200 else None,
+        data3 = r3.json() if r3.status_code == 200 else {}
+        results["test3_calls_90d"] = {
+            "status": r3.status_code,
+            "contracts": len(data3.get("snapshots", {})),
+            "sample": list(data3.get("snapshots", {}).items())[:2] if data3.get("snapshots") else [],
+            "raw": r3.text[:300] if r3.status_code != 200 else "OK",
         }
     except Exception as e:
-        return {"error": str(e)}
+        results["test3_calls_90d"] = {"error": str(e)}
+
+    return {"symbol": sym, "results": results}
 
 
 @app.get("/api/radar/test-alert")
