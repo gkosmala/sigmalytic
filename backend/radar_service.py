@@ -146,42 +146,38 @@ def fetch_snapshots(symbols: List[str]) -> dict:
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
     """
     Fetch historical daily bars for relative strength and ATR calculation.
-    Uses explicit start date to ensure data is returned regardless of market hours.
+    Fetches each symbol individually to avoid Alpaca multi-symbol pagination issues.
     """
     from datetime import timedelta
     results = {}
-    batch_size = 100
-    # Go back 90 calendar days to ensure we get enough trading days
     start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
 
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i + batch_size]
+    for symbol in symbols:
         try:
-            params = {
-                "symbols":    ",".join(batch),
-                "timeframe":  timeframe,
-                "start":      start_date,
-                "feed":       ALPACA_FEED,
-                "sort":       "asc",
-                "adjustment": "raw",
-            }
             r = _req.get(
-                f"{ALPACA_BASE_URL}/v2/stocks/bars",
+                f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
                 headers=_alpaca_headers(),
-                params=params,
-                timeout=30,
+                params={
+                    "timeframe":  timeframe,
+                    "start":      start_date,
+                    "feed":       ALPACA_FEED,
+                    "sort":       "asc",
+                    "adjustment": "raw",
+                },
+                timeout=10,
             )
             if r.status_code == 200:
-                data = r.json()
-                bars_data = data.get("bars") or {}
-                if isinstance(bars_data, dict):
-                    results.update(bars_data)
-                log.info(f"Bars fetched for {len(bars_data)} symbols in batch {i//batch_size + 1}")
-            else:
-                log.warning(f"Bars fetch HTTP {r.status_code}: {r.text[:300]}")
+                bars = r.json().get("bars") or []
+                if bars:
+                    results[symbol] = bars
+            elif r.status_code == 429:
+                log.warning("Rate limit hit during bar fetch — pausing 5s")
+                time.sleep(5)
         except Exception as e:
-            log.warning(f"Bars fetch error: {e}")
-        time.sleep(0.3)
+            log.debug(f"Bar fetch error {symbol}: {e}")
+        time.sleep(0.05)  # 50ms between requests = ~20 req/sec, well under 200/min limit
+
+    log.info(f"Individual bar fetch complete — {len(results)}/{len(symbols)} symbols loaded")
     return results
 
 # ── Scoring engine ─────────────────────────────────────────────────────────────
