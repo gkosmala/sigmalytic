@@ -146,19 +146,23 @@ def fetch_snapshots(symbols: List[str]) -> dict:
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
     """
     Fetch historical daily bars for relative strength and ATR calculation.
-    Uses multi-symbol endpoint with correct Alpaca v2 params.
+    Uses explicit start date to ensure data is returned regardless of market hours.
     """
+    from datetime import timedelta
     results = {}
     batch_size = 100
+    # Go back 90 calendar days to ensure we get enough trading days
+    start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+
     for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
         try:
             params = {
-                "symbols":   ",".join(batch),
-                "timeframe": timeframe,
-                "limit":     limit,
-                "feed":      ALPACA_FEED,
-                "sort":      "asc",
+                "symbols":    ",".join(batch),
+                "timeframe":  timeframe,
+                "start":      start_date,
+                "feed":       ALPACA_FEED,
+                "sort":       "asc",
                 "adjustment": "raw",
             }
             r = _req.get(
@@ -169,7 +173,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
             )
             if r.status_code == 200:
                 data = r.json()
-                bars_data = data.get("bars", {})
+                bars_data = data.get("bars") or {}
                 if isinstance(bars_data, dict):
                     results.update(bars_data)
                 log.info(f"Bars fetched for {len(bars_data)} symbols in batch {i//batch_size + 1}")
@@ -177,7 +181,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
                 log.warning(f"Bars fetch HTTP {r.status_code}: {r.text[:300]}")
         except Exception as e:
             log.warning(f"Bars fetch error: {e}")
-        time.sleep(0.5)  # small delay between batches to avoid rate limits
+        time.sleep(0.3)
     return results
 
 # ── Scoring engine ─────────────────────────────────────────────────────────────
@@ -640,6 +644,9 @@ def debug_bars():
     if not ALPACA_API_KEY:
         return {"error": "No Alpaca API key"}
 
+    from datetime import timedelta
+    start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+
     # Test single symbol first
     test_sym = "AAPL"
     try:
@@ -651,7 +658,7 @@ def debug_bars():
             },
             params={
                 "timeframe": "1Day",
-                "limit":     10,
+                "start":     start_date,
                 "feed":      ALPACA_FEED,
                 "sort":      "asc",
             },
@@ -659,7 +666,8 @@ def debug_bars():
         )
         single_result = {
             "status_code": r.status_code,
-            "response":    r.json() if r.status_code == 200 else r.text[:300],
+            "bar_count":   len((r.json().get("bars") or [])) if r.status_code == 200 else 0,
+            "sample":      (r.json().get("bars") or [None])[-1] if r.status_code == 200 else r.text[:200],
         }
     except Exception as e:
         single_result = {"error": str(e)}
@@ -675,15 +683,17 @@ def debug_bars():
             params={
                 "symbols":   "AAPL,MSFT,XOM",
                 "timeframe": "1Day",
-                "limit":     5,
+                "start":     start_date,
                 "feed":      ALPACA_FEED,
                 "sort":      "asc",
             },
             timeout=10,
         )
+        bars_data = (r2.json().get("bars") or {}) if r2.status_code == 200 else {}
         multi_result = {
-            "status_code": r2.status_code,
-            "response":    r2.json() if r2.status_code == 200 else r2.text[:300],
+            "status_code":    r2.status_code,
+            "symbols_returned": list(bars_data.keys()),
+            "aapl_bar_count": len(bars_data.get("AAPL", [])),
         }
     except Exception as e:
         multi_result = {"error": str(e)}
