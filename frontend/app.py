@@ -256,7 +256,7 @@ def build_radar_row(sym):
                     "fontFamily":"DM Mono, monospace",
                 }),
                 html.Span(sym.get("setup_type",""), style={
-                    "fontSize":"10px","color":TEXT,"display":"block","marginTop":"2px",
+                    "fontSize":"10px","color":WHITE,"display":"block","marginTop":"2px",
                 }),
             ], style={"flex":"2","minWidth":"120px"}),
 
@@ -291,13 +291,13 @@ def build_radar_row(sym):
 
             # Trigger + proximity
             html.Div([
-                html.Span("Trigger", style={"fontSize":"10px","color":TEXT,"display":"block"}),
+                html.Span("Trigger", style={"fontSize":"10px","color":WHITE,"display":"block"}),
                 html.Span(f"${trigger:,.2f}", style={
                     "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700",
                 }),
                 html.Span(
                     f"{sym.get('trigger_proximity', 0):+.1f}%" if sym.get('trigger_proximity', 0) != 0 else "",
-                    style={"fontSize":"10px","color":TEXT,"display":"block"},
+                    style={"fontSize":"10px","color":WHITE,"display":"block"},
                 ),
             ], style={"flex":"1","minWidth":"80px"}),
 
