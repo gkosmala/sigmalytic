@@ -978,7 +978,6 @@ SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 def build_login_page(error=""):
-    # Feature pills
     def pill(icon, text):
         return html.Div([
             html.Span(icon, style={"marginRight":"6px"}),
@@ -986,7 +985,6 @@ def build_login_page(error=""):
         ], style={"background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
                   "borderRadius":"999px","padding":"6px 14px","whiteSpace":"nowrap"})
 
-    # Stat tiles
     def stat(value, label):
         return html.Div([
             html.Div(value, style={"fontSize":"24px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
@@ -994,156 +992,147 @@ def build_login_page(error=""):
                                    "textTransform":"uppercase","letterSpacing":".12em","marginTop":"4px"}),
         ], style={"textAlign":"center","flex":"1"})
 
-    return html.Div([
+    # ── Hero left column ──────────────────────────────────────────────────────
+    hero = html.Div([
         html.Div([
-            # ── Left side — Hero ──────────────────────────────────────────────
+            html.Span("Σ", style={"fontSize":"36px","fontWeight":"900","color":TEAL_DIM,"marginRight":"10px"}),
             html.Div([
-                # Logo
-                html.Div([
-                    html.Span("Σ", style={"fontSize":"36px","fontWeight":"900","color":TEAL_DIM,"marginRight":"10px"}),
-                    html.Div([
-                        html.Div("SIGMALYTIC", style={"fontSize":"22px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
-                        html.Div("QUANT CORPORATION", style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em"}),
-                    ]),
-                ], style={"display":"flex","alignItems":"center","marginBottom":"40px"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"22px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em"}),
+            ]),
+        ], style={"display":"flex","alignItems":"center","marginBottom":"40px"}),
 
-                # Headline
-                html.H1([
-                    "Real-Time ",
-                    html.Span("Decision Intelligence", style={"color":TEAL_DIM}),
-                    html.Br(),
-                    "for Modern Markets.",
-                ], style={"fontSize":"42px","fontWeight":"900","color":WHITE,"lineHeight":"1.1",
-                           "letterSpacing":"-.02em","margin":"0 0 20px"}),
+        html.H1([
+            "Real-Time ",
+            html.Span("Decision Intelligence", style={"color":TEAL_DIM}),
+            html.Br(),
+            "for Modern Markets.",
+        ], style={"fontSize":"42px","fontWeight":"900","color":WHITE,"lineHeight":"1.1",
+                   "letterSpacing":"-.02em","margin":"0 0 20px"}),
 
-                # Subheadline
-                html.P("Sigmalytic continuously scores, interprets, and projects market behavior — surfacing the highest-quality setups before they trigger.",
-                       style={"fontSize":"16px","color":TEXT,"lineHeight":"1.7","margin":"0 0 32px","maxWidth":"480px"}),
+        html.P("Sigmalytic continuously scores, interprets, and projects market behavior — surfacing the highest-quality setups before they trigger.",
+               style={"fontSize":"16px","color":TEXT,"lineHeight":"1.7","margin":"0 0 32px","maxWidth":"480px"}),
 
-                # Feature pills
-                html.Div([
-                    pill("📡","Live Radar — 1,000 symbols"),
-                    pill("🎯","Armed / Triggered alerts"),
-                    pill("📊","Confluence Engine™"),
-                    pill("🔮","Forward Projection Layer™"),
-                    pill("🧠","Behavioral Intelligence™"),
-                    pill("⚡","60-second scans"),
-                ], style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"40px"}),
+        html.Div([
+            pill("📡","Live Radar — 35+ symbols"),
+            pill("🎯","Armed / Triggered alerts"),
+            pill("📊","Confluence Engine™"),
+            pill("🔮","Forward Projection Layer™"),
+            pill("🧠","Behavioral Intelligence™"),
+            pill("⚡","60-second scans"),
+        ], style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"40px"}),
 
-                # Stats bar
-                html.Div([
-                    stat("60s",  "Scan interval"),
-                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
-                    stat("5",    "Score dimensions"),
-                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
-                    stat("3",    "Projection paths"),
-                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
-                    stat("A–F",  "Grade system"),
-                ], style={"display":"flex","alignItems":"center","background":"rgba(0,0,0,.25)",
-                           "border":f"1px solid {BORDER}","borderRadius":"16px","padding":"20px 24px",
-                           "marginBottom":"40px"}),
+        html.Div([
+            stat("60s",  "Scan interval"),
+            html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+            stat("5",    "Score dimensions"),
+            html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+            stat("3",    "Projection paths"),
+            html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+            stat("A–F",  "Grade system"),
+        ], style={"display":"flex","alignItems":"center","background":"rgba(0,0,0,.25)",
+                   "border":f"1px solid {BORDER}","borderRadius":"16px","padding":"20px 24px",
+                   "marginBottom":"40px"}),
 
-                # Architecture callout
-                html.Div([
-                    html.Div("POWERED BY", style={"fontSize":"9px","fontWeight":"800","color":MUTED,
-                                                   "letterSpacing":".3em","textTransform":"uppercase","marginBottom":"10px"}),
-                    html.Div([
-                        html.Span("Confluence Engine™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
-                        html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
-                        html.Span("Expansion Node Modeling™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
-                        html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
-                        html.Span("Forward Projection Layer™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
-                    ]),
-                ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"20px"}),
-
-            ], style={"flex":"1","minWidth":"0","paddingRight":"60px"}),
-
-            # ── Right side — Login form ────────────────────────────────────────
+        html.Div([
+            html.Div("POWERED BY", style={"fontSize":"9px","fontWeight":"800","color":MUTED,
+                                           "letterSpacing":".3em","textTransform":"uppercase","marginBottom":"10px"}),
             html.Div([
-                html.Div([
-                    html.Div([
-                        html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
-                        html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
-                        html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
-                    ], style={"textAlign":"center","marginBottom":"40px"}),
+                html.Span("Confluence Engine™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
+                html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
+                html.Span("Expansion Node Modeling™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
+                html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
+                html.Span("Forward Projection Layer™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+            ]),
+        ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"20px"}),
 
+    ], style={"flex":"1","minWidth":"0","paddingRight":"60px"})
+
+    # ── Login form right column ───────────────────────────────────────────────
+    form = html.Div([
+        html.Div([
+            html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+            html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+            html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+        ], style={"textAlign":"center","marginBottom":"40px"}),
+
+        html.Div(id="login-section", children=[
+            html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
             html.Div([
-                html.Div(id="login-section", children=[
-                    html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
-                    html.Div([
-                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="login-email", type="email", placeholder="you@example.com",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"16px"}),
-                    html.Div([
-                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="login-password", type="password", placeholder="••••••••",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"24px"}),
-                    html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
-                    html.Button("Sign In", id="login-btn", n_clicks=0,
-                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
-                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
-                               "cursor":"pointer","marginBottom":"16px"}),
-                    html.Div([
-                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
-                        html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
-                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
-                    ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
-                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
-                        style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
-                               "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
-                               "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
-                    html.Div([
-                        html.Span("Don't have an account? ", style={"color":MUTED,"fontSize":"12px"}),
-                        html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
-                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
-                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
-                    ], style={"textAlign":"center"}),
-                ]),
+                html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                dcc.Input(id="login-email", type="email", placeholder="you@example.com",
+                          style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                 "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                 "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+            ], style={"marginBottom":"16px"}),
+            html.Div([
+                html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                          style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                 "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                 "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+            ], style={"marginBottom":"24px"}),
+            html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+            html.Button("Sign In", id="login-btn", n_clicks=0,
+                style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                       "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                       "cursor":"pointer","marginBottom":"16px"}),
+            html.Div([
+                html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
+                html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+            ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
+            html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
+                       "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
+                       "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
+            html.Div([
+                html.Span("Don't have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
+                    style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                           "fontWeight":"700","cursor":"pointer","padding":"0"}),
+            ], style={"textAlign":"center"}),
+        ]),
 
-                html.Div(id="signup-section", style={"display":"none"}, children=[
-                    html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
-                    html.Div([
-                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"16px"}),
-                    html.Div([
-                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"24px"}),
-                    html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
-                    html.Button("Create Account", id="signup-btn", n_clicks=0,
-                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
-                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
-                               "cursor":"pointer","marginBottom":"24px"}),
-                    html.Div([
-                        html.Span("Already have an account? ", style={"color":MUTED,"fontSize":"12px"}),
-                        html.Button("Sign In", id="goto-login-btn", n_clicks=0,
-                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
-                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
-                    ], style={"textAlign":"center"}),
-                ]),
+        html.Div(id="signup-section", style={"display":"none"}, children=[
+            html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+            html.Div([
+                html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
+                          style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                 "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                 "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+            ], style={"marginBottom":"16px"}),
+            html.Div([
+                html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
+                          style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                 "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                 "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+            ], style={"marginBottom":"24px"}),
+            html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+            html.Button("Create Account", id="signup-btn", n_clicks=0,
+                style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                       "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                       "cursor":"pointer","marginBottom":"24px"}),
+            html.Div([
+                html.Span("Already have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                html.Button("Sign In", id="goto-login-btn", n_clicks=0,
+                    style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                           "fontWeight":"700","cursor":"pointer","padding":"0"}),
+            ], style={"textAlign":"center"}),
+        ]),
 
-            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
-                      "padding":"40px","width":"420px","minWidth":"420px",
-                      "boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+    ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+              "padding":"40px","width":"420px","minWidth":"420px",
+              "boxShadow":"0 20px 60px rgba(0,0,0,.4)"})
 
-            ], style={"flexShrink":"0"}),  # end right column
-
-        ], style={"display":"flex","alignItems":"center","justifyContent":"center",
-                  "minHeight":"100vh","padding":"60px 40px","gap":"0","maxWidth":"1200px","margin":"0 auto"}),
+    return html.Div([
+        html.Div([hero, form],
+                 style={"display":"flex","alignItems":"center","justifyContent":"center",
+                        "minHeight":"100vh","padding":"60px 40px","maxWidth":"1200px","margin":"0 auto"}),
     ], style={"background":NAVY,"minHeight":"100vh"})
+
 
 def build_main_app():
     return html.Div([html.Div([
