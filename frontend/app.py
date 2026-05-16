@@ -1101,7 +1101,7 @@ def build_main_app():
                         "padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES
                 ],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                           "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button(id="btn-live",n_clicks=0,style={
+                html.Button("Use Live Alpaca Feed",id="btn-live",n_clicks=0,style={
                     "background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px",
                     "padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
