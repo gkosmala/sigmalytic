@@ -270,19 +270,27 @@ def build_radar_row(sym):
     })
 
 
-def build_radar_tab(radar_data=None):
+def build_radar_tab(radar_data=None, status_filter="all"):
     """Build the full Radar tab UI."""
     import requests as _req
 
     # Fetch from backend if no data passed
     if radar_data is None:
         try:
-            r = _req.get(f"{BACKEND_HTTP}/api/radar/scores?limit=35", timeout=6)
+            r = _req.get(f"{BACKEND_HTTP}/api/radar/scores?limit=100", timeout=6)
             radar_data = r.json() if r.ok else {}
         except Exception:
             radar_data = {}
 
-    symbols   = radar_data.get("symbols", [])
+    all_symbols = radar_data.get("symbols", [])
+
+    # Apply filter
+    status_filter = (status_filter or "all").lower()
+    if status_filter == "all":
+        symbols = all_symbols
+    else:
+        symbols = [s for s in all_symbols if s.get("status","").lower() == status_filter]
+
     delay     = radar_data.get("data_delay", "15min")
     last_scan = radar_data.get("last_scan")
 
@@ -293,11 +301,11 @@ def build_radar_tab(radar_data=None):
     else:
         scan_label = "—"
 
-    # Summary counts
-    armed    = sum(1 for s in symbols if s.get("status") == "Armed")
-    building = sum(1 for s in symbols if s.get("status") == "Building")
-    avoid    = sum(1 for s in symbols if s.get("status") == "Avoid")
-    avg_score= round(sum(s.get("composite_score",0) for s in symbols) / len(symbols), 1) if symbols else 0
+    # Summary counts — always based on full universe
+    armed    = sum(1 for s in all_symbols if s.get("status") == "Armed")
+    building = sum(1 for s in all_symbols if s.get("status") == "Building")
+    avoid    = sum(1 for s in all_symbols if s.get("status") == "Avoid")
+    avg_score= round(sum(s.get("composite_score",0) for s in all_symbols) / len(all_symbols), 1) if all_symbols else 0
 
     delay_color = YELLOW_DIM if delay == "15min" else TEAL_DIM
     delay_label = "15-Min Delayed" if delay == "15min" else "Live"
@@ -343,7 +351,9 @@ def build_radar_tab(radar_data=None):
                 html.Span("Filter:", style={"color":MUTED,"fontSize":"12px","fontWeight":"600","marginRight":"8px"}),
                 *[
                     html.Button(label, id=f"radar-filter-{key}", n_clicks=0, style={
-                        "background":"transparent","color":TEXT,"border":f"1px solid {BORDER}",
+                        "background": TEAL_GLOW if status_filter == key else "transparent",
+                        "color":      TEAL_DIM  if status_filter == key else TEXT,
+                        "border":     f"1px solid {BORDER_T}" if status_filter == key else f"1px solid {BORDER}",
                         "borderRadius":"8px","padding":"6px 14px","fontSize":"12px",
                         "fontWeight":"700","marginRight":"6px","cursor":"pointer",
                     })
@@ -353,7 +363,7 @@ def build_radar_tab(radar_data=None):
                     ]
                 ],
                 html.Div(style={"flex":"1"}),
-                html.Span(f"{len(symbols)} symbols ranked by composite score",
+                html.Span(f"{len(symbols)} of {len(all_symbols)} symbols",
                           style={"fontSize":"11px","color":MUTED}),
             ], style={"display":"flex","alignItems":"center","flexWrap":"wrap","gap":"4px"}),
         ], sx={"marginBottom":"16px","padding":"12px 20px"}),
@@ -1070,6 +1080,7 @@ app.layout = html.Div([
     dcc.Interval(id="i-alpaca",    interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",     interval=1_000, n_intervals=0),
     dcc.Interval(id="i-radar",     interval=60_000,n_intervals=0),  # ← radar refresh
+    dcc.Store(id="s-radar-filter",  data="all"),
 
     html.Div(id="auth-overlay", children=build_login_page(),
              style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
@@ -1199,6 +1210,22 @@ def set_tab(*_):
     if not ctx.triggered: return no_update
     return ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
 
+@app.callback(
+    Output("s-radar-filter","data"),
+    Input("radar-filter-all","n_clicks"),
+    Input("radar-filter-armed","n_clicks"),
+    Input("radar-filter-building","n_clicks"),
+    Input("radar-filter-watching","n_clicks"),
+    Input("radar-filter-avoid","n_clicks"),
+    prevent_initial_call=True,
+)
+def set_radar_filter(*_):
+    ctx = callback_context
+    if not ctx.triggered: return no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    return trigger.replace("radar-filter-","")
+
+
 @app.callback(Output("s-live","data"),Output("s-seq","data"),Output("s-candles","data"),
               Input("i-synth","n_intervals"),Input("i-alpaca","n_intervals"),
               State("s-live","data"),State("s-seq","data"),State("s-candles","data"),
@@ -1260,9 +1287,10 @@ def update_badges(live,live_mode):
               Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),
               Input("s-permissions","data"),
+              Input("s-radar-filter","data"),
               State("s-session","data"),
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,session,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
@@ -1279,7 +1307,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="performance": return build_performance_tab(live)
     if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {}, session)
     if tab=="import":      return build_import_tab()
-    if tab=="radar":       return build_radar_tab()
+    if tab=="radar":       return build_radar_tab(status_filter=radar_filter)
     if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
