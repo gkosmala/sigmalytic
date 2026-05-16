@@ -246,7 +246,7 @@ def build_radar_row(sym):
         # Regime
         html.Div(
             html.Span(sym.get("regime","—"), style={
-                "fontSize":"11px","color":TEXT,
+                "fontSize":"11px","color":sc,"fontWeight":"600",
             }),
             style={"flex":"1.5","minWidth":"100px"},
         ),
@@ -256,7 +256,7 @@ def build_radar_row(sym):
             html.Span(f"C:{sym.get('confluence',0):.0f} "
                       f"E:{sym.get('expansion_node',0):.0f} "
                       f"RS:{sym.get('relative_strength',0):.0f}",
-                      style={"fontSize":"10px","color":MUTED,"fontFamily":"DM Mono, monospace"}),
+                      style={"fontSize":"10px","color":sc,"fontFamily":"DM Mono, monospace","fontWeight":"600"}),
         ], style={"flex":"2","minWidth":"130px"}),
 
     ], style={
