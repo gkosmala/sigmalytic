@@ -58,7 +58,6 @@ input{{font-family:inherit;outline:none;}}
 # ── Auth header helpers ────────────────────────────────────────────────────────
 
 def _auth_headers(session: dict) -> dict:
-    """Returns Authorization header for real users. Demo returns empty dict."""
     if not session:
         return {}
     token = session.get("access_token", "")
@@ -147,6 +146,257 @@ def zcard(name, level, desc, color):
         html.P(desc,  style={"fontSize":"11px","color":MUTED,"margin":"0"}),
     ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"14px",
                "padding":"14px","textAlign":"center"})
+
+# ── Radar helpers ──────────────────────────────────────────────────────────────
+
+def _status_color(status):
+    return {
+        "Armed":     TEAL_DIM,
+        "Building":  YELLOW_DIM,
+        "Triggered": BLUE_DIM,
+        "Watching":  TEXT,
+        "Avoid":     RED_DIM,
+    }.get(status, TEXT)
+
+def _score_color(score):
+    if score >= 75: return TEAL_DIM
+    if score >= 60: return YELLOW_DIM
+    return RED_DIM
+
+def _change_color(pct):
+    if pct > 0:  return TEAL_DIM
+    if pct < 0:  return RED_DIM
+    return TEXT
+
+def build_radar_row(sym):
+    """Build one row in the radar table."""
+    score  = sym.get("composite_score", 0)
+    status = sym.get("status", "Watching")
+    chg    = sym.get("change_pct", 0)
+    sc     = _score_color(score)
+    stc    = _status_color(status)
+    chgc   = _change_color(chg)
+
+    # Score bar
+    score_bar = html.Div([
+        html.Div(style={
+            "width":  f"{score}%",
+            "height": "100%",
+            "borderRadius": "999px",
+            "background": f"linear-gradient(90deg,#ef4444,{YELLOW},{TEAL_DIM})",
+        }),
+    ], style={
+        "height": "5px",
+        "background": "rgba(255,255,255,.08)",
+        "borderRadius": "999px",
+        "overflow": "hidden",
+        "marginTop": "4px",
+        "width": "80px",
+    })
+
+    return html.Div([
+        # Rank + Symbol
+        html.Div([
+            html.Span(sym.get("symbol",""), style={
+                "fontWeight":"800","fontSize":"14px","color":WHITE,
+                "fontFamily":"DM Mono, monospace",
+            }),
+            html.Span(sym.get("setup_type",""), style={
+                "fontSize":"10px","color":MUTED,"display":"block","marginTop":"2px",
+            }),
+        ], style={"flex":"2","minWidth":"120px"}),
+
+        # Price + Change
+        html.Div([
+            html.Span(f"${sym.get('price',0):,.2f}", style={
+                "fontWeight":"700","fontSize":"13px","color":WHITE,
+            }),
+            html.Span(f"  {'+' if chg>=0 else ''}{chg:.2f}%", style={
+                "fontSize":"12px","color":chgc,"fontWeight":"600",
+            }),
+        ], style={"flex":"1.5","minWidth":"100px"}),
+
+        # Composite Score + bar
+        html.Div([
+            html.Span(f"{score:.0f}", style={
+                "fontWeight":"900","fontSize":"15px","color":sc,
+            }),
+            score_bar,
+        ], style={"flex":"1","minWidth":"70px"}),
+
+        # Status badge
+        html.Div(
+            html.Span(status, style={
+                "fontSize":"10px","fontWeight":"800","color":stc,
+                "border":f"1px solid {stc}","borderRadius":"999px",
+                "padding":"3px 10px","background":f"{stc}18",
+                "textTransform":"uppercase","letterSpacing":".06em",
+            }),
+            style={"flex":"1","minWidth":"80px"},
+        ),
+
+        # Trigger
+        html.Div([
+            html.Span("Trigger", style={"fontSize":"10px","color":MUTED,"display":"block"}),
+            html.Span(f"${sym.get('trigger',0):,.2f}", style={
+                "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700",
+            }),
+        ], style={"flex":"1","minWidth":"80px"}),
+
+        # Regime
+        html.Div(
+            html.Span(sym.get("regime","—"), style={
+                "fontSize":"11px","color":TEXT,
+            }),
+            style={"flex":"1.5","minWidth":"100px"},
+        ),
+
+        # Score breakdown
+        html.Div([
+            html.Span(f"C:{sym.get('confluence',0):.0f} "
+                      f"E:{sym.get('expansion_node',0):.0f} "
+                      f"RS:{sym.get('relative_strength',0):.0f}",
+                      style={"fontSize":"10px","color":MUTED,"fontFamily":"DM Mono, monospace"}),
+        ], style={"flex":"2","minWidth":"130px"}),
+
+    ], style={
+        "display":       "flex",
+        "alignItems":    "center",
+        "gap":           "12px",
+        "padding":       "12px 16px",
+        "borderBottom":  f"1px solid {BORDER}",
+        "borderRadius":  "0",
+        "transition":    "background .15s",
+    })
+
+
+def build_radar_tab(radar_data=None):
+    """Build the full Radar tab UI."""
+    import requests as _req
+
+    # Fetch from backend if no data passed
+    if radar_data is None:
+        try:
+            r = _req.get(f"{BACKEND_HTTP}/api/radar/scores?limit=35", timeout=6)
+            radar_data = r.json() if r.ok else {}
+        except Exception:
+            radar_data = {}
+
+    symbols   = radar_data.get("symbols", [])
+    delay     = radar_data.get("data_delay", "15min")
+    last_scan = radar_data.get("last_scan")
+
+    if last_scan:
+        import time
+        ago = int(time.time() - last_scan)
+        scan_label = f"{ago}s ago"
+    else:
+        scan_label = "—"
+
+    # Summary counts
+    armed    = sum(1 for s in symbols if s.get("status") == "Armed")
+    building = sum(1 for s in symbols if s.get("status") == "Building")
+    avoid    = sum(1 for s in symbols if s.get("status") == "Avoid")
+    avg_score= round(sum(s.get("composite_score",0) for s in symbols) / len(symbols), 1) if symbols else 0
+
+    delay_color = YELLOW_DIM if delay == "15min" else TEAL_DIM
+    delay_label = "15-Min Delayed" if delay == "15min" else "Live"
+
+    return html.Div([
+
+        # ── Header ──────────────────────────────────────────────────────────
+        card([
+            html.Div([
+                html.Div([
+                    html.H2("📡 Radar Screen",
+                            style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                    html.P("Real-time opportunity ranking — scored, interpreted, and ranked by confluence.",
+                           style={"fontSize":"12px","color":TEXT}),
+                ]),
+                html.Div([
+                    html.Span(delay_label, style={
+                        "fontSize":"10px","fontWeight":"800","color":delay_color,
+                        "border":f"1px solid {delay_color}","borderRadius":"999px",
+                        "padding":"4px 12px","background":f"{delay_color}18",
+                        "textTransform":"uppercase","letterSpacing":".06em","marginRight":"8px",
+                    }),
+                    html.Span(f"Last scan: {scan_label}", style={
+                        "fontSize":"11px","color":MUTED,
+                    }),
+                ], style={"display":"flex","alignItems":"center"}),
+            ], style={"display":"flex","justifyContent":"space-between",
+                      "alignItems":"flex-start","marginBottom":"16px"}),
+
+            # Summary tiles
+            html.Div([
+                metric_tile("Symbols Scanned", str(len(symbols)), BLUE_DIM),
+                metric_tile("Armed",    str(armed),    TEAL_DIM),
+                metric_tile("Building", str(building), YELLOW_DIM),
+                metric_tile("Avoid",    str(avoid),    RED_DIM),
+                metric_tile("Avg Score",f"{avg_score}", _score_color(avg_score)),
+            ], style={"display":"grid","gridTemplateColumns":"repeat(5,1fr)","gap":"12px"}),
+        ], sx={"marginBottom":"16px"}),
+
+        # ── Filter bar ───────────────────────────────────────────────────────
+        card([
+            html.Div([
+                html.Span("Filter:", style={"color":MUTED,"fontSize":"12px","fontWeight":"600","marginRight":"8px"}),
+                *[
+                    html.Button(label, id=f"radar-filter-{key}", n_clicks=0, style={
+                        "background":"transparent","color":TEXT,"border":f"1px solid {BORDER}",
+                        "borderRadius":"8px","padding":"6px 14px","fontSize":"12px",
+                        "fontWeight":"700","marginRight":"6px","cursor":"pointer",
+                    })
+                    for key, label in [
+                        ("all","All"),("armed","Armed"),("building","Building"),
+                        ("watching","Watching"),("avoid","Avoid"),
+                    ]
+                ],
+                html.Div(style={"flex":"1"}),
+                html.Span(f"{len(symbols)} symbols ranked by composite score",
+                          style={"fontSize":"11px","color":MUTED}),
+            ], style={"display":"flex","alignItems":"center","flexWrap":"wrap","gap":"4px"}),
+        ], sx={"marginBottom":"16px","padding":"12px 20px"}),
+
+        # ── Radar table ──────────────────────────────────────────────────────
+        card([
+            # Table header
+            html.Div([
+                html.Span("Symbol / Setup",   style={"flex":"2","minWidth":"120px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Price / Chg",      style={"flex":"1.5","minWidth":"100px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Score",            style={"flex":"1","minWidth":"70px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Status",           style={"flex":"1","minWidth":"80px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Trigger",          style={"flex":"1","minWidth":"80px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Regime",           style={"flex":"1.5","minWidth":"100px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Breakdown",        style={"flex":"2","minWidth":"130px","fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+            ], style={
+                "display":"flex","alignItems":"center","gap":"12px",
+                "padding":"8px 16px","borderBottom":f"1px solid {BORDER}",
+                "marginBottom":"4px",
+            }),
+
+            # Rows
+            html.Div(
+                [build_radar_row(s) for s in symbols] if symbols else [
+                    html.Div("No radar data yet — scanner initializing…",
+                             style={"padding":"40px","textAlign":"center","color":MUTED})
+                ],
+                id="radar-rows",
+            ),
+        ]),
+
+        # ── Footer note ──────────────────────────────────────────────────────
+        html.Div(
+            note_box(
+                f"{'⏱ Data is 15 minutes delayed (free Alpaca IEX feed). Upgrade to live SIP feed for real-time scores.' if delay == '15min' else '✅ Live data feed active.'}  "
+                f"Scores update every 60 seconds. Confluence Engine v1.0.",
+                "yellow" if delay == "15min" else "teal"
+            ),
+            style={"marginTop":"16px"},
+        ),
+
+    ], style={"display":"flex","flexDirection":"column"})
+
 
 def build_chart(candles, price, nodes):
     kl = get_key_levels(price)
@@ -789,6 +1039,7 @@ def build_main_app():
                 ("performance","Performance"),
                 ("behavior","Behavioral Intelligence"),
                 ("import","Import History"),
+                ("radar","Radar Screen"),
                 ("billing","Billing"),
                 ("setup","Setup"),
             ]
@@ -815,9 +1066,10 @@ app.layout = html.Div([
     dcc.Store(id="s-refresh",      data=0),
     dcc.Store(id="s-page",         data="login"),
     dcc.Store(id="s-permissions",  data={}),
-    dcc.Interval(id="i-synth",     interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",    interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",     interval=1_000,n_intervals=0),
+    dcc.Interval(id="i-synth",     interval=1_400, n_intervals=0),
+    dcc.Interval(id="i-alpaca",    interval=5_000, n_intervals=0),
+    dcc.Interval(id="i-clock",     interval=1_000, n_intervals=0),
+    dcc.Interval(id="i-radar",     interval=60_000,n_intervals=0),  # ← radar refresh
 
     html.Div(id="auth-overlay", children=build_login_page(),
              style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
@@ -874,7 +1126,6 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if trigger == "demo-btn":
-        # No access_token — backend falls back to demo_user_001
         return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
 
     if trigger == "login-btn":
@@ -940,8 +1191,9 @@ def load_symbol(_,ticker):
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
               Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
-              Input("tab-import","n_clicks"),Input("tab-billing","n_clicks"),
-              Input("tab-setup","n_clicks"),prevent_initial_call=True)
+              Input("tab-import","n_clicks"),Input("tab-radar","n_clicks"),
+              Input("tab-billing","n_clicks"),Input("tab-setup","n_clicks"),
+              prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
     if not ctx.triggered: return no_update
@@ -1005,21 +1257,29 @@ def update_badges(live,live_mode):
 @app.callback(Output("main-content","children"),
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
+              Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),
               Input("s-permissions","data"),
               State("s-session","data"),
               State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,perms,session,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,session,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed") and trigger == "i-clock":
+
+    # Clock only re-renders clock-dependent tabs
+    if tab in ("behavior","import","billing","setup","performance","feed","radar") and trigger == "i-clock":
         return no_update
+    # Radar interval only re-renders radar tab
+    if tab != "radar" and trigger == "i-radar":
+        return no_update
+
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
     if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {}, session)
     if tab=="import":      return build_import_tab()
+    if tab=="radar":       return build_radar_tab()
     if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
