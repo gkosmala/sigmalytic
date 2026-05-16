@@ -27,7 +27,7 @@ ALERT_TO_EMAIL  = os.getenv("ALERT_EMAIL", "greg.kosmala@gmail.com")
 ALERT_FROM      = "Sigmalytic <onboarding@resend.dev>"
 
 # Only send alerts for these status transitions
-ALERT_STATUSES = {"Armed", "Triggered", "Confirmed", "Failed"}
+ALERT_STATUSES = {"Armed", "Triggered", "Confirmed", "Failed", "Short Trigger", "Short Confirmed", "Short Armed"}
 
 # Track which alerts have been sent to avoid duplicates
 # symbol → last alerted status
@@ -36,10 +36,13 @@ _alerted: dict[str, str] = {}
 
 def _status_emoji(status: str) -> str:
     return {
-        "Armed":     "🎯",
-        "Triggered": "⚡",
-        "Confirmed": "✅",
-        "Failed":    "❌",
+        "Armed":           "🎯",
+        "Triggered":       "⚡",
+        "Confirmed":       "✅",
+        "Failed":          "❌",
+        "Short Trigger":   "🔻",
+        "Short Confirmed": "🔴",
+        "Short Armed":     "⚠️",
     }.get(status, "📡")
 
 

@@ -320,7 +320,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     status = _determine_status(
         composite, expansion, rel_vol, change_pct,
         price=price, trigger=trigger, invalidation=invalidation,
-        prev_status=prev_status,
+        prev_status=prev_status, ma20=ma20, ma50=ma50,
     )
 
     # ── Regime tag ─────────────────────────────────────────────────────────────
@@ -396,22 +396,44 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
 
 
 def _determine_status(composite, expansion, rel_vol, change_pct,
-                      price=0, trigger=0, invalidation=0, prev_status="") -> str:
+                      price=0, trigger=0, invalidation=0, prev_status="",
+                      ma20=0, ma50=0) -> str:
     """
-    Status state machine with 6 states:
-    Armed     — setup is ready, trigger is imminent
-    Triggered — price has crossed trigger level
-    Confirmed — price held above trigger on volume
-    Building  — conditions improving, not yet ready
-    Watching  — monitoring, setup forming
-    Avoid     — poor conditions, high risk
+    Status state machine with 8 states:
+    Armed          — long setup ready, trigger imminent
+    Triggered      — price crossed above trigger (long)
+    Confirmed      — held above trigger on volume (long)
+    Failed         — dropped below invalidation after trigger
+    Short Trigger  — price broke below invalidation on volume (short)
+    Short Armed    — price approaching breakdown level
+    Building       — conditions improving
+    Watching       — monitoring
+    Avoid          — poor conditions
     """
+    # ── SHORT SIDE ────────────────────────────────────────────────────────────
+
+    # Short Trigger — price broke below invalidation on high volume
+    if invalidation > 0 and price <= invalidation and rel_vol >= 1.2 and change_pct < -2:
+        return "Short Trigger"
+
+    # Short Confirmed — was Short Trigger and continued lower
+    if prev_status == "Short Trigger" and price <= invalidation * 1.002:
+        return "Short Confirmed"
+
+    # Short Armed — approaching breakdown, within 1% of invalidation
+    if change_pct < -1.5 and rel_vol >= 1.1 and invalidation > 0 and price > 0:
+        dist_to_breakdown = (price - invalidation) / price
+        if dist_to_breakdown <= 0.01 and price < ma20:
+            return "Short Armed"
+
+    # ── LONG SIDE ─────────────────────────────────────────────────────────────
+
     # Triggered — price crossed above trigger
     if trigger > 0 and price >= trigger:
         if rel_vol >= 1.2:
             return "Triggered"
 
-    # Confirmed — was Triggered and held (prev status check)
+    # Confirmed — was Triggered and held
     if prev_status == "Triggered" and price >= trigger * 0.998:
         return "Confirmed"
 
@@ -423,7 +445,7 @@ def _determine_status(composite, expansion, rel_vol, change_pct,
     if composite >= 75 and expansion >= 60:
         if trigger > 0 and price > 0:
             dist_to_trigger = (trigger - price) / price
-            if dist_to_trigger <= 0.015:   # within 1.5% of trigger
+            if dist_to_trigger <= 0.015:
                 return "Armed"
         else:
             return "Armed"
