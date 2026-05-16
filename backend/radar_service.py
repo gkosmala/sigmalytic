@@ -143,33 +143,41 @@ def fetch_snapshots(symbols: List[str]) -> dict:
     return results
 
 
-def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 50) -> dict:
+def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
     """
     Fetch historical daily bars for relative strength and ATR calculation.
-    Used on startup and periodically to refresh historical context.
+    Uses multi-symbol endpoint with correct Alpaca v2 params.
     """
     results = {}
-    batch_size = 200
-    for i in range(0, min(len(symbols), 500), batch_size):
+    batch_size = 100
+    for i in range(0, len(symbols), batch_size):
         batch = symbols[i:i + batch_size]
         try:
+            params = {
+                "symbols":   ",".join(batch),
+                "timeframe": timeframe,
+                "limit":     limit,
+                "feed":      ALPACA_FEED,
+                "sort":      "asc",
+                "adjustment": "raw",
+            }
             r = _req.get(
                 f"{ALPACA_BASE_URL}/v2/stocks/bars",
                 headers=_alpaca_headers(),
-                params={
-                    "symbols":   ",".join(batch),
-                    "timeframe": timeframe,
-                    "limit":     limit,
-                    "feed":      ALPACA_FEED,
-                    "sort":      "asc",
-                },
-                timeout=20,
+                params=params,
+                timeout=30,
             )
             if r.status_code == 200:
-                data = r.json().get("bars", {})
-                results.update(data)
+                data = r.json()
+                bars_data = data.get("bars", {})
+                if isinstance(bars_data, dict):
+                    results.update(bars_data)
+                log.info(f"Bars fetched for {len(bars_data)} symbols in batch {i//batch_size + 1}")
+            else:
+                log.warning(f"Bars fetch HTTP {r.status_code}: {r.text[:300]}")
         except Exception as e:
             log.warning(f"Bars fetch error: {e}")
+        time.sleep(0.5)  # small delay between batches to avoid rate limits
     return results
 
 # ── Scoring engine ─────────────────────────────────────────────────────────────
@@ -614,13 +622,31 @@ def stop_radar_scheduler():
 def radar_status():
     """Service health and last scan info."""
     return {
-        "ok":           True,
-        "symbol_count": len(SYMBOLS),
-        "cached_count": len(RADAR_CACHE),
-        "last_scan":    LAST_SCAN_TIME,
-        "last_scan_ago": round(time.time() - LAST_SCAN_TIME, 1) if LAST_SCAN_TIME else None,
-        "feed":         ALPACA_FEED,
-        "data_delay":   "15min" if ALPACA_FEED == "iex" else "live",
+        "ok":              True,
+        "symbol_count":    len(SYMBOLS),
+        "cached_count":    len(RADAR_CACHE),
+        "last_scan":       LAST_SCAN_TIME,
+        "last_scan_ago":   round(time.time() - LAST_SCAN_TIME, 1) if LAST_SCAN_TIME else None,
+        "feed":            ALPACA_FEED,
+        "data_delay":      "15min" if ALPACA_FEED == "iex" else "live",
+        "bars_loaded":     len(_historical_bars),
+        "bars_last_refresh": _bars_last_refresh,
+    }
+
+
+@radar_router.get("/debug/bars")
+def debug_bars():
+    """Debug — shows bar data for first symbol to verify fetch is working."""
+    if not _historical_bars:
+        return {"bars_loaded": 0, "error": "No bars in cache"}
+    first_sym = list(_historical_bars.keys())[0]
+    bars = _historical_bars[first_sym]
+    return {
+        "bars_loaded":  len(_historical_bars),
+        "sample_symbol": first_sym,
+        "bar_count":    len(bars),
+        "first_bar":    bars[0] if bars else None,
+        "last_bar":     bars[-1] if bars else None,
     }
 
 
