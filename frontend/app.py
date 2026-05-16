@@ -169,13 +169,25 @@ def _change_color(pct):
     return TEXT
 
 def build_radar_row(sym):
-    """Build one row in the radar table."""
+    """Build one row in the radar table with projection paths."""
     score  = sym.get("composite_score", 0)
     status = sym.get("status", "Watching")
     chg    = sym.get("change_pct", 0)
+    price  = sym.get("price", 0)
     sc     = _score_color(score)
     stc    = _status_color(status)
     chgc   = _change_color(chg)
+
+    # Projection levels
+    trigger      = sym.get("trigger", 0)
+    invalidation = sym.get("invalidation", 0)
+    target1      = sym.get("target1", 0)
+    target2      = sym.get("target2", 0)
+    atr          = sym.get("atr", 1)
+
+    # Bear targets derived from invalidation
+    bear1 = round(invalidation - atr * 1.0, 2)
+    bear2 = round(invalidation - atr * 2.0, 2)
 
     # Score bar
     score_bar = html.Div([
@@ -194,78 +206,120 @@ def build_radar_row(sym):
         "width": "80px",
     })
 
+    # Projection paths block
+    projection_block = html.Div([
+        # Bull path
+        html.Div([
+            html.Span("▲ Bull", style={
+                "fontSize":"9px","fontWeight":"800","color":TEAL_DIM,
+                "textTransform":"uppercase","letterSpacing":".08em","marginRight":"6px",
+            }),
+            html.Span(f"Above ${trigger:,.2f} → ${target1:,.2f} → ${target2:,.2f}", style={
+                "fontSize":"10px","color":TEAL_DIM,"fontFamily":"DM Mono, monospace",
+            }),
+        ], style={"marginBottom":"3px"}),
+        # Neutral path
+        html.Div([
+            html.Span("◆ Neutral", style={
+                "fontSize":"9px","fontWeight":"800","color":YELLOW_DIM,
+                "textTransform":"uppercase","letterSpacing":".08em","marginRight":"6px",
+            }),
+            html.Span(f"${invalidation:,.2f} – ${trigger:,.2f} chop zone", style={
+                "fontSize":"10px","color":YELLOW_DIM,"fontFamily":"DM Mono, monospace",
+            }),
+        ], style={"marginBottom":"3px"}),
+        # Bear path
+        html.Div([
+            html.Span("▼ Bear", style={
+                "fontSize":"9px","fontWeight":"800","color":RED_DIM,
+                "textTransform":"uppercase","letterSpacing":".08em","marginRight":"6px",
+            }),
+            html.Span(f"Below ${invalidation:,.2f} → ${bear1:,.2f} → ${bear2:,.2f}", style={
+                "fontSize":"10px","color":RED_DIM,"fontFamily":"DM Mono, monospace",
+            }),
+        ]),
+    ], style={
+        "borderLeft": f"2px solid {BORDER}",
+        "paddingLeft": "10px",
+        "marginTop": "8px",
+    })
+
     return html.Div([
-        # Rank + Symbol
+        # Top row — all columns
         html.Div([
-            html.Span(sym.get("symbol",""), style={
-                "fontWeight":"800","fontSize":"14px","color":WHITE,
-                "fontFamily":"DM Mono, monospace",
-            }),
-            html.Span(sym.get("setup_type",""), style={
-                "fontSize":"10px","color":MUTED,"display":"block","marginTop":"2px",
-            }),
-        ], style={"flex":"2","minWidth":"120px"}),
+            # Symbol + setup
+            html.Div([
+                html.Span(sym.get("symbol",""), style={
+                    "fontWeight":"800","fontSize":"14px","color":WHITE,
+                    "fontFamily":"DM Mono, monospace",
+                }),
+                html.Span(sym.get("setup_type",""), style={
+                    "fontSize":"10px","color":MUTED,"display":"block","marginTop":"2px",
+                }),
+            ], style={"flex":"2","minWidth":"120px"}),
 
-        # Price + Change
-        html.Div([
-            html.Span(f"${sym.get('price',0):,.2f}", style={
-                "fontWeight":"700","fontSize":"13px","color":WHITE,
-            }),
-            html.Span(f"  {'+' if chg>=0 else ''}{chg:.2f}%", style={
-                "fontSize":"12px","color":chgc,"fontWeight":"600",
-            }),
-        ], style={"flex":"1.5","minWidth":"100px"}),
+            # Price + Change
+            html.Div([
+                html.Span(f"${price:,.2f}", style={
+                    "fontWeight":"700","fontSize":"13px","color":WHITE,
+                }),
+                html.Span(f"  {'+' if chg>=0 else ''}{chg:.2f}%", style={
+                    "fontSize":"12px","color":chgc,"fontWeight":"600",
+                }),
+            ], style={"flex":"1.5","minWidth":"100px"}),
 
-        # Composite Score + bar
-        html.Div([
-            html.Span(f"{score:.0f}", style={
-                "fontWeight":"900","fontSize":"15px","color":sc,
-            }),
-            score_bar,
-        ], style={"flex":"1","minWidth":"70px"}),
+            # Composite Score + bar
+            html.Div([
+                html.Span(f"{score:.0f}", style={
+                    "fontWeight":"900","fontSize":"15px","color":sc,
+                }),
+                score_bar,
+            ], style={"flex":"1","minWidth":"70px"}),
 
-        # Status badge
-        html.Div(
-            html.Span(status, style={
-                "fontSize":"10px","fontWeight":"800","color":stc,
-                "border":f"1px solid {stc}","borderRadius":"999px",
-                "padding":"3px 10px","background":f"{stc}18",
-                "textTransform":"uppercase","letterSpacing":".06em",
-            }),
-            style={"flex":"1","minWidth":"80px"},
-        ),
+            # Status badge
+            html.Div(
+                html.Span(status, style={
+                    "fontSize":"10px","fontWeight":"800","color":stc,
+                    "border":f"1px solid {stc}","borderRadius":"999px",
+                    "padding":"3px 10px","background":f"{stc}18",
+                    "textTransform":"uppercase","letterSpacing":".06em",
+                }),
+                style={"flex":"1","minWidth":"80px"},
+            ),
 
-        # Trigger
-        html.Div([
-            html.Span("Trigger", style={"fontSize":"10px","color":MUTED,"display":"block"}),
-            html.Span(f"${sym.get('trigger',0):,.2f}", style={
-                "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700",
-            }),
-        ], style={"flex":"1","minWidth":"80px"}),
+            # Trigger
+            html.Div([
+                html.Span("Trigger", style={"fontSize":"10px","color":MUTED,"display":"block"}),
+                html.Span(f"${trigger:,.2f}", style={
+                    "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700",
+                }),
+            ], style={"flex":"1","minWidth":"80px"}),
 
-        # Regime
-        html.Div(
-            html.Span(sym.get("regime","—"), style={
-                "fontSize":"11px","color":sc,"fontWeight":"600",
-            }),
-            style={"flex":"1.5","minWidth":"100px"},
-        ),
+            # Regime
+            html.Div(
+                html.Span(sym.get("regime","—"), style={
+                    "fontSize":"11px","color":sc,"fontWeight":"600",
+                }),
+                style={"flex":"1.5","minWidth":"100px"},
+            ),
 
-        # Score breakdown
-        html.Div([
-            html.Span(f"C:{sym.get('confluence',0):.0f} "
-                      f"E:{sym.get('expansion_node',0):.0f} "
-                      f"RS:{sym.get('relative_strength',0):.0f}",
-                      style={"fontSize":"10px","color":sc,"fontFamily":"DM Mono, monospace","fontWeight":"600"}),
-        ], style={"flex":"2","minWidth":"130px"}),
+            # Score breakdown
+            html.Div([
+                html.Span(f"C:{sym.get('confluence',0):.0f} "
+                          f"E:{sym.get('expansion_node',0):.0f} "
+                          f"RS:{sym.get('relative_strength',0):.0f}",
+                          style={"fontSize":"10px","color":sc,
+                                 "fontFamily":"DM Mono, monospace","fontWeight":"600"}),
+            ], style={"flex":"2","minWidth":"130px"}),
+
+        ], style={"display":"flex","alignItems":"center","gap":"12px"}),
+
+        # Projection paths — full width below
+        projection_block,
 
     ], style={
-        "display":       "flex",
-        "alignItems":    "center",
-        "gap":           "12px",
         "padding":       "12px 16px",
         "borderBottom":  f"1px solid {BORDER}",
-        "borderRadius":  "0",
         "transition":    "background .15s",
     })
 
@@ -384,6 +438,10 @@ def build_radar_tab(radar_data=None, status_filter="all"):
                 "padding":"8px 16px","borderBottom":f"1px solid {BORDER}",
                 "marginBottom":"4px",
             }),
+            html.Div([
+                html.Span("▲ Bull / ◆ Neutral / ▼ Bear projection paths shown below each symbol",
+                          style={"fontSize":"10px","color":MUTED,"fontStyle":"italic","paddingLeft":"16px"}),
+            ], style={"paddingBottom":"8px"}),
 
             # Rows
             html.Div(
