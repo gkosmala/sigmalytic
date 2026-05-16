@@ -978,13 +978,94 @@ SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 def build_login_page(error=""):
+    # Feature pills
+    def pill(icon, text):
+        return html.Div([
+            html.Span(icon, style={"marginRight":"6px"}),
+            html.Span(text, style={"fontSize":"11px","fontWeight":"600","color":TEXT}),
+        ], style={"background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
+                  "borderRadius":"999px","padding":"6px 14px","whiteSpace":"nowrap"})
+
+    # Stat tiles
+    def stat(value, label):
+        return html.Div([
+            html.Div(value, style={"fontSize":"24px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+            html.Div(label, style={"fontSize":"10px","color":MUTED,"fontWeight":"600",
+                                   "textTransform":"uppercase","letterSpacing":".12em","marginTop":"4px"}),
+        ], style={"textAlign":"center","flex":"1"})
+
     return html.Div([
         html.Div([
+            # ── Left side — Hero ──────────────────────────────────────────────
             html.Div([
-                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
-                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
-                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
-            ], style={"textAlign":"center","marginBottom":"40px"}),
+                # Logo
+                html.Div([
+                    html.Span("Σ", style={"fontSize":"36px","fontWeight":"900","color":TEAL_DIM,"marginRight":"10px"}),
+                    html.Div([
+                        html.Div("SIGMALYTIC", style={"fontSize":"22px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
+                        html.Div("QUANT CORPORATION", style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em"}),
+                    ]),
+                ], style={"display":"flex","alignItems":"center","marginBottom":"40px"}),
+
+                # Headline
+                html.H1([
+                    "Real-Time ",
+                    html.Span("Decision Intelligence", style={"color":TEAL_DIM}),
+                    html.Br(),
+                    "for Modern Markets.",
+                ], style={"fontSize":"42px","fontWeight":"900","color":WHITE,"lineHeight":"1.1",
+                           "letterSpacing":"-.02em","margin":"0 0 20px"}),
+
+                # Subheadline
+                html.P("Sigmalytic continuously scores, interprets, and projects market behavior — surfacing the highest-quality setups before they trigger.",
+                       style={"fontSize":"16px","color":TEXT,"lineHeight":"1.7","margin":"0 0 32px","maxWidth":"480px"}),
+
+                # Feature pills
+                html.Div([
+                    pill("📡","Live Radar — 1,000 symbols"),
+                    pill("🎯","Armed / Triggered alerts"),
+                    pill("📊","Confluence Engine™"),
+                    pill("🔮","Forward Projection Layer™"),
+                    pill("🧠","Behavioral Intelligence™"),
+                    pill("⚡","60-second scans"),
+                ], style={"display":"flex","flexWrap":"wrap","gap":"8px","marginBottom":"40px"}),
+
+                # Stats bar
+                html.Div([
+                    stat("60s",  "Scan interval"),
+                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+                    stat("5",    "Score dimensions"),
+                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+                    stat("3",    "Projection paths"),
+                    html.Div(style={"width":"1px","background":BORDER,"margin":"0 8px"}),
+                    stat("A–F",  "Grade system"),
+                ], style={"display":"flex","alignItems":"center","background":"rgba(0,0,0,.25)",
+                           "border":f"1px solid {BORDER}","borderRadius":"16px","padding":"20px 24px",
+                           "marginBottom":"40px"}),
+
+                # Architecture callout
+                html.Div([
+                    html.Div("POWERED BY", style={"fontSize":"9px","fontWeight":"800","color":MUTED,
+                                                   "letterSpacing":".3em","textTransform":"uppercase","marginBottom":"10px"}),
+                    html.Div([
+                        html.Span("Confluence Engine™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
+                        html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
+                        html.Span("Expansion Node Modeling™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px","marginRight":"16px"}),
+                        html.Span("·", style={"color":MUTED,"marginRight":"16px"}),
+                        html.Span("Forward Projection Layer™", style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                    ]),
+                ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"20px"}),
+
+            ], style={"flex":"1","minWidth":"0","paddingRight":"60px"}),
+
+            # ── Right side — Login form ────────────────────────────────────────
+            html.Div([
+                html.Div([
+                    html.Div([
+                        html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                        html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                        html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+                    ], style={"textAlign":"center","marginBottom":"40px"}),
 
             html.Div([
                 html.Div(id="login-section", children=[
@@ -1055,13 +1136,29 @@ def build_login_page(error=""):
                 ]),
 
             ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
-                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
-        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
-                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
-    ], style={"background":NAVY})
+                      "padding":"40px","width":"420px","minWidth":"420px",
+                      "boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+
+            ], style={"flexShrink":"0"}),  # end right column
+
+        ], style={"display":"flex","alignItems":"center","justifyContent":"center",
+                  "minHeight":"100vh","padding":"60px 40px","gap":"0","maxWidth":"1200px","margin":"0 auto"}),
+    ], style={"background":NAVY,"minHeight":"100vh"})
 
 def build_main_app():
     return html.Div([html.Div([
+        # Demo mode banner
+        html.Div([
+            html.Span("🎯 INVESTOR DEMO · ", style={"fontWeight":"800","color":TEAL_DIM}),
+            html.Span("Confluence Engine v1.0 · Radar Screen · Behavioral Intelligence · Real-Time Decision Layer",
+                      style={"color":TEXT}),
+            html.Span(" · Beta", style={"fontWeight":"700","color":YELLOW_DIM}),
+        ], style={
+            "background":"rgba(45,143,111,.08)","border":f"1px solid {BORDER_T}",
+            "borderRadius":"10px","padding":"8px 20px","textAlign":"center",
+            "fontSize":"11px","letterSpacing":".04em","marginBottom":"8px",
+        }),
+
         html.Header([
             html.Div([
                 LOGO,
