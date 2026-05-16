@@ -308,6 +308,12 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         high_52w, rel_vol, change_pct, closes
     )
 
+    # ── Trigger and invalidation levels ───────────────────────────────────────
+    trigger      = round(day_high + atr * 0.1, 2)  if atr > 0 else round(price * 1.005, 2)
+    invalidation = round(day_low  - atr * 0.1, 2)  if atr > 0 else round(price * 0.99,  2)
+    target1      = round(price + atr * 1.0, 2)
+    target2      = round(price + atr * 2.0, 2)
+
     # ── Status ─────────────────────────────────────────────────────────────────
     prev_status = _prev_statuses.get(symbol, "")
     status = _determine_status(
@@ -315,12 +321,6 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         price=price, trigger=trigger, invalidation=invalidation,
         prev_status=prev_status,
     )
-
-    # ── Trigger and invalidation levels ───────────────────────────────────────
-    trigger      = round(day_high + atr * 0.1, 2)  if atr > 0 else round(price * 1.005, 2)
-    invalidation = round(day_low  - atr * 0.1, 2)  if atr > 0 else round(price * 0.99,  2)
-    target1      = round(price + atr * 1.0, 2)
-    target2      = round(price + atr * 2.0, 2)
 
     # ── Regime tag ─────────────────────────────────────────────────────────────
     regime = _infer_regime(change_pct, rel_vol, price, ma20, ma50)
