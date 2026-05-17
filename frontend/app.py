@@ -498,6 +498,219 @@ def build_radar_tab(radar_data=None, status_filter="all"):
     ], style={"display":"flex","flexDirection":"column"})
 
 
+def build_scoreboard_tab():
+    """Build the Scoreboard tab — historical radar calls with grades."""
+    import requests as _req
+    try:
+        r = _req.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
+        data = r.json() if r.ok else {}
+    except Exception:
+        data = {}
+
+    total     = data.get("total_graded", 0)
+    pending   = data.get("pending", 0)
+    long_wr   = data.get("long_win_rate", 0)
+    short_wr  = data.get("short_win_rate", 0)
+    grade_a   = data.get("grade_a", 0)
+    grade_b   = data.get("grade_b", 0)
+    grade_c   = data.get("grade_c", 0)
+    avg_pct   = data.get("avg_winner_pct", 0)
+    avg_days  = data.get("avg_days", 0)
+    signals   = data.get("recent_signals", [])
+
+    def grade_color(grade):
+        if grade in ("A","Short-A"):       return TEAL_DIM
+        if grade in ("B","Short-B"):       return BLUE_DIM
+        if grade in ("C","Short-C"):       return YELLOW_DIM
+        if grade in ("Miss","Short-Miss"): return RED_DIM
+        return MUTED
+
+    def grade_label(grade):
+        labels = {
+            "A": "A — Full Target",
+            "B": "B — Partial",
+            "C": "C — Neutral",
+            "Miss": "Miss",
+            "Short-A": "A — Short Full",
+            "Short-B": "B — Short Partial",
+            "Short-C": "C — Short Neutral",
+            "Short-Miss": "Short Miss",
+            "Pending": "Pending",
+        }
+        return labels.get(grade, grade)
+
+    # Signal rows
+    rows = []
+    for s in signals:
+        grade  = s.get("grade", "Pending")
+        gc     = grade_color(grade)
+        gl     = grade_label(grade)
+        pct    = s.get("outcome_pct")
+        days   = s.get("days")
+        sig_type = s.get("signal_type", "")
+        is_short = "Short" in sig_type
+
+        try:
+            dt = datetime.fromisoformat(s["signal_date"].replace("Z", "+00:00"))
+            date_str = dt.strftime("%b %d %I:%M %p")
+        except:
+            date_str = "—"
+
+        rows.append(html.Div([
+            # Symbol + type
+            html.Div([
+                html.Span(s.get("symbol",""), style={"fontWeight":"800","fontSize":"14px",
+                    "color":WHITE,"fontFamily":"DM Mono, monospace","display":"block"}),
+                html.Span(sig_type, style={"fontSize":"10px",
+                    "color": RED_DIM if is_short else TEAL_DIM,
+                    "fontWeight":"700","display":"block","marginTop":"2px"}),
+            ], style={"flex":"1.5","minWidth":"100px"}),
+
+            # Date
+            html.Div(html.Span(date_str, style={"fontSize":"11px","color":TEXT}),
+                     style={"flex":"1.5","minWidth":"100px"}),
+
+            # Entry price
+            html.Div(html.Span(f"${s.get('entry_price',0):,.2f}",
+                style={"fontSize":"12px","color":WHITE,"fontWeight":"700"}),
+                style={"flex":"1","minWidth":"80px"}),
+
+            # Score
+            html.Div(html.Span(f"{s.get('score',0):.0f}",
+                style={"fontSize":"13px","color":_score_color(s.get('score',0)),"fontWeight":"800"}),
+                style={"flex":"0.8","minWidth":"60px"}),
+
+            # Setup
+            html.Div(html.Span(s.get("setup_type","—"),
+                style={"fontSize":"10px","color":TEXT}),
+                style={"flex":"2","minWidth":"120px"}),
+
+            # Regime
+            html.Div(html.Span(s.get("regime","—"),
+                style={"fontSize":"11px","color":TEXT}),
+                style={"flex":"1.5","minWidth":"100px"}),
+
+            # Grade
+            html.Div(
+                html.Span(gl, style={
+                    "fontSize":"10px","fontWeight":"800","color":gc,
+                    "border":f"1px solid {gc}","borderRadius":"999px",
+                    "padding":"3px 10px","background":f"{gc}18",
+                    "textTransform":"uppercase","letterSpacing":".06em",
+                }),
+                style={"flex":"1","minWidth":"90px"},
+            ),
+
+            # Outcome %
+            html.Div(
+                html.Span(f"{pct:+.1f}%" if pct is not None else "—",
+                    style={"fontSize":"12px","fontWeight":"700",
+                           "color": TEAL_DIM if (pct or 0) > 0 else (RED_DIM if (pct or 0) < 0 else MUTED)}),
+                style={"flex":"0.8","minWidth":"60px"},
+            ),
+
+            # Days
+            html.Div(
+                html.Span(f"{days}d" if days is not None else "—",
+                    style={"fontSize":"11px","color":MUTED}),
+                style={"flex":"0.6","minWidth":"40px"},
+            ),
+
+        ], style={
+            "display":"flex","alignItems":"center","gap":"12px",
+            "padding":"12px 16px","borderBottom":f"1px solid {BORDER}",
+        }))
+
+    empty_state = html.Div([
+        html.Div("📡", style={"fontSize":"48px","marginBottom":"16px"}),
+        html.Div("No signals logged yet", style={"fontSize":"16px","fontWeight":"700",
+                  "color":WHITE,"marginBottom":"8px"}),
+        html.Div("The scoreboard begins recording when the market opens Monday. Every Armed, Triggered, and Short Trigger signal will be logged here with a timestamp and entry price, then graded after close.",
+                 style={"fontSize":"13px","color":TEXT,"maxWidth":"480px","lineHeight":"1.7"}),
+    ], style={"textAlign":"center","padding":"60px 20px"})
+
+    return html.Div([
+
+        # ── Header ──────────────────────────────────────────────────────────
+        card([
+            html.Div([
+                html.Div([
+                    html.H2("📋 Signal Scoreboard",
+                            style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                    html.P("Every radar signal logged, tracked, and graded. Transparency by design.",
+                           style={"fontSize":"12px","color":TEXT}),
+                ]),
+                html.Div([
+                    badge("LIVE TRACKING","teal"),
+                    html.Span("Signals logged from market open · Graded at 4:15 PM ET daily",
+                              style={"fontSize":"10px","color":MUTED,"marginLeft":"8px"}),
+                ], style={"display":"flex","alignItems":"center"}),
+            ], style={"display":"flex","justifyContent":"space-between",
+                      "alignItems":"flex-start","marginBottom":"20px"}),
+
+            # Stats
+            html.Div([
+                metric_tile("Total Graded",    str(total),                    WHITE),
+                metric_tile("Pending",         str(pending),                  YELLOW_DIM),
+                metric_tile("Long Win Rate",   f"{long_wr}%",                 TEAL_DIM if long_wr >= 50 else RED_DIM),
+                metric_tile("Short Win Rate",  f"{short_wr}%",                TEAL_DIM if short_wr >= 50 else RED_DIM),
+                metric_tile("A Grades",        str(grade_a),                  TEAL_DIM),
+                metric_tile("B Grades",        str(grade_b),                  BLUE_DIM),
+                metric_tile("Avg Winner",      f"{avg_pct:+.1f}%",            TEAL_DIM if avg_pct > 0 else RED_DIM),
+                metric_tile("Avg Days",        f"{avg_days:.1f}d",            TEXT),
+            ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"12px"}),
+        ], sx={"marginBottom":"16px"}),
+
+        # ── Grade legend ────────────────────────────────────────────────────
+        card([
+            html.Div([
+                html.Span("Grade Guide:", style={"fontSize":"11px","color":MUTED,
+                    "fontWeight":"700","marginRight":"16px"}),
+                *[html.Span([
+                    html.Span(label, style={"fontWeight":"800","color":color,
+                        "fontSize":"11px","marginRight":"4px"}),
+                    html.Span(desc, style={"color":TEXT,"fontSize":"11px","marginRight":"16px"}),
+                ]) for label, color, desc in [
+                    ("A", TEAL_DIM,  "— Hit full target"),
+                    ("B", BLUE_DIM,  "— Hit target 1"),
+                    ("C", YELLOW_DIM,"— Moved right direction"),
+                    ("Miss", RED_DIM,"— Hit invalidation"),
+                    ("Pending", MUTED,"— Awaiting outcome"),
+                ]],
+            ], style={"display":"flex","alignItems":"center","flexWrap":"wrap","gap":"4px"}),
+        ], sx={"marginBottom":"16px","padding":"12px 20px"}),
+
+        # ── Signal table ────────────────────────────────────────────────────
+        card([
+            # Header
+            html.Div([
+                html.Span("Symbol",    style={"flex":"1.5","minWidth":"100px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Date",      style={"flex":"1.5","minWidth":"100px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Entry",     style={"flex":"1","minWidth":"80px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Score",     style={"flex":"0.8","minWidth":"60px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Setup",     style={"flex":"2","minWidth":"120px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Regime",    style={"flex":"1.5","minWidth":"100px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Grade",     style={"flex":"1","minWidth":"90px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Outcome",   style={"flex":"0.8","minWidth":"60px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+                html.Span("Days",      style={"flex":"0.6","minWidth":"40px","fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+            ], style={"display":"flex","alignItems":"center","gap":"12px",
+                      "padding":"8px 16px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
+
+            # Rows or empty state
+            html.Div(rows if rows else [empty_state], id="scoreboard-rows"),
+        ]),
+
+        # Footer
+        html.Div(
+            note_box("Signals are logged in real time when status changes to Armed, Triggered, Short Armed, or Short Trigger. "
+                     "Outcomes are graded automatically at 4:15 PM ET each trading day using closing prices. "
+                     "This scoreboard is public — every call is on record.", "teal"),
+            style={"marginTop":"16px"},
+        ),
+
+    ], style={"display":"flex","flexDirection":"column"})
+
+
 def build_chart(candles, price, nodes):
     kl = get_key_levels(price)
     opens  = [c["o"] for c in candles]
@@ -1226,6 +1439,7 @@ def build_main_app():
                 ("behavior","Behavioral Intelligence"),
                 ("import","Import History"),
                 ("radar","Radar Screen"),
+                ("scoreboard","Scoreboard"),
                 ("billing","Billing"),
                 ("setup","Setup"),
             ]
@@ -1379,6 +1593,7 @@ def load_symbol(_,ticker):
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
               Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
               Input("tab-import","n_clicks"),Input("tab-radar","n_clicks"),
+              Input("tab-scoreboard","n_clicks"),
               Input("tab-billing","n_clicks"),Input("tab-setup","n_clicks"),
               prevent_initial_call=True)
 def set_tab(*_):
@@ -1475,7 +1690,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
 
     # Clock only re-renders clock-dependent tabs
-    if tab in ("behavior","import","billing","setup","performance","feed","radar") and trigger == "i-clock":
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard") and trigger == "i-clock":
         return no_update
     # Radar interval only re-renders radar tab
     if tab != "radar" and trigger == "i-radar":
@@ -1487,6 +1702,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {}, session)
     if tab=="import":      return build_import_tab()
     if tab=="radar":       return build_radar_tab(status_filter=radar_filter)
+    if tab=="scoreboard":  return build_scoreboard_tab()
     if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
