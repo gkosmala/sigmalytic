@@ -89,11 +89,13 @@ def metric_tile(label, value, accent=WHITE):
     return html.Div([
         html.Span(label, style={"display":"block","color":TEXT,"fontSize":"11px",
                                 "fontWeight":"600","textTransform":"uppercase",
-                                "letterSpacing":".12em","marginBottom":"8px"}),
+                                "letterSpacing":".12em","marginBottom":"8px",
+                                "minHeight":"28px"}),
         html.Strong(value, style={"display":"block","color":accent,
                                   "fontSize":"15px","fontWeight":"800"}),
     ], style={"background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
-               "borderRadius":"12px","padding":"14px 16px","minHeight":"64px"})
+               "borderRadius":"12px","padding":"14px 16px","minHeight":"64px",
+               "display":"flex","flexDirection":"column","justifyContent":"space-between"})
 
 def card(children, sx=None):
     s = {"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
@@ -650,14 +652,14 @@ def build_scoreboard_tab():
 
             # Stats
             html.Div([
-                metric_tile("Total Graded",    str(total),                    WHITE),
+                metric_tile("Graded",          str(total),                    WHITE),
                 metric_tile("Pending",         str(pending),                  YELLOW_DIM),
-                metric_tile("Long Win Rate",   f"{long_wr}%",                 TEAL_DIM if long_wr >= 50 else RED_DIM),
-                metric_tile("Short Win Rate",  f"{short_wr}%",                TEAL_DIM if short_wr >= 50 else RED_DIM),
+                metric_tile("Long Win %",      f"{long_wr}%",                 TEAL_DIM if long_wr >= 50 else RED_DIM),
+                metric_tile("Short Win %",     f"{short_wr}%",                TEAL_DIM if short_wr >= 50 else RED_DIM),
                 metric_tile("A Grades",        str(grade_a),                  TEAL_DIM),
                 metric_tile("B Grades",        str(grade_b),                  BLUE_DIM),
-                metric_tile("Avg Winner",      f"{avg_pct:+.1f}%",            TEAL_DIM if avg_pct > 0 else RED_DIM),
-                metric_tile("Avg Days",        f"{avg_days:.1f}d",            TEXT),
+                metric_tile("Avg Win %",       f"{avg_pct:+.1f}%",            TEAL_DIM if avg_pct > 0 else RED_DIM),
+                metric_tile("Avg Hold",        f"{avg_days:.1f}" if avg_days >= 1 else f"{avg_days*24:.1f}h" if avg_days > 0 else "—", TEXT),
             ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"12px"}),
         ], sx={"marginBottom":"16px"}),
 
