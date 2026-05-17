@@ -273,6 +273,21 @@ async def health():
     }
 
 
+@app.get("/api/scoreboard")
+async def get_scoreboard():
+    """Public scoreboard — all historical signals with grades."""
+    from scoreboard_service import get_scoreboard_stats
+    return get_scoreboard_stats()
+
+
+@app.post("/api/scoreboard/grade-now")
+async def grade_now():
+    """Manually trigger grading of pending signals."""
+    from scoreboard_service import grade_pending_signals
+    grade_pending_signals()
+    return {"ok": True, "message": "Grading complete"}
+
+
 @app.get("/api/options/test/{symbol}")
 async def test_options(symbol: str):
     """Debug — test Alpaca options snapshot endpoint with multiple param combos."""

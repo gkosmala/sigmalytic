@@ -39,6 +39,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from supabase_isolation import get_user_id_from_request
 from radar_alerts import maybe_send_alert, send_daily_summary
+from scoreboard_service import log_signal, grade_pending_signals
 
 log = logging.getLogger("radar")
 
@@ -566,6 +567,8 @@ def _process_events(scored: list):
             })
             # Send email alert for important status changes
             maybe_send_alert(s, prev, status)
+            # Log to scoreboard
+            log_signal(s, status)
         _prev_statuses[sym] = status
 
         # Score threshold crossing — only log once per 5 min per symbol
@@ -683,6 +686,14 @@ def start_radar_scheduler():
         hour=12,
         minute=0,
         id="daily_summary",
+    )
+    # Grade pending signals — runs at 4:15 PM ET (21:15 UTC) after market close
+    _scheduler.add_job(
+        grade_pending_signals,
+        trigger="cron",
+        hour=21,
+        minute=15,
+        id="grade_signals",
     )
     _scheduler.start()
     log.info("Radar scheduler started")
