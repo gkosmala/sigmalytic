@@ -1472,7 +1472,72 @@ app.layout = html.Div([
     dcc.Interval(id="i-alpaca",    interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",     interval=1_000, n_intervals=0),
     dcc.Interval(id="i-radar",     interval=60_000,n_intervals=0),  # ← radar refresh
+    dcc.Interval(id="i-demo-timer", interval=90_000,n_intervals=0,max_intervals=1),  # ← 90s conversion trigger
+    dcc.Store(id="s-modal-dismissed", data=False),
     dcc.Store(id="s-radar-filter",  data="all"),
+
+    html.Div(id="conversion-modal", style={"display":"none"},
+             children=html.Div([
+                 # Backdrop
+                 html.Div(style={
+                     "position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                     "background":"rgba(0,0,0,.75)","zIndex":8000,
+                     "display":"flex","alignItems":"center","justifyContent":"center",
+                 }, children=[
+                     # Modal card
+                     html.Div([
+                         # Header
+                         html.Div([
+                             html.Div("Σ", style={"fontSize":"32px","fontWeight":"900",
+                                 "color":TEAL_DIM,"marginBottom":"8px"}),
+                             html.H2("Enjoying Sigmalytic?", style={"fontSize":"22px",
+                                 "fontWeight":"900","color":WHITE,"margin":"0 0 8px"}),
+                             html.P("You've experienced the intelligence layer. Create a free account to unlock:",
+                                    style={"fontSize":"13px","color":TEXT,"margin":"0 0 20px","lineHeight":"1.6"}),
+                         ], style={"textAlign":"center"}),
+
+                         # Feature list
+                         html.Div([
+                             *[html.Div([
+                                 html.Span("✓ ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+                                 html.Span(feat, style={"color":WHITE,"fontSize":"13px"}),
+                             ], style={"marginBottom":"8px"})
+                             for feat in [
+                                 "Save your watchlists across sessions",
+                                 "Receive Armed & Triggered email alerts",
+                                 "Access the Signal Scoreboard",
+                                 "Track your behavioral performance history",
+                                 "Follow your setups across sessions",
+                             ]],
+                         ], style={
+                             "background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
+                             "borderRadius":"12px","padding":"16px 20px","marginBottom":"20px",
+                         }),
+
+                         # Buttons
+                         html.Button("Create Free Account — No Credit Card",
+                             id="modal-signup-btn", n_clicks=0,
+                             style={"width":"100%","background":TEAL,"color":WHITE,
+                                    "border":"none","borderRadius":"10px","padding":"14px",
+                                    "fontSize":"14px","fontWeight":"800","cursor":"pointer",
+                                    "marginBottom":"10px"}),
+                         html.Button("Continue Demo",
+                             id="modal-dismiss-btn", n_clicks=0,
+                             style={"width":"100%","background":"transparent","color":MUTED,
+                                    "border":f"1px solid {BORDER}","borderRadius":"10px",
+                                    "padding":"12px","fontSize":"13px","cursor":"pointer"}),
+
+                         html.P("Free account · No credit card · Cancel anytime",
+                                style={"textAlign":"center","fontSize":"11px","color":MUTED,
+                                       "marginTop":"12px","marginBottom":"0"}),
+
+                     ], style={
+                         "background":NAVY_CARD,"border":f"1px solid {BORDER_T}",
+                         "borderRadius":"20px","padding":"32px","width":"420px",
+                         "boxShadow":"0 20px 60px rgba(0,0,0,.6)",
+                     }),
+                 ]),
+             ])),
 
     html.Div(id="auth-overlay", children=build_login_page(),
              style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
@@ -1704,7 +1769,36 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="behavior":    return build_behavior_tab(analysis or {}, perms or {}, session)
     if tab=="import":      return build_import_tab()
     if tab=="radar":       return build_radar_tab(status_filter=radar_filter)
-    if tab=="scoreboard":  return build_scoreboard_tab()
+    if tab=="scoreboard":
+        # Gate scoreboard behind free account
+        if session and session.get("is_demo"):
+            return card([
+                html.Div([
+                    html.Div("📋", style={"fontSize":"48px","marginBottom":"16px"}),
+                    html.H2("Signal Scoreboard", style={"fontSize":"20px","fontWeight":"900",
+                        "color":WHITE,"marginBottom":"8px"}),
+                    html.P("Create a free account to access the Signal Scoreboard — every radar call logged, tracked, and graded.",
+                           style={"fontSize":"14px","color":TEXT,"marginBottom":"24px","lineHeight":"1.7","maxWidth":"400px"}),
+                    html.Div([
+                        html.Span("✓ ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+                        html.Span("Every Armed & Triggered signal on record", style={"color":TEXT,"fontSize":"13px"}),
+                    ], style={"marginBottom":"8px"}),
+                    html.Div([
+                        html.Span("✓ ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+                        html.Span("A/B/C/Miss grading after market close", style={"color":TEXT,"fontSize":"13px"}),
+                    ], style={"marginBottom":"8px"}),
+                    html.Div([
+                        html.Span("✓ ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+                        html.Span("Win rate, avg return, days to outcome", style={"color":TEXT,"fontSize":"13px"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Button("Create Free Account — No Credit Card",
+                        id="scoreboard-gate-btn", n_clicks=0,
+                        style={"background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"10px","padding":"14px 28px",
+                               "fontSize":"14px","fontWeight":"800","cursor":"pointer"}),
+                ], style={"textAlign":"center","padding":"60px 20px"}),
+            ])
+        return build_scoreboard_tab()
     if tab=="billing":     return build_billing_tab(session, perms or {})
     if tab=="setup":       return build_setup_tab()
     return html.Div("Unknown tab")
@@ -1820,6 +1914,64 @@ def reset_trade_history(n_clicks):
         return html.Span(f"❌ Reset failed (status {r.status_code}).",style={"color":"#ff4444"})
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
+
+# ── Conversion modal callbacks ────────────────────────────────────────────────
+
+@app.callback(
+    Output("conversion-modal", "style"),
+    Output("s-modal-dismissed", "data"),
+    Input("i-demo-timer", "n_intervals"),
+    Input("modal-dismiss-btn", "n_clicks"),
+    Input("modal-signup-btn", "n_clicks"),
+    Input("s-session", "data"),
+    State("s-modal-dismissed", "data"),
+    prevent_initial_call=True,
+)
+def handle_conversion_modal(timer_fired, dismiss_clicks, signup_clicks, session, dismissed):
+    ctx = callback_context
+    if not ctx.triggered:
+        return {"display":"none"}, dismissed
+
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    # Don't show if user is already logged in (not demo)
+    if session and not session.get("is_demo"):
+        return {"display":"none"}, True
+
+    # Dismiss button clicked
+    if trigger == "modal-dismiss-btn" and dismiss_clicks:
+        return {"display":"none"}, True
+
+    # Signup button — send to signup section
+    if trigger == "modal-signup-btn" and signup_clicks:
+        return {"display":"none"}, True
+
+    # Timer fired — show modal if not dismissed and user is in demo
+    if trigger == "i-demo-timer" and not dismissed:
+        if session and session.get("is_demo"):
+            return {"display":"block"}, dismissed
+
+    return {"display":"none"}, dismissed
+
+
+@app.callback(
+    Output("auth-overlay", "style"),
+    Output("login-section", "style"),
+    Output("signup-section", "style"),
+    Input("modal-signup-btn", "n_clicks"),
+    Input("scoreboard-gate-btn", "n_clicks"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def modal_to_signup(modal_clicks, gate_clicks, session):
+    """When modal or gate signup clicked — show auth overlay on signup section."""
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update, no_update
+    overlay = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+               "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    return overlay, {"display":"none"}, {"display":"block"}
+
 
 # ── Register billing callbacks ─────────────────────────────────────────────
 register_billing_callbacks(app)
