@@ -1474,6 +1474,7 @@ app.layout = html.Div([
     dcc.Interval(id="i-radar",     interval=60_000,n_intervals=0),  # ← radar refresh
     dcc.Interval(id="i-demo-timer", interval=90_000,n_intervals=0,max_intervals=1),  # ← 90s conversion trigger
     dcc.Store(id="s-modal-dismissed", data=False),
+    dcc.Store(id="s-show-signup", data=False),
     dcc.Store(id="s-radar-filter",  data="all"),
 
     html.Div(id="conversion-modal", style={"display":"none"},
@@ -1562,13 +1563,7 @@ def load_permissions(session):
         pass
     return {}
 
-@app.callback(Output("auth-overlay","style"), Input("s-session","data"))
-def route_page(session):
-    overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
-                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}
-    if session and session.get("user_id"):
-        return {"display":"none"}
-    return overlay_base
+
 
 @app.callback(Output("login-section","style"), Output("signup-section","style"),
               Input("goto-signup-btn","n_clicks"), Input("goto-login-btn","n_clicks"),
@@ -1584,12 +1579,10 @@ def toggle_auth_section(to_signup, to_login):
 @app.callback(Output("s-session","data"),Output("s-page","data"),
               Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
               Input("signup-btn","n_clicks"),
-              Input("modal-signup-btn","n_clicks"),
-              Input("scoreboard-gate-btn","n_clicks"),
               State("login-email","value"),State("login-password","value"),
               State("signup-email","value"),State("signup-password","value"),
               prevent_initial_call=True)
-def handle_auth(login_clicks, demo_clicks, signup_clicks, modal_clicks, gate_clicks,
+def handle_auth(login_clicks, demo_clicks, signup_clicks,
                 login_email, login_password, signup_email, signup_password):
     ctx = callback_context
     if not ctx.triggered: return no_update, no_update
@@ -1597,10 +1590,6 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks, modal_clicks, gate_cli
 
     if trigger == "demo-btn":
         return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
-
-    if trigger in ("modal-signup-btn", "scoreboard-gate-btn"):
-        # Clear session to show auth overlay on signup tab
-        return None, "login"
 
     if trigger == "login-btn":
         if not login_email or not login_password: return no_update, no_update
@@ -1920,6 +1909,33 @@ def reset_trade_history(n_clicks):
         return html.Span(f"❌ Reset failed (status {r.status_code}).",style={"color":"#ff4444"})
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
+
+# ── Show signup from modal/gate buttons ───────────────────────────────────────
+
+@app.callback(
+    Output("s-show-signup", "data"),
+    Input("modal-signup-btn", "n_clicks"),
+    Input("scoreboard-gate-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
+def trigger_signup(*_):
+    return True
+
+
+@app.callback(
+    Output("auth-overlay", "style"),
+    Input("s-session", "data"),
+    Input("s-show-signup", "data"),
+)
+def show_overlay(session, show_signup):
+    overlay = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+               "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    if show_signup:
+        return overlay
+    if session and session.get("user_id"):
+        return {"display":"none"}
+    return overlay
+
 
 # ── Conversion modal callbacks ────────────────────────────────────────────────
 
