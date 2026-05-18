@@ -1695,8 +1695,12 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
                     "access_token": data.get("access_token",""),
                     "is_demo":      False,
                 }, "app"
-        except Exception:
-            pass
+            else:
+                # Show error message
+                err = r.json().get("error_description", r.json().get("msg", "Invalid email or password"))
+                return {"login_error": err}, no_update
+        except Exception as e:
+            return {"login_error": str(e)[:100]}, no_update
         return no_update, no_update
 
     if trigger == "signup-btn":
@@ -1997,6 +2001,19 @@ def reset_trade_history(n_clicks):
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
 
+# ── Login error display ───────────────────────────────────────────────────────
+
+@app.callback(
+    Output("login-error", "children"),
+    Input("s-session", "data"),
+    prevent_initial_call=True,
+)
+def show_login_error(session):
+    if session and session.get("login_error"):
+        return session["login_error"]
+    return ""
+
+
 # ── Password reset callbacks ──────────────────────────────────────────────────
 
 @app.callback(
@@ -2119,6 +2136,9 @@ def show_overlay(session, show_signup):
     overlay = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
                "zIndex":9999,"background":NAVY,"overflowY":"auto"}
     if show_signup:
+        return overlay
+    # Login error — keep overlay visible
+    if session and session.get("login_error"):
         return overlay
     if session and session.get("user_id"):
         return {"display":"none"}
