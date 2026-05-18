@@ -320,11 +320,8 @@ async function sendReset() {
   if (!email) { msg.style.color='#f87171'; msg.innerText='Enter your email first.'; return; }
   msg.style.color='#94a3b8'; msg.innerText='Sending...';
   try {
-    var formData = new FormData();
-    formData.append('email', email);
-    var r = await fetch('/api/auth/reset-password', {
-      method:'POST',
-      body: formData
+    var r = await fetch('/api/auth/reset-password?email=' + encodeURIComponent(email), {
+      method:'GET'
     });
     var d = await r.json();
     if (d.ok) {
@@ -345,23 +342,11 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
-@app.post("/api/auth/reset-password")
-async def request_password_reset(request: Request):
+@app.get("/api/auth/reset-password")
+async def request_password_reset(email: str = ""):
     """Send password reset email via Supabase."""
-    import os as _os, json as _json, urllib.parse as _up
-    email = ""
-    try:
-        body_bytes = await request.body()
-        body_str = body_bytes.decode("utf-8")
-        log.info(f"Reset body: {body_str[:200]!r}")
-        try:
-            data = _json.loads(body_str)
-            email = data.get("email", "").strip()
-        except Exception:
-            parsed = _up.parse_qs(body_str)
-            email = parsed.get("email", [""])[0].strip()
-    except Exception as e:
-        log.error(f"Reset parse error: {e}")
+    import os as _os
+    email = email.strip()
     log.info(f"Password reset requested for: {email!r}")
     if not email:
         return {"ok": False, "error": "Email required"}
