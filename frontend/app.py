@@ -348,10 +348,20 @@ def build_radar_tab(radar_data=None, status_filter="all"):
     # Fetch from backend if no data passed
     if radar_data is None:
         try:
-            r = _req.get(f"{BACKEND_HTTP}/api/radar/scores?limit=100", timeout=6)
+            r = _req.get(f"{BACKEND_HTTP}/api/radar/scores?limit=100", timeout=10)
             radar_data = r.json() if r.ok else {}
         except Exception:
             radar_data = {}
+        if not radar_data or not radar_data.get("symbols"):
+            return card([
+                html.Div([
+                    html.Div("📡", style={"fontSize":"48px","marginBottom":"16px"}),
+                    html.Div("Radar initializing…", style={"fontSize":"16px","fontWeight":"700",
+                              "color":WHITE,"marginBottom":"8px"}),
+                    html.Div("The scoring engine is warming up. This takes about 60 seconds on first load. Please wait and the page will refresh automatically.",
+                             style={"fontSize":"13px","color":TEXT,"maxWidth":"400px","lineHeight":"1.7"}),
+                ], style={"textAlign":"center","padding":"60px 20px"}),
+            ])
 
     all_symbols = radar_data.get("symbols", [])
 
@@ -504,7 +514,7 @@ def build_scoreboard_tab():
     """Build the Scoreboard tab — historical radar calls with grades."""
     import requests as _req
     try:
-        r = _req.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
+        r = _req.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=10)
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
@@ -1786,11 +1796,12 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
                         html.Span("✓ ", style={"color":TEAL_DIM,"fontWeight":"800"}),
                         html.Span("Win rate, avg return, days to outcome", style={"color":TEXT,"fontSize":"13px"}),
                     ], style={"marginBottom":"24px"}),
-                    html.Button("Create Free Account — No Credit Card",
-                        id="scoreboard-gate-btn", n_clicks=0,
+                    html.A("Create Free Account — No Credit Card",
+                        href="/",
                         style={"background":TEAL,"color":WHITE,"border":"none",
                                "borderRadius":"10px","padding":"14px 28px",
-                               "fontSize":"14px","fontWeight":"800","cursor":"pointer"}),
+                               "fontSize":"14px","fontWeight":"800","cursor":"pointer",
+                               "textDecoration":"none","display":"inline-block"}),
                 ], style={"textAlign":"center","padding":"60px 20px"}),
             ])
         return build_scoreboard_tab()
@@ -1915,7 +1926,6 @@ def reset_trade_history(n_clicks):
 @app.callback(
     Output("s-show-signup", "data"),
     Input("modal-signup-btn", "n_clicks"),
-    Input("scoreboard-gate-btn", "n_clicks"),
     prevent_initial_call=True,
 )
 def trigger_signup(*_):
@@ -1944,12 +1954,11 @@ def show_overlay(session, show_signup):
     Output("s-modal-dismissed", "data"),
     Input("i-demo-timer", "n_intervals"),
     Input("modal-dismiss-btn", "n_clicks"),
-    Input("modal-signup-btn", "n_clicks"),
     Input("s-session", "data"),
     State("s-modal-dismissed", "data"),
     prevent_initial_call=True,
 )
-def handle_conversion_modal(timer_fired, dismiss_clicks, signup_clicks, session, dismissed):
+def handle_conversion_modal(timer_fired, dismiss_clicks, session, dismissed):
     ctx = callback_context
     if not ctx.triggered:
         return {"display":"none"}, dismissed
@@ -1962,10 +1971,6 @@ def handle_conversion_modal(timer_fired, dismiss_clicks, signup_clicks, session,
 
     # Dismiss button clicked
     if trigger == "modal-dismiss-btn" and dismiss_clicks:
-        return {"display":"none"}, True
-
-    # Signup button — send to signup section
-    if trigger == "modal-signup-btn" and signup_clicks:
         return {"display":"none"}, True
 
     # Timer fired — show modal if not dismissed and user is in demo
