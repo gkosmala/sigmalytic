@@ -1384,15 +1384,15 @@ def build_login_page(error=""):
                                  "outline":"none","fontFamily":"DM Sans, sans-serif"}),
             ], style={"marginBottom":"24px"}),
             html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
-            html.Div(id="forgot-status", style={"fontSize":"12px","color":TEAL_DIM,"marginBottom":"12px","textAlign":"center"}),
             html.Button("Sign In", id="login-btn", n_clicks=0,
                 style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
                        "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
                        "cursor":"pointer","marginBottom":"8px"}),
-            html.Button("Forgot Password?", id="forgot-btn", n_clicks=0,
-                style={"width":"100%","background":"none","border":"none","color":TEAL_DIM,
-                       "fontSize":"12px","fontWeight":"600","cursor":"pointer",
-                       "padding":"6px","marginBottom":"10px"}),
+            html.Div(id="forgot-msg", style={"fontSize":"12px","marginBottom":"8px","textAlign":"center","minHeight":"18px"}),
+            html.Button("Forgot Password? Send Reset Email", id="forgot-btn", n_clicks=0,
+                style={"width":"100%","background":"transparent","border":f"1px solid {BORDER}",
+                       "color":TEAL_DIM,"borderRadius":"8px","padding":"10px",
+                       "fontSize":"12px","fontWeight":"600","cursor":"pointer","marginBottom":"10px"}),
             html.Div([
                 html.Div(style={"flex":"1","height":"1px","background":BORDER}),
                 html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
@@ -2070,30 +2070,30 @@ def submit_reset(n_clicks, password, confirm, token):
 # ── Forgot password ───────────────────────────────────────────────────────────
 
 @app.callback(
-    Output("forgot-status", "children"),
-    Output("forgot-status", "style"),
+    Output("forgot-msg", "children"),
+    Output("forgot-msg", "style"),
     Input("forgot-btn", "n_clicks"),
     State("login-email", "value"),
     prevent_initial_call=True,
 )
 def forgot_password(n_clicks, email):
     if not n_clicks:
-        return "", {"display":"none"}
+        return "", {}
     if not email:
-        return "Enter your email above first.", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+        return "Enter your email above first.", {"fontSize":"12px","color":RED_DIM,"textAlign":"center"}
     import requests as _req
     try:
         r = _req.post(
-            f"{SUPABASE_URL}/auth/v1/recover",
-            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            f"{BACKEND_HTTP}/api/auth/reset-password",
             json={"email": email},
             timeout=10,
         )
-        if r.status_code in (200, 204):
-            return f"Password reset email sent to {email}. Check your inbox.", {"fontSize":"12px","color":TEAL_DIM,"marginBottom":"12px","textAlign":"center"}
-        return "Something went wrong. Try again.", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+        data = r.json()
+        if data.get("ok"):
+            return f"✅ Reset email sent to {email}. Check your inbox.", {"fontSize":"12px","color":TEAL_DIM,"textAlign":"center"}
+        return "Something went wrong. Try again.", {"fontSize":"12px","color":RED_DIM,"textAlign":"center"}
     except Exception as e:
-        return f"Error: {str(e)[:100]}", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+        return f"Error: {str(e)[:100]}", {"fontSize":"12px","color":RED_DIM,"textAlign":"center"}
 
 
 # ── Show signup from modal/gate buttons ───────────────────────────────────────

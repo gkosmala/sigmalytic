@@ -273,6 +273,35 @@ async def health():
     }
 
 
+@app.post("/api/auth/reset-password")
+async def request_password_reset(request: Request):
+    """Send password reset email via Supabase."""
+    import os as _os
+    body = await request.json()
+    email = body.get("email", "").strip()
+    if not email:
+        raise HTTPException(400, "Email required")
+
+    SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
+
+    try:
+        r = requests.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={
+                "email": email,
+                "redirect_to": "https://sigmalytic-frontend.onrender.com"
+            },
+            timeout=10,
+        )
+        if r.status_code in (200, 204):
+            return {"ok": True, "message": f"Reset email sent to {email}"}
+        return {"ok": False, "error": r.text[:200]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/sms/test")
 async def test_sms():
     """Send a test SMS to verify Twilio is working."""
