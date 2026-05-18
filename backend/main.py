@@ -1,4 +1,4 @@
-"""
+""" 
 Sigmalytic Backend — FastAPI + Alpaca Real-Time
 ------------------------------------------------
 Endpoints:
