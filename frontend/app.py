@@ -1194,7 +1194,7 @@ app = dash.Dash(
     __name__,
     title="Sigmalytic Quant Corporation — Decision Intelligence",
     update_title=None,
-    suppress_callback_exceptions=True,
+    suppress_callback_exceptions=False,
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
                {"name":"theme-color","content":NAVY}],
 )
@@ -1558,6 +1558,13 @@ app.layout = html.Div([
     dcc.Store(id="s-modal-dismissed", data=False),
     dcc.Store(id="s-show-signup", data=False),
     dcc.Store(id="s-reset-token", data=""),  # stores recovery token from URL
+    # Hidden dummy components so Dash registers callbacks even with suppress_callback_exceptions=True
+    html.Div([
+        html.Button(id="login-btn-dummy", n_clicks=0, style={"display":"none"}),
+        html.Div(id="login-error-dummy", style={"display":"none"}),
+        html.Div(id="forgot-msg-dummy", style={"display":"none"}),
+        html.Div(id="reset-error-dummy", style={"display":"none"}),
+    ], style={"display":"none"}),
     dcc.Store(id="s-radar-filter",  data="all"),
 
     html.Div(id="conversion-modal", style={"display":"none"},
@@ -1681,24 +1688,24 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
         if not login_email or not login_password: return no_update, no_update
         import requests as _req
         try:
-            r = _req.post(
-                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
-                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
-                json={"email":login_email,"password":login_password}, timeout=10,
+            r = _req.get(
+                f"{BACKEND_HTTP}/api/auth/test-login",
+                params={"email": login_email, "password": login_password},
+                timeout=10,
             )
             if r.ok:
                 data = r.json()
-                user = data.get("user",{})
-                return {
-                    "user_id":      user.get("id",""),
-                    "email":        user.get("email",""),
-                    "access_token": data.get("access_token",""),
-                    "is_demo":      False,
-                }, "app"
-            else:
-                # Show error message
-                err = r.json().get("error_description", r.json().get("msg", "Invalid email or password"))
-                return {"login_error": err}, no_update
+                if data.get("status") == 200:
+                    resp = data.get("response", {})
+                    user = resp.get("user", {})
+                    return {
+                        "user_id":      user.get("id", ""),
+                        "email":        user.get("email", ""),
+                        "access_token": resp.get("access_token", ""),
+                        "is_demo":      False,
+                    }, "app"
+                else:
+                    return {"login_error": data.get("response", {}).get("msg", "Invalid credentials")}, no_update
         except Exception as e:
             return {"login_error": str(e)[:100]}, no_update
         return no_update, no_update
