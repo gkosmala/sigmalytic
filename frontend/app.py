@@ -2023,17 +2023,6 @@ def show_login_error(session):
 
 # ── Password reset callbacks ──────────────────────────────────────────────────
 
-@app.callback(
-    Output("reset-overlay", "style"),
-    Output("s-reset-token", "data"),
-    Input("url-refresh", "n_intervals") if False else Input("i-clock", "n_intervals"),
-    prevent_initial_call=False,
-)
-def check_reset_token(n):
-    """Check sessionStorage for recovery token via clientside callback."""
-    return no_update, no_update
-
-
 app.clientside_callback(
     """
     function(n) {
