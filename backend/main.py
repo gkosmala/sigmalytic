@@ -366,10 +366,12 @@ async def request_password_reset(request: Request):
             },
             timeout=10,
         )
+        log.info(f"Supabase recover response: {r.status_code} — {r.text[:300]}")
         if r.status_code in (200, 204):
             return {"ok": True, "message": f"Reset email sent to {email}"}
-        return {"ok": False, "error": r.text[:200]}
+        return {"ok": False, "error": f"Supabase {r.status_code}: {r.text[:200]}"}
     except Exception as e:
+        log.error(f"Reset password error: {e}")
         return {"ok": False, "error": str(e)}
 
 
