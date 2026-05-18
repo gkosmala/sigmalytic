@@ -342,6 +342,23 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
+@app.get("/api/auth/test-login")
+async def test_login(email: str = "", password: str = ""):
+    """Test login against Supabase — debug only."""
+    SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+    try:
+        r = requests.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={"email": email, "password": password},
+            timeout=10,
+        )
+        return {"status": r.status_code, "response": r.json()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/auth/reset-password")
 async def request_password_reset(email: str = ""):
     """Send password reset email via Supabase."""
