@@ -345,7 +345,8 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
-class ResetRequest(BaseModel):
+from pydantic import BaseModel as _BaseModel
+class ResetRequest(_BaseModel):
     email: str = ""
 
 @app.post("/api/auth/reset-password")
