@@ -1584,10 +1584,12 @@ def toggle_auth_section(to_signup, to_login):
 @app.callback(Output("s-session","data"),Output("s-page","data"),
               Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
               Input("signup-btn","n_clicks"),
+              Input("modal-signup-btn","n_clicks"),
+              Input("scoreboard-gate-btn","n_clicks"),
               State("login-email","value"),State("login-password","value"),
               State("signup-email","value"),State("signup-password","value"),
               prevent_initial_call=True)
-def handle_auth(login_clicks, demo_clicks, signup_clicks,
+def handle_auth(login_clicks, demo_clicks, signup_clicks, modal_clicks, gate_clicks,
                 login_email, login_password, signup_email, signup_password):
     ctx = callback_context
     if not ctx.triggered: return no_update, no_update
@@ -1595,6 +1597,10 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
 
     if trigger == "demo-btn":
         return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
+
+    if trigger in ("modal-signup-btn", "scoreboard-gate-btn"):
+        # Clear session to show auth overlay on signup tab
+        return None, "login"
 
     if trigger == "login-btn":
         if not login_email or not login_password: return no_update, no_update
@@ -1954,23 +1960,7 @@ def handle_conversion_modal(timer_fired, dismiss_clicks, signup_clicks, session,
     return {"display":"none"}, dismissed
 
 
-@app.callback(
-    Output("auth-overlay", "style"),
-    Output("login-section", "style"),
-    Output("signup-section", "style"),
-    Input("modal-signup-btn", "n_clicks"),
-    Input("scoreboard-gate-btn", "n_clicks"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def modal_to_signup(modal_clicks, gate_clicks, session):
-    """When modal or gate signup clicked — show auth overlay on signup section."""
-    ctx = callback_context
-    if not ctx.triggered:
-        return no_update, no_update, no_update
-    overlay = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
-               "zIndex":9999,"background":NAVY,"overflowY":"auto"}
-    return overlay, {"display":"none"}, {"display":"block"}
+
 
 
 # ── Register billing callbacks ─────────────────────────────────────────────
