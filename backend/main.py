@@ -320,10 +320,11 @@ async function sendReset() {
   if (!email) { msg.style.color='#f87171'; msg.innerText='Enter your email first.'; return; }
   msg.style.color='#94a3b8'; msg.innerText='Sending...';
   try {
+    var formData = new FormData();
+    formData.append('email', email);
     var r = await fetch('/api/auth/reset-password', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:email})
+      body: formData
     });
     var d = await r.json();
     if (d.ok) {
@@ -331,7 +332,7 @@ async function sendReset() {
       msg.innerText='✅ Reset email sent! Check your inbox.';
     } else {
       msg.style.color='#f87171';
-      msg.innerText='Something went wrong. Try again.';
+      msg.innerText='Error: ' + (d.error || 'Try again.');
     }
   } catch(e) {
     msg.style.color='#f87171';
