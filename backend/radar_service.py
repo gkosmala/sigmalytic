@@ -40,6 +40,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from supabase_isolation import get_user_id_from_request
 from radar_alerts import maybe_send_alert, send_daily_summary
 from scoreboard_service import log_signal, grade_pending_signals
+from sms_alerts import maybe_send_sms
 
 log = logging.getLogger("radar")
 
@@ -569,6 +570,8 @@ def _process_events(scored: list):
             maybe_send_alert(s, prev, status)
             # Log to scoreboard
             log_signal(s, status)
+            # Send SMS alert
+            maybe_send_sms(s, prev, status)
         _prev_statuses[sym] = status
 
         # Score threshold crossing — only log once per 5 min per symbol

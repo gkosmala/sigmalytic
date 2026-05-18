@@ -273,6 +273,13 @@ async def health():
     }
 
 
+@app.get("/api/sms/test")
+async def test_sms():
+    """Send a test SMS to verify Twilio is working."""
+    from sms_alerts import send_test_sms
+    return send_test_sms()
+
+
 @app.get("/api/scoreboard")
 async def get_scoreboard():
     """Public scoreboard — all historical signals with grades."""
