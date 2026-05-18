@@ -1320,10 +1320,15 @@ def build_login_page(error=""):
                                  "outline":"none","fontFamily":"DM Sans, sans-serif"}),
             ], style={"marginBottom":"24px"}),
             html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+            html.Div(id="forgot-status", style={"fontSize":"12px","color":TEAL_DIM,"marginBottom":"12px","textAlign":"center"}),
             html.Button("Sign In", id="login-btn", n_clicks=0,
                 style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
                        "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
-                       "cursor":"pointer","marginBottom":"16px"}),
+                       "cursor":"pointer","marginBottom":"8px"}),
+            html.Button("Forgot Password?", id="forgot-btn", n_clicks=0,
+                style={"width":"100%","background":"none","border":"none","color":TEAL_DIM,
+                       "fontSize":"12px","fontWeight":"600","cursor":"pointer",
+                       "padding":"6px","marginBottom":"10px"}),
             html.Div([
                 html.Div(style={"flex":"1","height":"1px","background":BORDER}),
                 html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
@@ -1920,6 +1925,35 @@ def reset_trade_history(n_clicks):
         return html.Span(f"❌ Reset failed (status {r.status_code}).",style={"color":"#ff4444"})
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
+
+# ── Forgot password ───────────────────────────────────────────────────────────
+
+@app.callback(
+    Output("forgot-status", "children"),
+    Output("forgot-status", "style"),
+    Input("forgot-btn", "n_clicks"),
+    State("login-email", "value"),
+    prevent_initial_call=True,
+)
+def forgot_password(n_clicks, email):
+    if not n_clicks:
+        return "", {"display":"none"}
+    if not email:
+        return "Enter your email above first.", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+    import requests as _req
+    try:
+        r = _req.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={"email": email},
+            timeout=10,
+        )
+        if r.status_code in (200, 204):
+            return f"Password reset email sent to {email}. Check your inbox.", {"fontSize":"12px","color":TEAL_DIM,"marginBottom":"12px","textAlign":"center"}
+        return "Something went wrong. Try again.", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+    except Exception as e:
+        return f"Error: {str(e)[:100]}", {"fontSize":"12px","color":RED_DIM,"marginBottom":"12px","textAlign":"center"}
+
 
 # ── Show signup from modal/gate buttons ───────────────────────────────────────
 
