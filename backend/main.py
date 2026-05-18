@@ -345,32 +345,23 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
-from pydantic import BaseModel as _BaseModel
-class ResetRequest(_BaseModel):
-    email: str = ""
-
 @app.post("/api/auth/reset-password")
-async def request_password_reset(payload: ResetRequest = None, request: Request = None):
+async def request_password_reset(request: Request):
     """Send password reset email via Supabase."""
-    import os as _os
+    import os as _os, json as _json, urllib.parse as _up
     email = ""
-    # Try Pydantic model first
-    if payload and payload.email:
-        email = payload.email.strip()
-    # Fall back to raw body
-    if not email and request:
+    try:
+        body_bytes = await request.body()
+        body_str = body_bytes.decode("utf-8")
+        log.info(f"Reset body: {body_str[:200]!r}")
         try:
-            body_bytes = await request.body()
-            body_str = body_bytes.decode("utf-8")
-            import json as _json, urllib.parse as _up
-            try:
-                data = _json.loads(body_str)
-                email = data.get("email", "").strip()
-            except Exception:
-                parsed = _up.parse_qs(body_str)
-                email = parsed.get("email", [""])[0].strip()
-        except Exception as e:
-            log.error(f"Reset parse error: {e}")
+            data = _json.loads(body_str)
+            email = data.get("email", "").strip()
+        except Exception:
+            parsed = _up.parse_qs(body_str)
+            email = parsed.get("email", [""])[0].strip()
+    except Exception as e:
+        log.error(f"Reset parse error: {e}")
     log.info(f"Password reset requested for: {email!r}")
     if not email:
         return {"ok": False, "error": "Email required"}
