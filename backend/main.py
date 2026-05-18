@@ -348,8 +348,13 @@ async function sendReset() {
 async def request_password_reset(request: Request):
     """Send password reset email via Supabase."""
     import os as _os
-    body = await request.json()
-    email = body.get("email", "").strip()
+    # Try JSON first, fall back to form data
+    try:
+        body = await request.json()
+        email = body.get("email", "").strip()
+    except Exception:
+        form = await request.form()
+        email = form.get("email", "").strip()
     if not email:
         raise HTTPException(400, "Email required")
 
