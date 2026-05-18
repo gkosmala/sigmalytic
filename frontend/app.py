@@ -1200,6 +1200,31 @@ app = dash.Dash(
 )
 server = app.server
 
+# ── Password reset JS ─────────────────────────────────────────────────────────
+RESET_JS = """
+<script>
+// Detect Supabase recovery token in URL hash and store in hidden input
+window.addEventListener('load', function() {
+    var hash = window.location.hash;
+    if (hash && hash.includes('type=recovery') && hash.includes('access_token=')) {
+        var params = new URLSearchParams(hash.substring(1));
+        var token = params.get('access_token');
+        if (token) {
+            // Store token in sessionStorage for the Dash callback to pick up
+            sessionStorage.setItem('supabase_recovery_token', token);
+            // Signal Dash by updating a hidden div
+            setTimeout(function() {
+                var el = document.getElementById('recovery-token-signal');
+                if (el) el.innerText = token;
+            }, 1000);
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+});
+</script>
+"""
+
 app.index_string = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1208,6 +1233,7 @@ app.index_string = f"""<!DOCTYPE html>
 {{%favicon%}}
 {{%css%}}
 <style>{GLOBAL_CSS}</style>
+{RESET_JS}
 </head>
 <body>
 {{%app_entry%}}
@@ -1223,6 +1249,44 @@ _init_candles = [{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)}
 
 SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+
+def build_reset_page():
+    """Password reset page — shown when user clicks reset link from email."""
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            html.Div([
+                html.H2("Set New Password", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                html.Div([
+                    html.Label("New Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="reset-password-input", type="password", placeholder="Min 6 characters",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"16px"}),
+                html.Div([
+                    html.Label("Confirm Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                    dcc.Input(id="reset-password-confirm", type="password", placeholder="Repeat password",
+                              style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                     "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                ], style={"marginBottom":"24px"}),
+                html.Div(id="reset-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                html.Button("Set New Password", id="reset-submit-btn", n_clicks=0,
+                    style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                           "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                           "cursor":"pointer"}),
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
 
 def build_login_page(error=""):
     def pill(icon, text):
@@ -1490,6 +1554,7 @@ app.layout = html.Div([
     dcc.Interval(id="i-demo-timer", interval=90_000,n_intervals=0,max_intervals=1),  # ← 90s conversion trigger
     dcc.Store(id="s-modal-dismissed", data=False),
     dcc.Store(id="s-show-signup", data=False),
+    dcc.Store(id="s-reset-token", data=""),  # stores recovery token from URL
     dcc.Store(id="s-radar-filter",  data="all"),
 
     html.Div(id="conversion-modal", style={"display":"none"},
@@ -1555,6 +1620,9 @@ app.layout = html.Div([
                  ]),
              ])),
 
+    html.Div(id="reset-overlay", children=build_reset_page(),
+             style={"display":"none","position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":10000,"background":NAVY,"overflowY":"auto"}),
     html.Div(id="auth-overlay", children=build_login_page(),
              style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
                     "zIndex":9999,"background":NAVY,"overflowY":"auto"}),
@@ -1925,6 +1993,79 @@ def reset_trade_history(n_clicks):
         return html.Span(f"❌ Reset failed (status {r.status_code}).",style={"color":"#ff4444"})
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}",style={"color":"#ff4444"})
+
+# ── Password reset callbacks ──────────────────────────────────────────────────
+
+@app.callback(
+    Output("reset-overlay", "style"),
+    Output("s-reset-token", "data"),
+    Input("url-refresh", "n_intervals") if False else Input("i-clock", "n_intervals"),
+    prevent_initial_call=False,
+)
+def check_reset_token(n):
+    """Check sessionStorage for recovery token via clientside callback."""
+    return no_update, no_update
+
+
+app.clientside_callback(
+    """
+    function(n) {
+        var token = sessionStorage.getItem('supabase_recovery_token');
+        if (token) {
+            return [
+                {"display":"block","position":"fixed","top":"0","left":"0",
+                 "right":"0","bottom":"0","zIndex":"10000",
+                 "background":"#0d1b2e","overflowY":"auto"},
+                token
+            ];
+        }
+        return [{"display":"none"}, ""];
+    }
+    """,
+    Output("reset-overlay", "style"),
+    Output("s-reset-token", "data"),
+    Input("i-clock", "n_intervals"),
+)
+
+
+@app.callback(
+    Output("reset-error", "children"),
+    Input("reset-submit-btn", "n_clicks"),
+    State("reset-password-input", "value"),
+    State("reset-password-confirm", "value"),
+    State("s-reset-token", "data"),
+    prevent_initial_call=True,
+)
+def submit_reset(n_clicks, password, confirm, token):
+    if not n_clicks:
+        return ""
+    if not password or len(password) < 6:
+        return "Password must be at least 6 characters."
+    if password != confirm:
+        return "Passwords do not match."
+    if not token:
+        return "Reset token missing. Please request a new reset link."
+    import requests as _req
+    try:
+        # Use Supabase REST API to update password with the recovery token
+        r = _req.put(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"password": password},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            import json as _json
+            # Clear token from sessionStorage via JS and redirect to login
+            return "✅ Password updated successfully. You can now sign in."
+        return f"Error: {r.text[:200]}"
+    except Exception as e:
+        return f"Error: {str(e)[:200]}"
+
 
 # ── Forgot password ───────────────────────────────────────────────────────────
 
