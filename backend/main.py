@@ -349,15 +349,31 @@ async function sendReset() {
 async def request_password_reset(request: Request):
     """Send password reset email via Supabase."""
     import os as _os
-    # Try JSON first, fall back to form data
+    from fastapi import Form as _Form
+    email = ""
+    content_type = request.headers.get("content-type", "")
     try:
-        body = await request.json()
-        email = body.get("email", "").strip()
-    except Exception:
-        form = await request.form()
-        email = form.get("email", "").strip()
+        if "application/json" in content_type:
+            body = await request.json()
+            email = body.get("email", "").strip()
+        elif "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+            form = await request.form()
+            email = str(form.get("email", "")).strip()
+        else:
+            # Try both
+            try:
+                body = await request.json()
+                email = body.get("email", "").strip()
+            except Exception:
+                body_bytes = await request.body()
+                body_str = body_bytes.decode("utf-8")
+                for part in body_str.split("&"):
+                    if part.startswith("email="):
+                        email = part.replace("email=", "").strip()
+    except Exception as e:
+        log.error(f"Reset request parse error: {e}")
     if not email:
-        raise HTTPException(400, "Email required")
+        return {"ok": False, "error": "Email required — could not parse request"}
 
     SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
