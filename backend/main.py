@@ -345,35 +345,34 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
+class ResetRequest(BaseModel):
+    email: str = ""
+
 @app.post("/api/auth/reset-password")
-async def request_password_reset(request: Request):
+async def request_password_reset(payload: ResetRequest = None, request: Request = None):
     """Send password reset email via Supabase."""
     import os as _os
-    from fastapi import Form as _Form
     email = ""
-    content_type = request.headers.get("content-type", "")
-    try:
-        if "application/json" in content_type:
-            body = await request.json()
-            email = body.get("email", "").strip()
-        elif "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
-            form = await request.form()
-            email = str(form.get("email", "")).strip()
-        else:
-            # Try both
+    # Try Pydantic model first
+    if payload and payload.email:
+        email = payload.email.strip()
+    # Fall back to raw body
+    if not email and request:
+        try:
+            body_bytes = await request.body()
+            body_str = body_bytes.decode("utf-8")
+            import json as _json, urllib.parse as _up
             try:
-                body = await request.json()
-                email = body.get("email", "").strip()
+                data = _json.loads(body_str)
+                email = data.get("email", "").strip()
             except Exception:
-                body_bytes = await request.body()
-                body_str = body_bytes.decode("utf-8")
-                for part in body_str.split("&"):
-                    if part.startswith("email="):
-                        email = part.replace("email=", "").strip()
-    except Exception as e:
-        log.error(f"Reset request parse error: {e}")
+                parsed = _up.parse_qs(body_str)
+                email = parsed.get("email", [""])[0].strip()
+        except Exception as e:
+            log.error(f"Reset parse error: {e}")
+    log.info(f"Password reset requested for: {email!r}")
     if not email:
-        return {"ok": False, "error": "Email required — could not parse request"}
+        return {"ok": False, "error": "Email required"}
 
     SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
