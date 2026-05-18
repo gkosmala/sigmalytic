@@ -273,6 +273,77 @@ async def health():
     }
 
 
+@app.get("/api/auth/reset-form")
+async def reset_form():
+    """Simple HTML password reset form — no Dash needed."""
+    from fastapi.responses import HTMLResponse
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Sigmalytic — Reset Password</title>
+<style>
+body{margin:0;padding:0;background:#0d1b2e;font-family:'Helvetica Neue',Arial,sans-serif;
+     display:flex;align-items:center;justify-content:center;min-height:100vh;}
+.box{background:#111f35;border:1px solid rgba(255,255,255,.08);border-radius:20px;
+     padding:40px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+h2{color:#f1f5f9;font-size:20px;margin:0 0 24px;text-align:center;}
+.logo{text-align:center;font-size:36px;font-weight:900;color:#34d399;margin-bottom:8px;}
+.sub{text-align:center;font-size:11px;color:#64748b;letter-spacing:.2em;margin-bottom:32px;}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;
+      letter-spacing:.1em;margin-bottom:6px;}
+input{width:100%;box-sizing:border-box;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.08);
+      border-radius:8px;padding:12px 16px;color:#f1f5f9;font-size:14px;outline:none;
+      font-family:inherit;margin-bottom:16px;}
+button{width:100%;background:#2d8f6f;color:white;border:none;border-radius:8px;
+       padding:14px;font-size:14px;font-weight:700;cursor:pointer;}
+.msg{text-align:center;font-size:13px;margin-top:16px;min-height:20px;}
+.back{text-align:center;margin-top:16px;}
+.back a{color:#34d399;font-size:12px;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">Σ</div>
+  <div class="sub">SIGMALYTIC QUANT CORPORATION</div>
+  <h2>Reset Password</h2>
+  <label>Your Email Address</label>
+  <input type="email" id="email" placeholder="you@example.com">
+  <button onclick="sendReset()">Send Reset Email</button>
+  <div class="msg" id="msg"></div>
+  <div class="back"><a href="https://sigmalytic-frontend.onrender.com">← Back to Sigmalytic</a></div>
+</div>
+<script>
+async function sendReset() {
+  var email = document.getElementById('email').value.trim();
+  var msg = document.getElementById('msg');
+  if (!email) { msg.style.color='#f87171'; msg.innerText='Enter your email first.'; return; }
+  msg.style.color='#94a3b8'; msg.innerText='Sending...';
+  try {
+    var r = await fetch('/api/auth/reset-password', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:email})
+    });
+    var d = await r.json();
+    if (d.ok) {
+      msg.style.color='#34d399';
+      msg.innerText='✅ Reset email sent! Check your inbox.';
+    } else {
+      msg.style.color='#f87171';
+      msg.innerText='Something went wrong. Try again.';
+    }
+  } catch(e) {
+    msg.style.color='#f87171';
+    msg.innerText='Error: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 @app.post("/api/auth/reset-password")
 async def request_password_reset(request: Request):
     """Send password reset email via Supabase."""
