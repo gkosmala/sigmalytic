@@ -342,6 +342,106 @@ async function sendReset() {
     return HTMLResponse(content=html)
 
 
+@app.get("/api/auth/set-password")
+async def set_password_page(access_token: str = "", refresh_token: str = "", type: str = ""):
+    """Password reset landing page — shown after user clicks reset email link."""
+    from fastapi.responses import HTMLResponse
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>Sigmalytic — Set New Password</title>
+<style>
+body{{margin:0;padding:0;background:#0d1b2e;font-family:'Helvetica Neue',Arial,sans-serif;
+     display:flex;align-items:center;justify-content:center;min-height:100vh;}}
+.box{{background:#111f35;border:1px solid rgba(255,255,255,.08);border-radius:20px;
+     padding:40px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.4);}}
+h2{{color:#f1f5f9;font-size:20px;margin:0 0 24px;text-align:center;}}
+.logo{{text-align:center;font-size:36px;font-weight:900;color:#34d399;margin-bottom:8px;}}
+.sub{{text-align:center;font-size:11px;color:#64748b;letter-spacing:.2em;margin-bottom:32px;}}
+label{{display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;
+      letter-spacing:.1em;margin-bottom:6px;}}
+input{{width:100%;box-sizing:border-box;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.08);
+      border-radius:8px;padding:12px 16px;color:#f1f5f9;font-size:14px;outline:none;
+      font-family:inherit;margin-bottom:16px;}}
+button{{width:100%;background:#2d8f6f;color:white;border:none;border-radius:8px;
+       padding:14px;font-size:14px;font-weight:700;cursor:pointer;}}
+.msg{{text-align:center;font-size:13px;margin-top:16px;min-height:20px;}}
+.back{{text-align:center;margin-top:16px;}}
+.back a{{color:#34d399;font-size:12px;text-decoration:none;}}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">Σ</div>
+  <div class="sub">SIGMALYTIC QUANT CORPORATION</div>
+  <h2>Set New Password</h2>
+  <label>New Password</label>
+  <input type="password" id="password" placeholder="Min 6 characters">
+  <label>Confirm Password</label>
+  <input type="password" id="confirm" placeholder="Repeat password">
+  <button onclick="setPassword()">Set New Password</button>
+  <div class="msg" id="msg"></div>
+  <div class="back"><a href="https://sigmalytic-frontend.onrender.com">← Back to Sigmalytic</a></div>
+</div>
+<script>
+var ACCESS_TOKEN = "{access_token}";
+async function setPassword() {{
+  var pwd = document.getElementById('password').value;
+  var cfm = document.getElementById('confirm').value;
+  var msg = document.getElementById('msg');
+  if (!pwd || pwd.length < 6) {{ msg.style.color='#f87171'; msg.innerText='Min 6 characters.'; return; }}
+  if (pwd !== cfm) {{ msg.style.color='#f87171'; msg.innerText='Passwords do not match.'; return; }}
+  msg.style.color='#94a3b8'; msg.innerText='Updating...';
+  try {{
+    var r = await fetch('/api/auth/update-password?token=' + encodeURIComponent(ACCESS_TOKEN) + '&password=' + encodeURIComponent(pwd));
+    var d = await r.json();
+    if (d.ok) {{
+      msg.style.color='#34d399';
+      msg.innerText='✅ Password updated! Redirecting to login...';
+      setTimeout(function(){{ window.location='https://sigmalytic-frontend.onrender.com'; }}, 2000);
+    }} else {{
+      msg.style.color='#f87171';
+      msg.innerText='Error: ' + (d.error || 'Try again.');
+    }}
+  }} catch(e) {{
+    msg.style.color='#f87171';
+    msg.innerText='Error: ' + e.message;
+  }}
+}}
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get("/api/auth/update-password")
+async def update_password(token: str = "", password: str = ""):
+    """Update password using recovery token."""
+    import os as _os
+    SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
+    if not token or not password:
+        return {"ok": False, "error": "Token and password required"}
+    try:
+        r = requests.put(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_ANON_KEY,
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"password": password},
+            timeout=10,
+        )
+        log.info(f"Update password response: {r.status_code} — {r.text[:200]}")
+        if r.status_code == 200:
+            return {"ok": True}
+        return {"ok": False, "error": r.text[:200]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/auth/test-login")
 async def test_login(email: str = "", password: str = ""):
     """Test login against Supabase — debug only."""
@@ -367,6 +467,21 @@ async def request_password_reset(email: str = ""):
     log.info(f"Password reset requested for: {email!r}")
     if not email:
         return {"ok": False, "error": "Email required"}
+    SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
+    try:
+        r = requests.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={"email": email, "redirect_to": "https://sigmalytic-backend.onrender.com/api/auth/set-password"},
+            timeout=10,
+        )
+        log.info(f"Supabase recover: {r.status_code} — {r.text[:200]}")
+        if r.status_code in (200, 204):
+            return {"ok": True, "message": f"Reset email sent to {email}"}
+        return {"ok": False, "error": f"Supabase {r.status_code}: {r.text[:200]}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
     SUPABASE_URL      = _os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY = _os.getenv("SUPABASE_ANON_KEY", "")
