@@ -589,7 +589,7 @@ LOGO=html.Div([
 ],style={"display":"flex","alignItems":"center","gap":"10px"})
 
 app=dash.Dash(__name__,title="Sigmalytic Quant Corporation — Decision Intelligence",update_title=None,
-    suppress_callback_exceptions=False,
+    suppress_callback_exceptions=True,
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},{"name":"theme-color","content":NAVY}])
 server=app.server
 
