@@ -735,7 +735,14 @@ app.layout=html.Div([
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
-    html.Div([html.Button(id="login-btn-dummy",n_clicks=0,style={"display":"none"}),html.Div(id="login-error-dummy",style={"display":"none"}),html.Div(id="forgot-msg-dummy",style={"display":"none"}),html.Div(id="reset-error-dummy",style={"display":"none"})],style={"display":"none"}),
+    html.Div([
+        html.Button(id="login-btn-dummy",n_clicks=0,style={"display":"none"}),
+        html.Div(id="login-error-dummy",style={"display":"none"}),
+        html.Div(id="forgot-msg-dummy",style={"display":"none"}),
+        html.Div(id="reset-error-dummy",style={"display":"none"}),
+        html.Button(id="forgot-btn",n_clicks=0,style={"display":"none"}),
+        html.Div(id="forgot-msg",children="",style={"display":"none"}),
+    ],style={"display":"none"}),
 
     html.Div(id="conversion-modal",style={"display":"none"},children=html.Div([
         html.Div(style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,"background":"rgba(0,0,0,.75)","zIndex":8000,"display":"flex","alignItems":"center","justifyContent":"center"},children=[
