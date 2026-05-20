@@ -26,6 +26,7 @@ import os
 import uuid
 import logging
 import time
+import threading
 import pathlib
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -49,20 +50,20 @@ log = logging.getLogger("radar")
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
-ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")   # "iex" free | "sip" paid
+ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
 SCAN_INTERVAL_SECONDS = 60
-SNAPSHOT_INTERVAL     = 300   # write snapshot to Supabase every 5 min per symbol
-SCORE_THRESHOLD       = 75    # log event when symbol crosses this score
-TOP_N                 = 100   # symbols returned by /api/radar/scores
+SNAPSHOT_INTERVAL     = 300
+SCORE_THRESHOLD       = 75
+TOP_N                 = 100
 
 # ── In-memory cache ────────────────────────────────────────────────────────────
 
-RADAR_CACHE: Dict[str, dict] = {}   # symbol → full score dict
+RADAR_CACHE: Dict[str, dict] = {}
 LAST_SCAN_TIME: Optional[float] = None
 SYMBOLS: List[str] = []
-_prev_statuses: Dict[str, str] = {}   # symbol → last known status
+_prev_statuses: Dict[str, str] = {}
 _last_snapshot_times: Dict[str, float] = {}
 
 # ── Router ─────────────────────────────────────────────────────────────────────
@@ -97,7 +98,6 @@ def load_russell1000() -> List[str]:
 
 
 def _fallback_universe() -> List[str]:
-    """Fallback: Magnificent 7 + major sector leaders for demo."""
     return [
         "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA",
         "JPM","BAC","GS","MS","WFC",
@@ -119,11 +119,6 @@ def _alpaca_headers() -> dict:
 
 
 def fetch_snapshots(symbols: List[str]) -> dict:
-    """
-    Fetch Alpaca snapshots for a list of symbols in one request.
-    Returns dict of symbol → snapshot data.
-    Batches into groups of 1000 (Alpaca limit per request).
-    """
     results = {}
     batch_size = 1000
     for i in range(0, len(symbols), batch_size):
@@ -147,10 +142,6 @@ def fetch_snapshots(symbols: List[str]) -> dict:
 
 
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
-    """
-    Fetch historical daily bars for relative strength and ATR calculation.
-    Fetches each symbol individually to avoid Alpaca multi-symbol pagination issues.
-    """
     from datetime import timedelta
     results = {}
     start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
@@ -178,7 +169,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
                 time.sleep(5)
         except Exception as e:
             log.debug(f"Bar fetch error {symbol}: {e}")
-        time.sleep(0.05)  # 50ms between requests = ~20 req/sec, well under 200/min limit
+        time.sleep(0.05)
 
     log.info(f"Individual bar fetch complete — {len(results)}/{len(symbols)} symbols loaded")
     return results
@@ -186,11 +177,6 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
 # ── Scoring engine ─────────────────────────────────────────────────────────────
 
 def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
-    """
-    Score a single symbol across 5 dimensions.
-    Returns a full score dict with composite, sub-scores, status, and levels.
-    """
-    # ── Extract snapshot fields ────────────────────────────────────────────────
     daily_bar   = snap.get("dailyBar", {})
     prev_daily  = snap.get("prevDailyBar", {})
     minute_bar  = snap.get("minuteBar", {})
@@ -211,7 +197,6 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
 
     change_pct  = ((price - prev_close) / prev_close) * 100
 
-    # ── Historical context from bars ───────────────────────────────────────────
     closes      = [float(b.get("c", 0)) for b in bars if b.get("c")]
     volumes     = [float(b.get("v", 0)) for b in bars if b.get("v")]
     highs       = [float(b.get("h", 0)) for b in bars if b.get("h")]
@@ -221,13 +206,9 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     ma50  = sum(closes[-50:]) / len(closes[-50:]) if len(closes) >= 50 else price
     avg_vol_20 = sum(volumes[-20:]) / len(volumes[-20:]) if len(volumes) >= 20 else volume
 
-    # ATR (14-day)
     atr = _calc_atr(highs, lows, closes, 14)
-
-    # Relative volume
     rel_vol = (volume / avg_vol_20) if avg_vol_20 > 0 else 1.0
 
-    # 52-week high/low
     high_52w = max(highs[-252:]) if len(highs) >= 52 else day_high
     low_52w  = min(lows[-252:])  if len(lows)  >= 52 else day_low
 
@@ -248,14 +229,13 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     expansion = 50.0
     if atr > 0:
         daily_range_pct = ((day_high - day_low) / atr) if atr > 0 else 1
-        if daily_range_pct < 0.6:   expansion += 20   # compression — coiling
+        if daily_range_pct < 0.6:   expansion += 20
         elif daily_range_pct < 0.8: expansion += 10
-        elif daily_range_pct > 1.5: expansion -= 10   # already expanded
-    # Near 52-week high = expansion candidate
+        elif daily_range_pct > 1.5: expansion -= 10
     dist_from_52w_high = ((high_52w - price) / high_52w) if high_52w > 0 else 1
-    if dist_from_52w_high < 0.02:   expansion += 15   # within 2% of 52w high
+    if dist_from_52w_high < 0.02:   expansion += 15
     elif dist_from_52w_high < 0.05: expansion += 8
-    elif dist_from_52w_high > 0.20: expansion -= 10   # too far from highs
+    elif dist_from_52w_high > 0.20: expansion -= 10
     if rel_vol > 1.3 and change_pct > 0: expansion += 7
     expansion = _clamp(expansion)
 
@@ -268,8 +248,8 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         elif perf_1m > 0:  rel_strength += 5
         elif perf_1m < -5: rel_strength -= 15
         elif perf_1m < -2: rel_strength -= 8
-    if price > ma20 > ma50:  rel_strength += 10   # uptrend alignment
-    if price < ma20 < ma50:  rel_strength -= 10   # downtrend
+    if price > ma20 > ma50:  rel_strength += 10
+    if price < ma20 < ma50:  rel_strength -= 10
     rel_strength = _clamp(rel_strength)
 
     # ── 4. Volume Pressure Score ───────────────────────────────────────────────
@@ -280,19 +260,19 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     elif rel_vol > 1.2:  vol_pressure += 6
     elif rel_vol < 0.7:  vol_pressure -= 15
     elif rel_vol < 0.5:  vol_pressure -= 25
-    if change_pct > 0 and rel_vol > 1.5: vol_pressure += 5   # volume confirms up move
-    if change_pct < 0 and rel_vol > 1.5: vol_pressure -= 5   # volume confirms down
+    if change_pct > 0 and rel_vol > 1.5: vol_pressure += 5
+    if change_pct < 0 and rel_vol > 1.5: vol_pressure -= 5
     vol_pressure = _clamp(vol_pressure)
 
     # ── 5. Behavioral Score ────────────────────────────────────────────────────
     behavioral = 50.0
-    if day_close > day_open:       behavioral += 10   # closed strong
-    if price > vwap:               behavioral += 8    # above vwap = buyers in control
-    if day_low > prev_close * 0.98:behavioral += 8    # holding above prior close
-    if change_pct > 2:             behavioral += 8
-    if change_pct > 5:             behavioral += 7
-    if change_pct < -3:            behavioral -= 15
-    if day_close < day_open:       behavioral -= 8    # closed weak
+    if day_close > day_open:        behavioral += 10
+    if price > vwap:                behavioral += 8
+    if day_low > prev_close * 0.98: behavioral += 8
+    if change_pct > 2:              behavioral += 8
+    if change_pct > 5:              behavioral += 7
+    if change_pct < -3:             behavioral -= 15
+    if day_close < day_open:        behavioral -= 8
     behavioral = _clamp(behavioral)
 
     # ── Composite Score ────────────────────────────────────────────────────────
@@ -305,19 +285,16 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     )
     composite = _clamp(round(composite, 1))
 
-    # ── Setup type ─────────────────────────────────────────────────────────────
     setup_type = _classify_setup(
         price, ma20, ma50, atr, day_high, day_low,
         high_52w, rel_vol, change_pct, closes
     )
 
-    # ── Trigger and invalidation levels ───────────────────────────────────────
     trigger      = round(day_high + atr * 0.1, 2)  if atr > 0 else round(price * 1.005, 2)
     invalidation = round(day_low  - atr * 0.1, 2)  if atr > 0 else round(price * 0.99,  2)
     target1      = round(price + atr * 1.0, 2)
     target2      = round(price + atr * 2.0, 2)
 
-    # ── Status ─────────────────────────────────────────────────────────────────
     prev_status = _prev_statuses.get(symbol, "")
     status = _determine_status(
         composite, expansion, rel_vol, change_pct,
@@ -325,36 +302,35 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         prev_status=prev_status, ma20=ma20, ma50=ma50,
     )
 
-    # ── Regime tag ─────────────────────────────────────────────────────────────
     regime = _infer_regime(change_pct, rel_vol, price, ma20, ma50)
 
     return {
-        "symbol":          symbol,
-        "price":           round(price, 2),
-        "change_pct":      round(change_pct, 2),
-        "volume":          int(volume),
-        "rel_volume":      round(rel_vol, 2),
-        "composite_score": composite,
-        "confluence":      round(confluence, 1),
-        "expansion_node":  round(expansion, 1),
+        "symbol":            symbol,
+        "price":             round(price, 2),
+        "change_pct":        round(change_pct, 2),
+        "volume":            int(volume),
+        "rel_volume":        round(rel_vol, 2),
+        "composite_score":   composite,
+        "confluence":        round(confluence, 1),
+        "expansion_node":    round(expansion, 1),
         "relative_strength": round(rel_strength, 1),
-        "volume_pressure": round(vol_pressure, 1),
-        "behavioral":      round(behavioral, 1),
-        "setup_type":      setup_type,
-        "status":          status,
-        "trigger":         trigger,
-        "invalidation":    invalidation,
-        "target1":         target1,
-        "target2":         target2,
-        "regime":          regime,
-        "vwap":            round(vwap, 2),
-        "ma20":            round(ma20, 2),
-        "ma50":            round(ma50, 2),
-        "atr":             round(atr, 2),
-        "high_52w":        round(high_52w, 2),
-        "low_52w":         round(low_52w, 2),
-        "updated_at":      datetime.now(timezone.utc).isoformat(),
-        "data_delay":      "15min" if ALPACA_FEED == "iex" else "live",
+        "volume_pressure":   round(vol_pressure, 1),
+        "behavioral":        round(behavioral, 1),
+        "setup_type":        setup_type,
+        "status":            status,
+        "trigger":           trigger,
+        "invalidation":      invalidation,
+        "target1":           target1,
+        "target2":           target2,
+        "regime":            regime,
+        "vwap":              round(vwap, 2),
+        "ma20":              round(ma20, 2),
+        "ma50":              round(ma50, 2),
+        "atr":               round(atr, 2),
+        "high_52w":          round(high_52w, 2),
+        "low_52w":           round(low_52w, 2),
+        "updated_at":        datetime.now(timezone.utc).isoformat(),
+        "data_delay":        "15min" if ALPACA_FEED == "iex" else "live",
         "trigger_proximity": round((trigger - price) / price * 100, 2) if price > 0 and trigger > 0 else 0,
     }
 
@@ -384,7 +360,6 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
     recent_range = max(closes[-5:]) - min(closes[-5:])
     avg_range    = atr * 5 if atr > 0 else recent_range
     compressed   = recent_range < avg_range * 0.6
-
     near_52w_high = high_52w > 0 and ((high_52w - price) / high_52w) < 0.03
 
     if compressed and near_52w_high:    return "Compression Breakout Candidate"
@@ -400,50 +375,28 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
 def _determine_status(composite, expansion, rel_vol, change_pct,
                       price=0, trigger=0, invalidation=0, prev_status="",
                       ma20=0, ma50=0) -> str:
-    """
-    Status state machine with 8 states:
-    Armed          — long setup ready, trigger imminent
-    Triggered      — price crossed above trigger (long)
-    Confirmed      — held above trigger on volume (long)
-    Failed         — dropped below invalidation after trigger
-    Short Trigger  — price broke below invalidation on volume (short)
-    Short Armed    — price approaching breakdown level
-    Building       — conditions improving
-    Watching       — monitoring
-    Avoid          — poor conditions
-    """
-    # ── SHORT SIDE ────────────────────────────────────────────────────────────
-
-    # Short Trigger — price broke below invalidation on high volume
+    # Short Trigger
     if invalidation > 0 and price <= invalidation and rel_vol >= 1.2 and change_pct < -2:
         return "Short Trigger"
-
-    # Short Confirmed — was Short Trigger and continued lower
+    # Short Confirmed
     if prev_status == "Short Trigger" and price <= invalidation * 1.002:
         return "Short Confirmed"
-
-    # Short Armed — approaching breakdown, within 1% of invalidation
+    # Short Armed
     if change_pct < -1.5 and rel_vol >= 1.1 and invalidation > 0 and price > 0:
         dist_to_breakdown = (price - invalidation) / price
         if dist_to_breakdown <= 0.01 and price < ma20:
             return "Short Armed"
-
-    # ── LONG SIDE ─────────────────────────────────────────────────────────────
-
-    # Triggered — price crossed above trigger
+    # Triggered
     if trigger > 0 and price >= trigger:
         if rel_vol >= 1.2:
             return "Triggered"
-
-    # Confirmed — was Triggered and held
+    # Confirmed
     if prev_status == "Triggered" and price >= trigger * 0.998:
         return "Confirmed"
-
-    # Failed — was Triggered but dropped below invalidation
+    # Failed
     if prev_status in ("Triggered", "Confirmed") and invalidation > 0 and price < invalidation:
         return "Failed"
-
-    # Armed — score ≥ 75, expansion ≥ 60, within 1.5% of trigger
+    # Armed
     if composite >= 75 and expansion >= 60:
         if trigger > 0 and price > 0:
             dist_to_trigger = (trigger - price) / price
@@ -451,18 +404,14 @@ def _determine_status(composite, expansion, rel_vol, change_pct,
                 return "Armed"
         else:
             return "Armed"
-
-    # Building — good score, improving
+    # Building
     if composite >= 68:
         return "Building"
-
-    # Avoid — down hard or poor conditions
+    # Avoid
     if change_pct < -3:
         return "Avoid"
     if composite < 45:
         return "Avoid"
-
-    # Watching — everything else
     return "Watching"
 
 
@@ -474,22 +423,30 @@ def _infer_regime(change_pct, rel_vol, price, ma20, ma50) -> str:
     if abs(change_pct) < 0.3 and rel_vol < 0.8: return "Compression"
     return "Neutral"
 
-# ── Main scan loop ─────────────────────────────────────────────────────────────
+# ── Historical bars ────────────────────────────────────────────────────────────
 
-_historical_bars: Dict[str, list] = {}   # symbol → list of daily bars
+_historical_bars: Dict[str, list] = {}
 _bars_last_refresh: float = 0
+_bars_loading: bool = False
 
 
 def _refresh_historical_bars():
-    """Refresh historical daily bars every 30 minutes."""
-    global _historical_bars, _bars_last_refresh
+    """Refresh historical daily bars — runs in background thread on startup."""
+    global _historical_bars, _bars_last_refresh, _bars_loading
+    _bars_loading = True
     log.info("Refreshing historical bars…")
-    raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
-    for sym, bars in raw.items():
-        _historical_bars[sym] = bars
-    _bars_last_refresh = time.time()
-    log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
+    try:
+        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
+        for sym, bars in raw.items():
+            _historical_bars[sym] = bars
+        _bars_last_refresh = time.time()
+        log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
+    except Exception as e:
+        log.warning(f"Historical bar refresh failed: {e}")
+    finally:
+        _bars_loading = False
 
+# ── Main scan loop ─────────────────────────────────────────────────────────────
 
 def run_radar_scan():
     """Main scan — called by APScheduler every 60 seconds."""
@@ -504,12 +461,9 @@ def run_radar_scan():
         _populate_synthetic_cache()
         return
 
-    # Refresh historical bars every 30 minutes
-    if time.time() - _bars_last_refresh > 1800:
-        try:
-            _refresh_historical_bars()
-        except Exception as e:
-            log.warning(f"Historical bar refresh failed: {e}")
+    # Refresh historical bars every 30 minutes (in background)
+    if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
+        threading.Thread(target=_refresh_historical_bars, daemon=True).start()
 
     log.info(f"Radar scan starting — {len(SYMBOLS)} symbols")
     snapshots = fetch_snapshots(SYMBOLS)
@@ -527,7 +481,6 @@ def run_radar_scan():
         except Exception as e:
             log.debug(f"Score error {symbol}: {e}")
 
-    # Update cache
     for s in scored:
         sym = s["symbol"]
         RADAR_CACHE[sym] = s
@@ -535,12 +488,11 @@ def run_radar_scan():
     LAST_SCAN_TIME = time.time()
     log.info(f"Radar scan complete — {len(scored)} symbols scored")
 
-    # Write events for status changes and threshold crossings
     _process_events(scored)
 
 
 def _process_events(scored: list):
-    """Write meaningful events to Supabase — status changes and threshold crossings."""
+    """Write meaningful events to Supabase."""
     if not DATABASE_URL:
         return
     events = []
@@ -552,7 +504,6 @@ def _process_events(scored: list):
         status= s["status"]
         prev  = _prev_statuses.get(sym)
 
-        # Status change event
         if prev and prev != status:
             events.append({
                 "event_id":       "re_" + uuid.uuid4().hex[:12],
@@ -566,15 +517,11 @@ def _process_events(scored: list):
                 "invalidation":   s["invalidation"],
                 "notes":          f"{s['setup_type']} · {s['regime']}",
             })
-            # Send email alert for important status changes
             maybe_send_alert(s, prev, status)
-            # Log to scoreboard
             log_signal(s, status)
-            # Send SMS alert
             maybe_send_sms(s, prev, status)
         _prev_statuses[sym] = status
 
-        # Score threshold crossing — only log once per 5 min per symbol
         last_snap = _last_snapshot_times.get(sym, 0)
         if now - last_snap > SNAPSHOT_INTERVAL:
             if score >= SCORE_THRESHOLD:
@@ -622,38 +569,36 @@ def _populate_synthetic_cache():
     for sym in SYMBOLS[:50]:
         score = random.uniform(45, 92)
         RADAR_CACHE[sym] = {
-            "symbol":          sym,
-            "price":           round(random.uniform(50, 500), 2),
-            "change_pct":      round(random.uniform(-3, 4), 2),
-            "volume":          random.randint(500_000, 5_000_000),
-            "rel_volume":      round(random.uniform(0.5, 3.0), 2),
-            "composite_score": round(score, 1),
-            "confluence":      round(random.uniform(40, 95), 1),
-            "expansion_node":  round(random.uniform(40, 95), 1),
+            "symbol":            sym,
+            "price":             round(random.uniform(50, 500), 2),
+            "change_pct":        round(random.uniform(-3, 4), 2),
+            "volume":            random.randint(500_000, 5_000_000),
+            "rel_volume":        round(random.uniform(0.5, 3.0), 2),
+            "composite_score":   round(score, 1),
+            "confluence":        round(random.uniform(40, 95), 1),
+            "expansion_node":    round(random.uniform(40, 95), 1),
             "relative_strength": round(random.uniform(40, 95), 1),
-            "volume_pressure": round(random.uniform(40, 95), 1),
-            "behavioral":      round(random.uniform(40, 95), 1),
-            "setup_type":      random.choice([
-                "Compression Breakout Candidate",
-                "Trend Continuation",
-                "Momentum Leader",
-                "Volatility Expansion Candidate",
-                "Monitoring",
+            "volume_pressure":   round(random.uniform(40, 95), 1),
+            "behavioral":        round(random.uniform(40, 95), 1),
+            "setup_type":        random.choice([
+                "Compression Breakout Candidate","Trend Continuation",
+                "Momentum Leader","Volatility Expansion Candidate","Monitoring",
             ]),
-            "status":          random.choice(["Armed","Building","Watching","Watching"]),
-            "trigger":         round(random.uniform(100, 500), 2),
-            "invalidation":    round(random.uniform(80, 400), 2),
-            "target1":         round(random.uniform(120, 550), 2),
-            "target2":         round(random.uniform(140, 600), 2),
-            "regime":          random.choice(["Bull Expansion","Compression","Neutral","Bull Pullback"]),
-            "vwap":            round(random.uniform(80, 480), 2),
-            "ma20":            round(random.uniform(80, 480), 2),
-            "ma50":            round(random.uniform(80, 480), 2),
-            "atr":             round(random.uniform(1, 20), 2),
-            "high_52w":        round(random.uniform(150, 600), 2),
-            "low_52w":         round(random.uniform(50, 300), 2),
-            "updated_at":      datetime.now(timezone.utc).isoformat(),
-            "data_delay":      "synthetic",
+            "status":            random.choice(["Armed","Building","Watching","Watching"]),
+            "trigger":           round(random.uniform(100, 500), 2),
+            "invalidation":      round(random.uniform(80, 400), 2),
+            "target1":           round(random.uniform(120, 550), 2),
+            "target2":           round(random.uniform(140, 600), 2),
+            "regime":            random.choice(["Bull Expansion","Compression","Neutral","Bull Pullback"]),
+            "vwap":              round(random.uniform(80, 480), 2),
+            "ma20":              round(random.uniform(80, 480), 2),
+            "ma50":              round(random.uniform(80, 480), 2),
+            "atr":               round(random.uniform(1, 20), 2),
+            "high_52w":          round(random.uniform(150, 600), 2),
+            "low_52w":           round(random.uniform(50, 300), 2),
+            "updated_at":        datetime.now(timezone.utc).isoformat(),
+            "data_delay":        "synthetic",
+            "trigger_proximity": 0,
         }
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -667,22 +612,23 @@ def start_radar_scheduler():
     SYMBOLS = load_russell1000()
     log.info(f"Radar scheduler starting with {len(SYMBOLS)} symbols")
 
-    # Pre-fetch historical bars BEFORE first scan so setup classification works immediately
+    # ── KEY FIX: fetch bars in background thread so port binds immediately ──
     if ALPACA_API_KEY:
-        try:
-            _refresh_historical_bars()
-        except Exception as e:
-            log.warning(f"Startup bar fetch failed: {e}")
+        threading.Thread(target=_refresh_historical_bars, daemon=True).start()
+        log.info("Historical bar fetch started in background thread")
 
     _scheduler = BackgroundScheduler(timezone="UTC")
+
+    # Main radar scan every 60 seconds
     _scheduler.add_job(
         run_radar_scan,
         trigger="interval",
         seconds=SCAN_INTERVAL_SECONDS,
         id="radar_scan",
-        next_run_time=datetime.now(timezone.utc),   # run immediately on start
+        next_run_time=datetime.now(timezone.utc),
     )
-    # Daily summary — sends at 8:00 AM ET (12:00 UTC)
+
+    # Daily email summary — 8:00 AM ET (12:00 UTC)
     _scheduler.add_job(
         lambda: send_daily_summary(list(RADAR_CACHE.values())),
         trigger="cron",
@@ -690,7 +636,8 @@ def start_radar_scheduler():
         minute=0,
         id="daily_summary",
     )
-    # Grade pending signals — runs at 4:15 PM ET (21:15 UTC) after market close
+
+    # Grade pending signals — 4:15 PM ET (21:15 UTC)
     _scheduler.add_job(
         grade_pending_signals,
         trigger="cron",
@@ -698,6 +645,28 @@ def start_radar_scheduler():
         minute=15,
         id="grade_signals",
     )
+
+    # Intraday snapshots every 5 minutes
+    try:
+        from snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
+        _scheduler.add_job(
+            lambda: write_intraday_snapshots(RADAR_CACHE),
+            trigger="interval",
+            seconds=300,
+            id="snapshot_intraday",
+        )
+        # Daily close snapshot — 4:15 PM ET (20:15 UTC)
+        _scheduler.add_job(
+            lambda: write_daily_close_snapshots(RADAR_CACHE),
+            trigger="cron",
+            hour=20,
+            minute=15,
+            id="snapshot_daily_close",
+        )
+        log.info("Snapshot writer jobs scheduled")
+    except ImportError:
+        log.warning("snapshot_service not found — snapshot writing disabled")
+
     _scheduler.start()
     log.info("Radar scheduler started")
 
@@ -712,44 +681,34 @@ def stop_radar_scheduler():
 
 @radar_router.get("/status")
 def radar_status():
-    """Service health and last scan info."""
     return {
-        "ok":              True,
-        "symbol_count":    len(SYMBOLS),
-        "cached_count":    len(RADAR_CACHE),
-        "last_scan":       LAST_SCAN_TIME,
-        "last_scan_ago":   round(time.time() - LAST_SCAN_TIME, 1) if LAST_SCAN_TIME else None,
-        "feed":            ALPACA_FEED,
-        "data_delay":      "15min" if ALPACA_FEED == "iex" else "live",
-        "bars_loaded":     len(_historical_bars),
+        "ok":                True,
+        "symbol_count":      len(SYMBOLS),
+        "cached_count":      len(RADAR_CACHE),
+        "last_scan":         LAST_SCAN_TIME,
+        "last_scan_ago":     round(time.time() - LAST_SCAN_TIME, 1) if LAST_SCAN_TIME else None,
+        "feed":              ALPACA_FEED,
+        "data_delay":        "15min" if ALPACA_FEED == "iex" else "live",
+        "bars_loaded":       len(_historical_bars),
         "bars_last_refresh": _bars_last_refresh,
+        "bars_loading":      _bars_loading,
     }
 
 
 @radar_router.get("/debug/bars")
 def debug_bars():
-    """Debug — tests bar fetch directly and shows raw Alpaca response."""
     if not ALPACA_API_KEY:
         return {"error": "No Alpaca API key"}
 
     from datetime import timedelta
     start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
 
-    # Test single symbol first
     test_sym = "AAPL"
     try:
         r = _req.get(
             f"{ALPACA_BASE_URL}/v2/stocks/{test_sym}/bars",
-            headers={
-                "APCA-API-KEY-ID":     ALPACA_API_KEY,
-                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-            },
-            params={
-                "timeframe": "1Day",
-                "start":     start_date,
-                "feed":      ALPACA_FEED,
-                "sort":      "asc",
-            },
+            headers=_alpaca_headers(),
+            params={"timeframe":"1Day","start":start_date,"feed":ALPACA_FEED,"sort":"asc"},
             timeout=10,
         )
         single_result = {
@@ -760,64 +719,31 @@ def debug_bars():
     except Exception as e:
         single_result = {"error": str(e)}
 
-    # Test multi-symbol
-    try:
-        r2 = _req.get(
-            f"{ALPACA_BASE_URL}/v2/stocks/bars",
-            headers={
-                "APCA-API-KEY-ID":     ALPACA_API_KEY,
-                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-            },
-            params={
-                "symbols":   "AAPL,MSFT,XOM",
-                "timeframe": "1Day",
-                "start":     start_date,
-                "feed":      ALPACA_FEED,
-                "sort":      "asc",
-            },
-            timeout=10,
-        )
-        bars_data = (r2.json().get("bars") or {}) if r2.status_code == 200 else {}
-        multi_result = {
-            "status_code":    r2.status_code,
-            "symbols_returned": list(bars_data.keys()),
-            "aapl_bar_count": len(bars_data.get("AAPL", [])),
-        }
-    except Exception as e:
-        multi_result = {"error": str(e)}
-
     return {
         "bars_in_cache":  len(_historical_bars),
+        "bars_loading":   _bars_loading,
         "single_symbol":  single_result,
-        "multi_symbol":   multi_result,
     }
 
 
 @radar_router.get("/scores")
 def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0):
-    """
-    Returns top symbols ranked by composite score.
-    Optional filters: status, min_score.
-    """
     results = list(RADAR_CACHE.values())
-
     if status:
         results = [r for r in results if r.get("status") == status]
     if min_score > 0:
         results = [r for r in results if r.get("composite_score", 0) >= min_score]
-
     results.sort(key=lambda x: x.get("composite_score", 0), reverse=True)
     return {
-        "count":    len(results[:limit]),
-        "symbols":  results[:limit],
-        "last_scan": LAST_SCAN_TIME,
+        "count":      len(results[:limit]),
+        "symbols":    results[:limit],
+        "last_scan":  LAST_SCAN_TIME,
         "data_delay": "15min" if ALPACA_FEED == "iex" else "live",
     }
 
 
 @radar_router.get("/symbol/{symbol}")
 def get_symbol_detail(symbol: str):
-    """Full score detail for a single symbol."""
     sym = symbol.upper().strip()
     if sym not in RADAR_CACHE:
         raise HTTPException(404, f"{sym} not in radar cache")
@@ -830,7 +756,6 @@ def add_to_watchlist(
     request: Request,
     user_id: str = Depends(get_user_id_from_request),
 ):
-    """Add a symbol to the user's watchlist."""
     sym = payload.symbol.upper().strip()
     if not sym or len(sym) > 5:
         raise HTTPException(400, "Invalid symbol")
@@ -852,7 +777,6 @@ def add_to_watchlist(
 
 @radar_router.get("/watchlist/{user_id}")
 def get_watchlist(user_id: str):
-    """Get user's watchlist with current radar scores."""
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur  = conn.cursor()
