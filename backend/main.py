@@ -492,20 +492,12 @@ async def request_password_reset(email: str = ""):
         return {"ok": False, "error": str(e)}
 
 
-@app.get("/api/sms/test")
-async def test_sms():
-    """Send a test SMS to verify Twilio is working."""
-    from sms_alerts import send_test_sms
-    return send_test_sms()
-
-
 @app.get("/api/scoreboard/clean-duplicates")
 async def clean_duplicates():
     """One-time cleanup of duplicate pending signals."""
     from scoreboard_service import clear_duplicate_signals
     deleted = clear_duplicate_signals()
     return {"ok": True, "deleted": deleted}
-
 
 @app.get("/api/scoreboard")
 async def get_scoreboard():
