@@ -855,7 +855,40 @@ def set_radar_filter(*_):
     if not ctx.triggered: return no_update
     return ctx.triggered[0]["prop_id"].split(".")[0].replace("radar-filter-","")
 
-@app.callback(Output("s-live","data"),Output("s-seq","data"),Output("s-candles","data"),
+
+@app.callback(
+    Output("s-candles","data","allow_duplicate"),
+    Input("s-symbol","data"),
+    Input("s-tf","data"),
+    prevent_initial_call=True,
+)
+def fetch_candles_for_tf(symbol, tf):
+    """Fetch real bars from backend when symbol or timeframe changes."""
+    import requests as _req
+    tf_map = {
+        "1m":  ("1Min",  60),
+        "5m":  ("5Min",  60),
+        "15m": ("15Min", 60),
+        "1H":  ("1Hour", 60),
+        "1D":  ("1Day",  60),
+        "1W":  ("1Week", 52),
+    }
+    alpaca_tf, limit = tf_map.get(tf, ("5Min", 60))
+    try:
+        r = _req.get(
+            f"{BACKEND_HTTP}/api/candles/{symbol}",
+            params={"timeframe": alpaca_tf, "limit": limit},
+            timeout=10,
+        )
+        if r.ok:
+            bars = r.json().get("bars", [])
+            if bars:
+                return bars
+    except Exception:
+        pass
+    return no_update
+
+@app.callback(Output("s-live","data"),Output("s-seq","data"),Output("s-candles","data","allow_duplicate"),
               Input("i-synth","n_intervals"),Input("i-alpaca","n_intervals"),
               State("s-live","data"),State("s-seq","data"),State("s-candles","data"),
               State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"))
