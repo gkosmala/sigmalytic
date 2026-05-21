@@ -379,7 +379,8 @@ def build_chart(candles, price, nodes):
     kl=get_key_levels(price)
     opens=[c["o"] for c in candles]; highs=[c["h"] for c in candles]
     lows=[c["l"] for c in candles]; closes=[c["c"] for c in candles]
-    xs=list(range(len(candles)))
+    # Use real timestamps if available, otherwise use index
+    xs=[c.get("t","") if c.get("t","") else str(i) for i,c in enumerate(candles)]
     fig=go.Figure()
     fig.add_trace(go.Candlestick(x=xs,open=opens,high=highs,low=lows,close=closes,name="Price",
         increasing=dict(line=dict(color=TEAL_DIM,width=1),fillcolor=TEAL_DIM),
@@ -590,6 +591,7 @@ LOGO=html.Div([
 
 app=dash.Dash(__name__,title="Sigmalytic Quant Corporation — Decision Intelligence",update_title=None,
     suppress_callback_exceptions=True,
+    prevent_initial_callbacks="initial_duplicate",
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},{"name":"theme-color","content":NAVY}])
 server=app.server
 
@@ -860,10 +862,10 @@ def set_radar_filter(*_):
     Output("s-candles","data","allow_duplicate"),
     Input("s-symbol","data"),
     Input("s-tf","data"),
-    prevent_initial_call=True,
+    prevent_initial_call="initial_duplicate",
 )
 def fetch_candles_for_tf(symbol, tf):
-    """Fetch real bars from backend when symbol or timeframe changes."""
+    """Fetch real bars from backend on load and when symbol or timeframe changes."""
     import requests as _req
     tf_map = {
         "1m":  ("1Min",  60),
@@ -873,16 +875,17 @@ def fetch_candles_for_tf(symbol, tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf, ("5Min", 60))
+    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 60))
     try:
         r = _req.get(
-            f"{BACKEND_HTTP}/api/candles/{symbol}",
+            f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
             params={"timeframe": alpaca_tf, "limit": limit},
             timeout=10,
         )
         if r.ok:
             bars = r.json().get("bars", [])
             if bars:
+                # Ensure bars have proper timestamp strings for chart x-axis
                 return bars
     except Exception:
         pass
