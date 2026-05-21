@@ -688,10 +688,10 @@ def build_login_page(error=""):
 
 def build_main_app():
     return html.Div([html.Div([
-        html.Div([html.Span("🎯 INVESTOR DEMO · ",style={"fontWeight":"800","color":TEAL_DIM}),html.Span("Confluence Engine v1.0 · Radar Screen · Behavioral Intelligence · Real-Time Decision Layer",style={"color":TEXT}),html.Span(" · Beta",style={"fontWeight":"700","color":YELLOW_DIM})],
+        html.Div([html.Span("⚡ LIVE · ",style={"fontWeight":"800","color":TEAL_DIM}),html.Span("Confluence Engine v1.0 · Radar Screen · Behavioral Intelligence · Real-Time Decision Layer",style={"color":TEXT}),html.Span(" · Beta",style={"fontWeight":"700","color":YELLOW_DIM})],
                  style={"background":"rgba(45,143,111,.08)","border":f"1px solid {BORDER_T}","borderRadius":"10px","padding":"8px 20px","textAlign":"center","fontSize":"11px","letterSpacing":".04em","marginBottom":"8px"}),
         html.Header([
-            html.Div([LOGO,html.Div([html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",style={"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".32em","color":TEAL_DIM}),html.Div(id="sim-label",style={"fontSize":"10px","fontWeight":"700","textTransform":"uppercase","letterSpacing":".18em","color":BLUE_DIM,"marginTop":"3px"})],style={"textAlign":"center"}),html.Div(style={"width":"120px"})],style={"display":"flex","justifyContent":"space-between","alignItems":"center","width":"100%","marginBottom":"6px"}),
+            html.Div([LOGO,html.Div([html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",style={"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".32em","color":TEAL_DIM}),html.Div(id="sim-label",style={"display":"none"})],style={"textAlign":"center"}),html.Div(style={"width":"120px"})],style={"display":"flex","justifyContent":"space-between","alignItems":"center","width":"100%","marginBottom":"6px"}),
             html.P("Real-time decision intelligence — scores, interprets, and projects market behavior via multi-layer confluence.",style={"fontSize":"12px","color":MUTED,"textAlign":"center","maxWidth":"640px","margin":"0 auto"}),
             html.P("Powered by Confluence Engine · Expansion Node Modeling · Forward Projection Layer",style={"fontSize":"11px","color":"#475569","textAlign":"center","letterSpacing":".06em","marginTop":"4px"}),
             html.Hr(style={"border":"none","height":"1px","background":BORDER,"width":"60%","margin":"12px auto 0"}),
@@ -701,7 +701,7 @@ def build_main_app():
                 html.Button("Load Symbol",id="btn-load",n_clicks=0,style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,"borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
                 html.Div(id="price-ctrl"),
                 html.Div([html.Button(tf,id={"type":"tf","index":tf},n_clicks=0,style={"background":"transparent","color":TEXT,"border":"none","borderRadius":"10px","padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,"border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button("Use Live Alpaca Feed",id="btn-live",n_clicks=0,style={"background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
+                html.Button("Use Synthetic Feed",id="btn-live",n_clicks=0,style={"display":"none"}),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
         ],style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
 
@@ -723,7 +723,7 @@ def build_main_app():
 app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
-    dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=False),
+    dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
     dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
