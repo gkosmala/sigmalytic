@@ -1,0 +1,146 @@
+# ═══════════════════════════════════════════════════════════════
+# SIGMALYTIC — SNAPSHOT WRITER + ADMIN TAB INTEGRATION GUIDE
+# ═══════════════════════════════════════════════════════════════
+
+# ────────────────────────────────────────────────────────────────
+# STEP 1: Run this SQL in Supabase SQL Editor
+# Go to: https://supabase.com/dashboard/project/jyblzaygumgmrentbchh/sql/new
+# ────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS radar_snapshots (
+    id                BIGSERIAL PRIMARY KEY,
+    symbol            TEXT NOT NULL,
+    snapshot_time     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    composite_score   NUMERIC(5,1),
+    confluence        NUMERIC(5,1),
+    expansion_node    NUMERIC(5,1),
+    relative_strength NUMERIC(5,1),
+    volume_pressure   NUMERIC(5,1),
+    behavioral        NUMERIC(5,1),
+    status            TEXT,
+    setup_type        TEXT,
+    price             NUMERIC(12,2),
+    change_pct        NUMERIC(6,2),
+    regime            TEXT,
+    is_daily_close    BOOLEAN DEFAULT FALSE,
+    grade             TEXT,
+    notes             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_symbol_time
+    ON radar_snapshots (symbol, snapshot_time DESC);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_daily_close
+    ON radar_snapshots (snapshot_time DESC)
+    WHERE is_daily_close = TRUE;
+
+
+# ────────────────────────────────────────────────────────────────
+# STEP 2: Copy files to your project
+# ────────────────────────────────────────────────────────────────
+
+# Copy snapshot_service.py  →  backend/snapshot_service.py
+# Copy admin_tab.py         →  frontend/admin_tab.py
+
+
+# ────────────────────────────────────────────────────────────────
+# STEP 3: Update backend/main.py
+# Add these lines in the IMPORTS section (near the top):
+# ────────────────────────────────────────────────────────────────
+
+from snapshot_service import snapshot_router
+
+# Then add this line near the other app.include_router() calls:
+app.include_router(snapshot_router)
+
+
+# ────────────────────────────────────────────────────────────────
+# STEP 4: Update backend/radar_service.py
+# Add snapshot writer calls to the scheduler
+# ────────────────────────────────────────────────────────────────
+
+# In start_radar_scheduler(), after the existing scheduler jobs, add:
+
+from snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
+
+# 5-minute intraday snapshot
+_scheduler.add_job(
+    lambda: write_intraday_snapshots(RADAR_CACHE),
+    trigger="interval",
+    seconds=300,
+    id="snapshot_intraday",
+    next_run_time=datetime.now(timezone.utc),
+)
+
+# Daily close snapshot — 4:15 PM ET = 20:15 UTC
+_scheduler.add_job(
+    lambda: write_daily_close_snapshots(RADAR_CACHE),
+    trigger="cron",
+    hour=20,
+    minute=15,
+    id="snapshot_daily_close",
+)
+
+
+# ────────────────────────────────────────────────────────────────
+# STEP 5: Update frontend/app.py
+# ────────────────────────────────────────────────────────────────
+
+# 5a. Add import at top of app.py:
+from admin_tab import build_admin_tab, is_admin
+
+# 5b. Add "Admin" tab to the Nav bar.
+# Find the list of tabs in build_main_app() — the html.Nav section.
+# Add this entry BEFORE "Setup":
+
+("admin", "🔒 Admin"),
+
+# 5c. Add the tab button to set_tab() callback inputs.
+# Find the @app.callback for set_tab and add:
+Input("tab-admin", "n_clicks"),
+
+# 5d. Add admin rendering to render_main() callback.
+# Find the if/elif chain at the bottom of render_main() and add:
+
+if tab == "admin":
+    return build_admin_tab(session or {}, BACKEND_HTTP)
+
+# 5e. Add "admin" to the list of tabs that skip re-render on i-clock:
+# Find this line:
+#   if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard") and trigger == "i-clock":
+# Add "admin" to it:
+if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin") and trigger == "i-clock":
+    return no_update
+
+
+# ────────────────────────────────────────────────────────────────
+# STEP 6: Push to GitHub → Render auto-deploys
+# ────────────────────────────────────────────────────────────────
+
+# git add backend/snapshot_service.py frontend/admin_tab.py
+# git add backend/main.py backend/radar_service.py frontend/app.py
+# git commit -m "feat: snapshot writer + admin performance monitor"
+# git push
+
+# Render will deploy automatically.
+# The admin tab appears only when logged in as greg.kosmala@gmail.com.
+# The snapshot writer begins recording immediately after deploy.
+
+
+# ────────────────────────────────────────────────────────────────
+# VERIFICATION
+# ────────────────────────────────────────────────────────────────
+
+# 1. Log in as greg.kosmala@gmail.com
+# 2. Click "🔒 Admin" tab
+# 3. Confirm accuracy block shows stats
+# 4. Check "📸 SNAPSHOT WRITER" shows "✅ Active"
+# 5. After 5 minutes, verify "Writes in last 10 min" > 0
+# 6. After 4:15 PM ET, grade grid should populate with today's EOD row
+
+# Force a manual snapshot write (for testing):
+# GET https://sigmalytic-backend.onrender.com/api/admin/snapshot/write-now
+# (requires Authorization: Bearer <your_token> header)
+
+# Or use the dev endpoint (no auth, only works when ADMIN_KEY is not set):
+# GET https://sigmalytic-backend.onrender.com/api/admin/report/public
