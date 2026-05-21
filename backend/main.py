@@ -499,6 +499,14 @@ async def test_sms():
     return send_test_sms()
 
 
+@app.get("/api/scoreboard/clean-duplicates")
+async def clean_duplicates():
+    """One-time cleanup of duplicate pending signals."""
+    from scoreboard_service import clear_duplicate_signals
+    deleted = clear_duplicate_signals()
+    return {"ok": True, "deleted": deleted}
+
+
 @app.get("/api/scoreboard")
 async def get_scoreboard():
     """Public scoreboard — all historical signals with grades."""
