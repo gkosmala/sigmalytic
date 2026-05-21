@@ -731,3 +731,5 @@ async def _synthetic_feed(ws: WebSocket, symbol: str):
             await ws.send_json(update.to_dict())
         except Exception:
             break
+
+# updated
