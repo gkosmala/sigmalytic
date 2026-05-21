@@ -733,7 +733,7 @@ app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
-    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
+    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
@@ -741,9 +741,12 @@ app.layout=html.Div([
     dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
     dcc.Interval(id="i-clock",interval=1_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
+    dcc.Interval(id="i-chart",interval=10_000,n_intervals=0),  # refresh chart bars every 10s
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
+    dcc.Store(id="s-ws-price",data=None),
+    html.Div(id="ws-price-receiver",style={"display":"none"}),
     html.Div([
         html.Button(id="login-btn-dummy",n_clicks=0,style={"display":"none"}),
         html.Div(id="login-error-dummy",style={"display":"none"}),
@@ -855,6 +858,54 @@ def set_timeframe(*_):
     trigger=ctx.triggered[0]["prop_id"].split(".")[0]
     return trigger.replace("btn-tf-","")
 
+
+@app.callback(
+    Output("s-candles","data","allow_duplicate"),
+    Input("i-chart","n_intervals"),
+    State("s-symbol","data"),
+    State("s-tf","data"),
+    prevent_initial_call=True,
+)
+def refresh_chart_bars(_,symbol,tf):
+    """Refresh chart bars every 10s for intraday, skip for daily/weekly."""
+    import requests as _req
+    # For daily/weekly — skip frequent refresh, only update on interval change
+    if tf in ("1D", "1W"):
+        return no_update
+    tf_map = {
+        "1m":  ("1Min",  60),
+        "5m":  ("5Min",  60),
+        "15m": ("15Min", 60),
+        "1H":  ("1Hour", 60),
+        "1D":  ("1Day",  60),
+        "1W":  ("1Week", 52),
+    }
+    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
+    try:
+        r = _req.get(
+            f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
+            params={"timeframe": alpaca_tf, "limit": limit},
+            timeout=10,
+        )
+        if r.ok:
+            bars = r.json().get("bars", [])
+            if bars and len(bars) > 1:
+                return bars
+        # Fallback to daily
+        if alpaca_tf != "1Day":
+            r2 = _req.get(
+                f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
+                params={"timeframe": "1Day", "limit": 60},
+                timeout=10,
+            )
+            if r2.ok:
+                bars2 = r2.json().get("bars", [])
+                if bars2 and len(bars2) > 1:
+                    return bars2
+    except Exception:
+        pass
+    return no_update
+
 @app.callback(Output("s-radar-filter","data"),
               Input("radar-filter-all","n_clicks"),Input("radar-filter-armed","n_clicks"),Input("radar-filter-building","n_clicks"),
               Input("radar-filter-triggered","n_clicks"),Input("radar-filter-long","n_clicks"),Input("radar-filter-short","n_clicks"),
@@ -882,7 +933,7 @@ def fetch_candles_for_tf(symbol, tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 60))
+    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
     try:
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
@@ -893,16 +944,17 @@ def fetch_candles_for_tf(symbol, tf):
             bars = r.json().get("bars", [])
             if bars and len(bars) > 1:
                 return bars
-        # Fallback to daily bars if intraday returns insufficient data
-        r2 = _req.get(
-            f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
-            params={"timeframe": "1Day", "limit": 60},
-            timeout=10,
-        )
-        if r2.ok:
-            bars2 = r2.json().get("bars", [])
-            if bars2 and len(bars2) > 1:
-                return bars2
+        # Fallback: always try daily if primary returns < 2 bars
+        if alpaca_tf != "1Day":
+            r2 = _req.get(
+                f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
+                params={"timeframe": "1Day", "limit": 60},
+                timeout=10,
+            )
+            if r2.ok:
+                bars2 = r2.json().get("bars", [])
+                if bars2 and len(bars2) > 1:
+                    return bars2
     except Exception:
         pass
     return no_update
@@ -927,11 +979,9 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
         price=round(max(1.0,prev+(random.random()-0.45)*1.25),2); volume=round(500_000+random.random()*5_000_000)
     else: return no_update,no_update,no_update
     new_seq=(seq or 0)+1; new_live=create_live_update(symbol,price,volume,new_seq).to_dict()
-    if candles:
-        prior=candles[-1]; new_c={"o":prior["c"],"h":round(max(prior["c"],price)+0.12,2),"l":round(min(prior["c"],price)-0.12,2),"c":price,"t":str(new_seq)}
-        new_candles=candles[-49:]+[new_c]
-    else: new_candles=_init_candles
-    return new_live,new_seq,new_candles
+    # Don't build fake candles — return existing candles unchanged
+    # Real candles are fetched by fetch_candles_for_tf on load and timeframe change
+    return new_live,new_seq,no_update
 
 @app.callback(Output("price-ctrl","children"),Input("s-live-mode","data"),Input("s-live","data"),State("s-price-text","data"))
 def render_price_ctrl(live_mode,live,price_text):
@@ -1086,6 +1136,67 @@ def handle_conversion_modal(timer_fired,dismiss_clicks,session,dismissed):
     if trigger=="i-demo-timer" and not dismissed:
         if session and session.get("is_demo"): return {"display":"block"},dismissed
     return {"display":"none"},dismissed
+
+
+# ── WebSocket clientside callback — connects to Alpaca stream ─────────────────
+app.clientside_callback(
+    """
+    function(symbol) {
+        // Close any existing WebSocket
+        if (window._sigmaWS) {
+            try { window._sigmaWS.close(); } catch(e) {}
+            window._sigmaWS = null;
+        }
+        if (!symbol) return window.dash_clientside.no_update;
+
+        var backendHttp = '""" + BACKEND_HTTP + """';
+        var wsUrl = backendHttp.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/' + symbol;
+        
+        try {
+            var ws = new WebSocket(wsUrl);
+            window._sigmaWS = ws;
+
+            ws.onmessage = function(event) {
+                try {
+                    var data = JSON.parse(event.data);
+                    if (data.price && data.price > 0) {
+                        // Update the hidden store with live price
+                        var store = document.getElementById('s-ws-price');
+                        if (store) {
+                            // Trigger Dash store update via hidden input
+                            var input = document.querySelector('#ws-price-receiver input');
+                            if (!input) {
+                                input = document.createElement('input');
+                                input.style.display = 'none';
+                                document.getElementById('ws-price-receiver').appendChild(input);
+                            }
+                        }
+                        // Update price display directly for zero-latency feel
+                        var priceEls = document.querySelectorAll('[data-ws-price]');
+                        priceEls.forEach(function(el) {
+                            el.innerText = '$' + data.price.toFixed(2);
+                        });
+                    }
+                } catch(e) {}
+            };
+
+            ws.onerror = function(e) { console.log('WS error:', e); };
+            ws.onclose = function() { 
+                // Reconnect after 3 seconds
+                setTimeout(function() {
+                    if (window._sigmaWS === ws) window._sigmaWS = null;
+                }, 3000);
+            };
+        } catch(e) {
+            console.log('WS connect failed:', e);
+        }
+        
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("ws-price-receiver", "children"),
+    Input("s-symbol", "data"),
+)
 
 register_billing_callbacks(app)
 
