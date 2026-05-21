@@ -33,7 +33,7 @@ log = logging.getLogger("radar_alerts")
 
 RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
 ALERT_TO_EMAIL  = os.getenv("ALERT_EMAIL", "greg.kosmala@gmail.com")
-ALERT_FROM      = "Sigmalytic <onboarding@resend.dev>"
+ALERT_FROM      = "Sigmalytic Quant Corporation <alerts@sigmalyticquantcorp.com>"
 SUPABASE_URL    = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY    = os.getenv("SUPABASE_ANON_KEY", "")
