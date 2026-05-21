@@ -700,7 +700,7 @@ def build_main_app():
                 dcc.Input(id="ticker-input",value="AAPL",debounce=False,style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}","borderRadius":"12px","padding":"10px 14px","width":"120px","fontSize":"14px","fontWeight":"700"}),
                 html.Button("Load Symbol",id="btn-load",n_clicks=0,style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,"borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
                 html.Div(id="price-ctrl"),
-                html.Div([html.Button(tf,id={"type":"tf","index":tf},n_clicks=0,style={"background":"transparent","color":TEXT,"border":"none","borderRadius":"10px","padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,"border":f"1px solid {BORDER}","borderRadius":"12px"}),
+                html.Div([html.Button(tf,id=f"btn-tf-{tf}",n_clicks=0,style={"background":"transparent","color":TEXT,"border":"none","borderRadius":"10px","padding":"8px 12px","fontSize":"12px","fontWeight":"700"}) for tf in TIMEFRAMES],style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,"border":f"1px solid {BORDER}","borderRadius":"12px"}),
                 html.Button("Use Synthetic Feed",id="btn-live",n_clicks=0,style={"display":"none"}),
             ],style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
         ],style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
@@ -836,6 +836,16 @@ def set_tab(*_):
     if not ctx.triggered: return no_update
     return ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
 
+
+@app.callback(Output("s-tf","data"),
+              [Input(f"btn-tf-{tf}","n_clicks") for tf in ["1m","5m","15m","1H","1D","1W"]],
+              prevent_initial_call=True)
+def set_timeframe(*_):
+    ctx=callback_context
+    if not ctx.triggered: return no_update
+    trigger=ctx.triggered[0]["prop_id"].split(".")[0]
+    return trigger.replace("btn-tf-","")
+
 @app.callback(Output("s-radar-filter","data"),
               Input("radar-filter-all","n_clicks"),Input("radar-filter-armed","n_clicks"),Input("radar-filter-building","n_clicks"),
               Input("radar-filter-triggered","n_clicks"),Input("radar-filter-long","n_clicks"),Input("radar-filter-short","n_clicks"),
@@ -911,9 +921,15 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
 def update_clock(_):
-    now=datetime.now(); minutes=now.hour*60+now.minute; in_sess=570<=minutes<=960
+    try:
+        import zoneinfo
+        et = datetime.now(zoneinfo.ZoneInfo("America/New_York"))
+    except Exception:
+        from datetime import timezone, timedelta
+        et = datetime.now(timezone(timedelta(hours=-4)))  # EDT fallback
+    minutes=et.hour*60+et.minute; in_sess=570<=minutes<=960
     phase="Outside RTH" if not in_sess else ("Opening Drive" if minutes<630 else ("Midday Auction" if minutes<840 else "Closing Auction"))
-    return html.Div([metric_tile("Clock",now.strftime("%I:%M:%S %p")),html.Div(style={"height":"8px"}),metric_tile("Session Phase",phase,TEAL_DIM if in_sess else MUTED),html.Div(style={"height":"10px"}),note_box("Future: economic releases, auction windows, proprietary cycle layers.")])
+    return html.Div([metric_tile("Clock",et.strftime("%I:%M:%S %p")+" ET"),html.Div(style={"height":"8px"}),metric_tile("Session Phase",phase,TEAL_DIM if in_sess else MUTED),html.Div(style={"height":"10px"}),note_box("Future: economic releases, auction windows, proprietary cycle layers.")])
 
 @app.callback(Output("csv-upload-behavior-status","children"),Output("s-analysis","data"),Output("s-refresh","data"),
               Input("csv-upload-behavior","contents"),State("csv-upload-behavior","filename"),State("s-refresh","data"),State("s-session","data"),prevent_initial_call=True)
