@@ -412,7 +412,14 @@ def build_command_tab(live, candles, symbol, tf):
     price=live["price"]; decision=live["decision"]; nodes=live["confluence"]
     kl=get_key_levels(price); seq=live["sequence"]; score=decision["score"]
     try:
-        ts=datetime.fromisoformat(live["timestamp"].replace("Z","+00:00")); live_age=ts.strftime("%I:%M:%S %p")
+        ts=datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
+        try:
+            import zoneinfo as _zi
+            ts=ts.astimezone(_zi.ZoneInfo("America/New_York"))
+        except Exception:
+            from datetime import timezone as _tz, timedelta as _td
+            ts=ts.astimezone(_tz(timedelta(hours=-4)))
+        live_age=ts.strftime("%I:%M:%S %p")+" ET"
     except: live_age="—"
     sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size="FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
@@ -884,9 +891,18 @@ def fetch_candles_for_tf(symbol, tf):
         )
         if r.ok:
             bars = r.json().get("bars", [])
-            if bars:
-                # Ensure bars have proper timestamp strings for chart x-axis
+            if bars and len(bars) > 1:
                 return bars
+        # Fallback to daily bars if intraday returns insufficient data
+        r2 = _req.get(
+            f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
+            params={"timeframe": "1Day", "limit": 60},
+            timeout=10,
+        )
+        if r2.ok:
+            bars2 = r2.json().get("bars", [])
+            if bars2 and len(bars2) > 1:
+                return bars2
     except Exception:
         pass
     return no_update
