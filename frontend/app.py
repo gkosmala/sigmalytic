@@ -891,7 +891,8 @@ def fetch_candles_for_tf(symbol, tf):
 @app.callback(Output("s-live","data"),Output("s-seq","data"),Output("s-candles","data","allow_duplicate"),
               Input("i-synth","n_intervals"),Input("i-alpaca","n_intervals"),
               State("s-live","data"),State("s-seq","data"),State("s-candles","data"),
-              State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"))
+              State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"),
+              prevent_initial_call=True)
 def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
     import random
     ctx=callback_context
