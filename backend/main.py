@@ -15,6 +15,7 @@ Endpoints:
   GET  /api/admin/report              — private admin performance report
   GET  /api/admin/report/public       — dev admin report (no auth)
   POST /api/admin/snapshot/write-now  — force snapshot write
+  GET  /api/debug/user-emails         — list all alert recipients
 
 Run:
   uvicorn backend.main:app --reload --port 8000
@@ -51,11 +52,12 @@ from shared.engine import (
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────
-from behavior       import behavior_router
-from csv_import     import csv_router
-from billing_stub   import billing_router
-from radar_service  import radar_router, start_radar_scheduler, stop_radar_scheduler
-from snapshot_service import snapshot_router   # ← SNAPSHOT + ADMIN ROUTER
+from behavior      import behavior_router
+from csv_import    import csv_router
+from billing_stub  import billing_router
+from radar_service import radar_router, start_radar_scheduler, stop_radar_scheduler
+from snapshot_service import snapshot_router   # ← ADMIN + SNAPSHOT ROUTER
+from legal_pages      import legal_router      # ← PRIVACY + TERMS PAGES
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
@@ -259,12 +261,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Register routers ───────────────────────────────────────────────────────
+# ── Register all routers ───────────────────────────────────────────────────
 app.include_router(behavior_router)
 app.include_router(csv_router)
 app.include_router(billing_router)
 app.include_router(radar_router)
-app.include_router(snapshot_router)    # ← ADMIN + SNAPSHOT ENDPOINTS
+app.include_router(snapshot_router)   # ← ADMIN + SNAPSHOT ENDPOINTS
+app.include_router(legal_router)      # ← PRIVACY + TERMS PAGES
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -326,7 +329,7 @@ async function sendReset() {
   if (!email) { msg.style.color='#f87171'; msg.innerText='Enter your email first.'; return; }
   msg.style.color='#94a3b8'; msg.innerText='Sending...';
   try {
-    var r = await fetch('/api/auth/reset-password?email=' + encodeURIComponent(email));
+    var r = await fetch('/api/auth/reset-password?email=' + encodeURIComponent(email), {method:'GET'});
     var d = await r.json();
     if (d.ok) {
       msg.style.color='#34d399';
@@ -402,7 +405,7 @@ async function setPassword() {{
     var d = await r.json();
     if (d.ok) {{
       msg.style.color='#34d399';
-      msg.innerText='✅ Password updated! Redirecting...';
+      msg.innerText='✅ Password updated! Redirecting to login...';
       setTimeout(function(){{ window.location='https://sigmalytic-frontend.onrender.com'; }}, 2000);
     }} else {{
       msg.style.color='#f87171';
@@ -511,9 +514,72 @@ async def grade_now():
     return {"ok": True, "message": "Grading complete"}
 
 
+@app.get("/api/options/test/{symbol}")
+async def test_options(symbol: str):
+    """Debug — test Alpaca options snapshot endpoint."""
+    sym = symbol.upper().strip()
+    results = {}
+
+    try:
+        r1 = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
+            params={"feed": "indicative", "limit": 5},
+            timeout=10,
+        )
+        data1 = r1.json() if r1.status_code == 200 else {}
+        results["test1_no_filter"] = {
+            "status": r1.status_code,
+            "contracts": len(data1.get("snapshots", {})),
+            "raw": r1.text[:300] if r1.status_code != 200 else "OK",
+        }
+    except Exception as e:
+        results["test1_no_filter"] = {"error": str(e)}
+
+    try:
+        r2 = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
+            params={"limit": 5},
+            timeout=10,
+        )
+        data2 = r2.json() if r2.status_code == 200 else {}
+        results["test2_no_feed"] = {
+            "status": r2.status_code,
+            "contracts": len(data2.get("snapshots", {})),
+            "raw": r2.text[:300] if r2.status_code != 200 else "OK",
+        }
+    except Exception as e:
+        results["test2_no_feed"] = {"error": str(e)}
+
+    try:
+        from datetime import datetime, timedelta
+        r3 = requests.get(
+            f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
+            headers={"APCA-API-KEY-ID": ALPACA_API_KEY, "APCA-API-SECRET-KEY": ALPACA_API_SECRET},
+            params={
+                "feed": "indicative", "type": "call", "limit": 5,
+                "expiration_date_gte": datetime.now().strftime("%Y-%m-%d"),
+                "expiration_date_lte": (datetime.now() + timedelta(days=90)).strftime("%Y-%m-%d"),
+            },
+            timeout=10,
+        )
+        data3 = r3.json() if r3.status_code == 200 else {}
+        results["test3_calls_90d"] = {
+            "status": r3.status_code,
+            "contracts": len(data3.get("snapshots", {})),
+            "sample": list(data3.get("snapshots", {}).items())[:2] if data3.get("snapshots") else [],
+            "raw": r3.text[:300] if r3.status_code != 200 else "OK",
+        }
+    except Exception as e:
+        results["test3_calls_90d"] = {"error": str(e)}
+
+    return {"symbol": sym, "results": results}
+
+
 @app.get("/api/radar/test-alert")
 async def test_alert():
-    """Send a test alert email to verify Resend is working."""
+    """Send a test alert email to all registered users."""
     from radar_alerts import send_alert
     from radar_service import RADAR_CACHE
     if not RADAR_CACHE:
@@ -525,11 +591,11 @@ async def test_alert():
 
 @app.get("/api/debug/user-emails")
 async def debug_user_emails():
-    """Debug — shows which emails would receive alerts."""
+    """Debug — shows exactly which emails will receive alerts."""
     from radar_alerts import _get_all_user_emails
     emails = _get_all_user_emails()
     return {
-        "count": len(emails),
+        "count":  len(emails),
         "emails": emails,
     }
 
@@ -580,6 +646,46 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
             await ws.send_json({"type": "PING"})
     except WebSocketDisconnect:
         manager.disconnect(ws, clean)
+
+
+@app.get("/api/debug/csv-test")
+async def csv_test():
+    """Debug endpoint — tests CSV parsing inline with hardcoded sample data."""
+    import io as _io
+    import pandas as pd
+    from csv_import import clean_price, clean_qty, normalize_side, parse_timestamp, reconstruct_trades, analyze_behavior
+
+    sample = """date,time,symbol,action,qty,price
+01/01/2025 09:43:00,09:43:00,AAPL,buy,67,160.2
+01/01/2025 14:52:00,14:52:00,AAPL,sell,67,158.68
+01/03/2025 09:35:00,09:35:00,AAPL,buy,127,154.7
+01/03/2025 12:25:00,12:25:00,AAPL,sell,127,160.01
+"""
+    df = pd.read_csv(_io.StringIO(sample), skip_blank_lines=True)
+    col_map = {"symbol":"symbol","action":"side","qty":"qty","price":"price","date":"timestamp"}
+    df.columns = [c.lower().strip() for c in df.columns]
+    df = df.rename(columns={k.lower(): v for k, v in col_map.items()})
+
+    rows = []
+    for _, row in df.iterrows():
+        price = clean_price(row.get("price"))
+        qty, is_sell = clean_qty(row.get("qty"))
+        side = normalize_side(str(row.get("side","")), qty_negative=(is_sell or False))
+        symbol = str(row.get("symbol","")).strip().upper()
+        ts = parse_timestamp(row.get("timestamp"))
+        if symbol and price and qty:
+            rows.append({"symbol":symbol,"side":side,"qty":qty,"price":price,"timestamp":ts})
+
+    trades, _ = reconstruct_trades(rows)
+    analysis = analyze_behavior(trades)
+
+    return {
+        "rows_parsed":    len(rows),
+        "sides":          list(set(r["side"] for r in rows)),
+        "timestamps":     [str(r["timestamp"]) for r in rows[:2]],
+        "trades_closed":  len(trades),
+        "analysis_keys":  list(analysis.keys()),
+    }
 
 
 @app.delete("/api/trades/reset")
