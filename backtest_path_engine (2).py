@@ -230,23 +230,27 @@ def grade_asset_day(
     Returns dict with factor scores and overall alignment.
     """
 
-    # Filter to this trading day — handle timezone-aware timestamps
-    try:
-        trade_date_naive = trade_date.tz_localize(None) if trade_date.tzinfo is None else trade_date.tz_convert("UTC").tz_localize(None)
-    except Exception:
-        trade_date_naive = trade_date
+    # Filter to this trading day using UTC date string
+    day_str = pd.Timestamp(trade_date).strftime("%Y-%m-%d")
 
-    day_str = pd.Timestamp(trade_date_naive).strftime("%Y-%m-%d")
+    # Normalize timestamps — convert to UTC date string for comparison
+    if hourly["timestamp"].dt.tz is not None:
+        h_date_strs = hourly["timestamp"].dt.tz_convert("UTC").dt.strftime("%Y-%m-%d")
+    else:
+        h_date_strs = hourly["timestamp"].dt.strftime("%Y-%m-%d")
 
-    # Normalize hourly timestamps for comparison
-    h_ts = hourly["timestamp"].dt.tz_localize(None) if hourly["timestamp"].dt.tz is not None else hourly["timestamp"]
-    h = hourly[h_ts.dt.strftime("%Y-%m-%d") == day_str].copy()
+    h = hourly[h_date_strs == day_str].copy().reset_index(drop=True)
 
     if h.empty or len(h) < 4:
         return _no_data_grade()
 
-    # Extract hour decimal for time-window filtering
-    h["hour"] = h["timestamp"].dt.hour + h["timestamp"].dt.minute / 60
+    # Extract hour as integer (UTC hour — market hours 14:00-21:00 UTC = 9:30-16:00 ET)
+    # We use UTC hours directly: 9:30 ET = 13:30 UTC = hour 13.5
+    # Offset all time comparisons by +4 or +5 hours
+    # Simpler: just use bar index position (0=open, last=close, middle=midday)
+    h["bar_idx"] = range(len(h))
+    total_bars   = len(h)
+    h["hour"]    = h["timestamp"].dt.hour + h["timestamp"].dt.minute / 60
 
     # Use h as m5 throughout (same logic, hourly resolution)
     m5 = h
@@ -276,7 +280,9 @@ def grade_asset_day(
     # Bearish: open holds below battle_upper
     # Neutral: open stays within battle zone
     # -------------------------------------------------------------------
-    open_bars = m5[m5["hour"] <= OPEN_WINDOW_END] if not m5.empty else pd.DataFrame()
+    # Use bar index for time windows (hourly bars: ~7 bars per trading day)
+    # Bar 0-1 = opening, Bar 2-4 = midday, Bar 5-6 = afternoon/close
+    open_bars = m5[m5["bar_idx"] <= 1] if not m5.empty else pd.DataFrame()
 
     if open_bars.empty:
         factors["f1_opening"] = False
@@ -344,9 +350,9 @@ def grade_asset_day(
     # Did the day unfold in expected sequence?
     # Bullish: morning push → midday stall → afternoon continuation
     # -------------------------------------------------------------------
-    morning_bars  = m5[m5["hour"].between(OPEN_WINDOW_START,  MID_WINDOW_START)]
-    midday_bars   = m5[m5["hour"].between(MID_WINDOW_START,   AFT_WINDOW_START)]
-    afternoon_bars = m5[m5["hour"].between(AFT_WINDOW_START,  CLOSE_WINDOW_END)]
+    morning_bars   = m5[m5["bar_idx"] <= 1]
+    midday_bars    = m5[m5["bar_idx"].between(2, 4)]
+    afternoon_bars = m5[m5["bar_idx"] >= 5]
 
     if morning_bars.empty or midday_bars.empty or afternoon_bars.empty:
         factors["f4_path"] = False
@@ -375,8 +381,8 @@ def grade_asset_day(
     # Did expansion occur in the correct time window?
     # Primary expansion should happen 10:30-12:00 or 1:30-2:30
     # -------------------------------------------------------------------
-    exp_bars  = m5[m5["hour"].between(EXP_WINDOW_START, EXP_WINDOW_END)]
-    aft_bars  = m5[m5["hour"].between(AFT_WINDOW_START, AFT_WINDOW_END)]
+    exp_bars  = m5[m5["bar_idx"].between(1, 3)]
+    aft_bars  = m5[m5["bar_idx"].between(4, 5)]
 
     if exp_bars.empty and aft_bars.empty:
         factors["f5_timing"] = False
