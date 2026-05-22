@@ -438,15 +438,40 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
             reversals += 1
     factors["path_quality"] = reversals <= 2
 
-    # F6 Close confirmation: day 1 or day 2 close validates thesis
-    # Get closes at approximately end of trading day (hour 7 = ~4pm)
-    day1_closes = future_h[future_h.index <= 7]
-    if not day1_closes.empty:
-        day1_close = day1_closes["close"].iloc[-1]
-        if direction == "bull":
-            factors["close_confirmed"] = day1_close > entry * 1.005
-        else:
-            factors["close_confirmed"] = day1_close < entry * 0.995
+    # F6 Close confirmation: check closes at end of each trading day
+    # Trading day = bars where hour is 15 or 16 (3pm-4pm ET)
+    # Fallback: use last bar of each group of 7 hourly bars
+    future_h2 = future_h.copy()
+    future_h2["hour"] = future_h2["timestamp"].dt.hour
+    
+    # Try to find actual end-of-day bars (hour 15 or 16)
+    eod_bars = future_h2[future_h2["hour"].isin([15, 16, 19, 20])]  # ET or UTC
+    
+    if not eod_bars.empty:
+        # Check first two end-of-day closes
+        for _, eod_bar in eod_bars.head(2).iterrows():
+            eod_close = eod_bar["close"]
+            if direction == "bull":
+                if eod_close > entry * 1.003:  # closed 0.3% above entry
+                    factors["close_confirmed"] = True
+                    break
+            else:
+                if eod_close < entry * 0.997:
+                    factors["close_confirmed"] = True
+                    break
+    else:
+        # Fallback: use bar 6 and bar 13 as proxies for day 1 and day 2 close
+        for proxy_idx in [6, 13]:
+            if proxy_idx < len(future_h):
+                proxy_close = future_h.iloc[proxy_idx]["close"]
+                if direction == "bull":
+                    if proxy_close > entry * 1.003:
+                        factors["close_confirmed"] = True
+                        break
+                else:
+                    if proxy_close < entry * 0.997:
+                        factors["close_confirmed"] = True
+                        break
 
     # Count factors passed
     factor_count = sum(factors.values())
@@ -739,6 +764,36 @@ def run_backtest(args):
             })
         )
         print(cal.to_string())
+
+        # Factor pass rates — shows which factor is killing the win rate
+        print("\n📊 Factor pass rates (which factors are failing):\n")
+        factor_cols = {
+            "f1_direction":  "F1 Direction",
+            "f2_opening":    "F2 Opening Read",
+            "f3_level":      "F3 Level Respected",
+            "f4_timing":     "F4 Timing Window",
+            "f5_path":       "F5 Path Quality",
+            "f6_close":      "F6 Close Confirmed",
+            "f7_regime":     "F7 Regime Matched",
+            "f8_tradeable":  "F8 Tradeability",
+        }
+        for col, label in factor_cols.items():
+            if col in df_out.columns:
+                pass_rate = df_out[col].dropna().mean() * 100
+                print(f"  {label:<25} {pass_rate:5.1f}% pass rate")
+
+        # Factor count distribution
+        print("\n📊 Factor count distribution:\n")
+        if "factor_count" in df_out.columns:
+            dist = df_out["factor_count"].dropna().value_counts().sort_index()
+            for count, num in dist.items():
+                print(f"  {int(count)}/8 factors: {num} signals ({num/len(df_out)*100:.1f}%)")
+
+        # Failure type breakdown
+        print("\n📊 Failure classification:\n")
+        failures = df_out[df_out["win"] == False]["failure_type"].value_counts()
+        for ftype, count in failures.items():
+            print(f"  {ftype:<30} {count} ({count/len(df_out)*100:.1f}%)")
         print()
     else:
         print("\n⚠️  No signals generated. Check universe and scoring thresholds.")
