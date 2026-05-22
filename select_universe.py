@@ -153,7 +153,7 @@ SEED = [
     ("HOLX","Hologic Inc","Health Care"),
     ("TECH","Bio-Techne Corp","Health Care"),
     # Financials
-    ("BRK-B","Berkshire Hathaway","Financials"),
+    ("BRK.B","Berkshire Hathaway","Financials"),
     ("JPM","JPMorgan Chase","Financials"),
     ("BAC","Bank of America","Financials"),
     ("WFC","Wells Fargo","Financials"),
@@ -396,7 +396,21 @@ def validate_via_alpaca(symbols: list, api_key: str, secret_key: str) -> dict:
                     "days": int(len(df)),
                 }
         except Exception as e:
-            print(f"\n  ⚠️  Batch {i//batch_size+1} error: {e}")
+            print(f"\n  ⚠️  Batch {i//batch_size+1} failed, retrying one by one...")
+            for sym in batch:
+                try:
+                    p2 = dict(params); p2["symbols"] = sym
+                    r2 = requests.get(f"{ALPACA_DATA_URL}/stocks/bars", headers=headers, params=p2, timeout=15)
+                    r2.raise_for_status()
+                    for s, bars in r2.json().get("bars", {}).items():
+                        if bars:
+                            import pandas as pd
+                            df2 = pd.DataFrame(bars)
+                            df2["dv"] = df2["c"] * df2["v"]
+                            results[s] = {"adv": float(df2["dv"].mean()), "days": int(len(df2))}
+                    time.sleep(0.2)
+                except Exception:
+                    pass
 
         time.sleep(0.35)
         done = min(i + batch_size, len(symbols))
