@@ -220,28 +220,28 @@ def grade_asset_day(
     symbol: str,
     bias: str,
     levels: dict,
-    intraday_5m: pd.DataFrame,
-    intraday_1m: pd.DataFrame,
+    hourly: pd.DataFrame,
     trade_date: pd.Timestamp,
 ) -> dict:
     """
     Grade the 7 alignment factors for one asset on one day.
+    Uses hourly bars — matches live system timeframe.
 
     Returns dict with factor scores and overall alignment.
     """
 
     # Filter to this trading day
     day_str = trade_date.strftime("%Y-%m-%d")
-    m5  = intraday_5m[intraday_5m["timestamp"].dt.strftime("%Y-%m-%d") == day_str].copy()
-    m1  = intraday_1m[intraday_1m["timestamp"].dt.strftime("%Y-%m-%d") == day_str].copy()
+    h = hourly[hourly["timestamp"].dt.strftime("%Y-%m-%d") == day_str].copy()
 
-    if m5.empty or len(m5) < 10:
+    if h.empty or len(h) < 4:
         return _no_data_grade()
 
     # Extract hour decimal for time-window filtering
-    m5["hour"]  = m5["timestamp"].dt.hour + m5["timestamp"].dt.minute / 60
-    if not m1.empty:
-        m1["hour"] = m1["timestamp"].dt.hour + m1["timestamp"].dt.minute / 60
+    h["hour"] = h["timestamp"].dt.hour + h["timestamp"].dt.minute / 60
+
+    # Use h as m5 throughout (same logic, hourly resolution)
+    m5 = h
 
     # Day OHLC
     day_open  = m5["open"].iloc[0]
@@ -513,17 +513,16 @@ def run_backtest(args):
     for sym_idx, (symbol, name, asset_type) in enumerate(BASKET):
         print(f"[{sym_idx+1}/{len(BASKET)}] {symbol} ({name}) — fetching data...")
 
-        # Fetch all timeframes
-        daily = fetch_bars(symbol, "1Day",  start_str, end_str, args.api_key, args.secret_key)
-        m5    = fetch_bars(symbol, "5Min",  start_str, end_str, args.api_key, args.secret_key)
-        m1    = fetch_bars(symbol, "1Min",  start_str, end_str, args.api_key, args.secret_key)
+        # Fetch daily + hourly only — matches live system timeframes
+        daily  = fetch_bars(symbol, "1Day",  start_str, end_str, args.api_key, args.secret_key)
+        hourly = fetch_bars(symbol, "1Hour", start_str, end_str, args.api_key, args.secret_key)
         time.sleep(0.5)
 
         if daily.empty or len(daily) < 20:
             print(f"  ⚠️  Insufficient daily data — skipping")
             continue
 
-        print(f"  Daily: {len(daily)} bars | 5-min: {len(m5)} bars | 1-min: {len(m1)} bars")
+        print(f"  Daily: {len(daily)} bars | Hourly: {len(hourly)} bars")
 
         # Walk forward through daily bars
         for i in range(20, len(daily)):
@@ -541,7 +540,7 @@ def run_backtest(args):
 
             # Grade the day
             grade_result = grade_asset_day(
-                symbol, bias, levels, m5, m1, trade_date
+                symbol, bias, levels, hourly, trade_date
             )
 
             record = {
