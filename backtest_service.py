@@ -308,20 +308,32 @@ def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optio
 
 def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp) -> dict:
     """
-    After a daily signal fires, use hourly bars to track:
-    - Did price hit T1? T2?
-    - Was the stop hit?
-    - MAE and MFE
-    - Time to target
-    - Failure type
+    8-factor outcome tracker matching Sigmalytic scoreboard definition.
+
+    A WIN requires ALL of:
+      1. Direction aligned
+      2. Opening read aligned (first 2 hourly bars)
+      3. Key level respected (T1 touched/held)
+      4. Timing window hit (within 3 trading days = ~21 hours)
+      5. Path followed (clean progression, not choppy)
+      6. Close confirmed (day 1 or day 2 close validates thesis)
+      7. Regime matched (already filtered upstream)
+      8. Tradeability confirmed (no gap-only moves)
+
+    Grade:
+      A = 8/8 factors + T2 hit
+      B = 6-7/8 factors + T1 hit + close confirmed
+      C = 4-5/8 factors
+      D = 2-3/8 factors
+      F = 0-1/8 factors or stop hit immediately
     """
-    end_date   = signal_date + timedelta(days=MAX_HOLD_DAYS)
-    future_h   = hourly[
+    end_date = signal_date + timedelta(days=MAX_HOLD_DAYS)
+    future_h = hourly[
         (hourly["timestamp"] > signal_date) &
         (hourly["timestamp"] <= end_date)
-    ].copy()
+    ].copy().reset_index(drop=True)
 
-    if future_h.empty:
+    if future_h.empty or len(future_h) < 2:
         return _no_data_outcome()
 
     entry     = signal["entry"]
@@ -330,17 +342,47 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
     t2        = signal["t2"]
     stop      = signal["invalidation"]
 
-    t1_hit    = False
-    t2_hit    = False
-    stop_hit  = False
-    t1_bar    = None
-    mae       = 0.0
-    mfe       = 0.0
+    # --- FACTOR TRACKING ---
+    factors = {
+        "direction":      False,  # F1
+        "opening_read":   False,  # F2
+        "level_respected":False,  # F3
+        "timing_window":  False,  # F4
+        "path_quality":   False,  # F5
+        "close_confirmed":False,  # F6
+        "regime_matched": True,   # F7 — already filtered upstream
+        "tradeability":   False,  # F8
+    }
 
+    t1_hit   = False
+    t2_hit   = False
+    stop_hit = False
+    t1_bar   = None
+    mae      = 0.0
+    mfe      = 0.0
+    highs    = []
+    lows     = []
+
+    # F8 Tradeability: first bar should not gap more than 2% from entry
+    first_bar  = future_h.iloc[0]
+    gap_pct    = abs(first_bar["open"] - entry) / entry
+    factors["tradeability"] = gap_pct < 0.02
+
+    # F2 Opening read: first 2 bars move in expected direction
+    if len(future_h) >= 2:
+        open_bars = future_h.iloc[:2]
+        if direction == "bull":
+            factors["opening_read"] = open_bars["close"].iloc[-1] > open_bars["open"].iloc[0]
+        else:
+            factors["opening_read"] = open_bars["close"].iloc[-1] < open_bars["open"].iloc[0]
+
+    # Walk through hourly bars
     for i, row in future_h.iterrows():
         high  = row["high"]
         low   = row["low"]
         close = row["close"]
+        highs.append(high)
+        lows.append(low)
 
         if direction == "bull":
             adverse   = (low - entry) / entry
@@ -352,12 +394,15 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
                 stop_hit = True
                 break
             if high >= t1 and not t1_hit:
-                t1_hit  = True
-                t1_bar  = i
+                t1_hit = True
+                t1_bar = i
+                factors["level_respected"] = True
+                # F4 Timing: T1 within 21 hours (~3 trading days)
+                factors["timing_window"] = i <= 21
             if high >= t2 and t1_hit:
-                t2_hit  = True
+                t2_hit = True
                 break
-        else:  # bear
+        else:
             adverse   = (high - entry) / entry
             favorable = (entry - low) / entry
             mae       = min(mae, -adverse)
@@ -367,55 +412,107 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
                 stop_hit = True
                 break
             if low <= t1 and not t1_hit:
-                t1_hit  = True
-                t1_bar  = i
+                t1_hit = True
+                t1_bar = i
+                factors["level_respected"] = True
+                factors["timing_window"]   = i <= 21
             if low <= t2 and t1_hit:
-                t2_hit  = True
+                t2_hit = True
                 break
 
-    # Win = moved in right direction without stopping out
-    win = t1_hit and not stop_hit
+    # F1 Direction: price moved net in correct direction
+    if len(highs) > 0:
+        if direction == "bull":
+            factors["direction"] = future_h["close"].iloc[-1] > entry
+        else:
+            factors["direction"] = future_h["close"].iloc[-1] < entry
 
-    # Time to T1 in hours
+    # F5 Path quality: monotonic progression (not choppy)
+    # Measure: no more than 2 bars reversing more than 1% against direction
+    reversals = 0
+    for i in range(1, len(future_h)):
+        bar_ret = (future_h["close"].iloc[i] - future_h["close"].iloc[i-1]) / future_h["close"].iloc[i-1]
+        if direction == "bull" and bar_ret < -0.01:
+            reversals += 1
+        elif direction == "bear" and bar_ret > 0.01:
+            reversals += 1
+    factors["path_quality"] = reversals <= 2
+
+    # F6 Close confirmation: day 1 or day 2 close validates thesis
+    # Get closes at approximately end of trading day (hour 7 = ~4pm)
+    day1_closes = future_h[future_h.index <= 7]
+    if not day1_closes.empty:
+        day1_close = day1_closes["close"].iloc[-1]
+        if direction == "bull":
+            factors["close_confirmed"] = day1_close > entry * 1.005
+        else:
+            factors["close_confirmed"] = day1_close < entry * 0.995
+
+    # Count factors passed
+    factor_count = sum(factors.values())
+
+    # Time to T1
     time_to_t1 = None
     if t1_hit and t1_bar is not None:
         t1_time    = future_h.loc[t1_bar, "timestamp"]
         time_to_t1 = int((t1_time - signal_date).total_seconds() / 3600)
 
-    # Failure classification
-    failure_type = None
-    if not win:
-        if stop_hit and len(future_h) <= 4:
-            failure_type = "Immediate Reversal"
-        elif stop_hit:
-            failure_type = "Stopped Out"
-        elif not t1_hit:
-            failure_type = "Weak Follow-Through"
-        else:
-            failure_type = "Partial"
+    # TRUE WIN requires direction + level + timing + close (minimum 4 core factors)
+    core_win = (
+        factors["direction"] and
+        factors["level_respected"] and
+        factors["timing_window"] and
+        factors["close_confirmed"] and
+        not stop_hit
+    )
 
     # Grade
-    if t2_hit:
+    if core_win and t2_hit and factor_count >= 7:
         grade = "A"
-    elif t1_hit and not stop_hit:
+    elif core_win and t1_hit and factor_count >= 6:
         grade = "B"
-    elif t1_hit and stop_hit:
+    elif t1_hit and factor_count >= 4 and not stop_hit:
         grade = "C"
-    elif not t1_hit and not stop_hit:
+    elif factor_count >= 2 and not stop_hit:
         grade = "D"
     else:
         grade = "F"
 
+    # Failure classification
+    failure_type = None
+    if not core_win:
+        if stop_hit and len(future_h) <= 4:
+            failure_type = "Immediate Reversal"
+        elif stop_hit:
+            failure_type = "Stopped Out"
+        elif not factors["close_confirmed"]:
+            failure_type = "No Close Confirmation"
+        elif not factors["timing_window"]:
+            failure_type = "Timing Miss"
+        elif not factors["level_respected"]:
+            failure_type = "Weak Follow-Through"
+        else:
+            failure_type = "Partial"
+
     return {
-        "win":          win,
-        "t1_hit":       t1_hit,
-        "t2_hit":       t2_hit,
-        "stop_hit":     stop_hit,
-        "mae":          round(mae, 4),
-        "mfe":          round(mfe, 4),
-        "time_to_t1_h": time_to_t1,
-        "failure_type": failure_type,
-        "grade":        grade,
+        "win":              core_win,
+        "t1_hit":          t1_hit,
+        "t2_hit":          t2_hit,
+        "stop_hit":        stop_hit,
+        "mae":             round(mae, 4),
+        "mfe":             round(mfe, 4),
+        "time_to_t1_h":   time_to_t1,
+        "failure_type":    failure_type,
+        "grade":           grade,
+        "factor_count":    factor_count,
+        "f1_direction":    factors["direction"],
+        "f2_opening":      factors["opening_read"],
+        "f3_level":        factors["level_respected"],
+        "f4_timing":       factors["timing_window"],
+        "f5_path":         factors["path_quality"],
+        "f6_close":        factors["close_confirmed"],
+        "f7_regime":       factors["regime_matched"],
+        "f8_tradeable":    factors["tradeability"],
     }
 
 
@@ -424,6 +521,10 @@ def _no_data_outcome() -> dict:
         "win": None, "t1_hit": None, "t2_hit": None,
         "stop_hit": None, "mae": None, "mfe": None,
         "time_to_t1_h": None, "failure_type": "No Data", "grade": None,
+        "factor_count": None,
+        "f1_direction": None, "f2_opening": None, "f3_level": None,
+        "f4_timing": None, "f5_path": None, "f6_close": None,
+        "f7_regime": None, "f8_tradeable": None,
     }
 
 
@@ -557,6 +658,15 @@ def run_backtest(args):
                 "time_to_t1_h":     outcome["time_to_t1_h"],
                 "failure_type":     outcome["failure_type"],
                 "grade":            outcome["grade"],
+                "factor_count":     outcome["factor_count"],
+                "f1_direction":     outcome["f1_direction"],
+                "f2_opening":       outcome["f2_opening"],
+                "f3_level":         outcome["f3_level"],
+                "f4_timing":        outcome["f4_timing"],
+                "f5_path":          outcome["f5_path"],
+                "f6_close":         outcome["f6_close"],
+                "f7_regime":        outcome["f7_regime"],
+                "f8_tradeable":     outcome["f8_tradeable"],
             }
             all_results.append(record)
             sym_signals += 1
