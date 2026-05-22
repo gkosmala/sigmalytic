@@ -373,7 +373,7 @@ def validate_via_alpaca(symbols: list, api_key: str, secret_key: str) -> dict:
             "end":        end.strftime("%Y-%m-%dT00:00:00Z"),
             "limit":      10000,
             "adjustment": "all",
-            "feed":       "sip",
+            "feed":       "iex",
         }
 
         try:
