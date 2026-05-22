@@ -504,6 +504,30 @@ def run_backtest(args):
             if signal is None:
                 continue
 
+            # HIGH PROBABILITY FILTER
+            direction = signal["direction"]
+            score     = signal["score"]
+            weekly_dir = weekly_sig["direction"]
+
+            if direction == "bull":
+                # Long: Bull/Recovery regime, weekly bull, score 75+
+                if regime in [REGIME_VOLATILE, REGIME_BEAR, REGIME_COMPRESS]:
+                    continue
+                if weekly_dir != "bull":
+                    continue
+                if score < 75:
+                    continue
+            elif direction == "bear":
+                # Short: Bear/Volatile regime, weekly bear, score 80+ (proxy for A/B quality)
+                if regime not in [REGIME_BEAR, REGIME_VOLATILE]:
+                    continue
+                if weekly_dir != "bear":
+                    continue
+                if score < 80:
+                    continue
+            else:
+                continue
+
             # Track outcome using hourly bars
             outcome = track_outcome(signal, hourly, bar_date) if not hourly.empty else _no_data_outcome()
 
