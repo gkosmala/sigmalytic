@@ -587,20 +587,22 @@ def run_backtest(args):
     df.to_csv(args.output, index=False)
 
     # Daily alignment scores
-    valid = df[df["aligned"].notna()]
+    valid = df[df["aligned"].notna()].copy()
+    valid["aligned_int"]  = valid["aligned"].apply(lambda x: 1 if x is True or str(x)=="True" else 0)
+    valid["factor_count"] = pd.to_numeric(valid["factor_count"], errors="coerce").fillna(0)
 
     print(f"\n{'='*62}")
     print(f"  ✅ PATH BACKTEST COMPLETE")
     print(f"{'='*62}")
     print(f"  Total asset-days graded: {len(valid):,}")
-    print(f"  Overall alignment rate:  {valid['aligned'].mean()*100:.1f}%")
+    print(f"  Overall alignment rate:  {valid['aligned_int'].mean()*100:.1f}%")
     print(f"  Avg factors per day:     {valid['factor_count'].mean():.2f}/7")
     print(f"  Output: {args.output}")
 
     # Daily score — X/12 assets aligned per day
     daily_scores = valid.groupby("date").agg(
-        assets_total=("aligned", "count"),
-        assets_aligned=("aligned", "sum"),
+        assets_total=("aligned_int", "count"),
+        assets_aligned=("aligned_int", "sum"),
     )
     daily_scores["alignment_pct"] = daily_scores["assets_aligned"] / daily_scores["assets_total"] * 100
     avg_daily = daily_scores["alignment_pct"].mean()
@@ -625,7 +627,8 @@ def run_backtest(args):
     }
     for col, label in factor_map.items():
         if col in valid.columns:
-            rate = valid[col].dropna().mean() * 100
+            col_data = valid[col].map(lambda x: 1 if x is True or x == True or str(x) == "True" else 0)
+            rate = col_data.mean() * 100
             print(f"  {label:<30} {rate:5.1f}%")
 
     # Regime breakdown
@@ -633,7 +636,7 @@ def run_backtest(args):
     regime_stats = valid.groupby("regime").apply(
         lambda x: pd.Series({
             "Days":      len(x),
-            "Aligned %": f"{x['aligned'].mean()*100:.1f}%",
+            "Aligned %": f"{x['aligned_int'].mean()*100:.1f}%",
             "Avg Score": f"{x['factor_count'].mean():.2f}/7",
         })
     )
@@ -644,7 +647,7 @@ def run_backtest(args):
     asset_stats = valid.groupby("symbol").apply(
         lambda x: pd.Series({
             "Days":      len(x),
-            "Aligned %": f"{x['aligned'].mean()*100:.1f}%",
+            "Aligned %": f"{x['aligned_int'].mean()*100:.1f}%",
             "Avg Grade": x["factor_count"].mean(),
         })
     ).sort_values("Avg Grade", ascending=False)
@@ -653,6 +656,9 @@ def run_backtest(args):
     # Best days (8+/12 aligned)
     best_days = daily_scores[daily_scores["assets_aligned"] >= daily_scores["assets_total"] * 0.75]
     print(f"\n  High-alignment days (75%+ basket aligned): {len(best_days):,} ({len(best_days)/len(daily_scores)*100:.1f}% of trading days)")
+
+    # Debug: show grade distribution to confirm
+    print(f"\n  Grade A+B (aligned): {(valid['grade'].isin(['A','B'])).sum():,} ({(valid['grade'].isin(['A','B'])).mean()*100:.1f}%)")
     print()
 
 
