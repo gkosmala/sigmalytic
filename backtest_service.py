@@ -188,44 +188,77 @@ def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optio
     if range20 == 0 or sma20 == 0:
         return None
 
-    # Compression: recent range < 35% of 20-bar range
-    recent_range  = (highs.tail(5).max() - lows.tail(5).min()) / range20
-    is_compressed = recent_range < 0.35
+    # Compression: recent 5-bar range vs 20-bar range
+    recent_range   = (highs.tail(5).max() - lows.tail(5).min()) / range20
+    is_compressed  = recent_range < 0.35
 
-    momentum      = (price - closes.iloc[-10]) / closes.iloc[-10] if len(closes) >= 10 else 0
-    near_breakout = price > high20 * 0.97
-    above_sma20   = price > sma20
-    above_sma5    = price > sma5
+    # Price position within 20-bar range (0=bottom, 1=top)
+    price_position = (price - low20) / range20
 
-    # Base score
+    # Momentum (10-bar)
+    momentum    = (price - closes.iloc[-10]) / closes.iloc[-10] if len(closes) >= 10 else 0
+
+    # RSI proxy: ratio of up days over 14 bars
+    changes     = closes.diff().dropna().tail(14)
+    up_days     = (changes > 0).sum()
+    rsi_proxy   = up_days / 14
+
+    above_sma20 = price > sma20
+    above_sma5  = price > sma5
+
     score = 50
 
-    # Weekly alignment bonus
+    # 1. Weekly alignment — most important
     weekly_dir = weekly_signal.get("direction", "neutral")
     if weekly_dir == "bull" and above_sma20:
-        score += 12
+        score += 15
     elif weekly_dir == "bear" and not above_sma20:
-        score += 12
+        score += 15
+    elif weekly_dir == "neutral":
+        score -= 5
 
-    if is_compressed:
+    # 2. Compression — reward BEFORE breakout
+    if is_compressed and price_position < 0.75:
+        score += 15
+    elif is_compressed and price_position >= 0.75:
+        score += 5
+
+    # 3. Volume expansion
+    if vol_ratio > 2.0:
         score += 12
-    if vol_ratio > 1.5:
-        score += 10
-    if near_breakout and above_sma20:
-        score += 10
-    if momentum > 0.03:
+    elif vol_ratio > 1.5:
         score += 8
-    elif momentum < -0.03:
+    elif vol_ratio < 0.7:
         score -= 8
-    if above_sma20 and above_sma5:
+
+    # 4. Momentum — reward moderate, penalize extremes
+    if 0.01 < momentum < 0.04:
+        score += 10
+    elif momentum > 0.06:
+        score -= 8
+    elif momentum < -0.06:
+        score -= 8
+
+    # 5. Trend structure
+    if above_sma20 and above_sma5 and sma5 > sma20:
         score += 8
+    elif not above_sma20 and not above_sma5 and sma5 < sma20:
+        score += 8
+
+    # 6. RSI filter — penalize extremes
+    if rsi_proxy > 0.75:
+        score -= 10
+    elif rsi_proxy < 0.25:
+        score -= 10
+    elif 0.4 < rsi_proxy < 0.65:
+        score += 5
 
     score = max(0, min(100, int(score)))
 
-    if score < 65:
+    if score < 70:
         return None
 
-    # Direction: weekly alignment takes priority
+    # Direction
     if weekly_dir == "bull":
         direction = "bull"
     elif weekly_dir == "bear":
@@ -233,12 +266,12 @@ def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optio
     else:
         direction = "bull" if (above_sma20 and momentum > 0) else "bear"
 
-    # Setup type classification
-    if is_compressed and near_breakout:
+    # Setup type
+    if is_compressed and price_position < 0.8:
         setup_type = "Compression Breakout"
-    elif near_breakout and vol_ratio > 1.5:
+    elif vol_ratio > 1.5 and above_sma20:
         setup_type = "Volume Breakout"
-    elif above_sma20 and above_sma5 and momentum > 0.02:
+    elif above_sma20 and above_sma5 and momentum > 0.01:
         setup_type = "Trend Continuation"
     elif not above_sma20 and momentum > 0.01:
         setup_type = "Reclaim"
