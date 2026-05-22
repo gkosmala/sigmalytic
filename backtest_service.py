@@ -1,0 +1,607 @@
+"""
+backtest_service.py
+Sigmalytic Quant Corporation
+
+Replays 5 years of historical data through the Sigmalytic scoring engine.
+For each symbol in backtest_universe.csv:
+  1. Pulls 5yr Weekly + Daily + Hourly bars from Alpaca
+  2. Runs multi-timeframe scoring logic (weekly trend + daily setup + hourly trigger)
+  3. Measures outcome: direction accuracy + T1/T2 target hits
+  4. Stores results in Supabase + CSV
+
+Timeframe hierarchy:
+  Weekly  → regime + trend direction
+  Daily   → setup identification + scoring
+  Hourly  → entry trigger + target tracking
+
+Usage:
+  python backtest_service.py \
+    --api-key YOUR_ALPACA_KEY \
+    --secret-key YOUR_ALPACA_SECRET \
+    --supabase-url YOUR_SUPABASE_URL \
+    --supabase-key YOUR_SUPABASE_KEY \
+    --universe backtest_universe.csv \
+    --output backtest_results.csv
+"""
+
+import argparse
+import time
+import os
+import requests
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from typing import Optional
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+ALPACA_DATA_URL = "https://data.alpaca.markets/v2"
+LOOKBACK_YEARS  = 5
+T1_MULTIPLIER   = 0.02    # T1 = entry + 2%
+T2_MULTIPLIER   = 0.04    # T2 = entry + 4%
+STOP_MULTIPLIER = 0.015   # Stop = entry - 1.5%
+MAX_HOLD_DAYS   = 10      # Max calendar days to hold
+
+REGIME_BULL     = "Bull Expansion"
+REGIME_BEAR     = "Bear Market"
+REGIME_VOLATILE = "Volatility Shock"
+REGIME_COMPRESS = "Compression"
+REGIME_RECOVERY = "Recovery"
+
+# ---------------------------------------------------------------------------
+# Alpaca data fetcher
+# ---------------------------------------------------------------------------
+
+def fetch_bars(symbol: str, timeframe: str, start: str, end: str,
+               api_key: str, secret_key: str) -> pd.DataFrame:
+    headers = {
+        "APCA-API-KEY-ID":     api_key,
+        "APCA-API-SECRET-KEY": secret_key,
+    }
+    all_bars   = []
+    next_token = None
+
+    while True:
+        params = {
+            "symbols":    symbol,
+            "timeframe":  timeframe,
+            "start":      start,
+            "end":        end,
+            "limit":      10000,
+            "adjustment": "all",
+            "feed":       "iex",
+        }
+        if next_token:
+            params["page_token"] = next_token
+
+        try:
+            resp = requests.get(
+                f"{ALPACA_DATA_URL}/stocks/bars",
+                headers=headers, params=params, timeout=30,
+            )
+            resp.raise_for_status()
+            data       = resp.json()
+            bars       = data.get("bars", {}).get(symbol, [])
+            all_bars.extend(bars)
+            next_token = data.get("next_page_token")
+            if not next_token:
+                break
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"    ⚠️  {symbol} {timeframe}: {e}")
+            break
+
+    if not all_bars:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(all_bars)
+    df["t"] = pd.to_datetime(df["t"])
+    df = df.sort_values("t").reset_index(drop=True)
+    df.rename(columns={
+        "o": "open", "h": "high", "l": "low",
+        "c": "close", "v": "volume", "t": "timestamp"
+    }, inplace=True)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Regime classifier (uses weekly bars)
+# ---------------------------------------------------------------------------
+
+def classify_regime(weekly: pd.DataFrame, as_of: pd.Timestamp) -> str:
+    past = weekly[weekly["timestamp"] <= as_of].tail(26)  # ~6 months of weekly bars
+    if len(past) < 10:
+        return REGIME_BULL
+
+    closes     = past["close"]
+    returns    = closes.pct_change().dropna()
+    volatility = returns.std()
+    trend      = (closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0]
+    avg_ret    = returns.mean()
+
+    if volatility > 0.04:
+        return REGIME_VOLATILE
+    elif trend > 0.08 and avg_ret > 0:
+        return REGIME_BULL
+    elif trend < -0.08:
+        return REGIME_BEAR
+    elif abs(trend) < 0.03:
+        return REGIME_COMPRESS
+    else:
+        return REGIME_RECOVERY
+
+
+# ---------------------------------------------------------------------------
+# Weekly trend scorer
+# ---------------------------------------------------------------------------
+
+def weekly_trend(weekly: pd.DataFrame, as_of: pd.Timestamp) -> dict:
+    past = weekly[weekly["timestamp"] <= as_of].tail(13)  # ~3 months
+    if len(past) < 8:
+        return {"direction": "neutral", "strength": 50}
+
+    closes    = past["close"]
+    sma13     = closes.mean()
+    sma4      = closes.tail(4).mean()
+    price     = closes.iloc[-1]
+    momentum  = (price - closes.iloc[0]) / closes.iloc[0]
+
+    if price > sma13 and sma4 > sma13 and momentum > 0:
+        direction = "bull"
+        strength  = min(100, 60 + int(momentum * 200))
+    elif price < sma13 and sma4 < sma13 and momentum < 0:
+        direction = "bear"
+        strength  = min(100, 60 + int(abs(momentum) * 200))
+    else:
+        direction = "neutral"
+        strength  = 50
+
+    return {"direction": direction, "strength": strength}
+
+
+# ---------------------------------------------------------------------------
+# Daily setup scorer
+# ---------------------------------------------------------------------------
+
+def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optional[dict]:
+    if idx < 20:
+        return None
+
+    window  = daily.iloc[max(0, idx - 20):idx + 1]
+    bar     = daily.iloc[idx]
+    closes  = window["close"]
+    highs   = window["high"]
+    lows    = window["low"]
+    volumes = window["volume"]
+
+    price       = bar["close"]
+    sma20       = closes.mean()
+    sma5        = closes.tail(5).mean()
+    vol_avg     = volumes.mean()
+    vol_ratio   = bar["volume"] / vol_avg if vol_avg > 0 else 1
+    high20      = highs.max()
+    low20       = lows.min()
+    range20     = high20 - low20
+
+    if range20 == 0 or sma20 == 0:
+        return None
+
+    # Compression: recent range < 35% of 20-bar range
+    recent_range  = (highs.tail(5).max() - lows.tail(5).min()) / range20
+    is_compressed = recent_range < 0.35
+
+    momentum      = (price - closes.iloc[-10]) / closes.iloc[-10] if len(closes) >= 10 else 0
+    near_breakout = price > high20 * 0.97
+    above_sma20   = price > sma20
+    above_sma5    = price > sma5
+
+    # Base score
+    score = 50
+
+    # Weekly alignment bonus
+    weekly_dir = weekly_signal.get("direction", "neutral")
+    if weekly_dir == "bull" and above_sma20:
+        score += 12
+    elif weekly_dir == "bear" and not above_sma20:
+        score += 12
+
+    if is_compressed:
+        score += 12
+    if vol_ratio > 1.5:
+        score += 10
+    if near_breakout and above_sma20:
+        score += 10
+    if momentum > 0.03:
+        score += 8
+    elif momentum < -0.03:
+        score -= 8
+    if above_sma20 and above_sma5:
+        score += 8
+
+    score = max(0, min(100, int(score)))
+
+    if score < 65:
+        return None
+
+    # Direction: weekly alignment takes priority
+    if weekly_dir == "bull":
+        direction = "bull"
+    elif weekly_dir == "bear":
+        direction = "bear"
+    else:
+        direction = "bull" if (above_sma20 and momentum > 0) else "bear"
+
+    # Setup type classification
+    if is_compressed and near_breakout:
+        setup_type = "Compression Breakout"
+    elif near_breakout and vol_ratio > 1.5:
+        setup_type = "Volume Breakout"
+    elif above_sma20 and above_sma5 and momentum > 0.02:
+        setup_type = "Trend Continuation"
+    elif not above_sma20 and momentum > 0.01:
+        setup_type = "Reclaim"
+    else:
+        setup_type = "Mean Reversion"
+
+    # Targets
+    if direction == "bull":
+        t1           = round(price * (1 + T1_MULTIPLIER), 2)
+        t2           = round(price * (1 + T2_MULTIPLIER), 2)
+        invalidation = round(price * (1 - STOP_MULTIPLIER), 2)
+    else:
+        t1           = round(price * (1 - T1_MULTIPLIER), 2)
+        t2           = round(price * (1 - T2_MULTIPLIER), 2)
+        invalidation = round(price * (1 + STOP_MULTIPLIER), 2)
+
+    return {
+        "entry":        price,
+        "direction":    direction,
+        "setup_type":   setup_type,
+        "score":        score,
+        "t1":           t1,
+        "t2":           t2,
+        "invalidation": invalidation,
+        "vol_ratio":    round(vol_ratio, 2),
+        "momentum":     round(momentum, 4),
+        "compressed":   is_compressed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Hourly outcome tracker
+# ---------------------------------------------------------------------------
+
+def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp) -> dict:
+    """
+    After a daily signal fires, use hourly bars to track:
+    - Did price hit T1? T2?
+    - Was the stop hit?
+    - MAE and MFE
+    - Time to target
+    - Failure type
+    """
+    end_date   = signal_date + timedelta(days=MAX_HOLD_DAYS)
+    future_h   = hourly[
+        (hourly["timestamp"] > signal_date) &
+        (hourly["timestamp"] <= end_date)
+    ].copy()
+
+    if future_h.empty:
+        return _no_data_outcome()
+
+    entry     = signal["entry"]
+    direction = signal["direction"]
+    t1        = signal["t1"]
+    t2        = signal["t2"]
+    stop      = signal["invalidation"]
+
+    t1_hit    = False
+    t2_hit    = False
+    stop_hit  = False
+    t1_bar    = None
+    mae       = 0.0
+    mfe       = 0.0
+
+    for i, row in future_h.iterrows():
+        high  = row["high"]
+        low   = row["low"]
+        close = row["close"]
+
+        if direction == "bull":
+            adverse   = (low - entry) / entry
+            favorable = (high - entry) / entry
+            mae       = min(mae, adverse)
+            mfe       = max(mfe, favorable)
+
+            if low <= stop and not t1_hit:
+                stop_hit = True
+                break
+            if high >= t1 and not t1_hit:
+                t1_hit  = True
+                t1_bar  = i
+            if high >= t2 and t1_hit:
+                t2_hit  = True
+                break
+        else:  # bear
+            adverse   = (high - entry) / entry
+            favorable = (entry - low) / entry
+            mae       = min(mae, -adverse)
+            mfe       = max(mfe, favorable)
+
+            if high >= stop and not t1_hit:
+                stop_hit = True
+                break
+            if low <= t1 and not t1_hit:
+                t1_hit  = True
+                t1_bar  = i
+            if low <= t2 and t1_hit:
+                t2_hit  = True
+                break
+
+    # Win = moved in right direction without stopping out
+    win = t1_hit and not stop_hit
+
+    # Time to T1 in hours
+    time_to_t1 = None
+    if t1_hit and t1_bar is not None:
+        t1_time    = future_h.loc[t1_bar, "timestamp"]
+        time_to_t1 = int((t1_time - signal_date).total_seconds() / 3600)
+
+    # Failure classification
+    failure_type = None
+    if not win:
+        if stop_hit and len(future_h) <= 4:
+            failure_type = "Immediate Reversal"
+        elif stop_hit:
+            failure_type = "Stopped Out"
+        elif not t1_hit:
+            failure_type = "Weak Follow-Through"
+        else:
+            failure_type = "Partial"
+
+    # Grade
+    if t2_hit:
+        grade = "A"
+    elif t1_hit and not stop_hit:
+        grade = "B"
+    elif t1_hit and stop_hit:
+        grade = "C"
+    elif not t1_hit and not stop_hit:
+        grade = "D"
+    else:
+        grade = "F"
+
+    return {
+        "win":          win,
+        "t1_hit":       t1_hit,
+        "t2_hit":       t2_hit,
+        "stop_hit":     stop_hit,
+        "mae":          round(mae, 4),
+        "mfe":          round(mfe, 4),
+        "time_to_t1_h": time_to_t1,
+        "failure_type": failure_type,
+        "grade":        grade,
+    }
+
+
+def _no_data_outcome() -> dict:
+    return {
+        "win": None, "t1_hit": None, "t2_hit": None,
+        "stop_hit": None, "mae": None, "mfe": None,
+        "time_to_t1_h": None, "failure_type": "No Data", "grade": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Supabase writer
+# ---------------------------------------------------------------------------
+
+def write_to_supabase(records: list, supabase_url: str, supabase_key: str):
+    if not records:
+        return
+    url     = f"{supabase_url}/rest/v1/backtest_results"
+    headers = {
+        "apikey":        supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type":  "application/json",
+        "Prefer":        "return=minimal",
+    }
+    # Insert in batches of 100
+    for i in range(0, len(records), 100):
+        batch = records[i:i+100]
+        try:
+            resp = requests.post(url, json=batch, headers=headers, timeout=15)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"  ⚠️  Supabase write error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Main backtest loop
+# ---------------------------------------------------------------------------
+
+def run_backtest(args):
+    print("\n" + "=" * 62)
+    print("  SIGMALYTIC — BACKTEST ENGINE")
+    print(f"  Timeframes: Weekly + Daily + Hourly | Lookback: {LOOKBACK_YEARS}yr")
+    print("=" * 62 + "\n")
+
+    # Load universe
+    universe = pd.read_csv(args.universe)
+    symbols  = universe["Symbol"].tolist()
+    sector_map = dict(zip(universe["Symbol"], universe["Sector_Normalized"]))
+    print(f"📋 Universe loaded: {len(symbols)} symbols\n")
+
+    # Date range
+    end_date   = datetime.now()
+    start_date = end_date - timedelta(days=365 * LOOKBACK_YEARS + 60)
+    start_str  = start_date.strftime("%Y-%m-%dT00:00:00Z")
+    end_str    = end_date.strftime("%Y-%m-%dT00:00:00Z")
+
+    all_results = []
+    total_signals = 0
+
+    for sym_idx, symbol in enumerate(symbols):
+        print(f"[{sym_idx+1}/{len(symbols)}] {symbol} — fetching bars...")
+
+        # Fetch all three timeframes
+        weekly  = fetch_bars(symbol, "1Week",  start_str, end_str, args.api_key, args.secret_key)
+        daily   = fetch_bars(symbol, "1Day",   start_str, end_str, args.api_key, args.secret_key)
+        hourly  = fetch_bars(symbol, "1Hour",  start_str, end_str, args.api_key, args.secret_key)
+        time.sleep(0.5)
+
+        if daily.empty or len(daily) < 30:
+            print(f"  ⚠️  Insufficient data — skipping")
+            continue
+
+        print(f"  Daily: {len(daily)} bars | Hourly: {len(hourly)} bars | Weekly: {len(weekly)} bars")
+
+        sym_signals = 0
+        sector      = sector_map.get(symbol, "Unknown")
+
+        # Walk forward through daily bars
+        for i in range(20, len(daily) - 1):
+            bar_date     = daily.iloc[i]["timestamp"]
+            regime       = classify_regime(weekly, bar_date) if not weekly.empty else REGIME_BULL
+            weekly_sig   = weekly_trend(weekly, bar_date) if not weekly.empty else {"direction":"neutral","strength":50}
+            signal       = score_daily_bar(daily, i, weekly_sig)
+
+            if signal is None:
+                continue
+
+            # Track outcome using hourly bars
+            outcome = track_outcome(signal, hourly, bar_date) if not hourly.empty else _no_data_outcome()
+
+            record = {
+                "symbol":           symbol,
+                "sector":           sector,
+                "signal_date":      bar_date.strftime("%Y-%m-%d"),
+                "setup_type":       signal["setup_type"],
+                "direction":        signal["direction"],
+                "confidence_score": signal["score"],
+                "entry_price":      signal["entry"],
+                "t1":               signal["t1"],
+                "t2":               signal["t2"],
+                "invalidation":     signal["invalidation"],
+                "vol_ratio":        signal["vol_ratio"],
+                "momentum":         signal["momentum"],
+                "compressed":       signal["compressed"],
+                "regime":           regime,
+                "weekly_direction": weekly_sig["direction"],
+                "weekly_strength":  weekly_sig["strength"],
+                "win":              outcome["win"],
+                "t1_hit":           outcome["t1_hit"],
+                "t2_hit":           outcome["t2_hit"],
+                "stop_hit":         outcome["stop_hit"],
+                "mae":              outcome["mae"],
+                "mfe":              outcome["mfe"],
+                "time_to_t1_h":     outcome["time_to_t1_h"],
+                "failure_type":     outcome["failure_type"],
+                "grade":            outcome["grade"],
+            }
+            all_results.append(record)
+            sym_signals += 1
+
+        total_signals += sym_signals
+        print(f"  ✅ {sym_signals} signals generated")
+
+        # Write to Supabase every 500 records
+        if len(all_results) >= 500 and args.supabase_url:
+            write_to_supabase(all_results[-500:], args.supabase_url, args.supabase_key)
+
+    # Write remaining to Supabase
+    remainder = len(all_results) % 500
+    if remainder > 0 and args.supabase_url:
+        write_to_supabase(all_results[-remainder:], args.supabase_url, args.supabase_key)
+
+    # Save CSV
+    if all_results:
+        df_out = pd.DataFrame(all_results)
+        df_out.to_csv(args.output, index=False)
+
+        # Summary stats
+        valid   = df_out[df_out["win"].notna()]
+        wins    = valid[valid["win"] == True]
+        t1_hits = valid[valid["t1_hit"] == True]
+        t2_hits = valid[valid["t2_hit"] == True]
+
+        print(f"\n{'='*62}")
+        print(f"  ✅ BACKTEST COMPLETE")
+        print(f"{'='*62}")
+        print(f"  Total signals:    {len(df_out):,}")
+        print(f"  Win rate:         {len(wins)/len(valid)*100:.1f}%" if len(valid) > 0 else "  Win rate: N/A")
+        print(f"  T1 hit rate:      {len(t1_hits)/len(valid)*100:.1f}%" if len(valid) > 0 else "")
+        print(f"  T2 hit rate:      {len(t2_hits)/len(valid)*100:.1f}%" if len(valid) > 0 else "")
+        print(f"  Avg MAE:          {valid['mae'].mean()*100:.2f}%" if len(valid) > 0 else "")
+        print(f"  Avg MFE:          {valid['mfe'].mean()*100:.2f}%" if len(valid) > 0 else "")
+        print(f"  Output:           {args.output}")
+        print(f"{'='*62}\n")
+
+        # Regime breakdown
+        print("📊 Win rate by regime:\n")
+        regime_stats = valid.groupby("regime").apply(
+            lambda x: pd.Series({
+                "Signals":  len(x),
+                "Win Rate": f"{x['win'].mean()*100:.1f}%"
+            })
+        )
+        print(regime_stats.to_string())
+
+        # Sector breakdown
+        print("\n📊 Win rate by sector:\n")
+        sector_stats = valid.groupby("sector").apply(
+            lambda x: pd.Series({
+                "Signals":  len(x),
+                "Win Rate": f"{x['win'].mean()*100:.1f}%"
+            })
+        )
+        print(sector_stats.to_string())
+
+        # Confidence calibration
+        print("\n📊 Confidence calibration:\n")
+        bins   = [65, 75, 85, 95, 101]
+        labels = ["65-74","75-84","85-94","95-100"]
+        valid2 = valid.copy()
+        valid2["conf_band"] = pd.cut(valid2["confidence_score"], bins=bins, labels=labels, right=False)
+        cal = valid2.groupby("conf_band", observed=True).apply(
+            lambda x: pd.Series({
+                "Signals":       len(x),
+                "Actual Win %":  f"{x['win'].mean()*100:.1f}%"
+            })
+        )
+        print(cal.to_string())
+        print()
+    else:
+        print("\n⚠️  No signals generated. Check universe and scoring thresholds.")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="Sigmalytic Backtest Engine")
+    parser.add_argument("--api-key",      required=True)
+    parser.add_argument("--secret-key",   required=True)
+    parser.add_argument("--supabase-url", default=None,  help="Supabase project URL")
+    parser.add_argument("--supabase-key", default=None,  help="Supabase anon key")
+    parser.add_argument("--universe",     default="backtest_universe.csv")
+    parser.add_argument("--output",       default="backtest_results.csv")
+    parser.add_argument("--symbols",      default=None,  help="Comma-separated subset for testing, e.g. AAPL,MSFT")
+    args = parser.parse_args()
+
+    # Allow subset testing
+    if args.symbols:
+        subset = [s.strip().upper() for s in args.symbols.split(",")]
+        uni    = pd.read_csv(args.universe)
+        uni    = uni[uni["Symbol"].isin(subset)]
+        uni.to_csv(args.universe, index=False)
+        print(f"  Running subset: {subset}")
+
+    run_backtest(args)
+
+
+if __name__ == "__main__":
+    main()
