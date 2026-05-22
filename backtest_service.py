@@ -278,15 +278,32 @@ def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optio
     else:
         setup_type = "Mean Reversion"
 
-    # Targets
+    # ATR calculation (14-bar)
+    tr_list = []
+    for j in range(max(1, len(window)-14), len(window)):
+        h = window["high"].iloc[j]
+        l = window["low"].iloc[j]
+        c_prev = window["close"].iloc[j-1]
+        tr = max(h - l, abs(h - c_prev), abs(l - c_prev))
+        tr_list.append(tr)
+    atr = np.mean(tr_list) if tr_list else price * 0.015
+
+    # ATR-based stop (1.5x ATR from entry)
+    atr_stop = atr * 1.5
+
+    # Thesis invalidation: below recent support (5-bar low for longs)
+    support    = lows.tail(5).min()
+    resistance = highs.tail(5).max()
+
     if direction == "bull":
-        t1           = round(price * (1 + T1_MULTIPLIER), 2)
-        t2           = round(price * (1 + T2_MULTIPLIER), 2)
-        invalidation = round(price * (1 - STOP_MULTIPLIER), 2)
+        # Use the wider of ATR stop or support level
+        invalidation = round(min(price - atr_stop, support * 0.999), 2)
+        t1           = round(price + atr * 2.0, 2)   # T1 = 2 ATR above entry
+        t2           = round(price + atr * 4.0, 2)   # T2 = 4 ATR above entry
     else:
-        t1           = round(price * (1 - T1_MULTIPLIER), 2)
-        t2           = round(price * (1 - T2_MULTIPLIER), 2)
-        invalidation = round(price * (1 + STOP_MULTIPLIER), 2)
+        invalidation = round(max(price + atr_stop, resistance * 1.001), 2)
+        t1           = round(price - atr * 2.0, 2)
+        t2           = round(price - atr * 4.0, 2)
 
     return {
         "entry":        price,
@@ -296,6 +313,7 @@ def score_daily_bar(daily: pd.DataFrame, idx: int, weekly_signal: dict) -> Optio
         "t1":           t1,
         "t2":           t2,
         "invalidation": invalidation,
+        "atr":          round(atr, 4),
         "vol_ratio":    round(vol_ratio, 2),
         "momentum":     round(momentum, 4),
         "compressed":   is_compressed,
@@ -354,19 +372,25 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
         "tradeability":   False,  # F8
     }
 
-    t1_hit   = False
-    t2_hit   = False
-    stop_hit = False
-    t1_bar   = None
-    mae      = 0.0
-    mfe      = 0.0
-    highs    = []
-    lows     = []
+    t1_hit      = False
+    t2_hit      = False
+    stop_hit    = False
+    t1_bar      = None
+    mae         = 0.0
+    mfe         = 0.0
+    highs       = []
+    lows        = []
+    atr         = signal.get("atr", entry * 0.015)
 
-    # F8 Tradeability: first bar should not gap more than 2% from entry
+    # Dynamic trailing stop state
+    current_stop   = stop
+    breakeven_set  = False
+    trailing_set   = False
+
+    # F8 Tradeability: first bar should not gap more than 2x ATR from entry
     first_bar  = future_h.iloc[0]
     gap_pct    = abs(first_bar["open"] - entry) / entry
-    factors["tradeability"] = gap_pct < 0.02
+    factors["tradeability"] = gap_pct < (atr / entry * 2)
 
     # F2 Opening read: first 2 bars move in expected direction
     if len(future_h) >= 2:
@@ -376,7 +400,7 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
         else:
             factors["opening_read"] = open_bars["close"].iloc[-1] < open_bars["open"].iloc[0]
 
-    # Walk through hourly bars
+    # Walk through hourly bars with trailing stop logic
     for i, row in future_h.iterrows():
         high  = row["high"]
         low   = row["low"]
@@ -390,15 +414,22 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
             mae       = min(mae, adverse)
             mfe       = max(mfe, favorable)
 
-            if low <= stop and not t1_hit:
+            # Trailing stop management
+            if t1_hit and not breakeven_set:
+                current_stop  = entry          # move stop to breakeven after T1
+                breakeven_set = True
+            if t1_hit and (high - entry) > atr * 2 and not trailing_set:
+                current_stop = t1              # trail stop to T1 after 2 ATR move
+                trailing_set = True
+
+            if low <= current_stop and not t2_hit:
                 stop_hit = True
                 break
             if high >= t1 and not t1_hit:
                 t1_hit = True
                 t1_bar = i
                 factors["level_respected"] = True
-                # F4 Timing: T1 within 21 hours (~3 trading days)
-                factors["timing_window"] = i <= 21
+                factors["timing_window"]   = i <= 48  # widened to 48 hours
             if high >= t2 and t1_hit:
                 t2_hit = True
                 break
@@ -408,14 +439,21 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
             mae       = min(mae, -adverse)
             mfe       = max(mfe, favorable)
 
-            if high >= stop and not t1_hit:
+            if t1_hit and not breakeven_set:
+                current_stop  = entry
+                breakeven_set = True
+            if t1_hit and (entry - low) > atr * 2 and not trailing_set:
+                current_stop = t1
+                trailing_set = True
+
+            if high >= current_stop and not t2_hit:
                 stop_hit = True
                 break
             if low <= t1 and not t1_hit:
                 t1_hit = True
                 t1_bar = i
                 factors["level_respected"] = True
-                factors["timing_window"]   = i <= 21
+                factors["timing_window"]   = i <= 48
             if low <= t2 and t1_hit:
                 t2_hit = True
                 break
@@ -482,11 +520,11 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
         t1_time    = future_h.loc[t1_bar, "timestamp"]
         time_to_t1 = int((t1_time - signal_date).total_seconds() / 3600)
 
-    # TRUE WIN requires direction + level + timing + close (minimum 4 core factors)
+    # TRUE WIN requires direction + level + close confirmed + not stopped out
+    # Timing window is informational only — only stop loss ends a trade
     core_win = (
         factors["direction"] and
         factors["level_respected"] and
-        factors["timing_window"] and
         factors["close_confirmed"] and
         not stop_hit
     )
@@ -512,8 +550,6 @@ def track_outcome(signal: dict, hourly: pd.DataFrame, signal_date: pd.Timestamp)
             failure_type = "Stopped Out"
         elif not factors["close_confirmed"]:
             failure_type = "No Close Confirmation"
-        elif not factors["timing_window"]:
-            failure_type = "Timing Miss"
         elif not factors["level_respected"]:
             failure_type = "Weak Follow-Through"
         else:
