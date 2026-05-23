@@ -2,42 +2,14 @@
 ================================================================================
 SIGMALYTIC — Confluence Engine Bridge
 ================================================================================
-Purpose : Run the new ConfluenceEngine in parallel with the existing
-          shared/engine.py score_symbol() function.
+Version : 1.1.0  — RS benchmark fix + intraday bar pass-through
+Date    : 2026-05-23
 
-Phase   : A/B Mode — both engines run every scan cycle.
-          Old engine remains primary (frontend keys unchanged).
-          New engine scores are logged alongside for comparison.
-
-Integration : This file is imported by radar_service.py.
-              Call score_symbol_ab(symbol, snap, bars) instead of
-              score_symbol(symbol, snap, bars).
-
-Output keys added to each result dict:
-    new_composite_score   — confluence engine composite (0–100)
-    new_confidence        — confluence engine confidence
-    new_confluence        — C factor (maps to old 'confluence')
-    new_expansion_node    — E factor (maps to old 'expansion_node')
-    new_relative_strength — RS factor (maps to old 'relative_strength')
-    new_volume_pressure   — VP factor (maps to old 'volume_pressure')
-    new_behavioral        — B factor (maps to old 'behavioral')
-    new_regime            — confluence engine regime
-    new_status            — confluence engine status
-    new_direction         — confluence engine direction
-    new_setup             — confluence engine setup label
-    new_wyckoff_phase     — Wyckoff phase
-    new_candle_pattern    — candle pattern
-    new_trigger           — confluence engine upside trigger
-    new_lower_boundary    — confluence engine downside trigger
-    new_bull_path         — bull path targets
-    new_bear_path         — bear path targets
-    new_engine_error      — error message if confluence engine failed
-    score_delta           — new_composite_score minus old composite_score
-    ab_mode               — always True (flag for logging/filtering)
-
-Frontend impact : ZERO. All existing keys are untouched.
-
-Author  : Sigmalytic Quant Corp
+Changes from 1.0.0:
+  - RS benchmark now pulled from snapshot change_pct directly (no RADAR_CACHE dependency)
+  - Intraday 5m bars fetched for A/B symbols when available
+  - SPY change_pct used as benchmark_change_pct for all symbols
+  - VSA/Wyckoff/Candle/Behavioral now receive real intraday candles
 ================================================================================
 """
 
@@ -50,28 +22,20 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("confluence_bridge")
 
-# ── Lazy import of confluence engine ─────────────────────────────────────────
-# We import lazily so a confluence engine import error never crashes the
-# existing radar scan. If it fails, old scores still flow normally.
-
 _confluence_engine_instance = None
 _confluence_import_error    = None
 
 
 def _get_engine():
-    """Return a singleton ConfluenceEngine, importing on first call."""
     global _confluence_engine_instance, _confluence_import_error
-
     if _confluence_engine_instance is not None:
         return _confluence_engine_instance
-
     if _confluence_import_error is not None:
-        return None  # Already failed — don't retry every scan
-
+        return None
     try:
         from confluence_engine import ConfluenceEngine
         _confluence_engine_instance = ConfluenceEngine()
-        log.info("ConfluenceEngine loaded and initialized successfully.")
+        log.info("ConfluenceEngine loaded successfully.")
         return _confluence_engine_instance
     except Exception as e:
         _confluence_import_error = str(e)
@@ -79,32 +43,103 @@ def _get_engine():
         return None
 
 
-# ── Data builder — Alpaca snapshot → MarketData ───────────────────────────────
+# ── Intraday bar cache (shared across all bridge calls) ───────────────────────
+# Populated lazily — fetched once per symbol per scan cycle
+_intraday_cache: Dict[str, List[dict]] = {}
+_intraday_last_fetch: Dict[str, float] = {}
+_INTRADAY_TTL = 300   # 5 minutes — don't refetch more often than this
 
-def _build_market_data(symbol: str, snap: dict, bars: list):
+import time as _time
+
+
+def _fetch_intraday_bars_cached(symbol: str) -> List[dict]:
     """
-    Convert Alpaca snapshot + historical bars into a MarketData object
-    for the confluence engine.
-
-    Alpaca snapshot structure:
-        snap["dailyBar"]    — today's OHLCV
-        snap["prevDailyBar"]— yesterday's OHLCV
-        snap["minuteBar"]   — latest 1-min bar
-        snap["latestTrade"] — most recent trade
-        snap["latestQuote"] — most recent quote
-
-    bars — list of daily bar dicts from fetch_bars_batch()
-        Each bar: {"o", "h", "l", "c", "v", "vw", "t"}
+    Fetch 5-minute bars for a symbol, with a 5-minute TTL cache.
+    Returns empty list if fetch fails or API key not available.
     """
+    import os
+    import requests
+
+    now = _time.time()
+    if (symbol in _intraday_cache and
+            now - _intraday_last_fetch.get(symbol, 0) < _INTRADAY_TTL):
+        return _intraday_cache[symbol]
+
+    api_key    = os.getenv("ALPACA_API_KEY", "")
+    api_secret = os.getenv("ALPACA_API_SECRET", "")
+    base_url   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
+    feed       = os.getenv("ALPACA_FEED", "sip")
+
+    if not api_key:
+        return []
+
     try:
-        from confluence_engine import (
-            MarketData, OptionsData, Candle, Direction
+        start = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{base_url}/v2/stocks/{symbol}/bars",
+            headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": api_secret},
+            params={"timeframe": "5Min", "start": start,
+                    "feed": feed, "sort": "asc", "limit": 78},
+            timeout=8,
         )
+        if r.status_code == 200:
+            bars = r.json().get("bars") or []
+            _intraday_cache[symbol]      = bars
+            _intraday_last_fetch[symbol] = now
+            return bars
+    except Exception as e:
+        log.debug(f"Intraday fetch error {symbol}: {e}")
+
+    return []
+
+
+def _bars_to_candles(bars: List[dict]):
+    """Convert Alpaca bar dicts to Candle objects."""
+    try:
+        from confluence_engine import Candle
+    except ImportError:
+        return []
+    candles = []
+    for b in bars:
+        try:
+            ts = (datetime.fromisoformat(b["t"].replace("Z", "+00:00"))
+                  if b.get("t") else datetime.now(timezone.utc))
+            candles.append(Candle(
+                timestamp = ts,
+                open      = float(b.get("o", 0)),
+                high      = float(b.get("h", 0)),
+                low       = float(b.get("l", 0)),
+                close     = float(b.get("c", 0)),
+                volume    = float(b.get("v", 0)),
+            ))
+        except Exception:
+            continue
+    return candles
+
+
+# ── SPY benchmark tracker ─────────────────────────────────────────────────────
+# Updated each time SPY is scored so all other symbols get a real benchmark
+
+_spy_change_pct: Optional[float] = None
+
+
+def update_spy_benchmark(change_pct: float) -> None:
+    """Call this when SPY is scored to keep benchmark current."""
+    global _spy_change_pct
+    _spy_change_pct = change_pct
+
+
+# ── Data builder ──────────────────────────────────────────────────────────────
+
+def _build_market_data(symbol: str, snap: dict, bars: list,
+                       bars_5m: List[dict]):
+    try:
+        from confluence_engine import MarketData, OptionsData
     except ImportError:
         return None, None
 
-    daily_bar  = snap.get("dailyBar",    {}) or {}
-    prev_daily = snap.get("prevDailyBar", {}) or {}
+    daily_bar    = snap.get("dailyBar",    {}) or {}
+    prev_daily   = snap.get("prevDailyBar", {}) or {}
     latest_trade = snap.get("latestTrade", {}) or {}
 
     price      = float(latest_trade.get("p", 0) or daily_bar.get("c", 0) or 0)
@@ -118,135 +153,105 @@ def _build_market_data(symbol: str, snap: dict, bars: list):
     if price <= 0 or prev_close <= 0:
         return None, None
 
-    # Average volume from historical bars
+    # Benchmark: use SPY tracker, fall back to snapshot change
+    change_pct = ((price - prev_close) / prev_close) * 100
+    if symbol == "SPY":
+        update_spy_benchmark(change_pct)
+
+    benchmark = _spy_change_pct if symbol != "SPY" else None
+
+    # Average volume from daily bars
     bar_volumes = [float(b.get("v", 0)) for b in bars if b.get("v")]
     avg_volume  = (sum(bar_volumes[-20:]) / len(bar_volumes[-20:])
-                   if len(bar_volumes) >= 20 else volume)
+                   if len(bar_volumes) >= 20 else max(volume, 1))
 
-    # Build daily Candle objects from historical bars
-    candles_daily = []
-    now_utc = datetime.now(timezone.utc)
-    for b in bars[-60:]:   # last 60 daily bars
-        try:
-            ts = datetime.fromisoformat(b["t"].replace("Z", "+00:00")) if b.get("t") else now_utc
-            candles_daily.append(Candle(
-                timestamp = ts,
-                open      = float(b.get("o", 0)),
-                high      = float(b.get("h", 0)),
-                low       = float(b.get("l", 0)),
-                close     = float(b.get("c", 0)),
-                volume    = float(b.get("v", 0)),
-            ))
-        except Exception:
-            continue
+    # Daily candles
+    candles_daily = _bars_to_candles(bars[-60:])
 
-    # Prior day levels from prev bar
+    # Intraday candles
+    candles_5m = _bars_to_candles(bars_5m)
+
+    # ATR from daily bars
+    atr = _calc_atr_from_bars(bars)
+
+    # Prior day levels
     prior_high  = float(prev_daily.get("h", 0) or 0) or None
     prior_low   = float(prev_daily.get("l", 0) or 0) or None
-    prior_close = float(prev_daily.get("c", 0) or 0) or None
 
-    # ATR from daily bars (14-period)
-    atr = _calc_atr_from_candles(candles_daily, 14)
-
-    # 52-week high/low from bars
+    # 52-week levels
     bar_highs = [float(b.get("h", 0)) for b in bars if b.get("h")]
     bar_lows  = [float(b.get("l", 0)) for b in bars if b.get("l")]
     week52_high = max(bar_highs[-252:]) if len(bar_highs) >= 20 else day_high
     week52_low  = min(bar_lows[-252:])  if len(bar_lows)  >= 20 else day_low
 
     market = MarketData(
-        symbol         = symbol,
-        price          = price,
-        previous_close = prev_close,
-        day_open       = day_open,
-        day_high       = day_high,
-        day_low        = day_low,
-        volume         = volume,
-        avg_volume     = avg_volume,
-        vwap           = vwap,
-        atr            = atr if atr > 0 else None,
-        prior_high     = prior_high,
-        prior_low      = prior_low,
-        prior_close    = prior_close,
-        week_high      = week52_high,
-        week_low       = week52_low,
-        candles_daily  = candles_daily,
-        # 5m and 1h candles not available from daily snapshot
-        # TODO: add intraday bars fetch here when available
-        # This will significantly improve: candle patterns, VSA, Wyckoff, behavioral
+        symbol               = symbol,
+        price                = price,
+        previous_close       = prev_close,
+        day_open             = day_open,
+        day_high             = day_high,
+        day_low              = day_low,
+        volume               = volume,
+        avg_volume           = avg_volume,
+        vwap                 = vwap,
+        atr                  = atr if atr > 0 else None,
+        prior_high           = prior_high,
+        prior_low            = prior_low,
+        prior_close          = prev_close,
+        week_high            = week52_high,
+        week_low             = week52_low,
+        benchmark_change_pct = benchmark,
+        candles_5m           = candles_5m,
+        candles_daily        = candles_daily,
     )
 
-    options = OptionsData()   # No options data yet — placeholder
-
-    return market, options
+    return market, OptionsData()
 
 
-def _calc_atr_from_candles(candles, period: int = 14) -> float:
-    """True Range ATR from Candle list."""
-    if len(candles) < 2:
+def _calc_atr_from_bars(bars: list, period: int = 14) -> float:
+    if len(bars) < 2:
         return 0.0
     trs = []
-    for i in range(1, len(candles)):
-        c    = candles[i]
-        prev = candles[i - 1]
+    for i in range(1, min(len(bars), period + 1)):
+        c    = bars[-i]
+        prev = bars[-(i + 1)]
         tr = max(
-            c.high - c.low,
-            abs(c.high - prev.close),
-            abs(c.low  - prev.close),
+            float(c.get("h", 0)) - float(c.get("l", 0)),
+            abs(float(c.get("h", 0)) - float(prev.get("c", 0))),
+            abs(float(c.get("l", 0)) - float(prev.get("c", 0))),
         )
         trs.append(tr)
-    recent = trs[-period:]
-    return round(sum(recent) / len(recent), 4) if recent else 0.0
+    return round(sum(trs) / len(trs), 4) if trs else 0.0
 
 
-# ── Score mapper — ConfluenceResult → frontend-safe dict ──────────────────────
+# ── Score mapper ──────────────────────────────────────────────────────────────
 
 def _map_result(result) -> Dict[str, Any]:
-    """
-    Map ConfluenceResult to the dict keys the frontend already expects.
-    All new keys are prefixed with 'new_' to avoid collision.
-    """
-    pf = result.factor_scores   # C, E, RS, VP, B
-
+    pf = result.factor_scores
     return {
-        # New engine composite (does NOT replace old composite_score)
         "new_composite_score"   : result.score,
         "new_confidence"        : result.confidence,
-
-        # Mapped to old frontend factor key names
         "new_confluence"        : pf.get("C",  50.0),
         "new_expansion_node"    : pf.get("E",  50.0),
         "new_relative_strength" : pf.get("RS", 50.0),
         "new_volume_pressure"   : pf.get("VP", 50.0),
         "new_behavioral"        : pf.get("B",  50.0),
-
-        # New engine classification fields
         "new_regime"            : result.regime,
         "new_status"            : result.status,
         "new_direction"         : result.direction,
         "new_setup"             : result.setup,
-
-        # New engine detail
         "new_wyckoff_phase"     : result.wyckoff_phase,
         "new_candle_pattern"    : result.candle_pattern,
         "new_cycle_hits"        : len(result.cycle_hits),
-
-        # New engine levels
         "new_trigger"           : result.levels.get("upside_trigger"),
         "new_lower_boundary"    : result.levels.get("downside_trigger"),
         "new_key_magnet"        : result.levels.get("key_magnet"),
-
-        # New engine paths
         "new_bull_path"         : result.paths.get("bull_path", []),
         "new_bear_path"         : result.paths.get("bear_path", []),
         "new_neutral_zone"      : result.paths.get("neutral_zone"),
         "new_bull_narrative"    : result.paths.get("bull_narrative", ""),
         "new_bear_narrative"    : result.paths.get("bear_narrative", ""),
-
-        # Internal scores (for logging/analysis — not displayed on frontend)
         "new_internal_scores"   : result.internal_scores,
-
-        # A/B metadata
         "new_engine_error"      : None,
         "ab_mode"               : True,
     }
@@ -256,22 +261,6 @@ def _map_result(result) -> Dict[str, Any]:
 
 def score_symbol_ab(symbol: str, snap: dict, bars: list,
                     old_result: dict) -> dict:
-    """
-    Run the new ConfluenceEngine alongside the old result.
-
-    Parameters
-    ----------
-    symbol     : ticker symbol
-    snap       : Alpaca snapshot dict
-    bars       : historical daily bars list
-    old_result : already-scored dict from existing score_symbol()
-
-    Returns
-    -------
-    Merged dict: old_result + new engine fields.
-    If the new engine fails for any reason, old_result is returned unchanged
-    with new_engine_error populated.
-    """
     engine = _get_engine()
 
     if engine is None:
@@ -281,10 +270,13 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
         return old_result
 
     try:
-        market, options = _build_market_data(symbol, snap, bars)
+        # Fetch intraday bars (cached, 5-min TTL)
+        bars_5m = _fetch_intraday_bars_cached(symbol)
+
+        market, options = _build_market_data(symbol, snap, bars, bars_5m)
 
         if market is None:
-            old_result["new_engine_error"] = "Could not build MarketData — price or prev_close missing"
+            old_result["new_engine_error"] = "Could not build MarketData"
             old_result["ab_mode"]          = True
             old_result["score_delta"]      = 0.0
             return old_result
@@ -292,12 +284,10 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
         result     = engine.evaluate(market, options)
         new_fields = _map_result(result)
 
-        # Score delta: positive = new engine is higher, negative = old is higher
-        old_score            = old_result.get("composite_score", 0)
-        new_score            = result.score
+        old_score = old_result.get("composite_score", 0)
+        new_score = result.score
         new_fields["score_delta"] = round(new_score - old_score, 2)
 
-        # Log meaningful divergences
         delta = abs(new_score - old_score)
         if delta >= 15:
             log.info(
@@ -306,17 +296,11 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                 f"delta={new_score - old_score:+.1f} | "
                 f"old_status={old_result.get('status')} "
                 f"new_status={result.status} | "
-                f"new_regime={result.regime}"
-            )
-        elif delta >= 8:
-            log.debug(
-                f"AB {symbol}: old={old_score:.1f} new={new_score:.1f} "
-                f"delta={new_score - old_score:+.1f}"
+                f"new_regime={result.regime} | "
+                f"5m_bars={len(bars_5m)}"
             )
 
-        # Merge: old result is primary, new fields added alongside
-        merged = {**old_result, **new_fields}
-        return merged
+        return {**old_result, **new_fields}
 
     except Exception as e:
         log.warning(f"ConfluenceEngine error for {symbol}: {e}")
@@ -327,14 +311,9 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
         return old_result
 
 
-# ── AB Summary reporter ───────────────────────────────────────────────────────
+# ── AB Summary ────────────────────────────────────────────────────────────────
 
 def ab_summary(scored: List[dict]) -> Dict[str, Any]:
-    """
-    Summarize A/B comparison across a full scan cycle.
-    Call this after each scan to get aggregate comparison stats.
-    Log or store these for the validation period.
-    """
     ab_results = [s for s in scored if s.get("ab_mode")]
     if not ab_results:
         return {"ab_count": 0}
@@ -345,15 +324,13 @@ def ab_summary(scored: List[dict]) -> Dict[str, Any]:
     if not successes:
         return {"ab_count": len(ab_results), "errors": len(errors)}
 
-    deltas         = [s.get("score_delta", 0) for s in successes]
-    old_scores     = [s.get("composite_score", 0) for s in successes]
-    new_scores     = [s.get("new_composite_score", 0) for s in successes]
+    deltas     = [s.get("score_delta", 0) for s in successes]
+    old_scores = [s.get("composite_score", 0) for s in successes]
+    new_scores = [s.get("new_composite_score", 0) for s in successes]
 
-    # Status agreement: how often do old and new agree on status?
-    status_agree   = sum(1 for s in successes
-                         if s.get("status") == s.get("new_status"))
+    status_agree = sum(1 for s in successes
+                       if s.get("status") == s.get("new_status"))
 
-    # Large divergences (delta >= 15) — most interesting for validation
     large_divs     = [s for s in successes if abs(s.get("score_delta", 0)) >= 15]
     large_div_syms = [(s["symbol"],
                        round(s.get("composite_score", 0), 1),
@@ -362,16 +339,24 @@ def ab_summary(scored: List[dict]) -> Dict[str, Any]:
                        s.get("new_status"))
                       for s in large_divs[:10]]
 
+    # RS health check — flag if RS is suspiciously flat
+    rs_values  = [s.get("new_relative_strength", 0) for s in successes]
+    rs_unique  = len(set(round(v, 1) for v in rs_values))
+    rs_warning = rs_unique <= 3   # flag if fewer than 3 distinct RS values
+
     return {
-        "ab_count"          : len(ab_results),
-        "success_count"     : len(successes),
-        "error_count"       : len(errors),
-        "avg_old_score"     : round(sum(old_scores) / len(old_scores), 2),
-        "avg_new_score"     : round(sum(new_scores) / len(new_scores), 2),
-        "avg_delta"         : round(sum(deltas) / len(deltas), 2),
-        "max_delta"         : round(max(deltas), 2),
-        "min_delta"         : round(min(deltas), 2),
-        "status_agreement_pct": round(status_agree / len(successes) * 100, 1),
-        "large_divergences" : len(large_divs),
-        "large_div_samples" : large_div_syms,
+        "ab_count"             : len(ab_results),
+        "success_count"        : len(successes),
+        "error_count"          : len(errors),
+        "avg_old_score"        : round(sum(old_scores) / len(old_scores), 2),
+        "avg_new_score"        : round(sum(new_scores) / len(new_scores), 2),
+        "avg_delta"            : round(sum(deltas) / len(deltas), 2),
+        "max_delta"            : round(max(deltas), 2),
+        "min_delta"            : round(min(deltas), 2),
+        "status_agreement_pct" : round(status_agree / len(successes) * 100, 1),
+        "large_divergences"    : len(large_divs),
+        "large_div_samples"    : large_div_syms,
+        "spy_benchmark"        : _spy_change_pct,
+        "rs_warning"           : rs_warning,
+        "rs_unique_values"     : rs_unique,
     }

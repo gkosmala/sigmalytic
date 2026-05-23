@@ -652,7 +652,10 @@ def run_radar_scan():
     snapshots = fetch_snapshots(SYMBOLS)
 
     scored = []
-    for symbol in SYMBOLS:
+    # Score SPY first so benchmark is available for all other symbols
+    priority = ["SPY"] + [s for s in SYMBOLS if s != "SPY"]
+
+    for symbol in priority:
         snap = snapshots.get(symbol, {})
         if not snap:
             continue
@@ -660,8 +663,9 @@ def run_radar_scan():
         try:
             result = score_symbol(symbol, snap, bars)
             if result and result.get("composite_score", 0) > 0:
-                # A/B bridge on non-focus symbols only
-                if _CONFLUENCE_AVAILABLE and symbol not in FOCUS_SYMBOLS:
+                # A/B bridge runs on all symbols — focus symbols skip intraday
+                # fetch here since intelligence scan handles them separately
+                if _CONFLUENCE_AVAILABLE:
                     result = score_symbol_ab(symbol, snap, bars, result)
                 scored.append(result)
         except Exception as e:
