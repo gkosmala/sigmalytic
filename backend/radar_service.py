@@ -652,10 +652,22 @@ def run_radar_scan():
     snapshots = fetch_snapshots(SYMBOLS)
 
     scored = []
-    # Score SPY first so benchmark is available for all other symbols
-    priority = ["SPY"] + [s for s in SYMBOLS if s != "SPY"]
 
-    for symbol in priority:
+    # Pre-seed SPY benchmark before main loop so all symbols get real RS scoring
+    if _CONFLUENCE_AVAILABLE:
+        try:
+            spy_snap = snapshots.get("SPY", {})
+            spy_bars = _historical_bars.get("SPY", [])
+            if spy_snap:
+                spy_result = score_symbol("SPY", spy_snap, spy_bars)
+                if spy_result and spy_result.get("change_pct") is not None:
+                    from confluence_bridge import update_spy_benchmark
+                    update_spy_benchmark(spy_result["change_pct"])
+                    log.info(f"SPY benchmark seeded: {spy_result['change_pct']:.2f}%")
+        except Exception as _e:
+            log.debug(f"SPY benchmark seed error: {_e}")
+
+    for symbol in SYMBOLS:
         snap = snapshots.get(symbol, {})
         if not snap:
             continue
@@ -663,8 +675,6 @@ def run_radar_scan():
         try:
             result = score_symbol(symbol, snap, bars)
             if result and result.get("composite_score", 0) > 0:
-                # A/B bridge runs on all symbols — focus symbols skip intraday
-                # fetch here since intelligence scan handles them separately
                 if _CONFLUENCE_AVAILABLE:
                     result = score_symbol_ab(symbol, snap, bars, result)
                 scored.append(result)
