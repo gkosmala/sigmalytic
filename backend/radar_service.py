@@ -17,6 +17,7 @@ ENDPOINTS (register in main.py)
 GET /api/radar/scores          — top 100 symbols by composite score
 GET /api/radar/symbol/{symbol} — full detail for one symbol
 GET /api/radar/status          — service health, last scan time, symbol count
+GET /api/radar/ab-summary      — A/B comparison: old engine vs confluence engine
 POST /api/radar/watchlist      — add symbol to user watchlist
 GET /api/radar/watchlist/{user_id} — get user watchlist with scores
 """
@@ -42,6 +43,14 @@ from supabase_isolation import get_user_id_from_request
 from radar_alerts import maybe_send_alert, send_daily_summary
 from scoreboard_service import log_signal, grade_pending_signals
 from sms_alerts import maybe_send_sms
+
+# ── CHANGE 1: Import confluence bridge (A/B mode) ─────────────────────────────
+try:
+    from confluence_bridge import score_symbol_ab, ab_summary as _ab_summary
+    _CONFLUENCE_AVAILABLE = True
+except Exception as _ce:
+    _CONFLUENCE_AVAILABLE = False
+    logging.getLogger("radar").warning(f"Confluence bridge not loaded: {_ce}")
 
 log = logging.getLogger("radar")
 
@@ -177,36 +186,35 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
 # ── Scoring engine ─────────────────────────────────────────────────────────────
 
 def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
-    daily_bar   = snap.get("dailyBar", {})
-    prev_daily  = snap.get("prevDailyBar", {})
-    minute_bar  = snap.get("minuteBar", {})
-    latest_trade= snap.get("latestTrade", {})
-    latest_quote= snap.get("latestQuote", {})
+    daily_bar    = snap.get("dailyBar", {})
+    prev_daily   = snap.get("prevDailyBar", {})
+    latest_trade = snap.get("latestTrade", {})
+    latest_quote = snap.get("latestQuote", {})
 
-    price       = float(latest_trade.get("p", 0) or daily_bar.get("c", 0) or 0)
-    volume      = float(daily_bar.get("v", 0) or 0)
-    prev_close  = float(prev_daily.get("c", 1) or 1)
-    day_open    = float(daily_bar.get("o", price) or price)
-    day_high    = float(daily_bar.get("h", price) or price)
-    day_low     = float(daily_bar.get("l", price) or price)
-    day_close   = float(daily_bar.get("c", price) or price)
-    vwap        = float(daily_bar.get("vw", price) or price)
+    price      = float(latest_trade.get("p", 0) or daily_bar.get("c", 0) or 0)
+    volume     = float(daily_bar.get("v", 0) or 0)
+    prev_close = float(prev_daily.get("c", 1) or 1)
+    day_open   = float(daily_bar.get("o", price) or price)
+    day_high   = float(daily_bar.get("h", price) or price)
+    day_low    = float(daily_bar.get("l", price) or price)
+    day_close  = float(daily_bar.get("c", price) or price)
+    vwap       = float(daily_bar.get("vw", price) or price)
 
     if price <= 0 or prev_close <= 0:
         return {}
 
-    change_pct  = ((price - prev_close) / prev_close) * 100
+    change_pct = ((price - prev_close) / prev_close) * 100
 
-    closes      = [float(b.get("c", 0)) for b in bars if b.get("c")]
-    volumes     = [float(b.get("v", 0)) for b in bars if b.get("v")]
-    highs       = [float(b.get("h", 0)) for b in bars if b.get("h")]
-    lows        = [float(b.get("l", 0)) for b in bars if b.get("l")]
+    closes  = [float(b.get("c", 0)) for b in bars if b.get("c")]
+    volumes = [float(b.get("v", 0)) for b in bars if b.get("v")]
+    highs   = [float(b.get("h", 0)) for b in bars if b.get("h")]
+    lows    = [float(b.get("l", 0)) for b in bars if b.get("l")]
 
-    ma20  = sum(closes[-20:]) / len(closes[-20:]) if len(closes) >= 20 else price
-    ma50  = sum(closes[-50:]) / len(closes[-50:]) if len(closes) >= 50 else price
+    ma20       = sum(closes[-20:]) / len(closes[-20:]) if len(closes) >= 20 else price
+    ma50       = sum(closes[-50:]) / len(closes[-50:]) if len(closes) >= 50 else price
     avg_vol_20 = sum(volumes[-20:]) / len(volumes[-20:]) if len(volumes) >= 20 else volume
 
-    atr = _calc_atr(highs, lows, closes, 14)
+    atr     = _calc_atr(highs, lows, closes, 14)
     rel_vol = (volume / avg_vol_20) if avg_vol_20 > 0 else 1.0
 
     high_52w = max(highs[-252:]) if len(highs) >= 52 else day_high
@@ -242,24 +250,24 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     # ── 3. Relative Strength Score ─────────────────────────────────────────────
     rel_strength = 50.0
     if len(closes) >= 20:
-        perf_1m  = ((price - closes[-20]) / closes[-20] * 100) if closes[-20] > 0 else 0
+        perf_1m = ((price - closes[-20]) / closes[-20] * 100) if closes[-20] > 0 else 0
         if perf_1m > 5:    rel_strength += 20
         elif perf_1m > 2:  rel_strength += 12
         elif perf_1m > 0:  rel_strength += 5
         elif perf_1m < -5: rel_strength -= 15
         elif perf_1m < -2: rel_strength -= 8
-    if price > ma20 > ma50:  rel_strength += 10
-    if price < ma20 < ma50:  rel_strength -= 10
+    if price > ma20 > ma50: rel_strength += 10
+    if price < ma20 < ma50: rel_strength -= 10
     rel_strength = _clamp(rel_strength)
 
     # ── 4. Volume Pressure Score ───────────────────────────────────────────────
     vol_pressure = 50.0
-    if rel_vol > 3.0:    vol_pressure += 30
-    elif rel_vol > 2.0:  vol_pressure += 20
-    elif rel_vol > 1.5:  vol_pressure += 12
-    elif rel_vol > 1.2:  vol_pressure += 6
-    elif rel_vol < 0.7:  vol_pressure -= 15
-    elif rel_vol < 0.5:  vol_pressure -= 25
+    if rel_vol > 3.0:   vol_pressure += 30
+    elif rel_vol > 2.0: vol_pressure += 20
+    elif rel_vol > 1.5: vol_pressure += 12
+    elif rel_vol > 1.2: vol_pressure += 6
+    elif rel_vol < 0.7: vol_pressure -= 15
+    elif rel_vol < 0.5: vol_pressure -= 25
     if change_pct > 0 and rel_vol > 1.5: vol_pressure += 5
     if change_pct < 0 and rel_vol > 1.5: vol_pressure -= 5
     vol_pressure = _clamp(vol_pressure)
@@ -290,8 +298,8 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         high_52w, rel_vol, change_pct, closes
     )
 
-    trigger      = round(day_high + atr * 0.1, 2)  if atr > 0 else round(price * 1.005, 2)
-    invalidation = round(day_low  - atr * 0.1, 2)  if atr > 0 else round(price * 0.99,  2)
+    trigger      = round(day_high + atr * 0.1, 2) if atr > 0 else round(price * 1.005, 2)
+    invalidation = round(day_low  - atr * 0.1, 2) if atr > 0 else round(price * 0.99,  2)
     target1      = round(price + atr * 1.0, 2)
     target2      = round(price + atr * 2.0, 2)
 
@@ -357,46 +365,39 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
                     high_52w, rel_vol, change_pct, closes) -> str:
     if len(closes) < 5:
         return "Insufficient data"
-    recent_range = max(closes[-5:]) - min(closes[-5:])
-    avg_range    = atr * 5 if atr > 0 else recent_range
-    compressed   = recent_range < avg_range * 0.6
+    recent_range  = max(closes[-5:]) - min(closes[-5:])
+    avg_range     = atr * 5 if atr > 0 else recent_range
+    compressed    = recent_range < avg_range * 0.6
     near_52w_high = high_52w > 0 and ((high_52w - price) / high_52w) < 0.03
 
-    if compressed and near_52w_high:    return "Compression Breakout Candidate"
-    if compressed:                      return "Volatility Expansion Candidate"
-    if change_pct > 2 and rel_vol > 1.5 and price > ma20: return "Trend Continuation"
-    if change_pct > 1 and price > ma20 > ma50:            return "Momentum Leader"
-    if change_pct < -3 and rel_vol > 1.5:                 return "Breakdown Risk"
-    if change_pct < -1 and price < ma20:                  return "Distribution"
-    if abs(change_pct) < 0.5 and rel_vol < 0.8:           return "Low Edge — Avoid"
+    if compressed and near_52w_high:                               return "Compression Breakout Candidate"
+    if compressed:                                                  return "Volatility Expansion Candidate"
+    if change_pct > 2 and rel_vol > 1.5 and price > ma20:         return "Trend Continuation"
+    if change_pct > 1 and price > ma20 > ma50:                    return "Momentum Leader"
+    if change_pct < -3 and rel_vol > 1.5:                         return "Breakdown Risk"
+    if change_pct < -1 and price < ma20:                          return "Distribution"
+    if abs(change_pct) < 0.5 and rel_vol < 0.8:                   return "Low Edge — Avoid"
     return "Monitoring"
 
 
 def _determine_status(composite, expansion, rel_vol, change_pct,
                       price=0, trigger=0, invalidation=0, prev_status="",
                       ma20=0, ma50=0) -> str:
-    # Short Trigger
     if invalidation > 0 and price <= invalidation and rel_vol >= 1.2 and change_pct < -2:
         return "Short Trigger"
-    # Short Confirmed
     if prev_status == "Short Trigger" and price <= invalidation * 1.002:
         return "Short Confirmed"
-    # Short Armed
     if change_pct < -1.5 and rel_vol >= 1.1 and invalidation > 0 and price > 0:
         dist_to_breakdown = (price - invalidation) / price
         if dist_to_breakdown <= 0.01 and price < ma20:
             return "Short Armed"
-    # Triggered
     if trigger > 0 and price >= trigger:
         if rel_vol >= 1.2:
             return "Triggered"
-    # Confirmed
     if prev_status == "Triggered" and price >= trigger * 0.998:
         return "Confirmed"
-    # Failed
     if prev_status in ("Triggered", "Confirmed") and invalidation > 0 and price < invalidation:
         return "Failed"
-    # Armed
     if composite >= 75 and expansion >= 60:
         if trigger > 0 and price > 0:
             dist_to_trigger = (trigger - price) / price
@@ -404,10 +405,8 @@ def _determine_status(composite, expansion, rel_vol, change_pct,
                 return "Armed"
         else:
             return "Armed"
-    # Building
     if composite >= 68:
         return "Building"
-    # Avoid
     if change_pct < -3:
         return "Avoid"
     if composite < 45:
@@ -461,7 +460,6 @@ def run_radar_scan():
         _populate_synthetic_cache()
         return
 
-    # Refresh historical bars every 30 minutes (in background)
     if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
 
@@ -477,6 +475,9 @@ def run_radar_scan():
         try:
             result = score_symbol(symbol, snap, bars)
             if result and result.get("composite_score", 0) > 0:
+                # ── CHANGE 2: Run confluence engine alongside old engine ──────
+                if _CONFLUENCE_AVAILABLE:
+                    result = score_symbol_ab(symbol, snap, bars, result)
                 scored.append(result)
         except Exception as e:
             log.debug(f"Score error {symbol}: {e}")
@@ -487,6 +488,14 @@ def run_radar_scan():
 
     LAST_SCAN_TIME = time.time()
     log.info(f"Radar scan complete — {len(scored)} symbols scored")
+
+    # ── CHANGE 3: Log A/B summary after each scan ────────────────────────────
+    if _CONFLUENCE_AVAILABLE:
+        try:
+            summary = _ab_summary(scored)
+            log.info(f"AB Summary: {summary}")
+        except Exception as e:
+            log.debug(f"AB summary error: {e}")
 
     _process_events(scored)
 
@@ -499,10 +508,10 @@ def _process_events(scored: list):
     now = time.time()
 
     for s in scored:
-        sym   = s["symbol"]
-        score = s["composite_score"]
-        status= s["status"]
-        prev  = _prev_statuses.get(sym)
+        sym    = s["symbol"]
+        score  = s["composite_score"]
+        status = s["status"]
+        prev   = _prev_statuses.get(sym)
 
         if prev and prev != status:
             events.append({
@@ -612,14 +621,12 @@ def start_radar_scheduler():
     SYMBOLS = load_russell1000()
     log.info(f"Radar scheduler starting with {len(SYMBOLS)} symbols")
 
-    # ── KEY FIX: fetch bars in background thread so port binds immediately ──
     if ALPACA_API_KEY:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
         log.info("Historical bar fetch started in background thread")
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Main radar scan every 60 seconds
     _scheduler.add_job(
         run_radar_scan,
         trigger="interval",
@@ -628,7 +635,6 @@ def start_radar_scheduler():
         next_run_time=datetime.now(timezone.utc),
     )
 
-    # Daily email summary — 8:00 AM ET (12:00 UTC)
     _scheduler.add_job(
         lambda: send_daily_summary(list(RADAR_CACHE.values())),
         trigger="cron",
@@ -637,7 +643,6 @@ def start_radar_scheduler():
         id="daily_summary",
     )
 
-    # Grade pending signals — 4:15 PM ET (21:15 UTC)
     _scheduler.add_job(
         grade_pending_signals,
         trigger="cron",
@@ -646,7 +651,6 @@ def start_radar_scheduler():
         id="grade_signals",
     )
 
-    # Intraday snapshots every 5 minutes
     try:
         from snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
         _scheduler.add_job(
@@ -655,7 +659,6 @@ def start_radar_scheduler():
             seconds=300,
             id="snapshot_intraday",
         )
-        # Daily close snapshot — 4:15 PM ET (20:15 UTC)
         _scheduler.add_job(
             lambda: write_daily_close_snapshots(RADAR_CACHE),
             trigger="cron",
@@ -692,7 +695,16 @@ def radar_status():
         "bars_loaded":       len(_historical_bars),
         "bars_last_refresh": _bars_last_refresh,
         "bars_loading":      _bars_loading,
+        "confluence_engine": _CONFLUENCE_AVAILABLE,
     }
+
+
+@radar_router.get("/ab-summary")
+def get_ab_summary():
+    """A/B comparison — old engine vs confluence engine across cached symbols."""
+    if not _CONFLUENCE_AVAILABLE:
+        return {"error": "Confluence engine not loaded"}
+    return _ab_summary(list(RADAR_CACHE.values()))
 
 
 @radar_router.get("/debug/bars")
