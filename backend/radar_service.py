@@ -133,6 +133,11 @@ def load_russell1000() -> List[str]:
             if sym and 1 <= len(sym) <= 5 and sym.isalpha():
                 symbols.append(sym)
     log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
+    # Always include benchmark and focus symbols regardless of CSV contents
+    benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
+    for b in benchmarks:
+        if b not in symbols:
+            symbols.append(b)
     return symbols if symbols else _fallback_universe()
 
 
