@@ -18,6 +18,7 @@ ENDPOINTS
 GET /api/radar/scores              — top 100 symbols by composite score
 GET /api/radar/symbol/{symbol}     — full detail for one symbol
 GET /api/radar/status              — service health, scan times, engine status
+GET /api/radar/health              — deep health check with heartbeat
 GET /api/radar/ab-summary          — A/B comparison stats across full universe
 GET /api/radar/intelligence        — deep scores for focus basket only
 GET /api/radar/intelligence/{symbol} — full intelligence detail for one symbol
@@ -38,6 +39,7 @@ from typing import Dict, List, Optional, Set
 import requests as _req
 import psycopg2
 import psycopg2.extras
+import redis as _redis
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -46,6 +48,18 @@ from supabase_isolation import get_user_id_from_request
 from radar_alerts import maybe_send_alert, send_daily_summary
 from scoreboard_service import log_signal, grade_pending_signals
 from sms_alerts import maybe_send_sms
+
+# ── Redis heartbeat client ─────────────────────────────────────────────────────
+try:
+    _redis_client = _redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=0,
+        decode_responses=True,
+        socket_timeout=2
+    )
+except Exception:
+    _redis_client = None
 
 # ── Confluence bridge (safe import) ───────────────────────────────────────────
 try:
@@ -84,23 +98,17 @@ SCORE_THRESHOLD            = 75
 TOP_N                      = 100
 
 # ── Layer 2 — Focus basket (Intelligence Radar) ────────────────────────────────
-# These symbols receive full intraday bars + complete confluence engine.
-# Expand this list carefully — each symbol adds API calls every 5 minutes.
-
 FOCUS_SYMBOLS: Set[str] = {
-    # Index proxies
     "SPY", "QQQ", "IWM",
-    # Mega-cap leaders
     "AAPL", "NVDA", "TSLA", "AMD",
     "GOOG", "META", "AMZN", "MSFT",
-    # Volatility / sector leaders
     "NFLX", "GLD", "SMH",
 }
 
 # ── In-memory caches ──────────────────────────────────────────────────────────
 
-RADAR_CACHE: Dict[str, dict]        = {}   # Layer 1 — all symbols
-INTELLIGENCE_CACHE: Dict[str, dict] = {}   # Layer 2 — focus basket deep scores
+RADAR_CACHE: Dict[str, dict]        = {}
+INTELLIGENCE_CACHE: Dict[str, dict] = {}
 
 LAST_SCAN_TIME:         Optional[float] = None
 LAST_INTELLIGENCE_TIME: Optional[float] = None
@@ -133,7 +141,6 @@ def load_russell1000() -> List[str]:
             if sym and 1 <= len(sym) <= 5 and sym.isalpha():
                 symbols.append(sym)
     log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
-    # Always include benchmark and focus symbols regardless of CSV contents
     benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
     for b in benchmarks:
         if b not in symbols:
@@ -215,10 +222,6 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
 
 def fetch_intraday_bars(symbol: str, timeframe: str = "5Min",
                         limit: int = 78) -> List[dict]:
-    """
-    Fetch intraday bars for a single symbol.
-    limit=78 → one full trading session of 5-minute bars (6.5hrs × 12 bars/hr)
-    """
     try:
         start_date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
         r = _req.get(
@@ -460,7 +463,6 @@ def _infer_regime(change_pct, rel_vol, price, ma20, ma50) -> str:
 # ── Layer 2 — Intelligence engine (focus basket) ──────────────────────────────
 
 def _bars_to_candles(bars: List[dict]) -> List["Candle"]:
-    """Convert Alpaca bar dicts to Candle objects for the confluence engine."""
     candles = []
     for b in bars:
         try:
@@ -484,7 +486,6 @@ def run_intelligence_scan():
     """
     Layer 2 — Deep confluence engine on focus basket.
     Runs every 5 minutes in a background thread.
-    Fetches real intraday bars (5m + 1h) for each focus symbol.
     """
     global LAST_INTELLIGENCE_TIME
 
@@ -497,7 +498,6 @@ def run_intelligence_scan():
 
     for symbol in sorted(FOCUS_SYMBOLS):
         try:
-            # Get snapshot for current price/daily data
             snaps = fetch_snapshots([symbol])
             snap  = snaps.get(symbol, {})
             if not snap:
@@ -512,12 +512,10 @@ def run_intelligence_scan():
             if price <= 0 or prev_close <= 0:
                 continue
 
-            # Fetch intraday bars
             bars_5m  = fetch_intraday_bars(symbol, "5Min",  limit=78)
             bars_1h  = fetch_intraday_bars(symbol, "1Hour", limit=20)
             bars_day = _historical_bars.get(symbol, [])
 
-            # Build MarketData for confluence engine
             market = MarketData(
                 symbol              = symbol,
                 price               = price,
@@ -538,11 +536,10 @@ def run_intelligence_scan():
                 benchmark_change_pct= _benchmark_change(),
             )
 
-            options = OptionsData()  # Placeholder — options data Phase 3
+            options = OptionsData()
 
             result = _intelligence_engine.evaluate(market, options)
 
-            # Store full intelligence result
             INTELLIGENCE_CACHE[symbol] = {
                 "symbol"          : symbol,
                 "price"           : result.price,
@@ -565,7 +562,6 @@ def run_intelligence_scan():
                 "bars_1h_count"   : len(bars_1h),
             }
 
-            # Also update the main radar cache with intelligence scores
             if symbol in RADAR_CACHE:
                 RADAR_CACHE[symbol]["intelligence_score"]     = result.score
                 RADAR_CACHE[symbol]["intelligence_confidence"]= result.confidence
@@ -582,7 +578,7 @@ def run_intelligence_scan():
         except Exception as e:
             log.warning(f"Intelligence scan error {symbol}: {e}")
 
-        time.sleep(0.5)  # Small pause between symbols — respect rate limits
+        time.sleep(0.5)
 
     LAST_INTELLIGENCE_TIME = time.time()
     log.info(f"Intelligence scan complete — {len(INTELLIGENCE_CACHE)} symbols graded")
@@ -610,7 +606,6 @@ def _atr_from_daily_bars(bars: list) -> Optional[float]:
 
 
 def _benchmark_change() -> Optional[float]:
-    """Get SPY % change from radar cache as benchmark."""
     spy = RADAR_CACHE.get("SPY", {})
     return spy.get("change_pct") if spy else None
 
@@ -658,7 +653,6 @@ def run_radar_scan():
 
     scored = []
 
-    # Pre-seed SPY benchmark before main loop so all symbols get real RS scoring
     if _CONFLUENCE_AVAILABLE:
         try:
             spy_snap = snapshots.get("SPY", {})
@@ -688,6 +682,14 @@ def run_radar_scan():
 
     for s in scored:
         RADAR_CACHE[s["symbol"]] = s
+
+    # ── Heartbeat pulse ───────────────────────────────────────────────────────
+    try:
+        if _redis_client:
+            _redis_client.set("health:scanner:last_pulse", int(time.time()))
+            log.debug("Heartbeat pulse written to Redis.")
+    except Exception as _he:
+        log.debug(f"Heartbeat write failed: {_he}")
 
     LAST_SCAN_TIME = time.time()
     log.info(f"Radar scan complete — {len(scored)} symbols scored")
@@ -826,7 +828,6 @@ def start_radar_scheduler():
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Layer 1 — universe scan every 60 seconds
     _scheduler.add_job(
         run_radar_scan,
         trigger="interval",
@@ -835,7 +836,6 @@ def start_radar_scheduler():
         next_run_time=datetime.now(timezone.utc),
     )
 
-    # Layer 2 — intelligence scan every 5 minutes
     if _INTELLIGENCE_AVAILABLE:
         _scheduler.add_job(
             lambda: threading.Thread(target=run_intelligence_scan, daemon=True).start(),
@@ -901,6 +901,23 @@ def radar_status():
     }
 
 
+@radar_router.get("/health")
+def scanner_health():
+    """Deep health check — verifies Redis connectivity and scanner heartbeat."""
+    try:
+        if not _redis_client:
+            return {"status": "unhealthy", "reason": "Redis client not initialized."}
+        last_pulse = _redis_client.get("health:scanner:last_pulse")
+        if not last_pulse:
+            return {"status": "unhealthy", "reason": "No heartbeat pulse recorded yet."}
+        seconds_offline = int(time.time()) - int(last_pulse)
+        if seconds_offline > 120:
+            return {"status": "stalled", "seconds_since_pulse": seconds_offline}
+        return {"status": "operational", "seconds_since_pulse": seconds_offline}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
 @radar_router.get("/ab-summary")
 def get_ab_summary():
     if not _CONFLUENCE_AVAILABLE:
@@ -910,7 +927,6 @@ def get_ab_summary():
 
 @radar_router.get("/intelligence")
 def get_intelligence():
-    """Layer 2 — full deep scores for all focus basket symbols."""
     results = list(INTELLIGENCE_CACHE.values())
     results.sort(key=lambda x: x.get("score", 0), reverse=True)
     return {
@@ -923,7 +939,6 @@ def get_intelligence():
 
 @radar_router.get("/intelligence/{symbol}")
 def get_intelligence_symbol(symbol: str):
-    """Layer 2 — full deep score for one focus symbol."""
     sym = symbol.upper().strip()
     if sym not in INTELLIGENCE_CACHE:
         if sym not in FOCUS_SYMBOLS:
