@@ -2057,7 +2057,7 @@ class ConfluenceEngine:
         self.status_classifier = StatusClassifier(status_thresholds)
         self.compressor        = PublicFactorCompressor()
 
-    def _fetch_wyckoff_anchors(self, symbol: str) -> dict:
+          def _fetch_wyckoff_anchors(self, symbol: str) -> dict:
         """
         Fetches active Wyckoff SC/AR/ST anchors from Supabase
         geometric_structures cache table.
