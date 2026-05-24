@@ -45,35 +45,25 @@ ALERT_STATUSES = {
 }
 
 # Track which alerts have been sent to avoid duplicates
-# symbol → last alerted status
 _alerted: dict[str, str] = {}
 
 # Cached user email list — refreshed every 10 minutes
 _user_emails: list[str] = []
 _user_emails_last_refresh: float = 0
-USER_EMAIL_REFRESH_INTERVAL = 600   # 10 minutes
+USER_EMAIL_REFRESH_INTERVAL = 600
 
 
 def _get_all_user_emails() -> list[str]:
-    """
-    Fetch all registered user emails from Supabase auth.
-    Uses service role key if available, falls back to listing
-    from the users table. Caches results for 10 minutes.
-    """
     global _user_emails, _user_emails_last_refresh
 
-    # Return cached list if still fresh
     if time.time() - _user_emails_last_refresh < USER_EMAIL_REFRESH_INTERVAL:
         return _user_emails
 
     emails = set()
 
-    # Always include the admin email
     if ALERT_TO_EMAIL:
         emails.add(ALERT_TO_EMAIL)
 
-    # Try Supabase admin API to get all users
-    # Requires SUPABASE_SERVICE_ROLE_KEY (different from anon key)
     service_key = SUPABASE_SERVICE_KEY or SUPABASE_ANON_KEY
     if SUPABASE_URL and service_key:
         try:
@@ -91,14 +81,12 @@ def _get_all_user_emails() -> list[str]:
                 users = data.get("users", [])
                 for user in users:
                     email = user.get("email", "")
-                    # Only include confirmed users
                     confirmed = user.get("email_confirmed_at") or user.get("confirmed_at")
                     if email and confirmed:
                         emails.add(email)
                 log.info(f"Loaded {len(emails)} user emails from Supabase")
             else:
                 log.warning(f"Supabase user list failed {r.status_code}: {r.text[:200]}")
-                log.info("Falling back to admin email only")
         except Exception as e:
             log.warning(f"User email fetch error: {e}")
 
@@ -120,8 +108,19 @@ def _status_emoji(status: str) -> str:
     }.get(status, "📡")
 
 
+def _get_intelligence_data(symbol: str) -> dict:
+    """
+    Pull intelligence layer data for this symbol if available.
+    Returns wyckoff_phase, setup, score, and anchor levels.
+    """
+    try:
+        from radar_service import INTELLIGENCE_CACHE
+        return INTELLIGENCE_CACHE.get(symbol, {})
+    except Exception:
+        return {}
+
+
 def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
-    """Build the HTML email body for a radar alert."""
     symbol    = sym.get("symbol", "")
     price     = sym.get("price", 0)
     score     = sym.get("composite_score", 0)
@@ -135,6 +134,22 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
     proximity = sym.get("trigger_proximity", 0)
     atr       = sym.get("atr", 0)
     emoji     = _status_emoji(new_status)
+
+    # ── Pull Intelligence Layer data if available ──────────────────────────
+    intel = _get_intelligence_data(symbol)
+    wyckoff_phase  = intel.get("wyckoff_phase", "")
+    intel_score    = intel.get("score", 0)
+    intel_setup    = intel.get("setup", "")
+    intel_signals  = intel.get("internal_signals", {})
+    sc_low         = intel_signals.get("wyckoff_sc_low")
+    ar_high        = intel_signals.get("wyckoff_ar_high")
+    st_low         = intel_signals.get("wyckoff_st_low")
+
+    # Use intelligence setup if available and richer
+    if intel_setup and intel_setup != "Monitoring":
+        setup = intel_setup
+    if intel_score > 0:
+        score = intel_score
 
     bear1 = round(inval - atr, 2)
     bear2 = round(inval - atr * 2, 2)
@@ -153,6 +168,26 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
 
     now = datetime.now(timezone.utc).strftime("%B %d, %Y %I:%M %p UTC")
 
+    # ── Wyckoff anchor block (only shown if anchors exist) ─────────────────
+    wyckoff_block = ""
+    if sc_low or ar_high or wyckoff_phase:
+        anchor_rows = ""
+        if sc_low:
+            anchor_rows += f"<tr><td style='padding:4px 0;color:#94a3b8;font-size:12px;'>SC Low (Floor)</td><td style='padding:4px 0;color:#f1f5f9;font-weight:700;font-family:monospace;text-align:right;'>${sc_low:,.2f}</td></tr>"
+        if st_low:
+            anchor_rows += f"<tr><td style='padding:4px 0;color:#94a3b8;font-size:12px;'>ST Low (Test)</td><td style='padding:4px 0;color:#fde68a;font-weight:700;font-family:monospace;text-align:right;'>${st_low:,.2f}</td></tr>"
+        if ar_high:
+            anchor_rows += f"<tr><td style='padding:4px 0;color:#94a3b8;font-size:12px;'>AR High (Ceiling)</td><td style='padding:4px 0;color:#f87171;font-weight:700;font-family:monospace;text-align:right;'>${ar_high:,.2f}</td></tr>"
+        if wyckoff_phase and wyckoff_phase != "Unknown":
+            anchor_rows += f"<tr><td style='padding:4px 0;color:#94a3b8;font-size:12px;'>Wyckoff Phase</td><td style='padding:4px 0;color:#a78bfa;font-weight:700;text-align:right;'>{wyckoff_phase}</td></tr>"
+
+        if anchor_rows:
+            wyckoff_block = f"""
+    <div style="background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.2);border-radius:10px;padding:14px;margin-top:16px;">
+      <div style="font-size:10px;font-weight:800;color:#a78bfa;text-transform:uppercase;letter-spacing:.12em;margin-bottom:10px;">Wyckoff Structural Anchors</div>
+      <table style="width:100%;border-collapse:collapse;">{anchor_rows}</table>
+    </div>"""
+
     return f"""
 <!DOCTYPE html>
 <html>
@@ -163,30 +198,25 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
 <body style="margin:0;padding:0;background:#0d1b2e;font-family:'Helvetica Neue',Arial,sans-serif;">
 <div style="max-width:600px;margin:0 auto;padding:32px 16px;">
 
-  <!-- Header -->
   <div style="text-align:center;margin-bottom:32px;">
     <div style="font-size:32px;font-weight:900;color:#34d399;letter-spacing:-.02em;">Σ SIGMALYTIC</div>
     <div style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:.3em;text-transform:uppercase;margin-top:4px;">QUANT CORPORATION · RADAR ALERT</div>
   </div>
 
-  <!-- Alert card -->
   <div style="background:#111f35;border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:28px;margin-bottom:20px;">
 
-    <!-- Status badge -->
     <div style="text-align:center;margin-bottom:20px;">
       <span style="background:{status_color}18;border:1px solid {status_color};border-radius:999px;padding:6px 20px;font-size:12px;font-weight:800;color:{status_color};text-transform:uppercase;letter-spacing:.1em;">
         {emoji} {new_status}
       </span>
     </div>
 
-    <!-- Symbol + price -->
     <div style="text-align:center;margin-bottom:24px;">
       <div style="font-size:48px;font-weight:900;color:#f1f5f9;letter-spacing:-.02em;font-family:'Courier New',monospace;">{symbol}</div>
       <div style="font-size:22px;font-weight:700;color:#f1f5f9;margin-top:4px;">${price:,.2f} <span style="font-size:16px;color:{chg_color};">{'+' if chg>=0 else ''}{chg:.2f}%</span></div>
       <div style="font-size:13px;color:#94a3b8;margin-top:6px;">{setup}</div>
     </div>
 
-    <!-- Score + Regime + Proximity -->
     <div style="display:flex;gap:12px;margin-bottom:20px;">
       <div style="flex:1;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;text-align:center;">
         <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px;">Score</div>
@@ -202,7 +232,6 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
       </div>
     </div>
 
-    <!-- Projection paths -->
     <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:20px;">
       <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.2em;margin-bottom:14px;">Projection Paths</div>
 
@@ -222,7 +251,6 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
       </div>
     </div>
 
-    <!-- Key levels -->
     <div style="display:flex;gap:8px;margin-top:16px;">
       <div style="flex:1;background:rgba(0,0,0,.25);border:1px solid rgba(253,230,138,.25);border-radius:10px;padding:12px;text-align:center;">
         <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;">Trigger</div>
@@ -238,9 +266,10 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
       </div>
     </div>
 
+    {wyckoff_block}
+
   </div>
 
-  <!-- Status transition -->
   <div style="background:#111f35;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:20px;text-align:center;">
     <span style="font-size:12px;color:#94a3b8;">Status changed: </span>
     <span style="font-size:12px;font-weight:700;color:#94a3b8;">{old_status or 'New'}</span>
@@ -249,9 +278,8 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
     <span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">{now}</span>
   </div>
 
-  <!-- Footer -->
   <div style="text-align:center;padding-top:16px;border-top:1px solid rgba(255,255,255,.06);">
-    <div style="font-size:11px;color:#475569;margin-bottom:4px;">Sigmalytic Quant Corporation · Decision Intelligence Platform</div>
+    <div style="font-size:11px;color:#475569;">Sigmalytic Quant Corporation · Decision Intelligence Platform</div>
     <div style="font-size:10px;color:#334155;">Data is 15-minute delayed (Alpaca IEX free feed). Not financial advice.</div>
   </div>
 
@@ -262,10 +290,6 @@ def _build_email_html(sym: dict, old_status: str, new_status: str) -> str:
 
 
 def send_alert(sym: dict, old_status: str, new_status: str) -> bool:
-    """
-    Send an email alert to ALL registered users for a status change.
-    Returns True if at least one email sent successfully.
-    """
     if not RESEND_API_KEY:
         log.warning("RESEND_API_KEY not set — skipping alert")
         return False
@@ -275,7 +299,6 @@ def send_alert(sym: dict, old_status: str, new_status: str) -> bool:
     subject = f"{emoji} {symbol} — {new_status} | Score {sym.get('composite_score',0):.0f} | Trigger ${sym.get('trigger',0):,.2f}"
     html    = _build_email_html(sym, old_status, new_status)
 
-    # Get all user emails
     recipients = _get_all_user_emails()
     if not recipients:
         recipients = [ALERT_TO_EMAIL]
@@ -313,17 +336,11 @@ def send_alert(sym: dict, old_status: str, new_status: str) -> bool:
 
 
 def maybe_send_alert(sym: dict, old_status: str, new_status: str):
-    """
-    Send alert only if:
-    1. New status is in ALERT_STATUSES
-    2. We haven't already alerted for this symbol+status combo
-    """
     symbol = sym.get("symbol", "")
 
     if new_status not in ALERT_STATUSES:
         return
 
-    # Don't resend the same alert
     last = _alerted.get(symbol)
     if last == new_status:
         return
@@ -334,10 +351,6 @@ def maybe_send_alert(sym: dict, old_status: str, new_status: str):
 
 
 def send_daily_summary(symbols: list):
-    """
-    Send a daily summary email to ALL registered users.
-    Called once per day from the scheduler at 8:00 AM ET.
-    """
     if not RESEND_API_KEY:
         return
 
@@ -421,7 +434,6 @@ def send_daily_summary(symbols: list):
 </body>
 </html>"""
 
-    # Send to all registered users
     recipients = _get_all_user_emails()
     if not recipients:
         recipients = [ALERT_TO_EMAIL]
