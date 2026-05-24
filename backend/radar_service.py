@@ -51,13 +51,21 @@ from sms_alerts import maybe_send_sms
 
 # ── Redis heartbeat client ─────────────────────────────────────────────────────
 try:
-    _redis_client = _redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        db=0,
-        decode_responses=True,
-        socket_timeout=2
-    )
+    _redis_url = os.getenv("REDIS_URL", "")
+    if _redis_url:
+        _redis_client = _redis.Redis.from_url(
+            _redis_url,
+            decode_responses=True,
+            socket_timeout=2
+        )
+    else:
+        _redis_client = _redis.Redis(
+            host="localhost",
+            port=6379,
+            db=0,
+            decode_responses=True,
+            socket_timeout=2
+        )
 except Exception:
     _redis_client = None
 
