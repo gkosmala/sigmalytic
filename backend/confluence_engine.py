@@ -199,23 +199,22 @@ class MarketData:
     volume              : float
     avg_volume          : float
 
-    # Derived / optional — supply as many as possible for best results
     vwap                : Optional[float]                = None
-    anchored_vwap       : Optional[float]                = None   # week-anchor AVWAP
-    atr                 : Optional[float]                = None   # 14-period ATR
-    prior_high          : Optional[float]                = None   # yesterday's high
-    prior_low           : Optional[float]                = None   # yesterday's low
-    prior_close         : Optional[float]                = None   # explicit alias
+    anchored_vwap       : Optional[float]                = None
+    atr                 : Optional[float]                = None
+    prior_high          : Optional[float]                = None
+    prior_low           : Optional[float]                = None
+    prior_close         : Optional[float]                = None
     premarket_high      : Optional[float]                = None
     premarket_low       : Optional[float]                = None
-    opening_range_high  : Optional[float]                = None   # first 30-min ORH
-    opening_range_low   : Optional[float]                = None   # first 30-min ORL
+    opening_range_high  : Optional[float]                = None
+    opening_range_low   : Optional[float]                = None
     week_high           : Optional[float]                = None
     week_low            : Optional[float]                = None
     month_high          : Optional[float]                = None
     month_low           : Optional[float]                = None
-    benchmark_change_pct: Optional[float]                = None   # SPY % change
-    sector_change_pct   : Optional[float]                = None   # sector ETF % change
+    benchmark_change_pct: Optional[float]                = None
+    sector_change_pct   : Optional[float]                = None
     candles_5m          : List[Candle]                   = field(default_factory=list)
     candles_15m         : List[Candle]                   = field(default_factory=list)
     candles_1h          : List[Candle]                   = field(default_factory=list)
@@ -234,10 +233,10 @@ class OptionsData:
     expected_move_down  : Optional[float]                = None
     dark_pool_zones     : List[Tuple[float, float]]      = field(default_factory=list)
     block_flow_bias     : Optional[Direction]            = None
-    net_gamma_exposure  : Optional[float]                = None   # positive = long gamma
+    net_gamma_exposure  : Optional[float]                = None
     put_call_ratio      : Optional[float]                = None
     implied_volatility  : Optional[float]                = None
-    iv_rank             : Optional[float]                = None   # 0–100
+    iv_rank             : Optional[float]                = None
 
 
 # ================================================================================
@@ -246,10 +245,6 @@ class OptionsData:
 
 @dataclass(frozen=True)
 class InternalFamilyWeights:
-    """
-    Weights for the 12 internal theory families.
-    Must sum to 1.0. Adjust after backtesting but preserve relative philosophy.
-    """
     market_structure    : float = 0.15
     gann_geometry       : float = 0.10
     time_cycle          : float = 0.10
@@ -266,7 +261,6 @@ class InternalFamilyWeights:
 
 @dataclass(frozen=True)
 class PublicFactorWeights:
-    """Weights for the 5 public radar factors. Must sum to 1.0."""
     confluence        : float = 0.30
     expansion         : float = 0.20
     relative_strength : float = 0.20
@@ -312,7 +306,6 @@ class MathUtils:
 
     @staticmethod
     def range_position(close: float, low: float, high: float) -> float:
-        """0.0 = at low, 1.0 = at high."""
         if high <= low:
             return 0.5
         return (close - low) / (high - low)
@@ -336,7 +329,6 @@ class MathUtils:
 
     @staticmethod
     def atr_estimate(candles: List[Candle], period: int = 14) -> float:
-        """True Range ATR estimate from candle list."""
         if not candles:
             return 0.0
         trs = []
@@ -357,10 +349,6 @@ class MathUtils:
 # ================================================================================
 
 class PivotDetector:
-    """
-    Deterministic swing pivot detector.
-    Uses left/right bar lookahead/lookback to confirm swing highs and lows.
-    """
 
     def detect(self, candles: List[Candle], left: int = 3, right: int = 3) -> List[Pivot]:
         pivots: List[Pivot] = []
@@ -377,7 +365,6 @@ class PivotDetector:
         return pivots
 
     def last_pivot_pair(self, pivots: List[Pivot]) -> Tuple[Optional[Pivot], Optional[Pivot]]:
-        """Return the last swing high and swing low from a pivot list."""
         last_high = next((p for p in reversed(pivots) if p.kind == "high"), None)
         last_low  = next((p for p in reversed(pivots) if p.kind == "low"),  None)
         return last_high, last_low
@@ -385,28 +372,9 @@ class PivotDetector:
 
 # ================================================================================
 # SECTION 6 — INTERNAL FAMILY 1: MARKET STRUCTURE
-# Implementation Level: ~85%
-# Remaining: multi-timeframe AVWAP anchoring, order flow microstructure
 # ================================================================================
 
 class MarketStructureEngine:
-    """
-    Evaluates structural alignment: trend, pivots, VWAP, prior day levels,
-    opening range, and relative position.
-
-    IMPLEMENTED:
-    - Prior day high/low/close respect
-    - VWAP and anchored VWAP alignment
-    - Opening range position
-    - Trend structure via pivot sequence (HH/HL vs LH/LL)
-    - Session range vs ATR (compression/expansion)
-    - Gap behavior classification
-
-    PLACEHOLDER (MEDIUM):
-    - Multi-timeframe AVWAP stack (weekly, monthly anchors)
-    - Order flow / footprint data
-    - Market profile / volume profile nodes
-    """
 
     def score(self, market: MarketData, pivots: List[Pivot], atr: float) -> Dict[str, Any]:
         score = 50.0
@@ -416,7 +384,6 @@ class MarketStructureEngine:
         price = market.price
         pct_change = MathUtils.safe_div(price - market.previous_close, market.previous_close) * 100
 
-        # --- VWAP alignment ---
         if market.vwap:
             if price > market.vwap:
                 score += 12
@@ -427,7 +394,6 @@ class MarketStructureEngine:
                 signals["vwap_position"] = "below"
                 notes.append("Price below VWAP — institutional bearish bias.")
 
-        # --- Anchored VWAP (week) ---
         if market.anchored_vwap:
             if price > market.anchored_vwap:
                 score += 6
@@ -436,7 +402,6 @@ class MarketStructureEngine:
                 score -= 4
                 notes.append("Below weekly AVWAP — structural weakness.")
 
-        # --- Prior day levels ---
         if market.prior_high and market.prior_low:
             pdh = market.prior_high
             pdl = market.prior_low
@@ -451,7 +416,6 @@ class MarketStructureEngine:
                 signals["vs_pdl"] = "below"
                 notes.append("Price below PDL — bearish breakdown of prior range.")
             else:
-                # Inside prior range — look for direction bias
                 pos = MathUtils.range_position(price, pdl, pdh)
                 if pos > 0.60:
                     score += 7
@@ -462,7 +426,6 @@ class MarketStructureEngine:
 
             signals["prior_day_position"] = MathUtils.range_position(price, pdl, pdh)
 
-        # --- Opening range position ---
         if market.opening_range_high and market.opening_range_low:
             orh = market.opening_range_high
             orl = market.opening_range_low
@@ -477,15 +440,14 @@ class MarketStructureEngine:
             else:
                 signals["or_position"] = "inside_or"
 
-        # --- Pivot trend structure ---
         highs = sorted([p for p in pivots if p.kind == "high"], key=lambda p: p.bar_index)
         lows  = sorted([p for p in pivots if p.kind == "low"],  key=lambda p: p.bar_index)
 
         if len(highs) >= 2 and len(lows) >= 2:
-            hh = highs[-1].price > highs[-2].price   # higher high
-            hl = lows[-1].price  > lows[-2].price    # higher low
-            lh = highs[-1].price < highs[-2].price   # lower high
-            ll = lows[-1].price  < lows[-2].price    # lower low
+            hh = highs[-1].price > highs[-2].price
+            hl = lows[-1].price  > lows[-2].price
+            lh = highs[-1].price < highs[-2].price
+            ll = lows[-1].price  < lows[-2].price
 
             if hh and hl:
                 score += 12
@@ -502,7 +464,6 @@ class MarketStructureEngine:
                 signals["pivot_trend"] = "contracting"
                 notes.append("Contracting pivots — compression building.")
 
-        # --- Gap behavior ---
         gap_pct = MathUtils.safe_div(market.day_open - market.previous_close,
                                      market.previous_close) * 100
         signals["gap_pct"] = round(gap_pct, 3)
@@ -520,7 +481,6 @@ class MarketStructureEngine:
                 score += 6
                 notes.append(f"Gap down {abs(gap_pct):.1f}% recovering — possible gap fill.")
 
-        # --- Session range vs ATR ---
         session_range = market.day_high - market.day_low
         range_ratio = MathUtils.safe_div(session_range, atr, 1.0) if atr > 0 else 1.0
         signals["range_ratio_vs_atr"] = round(range_ratio, 3)
@@ -529,18 +489,6 @@ class MarketStructureEngine:
             notes.append("Session range <50% ATR — significant compression building.")
         elif range_ratio > 1.8:
             notes.append("Session range >180% ATR — extended / exhaustion possible.")
-
-        # PLACEHOLDER (MEDIUM) — Volume Profile / Market Profile nodes
-        # TODO: When volume profile data is available, add scoring for:
-        #   - Price at high-volume node (support/resistance confirmed)
-        #   - Price at low-volume node (fast move through likely)
-        #   - POC (point of control) alignment
-        # Expected score adjustment: +10 to +20 when at key VP node
-
-        # PLACEHOLDER (MEDIUM) — Multi-timeframe AVWAP stack
-        # TODO: Weekly, monthly, yearly AVWAP confluence
-        # When price is above all three AVWAPs: +15
-        # When price is below all three: -15
 
         signals["notes"] = notes
         return {
@@ -551,43 +499,9 @@ class MarketStructureEngine:
 
 # ================================================================================
 # SECTION 7 — INTERNAL FAMILY 2: GANN GEOMETRY
-# Implementation Level: ~55%
-# Remaining: True wheel rotations, cardinal cross, price-time squaring, multi-pivot
 # ================================================================================
 
 class GannGeometryEngine:
-    """
-    W.D. Gann's geometric price/time theory applied to market levels.
-
-    The Square of 9 and Square of 144 are Gann's most powerful tools.
-    Every price level has a geometric relationship to every other price level.
-    Time cycles are embedded in the geometry itself.
-
-    IMPLEMENTED:
-    - Square of 9 spiral approximation (price levels at angular increments)
-    - Square of 144 (12-unit rhythm levels)
-    - Octave / Murrey Math levels (8ths of range)
-    - Psychological pressure points (round number harmonics)
-    - Cluster scoring (how many Gann levels agree at current price)
-    - Gann fan projections from recent pivot
-
-    PLACEHOLDER (HIGH):
-    - True Square of 9 wheel coordinates (requires full spiral matrix)
-    - Cardinal cross (0°, 90°, 180°, 270° from anchor) — these are the
-      most powerful Gann levels and require precise wheel arithmetic
-    - Price-time squaring (when price == time in Gann units)
-    - Multi-pivot geometric angle intersections
-    - Harmonic vibration engine (octave relationships across price history)
-    - Planetary price overlays (price values corresponding to planetary degrees)
-
-    REAL IMPLEMENTATION REQUIRES:
-    - gann_wheel.py — full 360-position spiral matrix
-    - price_time_square.py — time units matched to price units
-    - gann_cardinal.py — 0/90/180/270 degree calculation from key pivots
-
-    CLUSTER_TOLERANCE: 0.35% — price must be within 0.35% of a Gann level
-    to count as a hit. Tighten to 0.20% for high-confidence mode.
-    """
 
     CLUSTER_TOLERANCE_PCT = 0.35
     SQUARE9_ANGLES = (45, 90, 135, 180, 225, 270, 315, 360)
@@ -596,15 +510,6 @@ class GannGeometryEngine:
     FAN_RATIOS = (1/8, 1/4, 1/3, 1/2, 1, 2, 3, 4, 8)
 
     def square_of_9_levels(self, anchor: float) -> Dict[str, float]:
-        """
-        Square of 9 approximation.
-        True Gann: every 360° on the spiral = one full 'square'.
-        180° = one half square. The square ROOT is the operative value.
-        This approximation: root offset of angle/360 * 2.0
-
-        PLACEHOLDER NOTE: The factor = angle/180 is an approximation.
-        True geometry requires the full spiral coordinate lookup.
-        """
         root = math.sqrt(max(anchor, 1e-9))
         levels: Dict[str, float] = {}
         for angle in self.SQUARE9_ANGLES:
@@ -614,11 +519,6 @@ class GannGeometryEngine:
         return levels
 
     def square_of_144_levels(self, anchor: float, steps: int = 8) -> Dict[str, float]:
-        """
-        Square of 144: 12 × 12 = 144.
-        Gann used 12-unit intervals as natural harmonic divisions.
-        These are price levels that repeat every 12 units in the square.
-        """
         levels: Dict[str, float] = {}
         for i in range(1, steps + 1):
             levels[f"sq144_up_{i}"]   = round(anchor + self.SQUARE144_STEP * i, 4)
@@ -626,12 +526,6 @@ class GannGeometryEngine:
         return levels
 
     def octave_levels(self, low: float, high: float) -> Dict[str, float]:
-        """
-        Murrey Math / Gann octave levels.
-        Divide the range into 8 equal parts.
-        Key levels: 0/8, 2/8, 4/8 (midpoint), 6/8, 8/8.
-        4/8 is the most powerful — price often rotates around it.
-        """
         if high <= low:
             return {}
         rng = high - low
@@ -644,14 +538,6 @@ class GannGeometryEngine:
 
     def fan_levels(self, pivot: Pivot, current_time: datetime,
                    price_per_day: float = 1.0) -> Dict[str, float]:
-        """
-        Gann fan projections from a pivot.
-        The 1×1 angle (45°) is the most important — represents balance of price and time.
-        1×2, 2×1, etc. represent steeper/shallower angles of support/resistance.
-
-        PLACEHOLDER NOTE: price_per_day should be calibrated per-symbol from
-        historical data. A fixed value of 1.0 is the simplest approximation.
-        """
         days = max((current_time - pivot.timestamp).total_seconds() / 86400.0, 0.0)
         direction = 1 if pivot.kind == "low" else -1
         levels: Dict[str, float] = {}
@@ -664,10 +550,6 @@ class GannGeometryEngine:
         return levels
 
     def pressure_points(self, price: float) -> Dict[str, float]:
-        """
-        Psychological and harmonic pressure points.
-        Round numbers have disproportionate market significance.
-        """
         magnitude = 10 ** max(int(math.log10(max(price, 1))) - 1, 0)
         base = round(price / magnitude) * magnitude
         half = magnitude / 2
@@ -680,10 +562,8 @@ class GannGeometryEngine:
         }
 
     def cluster_score(self, price: float, all_levels: Dict[str, float]) -> Tuple[float, List[str]]:
-        """Score based on how many Gann levels cluster at current price."""
         hits = [name for name, level in all_levels.items()
                 if MathUtils.abs_pct_distance(price, level) <= self.CLUSTER_TOLERANCE_PCT]
-        # Each cluster hit adds 8 points above base of 45
         score = MathUtils.clamp(45 + len(hits) * 8)
         return score, hits
 
@@ -693,7 +573,6 @@ class GannGeometryEngine:
         all_levels: Dict[str, float] = {}
 
         if not pivots:
-            # No pivots — use prior day as anchor
             anchor = market.prior_close or market.previous_close
             all_levels.update(self.square_of_9_levels(anchor))
             all_levels.update(self.pressure_points(price))
@@ -701,23 +580,17 @@ class GannGeometryEngine:
             notes.append("No swing pivots available — using prior close as Gann anchor.")
             return {"score": score, "levels": all_levels, "hits": hits, "notes": notes}
 
-        # Use last significant pivot as anchor
         last_pivot = pivots[-1]
         all_levels.update(self.square_of_9_levels(last_pivot.price))
         all_levels.update(self.square_of_144_levels(last_pivot.price))
         all_levels.update(self.pressure_points(price))
-
-        # Octave levels from session high/low
         all_levels.update(self.octave_levels(market.day_low, market.day_high))
 
-        # Octave levels from prior day range if available
         if market.prior_high and market.prior_low:
             prior_octaves = self.octave_levels(market.prior_low, market.prior_high)
             all_levels.update({f"prior_{k}": v for k, v in prior_octaves.items()})
 
-        # Fan projections from last pivot
         now = market.candles_5m[-1].timestamp if market.candles_5m else datetime.now(timezone.utc)
-        # price_per_day calibration: use ATR as proxy (ATR ≈ average daily range)
         price_per_day = atr if atr > 0 else price * 0.01
         all_levels.update(self.fan_levels(last_pivot, now, price_per_day))
 
@@ -728,23 +601,10 @@ class GannGeometryEngine:
         else:
             notes.append("Price between Gann clusters — no immediate geometric pressure.")
 
-        # Bonus: price near the critical 4/8 octave midpoint
         mid = (market.day_low + market.day_high) / 2
         if MathUtils.abs_pct_distance(price, mid) < 0.5:
             score = MathUtils.clamp(score + 8)
             notes.append("Price near 4/8 octave midpoint — highest-significance Gann level.")
-
-        # PLACEHOLDER (HIGH) — True cardinal cross calculation
-        # TODO: Load full Square of 9 matrix from gann_wheel.py
-        # Cardinal cross levels (0°, 90°, 180°, 270° from anchor) are
-        # the most powerful Gann levels. Current approximation only estimates
-        # them via the square root arithmetic above.
-        # When implemented: additional +10 to score if price is at a true cardinal.
-
-        # PLACEHOLDER (HIGH) — Price-time squaring
-        # TODO: When price value (in Gann units) equals the time count from pivot,
-        # that is a "square" — extremely powerful timing + level confluence.
-        # Requires calibrated price unit per time unit per symbol.
 
         return {
             "score"  : score,
@@ -756,50 +616,26 @@ class GannGeometryEngine:
 
 # ================================================================================
 # SECTION 8 — INTERNAL FAMILY 3: TIME / CYCLE LAYER
-# Implementation Level: ~70%
-# Remaining: Multi-degree harmonic cycles, adaptive cycle detection, astro-linked
 # ================================================================================
 
 class TimeCycleEngine:
-    """
-    Time is the master dimension. Price follows time — not the other way around.
-    Gann, Bayer, Bradley all understood that markets move to a temporal drumbeat.
-
-    IMPLEMENTED:
-    - Pivot time-count cycle matching (3, 5, 7, 9, 13, 21, 30, 45, 60, 90, 120, 144, 180, 360 bars)
-    - Intraday high-probability timing windows (power hours)
-    - Day-of-week bias (Monday opens, Friday closes historically distinctive)
-    - First/last hour pressure scoring
-    - Days from earnings / catalyst (event-risk timing)
-    - Sequential bar count from key pivot
-
-    PLACEHOLDER (MEDIUM):
-    - Multi-degree nested cycle harmonics (Hurst, Kondratieff)
-    - Adaptive cycle period detection via DFT
-    - Volatility-adjusted cycle compression/expansion
-    - Astro-linked cycle phase (requires ephemeris — see Family 4)
-    - True Bradley Siderograph integration
-    - Dynamic timing pressure (cycle approaching inflection vs. mid-cycle)
-    """
 
     IMPORTANT_CYCLES = (3, 5, 7, 9, 13, 21, 30, 45, 60, 90, 120, 144, 180, 225, 270, 360)
-    CYCLE_TOLERANCE  = 2   # bars within ±2 of a cycle count = "hit"
+    CYCLE_TOLERANCE  = 2
 
-    # Intraday windows (EST). Windows where major moves historically begin/end.
     INTRADAY_WINDOWS = [
-        ("09:30", "10:15", "open_drive",      20),   # Opening drive — highest energy
-        ("10:15", "11:00", "reversal_window",  12),   # Common reversal point
-        ("11:30", "12:30", "lunch_chop",        0),   # Low-edge zone
-        ("14:00", "14:30", "early_pm_trigger", 15),   # Algo re-engagement
-        ("14:30", "15:30", "power_hour",        20),  # Power hour — institutional close
-        ("15:30", "16:00", "closing_bell",      10),  # MOC / final positioning
+        ("09:30", "10:15", "open_drive",      20),
+        ("10:15", "11:00", "reversal_window",  12),
+        ("11:30", "12:30", "lunch_chop",        0),
+        ("14:00", "14:30", "early_pm_trigger", 15),
+        ("14:30", "15:30", "power_hour",        20),
+        ("15:30", "16:00", "closing_bell",      10),
     ]
 
     def days_from_pivot(self, pivot: Pivot, now: datetime) -> int:
         return max((now.date() - pivot.timestamp.date()).days, 0)
 
     def bars_from_pivot(self, pivot: Pivot, candles: List[Candle]) -> int:
-        """Count bars elapsed since pivot on the given candle series."""
         if not candles:
             return 0
         pivot_ts = pivot.timestamp
@@ -810,9 +646,8 @@ class TimeCycleEngine:
 
     def cycle_hits(self, pivots: List[Pivot], candles: List[Candle],
                    now: datetime) -> List[Dict[str, Any]]:
-        """Find all active cycle hits from recent pivots."""
         hits = []
-        for p in pivots[-12:]:   # check last 12 pivots
+        for p in pivots[-12:]:
             bar_count  = self.bars_from_pivot(p, candles)
             day_count  = self.days_from_pivot(p, now)
             for cycle in self.IMPORTANT_CYCLES:
@@ -836,7 +671,6 @@ class TimeCycleEngine:
         return hits
 
     def intraday_window_score(self, now: datetime) -> Tuple[float, str]:
-        """Return timing score and window name for current time."""
         hhmm = now.strftime("%H:%M")
         for start, end, label, bonus in self.INTRADAY_WINDOWS:
             if start <= hhmm <= end:
@@ -844,12 +678,7 @@ class TimeCycleEngine:
         return 50.0, "off_window"
 
     def day_of_week_bias(self, now: datetime) -> float:
-        """
-        Historical tendencies by day of week.
-        Monday: gap fade tendency. Friday: close-to-open momentum fade.
-        Tuesday–Thursday: highest follow-through on breakouts.
-        """
-        dow = now.weekday()  # 0=Mon, 4=Fri
+        dow = now.weekday()
         biases = {0: -3, 1: 5, 2: 5, 3: 5, 4: -3}
         return biases.get(dow, 0)
 
@@ -858,17 +687,14 @@ class TimeCycleEngine:
         now = (market.candles_5m[-1].timestamp if market.candles_5m
                else datetime.now(timezone.utc))
 
-        # Intraday window
         window_score, window_name = self.intraday_window_score(now)
         dow_bias = self.day_of_week_bias(now)
 
-        # Cycle hits from pivots
         candles = market.candles_5m or market.candles_1h or market.candles_daily
         hits = self.cycle_hits(pivots, candles, now)
 
-        hit_score = MathUtils.clamp(min(len(hits) * 7, 35))  # cap at 35 pts from hits
+        hit_score = MathUtils.clamp(min(len(hits) * 7, 35))
 
-        # Earnings proximity penalty
         earnings_penalty = 0
         if market.earnings_date:
             days_to_earnings = abs((market.earnings_date.date() - now.date()).days)
@@ -886,15 +712,6 @@ class TimeCycleEngine:
         else:
             notes.append(f"No active cycle hits. Window: {window_name}.")
 
-        # PLACEHOLDER (MEDIUM) — Multi-degree nested cycles
-        # TODO: Implement Hurst cycle analysis (dominant cycle, half cycle, quarter cycle)
-        # DFT-based cycle period detection on price history
-        # When a dominant cycle approaches its trough after peak: bias bearish, vice versa
-
-        # PLACEHOLDER (MEDIUM) — Adaptive cycle compression/expansion
-        # TODO: When VIX or realized vol is elevated, cycles compress (happen faster)
-        # When vol is suppressed, cycles extend. Needs VIX feed integration.
-
         return {
             "score"       : total,
             "window"      : window_name,
@@ -905,53 +722,14 @@ class TimeCycleEngine:
 
 # ================================================================================
 # SECTION 9 — INTERNAL FAMILY 4: ASTRO / NATAL LAYER
-# Implementation Level: ~10%
-# PLACEHOLDER (HIGH) — Requires ephemeris integration
 # ================================================================================
 
 class AstroNatalEngine:
-    """
-    Financial astrology has been used by market operators since the early 1900s.
-    W.D. Gann's hidden layer was planetary price/time correspondence.
-    George Bayer, Bradley Cowan, and others formalized these relationships.
-
-    WHAT THIS ENGINE WILL DO WHEN FULLY IMPLEMENTED:
-    - Planetary price levels (each planet corresponds to a price via degree conversion)
-    - Planetary angle clusters (price at 0°, 90°, 120°, 180° from a planet = key level)
-    - Transit hits to natal chart of the asset's IPO date
-    - Solar/Lunar cycle phase scoring (new moon compression, full moon expansion tendency)
-    - Bradley Siderograph — net planetary angular velocity as a market bias indicator
-    - Heliocentric vs geocentric longitude price mapping
-    - Ingress dates (planet entering new sign = potential turning point)
-    - Retrograde periods (Mercury, Venus, Mars retrograde correlate to trend changes)
-
-    CURRENT IMPLEMENTATION:
-    - Lunar phase approximation (no ephemeris needed — mathematical)
-    - Day-count from key astrological dates (equinox, solstice) as proxy
-    - Solar year position (seasonal tendency)
-
-    PLACEHOLDER (HIGH):
-    - All planetary calculation requires astropy or ephem library
-    - Natal chart of asset requires IPO date as input
-    - Full integration: astro_engine.py with ephemeris_data/ folder
-
-    ACTIVATION PATH:
-    1. pip install ephem astropy
-    2. Build astro_engine.py using ephem.planets
-    3. Pass AstroResult object into this engine
-    4. Replace approximations with real planetary degree calculations
-    """
 
     def lunar_phase(self, now: datetime) -> Tuple[float, str]:
-        """
-        Approximate lunar phase using a known reference new moon.
-        Reference: Jan 1, 2000 was approximately a new moon.
-        Lunar cycle ≈ 29.53 days.
-        Returns (phase_angle_0_to_360, phase_name)
-        """
         reference_new_moon = datetime(2000, 1, 6, tzinfo=timezone.utc)
         days_elapsed = (now - reference_new_moon).total_seconds() / 86400
-        cycle_position = (days_elapsed % 29.53) / 29.53  # 0.0–1.0
+        cycle_position = (days_elapsed % 29.53) / 29.53
         phase_angle = cycle_position * 360
 
         if cycle_position < 0.03 or cycle_position > 0.97:
@@ -974,21 +752,10 @@ class AstroNatalEngine:
         return phase_angle, phase_name
 
     def seasonal_position(self, now: datetime) -> float:
-        """
-        Solar year position: day of year as 0–360°.
-        Equinoxes (~day 80 and ~day 266) and solstices (~day 172, ~355)
-        historically correspond to market inflection tendency.
-        """
         day_of_year = now.timetuple().tm_yday
         return (day_of_year / 365.25) * 360
 
     def days_to_nearest_ingress(self, now: datetime) -> int:
-        """
-        Approximate solar ingress dates (Sun entering new sign).
-        These occur ~every 30 days and correlate with potential pivots.
-        """
-        # Solar ingresses: ~Mar 20, Apr 20, May 21, Jun 21, Jul 23, Aug 23,
-        #                    Sep 23, Oct 23, Nov 22, Dec 22, Jan 20, Feb 19
         ingress_days = [19, 49, 80, 111, 141, 172, 203, 233, 264, 294, 325, 355]
         day_of_year = now.timetuple().tm_yday
         nearest_delta = min(abs(day_of_year - d) for d in ingress_days)
@@ -1003,10 +770,8 @@ class AstroNatalEngine:
         seasonal_deg = self.seasonal_position(now)
         days_to_ingress = self.days_to_nearest_ingress(now)
 
-        # Base score
         score = 50.0
 
-        # Lunar phase adjustments
         if phase_name == "New Moon":
             score += 5
             notes.append("New Moon — historically associated with compression and coiling.")
@@ -1017,34 +782,14 @@ class AstroNatalEngine:
             score += 4
             notes.append(f"{phase_name} — angular lunar phase, potential mid-cycle inflection.")
 
-        # Solar ingress proximity
         if days_to_ingress <= 3:
             score += 6
             notes.append(f"Solar ingress within {days_to_ingress} day(s) — potential timing pressure.")
 
-        # Seasonal tendency (very rough)
-        if 330 <= seasonal_deg or seasonal_deg <= 30:   # Dec–Jan: Santa rally / Jan effect
+        if 330 <= seasonal_deg or seasonal_deg <= 30:
             score += 3
-        elif 150 <= seasonal_deg <= 210:                 # May–Jul: "sell in May" zone
+        elif 150 <= seasonal_deg <= 210:
             score -= 3
-
-        # PLACEHOLDER (HIGH) — All items below require ephem / astropy
-        # TODO: score_planetary_price_levels()
-        #   - Convert planetary degrees to price via Gann planetary ruler
-        #   - If current price aligns with a planet's degree × price-per-degree: +12
-        # TODO: score_bradley_siderograph()
-        #   - Compute net angular velocity of all major planets
-        #   - Rising siderograph = bullish tendency; falling = bearish
-        # TODO: score_natal_transits(ipo_date)
-        #   - Load asset's natal chart from IPO date
-        #   - Score transiting planets hitting natal positions
-        # TODO: score_retrograde_risk()
-        #   - Mercury retrograde: communication/tech disruption risk flag
-        #   - Venus retrograde: financial sector / value rotation signal
-        #   - Mars retrograde: energy / momentum exhaustion signal
-        # TODO: score_planetary_angles()
-        #   - 0° (conjunction), 90° (square), 120° (trine), 180° (opposition)
-        #   - Between major planets = potential market turning point
 
         notes.append("ASTRO: Full planetary engine pending ephemeris integration.")
 
@@ -1060,60 +805,28 @@ class AstroNatalEngine:
 
 # ================================================================================
 # SECTION 10 — INTERNAL FAMILY 5: NUMEROLOGY / BIBLICAL LAYER
-# Implementation Level: ~15%
-# PLACEHOLDER (HIGH) — Requires deep proprietary research layer
 # ================================================================================
 
 class NumerologyBiblicalEngine:
-    """
-    Numeric harmonics, symbolic cycles, and date/price reductions.
-    This layer recognizes that many of the century-old trading rules
-    encode numerological significance — Gann's "Master Numbers," Biblical
-    cycles of 7 and 49, the Fibonacci sequence as divine proportion, etc.
-
-    WHAT THIS ENGINE WILL DO WHEN FULLY IMPLEMENTED:
-    - Digital root reduction of price levels (reduce price to 1–9 and test for
-      significance at key numbers: 3, 7, 9, 12, 21, 49, 144, 360)
-    - Date reduction: reduce today's date to a master number and test cycle alignment
-    - Price + date harmonic lock: when price and date reduce to same number
-    - Biblical cycle overlay: 7-day, 49-day (7×7), 360-day sacred year
-    - Decimal harmonic levels: .618, .786, .854 (Fibonacci as divine proportion)
-    - Square numbers as natural support/resistance: 4, 9, 16, 25, 36, 49, 64, 81, 100...
-
-    CURRENT IMPLEMENTATION:
-    - Digital root of price (deterministic)
-    - Digital root of date (deterministic)
-    - Square number proximity test
-    - Biblical cycle day counting from year start
-
-    PLACEHOLDER (HIGH):
-    - Full master number system requires proprietary research tables
-    - Price-date harmonic lock requires calibration per-symbol
-    - Symbolic cycle overlays require historical analog matching
-    """
 
     SACRED_NUMBERS  = {3, 7, 9, 12, 21, 33, 49, 72, 108, 144, 360}
     SQUARE_NUMBERS  = [i * i for i in range(1, 50)]
 
     def digital_root(self, n: float) -> int:
-        """Reduce a number to its digital root (1–9)."""
         n_int = int(abs(n))
         if n_int == 0:
             return 0
         return 1 + (n_int - 1) % 9
 
     def date_number(self, dt: datetime) -> int:
-        """Reduce a date to a single master number."""
         total = dt.year + dt.month + dt.day
         return self.digital_root(total)
 
     def nearest_square_number(self, price: float) -> Tuple[float, float]:
-        """Find the nearest perfect square to current price."""
         nearest = min(self.SQUARE_NUMBERS, key=lambda s: abs(s - price))
         return nearest, MathUtils.abs_pct_distance(price, nearest)
 
     def biblical_cycle_day(self, now: datetime) -> int:
-        """Day number within the current biblical 360-day sacred year."""
         year_start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
         return ((now - year_start).days % 360) + 1
 
@@ -1125,21 +838,17 @@ class NumerologyBiblicalEngine:
         score = 50.0
         price = market.price
 
-        # Digital root of price
         price_root = self.digital_root(price)
         date_root  = self.date_number(now)
 
-        # Harmonic lock: price and date reduce to same number
         if price_root == date_root:
             score += 8
             notes.append(f"Numeric harmonic lock: price root ({price_root}) == date root ({date_root}).")
 
-        # Sacred number test for price root
         if price_root in {3, 7, 9}:
             score += 5
             notes.append(f"Price digital root {price_root} — sacred harmonic number.")
 
-        # Nearest square number proximity
         nearest_sq, pct_away = self.nearest_square_number(price)
         if pct_away < 1.0:
             score += 6
@@ -1147,7 +856,6 @@ class NumerologyBiblicalEngine:
         elif pct_away < 2.5:
             score += 3
 
-        # Biblical cycle day
         bcd = self.biblical_cycle_day(now)
         for sacred in self.SACRED_NUMBERS:
             if abs(bcd - sacred) <= 1:
@@ -1155,18 +863,10 @@ class NumerologyBiblicalEngine:
                 notes.append(f"Biblical cycle day {bcd} near sacred number {sacred}.")
                 break
 
-        # Day 7, 49, 144 from Jan 1 — peak biblical significance
         day_of_year = now.timetuple().tm_yday
         if day_of_year in {7, 14, 21, 49, 72, 144, 216, 288, 360}:
             score += 5
             notes.append(f"Day {day_of_year} of year — biblically significant cycle count.")
-
-        # PLACEHOLDER (HIGH) — Full master number research tables
-        # TODO: When price reduces to master numbers 11, 22, 33 — special significance
-        # TODO: When annual/monthly cycle dates align with sacred number sequences
-        #        from proprietary research, score accordingly
-        # TODO: Cross-reference price × date reduction with historical pivot database
-        #        "Has this price-date combination historically produced pivots?"
 
         notes.append("NUMEROLOGY: Deep research table integration pending.")
 
@@ -1182,34 +882,15 @@ class NumerologyBiblicalEngine:
 
 # ================================================================================
 # SECTION 11 — INTERNAL FAMILY 6: FIBONACCI LAYER
-# Implementation Level: ~80%
-# Remaining: Fib time projections, multi-leg clusters, 3D Fib convergence
 # ================================================================================
 
 class FibonacciEngine:
-    """
-    Fibonacci ratios are the mathematical backbone of wave theory and price projection.
-    The divine proportion (.618, .382) appears across all markets and timeframes.
-
-    IMPLEMENTED:
-    - Retracements: .236, .382, .500, .618, .786, .886
-    - Extensions: 1.0, 1.272, 1.414, 1.618, 2.0, 2.618
-    - Multi-leg cluster analysis (finds where multiple fib legs agree)
-    - Cluster scoring with tight tolerance (0.35%)
-    - Bias from pivot sequence direction
-
-    PLACEHOLDER (LOW-MEDIUM):
-    - Fibonacci time projections (fib ratios applied to TIME between pivots)
-    - 3D Fib convergence (price × time × range simultaneously)
-    - Dynamic fib routing (Elliott wave-aware fib selection)
-    """
 
     RETRACEMENTS = (0.236, 0.382, 0.500, 0.618, 0.786, 0.886)
     EXTENSIONS   = (1.000, 1.272, 1.414, 1.618, 2.000, 2.618)
-    TOLERANCE    = 0.35  # percent
+    TOLERANCE    = 0.35
 
     def levels_from_swing(self, low: float, high: float) -> Dict[str, float]:
-        """Generate all fib levels from a swing low to high."""
         if high <= low:
             return {}
         rng = high - low
@@ -1222,12 +903,8 @@ class FibonacciEngine:
         return levels
 
     def cluster_analysis(self, price: float, pivots: List[Pivot]) -> Tuple[float, List[str], Dict[str, float]]:
-        """
-        Run fib levels from multiple pivot pairs and find clusters at current price.
-        More pivot pairs agreeing = stronger cluster = higher score.
-        """
         all_levels: Dict[str, float] = {}
-        recent = pivots[-8:]  # Use last 8 pivots for multi-leg analysis
+        recent = pivots[-8:]
 
         for i in range(len(recent) - 1):
             a, b = recent[i], recent[i + 1]
@@ -1238,7 +915,6 @@ class FibonacciEngine:
         hits = [name for name, level in all_levels.items()
                 if MathUtils.abs_pct_distance(price, level) <= self.TOLERANCE]
 
-        # Each cluster hit is significant — score rises meaningfully
         score = MathUtils.clamp(45 + len(hits) * 9)
         return score, hits, all_levels
 
@@ -1247,7 +923,6 @@ class FibonacciEngine:
         price = market.price
 
         if len(pivots) < 2:
-            # Fall back to session high/low as the swing
             lo = market.day_low
             hi = market.day_high
             levels = self.levels_from_swing(lo, hi)
@@ -1261,7 +936,6 @@ class FibonacciEngine:
 
         if hits:
             notes.append(f"Price at {len(hits)} Fibonacci cluster(s): {', '.join(hits[:5])}.")
-            # Extra weight if price is at the golden ratio levels
             golden_hits = [h for h in hits if "0.618" in h or "1.618" in h]
             if golden_hits:
                 score = MathUtils.clamp(score + 8)
@@ -1269,17 +943,11 @@ class FibonacciEngine:
         else:
             notes.append("No Fibonacci cluster at current price.")
 
-        # Fib bias from last pivot direction
         last_pivot = pivots[-1]
         bias_note = ("Expecting upward resolution from fib support."
                      if last_pivot.kind == "low" else
                      "Expecting downward resolution from fib resistance.")
         notes.append(bias_note)
-
-        # PLACEHOLDER (LOW-MEDIUM) — Fibonacci time projections
-        # TODO: Apply fib ratios to time elapsed between pivots
-        # If today's bar count from last pivot = 0.618 × bars of prior swing: timing hit
-        # Add +8 when fib time AND fib price cluster simultaneously
 
         return {
             "score"  : score,
@@ -1291,34 +959,11 @@ class FibonacciEngine:
 
 # ================================================================================
 # SECTION 12 — INTERNAL FAMILY 7: CANDLE TRIGGER LAYER
-# Implementation Level: ~80%
-# Remaining: Multi-candle context patterns, volume-confirmed candle scoring
 # ================================================================================
 
 class CandleTriggerEngine:
-    """
-    Price action and candle formations are the most direct language of the market.
-    A candle pattern in isolation means little — in context at a key level, it means everything.
-
-    IMPLEMENTED:
-    - Engulfing (bullish and bearish)
-    - Hammer and Shooting Star
-    - Pin Bar (bullish and bearish)
-    - Inside Bar
-    - Outside Bar
-    - Doji (indecision)
-    - Strong close candles
-    - Context-awareness: pattern at key level vs. in middle of range
-    - Multi-candle momentum sequence scoring
-
-    PLACEHOLDER (LOW):
-    - Volume confirmation per pattern (volume-confirmed engulf >> unconfirmed)
-    - Gap candle pattern scoring
-    - Three-bar patterns (morning/evening star, three soldiers/crows)
-    """
 
     def identify_pattern(self, candles: List[Candle]) -> CandlePattern:
-        """Identify the most significant pattern in the last 2–3 candles."""
         if len(candles) < 2:
             return CandlePattern.NONE
 
@@ -1328,15 +973,12 @@ class CandleTriggerEngine:
         spread = c.spread
         body   = c.body
 
-        # Inside Bar — key compression / coiling signal
         if c.high < p.high and c.low > p.low:
             return CandlePattern.INSIDE_BAR
 
-        # Outside Bar — volatility expansion
         if c.high > p.high and c.low < p.low:
             return CandlePattern.OUTSIDE_BAR
 
-        # Engulfing patterns
         if (c.is_bull and p.is_bear and
                 c.open < p.close and c.close > p.open and
                 body > p.body * 0.9):
@@ -1347,30 +989,25 @@ class CandleTriggerEngine:
                 body > p.body * 0.9):
             return CandlePattern.BEARISH_ENGULF
 
-        # Pin bars — rejection of a level with strong close opposite
         upper_wick_ratio = c.upper_wick / spread
         lower_wick_ratio = c.lower_wick / spread
         body_ratio       = c.body_ratio
 
         if lower_wick_ratio > 0.60 and upper_wick_ratio < 0.15 and body_ratio < 0.35:
-            return CandlePattern.BULLISH_PINBAR   # Hammer / Bullish Pin
+            return CandlePattern.BULLISH_PINBAR
 
         if upper_wick_ratio > 0.60 and lower_wick_ratio < 0.15 and body_ratio < 0.35:
-            return CandlePattern.BEARISH_PINBAR   # Shooting Star / Bearish Pin
+            return CandlePattern.BEARISH_PINBAR
 
-        # Hammer (at bottom of move)
         if lower_wick_ratio > 0.50 and body_ratio < 0.30:
             return CandlePattern.HAMMER
 
-        # Shooting Star (at top of move)
         if upper_wick_ratio > 0.50 and body_ratio < 0.30:
             return CandlePattern.SHOOTING_STAR
 
-        # Doji (open ≈ close)
         if body_ratio < 0.10:
             return CandlePattern.DOJI
 
-        # Strong directional closes
         if c.is_bull and c.close_position > 0.80 and body_ratio > 0.60:
             return CandlePattern.STRONG_BULL_CLOSE
 
@@ -1380,7 +1017,6 @@ class CandleTriggerEngine:
         return CandlePattern.NONE
 
     def pattern_score(self, pattern: CandlePattern, direction_bias: Direction) -> float:
-        """Score a pattern relative to the expected direction bias."""
         scores = {
             CandlePattern.BULLISH_ENGULF   : (85, Direction.BULL),
             CandlePattern.BEARISH_ENGULF   : (85, Direction.BEAR),
@@ -1390,17 +1026,15 @@ class CandleTriggerEngine:
             CandlePattern.SHOOTING_STAR    : (72, Direction.BEAR),
             CandlePattern.STRONG_BULL_CLOSE: (75, Direction.BULL),
             CandlePattern.STRONG_BEAR_CLOSE: (75, Direction.BEAR),
-            CandlePattern.INSIDE_BAR       : (65, Direction.NEUTRAL),  # compression — no bias
-            CandlePattern.OUTSIDE_BAR      : (60, Direction.NEUTRAL),  # expansion — no bias
-            CandlePattern.DOJI             : (55, Direction.NEUTRAL),  # indecision
+            CandlePattern.INSIDE_BAR       : (65, Direction.NEUTRAL),
+            CandlePattern.OUTSIDE_BAR      : (60, Direction.NEUTRAL),
+            CandlePattern.DOJI             : (55, Direction.NEUTRAL),
             CandlePattern.NONE             : (50, Direction.NEUTRAL),
         }
         base_score, pattern_dir = scores.get(pattern, (50, Direction.NEUTRAL))
 
-        # Boost if pattern aligns with direction bias
         if pattern_dir == direction_bias:
             return MathUtils.clamp(base_score + 10)
-        # Penalty if pattern opposes direction bias
         if (pattern_dir != Direction.NEUTRAL and
                 direction_bias != Direction.NEUTRAL and
                 pattern_dir != direction_bias):
@@ -1409,10 +1043,6 @@ class CandleTriggerEngine:
         return float(base_score)
 
     def momentum_sequence_score(self, candles: List[Candle], lookback: int = 5) -> float:
-        """
-        Score based on the last N candles' directional consistency.
-        4 or 5 consecutive bullish closes = strong momentum = higher score.
-        """
         if len(candles) < lookback:
             return 55.0
         recent = candles[-lookback:]
@@ -1424,7 +1054,6 @@ class CandleTriggerEngine:
         if bear_count >= 4:
             return MathUtils.clamp(60 + (bear_count - 3) * 8)
 
-        # Mixed — chop signal
         return max(35.0, 60.0 - abs(bull_count - bear_count) * 5)
 
     def score(self, market: MarketData, direction_bias: Direction) -> Dict[str, Any]:
@@ -1439,19 +1068,11 @@ class CandleTriggerEngine:
         pat_score = self.pattern_score(pattern, direction_bias)
         mom_score = self.momentum_sequence_score(candles)
 
-        # Weighted: pattern is primary, momentum is secondary
         combined = pat_score * 0.65 + mom_score * 0.35
 
         if pattern != CandlePattern.NONE:
             notes.append(f"Candle pattern identified: {pattern.value}. Score: {pat_score:.0f}.")
         notes.append(f"Momentum sequence score: {mom_score:.0f}.")
-
-        # Context: is the pattern at a key level?
-        # (Level-context scoring happens in the Confluence engine aggregation layer)
-
-        # PLACEHOLDER (LOW) — Volume-confirmed candle patterns
-        # TODO: When a bullish engulfing has volume > 1.5× average on the bullish bar: +10
-        # TODO: When a pin bar rejects with rising volume at the wick high: +8
 
         return {
             "score"  : MathUtils.clamp(combined),
@@ -1462,31 +1083,9 @@ class CandleTriggerEngine:
 
 # ================================================================================
 # SECTION 13 — INTERNAL FAMILY 8: VOLUME / VSA LAYER
-# Implementation Level: ~75%
-# Remaining: Multi-bar story logic, professional activity modeling, background trend
 # ================================================================================
 
 class VSAEngine:
-    """
-    Volume Spread Analysis — Richard Wyckoff's and Tom Williams' methodology.
-    Volume is the effort. Price is the result. Divergence between the two
-    reveals professional activity and exposes the smart money's hand.
-
-    IMPLEMENTED:
-    - Effort vs Result analysis (high volume → small range = absorption)
-    - No Demand (up bar, low volume, narrow spread = weakness)
-    - No Supply (down bar, low volume, narrow spread = potential strength)
-    - Upthrust proxy (pierces high, closes back below)
-    - Spring proxy (pierces low, closes back above)
-    - Climactic action (wide spread + high volume = potential reversal)
-    - Relative volume scoring
-
-    PLACEHOLDER (MEDIUM):
-    - Multi-bar VSA story (3–5 bar narrative context)
-    - Professional activity fingerprinting (consistent buying on dips vs. distribution)
-    - Background trend analysis (is VSA signal with or against the trend?)
-    - Hidden absorption (price flat, volume rising = accumulation beneath surface)
-    """
 
     def score(self, market: MarketData, atr: float) -> Dict[str, Any]:
         notes: List[str] = []
@@ -1507,7 +1106,6 @@ class VSAEngine:
         score = 50.0
         bias  = Direction.NEUTRAL
 
-        # --- Climactic action ---
         if rel_vol >= 2.0 and rel_spread >= 1.3:
             if last.close_position > 0.70:
                 score += 25
@@ -1521,19 +1119,16 @@ class VSAEngine:
                 score += 5
                 notes.append("VSA: Climactic volume with neutral close — possible absorption/churn.")
 
-        # --- No Demand ---
         if last.is_bull and rel_vol < 0.75 and rel_spread < 0.85:
-            score += 10   # Bullish candle on weak volume = no real demand
+            score += 10
             bias   = Direction.BEAR
             notes.append("VSA: No-demand bar — up bar on weak volume. Bearish undercurrent.")
 
-        # --- No Supply ---
         if last.is_bear and rel_vol < 0.75 and rel_spread < 0.85:
             score += 10
             bias   = Direction.BULL
             notes.append("VSA: No-supply bar — down bar on weak volume. Bullish undercurrent.")
 
-        # --- Upthrust (false breakout above recent high) ---
         prior_high = max(c.high for c in recent[:-1]) if len(recent) > 1 else last.high
         prior_low  = min(c.low  for c in recent[:-1]) if len(recent) > 1 else last.low
 
@@ -1542,14 +1137,11 @@ class VSAEngine:
             bias   = Direction.BEAR
             notes.append("VSA: Upthrust — pierced recent high, closed back below. Supply detected.")
 
-        # --- Spring (false breakdown below recent low) ---
         if last.low < prior_low and last.close > prior_low:
             score += 18
             bias   = Direction.BULL
             notes.append("VSA: Spring — pierced recent low, closed back above. Demand detected.")
 
-        # --- Effort vs Result divergence ---
-        # High volume but price barely moved = absorption (professional activity)
         if rel_vol > 1.5 and rel_spread < 0.6:
             if last.close_position > 0.50:
                 score += 10
@@ -1558,21 +1150,11 @@ class VSAEngine:
                 score -= 5
                 notes.append("VSA: High effort, small result — possible distribution (price failed).")
 
-        # --- Relative volume absolute score bonus ---
         if rel_vol > 2.0:
             score = MathUtils.clamp(score + 8)
             notes.append(f"VSA: Very high relative volume ({rel_vol:.1f}x) — conviction behind move.")
         elif rel_vol > 1.5:
             score = MathUtils.clamp(score + 4)
-
-        # PLACEHOLDER (MEDIUM) — Multi-bar story logic
-        # TODO: Analyze 3–5 candle sequence for professional accumulation/distribution narrative
-        # Example: [no demand] → [narrow spread test] → [wide spread bull close] = confirmed demand
-        # Example: [upthrust] → [no demand] → [wide bear close] = confirmed distribution
-
-        # PLACEHOLDER (MEDIUM) — Background trend analysis
-        # TODO: Is this VSA signal in the direction of the higher-timeframe trend?
-        # Spring in uptrend = much stronger signal than spring in downtrend
 
         return {
             "score"     : MathUtils.clamp(score),
@@ -1585,34 +1167,11 @@ class VSAEngine:
 
 # ================================================================================
 # SECTION 14 — INTERNAL FAMILY 9: WYCKOFF / WEIS WAVE LAYER
-# Implementation Level: ~70%
-# Remaining: Full Wyckoff schematics, composite operator model, cause/effect
 # ================================================================================
 
 class WeisWyckoffEngine:
-    """
-    Richard Wyckoff's methodology reads the market through the lens of the
-    'Composite Operator' — the sum of all professional activity.
-    Tom Dorsey's Point & Figure and David Weis's wave analysis extend this.
-
-    IMPLEMENTED:
-    - Weis Wave construction (directional volume waves)
-    - Effort vs Result at the wave level
-    - Ease of Movement detection (continuation signal)
-    - Range phase proxy (accumulation vs distribution vs markup)
-    - Spring and Upthrust classification at wave level
-    - Secondary Test detection proxy
-
-    PLACEHOLDER (MEDIUM):
-    - Full Wyckoff schematics (PS, SC, AR, ST, SOS, LPS, LPSY, UTAD, CREEK)
-    - Automatic phase detection (Phase A through Phase E)
-    - Composite Operator model (tracking professional buying/selling footprint)
-    - Cause/effect projections (Point & Figure count from accumulation base)
-    - True wave segmentation with volume weighting
-    """
 
     def build_waves(self, candles: List[Candle]) -> List[Dict[str, Any]]:
-        """Construct Weis waves — directional runs aggregating volume."""
         if len(candles) < 3:
             return []
 
@@ -1640,7 +1199,6 @@ class WeisWyckoffEngine:
             else:
                 wave_vol += c.volume
 
-        # Final wave
         if candles:
             waves.append({
                 "direction"   : cur_dir.value,
@@ -1653,11 +1211,6 @@ class WeisWyckoffEngine:
         return waves
 
     def wyckoff_phase_proxy(self, candles: List[Candle], price: float) -> WyckoffPhase:
-        """
-        Proxy classification of Wyckoff phase from candle data.
-        True Wyckoff requires explicit event identification (PS, SC, AR, ST).
-        This provides a structural approximation.
-        """
         if len(candles) < 20:
             return WyckoffPhase.UNKNOWN
 
@@ -1668,14 +1221,13 @@ class WeisWyckoffEngine:
 
         range_high = max(highs)
         range_low  = min(lows)
-        range_mid  = (range_high + range_low) / 2
 
         avg_vol_early = MathUtils.rolling_avg(vols[:20])
         avg_vol_late  = MathUtils.rolling_avg(vols[20:])
         vol_trend_up  = avg_vol_late > avg_vol_early * 1.1
 
         pos_in_range = MathUtils.range_position(price, range_low, range_high)
-        price_trend  = closes[-1] > closes[0]  # price moving up over window
+        price_trend  = closes[-1] > closes[0]
 
         if pos_in_range < 0.30 and not price_trend and vol_trend_up:
             return WyckoffPhase.ACCUMULATION
@@ -1688,7 +1240,8 @@ class WeisWyckoffEngine:
 
         return WyckoffPhase.UNKNOWN
 
-    def score(self, market: MarketData, atr: float) -> Dict[str, Any]:
+    def score(self, market: MarketData, atr: float,
+              cached_anchors: dict = None) -> Dict[str, Any]:
         notes: List[str] = []
         candles = market.candles_5m or market.candles_1h
 
@@ -1697,10 +1250,49 @@ class WeisWyckoffEngine:
                     "notes": ["Insufficient candles for Wyckoff analysis."]}
 
         waves = self.build_waves(candles[-80:])
-        phase = self.wyckoff_phase_proxy(candles, market.price)
+
+        # ── Use database anchors if available ─────────────────────────────
+        sc_low  = None
+        ar_high = None
+        st_low  = None
+
+        if cached_anchors:
+            sc_low  = cached_anchors.get("Wyckoff_SC_Low")
+            ar_high = cached_anchors.get("Wyckoff_AR_High")
+            st_low  = cached_anchors.get("Wyckoff_ST_Low")
+
+        if sc_low and ar_high:
+            notes.append(
+                f"Wyckoff: Anchored SC={sc_low:.2f} AR={ar_high:.2f}"
+                + (f" ST={st_low:.2f}" if st_low else "")
+            )
+        else:
+            notes.append("Wyckoff: No anchors — using dynamic 40-bar proxy.")
 
         score = 55.0
+        price = market.price
 
+        # ── Spring detection (Phase C) ─────────────────────────────────────
+        if sc_low and candles:
+            last = candles[-1]
+            if last.low < sc_low and last.close > sc_low:
+                score += 30
+                notes.append(
+                    f"Wyckoff Phase C: SPRING — pierced SC floor ({sc_low:.2f}), "
+                    f"closed back above. Institutional absorption confirmed."
+                )
+
+        # ── Secondary Test proximity ───────────────────────────────────────
+        if st_low:
+            dist_pct = abs(price - st_low) / price
+            if dist_pct <= 0.001:
+                score += 15
+                notes.append(f"Wyckoff: Price testing ST level ({st_low:.2f}) — low-risk entry zone.")
+            elif dist_pct <= 0.005:
+                score += 8
+                notes.append(f"Wyckoff: Price near ST level ({st_low:.2f}).")
+
+        # ── Wave analysis ──────────────────────────────────────────────────
         if len(waves) >= 3:
             last_wave = waves[-1]
             prev_same = next(
@@ -1714,7 +1306,6 @@ class WeisWyckoffEngine:
                     abs(last_wave["price_change"]), abs(prev_same["price_change"]), 1.0
                 )
 
-                # Effort/Result divergence = absorption / potential reversal
                 if effort_ratio > 1.3 and result_ratio < 0.75:
                     score += 18
                     notes.append("Wyckoff: Higher volume, smaller move — absorption / reversal risk.")
@@ -1722,28 +1313,27 @@ class WeisWyckoffEngine:
                         notes.append("Distribution footprint — smart money selling into strength.")
                     else:
                         notes.append("Accumulation footprint — smart money buying into weakness.")
-
-                # Ease of movement = continuation
                 elif effort_ratio < 0.90 and result_ratio > 1.2:
                     score += 12
                     notes.append("Wyckoff: Ease of movement — price advancing with less effort.")
 
-        # Phase scoring
+        # ── Phase proxy ────────────────────────────────────────────────────
+        phase = self.wyckoff_phase_proxy(candles, price)
         phase_bonuses = {
-            WyckoffPhase.ACCUMULATION : 12,
-            WyckoffPhase.MARKUP       :  8,
-            WyckoffPhase.DISTRIBUTION : -8,
-            WyckoffPhase.MARKDOWN     : -8,
-            WyckoffPhase.SPRING       : 15,
+            WyckoffPhase.ACCUMULATION   :  12,
+            WyckoffPhase.MARKUP         :   8,
+            WyckoffPhase.DISTRIBUTION   :  -8,
+            WyckoffPhase.MARKDOWN       :  -8,
+            WyckoffPhase.SPRING         :  15,
             WyckoffPhase.SIGN_OF_STRENGTH: 10,
-            WyckoffPhase.UPTHRUST     : -12,
+            WyckoffPhase.UPTHRUST       : -12,
         }
         phase_bonus = phase_bonuses.get(phase, 0)
         score += phase_bonus
         if phase != WyckoffPhase.UNKNOWN:
             notes.append(f"Wyckoff phase proxy: {phase.value}. Adjustment: {phase_bonus:+d}.")
 
-        # Range position of current price
+        # ── Range position ─────────────────────────────────────────────────
         daily = market.candles_daily
         if daily and len(daily) >= 20:
             highs = [c.high for c in daily[-20:]]
@@ -1756,61 +1346,28 @@ class WeisWyckoffEngine:
                 score -= 5
                 notes.append("Price in upper 20% of 20-day range — potential distribution zone.")
 
-        # PLACEHOLDER (MEDIUM) — Full Wyckoff event detection
-        # TODO: Identify PS (Preliminary Supply/Support), SC (Selling Climax),
-        #        AR (Automatic Rally/Reaction), ST (Secondary Test),
-        #        SOS (Sign of Strength), LPS (Last Point of Support)
-        # Each event confirmed = significant score adjustment
-        # TODO: Composite Operator tracking across sessions
-        # TODO: Cause/effect projections from P&F count
-
         return {
-            "score" : MathUtils.clamp(score),
-            "phase" : phase.value,
-            "waves" : waves[-5:],
-            "notes" : notes
+            "score"  : MathUtils.clamp(score),
+            "phase"  : phase.value,
+            "waves"  : waves[-5:],
+            "sc_low" : sc_low,
+            "ar_high": ar_high,
+            "st_low" : st_low,
+            "notes"  : notes
         }
 
 
 # ================================================================================
 # SECTION 15 — INTERNAL FAMILY 10: ELLIOTT WAVE LAYER
-# Implementation Level: ~30%
-# PLACEHOLDER (HIGH) — Full Elliott requires fractal wave solver
 # ================================================================================
 
 class ElliottWaveEngine:
-    """
-    R.N. Elliott's Wave Principle: markets move in 5-wave impulses and 3-wave corrections.
-    The fractal nature of waves means the same structure repeats across all timeframes.
-
-    WHAT FULL IMPLEMENTATION REQUIRES:
-    - Wave labeling engine (1, 2, 3, 4, 5, A, B, C at multiple degrees)
-    - Fractal decomposition (each wave contains smaller waves of same structure)
-    - Alternation rules (wave 2 and 4 alternate in form: sharp vs. flat)
-    - Wave extension rules (wave 3 is never the shortest; often 1.618 of wave 1)
-    - Invalidation engine (if wave 2 exceeds start of wave 1, count is wrong)
-    - Probabilistic wave tree (multiple valid counts with probabilities)
-    - Multi-timeframe wave synchronization
-    - Wave personality scoring (wave 3 characteristics: high volume, momentum)
-
-    CURRENT IMPLEMENTATION:
-    - Higher-high / higher-low structure proxy (impulse upward proxy)
-    - Lower-high / lower-low structure proxy (impulse downward proxy)
-    - Overlap detection (if wave 4 overlaps wave 1 = corrective, not impulse)
-    - Pivot count as wave count proxy
-    - Basic wave extension target projection
-
-    PLACEHOLDER (HIGH):
-    - Everything above in "what full implementation requires"
-    - Recommended external library: elliottwave-lib or custom fractal solver
-    """
 
     def structure_analysis(self, pivots: List[Pivot]) -> Dict[str, Any]:
-        """Analyze pivot sequence for wave structure clues."""
         if len(pivots) < 4:
             return {"structure": "insufficient_data", "wave_count": 0}
 
-        p = pivots[-5:]  # Last 5 pivots = potentially one full 5-wave cycle
+        p = pivots[-5:]
         highs = sorted([x for x in p if x.kind == "high"], key=lambda x: x.bar_index)
         lows  = sorted([x for x in p if x.kind == "low"],  key=lambda x: x.bar_index)
 
@@ -1833,10 +1390,6 @@ class ElliottWaveEngine:
         return {"structure": structure, "hh": hh, "hl": hl, "lh": lh, "ll": ll}
 
     def wave_extension_target(self, pivots: List[Pivot]) -> Optional[float]:
-        """
-        Estimate a wave extension target using the 1.618 ratio.
-        If we can identify waves 1 and 2, wave 3 target = start + 1.618 × length of wave 1.
-        """
         if len(pivots) < 3:
             return None
         lows  = [p for p in pivots if p.kind == "low"]
@@ -1850,15 +1403,10 @@ class ElliottWaveEngine:
         return round(wave2_bottom + 1.618 * wave1_length, 4)
 
     def overlap_check(self, pivots: List[Pivot]) -> bool:
-        """
-        Check for wave 4 overlap into wave 1 territory.
-        If detected: structure is likely corrective, not impulsive.
-        """
         lows = [p for p in pivots[-6:] if p.kind == "low"]
         highs = [p for p in pivots[-6:] if p.kind == "high"]
         if len(lows) < 2 or len(highs) < 2:
             return False
-        # Wave 4 low should not go below wave 1 high
         return lows[-1].price < highs[0].price
 
     def score(self, market: MarketData, pivots: List[Pivot]) -> Dict[str, Any]:
@@ -1895,13 +1443,6 @@ class ElliottWaveEngine:
         if ext_target:
             notes.append(f"Elliott: Wave 3 extension target proxy: {ext_target:.2f}.")
 
-        # PLACEHOLDER (HIGH) — Full fractal wave engine
-        # TODO: Replace structure_analysis with full degree-aware wave labeling
-        # TODO: Implement R.N. Elliott's alternation principle
-        # TODO: Wave personality: wave 3 should have highest volume and breadth
-        # TODO: Probabilistic wave tree: given current count, what are the top 3 scenarios?
-        # TODO: Multi-timeframe sync: daily wave + hourly sub-wave alignment
-
         notes.append("ELLIOTT: Full fractal wave solver pending.")
 
         return {
@@ -1915,46 +1456,15 @@ class ElliottWaveEngine:
 
 # ================================================================================
 # SECTION 16 — INTERNAL FAMILY 11: OPTIONS / LIQUIDITY LAYER
-# Implementation Level: ~60%
-# Remaining: Gamma exposure modeling, vanna/charm, dealer positioning, reflexivity
 # ================================================================================
 
 class OptionsLiquidityEngine:
-    """
-    Options flow and liquidity structure define where price is magnetically attracted,
-    repelled, or pinned. Market makers' hedging activity creates mechanical price forces
-    that are invisible to pure price-action analysis.
-
-    IMPLEMENTED:
-    - Call wall / Put wall attraction and repulsion
-    - Gamma flip level (positive → negative gamma = regime change)
-    - Expected move bands (market's implied daily/weekly range)
-    - Dark pool zone proximity
-    - Block flow bias alignment
-    - Put/call ratio sentiment reading
-    - IV rank positioning (is options vol cheap or expensive?)
-
-    PLACEHOLDER (MEDIUM-HIGH):
-    - True gamma exposure (GEX) modeling — requires full options chain
-    - Vanna (delta sensitivity to IV) and Charm (delta decay) flows
-    - Dealer positioning model (are dealers long or short gamma?)
-    - Options reflexivity (when dealers hedge, they amplify moves: positive feedback)
-    - Liquidity void detection (thin book areas = fast moves through)
-    - Dark pool volume-weighted zone analysis
-
-    REAL GEX IMPLEMENTATION REQUIRES:
-    - Full options chain (all strikes, all expirations)
-    - Open interest at each strike
-    - Gamma per contract (from options pricing model)
-    - Net dealer gamma = sum of (gamma × OI × 100) across all strikes
-    """
 
     def score(self, market: MarketData, options: OptionsData, atr: float) -> Dict[str, Any]:
         notes: List[str] = []
         price = market.price
         score = 50.0
 
-        # --- Call Wall / Put Wall ---
         if options.call_wall:
             dist = MathUtils.abs_pct_distance(price, options.call_wall)
             if dist < 0.5:
@@ -1979,7 +1489,6 @@ class OptionsLiquidityEngine:
                 score -= 10
                 notes.append(f"Price below put wall ({options.put_wall:.2f}) — bearish, dealers short gamma.")
 
-        # --- Gamma Flip ---
         if options.gamma_flip:
             dist = MathUtils.abs_pct_distance(price, options.gamma_flip)
             if dist < 0.3:
@@ -1992,7 +1501,6 @@ class OptionsLiquidityEngine:
                 score -= 5
                 notes.append("Below gamma flip — negative gamma regime (dealers amplify volatility).")
 
-        # --- Expected Move ---
         if options.expected_move_up and options.expected_move_down:
             em_up   = options.expected_move_up
             em_down = options.expected_move_down
@@ -2006,14 +1514,12 @@ class OptionsLiquidityEngine:
                 score += 5
                 notes.append("Price within expected move range — normal territory.")
 
-        # --- Dark Pool Zones ---
         for lo, hi in options.dark_pool_zones:
             if lo <= price <= hi:
                 score += 10
                 notes.append(f"Price inside dark pool zone ({lo:.2f}–{hi:.2f}) — institutional activity.")
                 break
 
-        # --- Block Flow Bias ---
         if options.block_flow_bias:
             if options.block_flow_bias == Direction.BULL:
                 score += 10
@@ -2022,7 +1528,6 @@ class OptionsLiquidityEngine:
                 score -= 8
                 notes.append("Block flow: Bearish institutional bias detected.")
 
-        # --- Put/Call Ratio ---
         if options.put_call_ratio is not None:
             pcr = options.put_call_ratio
             if pcr > 1.5:
@@ -2032,7 +1537,6 @@ class OptionsLiquidityEngine:
                 score -= 5
                 notes.append(f"Put/call ratio {pcr:.2f} — low fear, potential complacency risk.")
 
-        # --- IV Rank ---
         if options.iv_rank is not None:
             ivr = options.iv_rank
             if ivr > 80:
@@ -2041,20 +1545,6 @@ class OptionsLiquidityEngine:
             elif ivr < 20:
                 score -= 3
                 notes.append(f"IV rank {ivr:.0f} — low IV, options cheap, quiet/coiled environment.")
-
-        # PLACEHOLDER (HIGH) — True GEX (Gamma Exposure) model
-        # TODO: net_gex = sum(gamma × OI × 100 × price^2 × 0.01) across all strikes
-        # When net GEX > 0: dealers are long gamma, they SELL rallies and BUY dips → mean reversion
-        # When net GEX < 0: dealers are short gamma, they SELL dips and BUY rallies → trend following
-        # This is one of the most powerful structural forces in modern markets.
-
-        # PLACEHOLDER (HIGH) — Vanna / Charm flows
-        # TODO: As IV changes (vanna) or time passes (charm), dealer hedges shift
-        # Vanna flow near expiration + rising IV = powerful directional amplifier
-
-        # PLACEHOLDER (MEDIUM) — Liquidity void mapping
-        # TODO: Use options OI distribution to identify strikes with thin coverage
-        # Price moves through liquidity voids rapidly — these are acceleration zones
 
         if not any([options.call_wall, options.put_wall, options.gamma_flip]):
             notes.append("Options data limited — liquidity layer operating with reduced inputs.")
@@ -2067,40 +1557,11 @@ class OptionsLiquidityEngine:
 
 # ================================================================================
 # SECTION 17 — INTERNAL FAMILY 12: BEHAVIORAL INTELLIGENCE LAYER
-# Implementation Level: ~75%
-# Remaining: Ticker personality memory, ML calibration, crowd positioning model
 # ================================================================================
 
 class BehavioralIntelligenceEngine:
-    """
-    Behavioral Intelligence models HOW this asset moves — its personality.
-    Every ticker has behavioral fingerprints: does it hold breakouts?
-    Does it whipsaw at the open? Does it fade Friday gaps?
-    Does it follow through on volume or trap breakout buyers?
-
-    IMPLEMENTED:
-    - Trap risk scoring (false break frequency)
-    - Expansion probability (compression duration and volume setup)
-    - Continuation probability (close strength, momentum consistency)
-    - Whipsaw probability (direction change frequency)
-    - Exhaustion risk (extension from mean, extreme close position)
-    - Composite behavioral score
-
-    PLACEHOLDER (MEDIUM-HIGH) — The REAL MOAT:
-    - Ticker personality memory: "TSLA historically whipsaws 68% of Monday opens"
-    - Historical analog engine: find the 10 most similar prior setups and their outcomes
-    - Adaptive calibration: weight factors by recent predictive accuracy per symbol
-    - Crowd positioning model (who is long, who is short, where are the stops?)
-    - ML behavioral pattern recognition (supervised learning on past setups)
-    - Options reflexivity behavior (how this ticker responds to gamma positioning)
-
-    THIS IS WHERE 90%+ HIT RATES COME FROM:
-    The gap between 28% mechanical baseline and 91% live rate = this layer's
-    memory, calibration, and analog intelligence.
-    """
 
     def false_break_count(self, candles: List[Candle]) -> int:
-        """Count false breakouts of recent highs and lows."""
         if len(candles) < 10:
             return 0
         recent = candles[-30:]
@@ -2117,7 +1578,6 @@ class BehavioralIntelligenceEngine:
         return count
 
     def whipsaw_count(self, candles: List[Candle]) -> int:
-        """Count direction changes in last 30 bars."""
         if len(candles) < 3:
             return 0
         dirs = [1 if c.is_bull else -1 if c.is_bear else 0
@@ -2126,7 +1586,6 @@ class BehavioralIntelligenceEngine:
         return sum(1 for i in range(1, len(dirs)) if dirs[i] != dirs[i - 1])
 
     def compression_score(self, candles: List[Candle], atr: float) -> float:
-        """How compressed is the recent range relative to ATR?"""
         if not candles or atr == 0:
             return 50.0
         recent_range = max(c.high for c in candles[-20:]) - min(c.low for c in candles[-20:])
@@ -2134,7 +1593,6 @@ class BehavioralIntelligenceEngine:
         return MathUtils.clamp((1.0 - ratio) * 100)
 
     def extension_from_mean(self, candles: List[Candle], atr: float) -> float:
-        """How far is price extended from its recent mean? In ATR units."""
         if not candles or atr == 0:
             return 0.0
         mean = MathUtils.rolling_avg([c.close for c in candles[-20:]])
@@ -2153,7 +1611,6 @@ class BehavioralIntelligenceEngine:
         extension  = self.extension_from_mean(candles, atr)
         close_pos  = candles[-1].close_position
 
-        # Component scores
         trap_risk = MathUtils.clamp(20 + fb_count * 12 + ws_count * 3)
         expansion_prob = MathUtils.clamp(30 + comp_score * 0.50 - fb_count * 4)
         continuation_prob = MathUtils.clamp(
@@ -2166,7 +1623,6 @@ class BehavioralIntelligenceEngine:
             + (20 if close_pos > 0.90 or close_pos < 0.10 else 0)
         )
 
-        # Composite behavioral score
         composite = MathUtils.clamp(
             expansion_prob     * 0.30 +
             continuation_prob  * 0.25 +
@@ -2175,7 +1631,6 @@ class BehavioralIntelligenceEngine:
             (100 - exhaustion_risk) * 0.10
         )
 
-        # Log significant findings
         if fb_count >= 3:
             notes.append(f"WARNING: {fb_count} false breaks detected — trap risk elevated.")
         if ws_count > 8:
@@ -2183,7 +1638,7 @@ class BehavioralIntelligenceEngine:
         if comp_score > 70:
             notes.append(f"Compression score {comp_score:.0f} — significant energy coiling.")
         if extension > 2.0:
-            notes.append(f"Price {extension:.1f}× ATR from mean — extended, exhaustion risk.")
+            notes.append(f"Price {extension:.1f}x ATR from mean — extended, exhaustion risk.")
         if exhaustion_risk > 70:
             notes.append("Exhaustion risk elevated — extreme close position detected.")
 
@@ -2192,22 +1647,6 @@ class BehavioralIntelligenceEngine:
             f"continuation={continuation_prob:.0f}, whipsaw={whipsaw_prob:.0f}, "
             f"exhaustion={exhaustion_risk:.0f}"
         )
-
-        # PLACEHOLDER (HIGH) — Ticker personality memory
-        # TODO: Load historical behavioral profile per symbol from database
-        # "TSLA: avg false_breaks=3.2/day, whipsaw_rate=0.68, open_range_hold_rate=0.44"
-        # Adjust base scores by deviation from historical personality baseline
-
-        # PLACEHOLDER (HIGH) — Historical analog engine
-        # TODO: Find 10 most similar prior setups (same regime, compression, volume, time of day)
-        # Return their outcome distribution: what % resolved bull, bear, sideways?
-        # Weight current score by analog hit rate
-
-        # PLACEHOLDER (MEDIUM) — ML calibration
-        # TODO: Train per-symbol gradient boosted classifier on:
-        #   features = [compression, false_breaks, whipsaws, rel_volume, time_window, regime]
-        #   target = next_bar_direction (up/down/flat)
-        # Use model probability as behavioral score override when confidence > 0.75
 
         return {
             "score"            : composite,
@@ -2227,10 +1666,6 @@ class BehavioralIntelligenceEngine:
 # ================================================================================
 
 class LevelEngine:
-    """
-    Generates actionable price zones by clustering all available level sources.
-    Multiple independent sources agreeing on the same price = high-confidence level.
-    """
 
     def generate(self, market: MarketData, options: OptionsData,
                  atr: float, fib_levels: Dict[str, float],
@@ -2238,7 +1673,6 @@ class LevelEngine:
 
         price = market.price
 
-        # Collect all upper level candidates
         upper_candidates = [x for x in [
             market.prior_high,
             market.premarket_high,
@@ -2250,7 +1684,6 @@ class LevelEngine:
             price + atr * 0.75,
         ] if x is not None and x > price]
 
-        # Collect all lower level candidates
         lower_candidates = [x for x in [
             market.prior_low,
             market.premarket_low,
@@ -2262,7 +1695,6 @@ class LevelEngine:
             price - atr * 0.75,
         ] if x is not None and x < price]
 
-        # Add Fibonacci and Gann levels near price
         for level_val in list(fib_levels.values()) + list(gann_levels.values()):
             pct = MathUtils.abs_pct_distance(price, level_val)
             if pct < 3.0:
@@ -2293,7 +1725,6 @@ class LevelEngine:
         }
 
     def _cluster(self, values: List[float], fallback: float) -> float:
-        """Median clustering — robust to outliers."""
         if not values:
             return fallback
         values = sorted(values)
@@ -2307,12 +1738,6 @@ class LevelEngine:
 # ================================================================================
 
 class RegimeEngine:
-    """
-    Regime classification determines the market environment.
-    It is the context within which all signals must be interpreted.
-    A bullish candle in a Compression regime means something very different
-    from the same candle in a Bear Expansion regime.
-    """
 
     def classify(self, market: MarketData, levels: Dict[str, Any],
                  internal_scores: Dict[str, float], atr: float) -> Regime:
@@ -2323,14 +1748,12 @@ class RegimeEngine:
         if avg_score < 45:
             return Regime.AVOID
 
-        # Session range ratio
         session_range = market.day_high - market.day_low
         range_ratio   = MathUtils.safe_div(session_range, atr, 1.0)
 
         upside_trigger   = levels["upside_trigger"]
         downside_trigger = levels["downside_trigger"]
 
-        # False break count from behavioral data
         candles = market.candles_5m or market.candles_15m
         fb_count = 0
         if candles:
@@ -2344,36 +1767,29 @@ class RegimeEngine:
                 if c.low < prev_low and c.close > prev_low:
                     fb_count += 1
 
-        # Trap detection
         if fb_count >= 3:
             return Regime.TRAP
 
-        # Compression: range < 0.8 ATR, price inside battle zone
         in_battle_zone = downside_trigger <= price <= upside_trigger
         if range_ratio < 0.8 and in_battle_zone:
             return Regime.COMPRESSION
 
-        # Bull Expansion: price above trigger, range expanding
-        pct_above_trigger = MathUtils.pct_distance(upside_trigger, price)
         if (price > upside_trigger and range_ratio > 1.1
                 and internal_scores.get("market_structure", 50) > 60):
             return Regime.BULL_EXPANSION
 
-        # Bear Expansion: price below trigger, range expanding
         if (price < downside_trigger and range_ratio > 1.1
                 and internal_scores.get("market_structure", 50) < 50):
             return Regime.BEAR_EXPANSION
 
-        # Rotation: inside range, churning between support and resistance
         if in_battle_zone and range_ratio > 0.8:
             return Regime.ROTATION
 
-        # Trend continuation: directional, range expanding, VWAP holding
         if range_ratio > 1.3:
             if price > (market.vwap or price):
                 return Regime.TREND_CONTINUATION
             else:
-                return Regime.TREND_CONTINUATION  # downtrend continuation
+                return Regime.TREND_CONTINUATION
 
         return Regime.NEUTRAL
 
@@ -2383,11 +1799,6 @@ class RegimeEngine:
 # ================================================================================
 
 class PathGenerator:
-    """
-    Generates three conditional path scenarios: Bull, Neutral, Bear.
-    These are not predictions — they are CONDITIONAL roadmaps.
-    'IF price does X THEN expect Y.'
-    """
 
     def generate(self, market: MarketData, levels: Dict[str, Any],
                  atr: float, regime: Regime,
@@ -2397,13 +1808,11 @@ class PathGenerator:
         downside = levels["downside_trigger"]
         price    = market.price
 
-        # Bull path targets: trigger → fib extension 1 → fib extension 2
         bull_t1 = self._find_target(upside, fib_targets, direction="up",
                                     fallback=upside + atr * 0.75)
         bull_t2 = self._find_target(bull_t1, fib_targets, direction="up",
                                     fallback=upside + atr * 1.50)
 
-        # Bear path targets: downside trigger → fib extension 1 → fib extension 2
         bear_t1 = self._find_target(downside, fib_targets, direction="down",
                                     fallback=downside - atr * 0.75)
         bear_t2 = self._find_target(bear_t1, fib_targets, direction="down",
@@ -2420,7 +1829,6 @@ class PathGenerator:
 
     def _find_target(self, from_price: float, fib_targets: Dict[str, float],
                      direction: str, fallback: float) -> float:
-        """Find the nearest Fibonacci target beyond from_price in the given direction."""
         candidates = []
         for level in fib_targets.values():
             if direction == "up"   and level > from_price * 1.001:
@@ -2487,11 +1895,6 @@ class StatusClassifier:
 # ================================================================================
 
 class PublicFactorCompressor:
-    """
-    Compresses the 12 internal family scores into the 5 public radar factors.
-    This compression protects proprietary internal logic while exposing
-    meaningful, actionable information to users and the radar display.
-    """
 
     def compress(self, internal: Dict[str, float],
                  market: MarketData, atr: float,
@@ -2512,10 +1915,6 @@ class PublicFactorCompressor:
         }
 
     def _score_confluence(self, internal: Dict[str, float]) -> float:
-        """
-        C = how many independent internal families agree.
-        Strong agreement = high confidence. Divergence = uncertainty.
-        """
         values  = list(internal.values())
         aligned = sum(1 for v in values if v >= 65)
         strong  = sum(1 for v in values if v >= 78)
@@ -2526,21 +1925,18 @@ class PublicFactorCompressor:
 
     def _score_expansion(self, market: MarketData, atr: float,
                          internal: Dict[str, float]) -> float:
-        """E = probability of range expansion."""
         score = 35.0
         session_range = market.day_high - market.day_low
         range_ratio   = MathUtils.safe_div(session_range, atr, 1.0)
 
         if range_ratio < 0.5:
-            score += 30  # strong compression = high expansion potential
+            score += 30
         elif range_ratio < 0.8:
             score += 18
         elif range_ratio > 1.5:
-            score -= 10  # already expanded
+            score -= 10
 
-        # Behavioral engine's expansion probability feeds this
         score += (internal.get("behavioral", 50) - 50) * 0.25
-        # Time/cycle engine feeds this
         score += (internal.get("time_cycle", 50) - 50) * 0.15
 
         rel_vol = MathUtils.safe_div(market.volume, market.avg_volume, 1.0)
@@ -2552,7 +1948,6 @@ class PublicFactorCompressor:
         return MathUtils.clamp(score)
 
     def _score_relative_strength(self, market: MarketData) -> float:
-        """RS = how asset performs vs benchmark and sector."""
         score    = 50.0
         pct_chg  = MathUtils.safe_div(
             market.price - market.previous_close, market.previous_close
@@ -2576,7 +1971,6 @@ class PublicFactorCompressor:
 
     def _score_volume_pressure(self, market: MarketData,
                                 internal: Dict[str, float]) -> float:
-        """VP = volume and flow confirmation."""
         score   = 40.0
         rel_vol = MathUtils.safe_div(market.volume, market.avg_volume, 1.0)
 
@@ -2587,22 +1981,16 @@ class PublicFactorCompressor:
         elif rel_vol > 1.1:
             score += 10
         elif rel_vol < 0.5:
-            score -= 15
+            score -= 25
 
-        # VSA internal score feeds volume pressure
         score += (internal.get("vsa", 50) - 50) * 0.4
-        # Options/liquidity feeds flow confirmation
         score += (internal.get("options_liquidity", 50) - 50) * 0.25
 
         return MathUtils.clamp(score)
 
     def _score_behavioral(self, internal: Dict[str, float]) -> float:
-        """B = behavioral quality (trap risk, follow-through)."""
-        # Primary: behavioral engine score
         b_raw = internal.get("behavioral", 55)
-        # Secondary: Wyckoff provides phase context
         wyc   = internal.get("wyckoff_weis", 55)
-        # Candle engine reflects follow-through quality
         cnd   = internal.get("candles", 55)
 
         return MathUtils.clamp(b_raw * 0.55 + wyc * 0.25 + cnd * 0.20)
@@ -2610,7 +1998,6 @@ class PublicFactorCompressor:
 
 # ================================================================================
 # SECTION 23 — CONFLUENCE ENGINE (ORCHESTRATOR)
-# This is the public interface. Everything above serves this.
 # ================================================================================
 
 @dataclass
@@ -2626,9 +2013,9 @@ class ConfluenceResult:
     setup           : str
     levels          : Dict[str, Any]
     paths           : Dict[str, Any]
-    factor_scores   : Dict[str, float]   # C, E, RS, VP, B
-    internal_scores : Dict[str, float]   # 12 family scores
-    internal_signals: Dict[str, Any]     # detailed signals from each family
+    factor_scores   : Dict[str, float]
+    internal_scores : Dict[str, float]
+    internal_signals: Dict[str, Any]
     alert_reason    : str
     wyckoff_phase   : str
     candle_pattern  : str
@@ -2640,12 +2027,6 @@ class ConfluenceResult:
 
 
 class ConfluenceEngine:
-    """
-    The orchestrator. Runs all 12 internal families, compresses to public factors,
-    generates levels, regime, paths, and status.
-
-    This is the single entry point for evaluating a symbol.
-    """
 
     def __init__(
         self,
@@ -2656,8 +2037,7 @@ class ConfluenceEngine:
         self.iw = internal_weights
         self.pw = public_weights
 
-        # Initialize all internal family engines
-        self.pivot_detector = PivotDetector()
+        self.pivot_detector   = PivotDetector()
         self.market_structure = MarketStructureEngine()
         self.gann             = GannGeometryEngine()
         self.time_cycle       = TimeCycleEngine()
@@ -2671,38 +2051,60 @@ class ConfluenceEngine:
         self.options_liq      = OptionsLiquidityEngine()
         self.behavioral       = BehavioralIntelligenceEngine()
 
-        # Service engines
-        self.level_engine    = LevelEngine()
-        self.regime_engine   = RegimeEngine()
-        self.path_generator  = PathGenerator()
+        self.level_engine      = LevelEngine()
+        self.regime_engine     = RegimeEngine()
+        self.path_generator    = PathGenerator()
         self.status_classifier = StatusClassifier(status_thresholds)
-        self.compressor      = PublicFactorCompressor()
+        self.compressor        = PublicFactorCompressor()
+
+    def _fetch_wyckoff_anchors(self, symbol: str) -> dict:
+        """
+        Fetches active Wyckoff SC/AR/ST anchors from Supabase
+        geometric_structures cache table.
+        Returns empty dict if unavailable — fallback to dynamic proxy.
+        """
+        try:
+            import os
+            from supabase import create_client
+            url = os.environ.get("SUPABASE_URL", "")
+            key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+            if not url or not key:
+                return {}
+            sb = create_client(url, key)
+            response = sb.table("geometric_structures") \
+                .select("structure_type, price_level") \
+                .eq("ticker", symbol) \
+                .eq("is_active", True) \
+                .in_("structure_type", ["Wyckoff_SC_Low", "Wyckoff_AR_High", "Wyckoff_ST_Low"]) \
+                .execute()
+            anchors = {}
+            for row in (response.data or []):
+                anchors[row["structure_type"]] = float(row["price_level"])
+            return anchors
+        except Exception:
+            return {}
 
     def evaluate(self, market: MarketData,
                  options: OptionsData = OptionsData()) -> ConfluenceResult:
-        """
-        Full evaluation of one symbol. Returns ConfluenceResult.
-        Call this once per symbol per scan cycle.
-        """
 
-        # ── Step 1: ATR ──────────────────────────────────────────────────────
+        # Step 1: ATR
         atr = (market.atr or
                MathUtils.atr_estimate(market.candles_daily or market.candles_1h) or
                max(market.day_high - market.day_low, market.price * 0.015))
 
-        # ── Step 2: Detect Pivots ─────────────────────────────────────────────
+        # Step 2: Detect Pivots
         candles_for_pivots = (market.candles_1h or market.candles_daily
                               or market.candles_5m)
         pivots = self.pivot_detector.detect(candles_for_pivots, left=3, right=3)
 
-        # ── Step 3: Run All 12 Internal Family Engines ────────────────────────
-        # Determine provisional direction for candle engine
+        # Step 3: Provisional direction
         prov_direction = Direction.NEUTRAL
         if market.price > (market.vwap or market.day_open):
             prov_direction = Direction.BULL
         elif market.price < (market.vwap or market.day_open):
             prov_direction = Direction.BEAR
 
+        # Step 4: Run all 12 internal family engines
         ms_result  = self.market_structure.score(market, pivots, atr)
         gn_result  = self.gann.score(market, pivots, atr)
         tc_result  = self.time_cycle.score(market, pivots)
@@ -2711,12 +2113,16 @@ class ConfluenceEngine:
         fb_result  = self.fibonacci.score(market, pivots)
         cd_result  = self.candle_trigger.score(market, prov_direction)
         vs_result  = self.vsa.score(market, atr)
-        wy_result  = self.wyckoff.score(market, atr)
+
+        # ── Fetch Wyckoff anchors from Supabase cache ──────────────────────
+        cached_anchors = self._fetch_wyckoff_anchors(market.symbol)
+        wy_result  = self.wyckoff.score(market, atr, cached_anchors=cached_anchors)
+
         el_result  = self.elliott.score(market, pivots)
         op_result  = self.options_liq.score(market, options, atr)
         bh_result  = self.behavioral.score(market, atr)
 
-        # ── Step 4: Assemble Internal Scores (weighted family scores) ─────────
+        # Step 5: Assemble internal scores
         internal_scores = {
             "market_structure"   : ms_result["score"],
             "gann_geometry"      : gn_result["score"],
@@ -2732,15 +2138,15 @@ class ConfluenceEngine:
             "behavioral"         : bh_result["score"],
         }
 
-        # ── Step 5: Levels ────────────────────────────────────────────────────
+        # Step 6: Levels
         fib_levels  = fb_result.get("levels", {})
         gann_levels = gn_result.get("levels", {})
         levels = self.level_engine.generate(market, options, atr, fib_levels, gann_levels)
 
-        # ── Step 6: Public Factor Compression ─────────────────────────────────
+        # Step 7: Public factor compression
         public_factors = self.compressor.compress(internal_scores, market, atr, options)
 
-        # ── Step 7: Composite Score ───────────────────────────────────────────
+        # Step 8: Composite score
         pw = self.pw
         composite = MathUtils.clamp(
             public_factors["C"]  * pw.confluence +
@@ -2750,38 +2156,37 @@ class ConfluenceEngine:
             public_factors["B"]  * pw.behavioral
         )
 
-        # ── Step 8: Confidence ────────────────────────────────────────────────
-        # Confidence = composite score penalized by factor dispersion
+        # Step 9: Confidence
         vals       = list(public_factors.values())
         mean_v     = MathUtils.rolling_avg(vals)
         dispersion = MathUtils.rolling_std(vals)
         confidence = MathUtils.clamp(composite - dispersion * 0.20)
         if min(vals) >= 60:
-            confidence = MathUtils.clamp(confidence + 5)  # all factors positive
+            confidence = MathUtils.clamp(confidence + 5)
 
-        # ── Step 9: Regime ────────────────────────────────────────────────────
+        # Step 10: Regime
         regime = self.regime_engine.classify(market, levels, internal_scores, atr)
 
-        # ── Step 10: Direction ────────────────────────────────────────────────
+        # Step 11: Direction
         direction = self._infer_direction(market, levels, public_factors, regime)
 
-        # ── Step 11: Paths ────────────────────────────────────────────────────
+        # Step 12: Paths
         paths = self.path_generator.generate(market, levels, atr, regime, fib_levels)
 
-        # ── Step 12: Status ───────────────────────────────────────────────────
+        # Step 13: Status
         status = self.status_classifier.classify(
             composite, market.price, levels, public_factors
         )
 
-        # ── Step 13: Setup Label ──────────────────────────────────────────────
+        # Step 14: Setup label
         setup = self._setup_label(regime, internal_scores, bh_result)
 
-        # ── Step 14: Alert Reason ─────────────────────────────────────────────
+        # Step 15: Alert reason
         alert_reason = self._alert_reason(
             market.symbol, status, composite, levels, regime, public_factors
         )
 
-        # ── Step 15: Assemble Result ──────────────────────────────────────────
+        # Step 16: Assemble result
         return ConfluenceResult(
             symbol           = market.symbol,
             timestamp        = datetime.now(timezone.utc).isoformat(),
@@ -2806,6 +2211,9 @@ class ConfluenceEngine:
                 "candle_pattern"     : cd_result.get("pattern", ""),
                 "vsa_bias"           : vs_result.get("bias", ""),
                 "wyckoff_phase"      : wy_result.get("phase", ""),
+                "wyckoff_sc_low"     : wy_result.get("sc_low"),
+                "wyckoff_ar_high"    : wy_result.get("ar_high"),
+                "wyckoff_st_low"     : wy_result.get("st_low"),
                 "elliott_structure"  : el_result.get("structure", ""),
                 "elliott_target"     : el_result.get("extension_target"),
                 "behavioral_detail"  : {
@@ -2818,8 +2226,6 @@ class ConfluenceEngine:
             cycle_hits        = tc_result.get("cycle_hits", []),
             behavioral_detail = {k: v for k, v in bh_result.items() if k != "notes"},
         )
-
-    # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _infer_direction(self, market: MarketData, levels: Dict[str, Any],
                          public: Dict[str, float], regime: Regime) -> Direction:
@@ -2880,15 +2286,11 @@ class ConfluenceEngine:
 
 
 # ================================================================================
-# SECTION 24 — ROADMAP SNAPSHOT (Alert → Scoreboard link)
+# SECTION 24 — ROADMAP SNAPSHOT
 # ================================================================================
 
 @dataclass
 class RoadmapSnapshot:
-    """
-    Every alert must save one of these. The scoreboard grades against it.
-    This is the immutable record of what was predicted before the market opened.
-    """
     snapshot_id         : str
     timestamp           : str
     symbol              : str
@@ -2950,15 +2352,10 @@ class RoadmapSnapshot:
 # ================================================================================
 
 def _smoke_test() -> None:
-    """
-    Validates the engine runs end-to-end with synthetic data.
-    Replace with live Alpaca/Polygon data in production.
-    """
     import json
 
     now = datetime.now(timezone.utc)
 
-    # Build synthetic 5m candles — 60 bars of realistic drift
     candles_5m = []
     price = 255.0
     for i in range(60):
@@ -2973,7 +2370,6 @@ def _smoke_test() -> None:
         candles_5m.append(Candle(ts, op, hi, lo, cl, vol))
         price = cl
 
-    # Build 20 daily candles
     candles_daily = []
     dp = 240.0
     for i in range(20):
@@ -3034,22 +2430,22 @@ def _smoke_test() -> None:
     print(f"  Regime    : {result.regime}")
     print(f"  Setup     : {result.setup}")
     print()
-    print("  ── Public Factors ──────────────────────────────")
+    print("  -- Public Factors --")
     for k, v in result.factor_scores.items():
-        bar = "█" * int(v / 5)
+        bar = "X" * int(v / 5)
         print(f"  {k:>3}  {v:5.1f}  {bar}")
     print()
-    print("  ── Internal Family Scores ──────────────────────")
+    print("  -- Internal Family Scores --")
     for k, v in result.internal_scores.items():
-        bar = "█" * int(v / 5)
+        bar = "X" * int(v / 5)
         print(f"  {k:<25} {v:5.1f}  {bar}")
     print()
-    print("  ── Levels ──────────────────────────────────────")
+    print("  -- Levels --")
     print(f"  Upside Trigger    : ${result.levels['upside_trigger']:.2f}")
     print(f"  Downside Trigger  : ${result.levels['downside_trigger']:.2f}")
     print(f"  Key Magnet        : ${result.levels['key_magnet']:.2f}")
     print()
-    print("  ── Paths ───────────────────────────────────────")
+    print("  -- Paths --")
     print(f"  BULL  : {result.paths['bull_narrative']}")
     print(f"  NEUTRAL: {result.paths['neutral_narrative']}")
     print(f"  BEAR  : {result.paths['bear_narrative']}")
