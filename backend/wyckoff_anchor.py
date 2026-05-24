@@ -59,7 +59,7 @@ INTELLIGENCE_SYMBOLS = [
 # STEP 1 — FETCH DAILY BARS FROM ALPACA
 # ================================================================================
 
-def fetch_alpaca_daily_bars(ticker: str, lookback_days: int = 180) -> pd.DataFrame:
+def fetch_alpaca_daily_bars(ticker: str, lookback_days: int = 365) -> pd.DataFrame:
     """
     Pulls 180 days of daily OHLCV bars from Alpaca.
     Returns a clean DataFrame with a flat timestamp column.
