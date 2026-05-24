@@ -12,6 +12,8 @@ Endpoints:
   GET  /api/radar/scores              — top 100 radar symbols
   GET  /api/radar/symbol/{symbol}     — single symbol detail
   GET  /api/radar/status              — radar service health
+  GET  /api/radar/health              — deep health check with heartbeat
+  POST /api/v1/alerts/dispatch-confluence-alert — send confluence alert email
   GET  /api/admin/report              — private admin performance report
   GET  /api/admin/report/public       — dev admin report (no auth)
   POST /api/admin/snapshot/write-now  — force snapshot write
@@ -43,8 +45,8 @@ except ImportError:
 
 # ── Path setup — ensures sibling modules resolve on Render ─────────────────
 import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent))         # backend/ itself
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))  # project root
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 # ── Shared engine ──────────────────────────────────────────────────────────
 from shared.engine import (
@@ -56,8 +58,9 @@ from behavior      import behavior_router
 from csv_import    import csv_router
 from billing_stub  import billing_router
 from radar_service import radar_router, start_radar_scheduler, stop_radar_scheduler
-from snapshot_service import snapshot_router   # ← ADMIN + SNAPSHOT ROUTER
-from legal_pages      import legal_router      # ← PRIVACY + TERMS PAGES
+from snapshot_service import snapshot_router
+from legal_pages      import legal_router
+from email_service    import router as email_router
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
@@ -76,8 +79,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # ── WebSocket connection manager ───────────────────────────────────────────
 
 class ConnectionManager:
-    """Tracks all active frontend WebSocket clients per symbol."""
-
     def __init__(self):
         self._clients: dict[str, set[WebSocket]] = {}
 
@@ -122,7 +123,6 @@ def _alpaca_headers() -> dict:
 def fetch_latest_quote(symbol: str) -> dict[str, Any]:
     if not ALPACA_API_KEY:
         raise HTTPException(503, "Alpaca API key not configured")
-
     url = f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/trades/latest"
     try:
         r = requests.get(url, headers=_alpaca_headers(), timeout=5)
@@ -146,26 +146,15 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
     if not ALPACA_API_KEY:
         candles = generate_initial_candles(280.15)
         return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
-
     url = f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars"
-    params = {
-        "timeframe": timeframe,
-        "limit":     limit,
-        "feed":      "iex",
-    }
+    params = {"timeframe": timeframe, "limit": limit, "feed": "iex"}
     try:
         r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=8)
         r.raise_for_status()
         bars = r.json().get("bars", [])
         return [
-            {
-                "o": float(b["o"]),
-                "h": float(b["h"]),
-                "l": float(b["l"]),
-                "c": float(b["c"]),
-                "v": int(b["v"]),
-                "t": b["t"],
-            }
+            {"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]),
+             "c": float(b["c"]), "v": int(b["v"]), "t": b["t"]}
             for b in bars
         ]
     except Exception as e:
@@ -174,47 +163,38 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
         return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
 
 
-# ── Alpaca WebSocket stream (per symbol) ──────────────────────────────────
+# ── Alpaca WebSocket stream ────────────────────────────────────────────────
 
 async def alpaca_stream(symbol: str):
     import websockets
-
     sequence = 0
     backoff  = 1
-
     while True:
         try:
             log.info(f"Connecting to Alpaca stream for {symbol}…")
             async with websockets.connect(ALPACA_WS_URL, ping_interval=20) as ws:
                 backoff = 1
-
                 await ws.send(json.dumps({
                     "action": "auth",
                     "key":    ALPACA_API_KEY,
                     "secret": ALPACA_API_SECRET,
                 }))
-
                 await ws.send(json.dumps({
                     "action": "subscribe",
                     "trades": [symbol],
                 }))
-
                 async for raw in ws:
                     messages = json.loads(raw)
                     for msg in messages:
                         msg_type = msg.get("T")
-
                         if msg_type == "t":
                             price  = float(msg.get("p", 0))
                             volume = int(msg.get("s", 0))
                             sequence += 1
-
                             update = create_live_update(symbol, price, volume, sequence)
                             await manager.broadcast(symbol, update.to_dict())
-
                         elif msg_type == "error":
                             log.error(f"Alpaca stream error: {msg}")
-
         except Exception as e:
             log.warning(f"Alpaca stream disconnected ({symbol}): {e} — retrying in {backoff}s")
             await asyncio.sleep(backoff)
@@ -266,8 +246,9 @@ app.include_router(behavior_router)
 app.include_router(csv_router)
 app.include_router(billing_router)
 app.include_router(radar_router)
-app.include_router(snapshot_router)   # ← ADMIN + SNAPSHOT ENDPOINTS
-app.include_router(legal_router)      # ← PRIVACY + TERMS PAGES
+app.include_router(snapshot_router)
+app.include_router(legal_router)
+app.include_router(email_router)        # ← EMAIL ALERT ROUTER
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -284,7 +265,6 @@ async def health():
 
 @app.get("/api/auth/reset-form")
 async def reset_form():
-    """Simple HTML password reset form — no Dash needed."""
     from fastapi.responses import HTMLResponse
     html = """
 <!DOCTYPE html>
@@ -351,7 +331,6 @@ async function sendReset() {
 
 @app.get("/api/auth/set-password")
 async def set_password_page(access_token: str = "", refresh_token: str = "", type: str = ""):
-    """Password reset landing page — shown after user clicks reset email link."""
     from fastapi.responses import HTMLResponse
     html = f"""
 <!DOCTYPE html>
@@ -424,7 +403,6 @@ async function setPassword() {{
 
 @app.get("/api/auth/update-password")
 async def update_password(token: str = "", password: str = ""):
-    """Update password using recovery token."""
     SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
     if not token or not password:
@@ -450,7 +428,6 @@ async def update_password(token: str = "", password: str = ""):
 
 @app.get("/api/auth/test-login")
 async def test_login(email: str = "", password: str = ""):
-    """Test login against Supabase — debug only."""
     SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
     try:
@@ -467,7 +444,6 @@ async def test_login(email: str = "", password: str = ""):
 
 @app.get("/api/auth/reset-password")
 async def request_password_reset(email: str = ""):
-    """Send password reset email via Supabase."""
     email = email.strip()
     log.info(f"Password reset requested for: {email!r}")
     if not email:
@@ -494,21 +470,19 @@ async def request_password_reset(email: str = ""):
 
 @app.get("/api/scoreboard/clean-duplicates")
 async def clean_duplicates():
-    """One-time cleanup of duplicate pending signals."""
     from scoreboard_service import clear_duplicate_signals
     deleted = clear_duplicate_signals()
     return {"ok": True, "deleted": deleted}
 
+
 @app.get("/api/scoreboard")
 async def get_scoreboard():
-    """Public scoreboard — all historical signals with grades."""
     from scoreboard_service import get_scoreboard_stats
     return get_scoreboard_stats()
 
 
 @app.post("/api/scoreboard/grade-now")
 async def grade_now():
-    """Manually trigger grading of pending signals."""
     from scoreboard_service import grade_pending_signals
     grade_pending_signals()
     return {"ok": True, "message": "Grading complete"}
@@ -516,10 +490,8 @@ async def grade_now():
 
 @app.get("/api/options/test/{symbol}")
 async def test_options(symbol: str):
-    """Debug — test Alpaca options snapshot endpoint."""
     sym = symbol.upper().strip()
     results = {}
-
     try:
         r1 = requests.get(
             f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
@@ -535,7 +507,6 @@ async def test_options(symbol: str):
         }
     except Exception as e:
         results["test1_no_filter"] = {"error": str(e)}
-
     try:
         r2 = requests.get(
             f"https://data.alpaca.markets/v1beta1/options/snapshots/{sym}",
@@ -551,7 +522,6 @@ async def test_options(symbol: str):
         }
     except Exception as e:
         results["test2_no_feed"] = {"error": str(e)}
-
     try:
         from datetime import datetime, timedelta
         r3 = requests.get(
@@ -573,13 +543,11 @@ async def test_options(symbol: str):
         }
     except Exception as e:
         results["test3_calls_90d"] = {"error": str(e)}
-
     return {"symbol": sym, "results": results}
 
 
 @app.get("/api/radar/test-alert")
 async def test_alert():
-    """Send a test alert email to all registered users."""
     from radar_alerts import send_alert
     from radar_service import RADAR_CACHE
     if not RADAR_CACHE:
@@ -591,18 +559,13 @@ async def test_alert():
 
 @app.get("/api/debug/user-emails")
 async def debug_user_emails():
-    """Debug — shows exactly which emails will receive alerts."""
     from radar_alerts import _get_all_user_emails
     emails = _get_all_user_emails()
-    return {
-        "count":  len(emails),
-        "emails": emails,
-    }
+    return {"count": len(emails), "emails": emails}
 
 
 @app.get("/api/v1/permissions/{user_id}")
 async def user_permissions(user_id: str):
-    """Returns the full feature permission map for a user."""
     return get_permissions(user_id)
 
 
@@ -624,22 +587,17 @@ async def get_candles(symbol: str, timeframe: str = "1Min", limit: int = 50):
     return {"symbol": clean, "bars": fetch_bars(clean, timeframe, limit)}
 
 
-# ── WebSocket endpoint ─────────────────────────────────────────────────────
-
 @app.websocket("/ws/{symbol}")
 async def websocket_endpoint(ws: WebSocket, symbol: str):
     clean = sanitize_symbol(symbol)
     if not clean:
         await ws.close(code=1008)
         return
-
     await manager.connect(ws, clean)
-
     if ALPACA_API_KEY:
         ensure_stream(clean)
     else:
         asyncio.create_task(_synthetic_feed(ws, clean))
-
     try:
         while True:
             await asyncio.sleep(30)
@@ -650,11 +608,9 @@ async def websocket_endpoint(ws: WebSocket, symbol: str):
 
 @app.get("/api/debug/csv-test")
 async def csv_test():
-    """Debug endpoint — tests CSV parsing inline with hardcoded sample data."""
     import io as _io
     import pandas as pd
     from csv_import import clean_price, clean_qty, normalize_side, parse_timestamp, reconstruct_trades, analyze_behavior
-
     sample = """date,time,symbol,action,qty,price
 01/01/2025 09:43:00,09:43:00,AAPL,buy,67,160.2
 01/01/2025 14:52:00,14:52:00,AAPL,sell,67,158.68
@@ -665,7 +621,6 @@ async def csv_test():
     col_map = {"symbol":"symbol","action":"side","qty":"qty","price":"price","date":"timestamp"}
     df.columns = [c.lower().strip() for c in df.columns]
     df = df.rename(columns={k.lower(): v for k, v in col_map.items()})
-
     rows = []
     for _, row in df.iterrows():
         price = clean_price(row.get("price"))
@@ -675,10 +630,8 @@ async def csv_test():
         ts = parse_timestamp(row.get("timestamp"))
         if symbol and price and qty:
             rows.append({"symbol":symbol,"side":side,"qty":qty,"price":price,"timestamp":ts})
-
     trades, _ = reconstruct_trades(rows)
     analysis = analyze_behavior(trades)
-
     return {
         "rows_parsed":    len(rows),
         "sides":          list(set(r["side"] for r in rows)),
@@ -690,7 +643,6 @@ async def csv_test():
 
 @app.delete("/api/trades/reset")
 def reset_trades():
-    """Lab reset — clears all imported trade history from the database."""
     try:
         import psycopg2
         db_url = os.environ.get("DATABASE_URL", "")
@@ -723,5 +675,3 @@ async def _synthetic_feed(ws: WebSocket, symbol: str):
             await ws.send_json(update.to_dict())
         except Exception:
             break
-
-# updated
