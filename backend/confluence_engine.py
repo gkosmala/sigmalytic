@@ -2057,7 +2057,7 @@ class ConfluenceEngine:
         self.status_classifier = StatusClassifier(status_thresholds)
         self.compressor        = PublicFactorCompressor()
 
-          def _fetch_wyckoff_anchors(self, symbol: str) -> dict:
+    def _fetch_wyckoff_anchors(self, symbol: str) -> dict:
         """
         Fetches active Wyckoff SC/AR/ST anchors from Supabase
         geometric_structures cache table.
@@ -2065,22 +2065,32 @@ class ConfluenceEngine:
         """
         try:
             import os
-            from supabase import create_client
+            import requests as _req
             url = os.environ.get("SUPABASE_URL", "")
             key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
             if not url or not key:
                 return {}
-            sb = create_client(url, key)
-            response = sb.table("geometric_structures") \
-                .select("structure_type, price_level") \
-                .eq("ticker", symbol) \
-                .eq("is_active", True) \
-                .in_("structure_type", ["Wyckoff_SC_Low", "Wyckoff_AR_High", "Wyckoff_ST_Low"]) \
-                .execute()
-            anchors = {}
-            for row in (response.data or []):
-                anchors[row["structure_type"]] = float(row["price_level"])
-            return anchors
+            endpoint = (
+                f"{url}/rest/v1/geometric_structures"
+                f"?ticker=eq.{symbol}"
+                f"&is_active=eq.true"
+                f"&structure_type=in.(Wyckoff_SC_Low,Wyckoff_AR_High,Wyckoff_ST_Low)"
+                f"&select=structure_type,price_level"
+            )
+            r = _req.get(
+                endpoint,
+                headers={
+                    "apikey"       : key,
+                    "Authorization": f"Bearer {key}",
+                },
+                timeout=2,
+            )
+            if r.status_code == 200:
+                anchors = {}
+                for row in r.json():
+                    anchors[row["structure_type"]] = float(row["price_level"])
+                return anchors
+            return {}
         except Exception:
             return {}
 
