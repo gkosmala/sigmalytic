@@ -174,7 +174,7 @@ def _inactive_btn():
 
 def register_preferences_callbacks(app):
 
-    # ── Load saved preferences from backend on startup ─────────────────────────
+    # ── Load saved preferences when Preferences tab is opened ─────────────────
     @app.callback(
         Output("pref-mode-val",      "data"),
         Output("pref-mode-realtime", "style"),
@@ -192,40 +192,45 @@ def register_preferences_callbacks(app):
         Output("pref-hours-btn",     "style"),
         Output("prefs-watchlist",    "data"),
         Output("prefs-watchlist-display", "children"),
-        Input("prefs-user-id",       "data"),
+        Input("s-tab",               "data"),
+        State("s-session",           "data"),
         prevent_initial_call=True,
     )
-    def load_saved_preferences(user_id):
-        defaults = (
-            "realtime",
-            _active_btn(), _inactive_btn(), _inactive_btn(),
-            {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
-            _active_btn(), _active_btn(), _active_btn(), _inactive_btn(), _inactive_btn(),
-            60,
-            True, "ON", _active_btn(),
-            [], [html.Span("All symbols — no filter applied",
-                           style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})],
-        )
+    def load_saved_preferences(tab, session):
+        def defaults():
+            return (
+                "realtime",
+                _active_btn(), _inactive_btn(), _inactive_btn(),
+                {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+                _active_btn(), _active_btn(), _active_btn(), _inactive_btn(), _inactive_btn(),
+                60, True, "ON", _active_btn(),
+                [], [html.Span("All symbols — no filter applied",
+                               style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})],
+            )
+        if tab != "preferences":
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        user_id = (session or {}).get("user_id", "")
         if not user_id:
-            return defaults
+            return defaults()
         try:
             r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=5)
             if not r.ok:
-                return defaults
+                return defaults()
             p = r.json()
             mode = p.get("delivery_mode", "realtime")
             mode_styles = [_active_btn() if x==mode else _inactive_btn()
                            for x in ["realtime","hourly","daily"]]
+            alert_types = p.get("alert_types", ["wyckoff","gann","ab_score"])
             types = {
-                "wyckoff":   "wyckoff"   in p.get("alert_types", ["wyckoff","gann","ab_score"]),
-                "gann":      "gann"      in p.get("alert_types", ["wyckoff","gann","ab_score"]),
-                "ab_score":  "ab_score"  in p.get("alert_types", ["wyckoff","gann","ab_score"]),
-                "elliott":   "elliott"   in p.get("alert_types", []),
-                "fibonacci": "fibonacci" in p.get("alert_types", []),
+                "wyckoff":   "wyckoff"   in alert_types,
+                "gann":      "gann"      in alert_types,
+                "ab_score":  "ab_score"  in alert_types,
+                "elliott":   "elliott"   in alert_types,
+                "fibonacci": "fibonacci" in alert_types,
             }
-            min_score  = p.get("min_score", 60)
-            hours      = p.get("market_hours_only", True)
-            watchlist  = p.get("watchlist", [])
+            min_score = p.get("min_score", 60)
+            hours     = p.get("market_hours_only", True)
+            watchlist = p.get("watchlist", [])
             return (
                 mode,
                 mode_styles[0], mode_styles[1], mode_styles[2],
@@ -243,7 +248,7 @@ def register_preferences_callbacks(app):
                 _render_watchlist(watchlist),
             )
         except Exception:
-            return defaults
+            return defaults()
 
 
     # ── Delivery mode ──────────────────────────────────────────────────────────
