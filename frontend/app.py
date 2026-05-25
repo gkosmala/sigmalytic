@@ -1007,7 +1007,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin") and trigger=="i-clock": return no_update
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
     if tab=="preferences": return build_preferences_tab(user_id=(session or {}).get("user_id",""))
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
