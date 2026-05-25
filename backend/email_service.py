@@ -21,15 +21,14 @@ RESEND_URL = "https://api.resend.com/emails"
 FROM_ADDRESS = os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # bypasses RLS
+SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
-_supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+_supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 # ── Preference loader ────────────────────────────────────────────────────────
 
 async def get_all_user_preferences() -> list[dict]:
-    """Fetch all user preference rows from Supabase."""
     try:
         result = _supabase.table("user_preferences").select("*").execute()
         return result.data or []
@@ -41,58 +40,38 @@ async def get_all_user_preferences() -> list[dict]:
 # ── Filter logic ─────────────────────────────────────────────────────────────
 
 def user_wants_alert(prefs: dict, alert: dict) -> bool:
-    """
-    Returns True if this alert passes all of the user's filter criteria.
-
-    alert dict expected keys:
-        symbol      str         e.g. "AAPL"
-        alert_type  str         e.g. "wyckoff" | "gann" | "ab_score" | "elliott" | "fibonacci"
-        score       int         confluence score 0–100
-        timestamp   datetime    UTC-aware datetime of the alert
-    """
     symbol      = alert.get("symbol", "").upper()
     alert_type  = alert.get("alert_type", "")
     score       = alert.get("score", 0)
     ts: datetime = alert.get("timestamp", datetime.now(timezone.utc))
 
-    # 1. Watchlist filter — empty watchlist means ALL symbols
     watchlist = prefs.get("watchlist") or []
     if watchlist and symbol not in [s.upper() for s in watchlist]:
-        logger.debug(f"[filter] {symbol} not in watchlist for {prefs['email']}")
         return False
 
-    # 2. Alert type filter
     allowed_types = prefs.get("alert_types") or []
     if allowed_types and alert_type not in allowed_types:
-        logger.debug(f"[filter] alert_type '{alert_type}' not in allowed types for {prefs['email']}")
         return False
 
-    # 3. Minimum score gate
     min_score = prefs.get("min_score", 60)
     if score < min_score:
-        logger.debug(f"[filter] score {score} < min_score {min_score} for {prefs['email']}")
         return False
 
-    # 4. Market hours filter (9:30–16:00 ET = 13:30–20:00 UTC, Mon–Fri)
     if prefs.get("market_hours_only", True):
-        weekday = ts.weekday()  # 0=Mon, 6=Sun
+        weekday = ts.weekday()
         hour_utc = ts.hour + ts.minute / 60
         if weekday >= 5 or not (13.5 <= hour_utc <= 20.0):
-            logger.debug(f"[filter] outside market hours for {prefs['email']}")
             return False
 
-    # 5. Quiet hours filter
     quiet_start = prefs.get("quiet_start_utc")
     quiet_end   = prefs.get("quiet_end_utc")
     if quiet_start is not None and quiet_end is not None:
         hour = ts.hour
         if quiet_start > quiet_end:
-            # Wraps midnight, e.g. 21:00–13:00
             in_quiet = hour >= quiet_start or hour < quiet_end
         else:
             in_quiet = quiet_start <= hour < quiet_end
         if in_quiet:
-            logger.debug(f"[filter] quiet hours active for {prefs['email']}")
             return False
 
     return True
@@ -101,7 +80,6 @@ def user_wants_alert(prefs: dict, alert: dict) -> bool:
 # ── Resend sender ─────────────────────────────────────────────────────────────
 
 async def _send_via_resend(to_email: str, subject: str, html_body: str) -> bool:
-    """Fire-and-forget POST to Resend API."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
@@ -134,25 +112,13 @@ async def dispatch_alert_to_all_users(
     html_body: str,
     background_tasks: Optional[BackgroundTasks] = None,
 ) -> None:
-    """
-    Fetch all user preferences, filter, and send the alert to qualifying users.
-
-    If background_tasks is provided, sends are queued as background jobs.
-    Otherwise sends are awaited inline (useful for testing).
-
-    alert dict:
-        symbol, alert_type, score, timestamp
-    """
     all_prefs = await get_all_user_preferences()
-
     for prefs in all_prefs:
         if not user_wants_alert(prefs, alert):
             continue
-
         email = prefs.get("email")
         if not email:
             continue
-
         if background_tasks:
             background_tasks.add_task(_send_via_resend, email, subject, html_body)
         else:
@@ -164,15 +130,8 @@ async def send_digest(
     alerts: list[dict],
     build_html_fn,
 ) -> None:
-    """
-    Send a batched digest email to a single user.
-    Filters the alert list through their preferences first.
-
-    build_html_fn: callable(list[dict]) -> (subject: str, html: str)
-    """
     qualifying = [a for a in alerts if user_wants_alert(user_prefs, a)]
     if not qualifying:
         return
-
     subject, html_body = build_html_fn(qualifying)
     await _send_via_resend(user_prefs["email"], subject, html_body)
