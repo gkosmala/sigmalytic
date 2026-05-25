@@ -1,191 +1,178 @@
 """
-================================================================================
-SIGMALYTIC QUANT CORPORATION
-Async Email Alert Service
-================================================================================
-File    : email_service.py
-Version : 1.0.0
-Date    : 2026-05-24
-
-PURPOSE
--------
-Asynchronous email alert router using Resend and FastAPI BackgroundTasks.
-Delivers confluence alerts to subscribers without blocking the 60-second
-scan loop.
-
-This is the primary notification channel while Twilio A2P 10DLC
-registration is pending.
-
-NOT FINANCIAL ADVICE. RESEARCH INFRASTRUCTURE ONLY.
-================================================================================
+email_service.py — Sigmalytic Quant
+Async Resend email router via FastAPI BackgroundTasks.
+Now preference-aware: pulls user_preferences from Supabase before sending.
 """
 
 import os
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
-import resend
+from datetime import datetime, timezone
+from typing import Optional
 
-log = logging.getLogger("email_service")
+import httpx
+from fastapi import BackgroundTasks
 
-# ── Resend API key ─────────────────────────────────────────────────────────────
-resend.api_key = os.environ.get("RESEND_API_KEY", "")
+from supabase import create_client, Client
 
-# ── Router ─────────────────────────────────────────────────────────────────────
-router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
+logger = logging.getLogger(__name__)
 
+RESEND_API_KEY = os.environ["RESEND_API_KEY"]
+RESEND_URL = "https://api.resend.com/emails"
+FROM_ADDRESS = os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com")
 
-# ── Payload model ──────────────────────────────────────────────────────────────
-class ConfluenceAlertPayload(BaseModel):
-    ticker         : str
-    score          : int
-    price          : float
-    setup_type     : str   # e.g. 'Spring Reversal', 'Upthrust', 'Apex Absorption'
-    recipient_email: str
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]  # bypasses RLS
+
+_supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-# ================================================================================
-# CORE EMAIL FUNCTION
-# ================================================================================
+# ── Preference loader ────────────────────────────────────────────────────────
 
-def execute_async_email_send(
-    to_email  : str,
-    ticker    : str,
-    score     : int,
-    price     : float,
-    setup_type: str
+async def get_all_user_preferences() -> list[dict]:
+    """Fetch all user preference rows from Supabase."""
+    try:
+        result = _supabase.table("user_preferences").select("*").execute()
+        return result.data or []
+    except Exception as e:
+        logger.error(f"[email_service] Failed to fetch user preferences: {e}")
+        return []
+
+
+# ── Filter logic ─────────────────────────────────────────────────────────────
+
+def user_wants_alert(prefs: dict, alert: dict) -> bool:
+    """
+    Returns True if this alert passes all of the user's filter criteria.
+
+    alert dict expected keys:
+        symbol      str         e.g. "AAPL"
+        alert_type  str         e.g. "wyckoff" | "gann" | "ab_score" | "elliott" | "fibonacci"
+        score       int         confluence score 0–100
+        timestamp   datetime    UTC-aware datetime of the alert
+    """
+    symbol      = alert.get("symbol", "").upper()
+    alert_type  = alert.get("alert_type", "")
+    score       = alert.get("score", 0)
+    ts: datetime = alert.get("timestamp", datetime.now(timezone.utc))
+
+    # 1. Watchlist filter — empty watchlist means ALL symbols
+    watchlist = prefs.get("watchlist") or []
+    if watchlist and symbol not in [s.upper() for s in watchlist]:
+        logger.debug(f"[filter] {symbol} not in watchlist for {prefs['email']}")
+        return False
+
+    # 2. Alert type filter
+    allowed_types = prefs.get("alert_types") or []
+    if allowed_types and alert_type not in allowed_types:
+        logger.debug(f"[filter] alert_type '{alert_type}' not in allowed types for {prefs['email']}")
+        return False
+
+    # 3. Minimum score gate
+    min_score = prefs.get("min_score", 60)
+    if score < min_score:
+        logger.debug(f"[filter] score {score} < min_score {min_score} for {prefs['email']}")
+        return False
+
+    # 4. Market hours filter (9:30–16:00 ET = 13:30–20:00 UTC, Mon–Fri)
+    if prefs.get("market_hours_only", True):
+        weekday = ts.weekday()  # 0=Mon, 6=Sun
+        hour_utc = ts.hour + ts.minute / 60
+        if weekday >= 5 or not (13.5 <= hour_utc <= 20.0):
+            logger.debug(f"[filter] outside market hours for {prefs['email']}")
+            return False
+
+    # 5. Quiet hours filter
+    quiet_start = prefs.get("quiet_start_utc")
+    quiet_end   = prefs.get("quiet_end_utc")
+    if quiet_start is not None and quiet_end is not None:
+        hour = ts.hour
+        if quiet_start > quiet_end:
+            # Wraps midnight, e.g. 21:00–13:00
+            in_quiet = hour >= quiet_start or hour < quiet_end
+        else:
+            in_quiet = quiet_start <= hour < quiet_end
+        if in_quiet:
+            logger.debug(f"[filter] quiet hours active for {prefs['email']}")
+            return False
+
+    return True
+
+
+# ── Resend sender ─────────────────────────────────────────────────────────────
+
+async def _send_via_resend(to_email: str, subject: str, html_body: str) -> bool:
+    """Fire-and-forget POST to Resend API."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                RESEND_URL,
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": FROM_ADDRESS,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body,
+                },
+            )
+            if resp.status_code not in (200, 201):
+                logger.error(f"[resend] Failed for {to_email}: {resp.status_code} {resp.text}")
+                return False
+            return True
+    except Exception as e:
+        logger.error(f"[resend] Exception sending to {to_email}: {e}")
+        return False
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+async def dispatch_alert_to_all_users(
+    alert: dict,
+    subject: str,
+    html_body: str,
+    background_tasks: Optional[BackgroundTasks] = None,
 ) -> None:
     """
-    Builds and sends a rich HTML confluence alert email via Resend.
-    Called as a FastAPI BackgroundTask — never blocks the scan loop.
+    Fetch all user preferences, filter, and send the alert to qualifying users.
+
+    If background_tasks is provided, sends are queued as background jobs.
+    Otherwise sends are awaited inline (useful for testing).
+
+    alert dict:
+        symbol, alert_type, score, timestamp
     """
-    if not resend.api_key:
-        log.warning("RESEND_API_KEY not set — email not sent.")
+    all_prefs = await get_all_user_preferences()
+
+    for prefs in all_prefs:
+        if not user_wants_alert(prefs, alert):
+            continue
+
+        email = prefs.get("email")
+        if not email:
+            continue
+
+        if background_tasks:
+            background_tasks.add_task(_send_via_resend, email, subject, html_body)
+        else:
+            await _send_via_resend(email, subject, html_body)
+
+
+async def send_digest(
+    user_prefs: dict,
+    alerts: list[dict],
+    build_html_fn,
+) -> None:
+    """
+    Send a batched digest email to a single user.
+    Filters the alert list through their preferences first.
+
+    build_html_fn: callable(list[dict]) -> (subject: str, html: str)
+    """
+    qualifying = [a for a in alerts if user_wants_alert(user_prefs, a)]
+    if not qualifying:
         return
 
-    try:
-        html_content = f"""
-        <div style="background-color:#090d16;color:#f8fafc;padding:32px;
-                    font-family:sans-serif;border-radius:16px;max-width:520px;
-                    border:1px solid #1e293b;">
-
-            <div style="border-bottom:1px solid #1e293b;padding-bottom:16px;
-                        margin-bottom:20px;">
-                <span style="background-color:#f59e0b;color:#090d16;font-size:11px;
-                             font-weight:bold;padding:4px 8px;border-radius:4px;
-                             text-transform:uppercase;">
-                    Confluence Triggered
-                </span>
-                <h2 style="color:#ffffff;margin:8px 0 0 0;font-size:22px;">
-                    Sigmalytic Intelligence Alert
-                </h2>
-            </div>
-
-            <p style="font-size:15px;color:#cbd5e1;line-height:1.5;">
-                The confluence engine has verified an imminent
-                <strong>{setup_type}</strong> setup on <strong>{ticker}</strong>.
-            </p>
-
-            <div style="background-color:#0f172a;padding:20px;border-radius:12px;
-                        margin:24px 0;border:1px solid #334155;">
-                <table style="width:100%;font-size:14px;border-collapse:collapse;">
-                    <tr>
-                        <td style="padding:6px 0;color:#94a3b8;">Execution Node:</td>
-                        <td style="padding:6px 0;text-align:right;color:#ffffff;
-                                   font-weight:bold;font-family:monospace;">
-                            ${price:.2f}
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;color:#94a3b8;">Matrix Confluence:</td>
-                        <td style="padding:6px 0;text-align:right;color:#10b981;
-                                   font-weight:bold;">
-                            {score}% Match
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:6px 0;color:#94a3b8;">Engine Validation:</td>
-                        <td style="padding:6px 0;text-align:right;color:#eab308;
-                                   font-weight:bold;">
-                            Gann + Wyckoff Verified
-                        </td>
-                    </tr>
-                </table>
-            </div>
-
-            <p style="font-size:13px;color:#64748b;margin-bottom:24px;">
-                Price is testing the low-risk danger point.
-                Ensure your protective stop levels are configured
-                within structural parameters.
-            </p>
-
-            <a href="https://sigmalytic-frontend.onrender.com"
-               style="display:block;text-align:center;background-color:#2563eb;
-                      color:#ffffff;padding:14px 24px;text-decoration:none;
-                      font-weight:bold;border-radius:8px;font-size:14px;
-                      box-shadow:0 4px 12px rgba(37,99,235,0.2);">
-                Open Sigmalytic Dashboard
-            </a>
-        </div>
-        """
-
-        resend.Emails.send({
-            "from"   : "Sigmalytic Engine <alerts@sigmalyticquantcorp.com>",
-            "to"     : to_email,
-            "subject": f"[SIGNAL] {setup_type} on {ticker} — {score}% Confluence",
-            "html"   : html_content
-        })
-
-        log.info(f"Alert email sent to {to_email} for {ticker} ({score}%)")
-
-    except Exception as e:
-        log.error(f"Resend error for {ticker} → {to_email}: {str(e)}")
-
-
-# ================================================================================
-# API ENDPOINT
-# ================================================================================
-
-@router.post("/dispatch-confluence-alert")
-async def dispatch_confluence_alert(
-    payload         : ConfluenceAlertPayload,
-    background_tasks: BackgroundTasks
-):
-    """
-    Receives a confluence alert payload from the scan loop.
-    Offloads email delivery to a background thread instantly
-    without blocking the 60-second radar cycle.
-    """
-    try:
-        background_tasks.add_task(
-            execute_async_email_send,
-            to_email   = payload.recipient_email,
-            ticker     = payload.ticker,
-            score      = payload.score,
-            price      = payload.price,
-            setup_type = payload.setup_type
-        )
-        return {
-            "status" : "accepted",
-            "message": f"Alert queued for {payload.ticker} → {payload.recipient_email}"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ================================================================================
-# DIRECT SEND UTILITY (called internally by radar_alerts.py)
-# ================================================================================
-
-def send_confluence_alert_direct(
-    to_email  : str,
-    ticker    : str,
-    score     : int,
-    price     : float,
-    setup_type: str
-) -> None:
-    """
-    Direct synchronous send — use when BackgroundTasks is not available.
-    Called by radar_alerts.py when a status change triggers an alert.
-    """
-    execute_async_email_send(to_email, ticker, score, price, setup_type)
+    subject, html_body = build_html_fn(qualifying)
+    await _send_via_resend(user_prefs["email"], subject, html_body)

@@ -249,7 +249,8 @@ app.include_router(radar_router)
 app.include_router(snapshot_router)
 app.include_router(legal_router)
 app.include_router(email_router)        # ← EMAIL ALERT ROUTER
-
+from preferences_router import router as preferences_router
+app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
 
