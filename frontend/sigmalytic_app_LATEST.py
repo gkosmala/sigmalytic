@@ -19,6 +19,7 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles,
     get_key_levels, build_confluence_nodes, run_decision,
 )
+from preferences_tab import build_preferences_tab, register_preferences_callbacks
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
@@ -786,7 +787,7 @@ def build_main_app():
                 "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key,label in [("command","Command Center"),("feed","Live Feed"),
                                ("performance","Performance"),("behavior","Behavioral Intelligence"),
-                               ("import","Import History"),("setup","Setup")]
+                               ("import","Import History"),("setup","Setup"),("preferences","Preferences")]
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
                   "justifyContent":"center","overflowX":"auto"}),
@@ -914,7 +915,7 @@ def load_symbol(_,ticker):
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),
               Input("tab-performance","n_clicks"),Input("tab-behavior","n_clicks"),
               Input("tab-import","n_clicks"),
-              Input("tab-setup","n_clicks"),prevent_initial_call=True)
+              Input("tab-setup","n_clicks"),Input("tab-preferences","n_clicks"),prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
     if not ctx.triggered: return no_update
@@ -979,13 +980,14 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),
               Input("s-live-mode","data"),Input("i-clock","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),
-              State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf):
+              State("s-symbol","data"),State("s-tf","data"),State("s-session","data"))
+def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf,session):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
+    if tab in ("behavior","import","setup","performance","feed","preferences") and trigger == "i-clock":
         return no_update
+    if tab=="preferences": return build_preferences_tab(user_id=(session or {}).get("user_id",""))
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -1104,6 +1106,8 @@ def reset_trade_history(n_clicks):
                              style={"color":"#ff4444"})
     except Exception as e:
         return html.Span(f"❌ Error: {str(e)}", style={"color":"#ff4444"})
+
+register_preferences_callbacks(app)
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
