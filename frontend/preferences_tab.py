@@ -144,7 +144,14 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             ], style={"display":"flex","alignItems":"center","gap":"16px"}),
         ]),
 
-        # Save
+        # Load + Save
+        html.Button("↓ Load My Saved Settings", id="prefs-load-btn", n_clicks=0, style={
+            "width":"100%","background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER_T}",
+            "borderRadius":"12px","color":TEAL_DIM,
+            "fontFamily":"DM Sans, sans-serif","fontSize":"13px",
+            "fontWeight":"700","padding":"12px","cursor":"pointer",
+            "marginBottom":"10px",
+        }),
         html.Button("Save Preferences", id="prefs-save-btn", n_clicks=0, style={
             "width":"100%","background":TEAL,"border":"none","borderRadius":"12px",
             "color":WHITE,"fontFamily":"DM Sans, sans-serif","fontSize":"14px",
@@ -192,11 +199,11 @@ def register_preferences_callbacks(app):
         Output("pref-hours-btn",     "style"),
         Output("prefs-watchlist",    "data"),
         Output("prefs-watchlist-display", "children"),
-        Input("s-tab",               "data"),
+        Input("prefs-load-btn",       "n_clicks"),
         State("s-session",           "data"),
         prevent_initial_call=True,
     )
-    def load_saved_preferences(tab, session):
+    def load_saved_preferences(n, session):
         def defaults():
             return (
                 "realtime",
@@ -207,13 +214,13 @@ def register_preferences_callbacks(app):
                 [], [html.Span("All symbols — no filter applied",
                                style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})],
             )
-        if tab != "preferences":
-            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        if not n:
+            return (no_update,) * 16
         user_id = (session or {}).get("user_id", "")
         if not user_id:
             return defaults()
         try:
-            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=5)
+            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=(2, 2))
             if not r.ok:
                 return defaults()
             p = r.json()
