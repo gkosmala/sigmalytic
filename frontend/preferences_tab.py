@@ -174,6 +174,78 @@ def _inactive_btn():
 
 def register_preferences_callbacks(app):
 
+    # ── Load saved preferences from backend on startup ─────────────────────────
+    @app.callback(
+        Output("pref-mode-val",      "data"),
+        Output("pref-mode-realtime", "style"),
+        Output("pref-mode-hourly",   "style"),
+        Output("pref-mode-daily",    "style"),
+        Output("pref-types-val",     "data"),
+        Output("pref-type-wyckoff",  "style"),
+        Output("pref-type-gann",     "style"),
+        Output("pref-type-ab_score", "style"),
+        Output("pref-type-elliott",  "style"),
+        Output("pref-type-fibonacci","style"),
+        Output("prefs-min-score",    "value"),
+        Output("pref-hours-val",     "data"),
+        Output("pref-hours-btn",     "children"),
+        Output("pref-hours-btn",     "style"),
+        Output("prefs-watchlist",    "data"),
+        Output("prefs-watchlist-display", "children"),
+        Input("prefs-user-id",       "data"),
+        prevent_initial_call=False,
+    )
+    def load_saved_preferences(user_id):
+        defaults = (
+            "realtime",
+            _active_btn(), _inactive_btn(), _inactive_btn(),
+            {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+            _active_btn(), _active_btn(), _active_btn(), _inactive_btn(), _inactive_btn(),
+            60,
+            True, "ON", _active_btn(),
+            [], [html.Span("All symbols — no filter applied",
+                           style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})],
+        )
+        if not user_id:
+            return defaults
+        try:
+            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=5)
+            if not r.ok:
+                return defaults
+            p = r.json()
+            mode = p.get("delivery_mode", "realtime")
+            mode_styles = [_active_btn() if x==mode else _inactive_btn()
+                           for x in ["realtime","hourly","daily"]]
+            types = {
+                "wyckoff":   "wyckoff"   in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "gann":      "gann"      in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "ab_score":  "ab_score"  in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "elliott":   "elliott"   in p.get("alert_types", []),
+                "fibonacci": "fibonacci" in p.get("alert_types", []),
+            }
+            min_score  = p.get("min_score", 60)
+            hours      = p.get("market_hours_only", True)
+            watchlist  = p.get("watchlist", [])
+            return (
+                mode,
+                mode_styles[0], mode_styles[1], mode_styles[2],
+                types,
+                _active_btn() if types["wyckoff"]   else _inactive_btn(),
+                _active_btn() if types["gann"]      else _inactive_btn(),
+                _active_btn() if types["ab_score"]  else _inactive_btn(),
+                _active_btn() if types["elliott"]   else _inactive_btn(),
+                _active_btn() if types["fibonacci"] else _inactive_btn(),
+                min_score,
+                hours,
+                "ON" if hours else "OFF",
+                _active_btn() if hours else _inactive_btn(),
+                watchlist,
+                _render_watchlist(watchlist),
+            )
+        except Exception:
+            return defaults
+
+
     # ── Delivery mode ──────────────────────────────────────────────────────────
     @app.callback(
         Output("pref-mode-val",       "data"),
