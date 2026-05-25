@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sigmalytic — Alert Preferences</title>
+<style>
+  :root {
+    --gold: #c9a84c;
+    --gold-dim: #8a6f2e;
+    --bg: #0d0d0d;
+    --surface: #111;
+    --surface2: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --muted: #888;
+    --green: #4caf50;
+    --red: #f44336;
+    --orange: #ff9800;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: monospace;
+    min-height: 100vh;
+    padding: 32px 16px;
+  }
+
+  .container {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .logo {
+    font-size: 40px;
+    font-weight: 900;
+    color: var(--gold);
+    line-height: 1;
+  }
+
+  .tagline {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.25em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  .page-title {
+    font-size: 18px;
+    color: var(--text);
+    margin-top: 16px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--gold);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .field {
+    margin-bottom: 20px;
+  }
+
+  .field:last-child {
+    margin-bottom: 0;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+
+  .description {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* Score slider */
+  .slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gold);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+  }
+
+  .slider-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: var(--gold);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* Toggle buttons */
+  .toggle-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .toggle-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: monospace;
+    font-size: 12px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .toggle-btn.active {
+    background: rgba(201, 168, 76, 0.15);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  .toggle-btn:hover:not(.active) {
+    border-color: var(--gold-dim);
+    color: var(--text);
+  }
+
+  /* Radio-style delivery mode */
+  .radio-group {
+    display: flex;
+    gap: 8px;
+  }
+
+  .radio-btn {
+    flex: 1;
+    text-align: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: monospace;
+    font-size: 12px;
+    padding: 10px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .radio-btn.active {
+    background: rgba(201, 168, 76, 0.15);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  /* Switch */
+  .switch-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+  }
+
+  .switch input { display: none; }
+
+  .switch-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .switch-track::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: var(--muted);
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .switch input:checked + .switch-track {
+    background: rgba(201, 168, 76, 0.3);
+  }
+
+  .switch input:checked + .switch-track::after {
+    transform: translateX(20px);
+    background: var(--gold);
+  }
+
+  /* Watchlist input */
+  .watchlist-input-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: monospace;
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    text-transform: uppercase;
+    transition: border-color 0.15s;
+  }
+
+  input[type="text"]:focus {
+    border-color: var(--gold-dim);
+  }
+
+  input[type="text"]::placeholder {
+    color: var(--muted);
+    text-transform: none;
+  }
+
+  .add-btn {
+    background: rgba(201, 168, 76, 0.15);
+    border: 1px solid var(--gold-dim);
+    border-radius: 6px;
+    color: var(--gold);
+    font-family: monospace;
+    font-size: 13px;
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .add-btn:hover {
+    background: rgba(201, 168, 76, 0.25);
+  }
+
+  .watchlist-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 28px;
+  }
+
+  .tag {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tag-remove {
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .tag-remove:hover { color: var(--red); }
+
+  .empty-watchlist {
+    font-size: 11px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Save button */
+  .save-btn {
+    width: 100%;
+    background: var(--gold);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 14px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .save-btn:hover { opacity: 0.85; }
+  .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .status-msg {
+    text-align: center;
+    font-size: 13px;
+    margin-top: 12px;
+    min-height: 20px;
+    transition: opacity 0.3s;
+  }
+
+  .status-msg.success { color: var(--green); }
+  .status-msg.error   { color: var(--red); }
+
+  .back-link {
+    display: block;
+    text-align: center;
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--muted);
+    text-decoration: none;
+  }
+
+  .back-link:hover { color: var(--gold); }
+
+  .loading-overlay {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <div class="logo">Σ</div>
+    <div class="tagline">Sigmalytic Quant Corporation</div>
+    <div class="page-title">Alert Preferences</div>
+  </div>
+
+  <div id="loading" class="loading-overlay">Loading your preferences…</div>
+  <div id="main" style="display:none;">
+
+    <!-- Delivery Mode -->
+    <div class="card">
+      <div class="card-title">📬 Delivery Mode</div>
+      <div class="field">
+        <label>How often do you want alerts?</label>
+        <div class="radio-group">
+          <div class="radio-btn active" data-mode="realtime" onclick="setMode(this)">Real-time</div>
+          <div class="radio-btn" data-mode="hourly" onclick="setMode(this)">Hourly Digest</div>
+          <div class="radio-btn" data-mode="daily" onclick="setMode(this)">Daily Summary</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Score Threshold -->
+    <div class="card">
+      <div class="card-title">🎯 Minimum Score</div>
+      <div class="field">
+        <label>Only alert when confluence score is at least:</label>
+        <div class="slider-wrap">
+          <input type="range" id="minScore" min="0" max="100" value="60"
+                 oninput="document.getElementById('scoreVal').textContent = this.value">
+          <div class="slider-value" id="scoreVal">60</div>
+        </div>
+        <div class="description">Higher = fewer, higher-quality alerts</div>
+      </div>
+    </div>
+
+    <!-- Alert Types -->
+    <div class="card">
+      <div class="card-title">⚡ Alert Types</div>
+      <div class="field">
+        <label>Which signals do you want to receive?</label>
+        <div class="toggle-group" id="alertTypes">
+          <div class="toggle-btn active" data-type="wyckoff" onclick="toggleType(this)">Wyckoff</div>
+          <div class="toggle-btn active" data-type="gann" onclick="toggleType(this)">Gann</div>
+          <div class="toggle-btn active" data-type="ab_score" onclick="toggleType(this)">A/B Score</div>
+          <div class="toggle-btn" data-type="elliott" onclick="toggleType(this)">Elliott Wave</div>
+          <div class="toggle-btn" data-type="fibonacci" onclick="toggleType(this)">Fibonacci</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Watchlist -->
+    <div class="card">
+      <div class="card-title">📋 Watchlist</div>
+      <div class="field">
+        <label>Only alert on these symbols (leave empty for all 1,403)</label>
+        <div class="watchlist-input-row">
+          <input type="text" id="symbolInput" placeholder="e.g. AAPL" maxlength="5"
+                 onkeydown="if(event.key==='Enter') addSymbol()">
+          <button class="add-btn" onclick="addSymbol()">Add</button>
+        </div>
+        <div class="watchlist-tags" id="watchlistTags">
+          <span class="empty-watchlist">All symbols — no filter applied</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market Hours -->
+    <div class="card">
+      <div class="card-title">🕐 Market Hours</div>
+      <div class="field">
+        <div class="switch-row">
+          <div>
+            <label style="margin-bottom:2px;">Market hours only</label>
+            <div class="description">Suppress alerts outside 9:30–4:00 PM ET</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="marketHours" checked>
+            <div class="switch-track"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save -->
+    <button class="save-btn" id="saveBtn" onclick="savePreferences()">Save Preferences</button>
+    <div class="status-msg" id="statusMsg"></div>
+
+  </div>
+
+  <a class="back-link" href="https://sigmalytic-frontend.onrender.com">← Back to Sigmalytic</a>
+</div>
+
+<script>
+  const BACKEND = 'https://sigmalytic-backend.onrender.com';
+  let watchlist = [];
+  let userId = null;
+
+  // ── Get user ID from URL or localStorage ─────────────────────────────────
+  function getUserId() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('user_id') || localStorage.getItem('sigmalytic_user_id') || null;
+  }
+
+  // ── Load existing preferences ─────────────────────────────────────────────
+  async function loadPreferences() {
+    userId = getUserId();
+
+    if (!userId) {
+      document.getElementById('loading').textContent = 'No user ID found. Please log in first.';
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BACKEND}/api/preferences/${userId}`);
+      if (res.ok) {
+        const prefs = await res.json();
+        applyPreferences(prefs);
+      }
+      // 404 = new user, just show defaults
+    } catch (e) {
+      console.warn('Could not load preferences:', e);
+    }
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('main').style.display = 'block';
+  }
+
+  function applyPreferences(prefs) {
+    // Delivery mode
+    if (prefs.delivery_mode) {
+      document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('active'));
+      const btn = document.querySelector(`[data-mode="${prefs.delivery_mode}"]`);
+      if (btn) btn.classList.add('active');
+    }
+
+    // Min score
+    if (prefs.min_score !== undefined) {
+      document.getElementById('minScore').value = prefs.min_score;
+      document.getElementById('scoreVal').textContent = prefs.min_score;
+    }
+
+    // Alert types
+    if (prefs.alert_types) {
+      document.querySelectorAll('.toggle-btn').forEach(b => {
+        b.classList.toggle('active', prefs.alert_types.includes(b.dataset.type));
+      });
+    }
+
+    // Watchlist
+    if (prefs.watchlist && prefs.watchlist.length > 0) {
+      watchlist = prefs.watchlist;
+      renderWatchlist();
+    }
+
+    // Market hours
+    if (prefs.market_hours_only !== undefined) {
+      document.getElementById('marketHours').checked = prefs.market_hours_only;
+    }
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function setMode(el) {
+    document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function toggleType(el) {
+    el.classList.toggle('active');
+  }
+
+  function addSymbol() {
+    const input = document.getElementById('symbolInput');
+    const sym = input.value.trim().toUpperCase();
+    if (!sym || watchlist.includes(sym)) { input.value = ''; return; }
+    watchlist.push(sym);
+    input.value = '';
+    renderWatchlist();
+  }
+
+  function removeSymbol(sym) {
+    watchlist = watchlist.filter(s => s !== sym);
+    renderWatchlist();
+  }
+
+  function renderWatchlist() {
+    const container = document.getElementById('watchlistTags');
+    if (watchlist.length === 0) {
+      container.innerHTML = '<span class="empty-watchlist">All symbols — no filter applied</span>';
+      return;
+    }
+    container.innerHTML = watchlist.map(s =>
+      `<div class="tag">${s}<span class="tag-remove" onclick="removeSymbol('${s}')">×</span></div>`
+    ).join('');
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  async function savePreferences() {
+    if (!userId) {
+      showStatus('No user ID — please log in first.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    const payload = {
+      delivery_mode:     document.querySelector('.radio-btn.active')?.dataset.mode || 'realtime',
+      min_score:         parseInt(document.getElementById('minScore').value),
+      alert_types:       [...document.querySelectorAll('.toggle-btn.active')].map(b => b.dataset.type),
+      watchlist:         watchlist,
+      market_hours_only: document.getElementById('marketHours').checked,
+    };
+
+    try {
+      // Try PATCH first, fall back to POST for new users
+      let res = await fetch(`${BACKEND}/api/preferences/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 404) {
+        // New user — create with POST
+        const email = localStorage.getItem('sigmalytic_email') || prompt('Enter your email:');
+        res = await fetch(`${BACKEND}/api/preferences/${userId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, email, user_id: userId }),
+        });
+      }
+
+      if (res.ok) {
+        showStatus('✅ Preferences saved!', 'success');
+      } else {
+        const err = await res.json();
+        showStatus(`Error: ${err.detail || 'Save failed'}`, 'error');
+      }
+    } catch (e) {
+      showStatus(`Error: ${e.message}`, 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Save Preferences';
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    el.className = `status-msg ${type}`;
+    setTimeout(() => { el.textContent = ''; el.className = 'status-msg'; }, 4000);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  loadPreferences();
+</script>
+</body>
+</html>

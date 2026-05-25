@@ -86,7 +86,7 @@ def build_alert_html(
         {"<p style='margin-top:16px;font-size:13px;color:#aaa;'>" + message + "</p>" if message else ""}
         <p style="margin-top:24px;font-size:11px;color:#444;border-top:1px solid #222;padding-top:12px;">
           Sigmalytic Quant — not financial advice.<br>
-          <a href="https://sigmalytic.com/preferences" style="color:#c9a84c;">
+          <a href="https://sigmalytic-frontend.onrender.com/preferences.html" style="color:#c9a84c;">
             Manage alert preferences
           </a>
         </p>
@@ -187,7 +187,7 @@ def send_daily_summary(top_symbols: list[dict]) -> bool:
         </table>
         <p style="margin-top:24px;font-size:11px;color:#444;border-top:1px solid #222;padding-top:12px;">
           Sigmalytic Quant — not financial advice.<br>
-          <a href="https://sigmalytic.com/preferences" style="color:#c9a84c;">
+          <a href="https://sigmalytic-frontend.onrender.com/preferences.html" style="color:#c9a84c;">
             Manage alert preferences
           </a>
         </p>
