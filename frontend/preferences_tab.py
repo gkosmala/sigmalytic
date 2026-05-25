@@ -193,7 +193,7 @@ def register_preferences_callbacks(app):
         Output("prefs-watchlist",    "data"),
         Output("prefs-watchlist-display", "children"),
         Input("prefs-user-id",       "data"),
-        prevent_initial_call=False,
+        prevent_initial_call=True,
     )
     def load_saved_preferences(user_id):
         defaults = (
