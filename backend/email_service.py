@@ -10,11 +10,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
-from fastapi import BackgroundTasks
-
+from fastapi import APIRouter, BackgroundTasks
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
+
+# ── Router (mounted in main.py) ───────────────────────────────────────────────
+router = APIRouter()
 
 RESEND_API_KEY = os.environ["RESEND_API_KEY"]
 RESEND_URL = "https://api.resend.com/emails"
@@ -26,7 +28,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 _supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
-# ── Preference loader ────────────────────────────────────────────────────────
+# ── Preference loader ─────────────────────────────────────────────────────────
 
 async def get_all_user_preferences() -> list[dict]:
     try:
@@ -37,7 +39,7 @@ async def get_all_user_preferences() -> list[dict]:
         return []
 
 
-# ── Filter logic ─────────────────────────────────────────────────────────────
+# ── Filter logic ──────────────────────────────────────────────────────────────
 
 def user_wants_alert(prefs: dict, alert: dict) -> bool:
     symbol      = alert.get("symbol", "").upper()
