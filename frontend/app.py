@@ -732,11 +732,6 @@ def build_main_app():
 
 app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
-    dcc.Store(id="prefs-delivery-mode",    data="realtime"),
-    dcc.Store(id="prefs-market-hours-val", data=True),
-    dcc.Store(id="prefs-types", data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}),
-    dcc.Store(id="prefs-watchlist",        data=[]),
-    dcc.Store(id="prefs-user-id",          data=""),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
     dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
