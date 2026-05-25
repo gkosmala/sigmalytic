@@ -727,6 +727,7 @@ def build_main_app():
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px","background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
+        html.Div(id="prefs-container", style={"display":"none"}),
     ],style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
@@ -1009,9 +1010,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="preferences":
-        if trigger != "s-tab": return no_update
-        return build_preferences_tab(user_id=(session or {}).get("user_id",""))
+    if tab=="preferences": return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -1204,6 +1203,26 @@ app.clientside_callback(
 )
 
 register_billing_callbacks(app)
+
+
+@app.callback(
+    Output("prefs-container", "children"),
+    Input("s-session", "data"),
+    prevent_initial_call=False,
+)
+def init_preferences_tab(session):
+    user_id = (session or {}).get("user_id", "")
+    return build_preferences_tab(user_id=user_id)
+
+@app.callback(
+    Output("main-content",    "style"),
+    Output("prefs-container", "style"),
+    Input("s-tab", "data"),
+)
+def show_hide_preferences(tab):
+    if tab == "preferences":
+        return {"display": "none"}, {"display": "block"}
+    return {}, {"display": "none"}
 
 register_preferences_callbacks(app)
 
