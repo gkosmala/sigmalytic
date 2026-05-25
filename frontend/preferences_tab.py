@@ -78,14 +78,35 @@ def _type_btn_style(active=False):
         "transition": "all .15s",
     }
 
+def _hours_btn_style(active=True):
+    if active:
+        return {
+            "marginLeft": "auto", "background": TEAL_GLOW,
+            "border": f"1px solid {BORDER_T}", "borderRadius": "8px",
+            "color": TEAL_DIM, "fontFamily": "DM Sans, sans-serif",
+            "fontSize": "12px", "fontWeight": "800",
+            "padding": "8px 18px", "cursor": "pointer", "minWidth": "60px",
+        }
+    return {
+        "marginLeft": "auto", "background": "rgba(0,0,0,.2)",
+        "border": f"1px solid {BORDER}", "borderRadius": "8px",
+        "color": MUTED, "fontFamily": "DM Sans, sans-serif",
+        "fontSize": "12px", "fontWeight": "800",
+        "padding": "8px 18px", "cursor": "pointer", "minWidth": "60px",
+    }
+
 
 def build_preferences_tab(user_id: str = "") -> html.Div:
     return html.Div([
-        dcc.Store(id="prefs-user-id", data=user_id),
-        dcc.Store(id="prefs-watchlist", data=[]),
-        # Store delivery mode and market hours as state
-        dcc.Store(id="prefs-delivery-mode", data="realtime"),
+        # Stores — single source of truth
+        dcc.Store(id="prefs-user-id",         data=user_id),
+        dcc.Store(id="prefs-watchlist",        data=[]),
+        dcc.Store(id="prefs-delivery-mode",    data="realtime"),
         dcc.Store(id="prefs-market-hours-val", data=True),
+        dcc.Store(id="prefs-types", data={
+            "wyckoff": True, "gann": True, "ab_score": True,
+            "elliott": False, "fibonacci": False
+        }),
 
         # Header
         html.Div([
@@ -100,14 +121,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
         _card([
             _section_title("📬 Delivery Mode"),
             _label("How often do you want alerts?"),
-            html.Div([
-                html.Button("Real-time", id="mode-realtime", n_clicks=0,
-                           style=_mode_btn_style(True)),
-                html.Button("Hourly Digest", id="mode-hourly", n_clicks=0,
-                           style=_mode_btn_style(False)),
-                html.Button("Daily Summary", id="mode-daily", n_clicks=0,
-                           style=_mode_btn_style(False)),
-            ], style={"display": "flex"}),
+            html.Div(id="delivery-mode-group", style={"display": "flex"}),
         ]),
 
         # Min Score
@@ -130,15 +144,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
         _card([
             _section_title("⚡ Alert Types"),
             _label("Select any combination — or activate all:"),
-            html.Div([
-                html.Button("✓ All",           id="type-select-all", n_clicks=0, style=_type_btn_style(False)),
-                html.Button("✗ None",          id="type-clear-all",  n_clicks=0, style=_type_btn_style(False)),
-                html.Button("Structure Alerts",id="type-wyckoff",    n_clicks=0, style=_type_btn_style(True)),
-                html.Button("Vector Alerts",   id="type-gann",       n_clicks=0, style=_type_btn_style(True)),
-                html.Button("Score Alerts",    id="type-ab_score",   n_clicks=0, style=_type_btn_style(True)),
-                html.Button("Cycle Alerts",    id="type-elliott",    n_clicks=0, style=_type_btn_style(False)),
-                html.Button("Level Alerts",    id="type-fibonacci",  n_clicks=0, style=_type_btn_style(False)),
-            ]),
+            html.Div(id="alert-types-group"),
         ]),
 
         # Watchlist
@@ -181,7 +187,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                                          style={"color": MUTED, "fontSize": "12px", "fontStyle": "italic"})]),
         ]),
 
-        # Market Hours — simple toggle button instead of checklist
+        # Market Hours
         _card([
             _section_title("🕐 Market Hours"),
             html.Div([
@@ -190,24 +196,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                     html.Div("Suppress alerts outside 9:30–4:00 PM ET",
                              style={"color": MUTED, "fontSize": "11px", "marginTop": "2px"}),
                 ]),
-                html.Button(
-                    "ON",
-                    id="prefs-market-hours-btn",
-                    n_clicks=0,
-                    style={
-                        "marginLeft": "auto",
-                        "background": TEAL_GLOW,
-                        "border": f"1px solid {BORDER_T}",
-                        "borderRadius": "8px",
-                        "color": TEAL_DIM,
-                        "fontFamily": "DM Sans, sans-serif",
-                        "fontSize": "12px",
-                        "fontWeight": "800",
-                        "padding": "8px 18px",
-                        "cursor": "pointer",
-                        "minWidth": "60px",
-                    }
-                ),
+                html.Div(id="prefs-market-hours-display"),
             ], style={"display": "flex", "alignItems": "center", "gap": "16px"}),
         ]),
 
@@ -228,7 +217,8 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
         }),
 
         html.Div(id="prefs-status-msg", style={
-            "textAlign": "center", "fontSize": "13px", "minHeight": "20px", "marginBottom": "24px"
+            "textAlign": "center", "fontSize": "13px",
+            "minHeight": "20px", "marginBottom": "24px"
         }),
 
     ], style={"maxWidth": "600px", "margin": "0 auto", "padding": "24px 16px"})
@@ -236,37 +226,62 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
 
 def register_preferences_callbacks(app):
 
-    # ── Delivery mode toggle ───────────────────────────────────────────────────
+    # ── Render delivery mode buttons from store ────────────────────────────────
     @app.callback(
-        Output("mode-realtime", "style"),
-        Output("mode-hourly", "style"),
-        Output("mode-daily", "style"),
+        Output("delivery-mode-group", "children"),
+        Input("prefs-delivery-mode", "data"),
+    )
+    def render_delivery_mode(mode):
+        modes = [("realtime", "Real-time"), ("hourly", "Hourly Digest"), ("daily", "Daily Summary")]
+        buttons = []
+        for key, label in modes:
+            active = (mode == key)
+            btn = html.Button(
+                label,
+                id=f"mode-{key}",
+                n_clicks=0,
+                style=_mode_btn_style(active),
+            )
+            buttons.append(btn)
+        return buttons
+
+    # ── Delivery mode click handlers ───────────────────────────────────────────
+    @app.callback(
         Output("prefs-delivery-mode", "data"),
         Input("mode-realtime", "n_clicks"),
-        Input("mode-hourly", "n_clicks"),
-        Input("mode-daily", "n_clicks"),
+        Input("mode-hourly",   "n_clicks"),
+        Input("mode-daily",    "n_clicks"),
+        State("prefs-delivery-mode", "data"),
         prevent_initial_call=True,
     )
-    def set_delivery_mode(r, h, d):
+    def update_delivery_mode(r, h, d, current):
         ctx = callback_context
         if not ctx.triggered:
-            return _mode_btn_style(True), _mode_btn_style(False), _mode_btn_style(False), "realtime"
+            return current
         trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-        mode_map = {
-            "mode-realtime": ("realtime", True,  False, False),
-            "mode-hourly":   ("hourly",   False, True,  False),
-            "mode-daily":    ("daily",    False, False, True),
-        }
-        mode, ar, ah, ad = mode_map.get(trigger, ("realtime", True, False, False))
-        return _mode_btn_style(ar), _mode_btn_style(ah), _mode_btn_style(ad), mode
+        return {"mode-realtime": "realtime", "mode-hourly": "hourly", "mode-daily": "daily"}.get(trigger, current)
 
-    # ── Alert type toggles ─────────────────────────────────────────────────────
+    # ── Render alert type buttons from store ───────────────────────────────────
     @app.callback(
-        Output("type-wyckoff",  "style"),
-        Output("type-gann",     "style"),
-        Output("type-ab_score", "style"),
-        Output("type-elliott",  "style"),
-        Output("type-fibonacci","style"),
+        Output("alert-types-group", "children"),
+        Input("prefs-types", "data"),
+    )
+    def render_alert_types(types):
+        type_list = [
+            ("type-select-all", "✓ All",           False),
+            ("type-clear-all",  "✗ None",           False),
+            ("type-wyckoff",    "Structure Alerts", types.get("wyckoff",   True)),
+            ("type-gann",       "Vector Alerts",    types.get("gann",      True)),
+            ("type-ab_score",   "Score Alerts",     types.get("ab_score",  True)),
+            ("type-elliott",    "Cycle Alerts",     types.get("elliott",   False)),
+            ("type-fibonacci",  "Level Alerts",     types.get("fibonacci", False)),
+        ]
+        return [html.Button(label, id=btn_id, n_clicks=0, style=_type_btn_style(active))
+                for btn_id, label, active in type_list]
+
+    # ── Alert type click handlers ──────────────────────────────────────────────
+    @app.callback(
+        Output("prefs-types", "data"),
         Input("type-wyckoff",    "n_clicks"),
         Input("type-gann",       "n_clicks"),
         Input("type-ab_score",   "n_clicks"),
@@ -274,63 +289,51 @@ def register_preferences_callbacks(app):
         Input("type-fibonacci",  "n_clicks"),
         Input("type-select-all", "n_clicks"),
         Input("type-clear-all",  "n_clicks"),
-        State("type-wyckoff",   "style"),
-        State("type-gann",      "style"),
-        State("type-ab_score",  "style"),
-        State("type-elliott",   "style"),
-        State("type-fibonacci", "style"),
+        State("prefs-types", "data"),
         prevent_initial_call=True,
     )
-    def toggle_alert_types(nw, ng, na, ne, nf, n_all, n_none,
-                           sw, sg, sa, se, sf):
+    def update_alert_types(nw, ng, na, ne, nf, n_all, n_none, types):
         ctx = callback_context
         if not ctx.triggered:
-            return sw, sg, sa, se, sf
+            return types
         trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        def is_active(s):
-            return s.get("color") == TEAL_DIM
-
         if trigger == "type-select-all":
-            return (_type_btn_style(True),) * 5
+            return {k: True for k in types}
         if trigger == "type-clear-all":
-            return (_type_btn_style(False),) * 5
+            return {k: False for k in types}
+        key_map = {
+            "type-wyckoff": "wyckoff", "type-gann": "gann",
+            "type-ab_score": "ab_score", "type-elliott": "elliott",
+            "type-fibonacci": "fibonacci",
+        }
+        if trigger in key_map:
+            key = key_map[trigger]
+            types = dict(types)
+            types[key] = not types.get(key, False)
+        return types
 
-        states = {"type-wyckoff": sw, "type-gann": sg, "type-ab_score": sa,
-                  "type-elliott": se, "type-fibonacci": sf}
-        if trigger in states:
-            states[trigger] = _type_btn_style(not is_active(states[trigger]))
-
-        return (states["type-wyckoff"], states["type-gann"], states["type-ab_score"],
-                states["type-elliott"], states["type-fibonacci"])
-
-    # ── Market hours toggle ────────────────────────────────────────────────────
+    # ── Render market hours button from store ──────────────────────────────────
     @app.callback(
-        Output("prefs-market-hours-btn", "children"),
-        Output("prefs-market-hours-btn", "style"),
+        Output("prefs-market-hours-display", "children"),
+        Input("prefs-market-hours-val", "data"),
+    )
+    def render_market_hours(val):
+        return html.Button(
+            "ON" if val else "OFF",
+            id="prefs-market-hours-btn",
+            n_clicks=0,
+            style=_hours_btn_style(val),
+        )
+
+    # ── Market hours click handler ─────────────────────────────────────────────
+    @app.callback(
         Output("prefs-market-hours-val", "data"),
         Input("prefs-market-hours-btn", "n_clicks"),
         State("prefs-market-hours-val", "data"),
         prevent_initial_call=True,
     )
     def toggle_market_hours(n, current):
-        new_val = not current
-        if new_val:
-            return "ON", {
-                "marginLeft": "auto", "background": TEAL_GLOW,
-                "border": f"1px solid {BORDER_T}", "borderRadius": "8px",
-                "color": TEAL_DIM, "fontFamily": "DM Sans, sans-serif",
-                "fontSize": "12px", "fontWeight": "800",
-                "padding": "8px 18px", "cursor": "pointer", "minWidth": "60px",
-            }, True
-        else:
-            return "OFF", {
-                "marginLeft": "auto", "background": "rgba(0,0,0,.2)",
-                "border": f"1px solid {BORDER}", "borderRadius": "8px",
-                "color": MUTED, "fontFamily": "DM Sans, sans-serif",
-                "fontSize": "12px", "fontWeight": "800",
-                "padding": "8px 18px", "cursor": "pointer", "minWidth": "60px",
-            }, False
+        return not current
 
     # ── Add symbol to watchlist ────────────────────────────────────────────────
     @app.callback(
@@ -355,24 +358,17 @@ def register_preferences_callbacks(app):
         Output("prefs-status-msg", "children"),
         Output("prefs-status-msg", "style"),
         Input("prefs-save-btn", "n_clicks"),
-        State("prefs-user-id", "data"),
-        State("prefs-delivery-mode", "data"),
-        State("prefs-min-score", "value"),
-        State("prefs-market-hours-val", "data"),
-        State("prefs-watchlist", "data"),
-        State("type-wyckoff",   "style"),
-        State("type-gann",      "style"),
-        State("type-ab_score",  "style"),
-        State("type-elliott",   "style"),
-        State("type-fibonacci", "style"),
-        State("s-session",      "data"),
+        State("prefs-user-id",         "data"),
+        State("prefs-delivery-mode",   "data"),
+        State("prefs-min-score",       "value"),
+        State("prefs-market-hours-val","data"),
+        State("prefs-watchlist",       "data"),
+        State("prefs-types",           "data"),
+        State("s-session",             "data"),
         prevent_initial_call=True,
     )
     def save_preferences(n, user_id, delivery_mode, min_score,
-                         market_hours, watchlist,
-                         s_wyckoff, s_gann, s_ab, s_elliott, s_fib, session):
-
-        # Get user_id and email from session if not passed directly
+                         market_hours, watchlist, types, session):
         if not user_id and session:
             user_id = session.get("user_id", "")
         user_email = (session or {}).get("email", "")
@@ -380,23 +376,13 @@ def register_preferences_callbacks(app):
         if not user_id:
             return "⚠️ No user ID — please log in first.", _status_style("yellow")
 
-        def is_active(s):
-            return s.get("color") == TEAL_DIM
-
-        type_map = {
-            "wyckoff":   s_wyckoff,
-            "gann":      s_gann,
-            "ab_score":  s_ab,
-            "elliott":   s_elliott,
-            "fibonacci": s_fib,
-        }
-        alert_types = [t for t, s in type_map.items() if is_active(s)]
+        alert_types = [k for k, v in (types or {}).items() if v]
 
         payload = {
-            "delivery_mode":    delivery_mode or "realtime",
-            "min_score":        min_score or 60,
-            "alert_types":      alert_types,
-            "watchlist":        watchlist or [],
+            "delivery_mode":     delivery_mode or "realtime",
+            "min_score":         min_score or 60,
+            "alert_types":       alert_types,
+            "watchlist":         watchlist or [],
             "market_hours_only": bool(market_hours),
         }
 
@@ -404,7 +390,6 @@ def register_preferences_callbacks(app):
             url = f"{BACKEND_HTTP}/api/preferences/{user_id}"
             r = requests.patch(url, json=payload, timeout=8)
             if r.status_code == 404:
-                # New user — create with POST using real email from session
                 post_payload = {**payload, "user_id": user_id, "email": user_email}
                 r = requests.post(url, json=post_payload, timeout=8)
             if r.ok:
