@@ -55,6 +55,7 @@ from shared.engine import (
 
 # ── Routers ────────────────────────────────────────────────────────────────
 from behavior      import behavior_router
+from preferences_router import router as preferences_router
 from csv_import    import csv_router
 from billing_stub  import billing_router
 from radar_service import radar_router, start_radar_scheduler, stop_radar_scheduler
