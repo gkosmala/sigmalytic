@@ -130,13 +130,15 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
         # Alert Types
         _card([
             _section_title("⚡ Alert Types"),
-            _label("Which signals do you want to receive?"),
+            _label("Select any combination — or activate all:"),
             html.Div([
-                html.Button("Wyckoff",     id="type-wyckoff",   n_clicks=0, style=_type_btn_style(True)),
-                html.Button("Gann",        id="type-gann",       n_clicks=0, style=_type_btn_style(True)),
-                html.Button("A/B Score",   id="type-ab_score",   n_clicks=0, style=_type_btn_style(True)),
-                html.Button("Elliott Wave",id="type-elliott",    n_clicks=0, style=_type_btn_style(False)),
-                html.Button("Fibonacci",   id="type-fibonacci",  n_clicks=0, style=_type_btn_style(False)),
+                html.Button("✓ All", id="type-select-all", n_clicks=0, style=_type_btn_style(False)),
+                html.Button("✗ None", id="type-clear-all", n_clicks=0, style=_type_btn_style(False)),
+                html.Button("Structure Alerts", id="type-wyckoff", n_clicks=0, style=_type_btn_style(True)),
+                html.Button("Vector Alerts", id="type-gann", n_clicks=0, style=_type_btn_style(True)),
+                html.Button("Score Alerts", id="type-ab_score", n_clicks=0, style=_type_btn_style(True)),
+                html.Button("Cycle Alerts", id="type-elliott", n_clicks=0, style=_type_btn_style(False)),
+                html.Button("Level Alerts", id="type-fibonacci", n_clicks=0, style=_type_btn_style(False)),
             ], id="alert-types-group"),
         ]),
 
