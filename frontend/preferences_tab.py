@@ -75,14 +75,7 @@ def _hours_off():
 
 def build_preferences_tab(user_id: str = "") -> html.Div:
     return html.Div([
-        dcc.Store(id="prefs-user-id",         data=user_id),
-        dcc.Store(id="prefs-watchlist",        data=[]),
-        dcc.Store(id="prefs-delivery-mode",    data="realtime"),
-        dcc.Store(id="prefs-market-hours-val", data=True),
-        dcc.Store(id="prefs-types", data={
-            "wyckoff": True, "gann": True, "ab_score": True,
-            "elliott": False, "fibonacci": False
-        }),
+        # Stores live in app.py layout to persist across tab switches
 
         html.Div([
             html.H2("Alert Preferences", style={
@@ -182,6 +175,19 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
 
 
 def register_preferences_callbacks(app):
+
+    # ── Sync user_id from session into store when tab opens ───────────────────
+    @app.callback(
+        Output("prefs-user-id", "data"),
+        Input("s-tab", "data"),
+        State("s-session", "data"),
+        prevent_initial_call=True,
+    )
+    def sync_user_id(tab, session):
+        if tab == "preferences" and session:
+            return session.get("user_id", "")
+        return no_update
+
 
     # ── Delivery mode: update store + button styles ────────────────────────────
     @app.callback(
