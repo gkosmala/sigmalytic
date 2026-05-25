@@ -54,14 +54,14 @@ from shared.engine import (
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────
-from behavior      import behavior_router
-from preferences_router import router as preferences_router
-from csv_import    import csv_router
-from billing_stub  import billing_router
-from radar_service import radar_router, start_radar_scheduler, stop_radar_scheduler
+from behavior         import behavior_router
+from csv_import       import csv_router
+from billing_stub     import billing_router
+from radar_service    import radar_router, start_radar_scheduler, stop_radar_scheduler
 from snapshot_service import snapshot_router
 from legal_pages      import legal_router
 from email_service    import router as email_router
+from preferences_router import router as preferences_router
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
@@ -250,7 +250,6 @@ app.include_router(radar_router)
 app.include_router(snapshot_router)
 app.include_router(legal_router)
 app.include_router(email_router)        # ← EMAIL ALERT ROUTER
-from preferences_router import router as preferences_router
 app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
