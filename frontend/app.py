@@ -747,7 +747,7 @@ app.layout=html.Div([
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=1),
     dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
     dcc.Interval(id="i-chart",interval=5_000,n_intervals=0),  # refresh chart bars every 10s
