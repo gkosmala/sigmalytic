@@ -727,7 +727,6 @@ def build_main_app():
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px","background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
-        html.Div(id="prefs-container", style={"display":"none"}),
     ],style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"})
 
@@ -1008,14 +1007,26 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),Input("s-live-mode","data"),
               Input("i-clock","n_intervals"),Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),Input("s-permissions","data"),Input("s-radar-filter","data"),
-              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf):
+              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"),
+              State("pref-mode-val","data"),State("pref-types-val","data"),
+              State("pref-hours-val","data"),State("prefs-min-score-val","data"),
+              State("prefs-watchlist","data"))
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf,p_mode,p_types,p_hours,p_score,p_wl):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="preferences": return no_update  # rendered in prefs-container
+    if tab=="preferences":
+        if trigger != "s-tab": return no_update
+        return build_preferences_tab(
+            user_id=(session or {}).get("user_id",""),
+            mode=p_mode or "realtime",
+            types=p_types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+            hours=True if p_hours is None else p_hours,
+            min_score=p_score or 60,
+            watchlist=p_wl or [],
+        )
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -1210,43 +1221,6 @@ app.clientside_callback(
 register_billing_callbacks(app)
 
 
-@app.callback(
-    Output("prefs-container", "children"),
-    Input("s-session", "data"),
-    prevent_initial_call=False,
-)
-def init_preferences_tab(session):
-    user_id = (session or {}).get("user_id", "")
-    return build_preferences_tab(user_id=user_id)
-
-@app.callback(
-    Output("main-content",    "style"),
-    Output("prefs-container", "style"),
-    Input("s-tab", "data"),
-)
-def show_hide_preferences(tab):
-    if tab == "preferences":
-        return {"display": "none"}, {"display": "block"}
-    return {}, {"display": "none"}
-
-
-@app.callback(
-    Output("main-content",    "style"),
-    Output("prefs-container", "style"),
-    Input("s-tab",            "data"),
-)
-def show_hide_prefs(tab):
-    if tab == "preferences":
-        return {"display":"none"}, {"display":"block"}
-    return {}, {"display":"none"}
-
-@app.callback(
-    Output("prefs-container", "children"),
-    Input("s-session",        "data"),
-)
-def init_prefs_tab(session):
-    user_id = (session or {}).get("user_id", "")
-    return build_preferences_tab(user_id=user_id)
 
 register_preferences_callbacks(app)
 
