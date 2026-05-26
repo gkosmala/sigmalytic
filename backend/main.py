@@ -228,6 +228,26 @@ def ensure_stream(symbol: str):
 async def lifespan(app: FastAPI):
     log.info("Sigmalytic backend starting…")
     start_radar_scheduler()
+
+    # ── Supabase heartbeat — prevents free tier auto-pause ─────────────────
+    import threading, time as _time
+    def _supabase_heartbeat():
+        import requests as _req
+        while True:
+            try:
+                _req.get(
+                    f"{SUPABASE_URL}/rest/v1/user_preferences?limit=1",
+                    headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+                    timeout=5
+                )
+                log.info("Supabase heartbeat OK")
+            except Exception as e:
+                log.warning(f"Supabase heartbeat failed: {e}")
+            _time.sleep(3600)  # ping every hour
+
+    threading.Thread(target=_supabase_heartbeat, daemon=True).start()
+    # ── End heartbeat ──────────────────────────────────────────────────────
+
     yield
     stop_radar_scheduler()
     for task in _active_streams.values():
