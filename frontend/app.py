@@ -742,15 +742,15 @@ app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
-    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
+    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
     dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",interval=1_000,n_intervals=0),
+    dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
-    dcc.Interval(id="i-chart",interval=10_000,n_intervals=0),  # refresh chart bars every 10s
+    dcc.Interval(id="i-chart",interval=5_000,n_intervals=0),  # refresh chart bars every 10s
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
@@ -929,7 +929,7 @@ def set_radar_filter(*_):
     Output("s-candles","data","allow_duplicate"),
     Input("s-symbol","data"),
     Input("s-tf","data"),
-    prevent_initial_call="initial_duplicate",
+    prevent_initial_call=True,
 )
 def fetch_candles_for_tf(symbol, tf):
     """Fetch real bars from backend on load and when symbol or timeframe changes."""
@@ -974,7 +974,8 @@ def fetch_candles_for_tf(symbol, tf):
               State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"),
               prevent_initial_call=True)
 def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
-    import random
+    import random, math
+    from datetime import datetime, timezone, timedelta
     ctx=callback_context
     if not ctx.triggered: return no_update,no_update,no_update
     trigger=ctx.triggered[0]["prop_id"].split(".")[0]
@@ -988,9 +989,61 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
         price=round(max(1.0,prev+(random.random()-0.45)*1.25),2); volume=round(500_000+random.random()*5_000_000)
     else: return no_update,no_update,no_update
     new_seq=(seq or 0)+1; new_live=create_live_update(symbol,price,volume,new_seq).to_dict()
-    # Don't build fake candles — return existing candles unchanged
-    # Real candles are fetched by fetch_candles_for_tf on load and timeframe change
-    return new_live,new_seq,no_update
+
+    # ── Update live candle ────────────────────────────────────────────────────
+    if candles and len(candles) > 0:
+        candles = list(candles)
+        last = dict(candles[-1])
+        now_ts = datetime.now(timezone.utc)
+
+        # Determine candle period in seconds based on timeframe
+        # We detect timeframe from the last candle timestamp gap
+        tf_seconds = 86400  # default daily
+        if len(candles) >= 2:
+            try:
+                t1 = candles[-2].get("t","")
+                t2 = candles[-1].get("t","")
+                if t1 and t2:
+                    from dateutil import parser as dparser
+                    dt1 = dparser.parse(t1)
+                    dt2 = dparser.parse(t2)
+                    diff = abs((dt2 - dt1).total_seconds())
+                    if diff > 0:
+                        tf_seconds = diff
+            except: pass
+
+        # Check if we need a new candle
+        last_t = last.get("t","")
+        new_candle = False
+        if last_t:
+            try:
+                from dateutil import parser as dparser
+                last_dt = dparser.parse(last_t)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                elapsed = (now_ts - last_dt).total_seconds()
+                if elapsed >= tf_seconds:
+                    new_candle = True
+            except: pass
+
+        if new_candle:
+            # Lock current candle, open a new one
+            new_bar = {"o": price, "h": price, "l": price, "c": price,
+                       "v": volume, "t": now_ts.isoformat()}
+            candles.append(new_bar)
+            if len(candles) > 300:
+                candles = candles[-300:]
+        else:
+            # Update last candle with new price
+            last["c"] = price
+            last["h"] = max(last.get("h", price), price)
+            last["l"] = min(last.get("l", price), price)
+            last["v"] = last.get("v", 0) + volume
+            candles[-1] = last
+
+        return new_live, new_seq, candles
+
+    return new_live, new_seq, no_update
 
 @app.callback(Output("price-ctrl","children"),Input("s-live-mode","data"),Input("s-live","data"),State("s-price-text","data"))
 def render_price_ctrl(live_mode,live,price_text):
@@ -1168,23 +1221,45 @@ app.clientside_callback(
             ws.onmessage = function(event) {
                 try {
                     var data = JSON.parse(event.data);
+                    if (data.type === 'PING') return;
                     if (data.price && data.price > 0) {
-                        // Update the hidden store with live price
-                        var store = document.getElementById('s-ws-price');
-                        if (store) {
-                            // Trigger Dash store update via hidden input
-                            var input = document.querySelector('#ws-price-receiver input');
-                            if (!input) {
-                                input = document.createElement('input');
-                                input.style.display = 'none';
-                                document.getElementById('ws-price-receiver').appendChild(input);
+                        var price = data.price;
+                        // Find candlestick chart
+                        var divs = document.querySelectorAll('.js-plotly-plot');
+                        for (var i = 0; i < divs.length; i++) {
+                            var gd = divs[i];
+                            if (!gd.data || !gd.data[0] || gd.data[0].type !== 'candlestick') continue;
+                            var trace = gd.data[0];
+                            var n = trace.close ? trace.close.length : 0;
+                            if (n === 0) continue;
+                            var now = Date.now() / 1000;
+                            var tfSec = window._tfSeconds || 300;
+                            if (!window._lc) {
+                                window._lc = {open:price, high:price, low:price, close:price, startTime:now};
                             }
+                            var lc = window._lc;
+                            if ((now - lc.startTime) >= tfSec) {
+                                lc = {open:price, high:price, low:price, close:price, startTime:now};
+                                window._lc = lc;
+                                Plotly.restyle(gd, {
+                                    x:[[...trace.x, new Date().toISOString()]],
+                                    open:[[...trace.open, price]],
+                                    high:[[...trace.high, price]],
+                                    low:[[...trace.low, price]],
+                                    close:[[...trace.close, price]]
+                                }, [0]);
+                            } else {
+                                lc.close = price;
+                                lc.high = Math.max(lc.high, price);
+                                lc.low = Math.min(lc.low, price);
+                                window._lc = lc;
+                                var h = trace.high.slice(); h[n-1] = lc.high;
+                                var l = trace.low.slice();  l[n-1] = lc.low;
+                                var c = trace.close.slice(); c[n-1] = lc.close;
+                                Plotly.restyle(gd, {high:[h], low:[l], close:[c]}, [0]);
+                            }
+                            break;
                         }
-                        // Update price display directly for zero-latency feel
-                        var priceEls = document.querySelectorAll('[data-ws-price]');
-                        priceEls.forEach(function(el) {
-                            el.innerText = '$' + data.price.toFixed(2);
-                        });
                     }
                 } catch(e) {}
             };
