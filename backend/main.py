@@ -61,6 +61,7 @@ from radar_service    import radar_router, start_radar_scheduler, stop_radar_sch
 from snapshot_service import snapshot_router
 from legal_pages      import legal_router
 from email_service    import router as email_router
+from preferences_page import router as prefs_page_router
 from preferences_router import router as preferences_router
 
 # ── Access Control ─────────────────────────────────────────────────────────
@@ -250,6 +251,7 @@ app.include_router(radar_router)
 app.include_router(snapshot_router)
 app.include_router(legal_router)
 app.include_router(email_router)        # ← EMAIL ALERT ROUTER
+app.include_router(prefs_page_router)
 app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
 
 # ── REST endpoints ─────────────────────────────────────────────────────────

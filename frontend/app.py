@@ -723,6 +723,15 @@ def build_main_app():
                 ("radar","Radar Screen"),("scoreboard","Scoreboard"),("billing","Billing"),
                 ("setup","Setup"),("admin","🔒 Admin"),    # ← ADMIN TAB
             ]
+        ] + [
+            html.A("⚙️ Preferences",
+                id="prefs-link",
+                href="https://sigmalytic-backend.onrender.com/preferences",
+                target="_blank",
+                style={"background":"rgba(0,0,0,.2)","border":"1px solid rgba(255,255,255,.08)",
+                       "borderRadius":"8px","color":"#94a3b8","fontSize":"13px",
+                       "fontWeight":"700","padding":"8px 14px","textDecoration":"none",
+                       "whiteSpace":"nowrap","cursor":"pointer"})
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px","background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
@@ -1199,6 +1208,19 @@ app.clientside_callback(
 )
 
 register_billing_callbacks(app)
+
+
+app.clientside_callback(
+    """
+    function(session) {
+        if (!session || !session.user_id) return 'https://sigmalytic-backend.onrender.com/preferences';
+        return 'https://sigmalytic-backend.onrender.com/preferences?user_id=' + session.user_id;
+    }
+    """,
+    Output("prefs-link", "href"),
+    Input("s-session", "data"),
+)
+
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
