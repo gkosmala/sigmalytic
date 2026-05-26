@@ -1008,9 +1008,8 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),Input("s-live-mode","data"),
               Input("i-clock","n_intervals"),Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),Input("s-permissions","data"),Input("s-radar-filter","data"),
-              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"),
-              State("pref-mode-val","data"),State("pref-types-val","data"),State("pref-hours-val","data"),State("prefs-min-score-val","data"),State("prefs-watchlist","data"))
-def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf,pref_mode,pref_types,pref_hours,pref_score,pref_watchlist):
+              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"))
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
@@ -1018,14 +1017,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab!="radar" and trigger=="i-radar": return no_update
     if tab=="preferences":
         if trigger != "s-tab": return no_update
-        return build_preferences_tab(
-            user_id=(session or {}).get("user_id",""),
-            mode=pref_mode or "realtime",
-            types=pref_types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
-            hours=pref_hours if pref_hours is not None else True,
-            min_score=pref_score or 60,
-            watchlist=pref_watchlist or [],
-        )
+        return build_preferences_tab(user_id=(session or {}).get("user_id",""))
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -1238,43 +1230,6 @@ def show_hide_preferences(tab):
     if tab == "preferences":
         return {"display": "none"}, {"display": "block"}
     return {}, {"display": "none"}
-
-
-@app.callback(
-    Output("pref-mode-val",       "data"),
-    Output("pref-hours-val",      "data"),
-    Output("pref-types-val",      "data"),
-    Output("prefs-watchlist",     "data"),
-    Output("prefs-min-score-val", "data"),
-    Input("s-session",            "data"),
-    prevent_initial_call=True,
-)
-def load_prefs_from_backend(session):
-    import requests as _req
-    if not session or not session.get("user_id"):
-        return no_update, no_update, no_update, no_update, no_update
-    user_id = session["user_id"]
-    try:
-        r = _req.get(
-            f"{os.getenv('BACKEND_URL','https://sigmalytic-backend.onrender.com')}/api/preferences/{user_id}",
-            timeout=3
-        )
-        if not r.ok:
-            return no_update, no_update, no_update, no_update, no_update
-        p = r.json()
-        alert_types = p.get("alert_types", ["wyckoff","gann","ab_score"])
-        types = {"wyckoff":"wyckoff" in alert_types,"gann":"gann" in alert_types,
-                 "ab_score":"ab_score" in alert_types,"elliott":"elliott" in alert_types,
-                 "fibonacci":"fibonacci" in alert_types}
-        return (
-            p.get("delivery_mode", "realtime"),
-            p.get("market_hours_only", True),
-            types,
-            p.get("watchlist", []),
-            p.get("min_score", 60),
-        )
-    except Exception:
-        return no_update, no_update, no_update, no_update, no_update
 
 register_preferences_callbacks(app)
 
