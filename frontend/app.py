@@ -983,7 +983,9 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
         try:
             import requests as req; r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=4); r.raise_for_status()
             data=r.json(); price=float(data["price"]); volume=int(data.get("volume",0))
-        except: return no_update,no_update,no_update
+        except Exception as _e:
+            print(f"TICK_ERROR: {_e}", flush=True)
+            return no_update,no_update,no_update
     elif not live_mode and trigger=="i-synth":
         prev=current["price"] if current else float(price_text or 280.15)
         price=round(max(1.0,prev+(random.random()-0.45)*1.25),2); volume=round(500_000+random.random()*5_000_000)
