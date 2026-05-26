@@ -403,7 +403,7 @@ def build_chart(candles, price, nodes):
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
         font=dict(family="DM Sans",color=TEXT,size=11),
         xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f"),
+        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f",autorange=True),
         margin=dict(l=0,r=130,t=12,b=12),height=390,showlegend=False,hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),dragmode="pan")
     return fig
