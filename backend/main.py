@@ -144,6 +144,7 @@ def fetch_latest_quote(symbol: str) -> dict[str, Any]:
 
 
 def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[dict]:
+    print(f"BAR_FETCH_CALLED {symbol} {timeframe} key={bool(ALPACA_API_KEY)}", flush=True)
     if not ALPACA_API_KEY:
         candles = generate_initial_candles(280.15)
         return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
@@ -154,9 +155,9 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
         r.raise_for_status()
         raw = r.json()
         bars = raw.get("bars", [])
-        log.info(f"Bar fetch {symbol} {timeframe}: status={r.status_code} bars={len(bars)} raw_keys={list(raw.keys())}")
+        print(f"BAR_FETCH_DEBUG {symbol} {timeframe}: status={r.status_code} bars={len(bars)} raw_keys={list(raw.keys())}", flush=True)
         if not bars:
-            log.warning(f"Empty bars for {symbol} {timeframe} - raw: {str(raw)[:200]}")
+            print(f"BAR_FETCH_EMPTY {symbol} {timeframe}: {str(raw)[:200]}", flush=True)
         return [
             {"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]),
              "c": float(b["c"]), "v": int(b["v"]), "t": b["t"]}
