@@ -747,7 +747,7 @@ app.layout=html.Div([
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=10_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=8_000,n_intervals=0),
     dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
     dcc.Interval(id="i-chart",interval=30_000,n_intervals=0),  # refresh chart bars every 10s
@@ -929,7 +929,7 @@ def set_radar_filter(*_):
     Output("s-candles","data","allow_duplicate"),
     Input("s-symbol","data"),
     Input("s-tf","data"),
-    prevent_initial_call="initial_duplicate",
+    prevent_initial_call=False,
 )
 def fetch_candles_for_tf(symbol, tf):
     """Fetch real bars from backend on load and when symbol or timeframe changes."""
@@ -1070,9 +1070,9 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","command") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
     if tab=="command":
-        # Only rebuild full chart on symbol/tf change, live mode change, or initial load
+        # Only rebuild full chart on symbol/tf change, candle data change, or initial load
         # WebSocket handles tick-level updates directly via Plotly.restyle
-        if trigger in ("i-clock", "i-alpaca", "i-synth"):
+        if trigger in ("i-clock", "i-alpaca", "i-synth", "i-radar"):
             return no_update
         return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
