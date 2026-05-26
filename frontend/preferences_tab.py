@@ -1,6 +1,7 @@
 """
 preferences_tab.py — Sigmalytic Quant
-Stores in app.py root layout. All callbacks prevent_initial_call=True.
+Tab lives permanently in DOM via prefs-container.
+No sync callback needed - stores update components directly.
 """
 
 from __future__ import annotations
@@ -153,50 +154,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
 
 def register_preferences_callbacks(app):
 
-    # ── Sync styles from stores when Preferences tab opens ─────────────────────
-    @app.callback(
-        Output("pref-mode-realtime", "style"),
-        Output("pref-mode-hourly",   "style"),
-        Output("pref-mode-daily",    "style"),
-        Output("pref-type-wyckoff",  "style"),
-        Output("pref-type-gann",     "style"),
-        Output("pref-type-ab_score", "style"),
-        Output("pref-type-elliott",  "style"),
-        Output("pref-type-fibonacci","style"),
-        Output("pref-hours-btn",     "children"),
-        Output("pref-hours-btn",     "style"),
-        Output("prefs-min-score",    "value"),
-        Output("prefs-watchlist-display", "children"),
-        Input("s-tab",               "data"),
-        State("pref-mode-val",       "data"),
-        State("pref-types-val",      "data"),
-        State("pref-hours-val",      "data"),
-        State("prefs-min-score-val", "data"),
-        State("prefs-watchlist",     "data"),
-        prevent_initial_call=True,
-    )
-    def sync_prefs_ui(tab, mode, types, hours, min_score, watchlist):
-        if tab != "preferences":
-            return (no_update,) * 12
-        mode  = mode  or "realtime"
-        types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
-        hours = True if hours is None else hours
-        return (
-            _on() if mode=="realtime" else _off(),
-            _on() if mode=="hourly"   else _off(),
-            _on() if mode=="daily"    else _off(),
-            _on() if types.get("wyckoff")   else _off(),
-            _on() if types.get("gann")      else _off(),
-            _on() if types.get("ab_score")  else _off(),
-            _on() if types.get("elliott")   else _off(),
-            _on() if types.get("fibonacci") else _off(),
-            "ON" if hours else "OFF",
-            _on() if hours else _off(),
-            min_score or 60,
-            _render_watchlist(watchlist or []),
-        )
-
-    # ── Delivery mode ──────────────────────────────────────────────────────────
+    # ── Delivery mode → store + styles ────────────────────────────────────────
     @app.callback(
         Output("pref-mode-val",      "data"),
         Output("pref-mode-realtime", "style"),
@@ -205,19 +163,23 @@ def register_preferences_callbacks(app):
         Input("pref-mode-realtime",  "n_clicks"),
         Input("pref-mode-hourly",    "n_clicks"),
         Input("pref-mode-daily",     "n_clicks"),
-        State("pref-mode-val",       "data"),
+        Input("pref-mode-val",       "data"),
         prevent_initial_call=True,
     )
-    def set_mode(r, h, d, current):
+    def update_mode(r, h, d, stored):
         ctx = callback_context
         if not ctx.triggered: return no_update, no_update, no_update, no_update
         t = ctx.triggered[0]["prop_id"].split(".")[0]
-        mode = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly",
-                "pref-mode-daily":"daily"}.get(t, current)
+        if t == "pref-mode-val":
+            # Store changed externally - just update styles
+            mode = stored or "realtime"
+        else:
+            mode = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly",
+                    "pref-mode-daily":"daily"}.get(t, stored)
         styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
         return mode, styles[0], styles[1], styles[2]
 
-    # ── Alert types ────────────────────────────────────────────────────────────
+    # ── Alert types → store + styles ───────────────────────────────────────────
     @app.callback(
         Output("pref-types-val",     "data"),
         Output("pref-type-wyckoff",  "style"),
@@ -232,16 +194,18 @@ def register_preferences_callbacks(app):
         Input("pref-type-fibonacci", "n_clicks"),
         Input("pref-type-all",       "n_clicks"),
         Input("pref-type-none",      "n_clicks"),
-        State("pref-types-val",      "data"),
+        Input("pref-types-val",      "data"),
         prevent_initial_call=True,
     )
-    def set_types(nw,ng,na,ne,nf,n_all,n_none,types):
+    def update_types(nw,ng,na,ne,nf,n_all,n_none,stored):
         ctx = callback_context
         if not ctx.triggered: return (no_update,)*6
         t = ctx.triggered[0]["prop_id"].split(".")[0]
-        types = dict(types)
-        if t=="pref-type-all":    types={k:True for k in types}
-        elif t=="pref-type-none": types={k:False for k in types}
+        types = dict(stored or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False})
+        if t == "pref-types-val":
+            pass  # just re-render styles from stored value
+        elif t=="pref-type-all":    types={k:True for k in types}
+        elif t=="pref-type-none":   types={k:False for k in types}
         else:
             km={"pref-type-wyckoff":"wyckoff","pref-type-gann":"gann",
                 "pref-type-ab_score":"ab_score","pref-type-elliott":"elliott",
@@ -260,21 +224,32 @@ def register_preferences_callbacks(app):
         Output("pref-hours-btn", "children"),
         Output("pref-hours-btn", "style"),
         Input("pref-hours-btn",  "n_clicks"),
-        State("pref-hours-val",  "data"),
+        Input("pref-hours-val",  "data"),
         prevent_initial_call=True,
     )
-    def toggle_hours(n, current):
-        new = not current
-        return new, ("ON" if new else "OFF"), (_on() if new else _off())
+    def update_hours(n, stored):
+        ctx = callback_context
+        if not ctx.triggered: return no_update, no_update, no_update
+        t = ctx.triggered[0]["prop_id"].split(".")[0]
+        val = (not stored) if t == "pref-hours-btn" else (stored if stored is not None else True)
+        return val, ("ON" if val else "OFF"), (_on() if val else _off())
 
     # ── Slider ─────────────────────────────────────────────────────────────────
     @app.callback(
         Output("prefs-min-score-val", "data"),
+        Output("prefs-min-score",     "value"),
         Input("prefs-min-score",      "value"),
+        Input("prefs-min-score-val",  "data"),
         prevent_initial_call=True,
     )
-    def save_score(val):
-        return val
+    def update_score(slider_val, stored_val):
+        ctx = callback_context
+        if not ctx.triggered: return no_update, no_update
+        t = ctx.triggered[0]["prop_id"].split(".")[0]
+        if t == "prefs-min-score":
+            return slider_val, no_update
+        else:
+            return no_update, stored_val or 60
 
     # ── Watchlist ──────────────────────────────────────────────────────────────
     @app.callback(
@@ -282,15 +257,21 @@ def register_preferences_callbacks(app):
         Output("prefs-watchlist-display", "children"),
         Output("prefs-symbol-input",      "value"),
         Input("prefs-add-symbol",         "n_clicks"),
+        Input("prefs-watchlist",          "data"),
         State("prefs-symbol-input",       "value"),
-        State("prefs-watchlist",          "data"),
         prevent_initial_call=True,
     )
-    def add_symbol(n, symbol, watchlist):
-        if not symbol: return watchlist, _render_watchlist(watchlist), ""
+    def update_watchlist(n, stored, symbol):
+        ctx = callback_context
+        if not ctx.triggered: return no_update, no_update, no_update
+        t = ctx.triggered[0]["prop_id"].split(".")[0]
+        if t == "prefs-watchlist":
+            return no_update, _render_watchlist(stored or []), no_update
+        if not symbol: return stored, _render_watchlist(stored or []), ""
         sym = symbol.strip().upper()
+        watchlist = list(stored or [])
         if sym and sym not in watchlist:
-            watchlist = watchlist + [sym]
+            watchlist.append(sym)
         return watchlist, _render_watchlist(watchlist), ""
 
     # ── Save ───────────────────────────────────────────────────────────────────

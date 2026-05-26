@@ -733,11 +733,11 @@ def build_main_app():
 
 app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
-    dcc.Store(id="pref-mode-val",       data="realtime", storage_type="session"),
-    dcc.Store(id="pref-hours-val",      data=True,       storage_type="session"),
-    dcc.Store(id="pref-types-val",      data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="session"),
-    dcc.Store(id="prefs-watchlist",     data=[],         storage_type="session"),
-    dcc.Store(id="prefs-min-score-val", data=60,         storage_type="session"),
+    dcc.Store(id="pref-mode-val",       data="realtime", storage_type="local"),
+    dcc.Store(id="pref-hours-val",      data=True,       storage_type="local"),
+    dcc.Store(id="pref-types-val",      data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="local"),
+    dcc.Store(id="prefs-watchlist",     data=[],         storage_type="local"),
+    dcc.Store(id="prefs-min-score-val", data=60,         storage_type="local"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
     dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
@@ -1015,9 +1015,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="preferences":
-        if trigger != "s-tab": return no_update
-        return build_preferences_tab(user_id=(session or {}).get("user_id",""))
+    if tab=="preferences": return no_update  # rendered in prefs-container
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
@@ -1230,6 +1228,25 @@ def show_hide_preferences(tab):
     if tab == "preferences":
         return {"display": "none"}, {"display": "block"}
     return {}, {"display": "none"}
+
+
+@app.callback(
+    Output("main-content",    "style"),
+    Output("prefs-container", "style"),
+    Input("s-tab",            "data"),
+)
+def show_hide_prefs(tab):
+    if tab == "preferences":
+        return {"display":"none"}, {"display":"block"}
+    return {}, {"display":"none"}
+
+@app.callback(
+    Output("prefs-container", "children"),
+    Input("s-session",        "data"),
+)
+def init_prefs_tab(session):
+    user_id = (session or {}).get("user_id", "")
+    return build_preferences_tab(user_id=user_id)
 
 register_preferences_callbacks(app)
 
