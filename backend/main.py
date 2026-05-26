@@ -154,7 +154,10 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
         r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=8)
         r.raise_for_status()
         raw = r.json()
-        bars = raw.get("bars", [])
+        if not raw or not isinstance(raw, dict):
+            print(f"BAR_FETCH_NULL {symbol} {timeframe}: raw={raw}", flush=True)
+            raise ValueError(f"Null/invalid response for {symbol}")
+        bars = raw.get("bars", []) or []
         print(f"BAR_FETCH_DEBUG {symbol} {timeframe}: status={r.status_code} bars={len(bars)} raw_keys={list(raw.keys())}", flush=True)
         if not bars:
             print(f"BAR_FETCH_EMPTY {symbol} {timeframe}: {str(raw)[:200]}", flush=True)
