@@ -1239,11 +1239,26 @@ app.clientside_callback(
         }
 
         function updateChart(price, volume) {
-            // Find the Plotly chart div
-            var graphDivs = document.querySelectorAll('.js-plotly-plot');
-            if (!graphDivs.length) return;
-            var gd = graphDivs[0];
-            if (!gd.data || !gd.data[0]) return;
+            // Find the Plotly chart div - try multiple selectors
+            var gd = null;
+            var candidates = document.querySelectorAll('.js-plotly-plot');
+            for (var i = 0; i < candidates.length; i++) {
+                if (candidates[i].data && candidates[i].data[0] && candidates[i].data[0].type === 'candlestick') {
+                    gd = candidates[i];
+                    break;
+                }
+            }
+            if (!gd) {
+                // Try finding by checking all plotly divs
+                candidates = document.querySelectorAll('[id*="chart"], [id*="graph"]');
+                for (var i = 0; i < candidates.length; i++) {
+                    if (candidates[i].data && candidates[i].data[0]) {
+                        gd = candidates[i];
+                        break;
+                    }
+                }
+            }
+            if (!gd || !gd.data || !gd.data[0]) return;
 
             var trace = gd.data[0];
             var n = trace.close ? trace.close.length : 0;
@@ -1321,9 +1336,23 @@ app.clientside_callback(
                         var data = JSON.parse(event.data);
                         if (data.type === 'PING') return;
                         if (data.price && data.price > 0) {
-                            updateChart(data.price, data.volume || 0);
+                            // Update price displays immediately
+                            var price = data.price;
+                            document.querySelectorAll('[data-ws-price]').forEach(function(el) {
+                                el.innerText = '$' + price.toFixed(2);
+                            });
+                            // Update any element with id containing 'live-price'
+                            var liveEls = document.querySelectorAll('[id*="price"]');
+                            liveEls.forEach(function(el) {
+                                if (el.tagName === 'STRONG' || el.tagName === 'SPAN') {
+                                    if (el.innerText && el.innerText.startsWith('$')) {
+                                        el.innerText = '$' + price.toFixed(2);
+                                    }
+                                }
+                            });
+                            updateChart(price, data.volume || 0);
                         }
-                    } catch(e) {}
+                    } catch(e) { console.log('WS msg error:', e); }
                 };
 
                 ws.onerror = function(e) { console.log('WS error:', e); };
