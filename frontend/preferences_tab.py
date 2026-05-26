@@ -1,13 +1,12 @@
 """
 preferences_tab.py — Sigmalytic Quant
-Uses native Dash RadioItems/Checklist with inline styles only.
-No html.Style, no external CSS dependencies.
+Stores live in app.py root layout for true persistence across login/logout.
 """
 
 from __future__ import annotations
 import os
 import requests
-from dash import dcc, html, Input, Output, State, no_update
+from dash import dcc, html, Input, Output, State, no_update, callback_context
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
 
@@ -44,12 +43,25 @@ def _section_title(text):
         "borderBottom": f"1px solid {BORDER}"
     })
 
-def build_preferences_tab(user_id: str = "") -> html.Div:
-    return html.Div([
-        dcc.Store(id="prefs-user-id",   data=user_id, storage_type="local"),
-        dcc.Store(id="prefs-watchlist", data=[], storage_type="local"),
+def _on():
+    return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
+            "borderRadius":"8px","color":TEAL_DIM,
+            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
+            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
 
-        # Header
+def _off():
+    return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+            "borderRadius":"8px","color":TEXT,
+            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
+            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
+
+
+def build_preferences_tab(user_id: str = "") -> html.Div:
+    # NOTE: all dcc.Store components live in app.py root layout
+    # This function only renders the UI controls
+    return html.Div([
+        dcc.Store(id="prefs-user-id", data=user_id),
+
         html.Div([
             html.H2("Alert Preferences", style={
                 "color": WHITE, "fontSize": "22px", "fontWeight": "800", "marginBottom": "4px"
@@ -63,28 +75,22 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             _section_title("📬 Delivery Mode"),
             _label("How often do you want alerts?"),
             html.Div([
-                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0,
-                            style=_active_btn()),
-                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0,
-                            style=_inactive_btn()),
-                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0,
-                            style=_inactive_btn()),
-                dcc.Store(id="pref-mode-val", data="realtime", storage_type="local"),
-            ], style={"display": "flex", "flexWrap": "wrap", "gap": "8px"}),
+                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0, style=_on()),
+                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0, style=_off()),
+                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0, style=_off()),
+            ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
         # Min Score
         _card([
             _section_title("🎯 Minimum Confluence Score"),
             _label("Only alert when score is at least:"),
-            dcc.Slider(
-                id="prefs-min-score", min=0, max=100, step=5, value=60,
-                marks={0:"0", 25:"25", 50:"50", 75:"75", 100:"100"},
-                tooltip={"placement":"bottom","always_visible":True},
-            ),
+            dcc.Slider(id="prefs-min-score", min=0, max=100, step=5, value=60,
+                       marks={0:"0",25:"25",50:"50",75:"75",100:"100"},
+                       tooltip={"placement":"bottom","always_visible":True}),
             html.Div(style={"height":"8px"}),
             html.Div("Higher score = fewer, higher-quality alerts",
-                     style={"color": MUTED, "fontSize": "11px"}),
+                     style={"color":MUTED,"fontSize":"11px"}),
         ]),
 
         # Alert Types
@@ -92,17 +98,13 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             _section_title("⚡ Alert Types"),
             _label("Select any combination — or activate all:"),
             html.Div([
-                html.Button("✓ All",            id="pref-type-all",      n_clicks=0, style=_inactive_btn()),
-                html.Button("✗ None",           id="pref-type-none",     n_clicks=0, style=_inactive_btn()),
-                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0, style=_active_btn()),
-                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0, style=_active_btn()),
-                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0, style=_active_btn()),
-                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0, style=_inactive_btn()),
-                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0, style=_inactive_btn()),
-                dcc.Store(id="pref-types-val", data={
-                    "wyckoff":True,"gann":True,"ab_score":True,
-                    "elliott":False,"fibonacci":False
-                }, storage_type="local"),
+                html.Button("✓ All",            id="pref-type-all",      n_clicks=0, style=_off()),
+                html.Button("✗ None",           id="pref-type-none",     n_clicks=0, style=_off()),
+                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0, style=_on()),
+                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0, style=_on()),
+                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0, style=_on()),
+                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0, style=_off()),
+                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0, style=_off()),
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
@@ -139,12 +141,10 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                     html.Div("Suppress alerts outside 9:30–4:00 PM ET",
                              style={"color":MUTED,"fontSize":"11px","marginTop":"2px"}),
                 ], style={"flex":"1"}),
-                html.Button("ON", id="pref-hours-btn", n_clicks=0, style=_active_btn()),
-                dcc.Store(id="pref-hours-val", data=True, storage_type="local"),
+                html.Button("ON", id="pref-hours-btn", n_clicks=0, style=_on()),
             ], style={"display":"flex","alignItems":"center","gap":"16px"}),
         ]),
 
-        # Save
         html.Button("Save Preferences", id="prefs-save-btn", n_clicks=0, style={
             "width":"100%","background":TEAL,"border":"none","borderRadius":"12px",
             "color":WHITE,"fontFamily":"DM Sans, sans-serif","fontSize":"14px",
@@ -159,83 +159,107 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
     ], style={"maxWidth":"600px","margin":"0 auto","padding":"24px 16px"})
 
 
-def _active_btn():
-    return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
-            "borderRadius":"8px","color":TEAL_DIM,
-            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
-            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
-
-def _inactive_btn():
-    return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
-            "borderRadius":"8px","color":TEXT,
-            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
-            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
-
-
 def register_preferences_callbacks(app):
 
-    # ── Delivery mode ──────────────────────────────────────────────────────────
+    # ── Sync button styles from stores on tab open ─────────────────────────────
     @app.callback(
-        Output("pref-mode-val",       "data"),
-        Output("pref-mode-realtime",  "style"),
-        Output("pref-mode-hourly",    "style"),
-        Output("pref-mode-daily",     "style"),
-        Input("pref-mode-realtime",   "n_clicks"),
-        Input("pref-mode-hourly",     "n_clicks"),
-        Input("pref-mode-daily",      "n_clicks"),
-        State("pref-mode-val",        "data"),
+        Output("pref-mode-realtime", "style"),
+        Output("pref-mode-hourly",   "style"),
+        Output("pref-mode-daily",    "style"),
+        Output("pref-type-wyckoff",  "style"),
+        Output("pref-type-gann",     "style"),
+        Output("pref-type-ab_score", "style"),
+        Output("pref-type-elliott",  "style"),
+        Output("pref-type-fibonacci","style"),
+        Output("pref-hours-btn",     "children"),
+        Output("pref-hours-btn",     "style"),
+        Output("prefs-min-score",    "value"),
+        Output("prefs-watchlist-display", "children"),
+        Input("s-tab",               "data"),
+        State("pref-mode-val",       "data"),
+        State("pref-types-val",      "data"),
+        State("pref-hours-val",      "data"),
+        State("prefs-min-score-val", "data"),
+        State("prefs-watchlist",     "data"),
+        prevent_initial_call=True,
+    )
+    def sync_ui_from_stores(tab, mode, types, hours, min_score, watchlist):
+        if tab != "preferences":
+            return (no_update,) * 12
+        mode = mode or "realtime"
+        types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
+        mode_styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
+        return (
+            mode_styles[0], mode_styles[1], mode_styles[2],
+            _on() if types.get("wyckoff")   else _off(),
+            _on() if types.get("gann")       else _off(),
+            _on() if types.get("ab_score")   else _off(),
+            _on() if types.get("elliott")    else _off(),
+            _on() if types.get("fibonacci")  else _off(),
+            "ON" if hours else "OFF",
+            _on() if hours else _off(),
+            min_score or 60,
+            _render_watchlist(watchlist or []),
+        )
+
+    # ── Delivery mode buttons → update store ───────────────────────────────────
+    @app.callback(
+        Output("pref-mode-val",      "data"),
+        Output("pref-mode-realtime", "style"),
+        Output("pref-mode-hourly",   "style"),
+        Output("pref-mode-daily",    "style"),
+        Input("pref-mode-realtime",  "n_clicks"),
+        Input("pref-mode-hourly",    "n_clicks"),
+        Input("pref-mode-daily",     "n_clicks"),
+        State("pref-mode-val",       "data"),
         prevent_initial_call=True,
     )
     def set_mode(r, h, d, current):
-        from dash import callback_context
         ctx = callback_context
         if not ctx.triggered: return no_update, no_update, no_update, no_update
         t = ctx.triggered[0]["prop_id"].split(".")[0]
-        m = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly","pref-mode-daily":"daily"}.get(t, current)
-        styles = [_active_btn() if x==m else _inactive_btn() for x in ["realtime","hourly","daily"]]
-        return m, styles[0], styles[1], styles[2]
+        mode = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly","pref-mode-daily":"daily"}.get(t, current)
+        styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
+        return mode, styles[0], styles[1], styles[2]
 
-    # ── Alert types ────────────────────────────────────────────────────────────
+    # ── Alert type buttons → update store ─────────────────────────────────────
     @app.callback(
-        Output("pref-types-val",        "data"),
-        Output("pref-type-wyckoff",     "style"),
-        Output("pref-type-gann",        "style"),
-        Output("pref-type-ab_score",    "style"),
-        Output("pref-type-elliott",     "style"),
-        Output("pref-type-fibonacci",   "style"),
-        Input("pref-type-wyckoff",      "n_clicks"),
-        Input("pref-type-gann",         "n_clicks"),
-        Input("pref-type-ab_score",     "n_clicks"),
-        Input("pref-type-elliott",      "n_clicks"),
-        Input("pref-type-fibonacci",    "n_clicks"),
-        Input("pref-type-all",          "n_clicks"),
-        Input("pref-type-none",         "n_clicks"),
-        State("pref-types-val",         "data"),
+        Output("pref-types-val",     "data"),
+        Output("pref-type-wyckoff",  "style"),
+        Output("pref-type-gann",     "style"),
+        Output("pref-type-ab_score", "style"),
+        Output("pref-type-elliott",  "style"),
+        Output("pref-type-fibonacci","style"),
+        Input("pref-type-wyckoff",   "n_clicks"),
+        Input("pref-type-gann",      "n_clicks"),
+        Input("pref-type-ab_score",  "n_clicks"),
+        Input("pref-type-elliott",   "n_clicks"),
+        Input("pref-type-fibonacci", "n_clicks"),
+        Input("pref-type-all",       "n_clicks"),
+        Input("pref-type-none",      "n_clicks"),
+        State("pref-types-val",      "data"),
         prevent_initial_call=True,
     )
     def set_types(nw,ng,na,ne,nf,n_all,n_none,types):
-        from dash import callback_context
         ctx = callback_context
-        if not ctx.triggered: return no_update,no_update,no_update,no_update,no_update,no_update
+        if not ctx.triggered: return (no_update,)*6
         t = ctx.triggered[0]["prop_id"].split(".")[0]
         types = dict(types)
-        if t == "pref-type-all":
-            types = {k:True for k in types}
-        elif t == "pref-type-none":
-            types = {k:False for k in types}
+        if t == "pref-type-all":   types = {k:True for k in types}
+        elif t == "pref-type-none": types = {k:False for k in types}
         else:
             km = {"pref-type-wyckoff":"wyckoff","pref-type-gann":"gann",
                   "pref-type-ab_score":"ab_score","pref-type-elliott":"elliott",
                   "pref-type-fibonacci":"fibonacci"}
             if t in km: types[km[t]] = not types.get(km[t], False)
         return (types,
-                _active_btn() if types.get("wyckoff")   else _inactive_btn(),
-                _active_btn() if types.get("gann")      else _inactive_btn(),
-                _active_btn() if types.get("ab_score")  else _inactive_btn(),
-                _active_btn() if types.get("elliott")   else _inactive_btn(),
-                _active_btn() if types.get("fibonacci") else _inactive_btn())
+                _on() if types.get("wyckoff")   else _off(),
+                _on() if types.get("gann")       else _off(),
+                _on() if types.get("ab_score")   else _off(),
+                _on() if types.get("elliott")    else _off(),
+                _on() if types.get("fibonacci")  else _off())
 
-    # ── Market hours ───────────────────────────────────────────────────────────
+    # ── Market hours button → update store ────────────────────────────────────
     @app.callback(
         Output("pref-hours-val", "data"),
         Output("pref-hours-btn", "children"),
@@ -246,7 +270,16 @@ def register_preferences_callbacks(app):
     )
     def toggle_hours(n, current):
         new = not current
-        return new, ("ON" if new else "OFF"), (_active_btn() if new else _inactive_btn())
+        return new, ("ON" if new else "OFF"), (_on() if new else _off())
+
+    # ── Slider → update store ──────────────────────────────────────────────────
+    @app.callback(
+        Output("prefs-min-score-val", "data"),
+        Input("prefs-min-score",      "value"),
+        prevent_initial_call=True,
+    )
+    def save_min_score(val):
+        return val
 
     # ── Watchlist ──────────────────────────────────────────────────────────────
     @app.callback(
@@ -265,14 +298,14 @@ def register_preferences_callbacks(app):
             watchlist = watchlist + [sym]
         return watchlist, _render_watchlist(watchlist), ""
 
-    # ── Save ───────────────────────────────────────────────────────────────────
+    # ── Save to backend ────────────────────────────────────────────────────────
     @app.callback(
         Output("prefs-status-msg", "children"),
         Output("prefs-status-msg", "style"),
         Input("prefs-save-btn",    "n_clicks"),
         State("prefs-user-id",     "data"),
         State("pref-mode-val",     "data"),
-        State("prefs-min-score",   "value"),
+        State("prefs-min-score-val","data"),
         State("pref-hours-val",    "data"),
         State("prefs-watchlist",   "data"),
         State("pref-types-val",    "data"),
