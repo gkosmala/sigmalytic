@@ -99,7 +99,7 @@ ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
 ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
-SCAN_INTERVAL_SECONDS      = 60
+SCAN_INTERVAL_SECONDS      = 300  # 5 minutes - reduced to free up backend resources
 INTELLIGENCE_INTERVAL_SECS = 300   # 5 minutes
 SNAPSHOT_INTERVAL          = 300
 SCORE_THRESHOLD            = 75
@@ -223,7 +223,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
                 time.sleep(5)
         except Exception as e:
             log.debug(f"Bar fetch error {symbol}: {e}")
-        time.sleep(0.05)
+        time.sleep(0.02)
     log.info(f"Bar fetch complete — {len(results)}/{len(symbols)} symbols")
     return results
 
@@ -586,7 +586,7 @@ def run_intelligence_scan():
         except Exception as e:
             log.warning(f"Intelligence scan error {symbol}: {e}")
 
-        time.sleep(0.5)
+        time.sleep(0.1)
 
     LAST_INTELLIGENCE_TIME = time.time()
     log.info(f"Intelligence scan complete — {len(INTELLIGENCE_CACHE)} symbols graded")
