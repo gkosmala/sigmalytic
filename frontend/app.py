@@ -637,8 +637,20 @@ app.index_string=f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-_init_live=create_live_update("AAPL",280.15,750_000,0).to_dict()
-_init_candles=[{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)} for i,c in enumerate(generate_initial_candles(280.15))]
+# Fetch real price on startup
+def _fetch_startup_price():
+    try:
+        import requests as _r
+        _backend = os.getenv("BACKEND_URL", "http://localhost:8000")
+        r = _r.get(f"{_backend}/api/stock/AAPL", timeout=5)
+        if r.ok:
+            return float(r.json().get("price", 280.15))
+    except: pass
+    return 280.15
+
+_startup_price = _fetch_startup_price()
+_init_live=create_live_update("AAPL",_startup_price,750_000,0).to_dict()
+_init_candles=[{"o":c.o,"h":c.h,"l":c.l,"c":c.c,"t":str(i)} for i,c in enumerate(generate_initial_candles(_startup_price))]
 SUPABASE_URL=os.getenv("SUPABASE_URL","")
 SUPABASE_ANON_KEY=os.getenv("SUPABASE_ANON_KEY","")
 
