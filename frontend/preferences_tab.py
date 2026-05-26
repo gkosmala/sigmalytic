@@ -1,6 +1,7 @@
 """
 preferences_tab.py — Sigmalytic Quant
-Stores live in app.py root layout for true persistence across login/logout.
+No startup callbacks. Stores live in app.py root layout.
+Button styles set at render time from store values.
 """
 
 from __future__ import annotations
@@ -56,9 +57,14 @@ def _off():
             "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
 
 
-def build_preferences_tab(user_id: str = "") -> html.Div:
-    # NOTE: all dcc.Store components live in app.py root layout
-    # This function only renders the UI controls
+def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True,
+                           min_score=60, watchlist=None) -> html.Div:
+    """Renders with correct button styles from stored values."""
+    if types is None:
+        types = {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
+    if watchlist is None:
+        watchlist = []
+
     return html.Div([
         dcc.Store(id="prefs-user-id", data=user_id),
 
@@ -75,9 +81,12 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             _section_title("📬 Delivery Mode"),
             _label("How often do you want alerts?"),
             html.Div([
-                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0, style=_on()),
-                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0, style=_off()),
-                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0, style=_off()),
+                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0,
+                            style=_on() if mode=="realtime" else _off()),
+                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0,
+                            style=_on() if mode=="hourly" else _off()),
+                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0,
+                            style=_on() if mode=="daily" else _off()),
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
@@ -85,7 +94,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
         _card([
             _section_title("🎯 Minimum Confluence Score"),
             _label("Only alert when score is at least:"),
-            dcc.Slider(id="prefs-min-score", min=0, max=100, step=5, value=60,
+            dcc.Slider(id="prefs-min-score", min=0, max=100, step=5, value=min_score,
                        marks={0:"0",25:"25",50:"50",75:"75",100:"100"},
                        tooltip={"placement":"bottom","always_visible":True}),
             html.Div(style={"height":"8px"}),
@@ -100,11 +109,16 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             html.Div([
                 html.Button("✓ All",            id="pref-type-all",      n_clicks=0, style=_off()),
                 html.Button("✗ None",           id="pref-type-none",     n_clicks=0, style=_off()),
-                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0, style=_on()),
-                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0, style=_on()),
-                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0, style=_on()),
-                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0, style=_off()),
-                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0, style=_off()),
+                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0,
+                            style=_on() if types.get("wyckoff")   else _off()),
+                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0,
+                            style=_on() if types.get("gann")      else _off()),
+                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0,
+                            style=_on() if types.get("ab_score")  else _off()),
+                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0,
+                            style=_on() if types.get("elliott")   else _off()),
+                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0,
+                            style=_on() if types.get("fibonacci") else _off()),
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
@@ -127,8 +141,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                                    "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
             ], style={"display":"flex","alignItems":"center","marginBottom":"12px"}),
             html.Div(id="prefs-watchlist-display",
-                     children=[html.Span("All symbols — no filter applied",
-                                         style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})]),
+                     children=_render_watchlist(watchlist)),
         ]),
 
         # Market Hours
@@ -141,7 +154,8 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                     html.Div("Suppress alerts outside 9:30–4:00 PM ET",
                              style={"color":MUTED,"fontSize":"11px","marginTop":"2px"}),
                 ], style={"flex":"1"}),
-                html.Button("ON", id="pref-hours-btn", n_clicks=0, style=_on()),
+                html.Button("ON" if hours else "OFF", id="pref-hours-btn", n_clicks=0,
+                            style=_on() if hours else _off()),
             ], style={"display":"flex","alignItems":"center","gap":"16px"}),
         ]),
 
@@ -161,47 +175,6 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
 
 def register_preferences_callbacks(app):
 
-    # ── Sync button styles from stores on tab open ─────────────────────────────
-    @app.callback(
-        Output("pref-mode-realtime", "style"),
-        Output("pref-mode-hourly",   "style"),
-        Output("pref-mode-daily",    "style"),
-        Output("pref-type-wyckoff",  "style"),
-        Output("pref-type-gann",     "style"),
-        Output("pref-type-ab_score", "style"),
-        Output("pref-type-elliott",  "style"),
-        Output("pref-type-fibonacci","style"),
-        Output("pref-hours-btn",     "children"),
-        Output("pref-hours-btn",     "style"),
-        Output("prefs-min-score",    "value"),
-        Output("prefs-watchlist-display", "children"),
-        Input("s-tab",               "data"),
-        State("pref-mode-val",       "data"),
-        State("pref-types-val",      "data"),
-        State("pref-hours-val",      "data"),
-        State("prefs-min-score-val", "data"),
-        State("prefs-watchlist",     "data"),
-        prevent_initial_call=True,
-    )
-    def sync_ui_from_stores(tab, mode, types, hours, min_score, watchlist):
-        if tab != "preferences":
-            return (no_update,) * 12
-        mode = mode or "realtime"
-        types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
-        mode_styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
-        return (
-            mode_styles[0], mode_styles[1], mode_styles[2],
-            _on() if types.get("wyckoff")   else _off(),
-            _on() if types.get("gann")       else _off(),
-            _on() if types.get("ab_score")   else _off(),
-            _on() if types.get("elliott")    else _off(),
-            _on() if types.get("fibonacci")  else _off(),
-            "ON" if hours else "OFF",
-            _on() if hours else _off(),
-            min_score or 60,
-            _render_watchlist(watchlist or []),
-        )
-
     # ── Delivery mode buttons → update store ───────────────────────────────────
     @app.callback(
         Output("pref-mode-val",      "data"),
@@ -218,7 +191,8 @@ def register_preferences_callbacks(app):
         ctx = callback_context
         if not ctx.triggered: return no_update, no_update, no_update, no_update
         t = ctx.triggered[0]["prop_id"].split(".")[0]
-        mode = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly","pref-mode-daily":"daily"}.get(t, current)
+        mode = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly",
+                "pref-mode-daily":"daily"}.get(t, current)
         styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
         return mode, styles[0], styles[1], styles[2]
 
@@ -245,7 +219,7 @@ def register_preferences_callbacks(app):
         if not ctx.triggered: return (no_update,)*6
         t = ctx.triggered[0]["prop_id"].split(".")[0]
         types = dict(types)
-        if t == "pref-type-all":   types = {k:True for k in types}
+        if t == "pref-type-all":    types = {k:True for k in types}
         elif t == "pref-type-none": types = {k:False for k in types}
         else:
             km = {"pref-type-wyckoff":"wyckoff","pref-type-gann":"gann",
@@ -259,7 +233,7 @@ def register_preferences_callbacks(app):
                 _on() if types.get("elliott")    else _off(),
                 _on() if types.get("fibonacci")  else _off())
 
-    # ── Market hours button → update store ────────────────────────────────────
+    # ── Market hours → update store ────────────────────────────────────────────
     @app.callback(
         Output("pref-hours-val", "data"),
         Output("pref-hours-btn", "children"),
@@ -302,14 +276,14 @@ def register_preferences_callbacks(app):
     @app.callback(
         Output("prefs-status-msg", "children"),
         Output("prefs-status-msg", "style"),
-        Input("prefs-save-btn",    "n_clicks"),
-        State("prefs-user-id",     "data"),
-        State("pref-mode-val",     "data"),
+        Input("prefs-save-btn",     "n_clicks"),
+        State("prefs-user-id",      "data"),
+        State("pref-mode-val",      "data"),
         State("prefs-min-score-val","data"),
-        State("pref-hours-val",    "data"),
-        State("prefs-watchlist",   "data"),
-        State("pref-types-val",    "data"),
-        State("s-session",         "data"),
+        State("pref-hours-val",     "data"),
+        State("prefs-watchlist",    "data"),
+        State("pref-types-val",     "data"),
+        State("s-session",          "data"),
         prevent_initial_call=True,
     )
     def save_prefs(n, user_id, mode, min_score, hours, watchlist, types, session):

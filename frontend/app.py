@@ -733,11 +733,11 @@ def build_main_app():
 
 app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
-    dcc.Store(id="pref-mode-val",  data="realtime",  storage_type="local"),
-    dcc.Store(id="pref-hours-val", data=True,         storage_type="local"),
-    dcc.Store(id="pref-types-val", data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="local"),
-    dcc.Store(id="prefs-watchlist",data=[],           storage_type="local"),
-    dcc.Store(id="prefs-min-score-val", data=60,      storage_type="local"),
+    dcc.Store(id="pref-mode-val",       data="realtime", storage_type="local"),
+    dcc.Store(id="pref-hours-val",      data=True,       storage_type="local"),
+    dcc.Store(id="pref-types-val",      data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="local"),
+    dcc.Store(id="prefs-watchlist",     data=[],         storage_type="local"),
+    dcc.Store(id="prefs-min-score-val", data=60,         storage_type="local"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
     dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
@@ -1008,14 +1008,24 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),Input("s-live-mode","data"),
               Input("i-clock","n_intervals"),Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),Input("s-permissions","data"),Input("s-radar-filter","data"),
-              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf):
+              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"),
+              State("pref-mode-val","data"),State("pref-types-val","data"),State("pref-hours-val","data"),State("prefs-min-score-val","data"),State("prefs-watchlist","data"))
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf,pref_mode,pref_types,pref_hours,pref_score,pref_watchlist):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="preferences": return no_update
+    if tab=="preferences":
+        if trigger != "s-tab": return no_update
+        return build_preferences_tab(
+            user_id=(session or {}).get("user_id",""),
+            mode=pref_mode or "realtime",
+            types=pref_types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+            hours=pref_hours if pref_hours is not None else True,
+            min_score=pref_score or 60,
+            watchlist=pref_watchlist or [],
+        )
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
