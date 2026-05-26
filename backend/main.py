@@ -66,15 +66,6 @@ from preferences_router import router as preferences_router
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
 
-# ── Price cache — serves last known price instantly ───────────────────────
-_price_cache: dict = {}
-
-def cache_price(symbol: str, price: float, volume: int):
-    _price_cache[symbol] = {"price": price, "volume": volume}
-
-def get_cached_price(symbol: str) -> dict | None:
-    return _price_cache.get(symbol)
-
 # ── Config ─────────────────────────────────────────────────────────────────
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
@@ -612,16 +603,7 @@ async def get_stock(symbol: str):
     clean = sanitize_symbol(symbol)
     if not clean:
         raise HTTPException(400, "Invalid symbol")
-    # Try cache first for instant response
-    cached = get_cached_price(clean)
-    try:
-        quote = fetch_latest_quote(clean)
-        cache_price(clean, quote["price"], quote["volume"])
-    except Exception:
-        if cached:
-            quote = cached
-        else:
-            raise HTTPException(503, "Price unavailable")
+    quote = fetch_latest_quote(clean)
     update = create_live_update(clean, quote["price"], quote["volume"], 0)
     return {**quote, "decision": update.decision.__dict__, "confluence": [c.__dict__ for c in update.confluence]}
 
