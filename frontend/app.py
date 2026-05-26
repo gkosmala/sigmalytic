@@ -723,15 +723,6 @@ def build_main_app():
                 ("radar","Radar Screen"),("scoreboard","Scoreboard"),("billing","Billing"),
                 ("setup","Setup"),("admin","🔒 Admin"),    # ← ADMIN TAB
             ]
-        ] + [
-            html.A("⚙️ Preferences",
-                id="prefs-link",
-                href="https://sigmalytic-backend.onrender.com/preferences",
-                target="_blank",
-                style={"background":"rgba(0,0,0,.2)","border":"1px solid rgba(255,255,255,.08)",
-                       "borderRadius":"8px","color":"#94a3b8","fontSize":"13px",
-                       "fontWeight":"700","padding":"8px 14px","textDecoration":"none",
-                       "whiteSpace":"nowrap","cursor":"pointer"})
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px","background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
@@ -742,15 +733,15 @@ app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
-    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
+    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=3_000,n_intervals=0),
-    dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-clock",interval=1_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
-    dcc.Interval(id="i-chart",interval=30_000,n_intervals=0),  # refresh chart bars every 10s
+    dcc.Interval(id="i-chart",interval=10_000,n_intervals=0),  # refresh chart bars every 10s
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
@@ -878,6 +869,9 @@ def set_timeframe(*_):
 def refresh_chart_bars(_,symbol,tf):
     """Refresh chart bars every 10s for intraday, skip for daily/weekly."""
     import requests as _req
+    # For daily/weekly — skip frequent refresh, only update on interval change
+    if tf in ("1D", "1W"):
+        return no_update
     tf_map = {
         "1m":  ("1Min",  60),
         "5m":  ("5Min",  60),
@@ -886,7 +880,7 @@ def refresh_chart_bars(_,symbol,tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 100))
+    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
     try:
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
@@ -897,8 +891,8 @@ def refresh_chart_bars(_,symbol,tf):
             bars = r.json().get("bars", [])
             if bars and len(bars) > 1:
                 return bars
-        # No fallback - return what we have
-        if False:
+        # Fallback to daily
+        if alpaca_tf != "1Day":
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
@@ -926,7 +920,7 @@ def set_radar_filter(*_):
     Output("s-candles","data","allow_duplicate"),
     Input("s-symbol","data"),
     Input("s-tf","data"),
-    prevent_initial_call=False,
+    prevent_initial_call="initial_duplicate",
 )
 def fetch_candles_for_tf(symbol, tf):
     """Fetch real bars from backend on load and when symbol or timeframe changes."""
@@ -939,7 +933,7 @@ def fetch_candles_for_tf(symbol, tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 100))
+    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
     try:
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
@@ -971,8 +965,7 @@ def fetch_candles_for_tf(symbol, tf):
               State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"),
               prevent_initial_call=True)
 def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
-    import random, math
-    from datetime import datetime, timezone, timedelta
+    import random
     ctx=callback_context
     if not ctx.triggered: return no_update,no_update,no_update
     trigger=ctx.triggered[0]["prop_id"].split(".")[0]
@@ -986,61 +979,9 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
         price=round(max(1.0,prev+(random.random()-0.45)*1.25),2); volume=round(500_000+random.random()*5_000_000)
     else: return no_update,no_update,no_update
     new_seq=(seq or 0)+1; new_live=create_live_update(symbol,price,volume,new_seq).to_dict()
-
-    # ── Update live candle ────────────────────────────────────────────────────
-    if candles and len(candles) > 0:
-        candles = list(candles)
-        last = dict(candles[-1])
-        now_ts = datetime.now(timezone.utc)
-
-        # Determine candle period in seconds based on timeframe
-        # We detect timeframe from the last candle timestamp gap
-        tf_seconds = 86400  # default daily
-        if len(candles) >= 2:
-            try:
-                t1 = candles[-2].get("t","")
-                t2 = candles[-1].get("t","")
-                if t1 and t2:
-                    from dateutil import parser as dparser
-                    dt1 = dparser.parse(t1)
-                    dt2 = dparser.parse(t2)
-                    diff = abs((dt2 - dt1).total_seconds())
-                    if diff > 0:
-                        tf_seconds = diff
-            except: pass
-
-        # Check if we need a new candle
-        last_t = last.get("t","")
-        new_candle = False
-        if last_t:
-            try:
-                from dateutil import parser as dparser
-                last_dt = dparser.parse(last_t)
-                if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
-                elapsed = (now_ts - last_dt).total_seconds()
-                if elapsed >= tf_seconds:
-                    new_candle = True
-            except: pass
-
-        if new_candle:
-            # Lock current candle, open a new one
-            new_bar = {"o": price, "h": price, "l": price, "c": price,
-                       "v": volume, "t": now_ts.isoformat()}
-            candles.append(new_bar)
-            if len(candles) > 300:
-                candles = candles[-300:]
-        else:
-            # Update last candle with new price
-            last["c"] = price
-            last["h"] = max(last.get("h", price), price)
-            last["l"] = min(last.get("l", price), price)
-            last["v"] = last.get("v", 0) + volume
-            candles[-1] = last
-
-        return new_live, new_seq, candles
-
-    return new_live, new_seq, no_update
+    # Don't build fake candles — return existing candles unchanged
+    # Real candles are fetched by fetch_candles_for_tf on load and timeframe change
+    return new_live,new_seq,no_update
 
 @app.callback(Output("price-ctrl","children"),Input("s-live-mode","data"),Input("s-live","data"),State("s-price-text","data"))
 def render_price_ctrl(live_mode,live,price_text):
@@ -1064,14 +1005,9 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","command") and trigger=="i-clock": return no_update
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="command":
-        # Only rebuild full chart on symbol/tf change, candle data change, or initial load
-        # WebSocket handles tick-level updates directly via Plotly.restyle
-        if trigger in ("i-clock", "i-alpaca", "i-synth", "i-radar"):
-            return no_update
-        return build_command_tab(live,candles or _init_candles,symbol,tf)
+    if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
     if tab=="behavior":    return build_behavior_tab(analysis or {},perms or {},session)
@@ -1215,159 +1151,46 @@ app.clientside_callback(
 
         var backendHttp = '""" + BACKEND_HTTP + """';
         var wsUrl = backendHttp.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/' + symbol;
+        
+        try {
+            var ws = new WebSocket(wsUrl);
+            window._sigmaWS = ws;
 
-        // Candle state for live forming candle
-        window._liveCandle = null;
-        window._tfSeconds = 300; // default 5 min, updated from store
-
-        function getTfSeconds() {
-            var tfStore = document.getElementById('s-tf');
-            if (tfStore) {
+            ws.onmessage = function(event) {
                 try {
-                    var val = JSON.parse(tfStore.getAttribute('data-dash-is-loading') || 'null');
-                    // Try reading from Dash store element
-                } catch(e) {}
-            }
-            // Read from visible timeframe button text
-            var tfButtons = document.querySelectorAll('[id^="tf-btn"]');
-            // Fallback: check window variable set by Dash
-            if (window._currentTf) {
-                var tfMap = {'1m':60,'5m':300,'15m':900,'1H':3600,'1D':86400,'1W':604800};
-                return tfMap[window._currentTf] || 300;
-            }
-            return 300;
-        }
-
-        function updateChart(price, volume) {
-            // Find the Plotly chart div - try multiple selectors
-            var gd = null;
-            var candidates = document.querySelectorAll('.js-plotly-plot');
-            for (var i = 0; i < candidates.length; i++) {
-                if (candidates[i].data && candidates[i].data[0] && candidates[i].data[0].type === 'candlestick') {
-                    gd = candidates[i];
-                    break;
-                }
-            }
-            if (!gd) {
-                // Try finding by checking all plotly divs
-                candidates = document.querySelectorAll('[id*="chart"], [id*="graph"]');
-                for (var i = 0; i < candidates.length; i++) {
-                    if (candidates[i].data && candidates[i].data[0]) {
-                        gd = candidates[i];
-                        break;
-                    }
-                }
-            }
-            if (!gd || !gd.data || !gd.data[0]) return;
-
-            var trace = gd.data[0];
-            var n = trace.close ? trace.close.length : 0;
-            if (n === 0) return;
-
-            var now = Date.now() / 1000;
-            var tfSec = getTfSeconds();
-
-            // Initialize live candle tracking
-            if (!window._liveCandle) {
-                window._liveCandle = {
-                    open: price, high: price, low: price, close: price,
-                    startTime: now, volume: volume || 0
-                };
-            }
-
-            var lc = window._liveCandle;
-            var elapsed = now - lc.startTime;
-
-            if (elapsed >= tfSec) {
-                // New candle period — lock current and open new
-                lc = { open: price, high: price, low: price, close: price,
-                        startTime: now, volume: volume || 0 };
-                window._liveCandle = lc;
-
-                // Extend arrays with new candle
-                var newX = trace.x ? [...trace.x, new Date().toISOString()] : [new Date().toISOString()];
-                var newO = trace.open ? [...trace.open, price] : [price];
-                var newH = trace.high ? [...trace.high, price] : [price];
-                var newL = trace.low ? [...trace.low, price] : [price];
-                var newC = trace.close ? [...trace.close, price] : [price];
-
-                Plotly.restyle(gd, {
-                    x: [newX], open: [newO], high: [newH], low: [newL], close: [newC]
-                }, [0]);
-            } else {
-                // Update last candle
-                lc.close = price;
-                lc.high = Math.max(lc.high, price);
-                lc.low = Math.min(lc.low, price);
-                lc.volume += (volume || 0);
-                window._liveCandle = lc;
-
-                // Update last point of existing trace
-                var updH = [...(trace.high || [])];
-                var updL = [...(trace.low || [])];
-                var updC = [...(trace.close || [])];
-                updH[n-1] = lc.high;
-                updL[n-1] = lc.low;
-                updC[n-1] = lc.close;
-
-                Plotly.restyle(gd, {
-                    high: [updH], low: [updL], close: [updC]
-                }, [0]);
-
-                // Update live price hline (index 1 is the price line)
-                try {
-                    Plotly.relayout(gd, {'shapes[0].y0': price, 'shapes[0].y1': price});
-                } catch(e) {}
-            }
-
-            // Update price display elements
-            document.querySelectorAll('[data-ws-price]').forEach(function(el) {
-                el.innerText = '$' + price.toFixed(2);
-            });
-        }
-
-        function connect() {
-            try {
-                var ws = new WebSocket(wsUrl);
-                window._sigmaWS = ws;
-
-                ws.onmessage = function(event) {
-                    try {
-                        var data = JSON.parse(event.data);
-                        if (data.type === 'PING') return;
-                        if (data.price && data.price > 0) {
-                            // Update price displays immediately
-                            var price = data.price;
-                            document.querySelectorAll('[data-ws-price]').forEach(function(el) {
-                                el.innerText = '$' + price.toFixed(2);
-                            });
-                            // Update any element with id containing 'live-price'
-                            var liveEls = document.querySelectorAll('[id*="price"]');
-                            liveEls.forEach(function(el) {
-                                if (el.tagName === 'STRONG' || el.tagName === 'SPAN') {
-                                    if (el.innerText && el.innerText.startsWith('$')) {
-                                        el.innerText = '$' + price.toFixed(2);
-                                    }
-                                }
-                            });
-                            updateChart(price, data.volume || 0);
+                    var data = JSON.parse(event.data);
+                    if (data.price && data.price > 0) {
+                        // Update the hidden store with live price
+                        var store = document.getElementById('s-ws-price');
+                        if (store) {
+                            // Trigger Dash store update via hidden input
+                            var input = document.querySelector('#ws-price-receiver input');
+                            if (!input) {
+                                input = document.createElement('input');
+                                input.style.display = 'none';
+                                document.getElementById('ws-price-receiver').appendChild(input);
+                            }
                         }
-                    } catch(e) { console.log('WS msg error:', e); }
-                };
+                        // Update price display directly for zero-latency feel
+                        var priceEls = document.querySelectorAll('[data-ws-price]');
+                        priceEls.forEach(function(el) {
+                            el.innerText = '$' + data.price.toFixed(2);
+                        });
+                    }
+                } catch(e) {}
+            };
 
-                ws.onerror = function(e) { console.log('WS error:', e); };
-                ws.onclose = function() {
-                    window._sigmaWS = null;
-                    // Reconnect after 2 seconds
-                    setTimeout(connect, 500);
-                };
-            } catch(e) {
-                console.log('WS connect failed:', e);
-                setTimeout(connect, 500);
-            }
+            ws.onerror = function(e) { console.log('WS error:', e); };
+            ws.onclose = function() { 
+                // Reconnect after 3 seconds
+                setTimeout(function() {
+                    if (window._sigmaWS === ws) window._sigmaWS = null;
+                }, 3000);
+            };
+        } catch(e) {
+            console.log('WS connect failed:', e);
         }
-
-        connect();
+        
         return window.dash_clientside.no_update;
     }
     """,
@@ -1375,35 +1198,7 @@ app.clientside_callback(
     Input("s-symbol", "data"),
 )
 
-
-app.clientside_callback(
-    """
-    function(tf) {
-        window._currentTf = tf;
-        // Reset live candle when timeframe changes
-        window._liveCandle = null;
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output("ws-price-receiver", "children", allow_duplicate=True),
-    Input("s-tf", "data"),
-    prevent_initial_call=True,
-)
-
 register_billing_callbacks(app)
-
-
-app.clientside_callback(
-    """
-    function(session) {
-        if (!session || !session.user_id) return 'https://sigmalytic-backend.onrender.com/preferences';
-        return 'https://sigmalytic-backend.onrender.com/preferences?user_id=' + session.user_id;
-    }
-    """,
-    Output("prefs-link", "href"),
-    Input("s-session", "data"),
-)
-
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
