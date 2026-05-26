@@ -1239,6 +1239,43 @@ def show_hide_preferences(tab):
         return {"display": "none"}, {"display": "block"}
     return {}, {"display": "none"}
 
+
+@app.callback(
+    Output("pref-mode-val",       "data"),
+    Output("pref-hours-val",      "data"),
+    Output("pref-types-val",      "data"),
+    Output("prefs-watchlist",     "data"),
+    Output("prefs-min-score-val", "data"),
+    Input("s-session",            "data"),
+    prevent_initial_call=True,
+)
+def load_prefs_from_backend(session):
+    import requests as _req
+    if not session or not session.get("user_id"):
+        return no_update, no_update, no_update, no_update, no_update
+    user_id = session["user_id"]
+    try:
+        r = _req.get(
+            f"{os.getenv('BACKEND_URL','https://sigmalytic-backend.onrender.com')}/api/preferences/{user_id}",
+            timeout=3
+        )
+        if not r.ok:
+            return no_update, no_update, no_update, no_update, no_update
+        p = r.json()
+        alert_types = p.get("alert_types", ["wyckoff","gann","ab_score"])
+        types = {"wyckoff":"wyckoff" in alert_types,"gann":"gann" in alert_types,
+                 "ab_score":"ab_score" in alert_types,"elliott":"elliott" in alert_types,
+                 "fibonacci":"fibonacci" in alert_types}
+        return (
+            p.get("delivery_mode", "realtime"),
+            p.get("market_hours_only", True),
+            types,
+            p.get("watchlist", []),
+            p.get("min_score", 60),
+        )
+    except Exception:
+        return no_update, no_update, no_update, no_update, no_update
+
 register_preferences_callbacks(app)
 
 if __name__=="__main__":
