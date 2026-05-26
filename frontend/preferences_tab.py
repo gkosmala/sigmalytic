@@ -1,7 +1,6 @@
 """
 preferences_tab.py — Sigmalytic Quant
-NO stores inside this file. All stores live in app.py root layout.
-Buttons update stores directly. localStorage handles persistence.
+Stores in app.py root layout. All callbacks prevent_initial_call=True.
 """
 
 from __future__ import annotations
@@ -58,24 +57,16 @@ def _off():
 
 
 def build_preferences_tab(user_id: str = "") -> html.Div:
-    """
-    Renders the preferences UI. No stores here — they live in app.py root.
-    Button styles start at defaults; the sync_prefs_ui callback will correct
-    them immediately using the stored localStorage values.
-    """
     return html.Div([
-        # Header
         html.Div([
             html.H2("Alert Preferences", style={
                 "color": WHITE, "fontSize": "22px", "fontWeight": "800", "marginBottom": "4px"
             }),
             html.P("Control which alerts you receive and how often.",
                    style={"color": TEXT, "fontSize": "13px"}),
-            # Hidden span to carry user_id into save callback
             html.Span(user_id, id="prefs-user-id", style={"display":"none"}),
         ], style={"marginBottom": "24px"}),
 
-        # Delivery Mode
         _card([
             _section_title("📬 Delivery Mode"),
             _label("How often do you want alerts?"),
@@ -86,7 +77,6 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
-        # Min Score
         _card([
             _section_title("🎯 Minimum Confluence Score"),
             _label("Only alert when score is at least:"),
@@ -98,7 +88,6 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                      style={"color":MUTED,"fontSize":"11px"}),
         ]),
 
-        # Alert Types
         _card([
             _section_title("⚡ Alert Types"),
             _label("Select any combination — or activate all:"),
@@ -113,7 +102,6 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
         ]),
 
-        # Watchlist
         _card([
             _section_title("📋 Watchlist"),
             _label("Only alert on these symbols (leave empty for all 1,403)"),
@@ -136,7 +124,6 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
                                          style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})]),
         ]),
 
-        # Market Hours
         _card([
             _section_title("🕐 Market Hours"),
             html.Div([
@@ -166,8 +153,7 @@ def build_preferences_tab(user_id: str = "") -> html.Div:
 
 def register_preferences_callbacks(app):
 
-    # ── Sync button styles from localStorage stores when tab opens ─────────────
-    # This only updates styles - no HTTP calls, no freezing
+    # ── Sync styles from stores when Preferences tab opens ─────────────────────
     @app.callback(
         Output("pref-mode-realtime", "style"),
         Output("pref-mode-hourly",   "style"),
@@ -182,26 +168,19 @@ def register_preferences_callbacks(app):
         Output("prefs-min-score",    "value"),
         Output("prefs-watchlist-display", "children"),
         Input("s-tab",               "data"),
-        Input("pref-mode-val",       "data"),
-        Input("pref-types-val",      "data"),
-        Input("pref-hours-val",      "data"),
-        Input("prefs-min-score-val", "data"),
-        Input("prefs-watchlist",     "data"),
+        State("pref-mode-val",       "data"),
+        State("pref-types-val",      "data"),
+        State("pref-hours-val",      "data"),
+        State("prefs-min-score-val", "data"),
+        State("prefs-watchlist",     "data"),
         prevent_initial_call=True,
     )
     def sync_prefs_ui(tab, mode, types, hours, min_score, watchlist):
-        from dash import callback_context as _ctx
-        trigger = _ctx.triggered[0]["prop_id"].split(".")[0] if _ctx.triggered else ""
-        # Only skip if triggered by clock or other non-prefs inputs
-        if trigger == "s-tab" and tab != "preferences":
-            return (no_update,) * 12
-        if trigger != "s-tab" and tab != "preferences":
+        if tab != "preferences":
             return (no_update,) * 12
         mode  = mode  or "realtime"
         types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
         hours = True if hours is None else hours
-        min_score = min_score or 60
-        watchlist = watchlist or []
         return (
             _on() if mode=="realtime" else _off(),
             _on() if mode=="hourly"   else _off(),
@@ -213,11 +192,11 @@ def register_preferences_callbacks(app):
             _on() if types.get("fibonacci") else _off(),
             "ON" if hours else "OFF",
             _on() if hours else _off(),
-            min_score,
-            _render_watchlist(watchlist),
+            min_score or 60,
+            _render_watchlist(watchlist or []),
         )
 
-    # ── Delivery mode → store ──────────────────────────────────────────────────
+    # ── Delivery mode ──────────────────────────────────────────────────────────
     @app.callback(
         Output("pref-mode-val",      "data"),
         Output("pref-mode-realtime", "style"),
@@ -238,7 +217,7 @@ def register_preferences_callbacks(app):
         styles = [_on() if x==mode else _off() for x in ["realtime","hourly","daily"]]
         return mode, styles[0], styles[1], styles[2]
 
-    # ── Alert types → store ────────────────────────────────────────────────────
+    # ── Alert types ────────────────────────────────────────────────────────────
     @app.callback(
         Output("pref-types-val",     "data"),
         Output("pref-type-wyckoff",  "style"),
@@ -275,7 +254,7 @@ def register_preferences_callbacks(app):
                 _on() if types.get("elliott")    else _off(),
                 _on() if types.get("fibonacci")  else _off())
 
-    # ── Market hours → store ───────────────────────────────────────────────────
+    # ── Market hours ───────────────────────────────────────────────────────────
     @app.callback(
         Output("pref-hours-val", "data"),
         Output("pref-hours-btn", "children"),
@@ -288,7 +267,7 @@ def register_preferences_callbacks(app):
         new = not current
         return new, ("ON" if new else "OFF"), (_on() if new else _off())
 
-    # ── Slider → store ─────────────────────────────────────────────────────────
+    # ── Slider ─────────────────────────────────────────────────────────────────
     @app.callback(
         Output("prefs-min-score-val", "data"),
         Input("prefs-min-score",      "value"),
@@ -314,7 +293,7 @@ def register_preferences_callbacks(app):
             watchlist = watchlist + [sym]
         return watchlist, _render_watchlist(watchlist), ""
 
-    # ── Save to backend ────────────────────────────────────────────────────────
+    # ── Save ───────────────────────────────────────────────────────────────────
     @app.callback(
         Output("prefs-status-msg", "children"),
         Output("prefs-status-msg", "style"),

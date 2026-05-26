@@ -733,11 +733,11 @@ def build_main_app():
 
 app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
-    dcc.Store(id="pref-mode-val",       data="realtime", storage_type="local"),
-    dcc.Store(id="pref-hours-val",      data=True,       storage_type="local"),
-    dcc.Store(id="pref-types-val",      data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="local"),
-    dcc.Store(id="prefs-watchlist",     data=[],         storage_type="local"),
-    dcc.Store(id="prefs-min-score-val", data=60,         storage_type="local"),
+    dcc.Store(id="pref-mode-val",       data="realtime", storage_type="session"),
+    dcc.Store(id="pref-hours-val",      data=True,       storage_type="session"),
+    dcc.Store(id="pref-types-val",      data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}, storage_type="session"),
+    dcc.Store(id="prefs-watchlist",     data=[],         storage_type="session"),
+    dcc.Store(id="prefs-min-score-val", data=60,         storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
     dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
