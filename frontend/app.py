@@ -403,7 +403,7 @@ def build_chart(candles, price, nodes):
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
         font=dict(family="DM Sans",color=TEXT,size=11),
         xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f"),
+        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f",autorange=True),
         margin=dict(l=0,r=130,t=12,b=12),height=390,showlegend=False,hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),dragmode="pan")
     return fig
@@ -894,7 +894,7 @@ def refresh_chart_bars(_,symbol,tf):
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
             params={"timeframe": alpaca_tf, "limit": limit},
-            timeout=10,
+            timeout=15,
         )
         if r.ok:
             bars = r.json().get("bars", [])
@@ -905,7 +905,7 @@ def refresh_chart_bars(_,symbol,tf):
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
-                timeout=10,
+                timeout=15,
             )
             if r2.ok:
                 bars2 = r2.json().get("bars", [])
@@ -947,7 +947,7 @@ def fetch_candles_for_tf(symbol, tf):
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
             params={"timeframe": alpaca_tf, "limit": limit},
-            timeout=10,
+            timeout=15,
         )
         if r.ok:
             bars = r.json().get("bars", [])
@@ -958,7 +958,7 @@ def fetch_candles_for_tf(symbol, tf):
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
-                timeout=10,
+                timeout=15,
             )
             if r2.ok:
                 bars2 = r2.json().get("bars", [])
@@ -981,7 +981,7 @@ def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
     trigger=ctx.triggered[0]["prop_id"].split(".")[0]
     if live_mode and trigger=="i-alpaca":
         try:
-            import requests as req; r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=4); r.raise_for_status()
+            import requests as req; r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=8); r.raise_for_status()
             data=r.json(); price=float(data["price"]); volume=int(data.get("volume",0))
         except Exception as _e:
             print(f"TICK_ERROR: {_e}", flush=True)
