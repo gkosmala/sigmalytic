@@ -1,205 +1,394 @@
 """
 preferences_tab.py — Sigmalytic Quant
-Minimal working version. Stores in app.py root (localStorage).
-NO store inputs in callbacks - only button clicks trigger updates.
+Uses native Dash RadioItems/Checklist with inline styles only.
+No html.Style, no external CSS dependencies.
 """
 
 from __future__ import annotations
 import os
 import requests
-from dash import dcc, html, Input, Output, State, no_update, callback_context
+from dash import dcc, html, Input, Output, State, no_update
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
 
-NAVY_CARD="#111f35"; TEAL="#2d8f6f"; TEAL_DIM="#34d399"
-TEAL_GLOW="rgba(45,143,111,.18)"; RED_DIM="#f87171"; YELLOW_DIM="#fde68a"
-MUTED="#64748b"; TEXT="#94a3b8"; WHITE="#f1f5f9"
-BORDER="rgba(255,255,255,.08)"; BORDER_T="rgba(45,143,111,.35)"
+NAVY_CARD = "#111f35"
+TEAL      = "#2d8f6f"
+TEAL_DIM  = "#34d399"
+TEAL_GLOW = "rgba(45,143,111,.18)"
+RED_DIM   = "#f87171"
+YELLOW_DIM= "#fde68a"
+MUTED     = "#64748b"
+TEXT      = "#94a3b8"
+WHITE     = "#f1f5f9"
+BORDER    = "rgba(255,255,255,.08)"
+BORDER_T  = "rgba(45,143,111,.35)"
 
-def _card(c):
-    return html.Section(c, style={"background":NAVY_CARD,"border":f"1px solid {BORDER}",
-        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)","marginBottom":"16px"})
+def _card(children):
+    return html.Section(children, style={
+        "background": NAVY_CARD, "border": f"1px solid {BORDER}",
+        "borderRadius": "20px", "padding": "20px",
+        "boxShadow": "0 8px 32px rgba(0,0,0,.32)", "marginBottom": "16px"
+    })
 
-def _label(t):
-    return html.Div(t, style={"color":MUTED,"fontSize":"10px","fontWeight":"800",
-        "textTransform":"uppercase","letterSpacing":".28em","marginBottom":"10px"})
+def _label(text):
+    return html.Div(text, style={
+        "color": MUTED, "fontSize": "10px", "fontWeight": "800",
+        "textTransform": "uppercase", "letterSpacing": ".28em", "marginBottom": "10px"
+    })
 
-def _stitle(t):
-    return html.Div(t, style={"color":TEAL_DIM,"fontSize":"11px","fontWeight":"800",
-        "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"16px",
-        "paddingBottom":"10px","borderBottom":f"1px solid {BORDER}"})
+def _section_title(text):
+    return html.Div(text, style={
+        "color": TEAL_DIM, "fontSize": "11px", "fontWeight": "800",
+        "textTransform": "uppercase", "letterSpacing": ".15em",
+        "marginBottom": "16px", "paddingBottom": "10px",
+        "borderBottom": f"1px solid {BORDER}"
+    })
 
-def _on():
-    return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
-            "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
-            "fontWeight":"700","padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
-
-def _off():
-    return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"8px",
-            "color":TEXT,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
-            "fontWeight":"700","padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
-
-
-def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, min_score=60, watchlist=None):
-    types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
-    watchlist = watchlist or []
+def build_preferences_tab(user_id: str = "") -> html.Div:
     return html.Div([
+        dcc.Store(id="prefs-user-id",   data=user_id),
+        dcc.Store(id="prefs-watchlist", data=[]),
+
+        # Header
         html.Div([
-            html.H2("Alert Preferences", style={"color":WHITE,"fontSize":"22px","fontWeight":"800","marginBottom":"4px"}),
-            html.P("Control which alerts you receive and how often.", style={"color":TEXT,"fontSize":"13px"}),
-            html.Span(user_id, id="prefs-user-id", style={"display":"none"}),
-        ], style={"marginBottom":"24px"}),
+            html.H2("Alert Preferences", style={
+                "color": WHITE, "fontSize": "22px", "fontWeight": "800", "marginBottom": "4px"
+            }),
+            html.P("Control which alerts you receive and how often.",
+                   style={"color": TEXT, "fontSize": "13px"}),
+        ], style={"marginBottom": "24px"}),
 
-        _card([_stitle("📬 Delivery Mode"), _label("How often do you want alerts?"),
+        # Delivery Mode
+        _card([
+            _section_title("📬 Delivery Mode"),
+            _label("How often do you want alerts?"),
             html.Div([
-                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0, style=_on() if mode=="realtime" else _off()),
-                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0, style=_on() if mode=="hourly"   else _off()),
-                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0, style=_on() if mode=="daily"    else _off()),
-            ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
+                html.Button("Real-time",     id="pref-mode-realtime", n_clicks=0,
+                            style=_active_btn()),
+                html.Button("Hourly Digest", id="pref-mode-hourly",   n_clicks=0,
+                            style=_inactive_btn()),
+                html.Button("Daily Summary", id="pref-mode-daily",    n_clicks=0,
+                            style=_inactive_btn()),
+                dcc.Store(id="pref-mode-val", data="realtime"),
+            ], style={"display": "flex", "flexWrap": "wrap", "gap": "8px"}),
+        ]),
 
-        _card([_stitle("🎯 Minimum Confluence Score"), _label("Only alert when score is at least:"),
-            dcc.Slider(id="prefs-min-score", min=0, max=100, step=5, value=min_score,
-                marks={0:"0",25:"25",50:"50",75:"75",100:"100"},
-                tooltip={"placement":"bottom","always_visible":True}),
+        # Min Score
+        _card([
+            _section_title("🎯 Minimum Confluence Score"),
+            _label("Only alert when score is at least:"),
+            dcc.Slider(
+                id="prefs-min-score", min=0, max=100, step=5, value=60,
+                marks={0:"0", 25:"25", 50:"50", 75:"75", 100:"100"},
+                tooltip={"placement":"bottom","always_visible":True},
+            ),
             html.Div(style={"height":"8px"}),
-            html.Div("Higher score = fewer, higher-quality alerts", style={"color":MUTED,"fontSize":"11px"})]),
+            html.Div("Higher score = fewer, higher-quality alerts",
+                     style={"color": MUTED, "fontSize": "11px"}),
+        ]),
 
-        _card([_stitle("⚡ Alert Types"), _label("Select any combination — or activate all:"),
+        # Alert Types
+        _card([
+            _section_title("⚡ Alert Types"),
+            _label("Select any combination — or activate all:"),
             html.Div([
-                html.Button("✓ All",            id="pref-type-all",      n_clicks=0, style=_off()),
-                html.Button("✗ None",           id="pref-type-none",     n_clicks=0, style=_off()),
-                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0, style=_on() if types.get("wyckoff")   else _off()),
-                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0, style=_on() if types.get("gann")      else _off()),
-                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0, style=_on() if types.get("ab_score")  else _off()),
-                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0, style=_on() if types.get("elliott")   else _off()),
-                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0, style=_on() if types.get("fibonacci") else _off()),
-            ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
+                html.Button("✓ All",            id="pref-type-all",      n_clicks=0, style=_inactive_btn()),
+                html.Button("✗ None",           id="pref-type-none",     n_clicks=0, style=_inactive_btn()),
+                html.Button("Structure Alerts", id="pref-type-wyckoff",  n_clicks=0, style=_active_btn()),
+                html.Button("Vector Alerts",    id="pref-type-gann",     n_clicks=0, style=_active_btn()),
+                html.Button("Score Alerts",     id="pref-type-ab_score", n_clicks=0, style=_active_btn()),
+                html.Button("Cycle Alerts",     id="pref-type-elliott",  n_clicks=0, style=_inactive_btn()),
+                html.Button("Level Alerts",     id="pref-type-fibonacci",n_clicks=0, style=_inactive_btn()),
+                dcc.Store(id="pref-types-val", data={
+                    "wyckoff":True,"gann":True,"ab_score":True,
+                    "elliott":False,"fibonacci":False
+                }),
+            ], style={"display":"flex","flexWrap":"wrap","gap":"8px"}),
+        ]),
 
-        _card([_stitle("📋 Watchlist"), _label("Only alert on these symbols (leave empty for all 1,403)"),
+        # Watchlist
+        _card([
+            _section_title("📋 Watchlist"),
+            _label("Only alert on these symbols (leave empty for all 1,403)"),
             html.Div([
-                dcc.Input(id="prefs-symbol-input", type="text", placeholder="e.g. AAPL", maxLength=5,
-                    style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}","borderRadius":"8px",
-                           "color":WHITE,"fontFamily":"DM Mono, monospace","fontSize":"13px",
-                           "padding":"10px 14px","width":"160px","marginRight":"10px","textTransform":"uppercase"}),
+                dcc.Input(id="prefs-symbol-input", type="text",
+                          placeholder="e.g. AAPL", maxLength=5,
+                          style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                 "borderRadius":"8px","color":WHITE,
+                                 "fontFamily":"DM Mono, monospace","fontSize":"13px",
+                                 "padding":"10px 14px","width":"160px","marginRight":"10px",
+                                 "textTransform":"uppercase"}),
                 html.Button("Add Symbol", id="prefs-add-symbol", n_clicks=0,
-                    style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
-                           "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
-                           "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
+                            style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
+                                   "borderRadius":"8px","color":TEAL_DIM,
+                                   "fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                                   "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
             ], style={"display":"flex","alignItems":"center","marginBottom":"12px"}),
-            html.Div(id="prefs-watchlist-display", children=_render_watchlist(watchlist))]),
+            html.Div(id="prefs-watchlist-display",
+                     children=[html.Span("All symbols — no filter applied",
+                                         style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})]),
+        ]),
 
-        _card([_stitle("🕐 Market Hours"),
+        # Market Hours
+        _card([
+            _section_title("🕐 Market Hours"),
             html.Div([
                 html.Div([
-                    html.Div("Market hours only", style={"color":WHITE,"fontSize":"13px","fontWeight":"600"}),
-                    html.Div("Suppress alerts outside 9:30–4:00 PM ET", style={"color":MUTED,"fontSize":"11px","marginTop":"2px"}),
+                    html.Div("Market hours only",
+                             style={"color":WHITE,"fontSize":"13px","fontWeight":"600"}),
+                    html.Div("Suppress alerts outside 9:30–4:00 PM ET",
+                             style={"color":MUTED,"fontSize":"11px","marginTop":"2px"}),
                 ], style={"flex":"1"}),
-                html.Button("ON" if hours else "OFF", id="pref-hours-btn", n_clicks=0,
-                            style=_on() if hours else _off()),
-            ], style={"display":"flex","alignItems":"center","gap":"16px"})]),
+                html.Button("ON", id="pref-hours-btn", n_clicks=0, style=_active_btn()),
+                dcc.Store(id="pref-hours-val", data=True),
+            ], style={"display":"flex","alignItems":"center","gap":"16px"}),
+        ]),
 
+        # Save
         html.Button("Save Preferences", id="prefs-save-btn", n_clicks=0, style={
-            "width":"100%","background":TEAL,"border":"none","borderRadius":"12px","color":WHITE,
-            "fontFamily":"DM Sans, sans-serif","fontSize":"14px","fontWeight":"800",
-            "padding":"16px","cursor":"pointer","letterSpacing":".05em","marginBottom":"12px"}),
-        html.Div(id="prefs-status-msg", style={"textAlign":"center","fontSize":"13px","minHeight":"20px","marginBottom":"24px"}),
+            "width":"100%","background":TEAL,"border":"none","borderRadius":"12px",
+            "color":WHITE,"fontFamily":"DM Sans, sans-serif","fontSize":"14px",
+            "fontWeight":"800","padding":"16px","cursor":"pointer",
+            "letterSpacing":".05em","marginBottom":"12px",
+        }),
+        html.Div(id="prefs-status-msg", style={
+            "textAlign":"center","fontSize":"13px",
+            "minHeight":"20px","marginBottom":"24px",
+        }),
 
     ], style={"maxWidth":"600px","margin":"0 auto","padding":"24px 16px"})
 
 
+def _active_btn():
+    return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
+            "borderRadius":"8px","color":TEAL_DIM,
+            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
+            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
+
+def _inactive_btn():
+    return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+            "borderRadius":"8px","color":TEXT,
+            "fontFamily":"DM Sans, sans-serif","fontSize":"12px","fontWeight":"700",
+            "padding":"8px 16px","cursor":"pointer","transition":"all .15s"}
+
+
 def register_preferences_callbacks(app):
 
+    # ── Load saved preferences from backend on startup ─────────────────────────
     @app.callback(
-        Output("pref-mode-val","data"),
-        Output("pref-mode-realtime","style"), Output("pref-mode-hourly","style"), Output("pref-mode-daily","style"),
-        Input("pref-mode-realtime","n_clicks"), Input("pref-mode-hourly","n_clicks"), Input("pref-mode-daily","n_clicks"),
-        State("pref-mode-val","data"), prevent_initial_call=True,
+        Output("pref-mode-val",      "data"),
+        Output("pref-mode-realtime", "style"),
+        Output("pref-mode-hourly",   "style"),
+        Output("pref-mode-daily",    "style"),
+        Output("pref-types-val",     "data"),
+        Output("pref-type-wyckoff",  "style"),
+        Output("pref-type-gann",     "style"),
+        Output("pref-type-ab_score", "style"),
+        Output("pref-type-elliott",  "style"),
+        Output("pref-type-fibonacci","style"),
+        Output("prefs-min-score",    "value"),
+        Output("pref-hours-val",     "data"),
+        Output("pref-hours-btn",     "children"),
+        Output("pref-hours-btn",     "style"),
+        Output("prefs-watchlist",    "data"),
+        Output("prefs-watchlist-display", "children"),
+        Input("prefs-user-id",       "data"),
+        prevent_initial_call=False,
     )
-    def set_mode(r,h,d,cur):
-        ctx=callback_context
-        if not ctx.triggered: return no_update,no_update,no_update,no_update
-        t=ctx.triggered[0]["prop_id"].split(".")[0]
-        m={"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly","pref-mode-daily":"daily"}.get(t,cur)
-        return m,*[_on() if x==m else _off() for x in ["realtime","hourly","daily"]]
+    def load_saved_preferences(user_id):
+        defaults = (
+            "realtime",
+            _active_btn(), _inactive_btn(), _inactive_btn(),
+            {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+            _active_btn(), _active_btn(), _active_btn(), _inactive_btn(), _inactive_btn(),
+            60,
+            True, "ON", _active_btn(),
+            [], [html.Span("All symbols — no filter applied",
+                           style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})],
+        )
+        if not user_id:
+            return defaults
+        try:
+            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=5)
+            if not r.ok:
+                return defaults
+            p = r.json()
+            mode = p.get("delivery_mode", "realtime")
+            mode_styles = [_active_btn() if x==mode else _inactive_btn()
+                           for x in ["realtime","hourly","daily"]]
+            types = {
+                "wyckoff":   "wyckoff"   in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "gann":      "gann"      in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "ab_score":  "ab_score"  in p.get("alert_types", ["wyckoff","gann","ab_score"]),
+                "elliott":   "elliott"   in p.get("alert_types", []),
+                "fibonacci": "fibonacci" in p.get("alert_types", []),
+            }
+            min_score  = p.get("min_score", 60)
+            hours      = p.get("market_hours_only", True)
+            watchlist  = p.get("watchlist", [])
+            return (
+                mode,
+                mode_styles[0], mode_styles[1], mode_styles[2],
+                types,
+                _active_btn() if types["wyckoff"]   else _inactive_btn(),
+                _active_btn() if types["gann"]      else _inactive_btn(),
+                _active_btn() if types["ab_score"]  else _inactive_btn(),
+                _active_btn() if types["elliott"]   else _inactive_btn(),
+                _active_btn() if types["fibonacci"] else _inactive_btn(),
+                min_score,
+                hours,
+                "ON" if hours else "OFF",
+                _active_btn() if hours else _inactive_btn(),
+                watchlist,
+                _render_watchlist(watchlist),
+            )
+        except Exception:
+            return defaults
 
-    @app.callback(
-        Output("pref-types-val","data"),
-        Output("pref-type-wyckoff","style"), Output("pref-type-gann","style"),
-        Output("pref-type-ab_score","style"), Output("pref-type-elliott","style"), Output("pref-type-fibonacci","style"),
-        Input("pref-type-wyckoff","n_clicks"), Input("pref-type-gann","n_clicks"),
-        Input("pref-type-ab_score","n_clicks"), Input("pref-type-elliott","n_clicks"),
-        Input("pref-type-fibonacci","n_clicks"), Input("pref-type-all","n_clicks"), Input("pref-type-none","n_clicks"),
-        State("pref-types-val","data"), prevent_initial_call=True,
-    )
-    def set_types(nw,ng,na,ne,nf,n_all,n_none,types):
-        ctx=callback_context
-        if not ctx.triggered: return (no_update,)*6
-        t=ctx.triggered[0]["prop_id"].split(".")[0]
-        types=dict(types)
-        if t=="pref-type-all": types={k:True for k in types}
-        elif t=="pref-type-none": types={k:False for k in types}
-        else:
-            km={"pref-type-wyckoff":"wyckoff","pref-type-gann":"gann","pref-type-ab_score":"ab_score",
-                "pref-type-elliott":"elliott","pref-type-fibonacci":"fibonacci"}
-            if t in km: types[km[t]]=not types.get(km[t],False)
-        return types,*[_on() if types.get(k) else _off() for k in ["wyckoff","gann","ab_score","elliott","fibonacci"]]
 
+    # ── Delivery mode ──────────────────────────────────────────────────────────
     @app.callback(
-        Output("pref-hours-val","data"), Output("pref-hours-btn","children"), Output("pref-hours-btn","style"),
-        Input("pref-hours-btn","n_clicks"), State("pref-hours-val","data"), prevent_initial_call=True,
-    )
-    def toggle_hours(n,cur):
-        new=not cur
-        return new,("ON" if new else "OFF"),(_on() if new else _off())
-
-    @app.callback(
-        Output("prefs-min-score-val","data"),
-        Input("prefs-min-score","value"), prevent_initial_call=True,
-    )
-    def save_score(v): return v
-
-    @app.callback(
-        Output("prefs-watchlist","data"), Output("prefs-watchlist-display","children"), Output("prefs-symbol-input","value"),
-        Input("prefs-add-symbol","n_clicks"), State("prefs-symbol-input","value"), State("prefs-watchlist","data"),
+        Output("pref-mode-val",       "data"),
+        Output("pref-mode-realtime",  "style"),
+        Output("pref-mode-hourly",    "style"),
+        Output("pref-mode-daily",     "style"),
+        Input("pref-mode-realtime",   "n_clicks"),
+        Input("pref-mode-hourly",     "n_clicks"),
+        Input("pref-mode-daily",      "n_clicks"),
+        State("pref-mode-val",        "data"),
         prevent_initial_call=True,
     )
-    def add_symbol(n,sym,wl):
-        if not sym: return wl,_render_watchlist(wl),""
-        s=sym.strip().upper()
-        if s and s not in wl: wl=wl+[s]
-        return wl,_render_watchlist(wl),""
+    def set_mode(r, h, d, current):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered: return no_update, no_update, no_update, no_update
+        t = ctx.triggered[0]["prop_id"].split(".")[0]
+        m = {"pref-mode-realtime":"realtime","pref-mode-hourly":"hourly","pref-mode-daily":"daily"}.get(t, current)
+        styles = [_active_btn() if x==m else _inactive_btn() for x in ["realtime","hourly","daily"]]
+        return m, styles[0], styles[1], styles[2]
 
+    # ── Alert types ────────────────────────────────────────────────────────────
     @app.callback(
-        Output("prefs-status-msg","children"), Output("prefs-status-msg","style"),
-        Input("prefs-save-btn","n_clicks"),
-        State("prefs-user-id","children"), State("pref-mode-val","data"), State("prefs-min-score-val","data"),
-        State("pref-hours-val","data"), State("prefs-watchlist","data"), State("pref-types-val","data"),
-        State("s-session","data"), prevent_initial_call=True,
+        Output("pref-types-val",        "data"),
+        Output("pref-type-wyckoff",     "style"),
+        Output("pref-type-gann",        "style"),
+        Output("pref-type-ab_score",    "style"),
+        Output("pref-type-elliott",     "style"),
+        Output("pref-type-fibonacci",   "style"),
+        Input("pref-type-wyckoff",      "n_clicks"),
+        Input("pref-type-gann",         "n_clicks"),
+        Input("pref-type-ab_score",     "n_clicks"),
+        Input("pref-type-elliott",      "n_clicks"),
+        Input("pref-type-fibonacci",    "n_clicks"),
+        Input("pref-type-all",          "n_clicks"),
+        Input("pref-type-none",         "n_clicks"),
+        State("pref-types-val",         "data"),
+        prevent_initial_call=True,
     )
-    def save_prefs(n,uid,mode,score,hours,wl,types,session):
-        if not uid and session: uid=session.get("user_id","")
-        email=(session or {}).get("email","")
-        if not uid: return "⚠️ No user ID — please log in first.",_msg("yellow")
-        payload={"delivery_mode":mode or "realtime","min_score":score or 60,
-                 "alert_types":[k for k,v in (types or {}).items() if v],
-                 "watchlist":wl or [],"market_hours_only":bool(hours)}
+    def set_types(nw,ng,na,ne,nf,n_all,n_none,types):
+        from dash import callback_context
+        ctx = callback_context
+        if not ctx.triggered: return no_update,no_update,no_update,no_update,no_update,no_update
+        t = ctx.triggered[0]["prop_id"].split(".")[0]
+        types = dict(types)
+        if t == "pref-type-all":
+            types = {k:True for k in types}
+        elif t == "pref-type-none":
+            types = {k:False for k in types}
+        else:
+            km = {"pref-type-wyckoff":"wyckoff","pref-type-gann":"gann",
+                  "pref-type-ab_score":"ab_score","pref-type-elliott":"elliott",
+                  "pref-type-fibonacci":"fibonacci"}
+            if t in km: types[km[t]] = not types.get(km[t], False)
+        return (types,
+                _active_btn() if types.get("wyckoff")   else _inactive_btn(),
+                _active_btn() if types.get("gann")      else _inactive_btn(),
+                _active_btn() if types.get("ab_score")  else _inactive_btn(),
+                _active_btn() if types.get("elliott")   else _inactive_btn(),
+                _active_btn() if types.get("fibonacci") else _inactive_btn())
+
+    # ── Market hours ───────────────────────────────────────────────────────────
+    @app.callback(
+        Output("pref-hours-val", "data"),
+        Output("pref-hours-btn", "children"),
+        Output("pref-hours-btn", "style"),
+        Input("pref-hours-btn",  "n_clicks"),
+        State("pref-hours-val",  "data"),
+        prevent_initial_call=True,
+    )
+    def toggle_hours(n, current):
+        new = not current
+        return new, ("ON" if new else "OFF"), (_active_btn() if new else _inactive_btn())
+
+    # ── Watchlist ──────────────────────────────────────────────────────────────
+    @app.callback(
+        Output("prefs-watchlist",         "data"),
+        Output("prefs-watchlist-display", "children"),
+        Output("prefs-symbol-input",      "value"),
+        Input("prefs-add-symbol",         "n_clicks"),
+        State("prefs-symbol-input",       "value"),
+        State("prefs-watchlist",          "data"),
+        prevent_initial_call=True,
+    )
+    def add_symbol(n, symbol, watchlist):
+        if not symbol: return watchlist, _render_watchlist(watchlist), ""
+        sym = symbol.strip().upper()
+        if sym and sym not in watchlist:
+            watchlist = watchlist + [sym]
+        return watchlist, _render_watchlist(watchlist), ""
+
+    # ── Save ───────────────────────────────────────────────────────────────────
+    @app.callback(
+        Output("prefs-status-msg", "children"),
+        Output("prefs-status-msg", "style"),
+        Input("prefs-save-btn",    "n_clicks"),
+        State("prefs-user-id",     "data"),
+        State("pref-mode-val",     "data"),
+        State("prefs-min-score",   "value"),
+        State("pref-hours-val",    "data"),
+        State("prefs-watchlist",   "data"),
+        State("pref-types-val",    "data"),
+        State("s-session",         "data"),
+        prevent_initial_call=True,
+    )
+    def save_prefs(n, user_id, mode, min_score, hours, watchlist, types, session):
+        if not user_id and session:
+            user_id = session.get("user_id","")
+        email = (session or {}).get("email","")
+        if not user_id:
+            return "⚠️ No user ID — please log in first.", _msg_style("yellow")
+        payload = {
+            "delivery_mode":     mode or "realtime",
+            "min_score":         min_score or 60,
+            "alert_types":       [k for k,v in (types or {}).items() if v],
+            "watchlist":         watchlist or [],
+            "market_hours_only": bool(hours),
+        }
         try:
-            url=f"{BACKEND_HTTP}/api/preferences/{uid}"
-            r=requests.patch(url,json=payload,timeout=8)
-            if r.status_code==404: r=requests.post(url,json={**payload,"user_id":uid,"email":email},timeout=8)
-            if r.ok: return "✅ Preferences saved!",_msg("teal")
-            return f"❌ {r.json().get('detail','Save failed')}",_msg("red")
-        except Exception as e: return f"❌ {str(e)}",_msg("red")
+            url = f"{BACKEND_HTTP}/api/preferences/{user_id}"
+            r = requests.patch(url, json=payload, timeout=8)
+            if r.status_code == 404:
+                r = requests.post(url, json={**payload,"user_id":user_id,"email":email}, timeout=8)
+            if r.ok:
+                return "✅ Preferences saved!", _msg_style("teal")
+            return f"❌ {r.json().get('detail','Save failed')}", _msg_style("red")
+        except Exception as e:
+            return f"❌ {str(e)}", _msg_style("red")
 
 
-def _render_watchlist(wl):
-    if not wl:
-        return [html.Span("All symbols — no filter applied",style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})]
-    return [html.Span([s,html.Span(" ×",style={"color":RED_DIM,"cursor":"pointer","marginLeft":"4px"})],
-            style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"6px",
-                   "color":WHITE,"fontSize":"12px","padding":"4px 10px","marginRight":"6px",
-                   "marginBottom":"6px","display":"inline-block"}) for s in wl]
+def _render_watchlist(watchlist):
+    if not watchlist:
+        return [html.Span("All symbols — no filter applied",
+                          style={"color":MUTED,"fontSize":"12px","fontStyle":"italic"})]
+    return [
+        html.Span([sym, html.Span(" ×", style={"color":RED_DIM,"cursor":"pointer","marginLeft":"4px"})],
+                  style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+                         "borderRadius":"6px","color":WHITE,"fontSize":"12px",
+                         "padding":"4px 10px","marginRight":"6px","marginBottom":"6px",
+                         "display":"inline-block"})
+        for sym in watchlist
+    ]
 
-def _msg(c="teal"):
+def _msg_style(color="teal"):
     return {"textAlign":"center","fontSize":"13px","minHeight":"20px","marginBottom":"24px",
-            "color":{"teal":TEAL_DIM,"red":RED_DIM,"yellow":YELLOW_DIM}.get(c,WHITE)}
+            "color":{"teal":TEAL_DIM,"red":RED_DIM,"yellow":YELLOW_DIM}.get(color,WHITE)}
