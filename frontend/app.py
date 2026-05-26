@@ -1067,9 +1067,14 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin") and trigger=="i-clock": return no_update
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","command") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
-    if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
+    if tab=="command":
+        # Only rebuild full chart on symbol/tf change, live mode change, or initial load
+        # WebSocket handles tick-level updates directly via Plotly.restyle
+        if trigger in ("i-clock", "i-alpaca", "i-synth"):
+            return no_update
+        return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
     if tab=="behavior":    return build_behavior_tab(analysis or {},perms or {},session)
