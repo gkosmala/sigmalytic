@@ -747,10 +747,10 @@ app.layout=html.Div([
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=10_000,n_intervals=0),
     dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
-    dcc.Interval(id="i-chart",interval=5_000,n_intervals=0),  # refresh chart bars every 10s
+    dcc.Interval(id="i-chart",interval=30_000,n_intervals=0),  # refresh chart bars every 10s
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
@@ -1213,51 +1213,150 @@ app.clientside_callback(
 
         var backendHttp = '""" + BACKEND_HTTP + """';
         var wsUrl = backendHttp.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/' + symbol;
-        
-        try {
-            var ws = new WebSocket(wsUrl);
-            window._sigmaWS = ws;
 
-            ws.onmessage = function(event) {
+        // Candle state for live forming candle
+        window._liveCandle = null;
+        window._tfSeconds = 300; // default 5 min, updated from store
+
+        function getTfSeconds() {
+            var tfStore = document.getElementById('s-tf');
+            if (tfStore) {
                 try {
-                    var data = JSON.parse(event.data);
-                    if (data.price && data.price > 0) {
-                        // Update the hidden store with live price
-                        var store = document.getElementById('s-ws-price');
-                        if (store) {
-                            // Trigger Dash store update via hidden input
-                            var input = document.querySelector('#ws-price-receiver input');
-                            if (!input) {
-                                input = document.createElement('input');
-                                input.style.display = 'none';
-                                document.getElementById('ws-price-receiver').appendChild(input);
-                            }
-                        }
-                        // Update price display directly for zero-latency feel
-                        var priceEls = document.querySelectorAll('[data-ws-price]');
-                        priceEls.forEach(function(el) {
-                            el.innerText = '$' + data.price.toFixed(2);
-                        });
-                    }
+                    var val = JSON.parse(tfStore.getAttribute('data-dash-is-loading') || 'null');
+                    // Try reading from Dash store element
                 } catch(e) {}
-            };
-
-            ws.onerror = function(e) { console.log('WS error:', e); };
-            ws.onclose = function() { 
-                // Reconnect after 3 seconds
-                setTimeout(function() {
-                    if (window._sigmaWS === ws) window._sigmaWS = null;
-                }, 3000);
-            };
-        } catch(e) {
-            console.log('WS connect failed:', e);
+            }
+            // Read from visible timeframe button text
+            var tfButtons = document.querySelectorAll('[id^="tf-btn"]');
+            // Fallback: check window variable set by Dash
+            if (window._currentTf) {
+                var tfMap = {'1m':60,'5m':300,'15m':900,'1H':3600,'1D':86400,'1W':604800};
+                return tfMap[window._currentTf] || 300;
+            }
+            return 300;
         }
-        
+
+        function updateChart(price, volume) {
+            // Find the Plotly chart div
+            var graphDivs = document.querySelectorAll('.js-plotly-plot');
+            if (!graphDivs.length) return;
+            var gd = graphDivs[0];
+            if (!gd.data || !gd.data[0]) return;
+
+            var trace = gd.data[0];
+            var n = trace.close ? trace.close.length : 0;
+            if (n === 0) return;
+
+            var now = Date.now() / 1000;
+            var tfSec = getTfSeconds();
+
+            // Initialize live candle tracking
+            if (!window._liveCandle) {
+                window._liveCandle = {
+                    open: price, high: price, low: price, close: price,
+                    startTime: now, volume: volume || 0
+                };
+            }
+
+            var lc = window._liveCandle;
+            var elapsed = now - lc.startTime;
+
+            if (elapsed >= tfSec) {
+                // New candle period — lock current and open new
+                lc = { open: price, high: price, low: price, close: price,
+                        startTime: now, volume: volume || 0 };
+                window._liveCandle = lc;
+
+                // Extend arrays with new candle
+                var newX = trace.x ? [...trace.x, new Date().toISOString()] : [new Date().toISOString()];
+                var newO = trace.open ? [...trace.open, price] : [price];
+                var newH = trace.high ? [...trace.high, price] : [price];
+                var newL = trace.low ? [...trace.low, price] : [price];
+                var newC = trace.close ? [...trace.close, price] : [price];
+
+                Plotly.restyle(gd, {
+                    x: [newX], open: [newO], high: [newH], low: [newL], close: [newC]
+                }, [0]);
+            } else {
+                // Update last candle
+                lc.close = price;
+                lc.high = Math.max(lc.high, price);
+                lc.low = Math.min(lc.low, price);
+                lc.volume += (volume || 0);
+                window._liveCandle = lc;
+
+                // Update last point of existing trace
+                var updH = [...(trace.high || [])];
+                var updL = [...(trace.low || [])];
+                var updC = [...(trace.close || [])];
+                updH[n-1] = lc.high;
+                updL[n-1] = lc.low;
+                updC[n-1] = lc.close;
+
+                Plotly.restyle(gd, {
+                    high: [updH], low: [updL], close: [updC]
+                }, [0]);
+
+                // Update live price hline (index 1 is the price line)
+                try {
+                    Plotly.relayout(gd, {'shapes[0].y0': price, 'shapes[0].y1': price});
+                } catch(e) {}
+            }
+
+            // Update price display elements
+            document.querySelectorAll('[data-ws-price]').forEach(function(el) {
+                el.innerText = '$' + price.toFixed(2);
+            });
+        }
+
+        function connect() {
+            try {
+                var ws = new WebSocket(wsUrl);
+                window._sigmaWS = ws;
+
+                ws.onmessage = function(event) {
+                    try {
+                        var data = JSON.parse(event.data);
+                        if (data.type === 'PING') return;
+                        if (data.price && data.price > 0) {
+                            updateChart(data.price, data.volume || 0);
+                        }
+                    } catch(e) {}
+                };
+
+                ws.onerror = function(e) { console.log('WS error:', e); };
+                ws.onclose = function() {
+                    window._sigmaWS = null;
+                    // Reconnect after 2 seconds
+                    setTimeout(connect, 2000);
+                };
+            } catch(e) {
+                console.log('WS connect failed:', e);
+                setTimeout(connect, 3000);
+            }
+        }
+
+        connect();
         return window.dash_clientside.no_update;
     }
     """,
     Output("ws-price-receiver", "children"),
     Input("s-symbol", "data"),
+)
+
+
+app.clientside_callback(
+    """
+    function(tf) {
+        window._currentTf = tf;
+        // Reset live candle when timeframe changes
+        window._liveCandle = null;
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("ws-price-receiver", "children", allow_duplicate=True),
+    Input("s-tf", "data"),
+    prevent_initial_call=True,
 )
 
 register_billing_callbacks(app)
