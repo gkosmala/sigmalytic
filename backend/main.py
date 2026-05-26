@@ -152,7 +152,11 @@ def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[di
     try:
         r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=8)
         r.raise_for_status()
-        bars = r.json().get("bars", [])
+        raw = r.json()
+        bars = raw.get("bars", [])
+        log.info(f"Bar fetch {symbol} {timeframe}: status={r.status_code} bars={len(bars)} raw_keys={list(raw.keys())}")
+        if not bars:
+            log.warning(f"Empty bars for {symbol} {timeframe} - raw: {str(raw)[:200]}")
         return [
             {"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]),
              "c": float(b["c"]), "v": int(b["v"]), "t": b["t"]}
