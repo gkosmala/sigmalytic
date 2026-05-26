@@ -1222,6 +1222,43 @@ register_billing_callbacks(app)
 
 
 
+
+# ── Load preferences from backend after login (clientside - no blocking) ──────
+app.clientside_callback(
+    """
+    async function(session) {
+        if (!session || !session.user_id) return window.dash_clientside.no_update;
+        try {
+            const r = await fetch('/api/preferences/' + session.user_id);
+            if (!r.ok) return window.dash_clientside.no_update;
+            const p = await r.json();
+            return [
+                p.delivery_mode || 'realtime',
+                {
+                    wyckoff:  (p.alert_types || []).includes('wyckoff'),
+                    gann:     (p.alert_types || []).includes('gann'),
+                    ab_score: (p.alert_types || []).includes('ab_score'),
+                    elliott:  (p.alert_types || []).includes('elliott'),
+                    fibonacci:(p.alert_types || []).includes('fibonacci'),
+                },
+                p.market_hours_only !== undefined ? p.market_hours_only : true,
+                p.min_score || 60,
+                p.watchlist || [],
+            ];
+        } catch(e) { return window.dash_clientside.no_update; }
+    }
+    """,
+    [
+        Output("pref-mode-val",       "data"),
+        Output("pref-types-val",      "data"),
+        Output("pref-hours-val",      "data"),
+        Output("prefs-min-score-val", "data"),
+        Output("prefs-watchlist",     "data"),
+    ],
+    Input("s-session", "data"),
+    prevent_initial_call=True,
+)
+
 register_preferences_callbacks(app)
 
 if __name__=="__main__":
