@@ -742,12 +742,12 @@ app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
-    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
+    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=8_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=3_000,n_intervals=0),
     dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
     dcc.Interval(id="i-chart",interval=30_000,n_intervals=0),  # refresh chart bars every 10s
@@ -878,9 +878,6 @@ def set_timeframe(*_):
 def refresh_chart_bars(_,symbol,tf):
     """Refresh chart bars every 10s for intraday, skip for daily/weekly."""
     import requests as _req
-    # For daily/weekly — skip frequent refresh, only update on interval change
-    if tf in ("1D", "1W"):
-        return no_update
     tf_map = {
         "1m":  ("1Min",  60),
         "5m":  ("5Min",  60),
@@ -889,7 +886,7 @@ def refresh_chart_bars(_,symbol,tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
+    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 100))
     try:
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
@@ -900,8 +897,8 @@ def refresh_chart_bars(_,symbol,tf):
             bars = r.json().get("bars", [])
             if bars and len(bars) > 1:
                 return bars
-        # Fallback to daily
-        if alpaca_tf != "1Day":
+        # No fallback - return what we have
+        if False:
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
@@ -942,7 +939,7 @@ def fetch_candles_for_tf(symbol, tf):
         "1D":  ("1Day",  60),
         "1W":  ("1Week", 52),
     }
-    alpaca_tf, limit = tf_map.get(tf or "1D", ("1Day", 60))
+    alpaca_tf, limit = tf_map.get(tf or "5m", ("5Min", 100))
     try:
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
@@ -1333,11 +1330,11 @@ app.clientside_callback(
                 ws.onclose = function() {
                     window._sigmaWS = null;
                     // Reconnect after 2 seconds
-                    setTimeout(connect, 2000);
+                    setTimeout(connect, 500);
                 };
             } catch(e) {
                 console.log('WS connect failed:', e);
-                setTimeout(connect, 3000);
+                setTimeout(connect, 500);
             }
         }
 
