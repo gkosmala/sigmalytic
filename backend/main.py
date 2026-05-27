@@ -888,9 +888,12 @@ async def debug_radar(symbol: str):
     try:
         from radar_service import RADAR_CACHE, INTELLIGENCE_CACHE
         clean = symbol.upper().strip()
-        data = RADAR_CACHE.get(clean) or INTELLIGENCE_CACHE.get(clean)
-        if not data:
+        radar_data = RADAR_CACHE.get(clean, {})
+        intel_data = INTELLIGENCE_CACHE.get(clean, {})
+        if not radar_data and not intel_data:
             return {"error": f"{clean} not in radar cache yet — radar:{len(RADAR_CACHE)} intel:{len(INTELLIGENCE_CACHE)}"}
+        # Merge both caches — intel fields overlay radar base
+        data = {**radar_data, **intel_data}
         # Return key scoring fields
         return {
             "symbol"        : clean,
