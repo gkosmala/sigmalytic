@@ -147,7 +147,7 @@ def calculate_from_bars(daily_bars: list) -> Optional[PersonsPivotResult]:
         df = pd.DataFrame(daily_bars)
         df['t'] = pd.to_datetime(df['t'], utc=True, errors='coerce')
         df = df.dropna(subset=['t']).sort_values('t')
-        df['week'] = df['t'].dt.to_period('W')
+        df['week'] = df['t'].dt.tz_localize(None).dt.to_period('W')
 
         weekly = df.groupby('week').agg(
             high =('h', 'max'),
