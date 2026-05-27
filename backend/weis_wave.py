@@ -183,6 +183,76 @@ class WeisWaveEngine:
 
         return waves
 
+    def _detect_sot(self, bars: List[dict]) -> Optional[dict]:
+        """
+        Candle-style Shortening of the Thrust (SOT) detection.
+        Looks for 3 consecutive same-direction candles with decreasing thrust
+        and sustained volume — signals institutional exhaustion.
+        """
+        if not bars or len(bars) < 3:
+            return None
+
+        try:
+            for i in range(len(bars) - 1, 1, -1):
+                c1 = bars[i - 2]
+                c2 = bars[i - 1]
+                c3 = bars[i]
+
+                o1,c1p = float(c1.get('o',0)), float(c1.get('c',0))
+                o2,c2p = float(c2.get('o',0)), float(c2.get('c',0))
+                o3,c3p = float(c3.get('o',0)), float(c3.get('c',0))
+                v2     = float(c2.get('v',0))
+                v3     = float(c3.get('v',0))
+                h3     = float(c3.get('h', c3p))
+                l3     = float(c3.get('l', c3p))
+
+                # ── Bearish SOT (uptrend exhausting) ──────────────────────
+                if c1p > o1 and c2p > o2 and c3p > o3:
+                    thrust1 = c2p - c1p
+                    thrust2 = c3p - c2p
+                    if thrust1 > 0 and thrust2 > 0 and thrust2 < thrust1 * 0.6 and v3 >= v2 * 0.9:
+                        return {
+                            "signal"      : "SOT_BEARISH",
+                            "score"       : 16,
+                            "invalidation": h3,
+                            "note"        : f"Bearish SOT: Thrust fracturing on upwave. Invalidation {h3:.2f}.",
+                            "options"     : {
+                                "signal"          : "SOT_BEARISH",
+                                "bias"            : "BEARISH",
+                                "invalidation"    : h3,
+                                "long_put_strike" : round(c3p * 1.01, 2),
+                                "bear_call_short" : round(c3p * 1.05, 2),
+                                "bear_call_long"  : round(c3p * 1.06, 2),
+                                "stop_note"       : f"Exit if price closes above {h3:.2f}",
+                                "execution"       : "PENDING_BROKER_INTEGRATION",
+                            }
+                        }
+
+                # ── Bullish SOT (downtrend exhausting) ────────────────────
+                if c1p < o1 and c2p < o2 and c3p < o3:
+                    thrust1 = c1p - c2p
+                    thrust2 = c2p - c3p
+                    if thrust1 > 0 and thrust2 > 0 and thrust2 < thrust1 * 0.6 and v3 >= v2 * 0.9:
+                        return {
+                            "signal"      : "SOT_BULLISH",
+                            "score"       : 16,
+                            "invalidation": l3,
+                            "note"        : f"Bullish SOT: Thrust fracturing on downwave. Invalidation {l3:.2f}.",
+                            "options"     : {
+                                "signal"          : "SOT_BULLISH",
+                                "bias"            : "BULLISH",
+                                "invalidation"    : l3,
+                                "long_call_strike": round(c3p * 0.99, 2),
+                                "bull_put_short"  : round(c3p * 0.95, 2),
+                                "bull_put_long"   : round(c3p * 0.94, 2),
+                                "stop_note"       : f"Exit if price closes below {l3:.2f}",
+                                "execution"       : "PENDING_BROKER_INTEGRATION",
+                            }
+                        }
+        except Exception:
+            pass
+        return None
+
     def analyze(self, symbol: str, timeframe: str,
                 bars_5m: List[dict], bars_daily: List[dict],
                 current_price: float,
@@ -341,6 +411,16 @@ class WeisWaveEngine:
             signal = "NO_SUPPLY"
             signal_score = NO_DEMAND_SCORE
             notes.append("No Supply: Weak down wave volume — selloff lacks conviction.")
+
+        # ── Shortening of the Thrust (SOT) detection ─────────────────────────
+        sot_signal = self._detect_sot(bars_5m)
+        if sot_signal and signal == "NONE":
+            signal       = sot_signal["signal"]
+            signal_score = sot_signal["score"]
+            invalidation = sot_signal["invalidation"]
+            notes.append(sot_signal["note"])
+            if sot_signal["options"]:
+                options_setup = sot_signal["options"]
 
         return WeisWaveResult(
             symbol=symbol, timeframe=timeframe, threshold_pct=threshold,
