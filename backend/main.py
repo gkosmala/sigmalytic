@@ -848,14 +848,14 @@ async def geometry_status():
         data = r.json()
         wyckoff = [d for d in data if 'Wyckoff' in d.get('structure_type', '')]
         gann    = [d for d in data if 'Gann' in d.get('structure_type', '')]
-        bme_status = get_memory_status() if _BME_AVAILABLE else {"symbols_trained": 0}
+        bme_status = globals().get("get_memory_status", lambda: {"symbols_trained": 0})() if globals().get("_BME_AVAILABLE", False) else {"symbols_trained": 0}
         return {
             "total_active"   : len(data),
             "wyckoff_anchors": len(wyckoff),
             "gann_vectors"   : len(gann),
             "wyckoff_engine" : _WYCKOFF_AVAILABLE,
             "gann_engine"    : _GANN_AVAILABLE,
-            "bme_engine"     : _BME_AVAILABLE,
+            "bme_engine"     : globals().get("_BME_AVAILABLE", False),
             "bme_trained"    : bme_status.get("symbols_trained", 0),
         }
     except Exception as e:
