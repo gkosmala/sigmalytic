@@ -242,7 +242,7 @@ def fetch_options_bias(symbol: str, price: float) -> Optionsbias:
         # Fetch options snapshot for symbol
         url = f"{ALPACA_DATA_URL}/v1beta1/options/snapshots/{symbol}"
         params = {"feed": "indicative", "limit": 100}
-        resp = requests.get(url, headers=headers, params=params, timeout=5)
+        resp = requests.get(url, headers=headers, params=params, timeout=3)
 
         if resp.status_code != 200:
             return _synthetic_options_bias(price)
@@ -498,7 +498,10 @@ def create_live_update(
     Pass candles list for behavioral modeling — falls back gracefully if absent.
     """
     behavioral = calculate_behavioral_score(candles) if candles else None
-    options    = fetch_options_bias(symbol, price)
+    try:
+        options = fetch_options_bias(symbol, price)
+    except Exception:
+        options = _synthetic_options_bias(price)
     decision   = run_decision(price, volume > 1_500_000, behavioral, options)
     confluence = build_confluence_nodes(price, behavioral, options)
 
