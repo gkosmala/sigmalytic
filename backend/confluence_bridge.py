@@ -46,6 +46,20 @@ except Exception as _he:
     _HURST_AVAILABLE = False
     log.debug(f"Hurst Cycle not loaded: {_he}")
 
+# ── GEX Engine (safe import) ───────────────────────────────────────────────────
+try:
+    from gex_engine import score_gex
+    _GEX_AVAILABLE = True
+except Exception as _ge:
+    _GEX_AVAILABLE = False
+    log.debug(f"GEX engine not loaded: {_ge}")
+
+# Intelligence Layer symbols get full GEX + Market Tide
+_INTELLIGENCE_SYMBOLS = {
+    "SPY","QQQ","IWM","AAPL","NVDA","TSLA","AMD",
+    "GOOG","META","AMZN","MSFT","NFLX","GLD","SMH"
+}
+
 _confluence_engine_instance = None
 _confluence_import_error    = None
 
@@ -372,6 +386,16 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                 new_fields.update(hurst)
             except Exception as _he:
                 log.debug(f"Hurst Cycle error {symbol}: {_he}")
+
+        # Add GEX / Options Flow / Market Tide scoring
+        if _GEX_AVAILABLE:
+            try:
+                price  = market.price if market else 0
+                is_il  = symbol in _INTELLIGENCE_SYMBOLS
+                gex    = score_gex(symbol, price, bars_5m, is_il)
+                new_fields.update(gex)
+            except Exception as _ge:
+                log.debug(f"GEX scoring error {symbol}: {_ge}")
 
         return {**old_result, **new_fields}
 
