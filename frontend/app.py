@@ -393,7 +393,16 @@ def build_chart(candles, price, nodes):
         (kl.trigger,f"  {kl.trigger:.2f} Trigger",YELLOW_DIM,"dash"),
         (kl.trap,f"  {kl.trap:.2f} Trap Door",RED_DIM,"dot"),
         (kl.fail,f"  {kl.fail:.2f} Fail Gate",RED_DIM,"dash"),
-    ]:
+    ] + ([(
+        nodes.get("persons_resistance"), f"  {nodes.get('persons_resistance',0):.2f} PP Resist",
+        "rgba(147,197,253,.9)", "longdashdot"
+    ), (
+        nodes.get("persons_support"), f"  {nodes.get('persons_support',0):.2f} PP Support",
+        "rgba(147,197,253,.9)", "longdashdot"
+    ), (
+        nodes.get("persons_pivot"), f"  {nodes.get('persons_pivot',0):.2f} PP Pivot",
+        "rgba(147,197,253,.6)", "dot"
+    )] if nodes and nodes.get("persons_pivot") else []):
         fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
                       annotation_text=label,annotation_position="right",
                       annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
@@ -403,7 +412,7 @@ def build_chart(candles, price, nodes):
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
         font=dict(family="DM Sans",color=TEXT,size=11),
         xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f"),
+        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f",autorange=True),
         margin=dict(l=0,r=130,t=12,b=12),height=390,showlegend=False,hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),dragmode="pan")
     return fig
@@ -742,15 +751,15 @@ app.layout=html.Div([
     dcc.Store(id="s-session",data=None,storage_type="session"),
     dcc.Store(id="s-live",data=_init_live),dcc.Store(id="s-candles",data=_init_candles),
     dcc.Store(id="s-seq",data=0),dcc.Store(id="s-live-mode",data=True),
-    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="1D"),
+    dcc.Store(id="s-symbol",data="AAPL"),dcc.Store(id="s-tf",data="5m"),
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
-    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=0),
-    dcc.Interval(id="i-clock",interval=1_000,n_intervals=0),
+    dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=1),
+    dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
     dcc.Interval(id="i-radar",interval=60_000,n_intervals=0),
-    dcc.Interval(id="i-chart",interval=10_000,n_intervals=0),  # refresh chart bars every 10s
+    dcc.Interval(id="i-chart",interval=5_000,n_intervals=0),  # refresh chart bars every 10s
     dcc.Interval(id="i-demo-timer",interval=90_000,n_intervals=0,max_intervals=1),
     dcc.Store(id="s-modal-dismissed",data=False),dcc.Store(id="s-show-signup",data=False),
     dcc.Store(id="s-reset-token",data=""),dcc.Store(id="s-radar-filter",data="all"),
@@ -894,7 +903,7 @@ def refresh_chart_bars(_,symbol,tf):
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
             params={"timeframe": alpaca_tf, "limit": limit},
-            timeout=10,
+            timeout=15,
         )
         if r.ok:
             bars = r.json().get("bars", [])
@@ -905,7 +914,7 @@ def refresh_chart_bars(_,symbol,tf):
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
-                timeout=10,
+                timeout=15,
             )
             if r2.ok:
                 bars2 = r2.json().get("bars", [])
@@ -947,7 +956,7 @@ def fetch_candles_for_tf(symbol, tf):
         r = _req.get(
             f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
             params={"timeframe": alpaca_tf, "limit": limit},
-            timeout=10,
+            timeout=15,
         )
         if r.ok:
             bars = r.json().get("bars", [])
@@ -958,7 +967,7 @@ def fetch_candles_for_tf(symbol, tf):
             r2 = _req.get(
                 f"{BACKEND_HTTP}/api/candles/{symbol or 'AAPL'}",
                 params={"timeframe": "1Day", "limit": 60},
-                timeout=10,
+                timeout=15,
             )
             if r2.ok:
                 bars2 = r2.json().get("bars", [])
@@ -974,23 +983,78 @@ def fetch_candles_for_tf(symbol, tf):
               State("s-live-mode","data"),State("s-symbol","data"),State("s-price-text","data"),
               prevent_initial_call=True)
 def tick(_,__,current,seq,candles,live_mode,symbol,price_text):
-    import random
+    import random, math
+    from datetime import datetime, timezone, timedelta
     ctx=callback_context
     if not ctx.triggered: return no_update,no_update,no_update
     trigger=ctx.triggered[0]["prop_id"].split(".")[0]
     if live_mode and trigger=="i-alpaca":
         try:
-            import requests as req; r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=4); r.raise_for_status()
+            import requests as req; r=req.get(f"{BACKEND_HTTP}/api/stock/{symbol}",timeout=8); r.raise_for_status()
             data=r.json(); price=float(data["price"]); volume=int(data.get("volume",0))
-        except: return no_update,no_update,no_update
+        except Exception as _e:
+            print(f"TICK_ERROR: {_e}", flush=True)
+            return no_update,no_update,no_update
     elif not live_mode and trigger=="i-synth":
         prev=current["price"] if current else float(price_text or 280.15)
         price=round(max(1.0,prev+(random.random()-0.45)*1.25),2); volume=round(500_000+random.random()*5_000_000)
     else: return no_update,no_update,no_update
     new_seq=(seq or 0)+1; new_live=create_live_update(symbol,price,volume,new_seq).to_dict()
-    # Don't build fake candles — return existing candles unchanged
-    # Real candles are fetched by fetch_candles_for_tf on load and timeframe change
-    return new_live,new_seq,no_update
+
+    # ── Update live candle ────────────────────────────────────────────────────
+    if candles and len(candles) > 0:
+        candles = list(candles)
+        last = dict(candles[-1])
+        now_ts = datetime.now(timezone.utc)
+
+        # Determine candle period in seconds based on timeframe
+        # We detect timeframe from the last candle timestamp gap
+        tf_seconds = 86400  # default daily
+        if len(candles) >= 2:
+            try:
+                t1 = candles[-2].get("t","")
+                t2 = candles[-1].get("t","")
+                if t1 and t2:
+                    from dateutil import parser as dparser
+                    dt1 = dparser.parse(t1)
+                    dt2 = dparser.parse(t2)
+                    diff = abs((dt2 - dt1).total_seconds())
+                    if diff > 0:
+                        tf_seconds = diff
+            except: pass
+
+        # Check if we need a new candle
+        last_t = last.get("t","")
+        new_candle = False
+        if last_t:
+            try:
+                from dateutil import parser as dparser
+                last_dt = dparser.parse(last_t)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                elapsed = (now_ts - last_dt).total_seconds()
+                if elapsed >= tf_seconds:
+                    new_candle = True
+            except: pass
+
+        if new_candle:
+            # Lock current candle, open a new one
+            new_bar = {"o": price, "h": price, "l": price, "c": price,
+                       "v": volume, "t": now_ts.isoformat()}
+            candles.append(new_bar)
+            if len(candles) > 300:
+                candles = candles[-300:]
+        else:
+            # Update last candle with new price
+            last["c"] = price
+            last["h"] = max(last.get("h", price), price)
+            last["l"] = min(last.get("l", price), price)
+            last["v"] = last.get("v", 0) + volume
+            candles[-1] = last
+
+        return new_live, new_seq, candles
+
+    return new_live, new_seq, no_update
 
 @app.callback(Output("price-ctrl","children"),Input("s-live-mode","data"),Input("s-live","data"),State("s-price-text","data"))
 def render_price_ctrl(live_mode,live,price_text):

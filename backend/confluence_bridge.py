@@ -22,6 +22,14 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("confluence_bridge")
 
+# ── Person's Pivots (safe import) ─────────────────────────────────────────────
+try:
+    from persons_pivots import calculate_from_bars, get_pivot_levels_for_chart
+    _PERSONS_PIVOTS_AVAILABLE = True
+except Exception as _ppe:
+    _PERSONS_PIVOTS_AVAILABLE = False
+    log.debug(f"Person's Pivots not loaded: {_ppe}")
+
 _confluence_engine_instance = None
 _confluence_import_error    = None
 
@@ -205,6 +213,20 @@ def _build_market_data(symbol: str, snap: dict, bars: list,
         candles_daily        = candles_daily,
     )
 
+    # ── Person's Pivots — add to market data extra fields ────────────────────
+    persons_data = {}
+    if _PERSONS_PIVOTS_AVAILABLE:
+        try:
+            pivot_result = calculate_from_bars(bars)
+            if pivot_result:
+                persons_data = get_pivot_levels_for_chart(pivot_result)
+        except Exception as _pe:
+            pass
+
+    # Store pivots in market data for engine access
+    if persons_data:
+        market.__dict__.update({"persons_pivots": persons_data})
+
     return market, OptionsData()
 
 
@@ -299,6 +321,15 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                 f"new_regime={result.regime} | "
                 f"5m_bars={len(bars_5m)}"
             )
+
+        # Add Person's Pivots data to result
+        if _PERSONS_PIVOTS_AVAILABLE:
+            try:
+                pivot_result = calculate_from_bars(bars)
+                if pivot_result:
+                    new_fields["persons_pivots"] = get_pivot_levels_for_chart(pivot_result)
+            except Exception:
+                pass
 
         return {**old_result, **new_fields}
 

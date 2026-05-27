@@ -238,6 +238,35 @@ async def lifespan(app: FastAPI):
     log.info("Sigmalytic backend starting…")
     start_radar_scheduler()
 
+    # ── Nightly geometry recalculation at 20:00 UTC ───────────────────────────
+    import threading as _threading
+    from datetime import datetime as _dt, timezone as _tz
+    import time as _t
+
+    def _nightly_geometry_runner():
+        """Runs Wyckoff + Gann recalculation nightly at 20:00 UTC."""
+        while True:
+            now = _dt.now(_tz.utc)
+            # Calculate seconds until next 20:00 UTC
+            target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target = target.replace(day=target.day + 1)
+            sleep_secs = (target - now).total_seconds()
+            _t.sleep(sleep_secs)
+            if _WYCKOFF_AVAILABLE:
+                try:
+                    run_nightly_wyckoff_recalculation()
+                except Exception as _e:
+                    log.warning(f"Nightly Wyckoff failed: {_e}")
+            if _GANN_AVAILABLE:
+                try:
+                    run_nightly_gann_recalculation()
+                except Exception as _e:
+                    log.warning(f"Nightly Gann failed: {_e}")
+
+    _threading.Thread(target=_nightly_geometry_runner, daemon=True).start()
+    log.info("Nightly geometry scheduler started (20:00 UTC)")
+
     # ── Supabase heartbeat — prevents free tier auto-pause ─────────────────
     import threading, time as _time
     def _supabase_heartbeat():
@@ -722,3 +751,58 @@ async def _synthetic_feed(ws: WebSocket, symbol: str):
             await ws.send_json(update.to_dict())
         except Exception:
             break
+
+
+# ── Geometry seeding endpoints ─────────────────────────────────────────────────
+
+@app.post("/api/admin/seed-geometry")
+async def seed_geometry():
+    """Seeds Wyckoff and Gann vectors for Intelligence Layer symbols. Run once."""
+    results = {}
+    if _WYCKOFF_AVAILABLE:
+        try:
+            seed_wyckoff()
+            results["wyckoff"] = "seeded"
+        except Exception as e:
+            results["wyckoff"] = f"error: {e}"
+    else:
+        results["wyckoff"] = "engine not available"
+
+    if _GANN_AVAILABLE:
+        try:
+            seed_gann_vectors()
+            results["gann"] = "seeded"
+        except Exception as e:
+            results["gann"] = f"error: {e}"
+    else:
+        results["gann"] = "engine not available"
+
+    return results
+
+
+@app.get("/api/admin/geometry-status")
+async def geometry_status():
+    """Returns current geometric structures count from Supabase."""
+    try:
+        url = os.getenv("SUPABASE_URL", "")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        if not url or not key:
+            return {"error": "Supabase not configured"}
+        import requests as _req
+        r = _req.get(
+            f"{url}/rest/v1/geometric_structures?select=ticker,structure_type&is_active=eq.true",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            timeout=5
+        )
+        data = r.json()
+        wyckoff = [d for d in data if 'Wyckoff' in d.get('structure_type', '')]
+        gann    = [d for d in data if 'Gann' in d.get('structure_type', '')]
+        return {
+            "total_active"   : len(data),
+            "wyckoff_anchors": len(wyckoff),
+            "gann_vectors"   : len(gann),
+            "wyckoff_engine" : _WYCKOFF_AVAILABLE,
+            "gann_engine"    : _GANN_AVAILABLE,
+        }
+    except Exception as e:
+        return {"error": str(e)}
