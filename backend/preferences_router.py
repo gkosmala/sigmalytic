@@ -54,7 +54,7 @@ class PreferencesCreate(BaseModel):
 class PreferencesUpdate(BaseModel):
     delivery_mode:     Optional[str]            = None
     min_score:         Optional[int]            = None
-    alert_types:       Optional[Dict[str, bool]]= None
+    alert_types:       Optional[Any]            = None  # accepts dict or list
     watchlist:         Optional[List[str]]      = None
     market_hours_only: Optional[bool]           = None
     hurst_profile:     Optional[str]            = None
@@ -174,7 +174,13 @@ def update_preferences(user_id: str, payload: PreferencesUpdate):
     updates = {}
     if payload.delivery_mode     is not None: updates["delivery_mode"]     = payload.delivery_mode
     if payload.min_score         is not None: updates["min_score"]         = payload.min_score
-    if payload.alert_types       is not None: updates["alert_types"]       = json.dumps(payload.alert_types)
+    if payload.alert_types is not None:
+        at = payload.alert_types
+        # Normalize list ["wyckoff","gann"] → {"wyckoff":true,"gann":true,...}
+        if isinstance(at, list):
+            all_types = ["wyckoff","gann","ab_score","elliott","fibonacci"]
+            at = {k: (k in at) for k in all_types}
+        updates["alert_types"] = json.dumps(at)
     if payload.watchlist         is not None: updates["watchlist"]         = json.dumps(payload.watchlist)
     if payload.market_hours_only is not None: updates["market_hours_only"] = payload.market_hours_only
     if payload.hurst_profile     is not None: updates["hurst_profile"]     = payload.hurst_profile
