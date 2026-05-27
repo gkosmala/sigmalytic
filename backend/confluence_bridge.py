@@ -54,6 +54,14 @@ except Exception as _ge:
     _GEX_AVAILABLE = False
     log.debug(f"GEX engine not loaded: {_ge}")
 
+# ── Behavioral Memory Engine (safe import) ─────────────────────────────────────
+try:
+    from behavioral_memory import evaluate as bme_evaluate, train_memory_bank
+    _BME_AVAILABLE = True
+except Exception as _bme:
+    _BME_AVAILABLE = False
+    log.debug(f"Behavioral Memory Engine not loaded: {_bme}")
+
 # Intelligence Layer symbols get full GEX + Market Tide
 _INTELLIGENCE_SYMBOLS = {
     "SPY","QQQ","IWM","AAPL","NVDA","TSLA","AMD",
@@ -396,6 +404,28 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                 new_fields.update(gex)
             except Exception as _ge:
                 log.debug(f"GEX scoring error {symbol}: {_ge}")
+
+        # Add Behavioral Memory Engine scoring
+        if _BME_AVAILABLE:
+            try:
+                price         = market.price if market else 0
+                weis_signal   = new_fields.get("weis_signal", "NONE")
+                wyckoff_phase = new_fields.get("new_wyckoff_phase", "")
+                gex_regime    = new_fields.get("gex_regime", "NEUTRAL")
+                whale_sweep   = new_fields.get("gex_sweep_bias") == "BULLISH"
+
+                bme = bme_evaluate(
+                    symbol        = symbol,
+                    current_price = price,
+                    bars_5m       = bars_5m,
+                    weis_signal   = weis_signal,
+                    wyckoff_phase = str(wyckoff_phase),
+                    gex_regime    = gex_regime,
+                    whale_sweeping= whale_sweep,
+                )
+                new_fields.update(bme)
+            except Exception as _bme_e:
+                log.debug(f"BME scoring error {symbol}: {_bme_e}")
 
         return {**old_result, **new_fields}
 

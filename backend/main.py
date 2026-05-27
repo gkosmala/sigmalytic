@@ -288,9 +288,31 @@ async def lifespan(app: FastAPI):
                     run_nightly_gann_recalculation()
                 except Exception as _e:
                     log.warning(f"Nightly Gann failed: {_e}")
+            if _BME_AVAILABLE:
+                try:
+                    from radar_service import _historical_bars
+                    bme_train_batch(_historical_bars)
+                    log.info("Nightly BME retraining complete.")
+                except Exception as _e:
+                    log.warning(f"Nightly BME failed: {_e}")
 
     _threading.Thread(target=_nightly_geometry_runner, daemon=True).start()
     log.info("Nightly geometry scheduler started (20:00 UTC)")
+
+    # ── Initial BME training (runs in background after bars load) ─────────────
+    if _BME_AVAILABLE:
+        def _initial_bme_training():
+            import time as _t
+            _t.sleep(120)  # Wait 2 min for historical bars to load
+            try:
+                from radar_service import _historical_bars
+                trained = bme_train_batch(_historical_bars)
+                log.info(f"Initial BME training complete: {trained} symbols")
+            except Exception as _e:
+                log.warning(f"Initial BME training failed: {_e}")
+        import threading as _bme_thread
+        _bme_thread.Thread(target=_initial_bme_training, daemon=True).start()
+        log.info("BME initial training scheduled (starts in 2 min)")
 
     # ── Supabase heartbeat — prevents free tier auto-pause ─────────────────
     import threading, time as _time
@@ -825,12 +847,15 @@ async def geometry_status():
         data = r.json()
         wyckoff = [d for d in data if 'Wyckoff' in d.get('structure_type', '')]
         gann    = [d for d in data if 'Gann' in d.get('structure_type', '')]
+        bme_status = get_memory_status() if _BME_AVAILABLE else {"symbols_trained": 0}
         return {
             "total_active"   : len(data),
             "wyckoff_anchors": len(wyckoff),
             "gann_vectors"   : len(gann),
             "wyckoff_engine" : _WYCKOFF_AVAILABLE,
             "gann_engine"    : _GANN_AVAILABLE,
+            "bme_engine"     : _BME_AVAILABLE,
+            "bme_trained"    : bme_status.get("symbols_trained", 0),
         }
     except Exception as e:
         return {"error": str(e)}
