@@ -140,82 +140,77 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
     ACTIVATE: set OPTIONS_FEED=alpaca in Render env vars.
     Requires Alpaca options data subscription.
     """
-    # ── PLACEHOLDER — uncomment when Alpaca options feed is active ────────────
-    # import requests as _req
-    # try:
-    #     r = _req.get(
-    #         f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
-    #         headers={
-    #             "APCA-API-KEY-ID"    : ALPACA_API_KEY,
-    #             "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-    #         },
-    #         params={"feed": "indicative", "limit": 200},
-    #         timeout=8,
-    #     )
-    #     if r.status_code != 200:
-    #         return {}
-    #     chain = r.json().get("snapshots", {})
-    #
-    #     gex_profile = []
-    #     sweeps = []
-    #     total_call_vol = 0
-    #     total_put_vol = 0
-    #
-    #     for contract_id, snap in chain.items():
-    #         greeks  = snap.get("greeks", {})
-    #         quote   = snap.get("latestQuote", {})
-    #         details = snap.get("details", {})
-    #
-    #         strike     = float(details.get("strike_price", 0))
-    #         opt_type   = details.get("type", "call").lower()
-    #         gamma      = float(greeks.get("gamma", 0))
-    #         oi         = float(snap.get("openInterest", 0))
-    #         iv         = float(greeks.get("impliedVolatility", 0))
-    #         volume     = float(snap.get("dailyBar", {}).get("v", 0))
-    #         ask        = float(quote.get("ap", 0))
-    #         bid        = float(quote.get("bp", 0))
-    #         mid        = (ask + bid) / 2 if ask and bid else 0
-    #
-    #         gex_profile.append({
-    #             "strike": strike, "type": opt_type,
-    #             "gamma": gamma, "open_interest": oi,
-    #         })
-    #
-    #         # Premium from volume × mid price × 100 shares
-    #         premium = volume * mid * 100
-    #         if opt_type == "call":
-    #             total_call_vol += premium
-    #         else:
-    #             total_put_vol += premium
-    #
-    #         # Detect sweeps: ask-side aggressive orders
-    #         if volume > 500 and ask > 0 and mid >= ask * 0.98:
-    #             sweeps.append({
-    #                 "condition": "SWEEP",
-    #                 "position_side": "ASK",
-    #                 "type": opt_type,
-    #                 "premium": premium,
-    #             })
-    #
-    #     # Calculate IV rank from chain
-    #     ivs = [float(chain[c].get("greeks", {}).get("impliedVolatility", 0))
-    #            for c in chain if chain[c].get("greeks")]
-    #     iv_rank = _calc_iv_rank(ivs)
-    #
-    #     spread_pct = 0.02  # Default; calculate per contract if needed
-    #
-    #     return {
-    #         "gex_profile": gex_profile,
-    #         "recent_sweeps": sweeps,
-    #         "net_market_gex": 0,  # calculated in GexEngine
-    #         "iv_rank": iv_rank,
-    #         "option_bid_ask_spread_pct": spread_pct,
-    #     }
-    # except Exception as e:
-    #     log.debug(f"Alpaca options fetch error {symbol}: {e}")
-    #     return {}
-    # ── END PLACEHOLDER ───────────────────────────────────────────────────────
-    return {}
+    import requests as _req
+    try:
+        r = _req.get(
+            f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
+            headers={
+                "APCA-API-KEY-ID"    : ALPACA_API_KEY,
+                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+            },
+            params={"feed": "opra", "limit": 200},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            log.debug(f"Alpaca options {symbol} status {r.status_code}: {r.text[:200]}")
+            return {}
+        chain = r.json().get("snapshots", {})
+        if not chain:
+            return {}
+
+        gex_profile = []
+        sweeps = []
+        total_call_vol = 0
+        total_put_vol = 0
+
+        for contract_id, snap in chain.items():
+            greeks  = snap.get("greeks", {}) or {}
+            quote   = snap.get("latestQuote", {}) or {}
+            details = snap.get("details", {}) or {}
+
+            strike   = float(details.get("strike_price", 0) or 0)
+            opt_type = details.get("type", "call").lower()
+            gamma    = float(greeks.get("gamma", 0) or 0)
+            oi       = float(snap.get("openInterest", 0) or 0)
+            volume   = float((snap.get("dailyBar", {}) or {}).get("v", 0) or 0)
+            ask      = float(quote.get("ap", 0) or 0)
+            bid      = float(quote.get("bp", 0) or 0)
+            mid      = (ask + bid) / 2 if ask and bid else 0
+
+            if strike > 0 and gamma >= 0:
+                gex_profile.append({
+                    "strike": strike, "type": opt_type,
+                    "gamma": gamma, "open_interest": oi,
+                })
+
+            premium = volume * mid * 100
+            if opt_type == "call":
+                total_call_vol += premium
+            else:
+                total_put_vol += premium
+
+            if volume > 100 and ask > 0 and mid >= ask * 0.95:
+                sweeps.append({
+                    "condition": "SWEEP",
+                    "position_side": "ASK",
+                    "type": opt_type,
+                    "premium": premium,
+                })
+
+        ivs = [float((chain[c].get("greeks", {}) or {}).get("impliedVolatility", 0) or 0)
+               for c in chain if chain[c].get("greeks")]
+        iv_rank = _calc_iv_rank([v for v in ivs if v > 0])
+
+        return {
+            "gex_profile"              : gex_profile,
+            "recent_sweeps"            : sweeps,
+            "net_market_gex"           : 0,
+            "iv_rank"                  : iv_rank,
+            "option_bid_ask_spread_pct": 0.02,
+        }
+    except Exception as e:
+        log.debug(f"Alpaca options fetch error {symbol}: {e}")
+        return {}
 
 
 def _fetch_unusual_whales(symbol: str, current_price: float) -> dict:
