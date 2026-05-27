@@ -41,8 +41,10 @@ try:
         run_nightly_wyckoff_recalculation,
     )
     _WYCKOFF_AVAILABLE = True
+    print("WYCKOFF_ENGINE: loaded OK", flush=True)
 except Exception as _we:
     _WYCKOFF_AVAILABLE = False
+    print(f"WYCKOFF_ENGINE: FAILED — {_we}", flush=True)
 
 try:
     from gann_engine import (
@@ -50,8 +52,10 @@ try:
         run_nightly_gann_recalculation,
     )
     _GANN_AVAILABLE = True
+    print("GANN_ENGINE: loaded OK", flush=True)
 except Exception as _ge:
     _GANN_AVAILABLE = False
+    print(f"GANN_ENGINE: FAILED — {_ge}", flush=True)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
