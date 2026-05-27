@@ -33,6 +33,25 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import requests
+
+# ── Geometry engines (safe import) ────────────────────────────────────────────
+try:
+    from wyckoff_anchor import (
+        seed_intelligence_universe as seed_wyckoff,
+        run_nightly_wyckoff_recalculation,
+    )
+    _WYCKOFF_AVAILABLE = True
+except Exception as _we:
+    _WYCKOFF_AVAILABLE = False
+
+try:
+    from gann_engine import (
+        seed_gann_vectors,
+        run_nightly_gann_recalculation,
+    )
+    _GANN_AVAILABLE = True
+except Exception as _ge:
+    _GANN_AVAILABLE = False
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -755,7 +774,7 @@ async def _synthetic_feed(ws: WebSocket, symbol: str):
 
 # ── Geometry seeding endpoints ─────────────────────────────────────────────────
 
-@app.post("/api/admin/seed-geometry")
+@app.get("/api/admin/seed-geometry")
 async def seed_geometry():
     """Seeds Wyckoff and Gann vectors for Intelligence Layer symbols. Run once."""
     results = {}
