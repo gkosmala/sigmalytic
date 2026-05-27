@@ -315,19 +315,22 @@ async def lifespan(app: FastAPI):
     if globals().get("_BME_AVAILABLE", False):
         def _initial_bme_training():
             import time as _t
-            # Wait for historical bars to load — retry until we have data
-            for _attempt in range(12):  # Try every 5 min for 1 hour
+            # Train on whatever bars are available, retry every 5 min
+            last_trained = 0
+            for _attempt in range(24):  # Try every 5 min for 2 hours
                 _t.sleep(300)
                 try:
                     from radar_service import _historical_bars
-                    if len(_historical_bars) > 100:
-                        trained = bme_train_batch(_historical_bars)
-                        log.info(f"Initial BME training complete: {trained} symbols")
-                        break
-                    else:
-                        log.info(f"BME waiting for bars (attempt {_attempt+1}): {len(_historical_bars)} loaded")
+                    current = len(_historical_bars)
+                    if current > 0 and current != last_trained:
+                        trained = bme_train_batch(dict(_historical_bars))
+                        last_trained = current
+                        log.info(f"BME training pass {_attempt+1}: {trained}/{current} symbols trained")
+                        if current > 1000:  # Full Russell 1000 loaded
+                            log.info("BME fully trained on complete universe.")
+                            break
                 except Exception as _e:
-                    log.warning(f"Initial BME training failed: {_e}")
+                    log.warning(f"BME training attempt {_attempt+1} failed: {_e}")
         import threading as _bme_thread
         _bme_thread.Thread(target=_initial_bme_training, daemon=True).start()
         log.info("BME initial training scheduled (starts in 2 min)")
