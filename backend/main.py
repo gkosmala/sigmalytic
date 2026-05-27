@@ -289,7 +289,7 @@ async def lifespan(app: FastAPI):
                     run_nightly_gann_recalculation()
                 except Exception as _e:
                     log.warning(f"Nightly Gann failed: {_e}")
-            if _BME_AVAILABLE:
+            if globals().get("_BME_AVAILABLE", False):
                 try:
                     from radar_service import _historical_bars
                     bme_train_batch(_historical_bars)
@@ -301,7 +301,7 @@ async def lifespan(app: FastAPI):
     log.info("Nightly geometry scheduler started (20:00 UTC)")
 
     # ── Initial BME training (runs in background after bars load) ─────────────
-    if _BME_AVAILABLE:
+    if globals().get("_BME_AVAILABLE", False):
         def _initial_bme_training():
             import time as _t
             _t.sleep(300)  # Wait 2 min for historical bars to load
