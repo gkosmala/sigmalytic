@@ -145,6 +145,41 @@ def register_preferences_callbacks(app):
 
     @app.callback(
         Output("pref-mode-val","data"),
+        Output("pref-types-val","data"),
+        Output("pref-hours-val","data"),
+        Output("prefs-min-score-val","data"),
+        Output("prefs-watchlist","data"),
+        Input("s-tab","data"),
+        State("s-session","data"),
+        prevent_initial_call=True,
+    )
+    def load_preferences(tab, session):
+        """Load saved preferences from backend when preferences tab opens."""
+        if tab != "preferences":
+            return no_update, no_update, no_update, no_update, no_update
+        uid = (session or {}).get("user_id","")
+        if not uid:
+            return no_update, no_update, no_update, no_update, no_update
+        try:
+            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{uid}", timeout=5)
+            if not r.ok:
+                return no_update, no_update, no_update, no_update, no_update
+            p = r.json()
+            mode  = p.get("delivery_mode", "realtime")
+            types = p.get("alert_types", {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False})
+            hours = p.get("market_hours_only", True)
+            score = p.get("min_score", 60)
+            wl    = p.get("watchlist", [])
+            if isinstance(types, list):
+                all_types = ["wyckoff","gann","ab_score","elliott","fibonacci"]
+                types = {k: (k in types) for k in all_types}
+            return mode, types, hours, score, wl
+        except Exception:
+            return no_update, no_update, no_update, no_update, no_update
+
+
+    @app.callback(
+        Output("pref-mode-val","data"),
         Output("pref-mode-realtime","style"), Output("pref-mode-hourly","style"), Output("pref-mode-daily","style"),
         Input("pref-mode-realtime","n_clicks"), Input("pref-mode-hourly","n_clicks"), Input("pref-mode-daily","n_clicks"),
         State("pref-mode-val","data"), prevent_initial_call=True,
@@ -217,7 +252,7 @@ def register_preferences_callbacks(app):
         email=(session or {}).get("email","")
         if not uid: return "⚠️ No user ID — please log in first.",_msg("yellow")
         payload={"delivery_mode":mode or "realtime","min_score":score or 60,
-                 "alert_types":[k for k,v in (types or {}).items() if v],
+                 "alert_types":{k:bool(v) for k,v in (types or {}).items()},
                  "watchlist":wl or [],"market_hours_only":bool(hours),"weis_threshold":weis_thresh or 0.5}
         try:
             url=f"{BACKEND_HTTP}/api/preferences/{uid}"

@@ -1078,8 +1078,9 @@ def update_badges(live,live_mode):
               Input("s-live","data"),Input("s-candles","data"),Input("s-tab","data"),Input("s-live-mode","data"),
               Input("i-clock","n_intervals"),Input("i-radar","n_intervals"),
               Input("s-analysis","data"),Input("s-refresh","data"),Input("s-permissions","data"),Input("s-radar-filter","data"),
-              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"))
-def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf):
+              State("s-session","data"),State("s-symbol","data"),State("s-tf","data"),
+              State("pref-mode-val","data"),State("pref-types-val","data"),State("pref-hours-val","data"),State("prefs-min-score-val","data"),State("prefs-watchlist","data"))
+def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms,radar_filter,session,symbol,tf,pref_mode,pref_types,pref_hours,pref_score,pref_wl):
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
@@ -1098,7 +1099,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="billing":     return build_billing_tab(session,perms or {})
     if tab=="setup":       return build_setup_tab()
     if tab=="admin":       return build_admin_tab(session or {},BACKEND_HTTP)   # ← ADMIN RENDER
-    if tab=="preferences":  return build_preferences_tab(user_id=(session or {}).get("user_id",""))
+    if tab=="preferences":  return build_preferences_tab(user_id=(session or {}).get("user_id",""),mode=pref_mode or "realtime",types=pref_types,hours=pref_hours if pref_hours is not None else True,min_score=pref_score or 60,watchlist=pref_wl or [])
     return html.Div("Unknown tab")
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
