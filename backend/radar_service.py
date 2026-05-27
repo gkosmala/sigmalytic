@@ -99,7 +99,7 @@ ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
 ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
-SCAN_INTERVAL_SECONDS      = 300  # 5 minutes - reduced to free up backend resources
+SCAN_INTERVAL_SECONDS      = 480  # 8 minutes - prevents job overlap on full universe scan
 INTELLIGENCE_INTERVAL_SECS = 300   # 5 minutes
 SNAPSHOT_INTERVAL          = 300
 SCORE_THRESHOLD            = 75
