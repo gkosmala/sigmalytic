@@ -38,6 +38,14 @@ except Exception as _we:
     _WEIS_AVAILABLE = False
     log.debug(f"Weis Wave not loaded: {_we}")
 
+# ── Hurst Cycle (safe import) ──────────────────────────────────────────────────
+try:
+    from hurst_cycle import score_hurst_cycle
+    _HURST_AVAILABLE = True
+except Exception as _he:
+    _HURST_AVAILABLE = False
+    log.debug(f"Hurst Cycle not loaded: {_he}")
+
 _confluence_engine_instance = None
 _confluence_import_error    = None
 
@@ -354,6 +362,16 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                     new_fields["weis_active"] = True
             except Exception as _we:
                 log.debug(f"Weis Wave scoring error {symbol}: {_we}")
+
+        # Add Hurst Cycle scoring
+        if _HURST_AVAILABLE:
+            try:
+                price   = market.price if market else 0
+                profile = old_result.get("hurst_profile", "MEDIUM")
+                hurst   = score_hurst_cycle(symbol, bars, price, profile)
+                new_fields.update(hurst)
+            except Exception as _he:
+                log.debug(f"Hurst Cycle error {symbol}: {_he}")
 
         return {**old_result, **new_fields}
 
