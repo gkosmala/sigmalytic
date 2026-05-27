@@ -402,7 +402,7 @@ def build_chart(candles, price, nodes):
     ), (
         nodes.get("persons_pivot"), f"  {nodes.get('persons_pivot',0):.2f} PP Pivot",
         "rgba(147,197,253,.6)", "dot"
-    )] if nodes and nodes.get("persons_pivot") else []):
+    )] if isinstance(nodes, dict) and nodes.get("persons_pivot") else []):
         fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
                       annotation_text=label,annotation_position="right",
                       annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
