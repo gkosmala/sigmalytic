@@ -5,13 +5,15 @@ Sigmalytic Radar — Two-Layer Intelligence Architecture
 
 LAYER 1 — Market Radar (Universe)
 ──────────────────────────────────
-1,398 symbols | 60-second scan | daily bars | lightweight confluence
+1,429 symbols | 8-minute scan | daily bars | lightweight composite score only
 Purpose: broad surveillance, finds candidates, feeds watchlist
 
-LAYER 2 — Intelligence Radar (Focus Basket)
-────────────────────────────────────────────
-14 symbols | 5-minute intraday bars | full confluence engine
-Purpose: deep behavioral intelligence, path forecasting, alerts, scoreboard
+LAYER 2 — Divergence Watchlist (EOD Audit)
+───────────────────────────────────────────
+Runs nightly at 8:30 PM ET on full universe
+Compares composite score vs full ConfluenceEngine score
+Symbols with delta ≥ 15 or ≤ -15 written to divergence_watchlist in Supabase
+Next day: only divergence watchlist symbols get heavy intraday scoring
 
 ENDPOINTS
 ─────────────────────────────────────────────────────────────────────────────
@@ -19,8 +21,8 @@ GET /api/radar/scores              — top 100 symbols by composite score
 GET /api/radar/symbol/{symbol}     — full detail for one symbol
 GET /api/radar/status              — service health, scan times, engine status
 GET /api/radar/health              — deep health check with heartbeat
-GET /api/radar/ab-summary          — A/B comparison stats across full universe
-GET /api/radar/intelligence        — deep scores for focus basket only
+GET /api/radar/divergence          — current divergence watchlist
+GET /api/radar/intelligence        — deep scores for divergence watchlist
 GET /api/radar/intelligence/{symbol} — full intelligence detail for one symbol
 POST /api/radar/watchlist          — add symbol to user watchlist
 GET /api/radar/watchlist/{user_id} — get user watchlist with scores
@@ -77,7 +79,7 @@ except Exception as _ce:
     _CONFLUENCE_AVAILABLE = False
     logging.getLogger("radar").warning(f"Confluence bridge not loaded: {_ce}")
 
-# ── Confluence engine direct import for intelligence layer ─────────────────────
+# ── Confluence engine direct import for divergence scoring ─────────────────────
 try:
     from confluence_engine import (
         ConfluenceEngine, MarketData, OptionsData, Candle, Direction
@@ -99,27 +101,22 @@ ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
 ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
-SCAN_INTERVAL_SECONDS      = 480  # 8 minutes - prevents job overlap on full universe scan
-INTELLIGENCE_INTERVAL_SECS = 300   # 5 minutes
-SNAPSHOT_INTERVAL          = 300
-SCORE_THRESHOLD            = 75
-TOP_N                      = 100
+SCAN_INTERVAL_SECONDS = 480   # 8 minutes — lightweight only, completes fast
+SNAPSHOT_INTERVAL     = 300
+SCORE_THRESHOLD       = 75
+TOP_N                 = 100
 
-# ── Layer 2 — Focus basket (Intelligence Radar) ────────────────────────────────
-FOCUS_SYMBOLS: Set[str] = {
-    "SPY", "QQQ", "IWM",
-    "AAPL", "NVDA", "TSLA", "AMD",
-    "GOOG", "META", "AMZN", "MSFT",
-    "NFLX", "GLD", "SMH",
-}
+DIVERGENCE_THRESHOLD  = 15.0  # delta ≥ 15 or ≤ -15 flagged
 
 # ── In-memory caches ──────────────────────────────────────────────────────────
 
-RADAR_CACHE: Dict[str, dict]        = {}
-INTELLIGENCE_CACHE: Dict[str, dict] = {}
+RADAR_CACHE:        Dict[str, dict] = {}
+INTELLIGENCE_CACHE: Dict[str, dict] = {}  # divergence watchlist deep scores
+DIVERGENCE_WATCHLIST: List[dict]    = []  # populated by EOD audit
 
 LAST_SCAN_TIME:         Optional[float] = None
 LAST_INTELLIGENCE_TIME: Optional[float] = None
+LAST_EOD_AUDIT_TIME:    Optional[float] = None
 SYMBOLS: List[str] = []
 _prev_statuses: Dict[str, str]       = {}
 _last_snapshot_times: Dict[str, float] = {}
@@ -394,7 +391,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "data_delay":        "15min" if ALPACA_FEED == "iex" else "live",
         "trigger_proximity": round((trigger - price) / price * 100, 2)
                              if price > 0 and trigger > 0 else 0,
-        "intelligence_layer": symbol in FOCUS_SYMBOLS,
+        "on_divergence_watchlist": False,
     }
 
 
@@ -468,7 +465,313 @@ def _infer_regime(change_pct, rel_vol, price, ma20, ma50) -> str:
     if abs(change_pct) < 0.3 and rel_vol < 0.8: return "Compression"
     return "Neutral"
 
-# ── Layer 2 — Intelligence engine (focus basket) ──────────────────────────────
+# ── Historical bars ────────────────────────────────────────────────────────────
+
+_historical_bars: Dict[str, list] = {}
+_bars_last_refresh: float = 0
+_bars_loading: bool = False
+
+
+def _refresh_historical_bars():
+    global _historical_bars, _bars_last_refresh, _bars_loading
+    _bars_loading = True
+    log.info("Refreshing historical bars…")
+    try:
+        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
+        for sym, bars in raw.items():
+            _historical_bars[sym] = bars
+        _bars_last_refresh = time.time()
+        log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
+    except Exception as e:
+        log.warning(f"Historical bar refresh failed: {e}")
+    finally:
+        _bars_loading = False
+
+# ── Layer 1 — Main scan loop (lightweight only) ────────────────────────────────
+
+def run_radar_scan():
+    """Layer 1 — Lightweight universe scan. No AB confluence. No intraday fetches."""
+    global LAST_SCAN_TIME
+
+    if not SYMBOLS:
+        log.warning("No symbols loaded — skipping scan")
+        return
+    if not ALPACA_API_KEY:
+        log.warning("No Alpaca API key — skipping scan")
+        _populate_synthetic_cache()
+        return
+
+    if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
+        threading.Thread(target=_refresh_historical_bars, daemon=True).start()
+
+    log.info(f"Radar scan starting — {len(SYMBOLS)} symbols (lightweight)")
+    snapshots = fetch_snapshots(SYMBOLS)
+
+    # Seed SPY benchmark
+    try:
+        spy_snap = snapshots.get("SPY", {})
+        spy_bars = _historical_bars.get("SPY", [])
+        if spy_snap and _CONFLUENCE_AVAILABLE:
+            spy_result = score_symbol("SPY", spy_snap, spy_bars)
+            if spy_result and spy_result.get("change_pct") is not None:
+                from confluence_bridge import update_spy_benchmark
+                update_spy_benchmark(spy_result["change_pct"])
+                log.info(f"SPY benchmark seeded: {spy_result['change_pct']:.2f}%")
+    except Exception as _e:
+        log.debug(f"SPY benchmark seed error: {_e}")
+
+    # Load divergence watchlist symbols for flagging
+    div_symbols = {d["symbol"] for d in DIVERGENCE_WATCHLIST}
+
+    scored = []
+    for symbol in SYMBOLS:
+        snap = snapshots.get(symbol, {})
+        if not snap:
+            continue
+        bars = _historical_bars.get(symbol, [])
+        try:
+            result = score_symbol(symbol, snap, bars)
+            if result and result.get("composite_score", 0) > 0:
+                result["on_divergence_watchlist"] = symbol in div_symbols
+                scored.append(result)
+        except Exception as e:
+            log.debug(f"Score error {symbol}: {e}")
+
+    for s in scored:
+        RADAR_CACHE[s["symbol"]] = s
+
+    # Heartbeat
+    try:
+        if _redis_client:
+            _redis_client.set("health:scanner:last_pulse", int(time.time()))
+    except Exception as _he:
+        log.debug(f"Heartbeat write failed: {_he}")
+
+    LAST_SCAN_TIME = time.time()
+    log.info(f"Radar scan complete — {len(scored)} symbols scored (lightweight)")
+
+    _process_events(scored)
+
+# ── EOD Audit — Full ConfluenceEngine on entire universe ──────────────────────
+
+def run_eod_audit():
+    """
+    Runs nightly at 8:30 PM ET.
+    Scores all symbols with full ConfluenceEngine, computes delta vs composite_score.
+    Symbols with |delta| >= 15 written to divergence_watchlist in Supabase.
+    """
+    global DIVERGENCE_WATCHLIST, LAST_EOD_AUDIT_TIME
+
+    if not _CONFLUENCE_AVAILABLE:
+        log.warning("EOD audit skipped — confluence bridge not available")
+        return
+    if not RADAR_CACHE:
+        log.warning("EOD audit skipped — radar cache empty")
+        return
+
+    log.info(f"EOD audit starting — {len(RADAR_CACHE)} symbols")
+    divergences = []
+
+    for symbol, cached in list(RADAR_CACHE.items()):
+        snap = {}
+        bars = _historical_bars.get(symbol, [])
+        composite = cached.get("composite_score", 0)
+        if not composite:
+            continue
+        try:
+            result = score_symbol_ab(symbol, snap, bars, dict(cached))
+            new_score = result.get("new_composite_score") or result.get("composite_score", 0)
+            delta = round(new_score - composite, 2)
+
+            if abs(delta) >= DIVERGENCE_THRESHOLD:
+                direction = "BULLISH" if delta > 0 else "BEARISH"
+                divergences.append({
+                    "symbol":          symbol,
+                    "composite_score": composite,
+                    "deep_score":      round(new_score, 2),
+                    "delta":           delta,
+                    "direction":       direction,
+                    "old_status":      cached.get("status"),
+                    "new_status":      result.get("new_status") or result.get("status"),
+                    "regime":          result.get("new_regime") or result.get("regime"),
+                    "price":           cached.get("price"),
+                    "audited_at":      datetime.now(timezone.utc).isoformat(),
+                })
+                log.info(
+                    f"DIVERGENCE {symbol}: composite={composite:.1f} "
+                    f"deep={new_score:.1f} delta={delta:+.1f} | {direction}"
+                )
+        except Exception as e:
+            log.debug(f"EOD audit error {symbol}: {e}")
+
+    # Sort by absolute delta descending
+    divergences.sort(key=lambda x: abs(x["delta"]), reverse=True)
+    DIVERGENCE_WATCHLIST = divergences
+
+    log.info(f"EOD audit complete — {len(divergences)} divergences found")
+
+    # Write to Supabase
+    _write_divergence_watchlist(divergences)
+
+    # Mark divergence symbols in RADAR_CACHE
+    div_set = {d["symbol"] for d in divergences}
+    for sym in RADAR_CACHE:
+        RADAR_CACHE[sym]["on_divergence_watchlist"] = sym in div_set
+
+    LAST_EOD_AUDIT_TIME = time.time()
+
+
+def _write_divergence_watchlist(divergences: list):
+    if not DATABASE_URL or not divergences:
+        return
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur  = conn.cursor()
+        # Clear previous night's watchlist
+        cur.execute("DELETE FROM divergence_watchlist")
+        for d in divergences:
+            cur.execute("""
+                INSERT INTO divergence_watchlist
+                (symbol, composite_score, deep_score, delta, direction,
+                 old_status, new_status, regime, price, audited_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    composite_score = EXCLUDED.composite_score,
+                    deep_score      = EXCLUDED.deep_score,
+                    delta           = EXCLUDED.delta,
+                    direction       = EXCLUDED.direction,
+                    old_status      = EXCLUDED.old_status,
+                    new_status      = EXCLUDED.new_status,
+                    regime          = EXCLUDED.regime,
+                    price           = EXCLUDED.price,
+                    audited_at      = EXCLUDED.audited_at
+            """, (
+                d["symbol"], d["composite_score"], d["deep_score"],
+                d["delta"], d["direction"], d["old_status"],
+                d["new_status"], d["regime"], d["price"], d["audited_at"]
+            ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        log.info(f"Wrote {len(divergences)} divergences to Supabase")
+    except Exception as e:
+        log.warning(f"Divergence watchlist write error: {e}")
+
+
+def _load_divergence_watchlist_from_db():
+    """Load previous night's divergence watchlist from Supabase on startup."""
+    global DIVERGENCE_WATCHLIST
+    if not DATABASE_URL:
+        return
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM divergence_watchlist ORDER BY ABS(delta) DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        DIVERGENCE_WATCHLIST = [dict(r) for r in rows]
+        log.info(f"Loaded {len(DIVERGENCE_WATCHLIST)} symbols from divergence watchlist")
+    except Exception as e:
+        log.warning(f"Could not load divergence watchlist: {e}")
+
+# ── Divergence watchlist intraday deep scan ────────────────────────────────────
+
+def run_divergence_scan():
+    """
+    Runs every 8 minutes during market hours.
+    Deep-scores only the divergence watchlist symbols with intraday bars.
+    """
+    global LAST_INTELLIGENCE_TIME
+
+    if not DIVERGENCE_WATCHLIST:
+        log.debug("Divergence scan skipped — watchlist empty")
+        return
+    if not _INTELLIGENCE_AVAILABLE:
+        return
+
+    symbols = [d["symbol"] for d in DIVERGENCE_WATCHLIST]
+    log.info(f"Divergence scan starting — {len(symbols)} symbols")
+
+    for symbol in symbols:
+        try:
+            snap = fetch_snapshots([symbol]).get(symbol, {})
+            if not snap:
+                continue
+
+            daily_bar  = snap.get("dailyBar",    {}) or {}
+            prev_daily = snap.get("prevDailyBar", {}) or {}
+            trade      = snap.get("latestTrade",  {}) or {}
+
+            price      = float(trade.get("p", 0) or daily_bar.get("c", 0) or 0)
+            prev_close = float(prev_daily.get("c", 0) or 0)
+            if price <= 0 or prev_close <= 0:
+                continue
+
+            bars_5m  = fetch_intraday_bars(symbol, "5Min",  limit=78)
+            bars_1h  = fetch_intraday_bars(symbol, "1Hour", limit=20)
+            bars_day = _historical_bars.get(symbol, [])
+
+            market = MarketData(
+                symbol               = symbol,
+                price                = price,
+                previous_close       = prev_close,
+                day_open             = float(daily_bar.get("o", price) or price),
+                day_high             = float(daily_bar.get("h", price) or price),
+                day_low              = float(daily_bar.get("l", price) or price),
+                volume               = float(daily_bar.get("v", 0) or 0),
+                avg_volume           = _avg_volume_from_bars(bars_day),
+                vwap                 = float(daily_bar.get("vw", price) or price),
+                atr                  = _atr_from_daily_bars(bars_day),
+                prior_high           = float(prev_daily.get("h", 0) or 0) or None,
+                prior_low            = float(prev_daily.get("l", 0) or 0) or None,
+                prior_close          = prev_close,
+                candles_5m           = _bars_to_candles(bars_5m),
+                candles_1h           = _bars_to_candles(bars_1h),
+                candles_daily        = _bars_to_candles(bars_day[-60:]),
+                benchmark_change_pct = _benchmark_change(),
+            )
+
+            result = _intelligence_engine.evaluate(market, OptionsData())
+
+            INTELLIGENCE_CACHE[symbol] = {
+                "symbol":          symbol,
+                "price":           result.price,
+                "score":           result.score,
+                "confidence":      result.confidence,
+                "direction":       result.direction,
+                "status":          result.status,
+                "regime":          result.regime,
+                "setup":           result.setup,
+                "wyckoff_phase":   result.wyckoff_phase,
+                "candle_pattern":  result.candle_pattern,
+                "cycle_hits":      len(result.cycle_hits),
+                "factor_scores":   result.factor_scores,
+                "internal_scores": result.internal_scores,
+                "levels":          result.levels,
+                "paths":           result.paths,
+                "alert_reason":    result.alert_reason,
+                "updated_at":      datetime.now(timezone.utc).isoformat(),
+                "bars_5m_count":   len(bars_5m),
+                "bars_1h_count":   len(bars_1h),
+                "divergence_delta": next(
+                    (d["delta"] for d in DIVERGENCE_WATCHLIST if d["symbol"] == symbol), None
+                ),
+            }
+
+            if symbol in RADAR_CACHE:
+                RADAR_CACHE[symbol]["intelligence_score"]  = result.score
+                RADAR_CACHE[symbol]["intelligence_status"] = result.status
+                RADAR_CACHE[symbol]["intelligence_regime"] = result.regime
+
+        except Exception as e:
+            log.warning(f"Divergence scan error {symbol}: {e}")
+
+        time.sleep(0.2)
+
+    LAST_INTELLIGENCE_TIME = time.time()
+    log.info(f"Divergence scan complete — {len(INTELLIGENCE_CACHE)} symbols graded")
+
 
 def _bars_to_candles(bars: List[dict]) -> List["Candle"]:
     candles = []
@@ -488,108 +791,6 @@ def _bars_to_candles(bars: List[dict]) -> List["Candle"]:
         except Exception:
             continue
     return candles
-
-
-def run_intelligence_scan():
-    """
-    Layer 2 — Deep confluence engine on focus basket.
-    Runs every 5 minutes in a background thread.
-    """
-    global LAST_INTELLIGENCE_TIME
-
-    if not _INTELLIGENCE_AVAILABLE:
-        return
-    if not ALPACA_API_KEY:
-        return
-
-    log.info(f"Intelligence scan starting — {len(FOCUS_SYMBOLS)} focus symbols")
-
-    for symbol in sorted(FOCUS_SYMBOLS):
-        try:
-            snaps = fetch_snapshots([symbol])
-            snap  = snaps.get(symbol, {})
-            if not snap:
-                continue
-
-            daily_bar  = snap.get("dailyBar",    {}) or {}
-            prev_daily = snap.get("prevDailyBar", {}) or {}
-            trade      = snap.get("latestTrade", {}) or {}
-
-            price      = float(trade.get("p", 0) or daily_bar.get("c", 0) or 0)
-            prev_close = float(prev_daily.get("c", 0) or 0)
-            if price <= 0 or prev_close <= 0:
-                continue
-
-            bars_5m  = fetch_intraday_bars(symbol, "5Min",  limit=78)
-            bars_1h  = fetch_intraday_bars(symbol, "1Hour", limit=20)
-            bars_day = _historical_bars.get(symbol, [])
-
-            market = MarketData(
-                symbol              = symbol,
-                price               = price,
-                previous_close      = prev_close,
-                day_open            = float(daily_bar.get("o", price) or price),
-                day_high            = float(daily_bar.get("h", price) or price),
-                day_low             = float(daily_bar.get("l", price) or price),
-                volume              = float(daily_bar.get("v", 0) or 0),
-                avg_volume          = _avg_volume_from_bars(bars_day),
-                vwap                = float(daily_bar.get("vw", price) or price),
-                atr                 = _atr_from_daily_bars(bars_day),
-                prior_high          = float(prev_daily.get("h", 0) or 0) or None,
-                prior_low           = float(prev_daily.get("l", 0) or 0) or None,
-                prior_close         = prev_close,
-                candles_5m          = _bars_to_candles(bars_5m),
-                candles_1h          = _bars_to_candles(bars_1h),
-                candles_daily       = _bars_to_candles(bars_day[-60:]),
-                benchmark_change_pct= _benchmark_change(),
-            )
-
-            options = OptionsData()
-
-            result = _intelligence_engine.evaluate(market, options)
-
-            INTELLIGENCE_CACHE[symbol] = {
-                "symbol"          : symbol,
-                "price"           : result.price,
-                "score"           : result.score,
-                "confidence"      : result.confidence,
-                "direction"       : result.direction,
-                "status"          : result.status,
-                "regime"          : result.regime,
-                "setup"           : result.setup,
-                "wyckoff_phase"   : result.wyckoff_phase,
-                "candle_pattern"  : result.candle_pattern,
-                "cycle_hits"      : len(result.cycle_hits),
-                "factor_scores"   : result.factor_scores,
-                "internal_scores" : result.internal_scores,
-                "levels"          : result.levels,
-                "paths"           : result.paths,
-                "alert_reason"    : result.alert_reason,
-                "updated_at"      : datetime.now(timezone.utc).isoformat(),
-                "bars_5m_count"   : len(bars_5m),
-                "bars_1h_count"   : len(bars_1h),
-            }
-
-            if symbol in RADAR_CACHE:
-                RADAR_CACHE[symbol]["intelligence_score"]     = result.score
-                RADAR_CACHE[symbol]["intelligence_confidence"]= result.confidence
-                RADAR_CACHE[symbol]["intelligence_direction"] = result.direction
-                RADAR_CACHE[symbol]["intelligence_status"]    = result.status
-                RADAR_CACHE[symbol]["intelligence_regime"]    = result.regime
-                RADAR_CACHE[symbol]["intelligence_setup"]     = result.setup
-                RADAR_CACHE[symbol]["intelligence_layer"]     = True
-
-            log.debug(f"Intelligence {symbol}: score={result.score:.1f} "
-                      f"status={result.status} regime={result.regime} "
-                      f"5m_bars={len(bars_5m)}")
-
-        except Exception as e:
-            log.warning(f"Intelligence scan error {symbol}: {e}")
-
-        time.sleep(0.1)
-
-    LAST_INTELLIGENCE_TIME = time.time()
-    log.info(f"Intelligence scan complete — {len(INTELLIGENCE_CACHE)} symbols graded")
 
 
 def _avg_volume_from_bars(bars: list) -> float:
@@ -617,100 +818,7 @@ def _benchmark_change() -> Optional[float]:
     spy = RADAR_CACHE.get("SPY", {})
     return spy.get("change_pct") if spy else None
 
-# ── Historical bars ────────────────────────────────────────────────────────────
-
-_historical_bars: Dict[str, list] = {}
-_bars_last_refresh: float = 0
-_bars_loading: bool = False
-
-
-def _refresh_historical_bars():
-    global _historical_bars, _bars_last_refresh, _bars_loading
-    _bars_loading = True
-    log.info("Refreshing historical bars…")
-    try:
-        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
-        for sym, bars in raw.items():
-            _historical_bars[sym] = bars
-        _bars_last_refresh = time.time()
-        log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
-    except Exception as e:
-        log.warning(f"Historical bar refresh failed: {e}")
-    finally:
-        _bars_loading = False
-
-# ── Layer 1 — Main scan loop ───────────────────────────────────────────────────
-
-def run_radar_scan():
-    """Layer 1 — Universe scan every 60 seconds."""
-    global LAST_SCAN_TIME
-
-    if not SYMBOLS:
-        log.warning("No symbols loaded — skipping scan")
-        return
-    if not ALPACA_API_KEY:
-        log.warning("No Alpaca API key — skipping scan")
-        _populate_synthetic_cache()
-        return
-
-    if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
-        threading.Thread(target=_refresh_historical_bars, daemon=True).start()
-
-    log.info(f"Radar scan starting — {len(SYMBOLS)} symbols")
-    snapshots = fetch_snapshots(SYMBOLS)
-
-    scored = []
-
-    if _CONFLUENCE_AVAILABLE:
-        try:
-            spy_snap = snapshots.get("SPY", {})
-            spy_bars = _historical_bars.get("SPY", [])
-            if spy_snap:
-                spy_result = score_symbol("SPY", spy_snap, spy_bars)
-                if spy_result and spy_result.get("change_pct") is not None:
-                    from confluence_bridge import update_spy_benchmark
-                    update_spy_benchmark(spy_result["change_pct"])
-                    log.info(f"SPY benchmark seeded: {spy_result['change_pct']:.2f}%")
-        except Exception as _e:
-            log.debug(f"SPY benchmark seed error: {_e}")
-
-    for symbol in SYMBOLS:
-        snap = snapshots.get(symbol, {})
-        if not snap:
-            continue
-        bars = _historical_bars.get(symbol, [])
-        try:
-            result = score_symbol(symbol, snap, bars)
-            if result and result.get("composite_score", 0) > 0:
-                if _CONFLUENCE_AVAILABLE:
-                    result = score_symbol_ab(symbol, snap, bars, result)
-                scored.append(result)
-        except Exception as e:
-            log.debug(f"Score error {symbol}: {e}")
-
-    for s in scored:
-        RADAR_CACHE[s["symbol"]] = s
-
-    # ── Heartbeat pulse ───────────────────────────────────────────────────────
-    try:
-        if _redis_client:
-            _redis_client.set("health:scanner:last_pulse", int(time.time()))
-            log.debug("Heartbeat pulse written to Redis.")
-    except Exception as _he:
-        log.debug(f"Heartbeat write failed: {_he}")
-
-    LAST_SCAN_TIME = time.time()
-    log.info(f"Radar scan complete — {len(scored)} symbols scored")
-
-    if _CONFLUENCE_AVAILABLE:
-        try:
-            summary = _ab_summary(scored)
-            log.info(f"AB Summary: {summary}")
-        except Exception as e:
-            log.debug(f"AB summary error: {e}")
-
-    _process_events(scored)
-
+# ── Event processing ───────────────────────────────────────────────────────────
 
 def _process_events(scored: list):
     if not DATABASE_URL:
@@ -788,35 +896,35 @@ def _populate_synthetic_cache():
     for sym in SYMBOLS[:50]:
         score = random.uniform(45, 92)
         RADAR_CACHE[sym] = {
-            "symbol":            sym,
-            "price":             round(random.uniform(50, 500), 2),
-            "change_pct":        round(random.uniform(-3, 4), 2),
-            "volume":            random.randint(500_000, 5_000_000),
-            "rel_volume":        round(random.uniform(0.5, 3.0), 2),
-            "composite_score":   round(score, 1),
-            "confluence":        round(random.uniform(40, 95), 1),
-            "expansion_node":    round(random.uniform(40, 95), 1),
-            "relative_strength": round(random.uniform(40, 95), 1),
-            "volume_pressure":   round(random.uniform(40, 95), 1),
-            "behavioral":        round(random.uniform(40, 95), 1),
-            "setup_type":        random.choice(["Compression Breakout Candidate",
-                                                "Trend Continuation","Monitoring"]),
-            "status":            random.choice(["Armed","Building","Watching"]),
-            "trigger":           round(random.uniform(100, 500), 2),
-            "invalidation":      round(random.uniform(80, 400), 2),
-            "target1":           round(random.uniform(120, 550), 2),
-            "target2":           round(random.uniform(140, 600), 2),
-            "regime":            random.choice(["Bull Expansion","Compression","Neutral"]),
-            "vwap":              round(random.uniform(80, 480), 2),
-            "ma20":              round(random.uniform(80, 480), 2),
-            "ma50":              round(random.uniform(80, 480), 2),
-            "atr":               round(random.uniform(1, 20), 2),
-            "high_52w":          round(random.uniform(150, 600), 2),
-            "low_52w":           round(random.uniform(50, 300), 2),
-            "updated_at":        datetime.now(timezone.utc).isoformat(),
-            "data_delay":        "synthetic",
-            "trigger_proximity": 0,
-            "intelligence_layer": False,
+            "symbol":                 sym,
+            "price":                  round(random.uniform(50, 500), 2),
+            "change_pct":             round(random.uniform(-3, 4), 2),
+            "volume":                 random.randint(500_000, 5_000_000),
+            "rel_volume":             round(random.uniform(0.5, 3.0), 2),
+            "composite_score":        round(score, 1),
+            "confluence":             round(random.uniform(40, 95), 1),
+            "expansion_node":         round(random.uniform(40, 95), 1),
+            "relative_strength":      round(random.uniform(40, 95), 1),
+            "volume_pressure":        round(random.uniform(40, 95), 1),
+            "behavioral":             round(random.uniform(40, 95), 1),
+            "setup_type":             random.choice(["Compression Breakout Candidate",
+                                                     "Trend Continuation", "Monitoring"]),
+            "status":                 random.choice(["Armed", "Building", "Watching"]),
+            "trigger":                round(random.uniform(100, 500), 2),
+            "invalidation":           round(random.uniform(80, 400), 2),
+            "target1":                round(random.uniform(120, 550), 2),
+            "target2":                round(random.uniform(140, 600), 2),
+            "regime":                 random.choice(["Bull Expansion", "Compression", "Neutral"]),
+            "vwap":                   round(random.uniform(80, 480), 2),
+            "ma20":                   round(random.uniform(80, 480), 2),
+            "ma50":                   round(random.uniform(80, 480), 2),
+            "atr":                    round(random.uniform(1, 20), 2),
+            "high_52w":               round(random.uniform(150, 600), 2),
+            "low_52w":                round(random.uniform(50, 300), 2),
+            "updated_at":             datetime.now(timezone.utc).isoformat(),
+            "data_delay":             "synthetic",
+            "trigger_proximity":      0,
+            "on_divergence_watchlist": False,
         }
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
@@ -827,8 +935,10 @@ _scheduler: Optional[BackgroundScheduler] = None
 def start_radar_scheduler():
     global SYMBOLS, _scheduler
     SYMBOLS = load_russell1000()
-    log.info(f"Radar scheduler starting — {len(SYMBOLS)} symbols | "
-             f"Focus basket: {len(FOCUS_SYMBOLS)} symbols")
+    log.info(f"Radar scheduler starting — {len(SYMBOLS)} symbols")
+
+    # Load last night's divergence watchlist from Supabase
+    _load_divergence_watchlist_from_db()
 
     if ALPACA_API_KEY:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
@@ -836,6 +946,7 @@ def start_radar_scheduler():
 
     _scheduler = BackgroundScheduler(timezone="UTC")
 
+    # Layer 1 — Lightweight universe scan every 8 minutes
     _scheduler.add_job(
         run_radar_scan,
         trigger="interval",
@@ -844,15 +955,25 @@ def start_radar_scheduler():
         next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
     )
 
+    # Divergence watchlist intraday deep scan — runs alongside radar scan
     if _INTELLIGENCE_AVAILABLE:
         _scheduler.add_job(
-            lambda: threading.Thread(target=run_intelligence_scan, daemon=True).start(),
+            lambda: threading.Thread(target=run_divergence_scan, daemon=True).start(),
             trigger="interval",
-            seconds=INTELLIGENCE_INTERVAL_SECS,
-            id="intelligence_scan",
-            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
+            seconds=SCAN_INTERVAL_SECONDS,
+            id="divergence_scan",
+            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60),
         )
-        log.info("Intelligence scan scheduled every 5 minutes")
+        log.info("Divergence watchlist scan scheduled every 8 minutes")
+
+    # EOD audit — 8:30 PM ET = 00:30 UTC
+    _scheduler.add_job(
+        lambda: threading.Thread(target=run_eod_audit, daemon=True).start(),
+        trigger="cron",
+        hour=0, minute=30,
+        id="eod_audit",
+    )
+    log.info("EOD audit scheduled at 8:30 PM ET (00:30 UTC)")
 
     _scheduler.add_job(
         lambda: send_daily_summary(list(RADAR_CACHE.values())),
@@ -905,13 +1026,13 @@ def radar_status():
         "intelligence_engine":   _INTELLIGENCE_AVAILABLE,
         "intelligence_cached":   len(INTELLIGENCE_CACHE),
         "last_intelligence":     LAST_INTELLIGENCE_TIME,
-        "focus_symbols":         sorted(FOCUS_SYMBOLS),
+        "divergence_watchlist":  len(DIVERGENCE_WATCHLIST),
+        "last_eod_audit":        LAST_EOD_AUDIT_TIME,
     }
 
 
 @radar_router.get("/health")
 def scanner_health():
-    """Deep health check — verifies Redis connectivity and scanner heartbeat."""
     try:
         if not _redis_client:
             return {"status": "unhealthy", "reason": "Redis client not initialized."}
@@ -926,47 +1047,59 @@ def scanner_health():
         return {"status": "error", "detail": str(e)}
 
 
-@radar_router.get("/ab-summary")
-def get_ab_summary():
-    if not _CONFLUENCE_AVAILABLE:
-        return {"error": "Confluence engine not loaded"}
-    return _ab_summary(list(RADAR_CACHE.values()))
+@radar_router.get("/divergence")
+def get_divergence_watchlist():
+    return {
+        "count":          len(DIVERGENCE_WATCHLIST),
+        "symbols":        DIVERGENCE_WATCHLIST,
+        "last_audit":     LAST_EOD_AUDIT_TIME,
+        "threshold":      DIVERGENCE_THRESHOLD,
+    }
 
 
 @radar_router.get("/intelligence")
 def get_intelligence():
     results = list(INTELLIGENCE_CACHE.values())
-    results.sort(key=lambda x: x.get("score", 0), reverse=True)
+    results.sort(key=lambda x: abs(x.get("divergence_delta", 0) or 0), reverse=True)
     return {
-        "count":            len(results),
-        "symbols":          results,
-        "last_updated":     LAST_INTELLIGENCE_TIME,
-        "engine_available": _INTELLIGENCE_AVAILABLE,
+        "count":        len(results),
+        "symbols":      results,
+        "last_updated": LAST_INTELLIGENCE_TIME,
     }
 
 
 @radar_router.get("/intelligence/{symbol}")
 def get_intelligence_symbol(symbol: str):
     sym = symbol.upper().strip()
+    div_symbols = {d["symbol"] for d in DIVERGENCE_WATCHLIST}
     if sym not in INTELLIGENCE_CACHE:
-        if sym not in FOCUS_SYMBOLS:
-            raise HTTPException(404, f"{sym} is not in the focus basket")
-        raise HTTPException(404, f"{sym} intelligence data not yet available — check back in 5 minutes")
+        if sym not in div_symbols:
+            raise HTTPException(404, f"{sym} is not on the divergence watchlist")
+        raise HTTPException(404, f"{sym} intelligence data not yet available — check back after next scan")
     return INTELLIGENCE_CACHE[sym]
+
+
+@radar_router.get("/ab-summary")
+def get_ab_summary():
+    return {
+        "message": "AB divergence now runs as EOD audit at 8:30 PM ET",
+        "divergence_count": len(DIVERGENCE_WATCHLIST),
+        "last_audit": LAST_EOD_AUDIT_TIME,
+        "watchlist": DIVERGENCE_WATCHLIST[:10],
+    }
 
 
 @radar_router.get("/debug/bars")
 def debug_bars():
     if not ALPACA_API_KEY:
         return {"error": "No Alpaca API key"}
-    from datetime import timedelta
     start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
     test_sym = "AAPL"
     try:
         r = _req.get(
             f"{ALPACA_BASE_URL}/v2/stocks/{test_sym}/bars",
             headers=_alpaca_headers(),
-            params={"timeframe":"1Day","start":start_date,"feed":ALPACA_FEED,"sort":"asc"},
+            params={"timeframe": "1Day", "start": start_date, "feed": ALPACA_FEED, "sort": "asc"},
             timeout=10,
         )
         single_result = {
