@@ -1156,6 +1156,71 @@ class VSAEngine:
         elif rel_vol > 1.5:
             score = MathUtils.clamp(score + 4)
 
+        # ── STOPPING VOLUME ───────────────────────────────────────────────────
+        # Ultra-high volume bar that halts a downtrend — institutions absorbing
+        if len(recent) >= 3:
+            prev3 = recent[-4:-1] if len(recent) >= 4 else recent[:-1]
+            trend_down = all(c.close < c.open for c in prev3[-3:]) if len(prev3) >= 3 else False
+            if trend_down and rel_vol >= 2.5 and last.close_position > 0.40:
+                score = MathUtils.clamp(score + 20)
+                bias  = Direction.BULL
+                notes.append(f"VSA: Stopping volume — ultra-high volume ({rel_vol:.1f}x) halts downtrend. Institutional absorption.")
+
+        # ── TEST BAR ──────────────────────────────────────────────────────────
+        # Low volume revisit of a prior high-volume area — confirms supply absorbed
+        if len(recent) >= 5:
+            prior_vols = [c.volume for c in recent[-6:-1]]
+            max_prior_vol = max(prior_vols) if prior_vols else 0
+            if (rel_vol < 0.5 and max_prior_vol > 0 and
+                last.volume < max_prior_vol * 0.4 and
+                last.close_position > 0.50):
+                score = MathUtils.clamp(score + 14)
+                bias  = Direction.BULL
+                notes.append("VSA: Test bar — low volume revisit confirms supply absorbed. Bullish.")
+
+        # ── PSEUDO-UPTHRUST ───────────────────────────────────────────────────
+        # Failed rally on above-average but not extreme volume
+        if (1.2 <= rel_vol < 2.0 and
+            last.high > prior_high and
+            last.close < (last.high + last.low) / 2):
+            score = MathUtils.clamp(score + 10)
+            bias  = Direction.BEAR
+            notes.append(f"VSA: Pseudo-upthrust — above-average volume ({rel_vol:.1f}x) failed rally. Weak demand.")
+
+        # ── MULTI-BAR VSA CONTEXT ─────────────────────────────────────────────
+        # Analyze 3-bar volume trend vs price trend for background pressure
+        if len(recent) >= 4:
+            last3 = recent[-4:-1]
+            vol_trend  = [c.volume for c in last3]
+            price_trend = [c.close for c in last3]
+            vol_rising   = vol_trend[-1] > vol_trend[0] * 1.2
+            price_rising = price_trend[-1] > price_trend[0]
+            price_falling = price_trend[-1] < price_trend[0]
+
+            if vol_rising and price_falling:
+                score = MathUtils.clamp(score + 8)
+                bias  = Direction.BULL
+                notes.append("VSA: Background — rising volume on falling price. Absorption pattern forming.")
+            elif vol_rising and price_rising:
+                score = MathUtils.clamp(score + 6)
+                notes.append("VSA: Background — rising volume on rising price. Trend confirmed.")
+
+        # ── BACKGROUND VSA TREND ──────────────────────────────────────────────
+        # 10-bar volume vs spread relationship
+        if len(recent) >= 10:
+            last10 = recent[-10:]
+            avg_10_vol    = sum(c.volume for c in last10) / 10
+            avg_10_spread = sum(c.spread for c in last10) / 10
+            current_vol_vs_10   = MathUtils.safe_div(last.volume, avg_10_vol, 1.0)
+            current_spread_vs_10 = MathUtils.safe_div(last.spread, avg_10_spread, 1.0)
+
+            if current_vol_vs_10 > 1.8 and current_spread_vs_10 < 0.7:
+                score = MathUtils.clamp(score + 8)
+                notes.append(f"VSA: 10-bar context — high volume ({current_vol_vs_10:.1f}x) narrow spread. Hidden accumulation.")
+            elif current_vol_vs_10 < 0.5 and current_spread_vs_10 > 1.3:
+                score = MathUtils.clamp(score - 5)
+                notes.append("VSA: 10-bar context — low volume wide spread. Weak market structure.")
+
         return {
             "score"     : MathUtils.clamp(score),
             "bias"      : bias.value,
