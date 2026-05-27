@@ -22,6 +22,7 @@ from shared.engine import (
 )
 from billing_ui import build_billing_tab, register_billing_callbacks
 from admin_tab import build_admin_tab, is_admin   # ← ADMIN TAB
+from preferences_tab import build_preferences_tab, register_preferences_callbacks
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
@@ -733,14 +734,12 @@ def build_main_app():
                 ("setup","Setup"),("admin","🔒 Admin"),    # ← ADMIN TAB
             ]
         ] + [
-            html.A("⚙️ Preferences",
-                id="prefs-link",
-                href="https://sigmalytic-backend.onrender.com/preferences",
-                target="_blank",
-                style={"background":"rgba(0,0,0,.2)","border":"1px solid rgba(255,255,255,.08)",
-                       "borderRadius":"8px","color":"#94a3b8","fontSize":"13px",
-                       "fontWeight":"700","padding":"8px 14px","textDecoration":"none",
-                       "whiteSpace":"nowrap","cursor":"pointer"})
+            html.Button("⚙️ Preferences",
+                id="tab-preferences",
+                n_clicks=0,
+                style={"background":"transparent","color":TEXT,"border":"none",
+                       "borderRadius":"10px","padding":"10px 20px","fontSize":"13px",
+                       "fontWeight":"700","whiteSpace":"nowrap"})
         ],style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px","background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
         html.Main(id="main-content"),
@@ -755,6 +754,11 @@ app.layout=html.Div([
     dcc.Store(id="s-tab",data="command"),dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",data={}),dcc.Store(id="s-refresh",data=0),
     dcc.Store(id="s-page",data="login"),dcc.Store(id="s-permissions",data={}),
+    dcc.Store(id="pref-mode-val",data="realtime"),
+    dcc.Store(id="pref-types-val",data={"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}),
+    dcc.Store(id="pref-hours-val",data=True),
+    dcc.Store(id="prefs-min-score-val",data=60),
+    dcc.Store(id="prefs-watchlist",data=[]),
     dcc.Interval(id="i-synth",interval=1_400,n_intervals=0),
     dcc.Interval(id="i-alpaca",interval=5_000,n_intervals=1),
     dcc.Interval(id="i-clock",interval=2_000,n_intervals=0),
@@ -860,6 +864,7 @@ def load_symbol(_,ticker):
               Input("tab-behavior","n_clicks"),Input("tab-import","n_clicks"),Input("tab-radar","n_clicks"),
               Input("tab-scoreboard","n_clicks"),Input("tab-billing","n_clicks"),Input("tab-setup","n_clicks"),
               Input("tab-admin","n_clicks"),    # ← ADMIN TAB INPUT
+              Input("tab-preferences","n_clicks"),
               prevent_initial_call=True)
 def set_tab(*_):
     ctx=callback_context
@@ -1078,7 +1083,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin") and trigger=="i-clock": return no_update
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
@@ -1093,6 +1098,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="billing":     return build_billing_tab(session,perms or {})
     if tab=="setup":       return build_setup_tab()
     if tab=="admin":       return build_admin_tab(session or {},BACKEND_HTTP)   # ← ADMIN RENDER
+    if tab=="preferences":  return build_preferences_tab(user_id=(session or {}).get("user_id",""))
     return html.Div("Unknown tab")
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
@@ -1272,6 +1278,7 @@ app.clientside_callback(
 )
 
 register_billing_callbacks(app)
+register_preferences_callbacks(app)
 
 
 app.clientside_callback(
