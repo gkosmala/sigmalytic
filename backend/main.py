@@ -886,11 +886,11 @@ async def geometry_status():
 async def debug_radar(symbol: str):
     """Returns full radar cache for a symbol including GEX, BME, Weis scores."""
     try:
-        from radar_service import RADAR_CACHE
+        from radar_service import RADAR_CACHE, INTELLIGENCE_CACHE
         clean = symbol.upper().strip()
-        data = RADAR_CACHE.get(clean)
+        data = RADAR_CACHE.get(clean) or INTELLIGENCE_CACHE.get(clean)
         if not data:
-            return {"error": f"{clean} not in radar cache yet"}
+            return {"error": f"{clean} not in radar cache yet — radar:{len(RADAR_CACHE)} intel:{len(INTELLIGENCE_CACHE)}"}
         # Return key scoring fields
         return {
             "symbol"        : clean,
