@@ -260,6 +260,7 @@ def ensure_stream(symbol: str):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _BME_AVAILABLE
     log.info("Sigmalytic backend starting…")
     start_radar_scheduler()
 
@@ -303,7 +304,7 @@ async def lifespan(app: FastAPI):
     if _BME_AVAILABLE:
         def _initial_bme_training():
             import time as _t
-            _t.sleep(120)  # Wait 2 min for historical bars to load
+            _t.sleep(300)  # Wait 2 min for historical bars to load
             try:
                 from radar_service import _historical_bars
                 trained = bme_train_batch(_historical_bars)
