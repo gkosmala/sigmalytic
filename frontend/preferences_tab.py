@@ -100,7 +100,7 @@ def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, m
 
         # Hurst Cycle Profile
         _card([
-            _section_title("🔄 Hurst Cycle Profile"),
+            _stitle("🔄 Hurst Cycle Profile"),
             _label("Lookback horizon for cycle timing analysis"),
             dcc.RadioItems(
                 id="prefs-hurst-profile",
@@ -116,7 +116,7 @@ def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, m
 
         # Weis Wave Sensitivity
         _card([
-            _section_title("〰️ Weis Wave Sensitivity"),
+            _stitle("〰️ Weis Wave Sensitivity"),
             _label("Reversal threshold — lower = more sensitive, higher = fewer signals"),
             dcc.Slider(
                 id="prefs-weis-threshold",
@@ -208,9 +208,11 @@ def register_preferences_callbacks(app):
         Input("prefs-save-btn","n_clicks"),
         State("prefs-user-id","children"), State("pref-mode-val","data"), State("prefs-min-score-val","data"),
         State("pref-hours-val","data"), State("prefs-watchlist","data"), State("pref-types-val","data"),
-        State("s-session","data"), prevent_initial_call=True,
+        State("s-session","data"),
+        prevent_initial_call=True,
     )
-    def save_prefs(n,uid,mode,score,hours,wl,types,hurst_profile,weis_thresh,session):
+    def save_prefs(n,uid,mode,score,hours,wl,types,session):
+        hurst_profile="MEDIUM"; weis_thresh=0.5
         if not uid and session: uid=session.get("user_id","")
         email=(session or {}).get("email","")
         if not uid: return "⚠️ No user ID — please log in first.",_msg("yellow")
