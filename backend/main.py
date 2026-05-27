@@ -880,3 +880,34 @@ async def geometry_status():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/debug/radar/{symbol}")
+async def debug_radar(symbol: str):
+    """Returns full radar cache for a symbol including GEX, BME, Weis scores."""
+    try:
+        from radar_service import RADAR_CACHE
+        clean = symbol.upper().strip()
+        data = RADAR_CACHE.get(clean)
+        if not data:
+            return {"error": f"{clean} not in radar cache yet"}
+        # Return key scoring fields
+        return {
+            "symbol"        : clean,
+            "composite_score": data.get("composite_score"),
+            "status"        : data.get("status"),
+            "gex_score"     : data.get("gex_score"),
+            "gex_regime"    : data.get("gex_regime"),
+            "gex_available" : data.get("gex_available"),
+            "gex_strategy"  : data.get("gex_strategy"),
+            "bme_score"     : data.get("bme_score"),
+            "bme_regime"    : data.get("bme_regime"),
+            "bme_trained"   : data.get("bme_trained"),
+            "weis_signal"   : data.get("weis_signal"),
+            "weis_score"    : data.get("weis_score"),
+            "hurst_score"   : data.get("hurst_score"),
+            "hurst_inside_zone": data.get("hurst_inside_zone"),
+            "persons_pivots": data.get("persons_pivots"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
