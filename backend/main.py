@@ -892,25 +892,40 @@ async def debug_radar(symbol: str):
         intel_data = INTELLIGENCE_CACHE.get(clean, {})
         if not radar_data and not intel_data:
             return {"error": f"{clean} not in radar cache yet — radar:{len(RADAR_CACHE)} intel:{len(INTELLIGENCE_CACHE)}"}
-        # Merge both caches — intel fields overlay radar base
-        data = {**radar_data, **intel_data}
-        # Return key scoring fields
+        internal = intel_data.get("internal_scores", {})
+        factor   = intel_data.get("factor_scores", {})
         return {
-            "symbol"        : clean,
-            "composite_score": data.get("composite_score"),
-            "status"        : data.get("status"),
-            "gex_score"     : data.get("gex_score"),
-            "gex_regime"    : data.get("gex_regime"),
-            "gex_available" : data.get("gex_available"),
-            "gex_strategy"  : data.get("gex_strategy"),
-            "bme_score"     : data.get("bme_score"),
-            "bme_regime"    : data.get("bme_regime"),
-            "bme_trained"   : data.get("bme_trained"),
-            "weis_signal"   : data.get("weis_signal"),
-            "weis_score"    : data.get("weis_score"),
-            "hurst_score"   : data.get("hurst_score"),
-            "hurst_inside_zone": data.get("hurst_inside_zone"),
-            "persons_pivots": data.get("persons_pivots"),
+            "symbol"              : clean,
+            "composite_score"     : radar_data.get("composite_score"),
+            "intelligence_score"  : intel_data.get("score"),
+            "confidence"          : intel_data.get("confidence"),
+            "status"              : intel_data.get("status") or radar_data.get("status"),
+            "regime"              : intel_data.get("regime") or radar_data.get("regime"),
+            "direction"           : intel_data.get("direction"),
+            "setup"               : intel_data.get("setup"),
+            "wyckoff_phase"       : intel_data.get("wyckoff_phase"),
+            "candle_pattern"      : intel_data.get("candle_pattern"),
+            "gex_score"           : internal.get("options_liquidity"),
+            "gex_available"       : False,
+            "bme_score"           : internal.get("behavioral"),
+            "weis_score"          : internal.get("wyckoff_weis"),
+            "hurst_score"         : internal.get("time_cycle"),
+            "vsa_score"           : internal.get("vsa"),
+            "gann_score"          : internal.get("gann_geometry"),
+            "fibonacci_score"     : internal.get("fibonacci"),
+            "elliott_score"       : internal.get("elliott"),
+            "confluence_factor"   : factor.get("C"),
+            "expansion_factor"    : factor.get("E"),
+            "rel_strength_factor" : factor.get("RS"),
+            "vol_pressure_factor" : factor.get("VP"),
+            "behavioral_factor"   : factor.get("B"),
+            "upside_trigger"      : intel_data.get("levels", {}).get("upside_trigger"),
+            "downside_trigger"    : intel_data.get("levels", {}).get("downside_trigger"),
+            "invalidation_bull"   : intel_data.get("levels", {}).get("invalidation_bull"),
+            "invalidation_bear"   : intel_data.get("levels", {}).get("invalidation_bear"),
+            "bars_5m_count"       : intel_data.get("bars_5m_count"),
+            "bars_1h_count"       : intel_data.get("bars_1h_count"),
+            "updated_at"          : intel_data.get("updated_at"),
         }
     except Exception as e:
         return {"error": str(e)}
