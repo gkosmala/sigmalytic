@@ -298,9 +298,12 @@ async def lifespan(app: FastAPI):
         import requests as _req
         while True:
             try:
+                _supabase_url = os.getenv("SUPABASE_URL", "")
+                _supabase_key = os.getenv("SUPABASE_ANON_KEY", "")
+                if not _supabase_url: _time.sleep(3600); continue
                 _req.get(
-                    f"{SUPABASE_URL}/rest/v1/user_preferences?limit=1",
-                    headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+                    f"{_supabase_url}/rest/v1/user_preferences?limit=1",
+                    headers={"apikey": _supabase_key, "Authorization": f"Bearer {_supabase_key}"},
                     timeout=5
                 )
                 log.info("Supabase heartbeat OK")
