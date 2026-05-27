@@ -98,6 +98,24 @@ def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, m
                             style=_on() if hours else _off()),
             ], style={"display":"flex","alignItems":"center","gap":"16px"})]),
 
+        # Weis Wave Sensitivity
+        _card([
+            _section_title("〰️ Weis Wave Sensitivity"),
+            _label("Reversal threshold — lower = more sensitive, higher = fewer signals"),
+            dcc.Slider(
+                id="prefs-weis-threshold",
+                min=0.1, max=3.0, step=0.1, value=0.5,
+                marks={0.1:"0.1%", 0.5:"0.5%", 1.0:"1.0%", 2.0:"2.0%", 3.0:"3.0%"},
+                tooltip={"placement":"bottom","always_visible":True},
+            ),
+            html.Div(style={"height":"8px"}),
+            html.Div([
+                html.Span("Timeframe defaults: ", style={"color":MUTED,"fontSize":"11px"}),
+                html.Span("1m=0.2% · 5m=0.5% · 15m=0.75% · 1H=1.0% · 1D=1.5% · 1W=2.5%",
+                          style={"color":MUTED,"fontSize":"11px"}),
+            ]),
+        ]),
+
         html.Button("Save Preferences", id="prefs-save-btn", n_clicks=0, style={
             "width":"100%","background":TEAL,"border":"none","borderRadius":"12px","color":WHITE,
             "fontFamily":"DM Sans, sans-serif","fontSize":"14px","fontWeight":"800",
@@ -176,13 +194,13 @@ def register_preferences_callbacks(app):
         State("pref-hours-val","data"), State("prefs-watchlist","data"), State("pref-types-val","data"),
         State("s-session","data"), prevent_initial_call=True,
     )
-    def save_prefs(n,uid,mode,score,hours,wl,types,session):
+    def save_prefs(n,uid,mode,score,hours,wl,types,weis_thresh,session):
         if not uid and session: uid=session.get("user_id","")
         email=(session or {}).get("email","")
         if not uid: return "⚠️ No user ID — please log in first.",_msg("yellow")
         payload={"delivery_mode":mode or "realtime","min_score":score or 60,
                  "alert_types":[k for k,v in (types or {}).items() if v],
-                 "watchlist":wl or [],"market_hours_only":bool(hours)}
+                 "watchlist":wl or [],"market_hours_only":bool(hours),"weis_threshold":weis_thresh or 0.5}
         try:
             url=f"{BACKEND_HTTP}/api/preferences/{uid}"
             r=requests.patch(url,json=payload,timeout=8)

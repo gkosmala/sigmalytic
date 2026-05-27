@@ -30,6 +30,14 @@ except Exception as _ppe:
     _PERSONS_PIVOTS_AVAILABLE = False
     log.debug(f"Person's Pivots not loaded: {_ppe}")
 
+# ── Weis Wave (safe import) ────────────────────────────────────────────────────
+try:
+    from weis_wave import score_weis_wave
+    _WEIS_AVAILABLE = True
+except Exception as _we:
+    _WEIS_AVAILABLE = False
+    log.debug(f"Weis Wave not loaded: {_we}")
+
 _confluence_engine_instance = None
 _confluence_import_error    = None
 
@@ -330,6 +338,22 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                     new_fields["persons_pivots"] = get_pivot_levels_for_chart(pivot_result)
             except Exception:
                 pass
+
+        # Add Weis Wave scoring
+        if _WEIS_AVAILABLE:
+            try:
+                price = market.price if market else 0
+                tf = old_result.get("timeframe", "5m")
+                user_thresh = old_result.get("weis_threshold")
+                weis = score_weis_wave(
+                    symbol, tf, bars_5m, bars, price, user_thresh
+                )
+                new_fields.update(weis)
+                # Feed into wyckoff_weis score if engine supports it
+                if weis.get("weis_score", 0) > 0:
+                    new_fields["weis_active"] = True
+            except Exception as _we:
+                log.debug(f"Weis Wave scoring error {symbol}: {_we}")
 
         return {**old_result, **new_fields}
 
