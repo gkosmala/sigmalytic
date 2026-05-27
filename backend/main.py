@@ -24,6 +24,8 @@ Run:
 """
 
 from __future__ import annotations
+import sys, os as _os
+sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "."))
 import asyncio
 import json
 import logging
