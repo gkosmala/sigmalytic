@@ -32,19 +32,17 @@ NOT FINANCIAL ADVICE. RESEARCH INFRASTRUCTURE ONLY.
 import os
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+import requests as _requests
 from supabase import create_client, Client
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
 
 # ── Credentials ───────────────────────────────────────────────────────────────
-SUPABASE_URL    = os.environ.get("SUPABASE_URL",              "https://supabase.co")
-SUPABASE_KEY    = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "your-secret-role-key")
-ALPACA_KEY      = os.environ.get("ALPACA_API_KEY",            "your_api_key")
-ALPACA_SECRET   = os.environ.get("ALPACA_SECRET_KEY",         "your_secret_key")
+SUPABASE_URL    = os.environ.get("SUPABASE_URL",              "")
+SUPABASE_KEY    = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+ALPACA_KEY      = os.environ.get("ALPACA_API_KEY",            "")
+ALPACA_SECRET   = os.environ.get("ALPACA_API_SECRET",         "")
+ALPACA_BASE_URL = os.environ.get("ALPACA_BASE_URL",           "https://data.alpaca.markets")
 
-supabase     : Client                  = create_client(SUPABASE_URL, SUPABASE_KEY)
-alpaca_client: StockHistoricalDataClient = StockHistoricalDataClient(ALPACA_KEY, ALPACA_SECRET)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 # ── Intelligence Layer symbols (matches your radar_service.py) ────────────────
 INTELLIGENCE_SYMBOLS = [
@@ -61,30 +59,45 @@ INTELLIGENCE_SYMBOLS = [
 
 def fetch_alpaca_daily_bars(ticker: str, lookback_days: int = 365) -> pd.DataFrame:
     """
-    Pulls 180 days of daily OHLCV bars from Alpaca.
-    Returns a clean DataFrame with a flat timestamp column.
+    Pulls daily OHLCV bars from Alpaca using requests (no SDK dependency).
     """
+    if not ALPACA_KEY:
+        return pd.DataFrame()
+
     end_date   = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=lookback_days)
 
-    request_params = StockBarsRequest(
-        symbol_or_symbols=ticker,
-        timeframe=TimeFrame.Day,
-        start=start_date,
-        end=end_date
-    )
+    try:
+        r = _requests.get(
+            f"{ALPACA_BASE_URL}/v2/stocks/{ticker}/bars",
+            headers={
+                "APCA-API-KEY-ID"    : ALPACA_KEY,
+                "APCA-API-SECRET-KEY": ALPACA_SECRET,
+            },
+            params={
+                "timeframe": "1Day",
+                "start"    : start_date.strftime("%Y-%m-%d"),
+                "end"      : end_date.strftime("%Y-%m-%d"),
+                "feed"     : "sip",
+                "limit"    : min(lookback_days, 1000),
+                "sort"     : "asc",
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return pd.DataFrame()
 
-    bars = alpaca_client.get_stock_bars(request_params)
-    df   = bars.df
+        bars = r.json().get("bars", [])
+        if not bars:
+            return pd.DataFrame()
 
-    if df.empty:
+        df = pd.DataFrame(bars)
+        df = df.rename(columns={"t":"timestamp","o":"open","h":"high","l":"low","c":"close","v":"volume"})
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        return df
+
+    except Exception as e:
         return pd.DataFrame()
-
-    if isinstance(df.index, pd.MultiIndex):
-        df = df.reset_index(level=0, drop=True)
-
-    df = df.reset_index().rename(columns={"timestamp": "timestamp"})
-    return df
 
 
 # ================================================================================
@@ -207,11 +220,12 @@ def detect_and_store_wyckoff_anchors(ticker: str, df: pd.DataFrame) -> dict:
 
     # ── WRITE TO SUPABASE ─────────────────────────────────────────────────────
     # Deactivate any existing anchors for this ticker first
-    supabase.table("geometric_structures") \
-        .update({"is_active": False}) \
-        .eq("ticker", ticker) \
-        .in_("structure_type", ["Wyckoff_SC_Low", "Wyckoff_AR_High", "Wyckoff_ST_Low"]) \
-        .execute()
+    if supabase:
+        supabase.table("geometric_structures") \
+            .update({"is_active": False}) \
+            .eq("ticker", ticker) \
+            .in_("structure_type", ["Wyckoff_SC_Low", "Wyckoff_AR_High", "Wyckoff_ST_Low"]) \
+            .execute()
 
     # Insert the three validated, immutable anchors
     new_anchors = [
@@ -238,7 +252,8 @@ def detect_and_store_wyckoff_anchors(ticker: str, df: pd.DataFrame) -> dict:
         }
     ]
 
-    supabase.table("geometric_structures").insert(new_anchors).execute()
+    if supabase:
+        supabase.table("geometric_structures").insert(new_anchors).execute()
 
     return {
         "status"   : "anchored",
