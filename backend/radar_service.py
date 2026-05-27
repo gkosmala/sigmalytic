@@ -841,7 +841,7 @@ def start_radar_scheduler():
         trigger="interval",
         seconds=SCAN_INTERVAL_SECONDS,
         id="radar_scan",
-        next_run_time=datetime.now(timezone.utc),
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
     )
 
     if _INTELLIGENCE_AVAILABLE:
