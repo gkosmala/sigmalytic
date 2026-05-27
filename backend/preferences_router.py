@@ -131,7 +131,7 @@ def create_preferences(user_id: str, payload: PreferencesCreate):
             INSERT INTO user_preferences
             (user_id, email, delivery_mode, min_score, alert_types,
              watchlist, market_hours_only, hurst_profile, weis_threshold, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s)
             ON CONFLICT (user_id) DO UPDATE SET
                 email             = EXCLUDED.email,
                 delivery_mode     = EXCLUDED.delivery_mode,
@@ -205,7 +205,7 @@ def update_preferences(user_id: str, payload: PreferencesUpdate):
                 INSERT INTO user_preferences
                 (user_id, delivery_mode, min_score, alert_types, watchlist,
                  market_hours_only, hurst_profile, weis_threshold, updated_at)
-                VALUES (%s,'realtime',60,%s,%s,true,'MEDIUM',0.5,%s)
+                VALUES (%s,'realtime',60,%s::jsonb,%s::jsonb,true,'MEDIUM',0.5,%s)
             """, (
                 user_id,
                 json.dumps({"wyckoff": True, "gann": True, "ab_score": True,
@@ -215,7 +215,11 @@ def update_preferences(user_id: str, payload: PreferencesUpdate):
             ))
 
         # Apply patch
-        set_clause = ", ".join(f"{k} = %s" for k in updates)
+        jsonb_fields = {"alert_types", "watchlist"}
+        set_clause = ", ".join(
+            f"{k} = %s::jsonb" if k in jsonb_fields else f"{k} = %s"
+            for k in updates
+        )
         values     = list(updates.values()) + [user_id]
         cur.execute(
             f"UPDATE user_preferences SET {set_clause} WHERE user_id = %s",
