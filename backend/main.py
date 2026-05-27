@@ -58,6 +58,17 @@ try:
 except Exception as _ge:
     _GANN_AVAILABLE = False
     print(f"GANN_ENGINE: FAILED — {_ge}", flush=True)
+
+try:
+    from behavioral_memory import train_batch as bme_train_batch, get_memory_status
+    _BME_AVAILABLE = True
+    print("BME_ENGINE: loaded OK", flush=True)
+except Exception as _bme:
+    _BME_AVAILABLE = False
+    import traceback as _tb
+    print(f"BME_ENGINE: FAILED — {_bme}", flush=True)
+    print(_tb.format_exc(), flush=True)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
