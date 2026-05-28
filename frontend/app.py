@@ -437,7 +437,7 @@ def signal_intelligence_popup(sym):
             sig_row_item("3-Bar Reversal", reversal_val, None, reversal_color),
             sig_row_item("Behavioral Memory", fmt(bme),
                 "High = persistent participation", TEAL_DIM if (bme or 0)>=70 else MUTED),
-            sig_row_item("Hurst Timing", fmt(hurst),
+            sig_row_item("SPECTRAL ANALYSIS", fmt(hurst),
                 "Cycle timing score", TEAL_DIM if (hurst or 0)>=70 else MUTED),
             sig_row_item("VSA Score", fmt(vsa),
                 "Volume spread analysis", TEAL_DIM if (vsa or 0)>=70 else MUTED),
