@@ -1099,7 +1099,7 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if tab=="billing":     return build_billing_tab(session,perms or {})
     if tab=="setup":       return build_setup_tab()
     if tab=="admin":       return build_admin_tab(session or {},BACKEND_HTTP)   # ← ADMIN RENDER
-    if tab=="preferences":  return build_preferences_tab(user_id=(session or {}).get("user_id",""),mode="realtime",types=None,hours=True,min_score=60,watchlist=None)
+    if tab=="preferences":  return build_preferences_tab(user_id=(session or {}).get("user_id",""),session=session)
     return html.Div("Unknown tab")
 
 @app.callback(Output("clock-body","children"),Input("i-clock","n_intervals"))
