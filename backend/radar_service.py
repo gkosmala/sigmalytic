@@ -382,6 +382,26 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
                                      prev_status=prev_status, ma20=ma20, ma50=ma50)
     regime       = _infer_regime(change_pct, rel_vol, price, ma20, ma50)
 
+    # ── BME scoring ──────────────────────────────────────────────────────────
+    bme_score  = None
+    bme_regime = None
+    try:
+        from behavioral_memory import evaluate as _bme_evaluate
+        bme_result = _bme_evaluate(
+            symbol       = symbol,
+            current_price= price,
+            bars_5m      = [],   # 5m bars not available in lightweight scan
+            weis_signal  = "NONE",
+            gex_regime   = "NEUTRAL",
+        )
+        bme_score  = bme_result.get("bme_score")
+        bme_regime = bme_result.get("bme_regime")
+        # Blend BME score into behavioral factor
+        if bme_score is not None and bme_score != 50.0:
+            behavioral = _clamp(round(behavioral * 0.6 + bme_score * 0.4, 1))
+    except Exception:
+        pass
+
     return {
         "symbol":            symbol,
         "price":             round(price, 2),
@@ -416,6 +436,8 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "weis_score"        : None,
         "weis_macro_bias"   : None,
         "three_bar_reversal": None,
+        "bme_score"         : round(bme_score, 1) if bme_score is not None else None,
+        "bme_regime"        : bme_regime,
     }
 
 
@@ -506,6 +528,13 @@ def _refresh_historical_bars():
             _historical_bars[sym] = bars
         _bars_last_refresh = time.time()
         log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
+        # ── Trigger BME training immediately after bars load ───────────────────
+        try:
+            from behavioral_memory import train_batch as _bme_train
+            trained = _bme_train(dict(_historical_bars))
+            log.info(f"BME training triggered from bar refresh: {trained}/{len(_historical_bars)} symbols")
+        except Exception as _bme_e:
+            log.warning(f"BME training from bar refresh failed: {_bme_e}")
     except Exception as e:
         log.warning(f"Historical bar refresh failed: {e}")
     finally:
