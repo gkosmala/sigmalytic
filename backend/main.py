@@ -90,9 +90,8 @@ from shared.engine import (
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────
-from behavior         import behavior_router
 from csv_import       import csv_router
-from billing_stub     import billing_router
+from billing_router   import billing_router
 from radar_service    import radar_router, start_radar_scheduler, stop_radar_scheduler
 from snapshot_service import snapshot_router
 from legal_pages      import legal_router
@@ -380,7 +379,6 @@ app.add_middleware(
 )
 
 # ── Register all routers ───────────────────────────────────────────────────
-app.include_router(behavior_router)
 app.include_router(csv_router)
 app.include_router(billing_router)
 app.include_router(radar_router)
