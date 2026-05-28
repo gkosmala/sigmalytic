@@ -97,18 +97,21 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
             raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
-    data       = event["data"]["object"]
+    # Convert StripeObject to plain dict for safe .get() access
+    data       = dict(event["data"]["object"])
     log.info(f"[BILLING] Webhook received: {event_type}")
 
     # ── checkout.session.completed ─────────────────────────────────────────────
     if event_type == "checkout.session.completed":
         # user_id: try metadata first, then client_reference_id, then look up by email
-        user_id     = data.get("metadata", {}).get("user_id", "")
+        metadata    = data.get("metadata") or {}
+        user_id     = dict(metadata).get("user_id", "") if metadata else ""
         if not user_id:
             user_id = data.get("client_reference_id", "")
         if not user_id:
             # Fall back to looking up by email in Supabase auth
-            email = (data.get("customer_details") or {}).get("email", "")
+            cust_details = data.get("customer_details") or {}
+            email = dict(cust_details).get("email", "") if cust_details else ""
             if email:
                 try:
                     sb = _get_supabase()
