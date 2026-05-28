@@ -102,10 +102,31 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
     # ── checkout.session.completed ─────────────────────────────────────────────
     if event_type == "checkout.session.completed":
-        user_id      = data.get("metadata", {}).get("user_id", "")
-        customer_id  = data.get("customer", "")
-        sub_id       = data.get("subscription", "")
-        price_id     = ""
+        # user_id: try metadata first, then client_reference_id, then look up by email
+        user_id     = data.get("metadata", {}).get("user_id", "")
+        if not user_id:
+            user_id = data.get("client_reference_id", "")
+        if not user_id:
+            # Fall back to looking up by email in Supabase auth
+            email = (data.get("customer_details") or {}).get("email", "")
+            if email:
+                try:
+                    sb = _get_supabase()
+                    r  = sb.auth.admin.list_users()
+                    for u in (r or []):
+                        if getattr(u, "email", "") == email:
+                            user_id = u.id
+                            break
+                except Exception as e:
+                    log.warning(f"[BILLING] Email lookup failed: {e}")
+
+        customer_id = data.get("customer", "")
+        sub_id      = data.get("subscription", "")
+        price_id    = ""
+
+        if not user_id:
+            log.error(f"[BILLING] No user_id found for checkout session — customer: {customer_id}")
+            return JSONResponse({"status": "ok", "warning": "no user_id"})
 
         # Fetch subscription to get price ID and period end
         if sub_id:
