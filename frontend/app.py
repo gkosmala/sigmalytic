@@ -915,6 +915,140 @@ def build_import_tab():
         ],style={"display":"flex","gap":"20px","alignItems":"flex-start","flexWrap":"wrap"}),
     ])
 
+
+def build_divergence_tab():
+    import requests as _req
+    try:
+        r = _req.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=10)
+        data = r.json() if r.ok else {}
+    except Exception:
+        data = {}
+
+    count      = data.get("count", 0)
+    symbols    = data.get("symbols", [])
+    last_audit = data.get("last_audit")
+    threshold  = data.get("threshold", 15.0)
+
+    # Format last audit time
+    if last_audit:
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(last_audit.replace("Z", "+00:00"))
+            try:
+                import zoneinfo
+                dt = dt.astimezone(zoneinfo.ZoneInfo("America/New_York"))
+            except Exception:
+                pass
+            audit_label = dt.strftime("%b %d · %I:%M %p ET")
+        except Exception:
+            audit_label = last_audit
+    else:
+        audit_label = "Pending — runs nightly at 8:30 PM ET"
+
+    # Empty state
+    if not symbols:
+        empty = html.Div([
+            html.Div("📡", style={"fontSize": "48px", "marginBottom": "16px"}),
+            html.Div("No divergence signals yet", style={"fontSize": "16px", "fontWeight": "700", "color": WHITE, "marginBottom": "8px"}),
+            html.Div("The EOD audit runs nightly at 8:30 PM ET and writes divergence signals to this watchlist.",
+                     style={"fontSize": "13px", "color": TEXT, "maxWidth": "420px", "lineHeight": "1.7"}),
+            html.Div(f"Last audit: {audit_label}",
+                     style={"fontSize": "11px", "color": MUTED, "marginTop": "16px"}),
+        ], style={"textAlign": "center", "padding": "60px 20px"})
+        return html.Div([
+            card([
+                html.Div([
+                    html.Div([
+                        html.H2("🔍 Divergence Watchlist", style={"fontSize": "16px", "fontWeight": "800", "color": WHITE, "margin": "0 0 4px"}),
+                        html.P("Symbols where behavioral score has diverged significantly from price action.", style={"fontSize": "12px", "color": TEXT}),
+                    ]),
+                    badge("EOD AUDIT", "yellow"),
+                ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "marginBottom": "16px"}),
+                empty,
+            ]),
+            html.Div(note_box(f"Divergence threshold: {threshold:.0f} points · Audit: {audit_label}", "blue"), style={"marginTop": "16px"}),
+        ], style={"display": "flex", "flexDirection": "column"})
+
+    # Build rows
+    def div_row(sym):
+        symbol      = sym.get("symbol", "")
+        price       = sym.get("price", 0)
+        score       = sym.get("composite_score", 0)
+        beh         = sym.get("behavioral", sym.get("behavioral_factor", 0)) or 0
+        regime      = sym.get("regime", "—")
+        setup       = sym.get("setup_type", "—")
+        div_score   = sym.get("divergence_score", sym.get("score_delta", 0)) or 0
+        status      = sym.get("status", "—")
+        sc          = _score_color(score)
+        div_color   = TEAL_DIM if div_score > 0 else RED_DIM
+
+        return html.Div([
+            html.Div([
+                html.Span(symbol, style={"fontWeight": "800", "fontSize": "14px", "color": WHITE, "fontFamily": "DM Mono, monospace", "display": "block"}),
+                html.Span(abbrev_setup(setup), title=setup, style={"fontSize": "10px", "color": MUTED, "cursor": "help"}),
+            ], style={"flex": "1.5", "minWidth": "100px"}),
+            html.Div([
+                html.Span(f"${price:,.2f}", style={"fontWeight": "700", "fontSize": "13px", "color": WHITE}),
+            ], style={"flex": "1", "minWidth": "80px"}),
+            html.Div([
+                html.Span(f"{score:.0f}", style={"fontWeight": "900", "fontSize": "15px", "color": sc}),
+                html.Div(html.Div(style={"width": f"{score}%", "height": "100%", "borderRadius": "999px",
+                    "background": f"linear-gradient(90deg,#ef4444,{YELLOW},{TEAL_DIM})"}),
+                    style={"height": "5px", "background": "rgba(255,255,255,.08)", "borderRadius": "999px",
+                           "overflow": "hidden", "marginTop": "4px", "width": "80px"}),
+            ], style={"flex": "1", "minWidth": "70px"}),
+            html.Div([
+                html.Span(f"B:{beh:.0f}", style={"fontSize": "12px", "fontWeight": "800",
+                    "color": TEAL_DIM if beh >= 70 else (YELLOW_DIM if beh >= 45 else RED_DIM),
+                    "fontFamily": "DM Mono, monospace"}),
+            ], style={"flex": "1", "minWidth": "60px"}),
+            html.Div([
+                html.Span(f"{div_score:+.1f}", style={"fontWeight": "800", "fontSize": "13px", "color": div_color, "fontFamily": "DM Mono, monospace"}),
+                html.Span("divergence", style={"fontSize": "9px", "color": MUTED, "display": "block"}),
+            ], style={"flex": "1", "minWidth": "80px"}),
+            html.Div(
+                html.Span(regime, style={"fontSize": "11px", "color": sc, "fontWeight": "600"}),
+                style={"flex": "1.5", "minWidth": "100px"}
+            ),
+            html.Div(status_badge(status), style={"flex": "1", "minWidth": "90px"}),
+        ], style={"display": "flex", "alignItems": "center", "gap": "12px",
+                  "padding": "12px 16px", "borderBottom": f"1px solid {BORDER}"})
+
+    return html.Div([
+        card([
+            html.Div([
+                html.Div([
+                    html.H2("🔍 Divergence Watchlist", style={"fontSize": "16px", "fontWeight": "800", "color": WHITE, "margin": "0 0 4px"}),
+                    html.P("Symbols where behavioral score has diverged significantly from price action.", style={"fontSize": "12px", "color": TEXT}),
+                ]),
+                badge("EOD AUDIT", "yellow"),
+            ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "marginBottom": "16px"}),
+            html.Div([
+                metric_tile("Divergence Signals", str(count), YELLOW_DIM),
+                metric_tile("Threshold", f"{threshold:.0f} pts", BLUE_DIM),
+                metric_tile("Last Audit", audit_label, TEAL_DIM),
+                metric_tile("Next Audit", "8:30 PM ET", MUTED),
+            ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)", "gap": "12px", "marginBottom": "16px"}),
+        ], sx={"marginBottom": "16px"}),
+        card([
+            html.Div([
+                html.Span("Symbol", style={"flex": "1.5", "minWidth": "100px", "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Price",  style={"flex": "1",   "minWidth": "80px",  "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Score",  style={"flex": "1",   "minWidth": "70px",  "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Behav.", style={"flex": "1",   "minWidth": "60px",  "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Divergence", style={"flex": "1", "minWidth": "80px", "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Regime", style={"flex": "1.5", "minWidth": "100px", "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+                html.Span("Status", style={"flex": "1",   "minWidth": "90px",  "fontSize": "10px", "color": WHITE, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".12em"}),
+            ], style={"display": "flex", "alignItems": "center", "gap": "12px",
+                      "padding": "8px 16px", "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px"}),
+            html.Div([div_row(s) for s in symbols]),
+        ]),
+        html.Div(note_box(
+            f"Divergence signals identified where behavioral score deviates {threshold:.0f}+ points from composite score. "
+            f"These symbols may be setting up for mean reversion or acceleration. Last audit: {audit_label}.", "yellow"),
+            style={"marginTop": "16px"}),
+    ], style={"display": "flex", "flexDirection": "column"})
+
 def build_setup_tab():
     return card([
         html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
@@ -1058,7 +1192,7 @@ def build_main_app():
             for key,label in [
                 ("command","Command Center"),("feed","Live Feed"),("performance","Performance"),
                 ("behavior","Behavioral Intelligence"),("import","Import History"),
-                ("radar","Radar Screen"),("scoreboard","Scoreboard"),("billing","Billing"),
+                ("radar","Radar Screen"),("scoreboard","Scoreboard"),("divergence","🔍 Divergence"),("billing","Billing"),
                 ("setup","Setup"),("admin","🔒 Admin"),    # ← ADMIN TAB
             ]
         ] + [
@@ -1190,7 +1324,7 @@ def load_symbol(_,ticker):
 @app.callback(Output("s-tab","data"),
               Input("tab-command","n_clicks"),Input("tab-feed","n_clicks"),Input("tab-performance","n_clicks"),
               Input("tab-behavior","n_clicks"),Input("tab-import","n_clicks"),Input("tab-radar","n_clicks"),
-              Input("tab-scoreboard","n_clicks"),Input("tab-billing","n_clicks"),Input("tab-setup","n_clicks"),
+              Input("tab-scoreboard","n_clicks"),Input("tab-divergence","n_clicks"),Input("tab-billing","n_clicks"),Input("tab-setup","n_clicks"),
               Input("tab-admin","n_clicks"),    # ← ADMIN TAB INPUT
               Input("tab-preferences","n_clicks"),
               prevent_initial_call=True)
@@ -1411,13 +1545,14 @@ def render_main(live,candles,tab,live_mode,_clock,_radar,analysis,_refresh,perms
     if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx=callback_context
     trigger=ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
-    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","admin","preferences") and trigger=="i-clock": return no_update
+    if tab in ("behavior","import","billing","setup","performance","feed","radar","scoreboard","divergence","admin","preferences") and trigger=="i-clock": return no_update
     if tab!="radar" and trigger=="i-radar": return no_update
     if tab=="preferences" and trigger in ("s-live","i-alpaca","i-synth","i-chart"): return no_update
     if tab=="command":     return build_command_tab(live,candles or _init_candles,symbol,tf)
     if tab=="feed":        return build_feed_tab(live,live_mode)
     if tab=="performance": return build_performance_tab(live)
     if tab=="behavior":    return build_behavior_tab(analysis or {},perms or {},session)
+    if tab=="divergence":   return build_divergence_tab()
     if tab=="import":      return build_import_tab()
     if tab=="radar":       return build_radar_tab(status_filter=radar_filter)
     if tab=="scoreboard":
