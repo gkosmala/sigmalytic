@@ -159,17 +159,206 @@ def _change_color(pct):
     if pct < 0: return RED_DIM
     return TEXT
 
+
+# ── Directional Status Badge ──────────────────────────────────────────────────
+def status_badge(status):
+    """Directional status badge — instantly shows long vs short with ↑/↓ arrow."""
+    long_statuses  = {"Building", "Armed", "Triggered", "Confirmed"}
+    short_statuses = {"Short Armed", "Short Trigger", "Short Confirmed"}
+    if status in long_statuses:
+        label = f"↑ {status}"
+        color, bg, border = TEAL_DIM, "rgba(45,143,111,.15)", "rgba(45,143,111,.35)"
+    elif status in short_statuses:
+        label = f"↓ {status.replace('Short ','')}"
+        color, bg, border = RED_DIM, "rgba(239,68,68,.12)", "rgba(239,68,68,.35)"
+    else:
+        label = status
+        color, bg, border = YELLOW_DIM, "rgba(245,158,11,.10)", "rgba(245,158,11,.30)"
+    return html.Span(label, style={
+        "fontSize":"10px","fontWeight":"800","color":color,
+        "border":f"1px solid {border}","borderRadius":"999px",
+        "padding":"3px 10px","background":bg,
+        "textTransform":"uppercase","letterSpacing":".06em","whiteSpace":"nowrap"
+    })
+
+# ── Trigger Context ───────────────────────────────────────────────────────────
+def trigger_context_label(sym):
+    """Returns WHY a trigger fired — the context behind the status."""
+    status = sym.get("status","")
+    vsa    = sym.get("vsa_signal","")
+    vol_p  = sym.get("volume_pressure", 0)
+    beh    = sym.get("behavioral", 0)
+    exp    = sym.get("expansion_node", 0)
+    weis   = sym.get("weis_signal","")
+    reversal = sym.get("three_bar_reversal","")
+
+    if status not in ("Triggered","Confirmed","Short Trigger","Short Confirmed"):
+        return None
+
+    # Determine quality signals
+    positives = []
+    warnings  = []
+
+    if vol_p >= 70:  positives.append("Vol Expansion")
+    elif vol_p < 40: warnings.append("Weak Volume")
+
+    if beh >= 75:    positives.append("Behavioral Aligned")
+    elif beh < 45:   warnings.append("Weak Behavior")
+
+    if exp >= 70:    positives.append("Expansion Pressure")
+
+    if weis in ("BULLISH","SOT_BULLISH"):  positives.append("Weis Confirmed")
+    if weis in ("BEARISH","SOT_BEARISH"):  warnings.append("Weis Reversal")
+
+    if reversal == "BEARISH": warnings.append("3-Bar Reversal Risk")
+    if reversal == "BULLISH": positives.append("3-Bar Reversal Support")
+
+    if vsa in ("stopping_volume","test_bar"): positives.append("VSA Confirmed")
+    if vsa in ("pseudo_upthrust",):           warnings.append("Upthrust Risk")
+
+    if warnings:
+        label = "⚠ Warning: " + " · ".join(warnings[:2])
+        color = YELLOW_DIM
+    elif positives:
+        label = "✓ Confirmed: " + " · ".join(positives[:2])
+        color = TEAL_DIM
+    else:
+        label = "Trigger — Awaiting confirmation"
+        color = TEXT
+
+    return html.Span(label, style={
+        "fontSize":"9px","fontWeight":"700","color":color,
+        "display":"block","marginTop":"3px","fontFamily":"DM Mono, monospace"
+    })
+
+# ── Score Explainability Tooltips ─────────────────────────────────────────────
+SCORE_TOOLTIPS = {
+    "C":  ("Confluence","Multi-layer structural alignment score. High = strong setup architecture."),
+    "E":  ("Expansion","Probability of price expanding directionally from current structure."),
+    "RS": ("Rel. Strength","Relative strength vs market. High = leadership. Low = lagging."),
+    "VP": ("Vol. Pressure","Volume participation intensity. High = institutional involvement."),
+    "B":  ("Behavioral","Behavioral memory engine score. High = persistent participation, low reversal risk."),
+}
+
+def score_breakdown(sym, sc):
+    """Renders C/E/RS/VP/B with inline tooltip-style explainer on hover."""
+    c   = sym.get("confluence",0)
+    e   = sym.get("expansion_node",0)
+    rs  = sym.get("relative_strength",0)
+    vp  = sym.get("volume_pressure",0)
+    b   = sym.get("behavioral",0)
+
+    def chip(key, val):
+        full_name, tip = SCORE_TOOLTIPS.get(key, (key,""))
+        chip_color = TEAL_DIM if val>=70 else (YELLOW_DIM if val>=45 else RED_DIM)
+        return html.Span(
+            f"{key}:{val:.0f}",
+            title=f"{full_name}: {tip}",
+            style={"fontSize":"10px","color":chip_color,"fontFamily":"DM Mono, monospace",
+                   "fontWeight":"700","marginRight":"6px","cursor":"help"}
+        )
+
+    return html.Div([
+        html.Div([chip("C",c), chip("E",e), chip("RS",rs)],
+                 style={"display":"flex","flexWrap":"wrap","marginBottom":"2px"}),
+        html.Div([chip("VP",vp), chip("B",b)],
+                 style={"display":"flex","flexWrap":"wrap"}),
+    ])
+
+# ── Setup Type Abbreviation ───────────────────────────────────────────────────
+SETUP_ABBREVS = {
+    "Compression Breakout Candidate": "CB",
+    "Wyckoff Spring":                 "WS",
+    "Wyckoff Upthrust":               "WU",
+    "Accumulation":                   "ACC",
+    "Distribution":                   "DIST",
+    "Trend Continuation":             "TC",
+    "Reversal":                       "REV",
+    "Consolidation":                  "CONS",
+    "Expansion":                      "EXP",
+    "Volume Surge":                   "VS",
+    "Behavioral Setup":               "BEH",
+    "Gann Vector":                    "GV",
+}
+
+def abbrev_setup(setup_type):
+    """Returns short abbreviation if known, otherwise trims to 12 chars."""
+    if not setup_type: return ""
+    abbr = SETUP_ABBREVS.get(setup_type)
+    if abbr: return abbr
+    return setup_type[:12] + ("…" if len(setup_type)>12 else "")
+
+# ── AI Narrative (templated, no API call) ────────────────────────────────────
+def ai_narrative(sym):
+    """1-sentence templated interpretation shown in expanded row."""
+    status  = sym.get("status","")
+    regime  = sym.get("regime","")
+    score   = sym.get("composite_score",0)
+    beh     = sym.get("behavioral",0)
+    exp     = sym.get("expansion_node",0)
+    symbol  = sym.get("symbol","")
+    trigger = sym.get("trigger",0)
+    target1 = sym.get("target1",0)
+    weis    = sym.get("weis_signal","")
+    gex     = sym.get("gex_regime","")
+
+    # Quality descriptor
+    if score >= 80 and beh >= 70:
+        quality = "high-confluence structure with strong behavioral participation"
+    elif score >= 65:
+        quality = "developing confluence with moderate confirmation"
+    else:
+        quality = "early-stage setup with limited confirmation"
+
+    # GEX context
+    gex_text = ""
+    if gex == "NEGATIVE_GEX":
+        gex_text = " GEX regime supports directional expansion."
+    elif gex == "POSITIVE_GEX":
+        gex_text = " GEX regime may compress movement — discipline required."
+
+    # Weis context
+    weis_text = ""
+    if weis in ("BULLISH","SOT_BULLISH"):
+        weis_text = " Weis Wave confirms bullish thrust."
+    elif weis in ("BEARISH","SOT_BEARISH"):
+        weis_text = " Weis Wave shows bearish pressure."
+
+    # Status-based sentence
+    if status in ("Armed","Short Armed"):
+        direction = "bullish" if status=="Armed" else "bearish"
+        text = f"{symbol} approaching trigger in {quality}. Watch ${trigger:,.2f} for {direction} activation.{gex_text}{weis_text}"
+    elif status in ("Triggered","Short Trigger"):
+        text = f"{symbol} has triggered from {quality}. Initial target ${target1:,.2f}.{gex_text}{weis_text}"
+    elif status in ("Confirmed","Short Confirmed"):
+        text = f"{symbol} confirmed — {quality}. Expansion path active toward ${target1:,.2f}.{gex_text}{weis_text}"
+    elif status == "Building":
+        text = f"{symbol} building {quality} in {regime} regime. Monitor for Armed status.{gex_text}"
+    else:
+        text = f"{symbol} in {regime} regime. Score {score:.0f} — {quality}.{gex_text}"
+
+    return html.Div(text, style={
+        "fontSize":"10px","color":TEXT,"fontStyle":"italic",
+        "paddingTop":"6px","lineHeight":"1.5",
+        "borderTop":f"1px solid {BORDER}","marginTop":"6px"
+    })
+
+# ── Updated Radar Row ─────────────────────────────────────────────────────────
 def build_radar_row(sym):
     score=sym.get("composite_score",0); status=sym.get("status","Watching")
     chg=sym.get("change_pct",0); price=sym.get("price",0)
-    sc=_score_color(score); stc=_status_color(status); chgc=_change_color(chg)
+    sc=_score_color(score); chgc=_change_color(chg)
     trigger=sym.get("trigger",0); invalidation=sym.get("invalidation",0)
     target1=sym.get("target1",0); target2=sym.get("target2",0); atr=sym.get("atr",1)
     bear1=round(invalidation-atr*1.0,2); bear2=round(invalidation-atr*2.0,2)
+    setup_short = abbrev_setup(sym.get("setup_type",""))
+    ctx_label   = trigger_context_label(sym)
+
     score_bar=html.Div([html.Div(style={"width":f"{score}%","height":"100%","borderRadius":"999px",
         "background":f"linear-gradient(90deg,#ef4444,{YELLOW},{TEAL_DIM})"})],
         style={"height":"5px","background":"rgba(255,255,255,.08)","borderRadius":"999px",
                "overflow":"hidden","marginTop":"4px","width":"80px"})
+
     projection_block=html.Div([
         html.Div([html.Span("▲ Bull",style={"fontSize":"9px","fontWeight":"800","color":TEAL_DIM,"textTransform":"uppercase","letterSpacing":".08em","marginRight":"6px"}),
                   html.Span(f"Above ${trigger:,.2f} → ${target1:,.2f} → ${target2:,.2f}",style={"fontSize":"10px","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"})],style={"marginBottom":"3px"}),
@@ -177,23 +366,57 @@ def build_radar_row(sym):
                   html.Span(f"${invalidation:,.2f} – ${trigger:,.2f} chop zone",style={"fontSize":"10px","color":YELLOW_DIM,"fontFamily":"DM Mono, monospace"})],style={"marginBottom":"3px"}),
         html.Div([html.Span("▼ Bear",style={"fontSize":"9px","fontWeight":"800","color":RED_DIM,"textTransform":"uppercase","letterSpacing":".08em","marginRight":"6px"}),
                   html.Span(f"Below ${invalidation:,.2f} → ${bear1:,.2f} → ${bear2:,.2f}",style={"fontSize":"10px","color":RED_DIM,"fontFamily":"DM Mono, monospace"})]),
+        ai_narrative(sym),
     ],style={"borderLeft":f"2px solid {BORDER}","paddingLeft":"10px","marginTop":"8px"})
+
     return html.Div([
         html.Div([
-            html.Div([html.Span(sym.get("symbol",""),style={"fontWeight":"800","fontSize":"14px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
-                      html.Span(sym.get("setup_type",""),style={"fontSize":"10px","color":WHITE,"display":"block","marginTop":"2px"})],style={"flex":"2","minWidth":"120px"}),
-            html.Div([html.Span(f"${price:,.2f}",style={"fontWeight":"700","fontSize":"13px","color":WHITE}),
-                      html.Span(f"  {'+' if chg>=0 else ''}{chg:.2f}%",style={"fontSize":"12px","color":chgc,"fontWeight":"600"})],style={"flex":"1.5","minWidth":"100px"}),
-            html.Div([html.Span(f"{score:.0f}",style={"fontWeight":"900","fontSize":"15px","color":sc}),score_bar],style={"flex":"1","minWidth":"70px"}),
-            html.Div(html.Span(status,style={"fontSize":"10px","fontWeight":"800","color":stc,"border":f"1px solid {stc}","borderRadius":"999px","padding":"3px 10px","background":f"{stc}18","textTransform":"uppercase","letterSpacing":".06em"}),style={"flex":"1","minWidth":"80px"}),
-            html.Div([html.Span("Trigger",style={"fontSize":"10px","color":WHITE,"display":"block"}),html.Span(f"${trigger:,.2f}",style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700"}),html.Span(f"{sym.get('trigger_proximity',0):+.1f}%" if sym.get('trigger_proximity',0)!=0 else "",style={"fontSize":"10px","color":WHITE,"display":"block"})],style={"flex":"1","minWidth":"80px"}),
-            html.Div(html.Span(sym.get("regime","—"),style={"fontSize":"11px","color":sc,"fontWeight":"600"}),style={"flex":"1.5","minWidth":"100px"}),
-            html.Div([html.Span(f"C:{sym.get('confluence',0):.0f} E:{sym.get('expansion_node',0):.0f} RS:{sym.get('relative_strength',0):.0f}",style={"fontSize":"10px","color":sc,"fontFamily":"DM Mono, monospace","fontWeight":"600","display":"block"}),
-                      html.Span(f"VP:{sym.get('volume_pressure',0):.0f} B:{sym.get('behavioral',0):.0f}",style={"fontSize":"10px","color":sc,"fontFamily":"DM Mono, monospace","fontWeight":"600","display":"block","marginTop":"2px"})],style={"flex":"2","minWidth":"130px"}),
+            # Symbol + abbreviated setup type
+            html.Div([
+                html.Span(sym.get("symbol",""),style={"fontWeight":"800","fontSize":"14px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
+                html.Span(setup_short,
+                    title=sym.get("setup_type",""),
+                    style={"fontSize":"10px","color":MUTED,"display":"block","marginTop":"2px","cursor":"help"})
+            ],style={"flex":"2","minWidth":"120px"}),
+
+            # Price + change
+            html.Div([
+                html.Span(f"${price:,.2f}",style={"fontWeight":"700","fontSize":"13px","color":WHITE}),
+                html.Span(f"  {'+' if chg>=0 else ''}{chg:.2f}%",style={"fontSize":"12px","color":chgc,"fontWeight":"600"})
+            ],style={"flex":"1.5","minWidth":"100px"}),
+
+            # Score + bar
+            html.Div([
+                html.Span(f"{score:.0f}",style={"fontWeight":"900","fontSize":"15px","color":sc}),
+                score_bar
+            ],style={"flex":"1","minWidth":"70px"}),
+
+            # Directional status badge
+            html.Div([
+                status_badge(status),
+                ctx_label if ctx_label else html.Span(""),
+            ],style={"flex":"1","minWidth":"90px"}),
+
+            # Trigger + proximity
+            html.Div([
+                html.Span("Trigger",style={"fontSize":"10px","color":MUTED,"display":"block"}),
+                html.Span(f"${trigger:,.2f}",style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"700"}),
+                html.Span(f"{sym.get('trigger_proximity',0):+.1f}%" if sym.get('trigger_proximity',0)!=0 else "",
+                    style={"fontSize":"10px","color":MUTED,"display":"block"})
+            ],style={"flex":"1","minWidth":"80px"}),
+
+            # Regime
+            html.Div(
+                html.Span(sym.get("regime","—"),style={"fontSize":"11px","color":sc,"fontWeight":"600"}),
+                style={"flex":"1.5","minWidth":"100px"}
+            ),
+
+            # Score breakdown with tooltips
+            html.Div(score_breakdown(sym, sc),style={"flex":"2","minWidth":"130px"}),
+
         ],style={"display":"flex","alignItems":"center","gap":"12px"}),
         projection_block,
     ],style={"padding":"12px 16px","borderBottom":f"1px solid {BORDER}","transition":"background .15s"})
-
 
 def build_radar_tab(radar_data=None, status_filter="all"):
     import requests as _req
