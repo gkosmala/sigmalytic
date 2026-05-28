@@ -1,212 +1,256 @@
 """
 frontend/billing_ui.py
 ----------------------
-Billing tab UI for Sigmalytic — drop this into app.py.
+Sigmalytic — Stripe Billing UI
 
-INTEGRATION STEPS
-─────────────────
-1. Copy this file to frontend/billing_ui.py
-2. In app.py, add this import near the top:
-       from billing_ui import build_billing_tab, register_billing_callbacks
-3. In build_main_app(), add "Billing" to the nav buttons:
-       ("billing", "Billing"),
-4. In render_main(), add:
-       if tab == "billing": return build_billing_tab(session, perms)
-5. After app is defined, call:
-       register_billing_callbacks(app)
-6. In backend/main.py, add:
-       from billing_stub import billing_router
-       app.include_router(billing_router)
+Shows:
+- Current plan + feature flags for logged-in users
+- Stripe pricing table for upgrades
+- Customer portal link for plan management
+- Contact Us for Institutional tier
 """
 
-import requests as _req
-from dash import dcc, html, Input, Output, State, no_update, callback_context
-
-# ── Brand tokens (must match app.py) ──────────────────────────────────────────
-NAVY      = "#0d1b2e"
-NAVY_CARD = "#111f35"
-NAVY_MID  = "#0f172a"
-TEAL      = "#2d8f6f"
-TEAL_DIM  = "#34d399"
-TEAL_GLOW = "rgba(45,143,111,.18)"
-RED_DIM   = "#f87171"
-RED_GLOW  = "rgba(239,68,68,.15)"
-YELLOW_DIM= "#fde68a"
-BLUE_DIM  = "#93c5fd"
-MUTED     = "#64748b"
-TEXT      = "#94a3b8"
-WHITE     = "#f1f5f9"
-BORDER    = "rgba(255,255,255,.08)"
-BORDER_T  = "rgba(45,143,111,.35)"
-
 import os
-BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
+import requests as _req
+from dash import dcc, html, Input, Output, State, no_update
 
+BACKEND_HTTP     = os.getenv("BACKEND_URL",  "https://sigmalytic-backend.onrender.com")
+FRONTEND_URL     = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
+CONTACT_EMAIL    = "support@sigmalytic.com"
 
-# ── Helpers (duplicated from app.py for standalone use) ───────────────────────
+# ── Stripe pricing table config ────────────────────────────────────────────────
+PRICING_TABLE_ID = "prctbl_1Tc35NDRUJk6Un01beNdvTak"
+PUBLISHABLE_KEY  = os.getenv("STRIPE_PUBLISHABLE_KEY",
+                             "pk_test_51TO3CQDRUJk6Un01sFsuiZdCp248v1zFUBmLSbzYyQtvaGRbP3agOWAXnTX60gRCqxjOjLyDZeogZuO4dPZhwdhE00hNQoOw1V")
 
-def _metric(label, value, accent=WHITE):
-    return html.Div([
-        html.Span(label, style={"display":"block","color":TEXT,"fontSize":"11px",
-                                "fontWeight":"600","textTransform":"uppercase",
-                                "letterSpacing":".12em","marginBottom":"8px"}),
-        html.Strong(value, style={"display":"block","color":accent,
-                                  "fontSize":"15px","fontWeight":"800"}),
-    ], style={"background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
-               "borderRadius":"12px","padding":"14px 16px","minHeight":"64px"})
+# ── Brand tokens ───────────────────────────────────────────────────────────────
+NAVY_CARD = "#111f35"; TEAL = "#2d8f6f"; TEAL_DIM = "#34d399"
+TEAL_GLOW = "rgba(45,143,111,.18)"; RED_DIM = "#f87171"
+YELLOW_DIM = "#fde68a"; BLUE_DIM = "#93c5fd"; MUTED = "#64748b"
+TEXT = "#94a3b8"; WHITE = "#f1f5f9"; BORDER = "rgba(255,255,255,.08)"
+BORDER_T = "rgba(45,143,111,.35)"
+
 
 def _card(children, sx=None):
-    s = {"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
-         "padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}
+    s = {"background": NAVY_CARD, "border": f"1px solid {BORDER}",
+         "borderRadius": "20px", "padding": "24px",
+         "boxShadow": "0 8px 32px rgba(0,0,0,.32)", "marginBottom": "16px"}
     if sx: s.update(sx)
     return html.Section(children, style=s)
 
-def _note(text, variant=""):
-    s = {"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
-         "padding":"12px 14px","color":TEXT,"fontSize":"12px","lineHeight":"1.6"}
-    if variant == "yellow": s.update({"borderColor":"rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":"#fef3c7"})
-    elif variant == "blue":  s.update({"borderColor":"rgba(59,130,246,.25)","background":"rgba(59,130,246,.08)","color":"#dbeafe"})
-    elif variant == "teal":  s.update({"borderColor":BORDER_T,"background":TEAL_GLOW,"color":"#d1fae5"})
-    elif variant == "red":   s.update({"borderColor":"rgba(239,68,68,.25)","background":RED_GLOW,"color":"#fee2e2"})
-    return html.Div(text, style=s)
+
+def _badge(text, color=TEAL_DIM):
+    return html.Span(text, style={
+        "background": "rgba(45,143,111,.15)", "border": f"1px solid {BORDER_T}",
+        "borderRadius": "20px", "color": color, "fontSize": "11px",
+        "fontWeight": "800", "padding": "4px 12px", "letterSpacing": ".08em",
+    })
 
 
-# ── Billing tab builder ────────────────────────────────────────────────────────
+def _feature_row(label, value, enabled=True):
+    color = TEAL_DIM if enabled else MUTED
+    icon  = "✓" if enabled else "—"
+    return html.Div([
+        html.Span(f"{icon}  {label}", style={"color": color, "fontSize": "13px"}),
+        html.Span(str(value), style={"color": TEXT, "fontSize": "12px", "marginLeft": "8px"}),
+    ], style={"padding": "8px 0", "borderBottom": f"1px solid {BORDER}"})
+
+
+def _metric(label, value, color=WHITE):
+    return html.Div([
+        html.Div(label, style={"color": MUTED, "fontSize": "10px", "fontWeight": "800",
+                               "textTransform": "uppercase", "letterSpacing": ".2em",
+                               "marginBottom": "6px"}),
+        html.Div(value, style={"color": color, "fontSize": "16px", "fontWeight": "800"}),
+    ], style={"background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
+              "borderRadius": "12px", "padding": "14px 16px"})
+
 
 def build_billing_tab(session=None, perms=None):
-    """
-    Renders the billing page based on the user's current tier.
-    Called from render_main() in app.py.
-    """
-    user_id = (session or {}).get("user_id", "demo_user_001")
+    user_id = (session or {}).get("user_id", "")
+    email   = (session or {}).get("email", "")
 
-    # Fetch billing state from backend
-    try:
-        r = _req.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", timeout=5)
-        billing = r.json() if r.ok else {}
-    except Exception:
-        billing = {}
+    # Fetch billing state
+    billing = {}
+    if user_id:
+        try:
+            r = _req.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", timeout=5)
+            if r.ok:
+                billing = r.json()
+        except Exception:
+            pass
 
-    tier     = billing.get("tier", "free_trial")
-    plan     = billing.get("plan_name", "—")
-    renews   = billing.get("current_period_end", "—")
-    owed     = billing.get("amount_due", 0.00)
-    is_beta  = billing.get("is_beta_account", True)
+    tier        = billing.get("tier", "free")
+    plan_name   = billing.get("plan_name", "Free")
+    plan_price  = billing.get("plan_price", "$0")
+    status      = billing.get("status", "active")
+    period_end  = billing.get("current_period_end", "—")
+    cancel_end  = billing.get("cancel_at_period_end", False)
+    features    = billing.get("features", {})
+    has_customer= bool(billing.get("stripe_customer_id"))
 
-    # ── Alert banner ───────────────────────────────────────────────────────────
-    if tier == "past_due":
-        alert = _note("⚠️  Action Required — Your simulated account balance is past due. "
-                      "Click below to retry payment.", "red")
-    elif tier == "free_trial":
-        alert = _note("ℹ️  You are on a limited Beta Free Tier. Upgrade to unlock full access.", "blue")
+    # ── Status banner ──────────────────────────────────────────────────────────
+    if status == "past_due":
+        banner_color = RED_DIM
+        banner_bg    = "rgba(239,68,68,.08)"
+        banner_border= "rgba(239,68,68,.25)"
+        banner_text  = "⚠️ Payment past due — please update your payment method to restore full access."
+    elif cancel_end:
+        banner_color = YELLOW_DIM
+        banner_bg    = "rgba(245,158,11,.08)"
+        banner_border= "rgba(245,158,11,.25)"
+        banner_text  = f"⚠️ Your plan is set to cancel on {period_end}. Reactivate anytime below."
+    elif tier == "free":
+        banner_color = BLUE_DIM
+        banner_bg    = "rgba(59,130,246,.08)"
+        banner_border= "rgba(59,130,246,.25)"
+        banner_text  = "You are on the Free plan. Upgrade to unlock live data, alerts, and intelligence scoring."
     else:
-        alert = _note("✅  Your account is active on the Full Beta Premium Tier. "
-                      "All features are unlocked.", "teal")
+        banner_color = TEAL_DIM
+        banner_bg    = TEAL_GLOW
+        banner_border= BORDER_T
+        banner_text  = f"✅ {plan_name} — Active. All features unlocked."
 
-    # ── Subscription details card ──────────────────────────────────────────────
-    details_card = _card([
-        html.H2("Subscription Details",
-                style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+    banner = html.Div(banner_text, style={
+        "background": banner_bg, "border": f"1px solid {banner_border}",
+        "borderRadius": "12px", "color": banner_color,
+        "fontSize": "13px", "padding": "14px 18px", "marginBottom": "16px",
+    })
+
+    # ── Current plan card (only if logged in and subscribed) ──────────────────
+    plan_card = _card([
         html.Div([
-            _metric("Current Plan",  plan,            BLUE_DIM),
-            _metric("Renews On",     renews,          TEXT),
-            _metric("Balance Due",   f"${owed:.2f}",  RED_DIM if owed > 0 else TEAL_DIM),
-            _metric("Account Type",  "Beta" if is_beta else "Standard", YELLOW_DIM),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"}),
-    ], sx={"marginBottom":"16px"})
-
-    # ── Action card — changes by tier ──────────────────────────────────────────
-    if tier == "premium_beta":
-        action_card = _card([
-            html.H2("Plan Management",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-            html.Button("Manage Plan (Disabled During Beta)", disabled=True,
-                style={"background":"rgba(100,116,139,.2)","color":MUTED,"border":f"1px solid {BORDER}",
-                       "borderRadius":"10px","padding":"12px 24px","fontSize":"13px",
-                       "fontWeight":"700","cursor":"not-allowed","marginBottom":"12px"}),
-            _note("Full plan management (cancel, downgrade, invoice history) will be available "
-                  "when Stripe integration goes live.", "blue"),
-        ])
-
-    elif tier == "free_trial":
-        action_card = _card([
-            html.H2("Upgrade to Premium Beta",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
             html.Div([
-                html.Div([
-                    html.Div("✓  Full CSV behavioral analysis",  style={"color":TEAL_DIM,"fontSize":"13px","marginBottom":"6px"}),
-                    html.Div("✓  Advanced performance metrics",  style={"color":TEAL_DIM,"fontSize":"13px","marginBottom":"6px"}),
-                    html.Div("✓  Radar screen (coming soon)",    style={"color":TEAL_DIM,"fontSize":"13px","marginBottom":"6px"}),
-                    html.Div("✓  Paper trading (coming soon)",   style={"color":TEAL_DIM,"fontSize":"13px","marginBottom":"6px"}),
-                ], style={"marginBottom":"16px"}),
-                html.Button("Simulate Upgrade to Premium Beta",
-                    id="btn-billing-upgrade", n_clicks=0,
-                    style={"background":TEAL,"color":WHITE,"border":"none","borderRadius":"10px",
-                           "padding":"14px 28px","fontSize":"14px","fontWeight":"800",
-                           "cursor":"pointer","width":"100%","marginBottom":"12px"}),
-                html.Div(id="billing-upgrade-status", style={"fontSize":"13px","minHeight":"20px"}),
+                html.H2(plan_name, style={"color": WHITE, "fontSize": "20px",
+                                          "fontWeight": "900", "margin": "0 0 4px"}),
+                html.Div(plan_price, style={"color": TEAL_DIM, "fontSize": "24px",
+                                            "fontWeight": "900", "marginBottom": "12px"}),
+                _badge("ACTIVE" if status == "active" else status.upper()),
             ]),
-            _note("Beta pricing: $0 — all charges waived during the beta period. "
-                  "Stripe integration coming in production.", "yellow"),
-        ])
+        ], style={"marginBottom": "20px"}),
 
-    else:  # past_due
-        action_card = _card([
-            html.H2("Payment Required",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-            html.Button("Simulate Retry Payment",
-                id="btn-billing-upgrade", n_clicks=0,
-                style={"background":"#b45309","color":WHITE,"border":"none","borderRadius":"10px",
-                       "padding":"14px 28px","fontSize":"14px","fontWeight":"800",
-                       "cursor":"pointer","width":"100%","marginBottom":"12px"}),
-            html.Div(id="billing-upgrade-status", style={"fontSize":"13px","minHeight":"20px"}),
-            _note("This is a simulated past-due state for beta testing. "
-                  "No real payment is required.", "red"),
-        ])
+        html.Div([
+            _metric("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
+            _metric("Renews",     period_end or "—",        TEXT),
+            _metric("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
+            _metric("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
+                                  else f"{features.get('sms_limit',0)}/day"
+                                  if features.get("sms_limit",0) > 0 else "None", WHITE),
+        ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)",
+                  "gap": "12px", "marginBottom": "20px"}),
 
-    return html.Div([
-        _card([
-            html.H2("💳 Account Billing",
-                    style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
-            html.P("Manage your Sigmalytic subscription. All charges are waived during the beta period.",
-                   style={"fontSize":"12px","color":TEXT,"marginBottom":"16px"}),
-            alert,
-        ], sx={"marginBottom":"16px"}),
-        details_card,
-        action_card,
-        # Hidden store for billing state refresh
-        dcc.Store(id="billing-tier-store", data=tier),
+        html.Div([
+            _feature_row("Live Market Data",        "SIP Feed",    features.get("live_data", False)),
+            _feature_row("Radar Screen",            f"{features.get('radar_limit',50)} symbols", True),
+            _feature_row("Status Alerts",           "Armed / Triggered", features.get("alerts", False)),
+            _feature_row("Intelligence Layer",      "GEX · BME · Hurst · VSA", features.get("intelligence", False)),
+            _feature_row("Weis Wave + 3-Bar",       "All 1,403 symbols", True),
+            _feature_row("Divergence Watchlist",    "EOD Audit",   features.get("intelligence", False)),
+            _feature_row("SMS Alerts",              "Via Twilio",  features.get("sms_limit", 0) != 0),
+        ], style={"marginBottom": "20px"}),
+
+        # Manage plan button (only if has Stripe customer)
+        html.Div([
+            html.Button("Manage Plan / Cancel",
+                id="btn-manage-plan",
+                n_clicks=0,
+                style={
+                    "background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
+                    "borderRadius": "10px", "color": TEXT, "cursor": "pointer",
+                    "fontFamily": "DM Sans, sans-serif", "fontSize": "13px",
+                    "fontWeight": "700", "padding": "10px 20px",
+                } if has_customer else {
+                    "display": "none"
+                }
+            ),
+            html.Div(id="billing-portal-status", style={"fontSize": "12px",
+                     "color": MUTED, "marginTop": "8px"}),
+        ]) if tier != "free" else html.Div(),
+    ]) if user_id else html.Div()
+
+    # ── Stripe pricing table ───────────────────────────────────────────────────
+    pricing_section = _card([
+        html.H2("Choose Your Plan", style={"color": WHITE, "fontSize": "18px",
+                                            "fontWeight": "900", "marginBottom": "8px"}),
+        html.P("Upgrade or change your plan anytime. Cancel anytime.",
+               style={"color": TEXT, "fontSize": "13px", "marginBottom": "24px"}),
+
+        # Stripe pricing table embedded via iframe/HTML component
+        html.Iframe(
+            srcDoc=f"""
+                <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
+                <stripe-pricing-table
+                    pricing-table-id="{PRICING_TABLE_ID}"
+                    publishable-key="{PUBLISHABLE_KEY}"
+                    client-reference-id="{user_id}"
+                    customer-email="{email}">
+                </stripe-pricing-table>
+            """,
+            style={
+                "width": "100%", "border": "none",
+                "minHeight": "600px", "background": "transparent",
+            },
+        ),
+
+        # Institutional contact
+        html.Div([
+            html.Div("🏛️ Institutional", style={"color": WHITE, "fontSize": "16px",
+                                                  "fontWeight": "800", "marginBottom": "8px"}),
+            html.Div("Custom universe · API access · Priority support · Dedicated onboarding",
+                     style={"color": TEXT, "fontSize": "13px", "marginBottom": "16px"}),
+            html.A("Contact Us →",
+                   href=f"mailto:{CONTACT_EMAIL}?subject=Sigmalytic Institutional Inquiry",
+                   style={
+                       "background": TEAL_GLOW, "border": f"1px solid {BORDER_T}",
+                       "borderRadius": "10px", "color": TEAL_DIM, "cursor": "pointer",
+                       "display": "inline-block", "fontSize": "14px", "fontWeight": "800",
+                       "padding": "12px 24px", "textDecoration": "none",
+                   }),
+        ], style={
+            "background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
+            "borderRadius": "16px", "marginTop": "24px", "padding": "24px",
+            "textAlign": "center",
+        }),
     ])
 
+    return html.Div([
+        # Header
+        _card([
+            html.H2("💳 Billing & Plans", style={"color": WHITE, "fontSize": "18px",
+                                                   "fontWeight": "900", "margin": "0 0 6px"}),
+            html.P("Manage your Sigmalytic subscription.",
+                   style={"color": TEXT, "fontSize": "13px", "margin": "0"}),
+        ], sx={"marginBottom": "16px", "padding": "20px"}),
 
-# ── Callbacks ──────────────────────────────────────────────────────────────────
+        banner,
+        plan_card,
+        pricing_section,
+    ], style={"maxWidth": "900px", "margin": "0 auto", "padding": "24px 16px"})
 
-def register_billing_callbacks(app, backend_http=None):
-    """Call this once after `app` is defined in app.py."""
-    _backend = backend_http or BACKEND_HTTP
+
+def register_billing_callbacks(app):
 
     @app.callback(
-        Output("billing-upgrade-status", "children"),
-        Input("btn-billing-upgrade", "n_clicks"),
+        Output("billing-portal-status", "children"),
+        Input("btn-manage-plan", "n_clicks"),
         State("s-session", "data"),
         prevent_initial_call=True,
     )
-    def handle_upgrade(n_clicks, session):
-        if not n_clicks:
+    def open_portal(n, session):
+        if not n:
             return no_update
-        user_id = (session or {}).get("user_id", "demo_user_001")
-        tier    = "premium_beta"
+        user_id = (session or {}).get("user_id", "")
+        if not user_id:
+            return "Please log in first."
         try:
-            r = _req.post(
-                f"{_backend}/api/v1/billing/{user_id}/upgrade",
-                json={"requested_tier": tier},
-                timeout=5,
-            )
+            r = _req.post(f"{BACKEND_HTTP}/api/v1/billing/{user_id}/portal", timeout=8)
             if r.ok:
-                return html.Div([
-                    html.Span("✅ Simulated upgrade successful! ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-                    html.Span("Refresh the page to see your updated plan.",  style={"color":TEXT}),
-                ])
-            return html.Span(f"❌ Backend error: {r.status_code}", style={"color":RED_DIM})
+                url = r.json().get("url", "")
+                if url:
+                    # Return a clickable link
+                    return html.A("Click here to manage your plan →",
+                                  href=url, target="_blank",
+                                  style={"color": TEAL_DIM, "fontSize": "13px"})
+            return html.Span(f"Error: {r.status_code}", style={"color": RED_DIM})
         except Exception as e:
-            return html.Span(f"❌ Error: {str(e)[:200]}", style={"color":RED_DIM})
+            return html.Span(f"Error: {str(e)[:100]}", style={"color": RED_DIM})
