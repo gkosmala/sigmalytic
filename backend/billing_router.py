@@ -97,8 +97,10 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
             raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
-    # Convert StripeObject to plain dict for safe .get() access
-    data       = dict(event["data"]["object"])
+    # Parse raw payload as plain dict for safe access
+    import json as _json
+    raw        = _json.loads(payload)
+    data       = raw["data"]["object"]
     log.info(f"[BILLING] Webhook received: {event_type}")
 
     # ── checkout.session.completed ─────────────────────────────────────────────
