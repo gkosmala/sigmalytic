@@ -61,7 +61,7 @@ except Exception as _ge:
     print(f"GANN_ENGINE: FAILED — {_ge}", flush=True)
 
 try:
-    from behavioral_memory import train_batch as bme_train_batch, get_memory_status
+    from behavioral_memory import train_batch as bme_train_batch, get_memory_status, load_memory_from_supabase as bme_load_cache
     _BME_AVAILABLE = True
     print("BME_ENGINE: loaded OK", flush=True)
 except Exception as _bme:
@@ -311,14 +311,21 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_geometry_runner, daemon=True).start()
     log.info("Nightly geometry scheduler started (20:00 UTC)")
 
-    # ── Initial BME training (runs in background after bars load) ─────────────
+    # ── Initial BME — load cache from Supabase first, then retrain if needed ──
     if globals().get("_BME_AVAILABLE", False):
+        # Load persisted bank immediately (no wait needed)
+        try:
+            loaded = bme_load_cache()
+            log.info(f"BME cache loaded from Supabase: {loaded} symbols")
+        except Exception as _e:
+            log.warning(f"BME cache load failed: {_e}")
+
         def _initial_bme_training():
             import time as _t
-            # Train on whatever bars are available, retry every 5 min
+            # Short initial wait for radar bars to start loading
+            _t.sleep(30)
             last_trained = 0
-            for _attempt in range(24):  # Try every 5 min for 2 hours
-                _t.sleep(300)
+            for _attempt in range(48):  # Try every 5 min for 4 hours
                 try:
                     from radar_service import _historical_bars
                     current = len(_historical_bars)
@@ -331,9 +338,10 @@ async def lifespan(app: FastAPI):
                             break
                 except Exception as _e:
                     log.warning(f"BME training attempt {_attempt+1} failed: {_e}")
+                _t.sleep(300)
         import threading as _bme_thread
         _bme_thread.Thread(target=_initial_bme_training, daemon=True).start()
-        log.info("BME initial training scheduled (starts in 2 min)")
+        log.info("BME training thread started (30s initial delay, then every 5 min)")
 
     # ── Supabase heartbeat — prevents free tier auto-pause ─────────────────
     import threading, time as _time

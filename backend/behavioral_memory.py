@@ -411,6 +411,62 @@ def evaluate(symbol: str,
     }
 
 
+
+# ── Supabase Persistence ──────────────────────────────────────────────────────
+
+def _get_supabase():
+    try:
+        from supabase import create_client
+        url = os.getenv("SUPABASE_URL", "")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        if not url or not key:
+            return None
+        return create_client(url, key)
+    except Exception:
+        return None
+
+def save_memory_to_supabase() -> bool:
+    """Saves the full in-memory bank to Supabase for restart persistence."""
+    try:
+        sb = _get_supabase()
+        if not sb:
+            return False
+        with _bank_lock:
+            bank_snapshot = dict(_memory_bank)
+        if not bank_snapshot:
+            return False
+        payload = {
+            "id":         "bme_bank",
+            "data":       json.dumps(bank_snapshot),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "count":      len(bank_snapshot),
+        }
+        sb.table("bme_memory_bank").upsert(payload, on_conflict="id").execute()
+        log.info(f"BME saved {len(bank_snapshot)} symbols to Supabase")
+        return True
+    except Exception as e:
+        log.warning(f"BME Supabase save failed: {e}")
+        return False
+
+def load_memory_from_supabase() -> int:
+    """Loads memory bank from Supabase on startup. Returns symbols loaded."""
+    try:
+        sb = _get_supabase()
+        if not sb:
+            return 0
+        r = sb.table("bme_memory_bank").select("data,count").eq("id", "bme_bank").single().execute()
+        if not r.data:
+            return 0
+        bank = json.loads(r.data["data"])
+        with _bank_lock:
+            _memory_bank.update(bank)
+        count = len(bank)
+        log.info(f"BME loaded {count} symbols from Supabase cache")
+        return count
+    except Exception as e:
+        log.warning(f"BME Supabase load failed (will retrain): {e}")
+        return 0
+
 # ── Batch training ────────────────────────────────────────────────────────────
 
 def train_batch(symbol_bars: Dict[str, List[dict]]) -> int:
@@ -418,12 +474,16 @@ def train_batch(symbol_bars: Dict[str, List[dict]]) -> int:
     Trains memory bank for multiple symbols at once.
     Called on startup and nightly recalculation.
     Returns count of successfully trained symbols.
+    Saves to Supabase after training for restart persistence.
     """
     trained = 0
     for symbol, bars in symbol_bars.items():
         if train_memory_bank(symbol, bars):
             trained += 1
     log.info(f"BME batch training complete: {trained}/{len(symbol_bars)} symbols")
+    # Persist to Supabase so restarts don't wipe the bank
+    if trained > 0:
+        save_memory_to_supabase()
     return trained
 
 
