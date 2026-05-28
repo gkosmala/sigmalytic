@@ -32,7 +32,7 @@ except Exception as _ppe:
 
 # ── Weis Wave (safe import) ────────────────────────────────────────────────────
 try:
-    from weis_wave import score_weis_wave
+    from weis_wave import score_weis_wave, score_weis_wave_enhanced
     _WEIS_AVAILABLE = True
 except Exception as _we:
     _WEIS_AVAILABLE = False
@@ -375,13 +375,18 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
                 price = market.price if market else 0
                 tf = old_result.get("timeframe", "5m")
                 user_thresh = old_result.get("weis_threshold")
-                weis = score_weis_wave(
+                weis = score_weis_wave_enhanced(
                     symbol, tf, bars_5m, bars, price, user_thresh
                 )
                 new_fields.update(weis)
-                # Feed into wyckoff_weis score if engine supports it
                 if weis.get("weis_score", 0) > 0:
                     new_fields["weis_active"] = True
+                # Log 3-bar reversals
+                if weis.get("three_bar_reversal"):
+                    log.info(f"3-BAR REVERSAL {symbol}: {weis['three_bar_reversal']} | {weis.get('three_bar_note','')}")
+                # Log validated Springs
+                if weis.get("spring_validated"):
+                    log.info(f"VALIDATED SPRING {symbol}: confidence={weis.get('spring_confidence')} sc_low={weis.get('spring_sc_low')}")
             except Exception as _we:
                 log.debug(f"Weis Wave scoring error {symbol}: {_we}")
 

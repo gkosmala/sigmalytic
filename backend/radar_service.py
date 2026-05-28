@@ -79,6 +79,14 @@ except Exception as _ce:
     _CONFLUENCE_AVAILABLE = False
     logging.getLogger("radar").warning(f"Confluence bridge not loaded: {_ce}")
 
+# ── Weis Wave radar scoring (safe import) ──────────────────────────────────────
+try:
+    from weis_wave import score_weis_wave_radar
+    _WEIS_RADAR_AVAILABLE = True
+except Exception as _we:
+    _WEIS_RADAR_AVAILABLE = False
+    logging.getLogger("radar").warning(f"Weis Wave radar not loaded: {_we}")
+
 # ── Confluence engine direct import for divergence scoring ─────────────────────
 try:
     from confluence_engine import (
@@ -392,6 +400,10 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "trigger_proximity": round((trigger - price) / price * 100, 2)
                              if price > 0 and trigger > 0 else 0,
         "on_divergence_watchlist": False,
+        "weis_signal"       : None,
+        "weis_score"        : None,
+        "weis_macro_bias"   : None,
+        "three_bar_reversal": None,
     }
 
 
@@ -533,6 +545,14 @@ def run_radar_scan():
             result = score_symbol(symbol, snap, bars)
             if result and result.get("composite_score", 0) > 0:
                 result["on_divergence_watchlist"] = symbol in div_symbols
+                # Add lightweight Weis Wave signal from daily bars
+                if _WEIS_RADAR_AVAILABLE and bars:
+                    try:
+                        price = result.get("price", 0)
+                        weis  = score_weis_wave_radar(symbol, bars, price)
+                        result.update(weis)
+                    except Exception as _we:
+                        pass
                 scored.append(result)
         except Exception as e:
             log.debug(f"Score error {symbol}: {e}")
