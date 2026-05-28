@@ -41,7 +41,23 @@ def _off():
 
 
 def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, min_score=60, watchlist=None):
+    # Load saved preferences from backend if user_id provided
+    if user_id:
+        try:
+            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=4)
+            if r.ok:
+                p = r.json()
+                mode     = p.get("delivery_mode", mode)
+                types    = p.get("alert_types", types)
+                hours    = p.get("market_hours_only", hours)
+                min_score= p.get("min_score", min_score)
+                watchlist= p.get("watchlist", watchlist)
+        except Exception:
+            pass
     types = types or {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False}
+    if isinstance(types, list):
+        all_types = ["wyckoff","gann","ab_score","elliott","fibonacci"]
+        types = {k: (k in types) for k in all_types}
     watchlist = watchlist or []
     return html.Div([
         html.Div([
@@ -142,40 +158,6 @@ def build_preferences_tab(user_id="", mode="realtime", types=None, hours=True, m
 
 
 def register_preferences_callbacks(app):
-
-    @app.callback(
-        Output("pref-mode-val","data"),
-        Output("pref-types-val","data"),
-        Output("pref-hours-val","data"),
-        Output("prefs-min-score-val","data"),
-        Output("prefs-watchlist","data"),
-        Input("s-tab","data"),
-        State("s-session","data"),
-        prevent_initial_call=True,
-    )
-    def load_preferences(tab, session):
-        """Load saved preferences from backend when preferences tab opens."""
-        if tab != "preferences":
-            return no_update, no_update, no_update, no_update, no_update
-        uid = (session or {}).get("user_id","")
-        if not uid:
-            return no_update, no_update, no_update, no_update, no_update
-        try:
-            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{uid}", timeout=5)
-            if not r.ok:
-                return no_update, no_update, no_update, no_update, no_update
-            p = r.json()
-            mode  = p.get("delivery_mode", "realtime")
-            types = p.get("alert_types", {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False})
-            hours = p.get("market_hours_only", True)
-            score = p.get("min_score", 60)
-            wl    = p.get("watchlist", [])
-            if isinstance(types, list):
-                all_types = ["wyckoff","gann","ab_score","elliott","fibonacci"]
-                types = {k: (k in types) for k in all_types}
-            return mode, types, hours, score, wl
-        except Exception:
-            return no_update, no_update, no_update, no_update, no_update
 
 
     @app.callback(
