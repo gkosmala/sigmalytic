@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 preferences_page.py — Sigmalytic Quant
 Standalone FastAPI route serving a full HTML preferences page.
@@ -340,3 +341,4 @@ loadPrefs();
 </body>
 </html>"""
     return HTMLResponse(content=html)
+

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 ================================================================================
 SIGMALYTIC QUANT CORPORATION
@@ -433,3 +434,4 @@ def get_memory_status() -> Dict[str, Any]:
             "symbols_trained": len(_memory_bank),
             "symbols"        : list(_memory_bank.keys()),
         }
+

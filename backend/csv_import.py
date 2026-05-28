@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 SigmAlytic — Brokerage CSV Import Engine
 Supports: Alpaca, TD Ameritrade/Schwab, Interactive Brokers,

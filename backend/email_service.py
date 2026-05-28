@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 email_service.py — Sigmalytic Quant
 Async Resend email router via FastAPI BackgroundTasks.
@@ -137,3 +138,4 @@ async def send_digest(
         return
     subject, html_body = build_html_fn(qualifying)
     await _send_via_resend(user_prefs["email"], subject, html_body)
+

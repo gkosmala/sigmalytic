@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/billing_stub.py
 -----------------------
@@ -101,3 +102,4 @@ async def upgrade_billing(user_id: str, payload: UpgradeRequest):
         "message":    f"Simulated upgrade to {payload.requested_tier}.",
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+

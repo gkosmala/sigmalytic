@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 ================================================================================
 SIGMALYTIC — Confluence Engine Bridge
@@ -492,3 +493,4 @@ def ab_summary(scored: List[dict]) -> Dict[str, Any]:
         "rs_warning"           : rs_warning,
         "rs_unique_values"     : rs_unique,
     }
+

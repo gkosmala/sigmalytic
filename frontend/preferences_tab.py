@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 preferences_tab.py — Sigmalytic Quant
 Instant-save approach: every button click saves to backend immediately.
@@ -386,3 +387,4 @@ def register_preferences_callbacks(app):
         if not uid: return "⚠️ Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
         msg, color = _save(uid, email, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
+

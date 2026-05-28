@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 ================================================================================
 SIGMALYTIC QUANT CORPORATION
@@ -846,3 +847,4 @@ def score_weis_wave_radar(
 
     except Exception:
         return empty
+

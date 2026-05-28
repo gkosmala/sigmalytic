@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/sms_alerts.py
 ---------------------
@@ -159,3 +160,4 @@ def send_test_sms(to_number: str = None) -> dict:
         return {"ok": True, "sid": message.sid, "to": phone}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+

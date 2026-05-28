@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/billing_router.py
 --------------------------
@@ -345,3 +346,4 @@ async def stripe_webhook(request: Request):
             log.info(f"Subscription canceled: {user_id} → free")
 
     return Response(status_code=200)
+

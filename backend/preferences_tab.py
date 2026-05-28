@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 preferences_tab.py — Sigmalytic Quant
 Minimal working version. Stores in app.py root (localStorage).
@@ -239,3 +240,4 @@ def _render_watchlist(wl):
 def _msg(c="teal"):
     return {"textAlign":"center","fontSize":"13px","minHeight":"20px","marginBottom":"24px",
             "color":{"teal":TEAL_DIM,"red":RED_DIM,"yellow":YELLOW_DIM}.get(c,WHITE)}
+

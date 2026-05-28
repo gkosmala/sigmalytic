@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 radar_alerts.py — Sigmalytic Quant
 Builds rich HTML alert emails and dispatches via email_service.
@@ -257,3 +258,4 @@ async def fire_alert(
 def send_alert(symbol_data: dict, old_status: str, new_status: str) -> bool:
     """Alias for maybe_send_alert for backward compatibility."""
     return maybe_send_alert(symbol_data, old_status, new_status)
+

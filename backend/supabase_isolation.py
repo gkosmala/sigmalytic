@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/supabase_isolation.py
 ------------------------------
@@ -96,3 +97,4 @@ def get_auth_headers(session: dict) -> dict:
     if not token:
         return {}
     return {"Authorization": f"Bearer {token}"}
+

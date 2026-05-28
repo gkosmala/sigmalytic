@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/radar_service.py
 ------------------------
@@ -1339,3 +1340,4 @@ def get_watchlist(user_id: str):
         return {"symbols": symbols, "scores": scores}
     except Exception as e:
         return {"symbols": [], "scores": [], "error": str(e)}
+

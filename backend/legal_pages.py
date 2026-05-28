@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/legal_pages.py
 ----------------------
@@ -549,3 +550,4 @@ async def privacy_policy():
 async def terms_of_service():
     """Terms of Service page — required for Twilio SMS compliance."""
     return HTMLResponse(content=TERMS_HTML)
+

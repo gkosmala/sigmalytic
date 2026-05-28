@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/billing_ui.py
 ----------------------
@@ -254,3 +255,4 @@ def register_billing_callbacks(app):
             return html.Span(f"Error: {r.status_code}", style={"color": RED_DIM})
         except Exception as e:
             return html.Span(f"Error: {str(e)[:100]}", style={"color": RED_DIM})
+

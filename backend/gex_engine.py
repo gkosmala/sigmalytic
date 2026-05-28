@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 ================================================================================
 SIGMALYTIC QUANT CORPORATION
@@ -595,3 +596,4 @@ def score_gex(symbol: str, price: float,
             "gex_available": False,
             "gex_notes"    : [f"GEX engine error: {e}"],
         }
+

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """ 
 Sigmalytic Backend — FastAPI + Alpaca Real-Time
 ------------------------------------------------
@@ -946,3 +947,4 @@ async def debug_radar(symbol: str):
         }
     except Exception as e:
         return {"error": str(e)}
+

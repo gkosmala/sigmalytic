@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 ================================================================================
 SIGMALYTIC QUANT CORPORATION
@@ -324,3 +325,4 @@ def score_hurst_cycle(symbol: str, bars: List[dict],
             "hurst_notes"      : [f"Hurst error: {e}"],
             "hurst_liquidity_ok": True,
         }
+

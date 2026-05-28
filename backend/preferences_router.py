@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/preferences_router.py
 ------------------------------
@@ -235,3 +236,4 @@ def update_preferences(user_id: str, payload: PreferencesUpdate):
     except Exception as e:
         log.warning(f"Update preferences error: {e}")
         raise HTTPException(500, str(e))
+
