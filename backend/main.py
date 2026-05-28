@@ -933,7 +933,7 @@ async def debug_radar(symbol: str):
             "gex_strategy"        : radar_data.get("gex_strategy"),
             "gex_wall"            : radar_data.get("gex_wall"),
             "gex_sub_score"       : radar_data.get("gex_sub_score"),
-            "bme_score"           : internal.get("behavioral"),
+            "bme_score"           : radar_data.get("bme_score") or internal.get("behavioral"),
             "weis_score_deep"     : internal.get("wyckoff_weis"),
             "hurst_score"         : internal.get("time_cycle"),
             "vsa_score"           : internal.get("vsa"),
