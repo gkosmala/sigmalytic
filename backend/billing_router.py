@@ -77,7 +77,7 @@ def _get_subscription(user_id: str) -> dict:
         return {}
 
 # ── POST /api/billing/webhook ──────────────────────────────────────────────────
-@billing_router.post("/api/billing/webhook")
+@billing_router.post("/api/v1/billing/webhook")
 async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
     """Receives and processes Stripe webhook events."""
     payload = await request.body()
