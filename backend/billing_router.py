@@ -2,348 +2,285 @@
 """
 backend/billing_router.py
 --------------------------
-Sigmalytic — Full Stripe Billing Integration
+Full Stripe billing backend.
+Replaces billing_stub.py entirely.
 
 Endpoints:
-  GET  /api/v1/billing/{user_id}           — get user subscription state
-  POST /api/v1/billing/{user_id}/portal    — create Stripe customer portal session
-  POST /api/v1/billing/webhook             — handle Stripe webhook events
-
-Plans:
-  free          — $0, limited access
-  trader        — $49/month
-  elite_trader  — $129/month
-  institutional — contact us
-
-Supabase table: user_subscriptions
+  POST /api/billing/webhook              — Stripe webhook receiver
+  GET  /api/v1/billing/{user_id}         — fetch billing state from Supabase
+  POST /api/v1/billing/{user_id}/upgrade — create Stripe checkout session
+  POST /api/billing/portal               — customer portal session
 """
 
-from __future__ import annotations
 import os
-import json
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Optional
-
 import stripe
-import psycopg2
-import psycopg2.extras
-from fastapi import APIRouter, HTTPException, Request, Response
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-log = logging.getLogger("billing")
+log = logging.getLogger("billing_router")
 
 # ── Stripe config ──────────────────────────────────────────────────────────────
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET  = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
-DATABASE_URL           = os.getenv("DATABASE_URL", "")
-FRONTEND_URL           = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
 
-# ── Plan mapping (Stripe price IDs → internal tier names) ─────────────────────
-# Fill these in from your Stripe dashboard → Products → Price ID
+# Price IDs from Render env
+PRICE_TRADER       = os.getenv("STRIPE_PRICE_TRADER",       "price_1Tc2DvDRUJk6Un01MwT2Z1l0")
+PRICE_ELITE_TRADER = os.getenv("STRIPE_PRICE_ELITE_TRADER", "price_1Tc2IQDRUJk6Un01l7qEuD0l")
+
 PRICE_TO_TIER = {
-    "price_1Tc2DvDRUJk6Un01MwT2Z1l0": "trader",
-    "price_1Tc2IQDRUJk6Un01l7qEuD0l": "elite_trader",
+    PRICE_TRADER:       "trader",
+    PRICE_ELITE_TRADER: "elite_trader",
 }
 
-TIER_FEATURES = {
-    "free": {
-        "name"          : "Free",
-        "price"         : "$0",
-        "radar_limit"   : 50,
-        "live_data"     : False,
-        "alerts"        : False,
-        "intelligence"  : False,
-        "sms_limit"     : 0,
-    },
-    "trader": {
-        "name"          : "Trader",
-        "price"         : "$49/mo",
-        "radar_limit"   : 1403,
-        "live_data"     : True,
-        "alerts"        : True,
-        "intelligence"  : False,
-        "sms_limit"     : 20,
-    },
-    "elite_trader": {
-        "name"          : "Elite Trader",
-        "price"         : "$129/mo",
-        "radar_limit"   : 1403,
-        "live_data"     : True,
-        "alerts"        : True,
-        "intelligence"  : True,
-        "sms_limit"     : -1,  # unlimited
-    },
-    "institutional": {
-        "name"          : "Institutional",
-        "price"         : "Contact Us",
-        "radar_limit"   : 1403,
-        "live_data"     : True,
-        "alerts"        : True,
-        "intelligence"  : True,
-        "sms_limit"     : -1,
-    },
-}
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
 
-billing_router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
+# ── Supabase client ────────────────────────────────────────────────────────────
+def _get_supabase():
+    from supabase import create_client
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    return create_client(url, key)
 
+# ── Router ─────────────────────────────────────────────────────────────────────
+billing_router = APIRouter(tags=["billing"])
 
-# ── DB helpers ─────────────────────────────────────────────────────────────────
+# ── Pydantic schemas ───────────────────────────────────────────────────────────
+class UpgradeRequest(BaseModel):
+    price_id:    str
+    user_id:     str
+    user_email:  str
 
-def _get_conn():
-    if not DATABASE_URL:
-        raise HTTPException(503, "Database not configured")
-    return psycopg2.connect(DATABASE_URL)
+class PortalRequest(BaseModel):
+    user_id: str
 
+# ── Helper: upsert subscription in Supabase ────────────────────────────────────
+def _upsert_subscription(user_id: str, data: dict):
+    try:
+        sb = _get_supabase()
+        data["user_id"]   = user_id
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        sb.table("user_subscriptions").upsert(data, on_conflict="user_id").execute()
+        log.info(f"[BILLING] Upserted subscription for {user_id}: {data}")
+    except Exception as e:
+        log.error(f"[BILLING] Supabase upsert failed for {user_id}: {e}")
 
 def _get_subscription(user_id: str) -> dict:
-    """Get user subscription from Supabase. Returns free tier if not found."""
-    default = {
-        "user_id"              : user_id,
-        "tier"                 : "free",
-        "stripe_customer_id"   : None,
-        "stripe_subscription_id": None,
-        "status"               : "active",
-        "current_period_end"   : None,
-        "cancel_at_period_end" : False,
-    }
-    if not DATABASE_URL:
-        return default
     try:
-        conn = _get_conn()
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM user_subscriptions WHERE user_id = %s", (user_id,))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        return dict(row) if row else default
-    except Exception as e:
-        log.warning(f"Get subscription error: {e}")
-        return default
-
-
-def _upsert_subscription(data: dict):
-    """Write subscription state to Supabase."""
-    if not DATABASE_URL:
-        return
-    try:
-        conn = _get_conn()
-        cur  = conn.cursor()
-        cur.execute("""
-            INSERT INTO user_subscriptions
-            (user_id, tier, stripe_customer_id, stripe_subscription_id,
-             status, current_period_end, cancel_at_period_end, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (user_id) DO UPDATE SET
-                tier                    = EXCLUDED.tier,
-                stripe_customer_id      = EXCLUDED.stripe_customer_id,
-                stripe_subscription_id  = EXCLUDED.stripe_subscription_id,
-                status                  = EXCLUDED.status,
-                current_period_end      = EXCLUDED.current_period_end,
-                cancel_at_period_end    = EXCLUDED.cancel_at_period_end,
-                updated_at              = EXCLUDED.updated_at
-        """, (
-            data["user_id"],
-            data.get("tier", "free"),
-            data.get("stripe_customer_id"),
-            data.get("stripe_subscription_id"),
-            data.get("status", "active"),
-            data.get("current_period_end"),
-            data.get("cancel_at_period_end", False),
-            datetime.now(timezone.utc),
-        ))
-        conn.commit()
-        cur.close()
-        conn.close()
-        log.info(f"Subscription updated: {data['user_id']} → {data.get('tier')}")
-    except Exception as e:
-        log.warning(f"Upsert subscription error: {e}")
-
-
-def _get_user_id_by_customer(stripe_customer_id: str) -> Optional[str]:
-    """Look up user_id from stripe_customer_id."""
-    if not DATABASE_URL:
-        return None
-    try:
-        conn = _get_conn()
-        cur  = conn.cursor()
-        cur.execute(
-            "SELECT user_id FROM user_subscriptions WHERE stripe_customer_id = %s",
-            (stripe_customer_id,)
-        )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        return row[0] if row else None
+        sb = _get_supabase()
+        r = sb.table("user_subscriptions").select("*").eq("user_id", user_id).single().execute()
+        return r.data or {}
     except Exception:
-        return None
+        return {}
 
-
-def _tier_from_price_id(price_id: str) -> str:
-    """Map Stripe price ID to internal tier name."""
-    return PRICE_TO_TIER.get(price_id, "trader")
-
-
-# ── Endpoints ──────────────────────────────────────────────────────────────────
-
-@billing_router.get("/{user_id}")
-def get_billing(user_id: str):
-    """Returns subscription state + feature flags for a user."""
-    sub     = _get_subscription(user_id)
-    tier    = sub.get("tier", "free")
-    features= TIER_FEATURES.get(tier, TIER_FEATURES["free"])
-
-    period_end = sub.get("current_period_end")
-    if period_end and hasattr(period_end, 'strftime'):
-        period_end = period_end.strftime("%Y-%m-%d")
-    elif isinstance(period_end, (int, float)):
-        period_end = datetime.fromtimestamp(period_end).strftime("%Y-%m-%d")
-
-    return {
-        "user_id"              : user_id,
-        "tier"                 : tier,
-        "plan_name"            : features["name"],
-        "plan_price"           : features["price"],
-        "status"               : sub.get("status", "active"),
-        "current_period_end"   : period_end,
-        "cancel_at_period_end" : sub.get("cancel_at_period_end", False),
-        "stripe_customer_id"   : sub.get("stripe_customer_id"),
-        # Feature flags
-        "features"             : features,
-        "radar_limit"          : features["radar_limit"],
-        "live_data"            : features["live_data"],
-        "alerts_enabled"       : features["alerts"],
-        "intelligence_enabled" : features["intelligence"],
-        "sms_limit"            : features["sms_limit"],
-        # Publishable key for frontend
-        "publishable_key"      : STRIPE_PUBLISHABLE_KEY,
-    }
-
-
-@billing_router.post("/{user_id}/portal")
-def create_portal_session(user_id: str):
-    """Creates a Stripe Customer Portal session for plan management."""
-    if not stripe.api_key:
-        raise HTTPException(503, "Stripe not configured")
-
-    sub = _get_subscription(user_id)
-    customer_id = sub.get("stripe_customer_id")
-
-    if not customer_id:
-        raise HTTPException(404, "No Stripe customer found — subscribe first")
-
-    try:
-        session = stripe.billing_portal.Session.create(
-            customer   = customer_id,
-            return_url = f"{FRONTEND_URL}",
-        )
-        return {"url": session.url}
-    except stripe.StripeError as e:
-        raise HTTPException(400, str(e))
-
-
-@billing_router.post("/webhook")
-async def stripe_webhook(request: Request):
-    """
-    Handles Stripe webhook events.
-    Updates user_subscriptions in Supabase on subscription changes.
-    """
-    payload   = await request.body()
-    sig_header= request.headers.get("stripe-signature", "")
+# ── POST /api/billing/webhook ──────────────────────────────────────────────────
+@billing_router.post("/api/billing/webhook")
+async def stripe_webhook(request: Request, stripe_signature: str = Header(None)):
+    """Receives and processes Stripe webhook events."""
+    payload = await request.body()
 
     if not STRIPE_WEBHOOK_SECRET:
-        log.warning("Webhook received but STRIPE_WEBHOOK_SECRET not set")
-        return Response(status_code=200)
-
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
+        log.warning("[BILLING] STRIPE_WEBHOOK_SECRET not set — skipping signature verification")
+        event = stripe.Event.construct_from(
+            await request.json(), stripe.api_key
         )
-    except stripe.SignatureVerificationError:
-        log.warning("Webhook signature verification failed")
-        raise HTTPException(400, "Invalid signature")
-    except Exception as e:
-        raise HTTPException(400, str(e))
+    else:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            )
+        except stripe.error.SignatureVerificationError as e:
+            log.error(f"[BILLING] Webhook signature failed: {e}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
     data       = event["data"]["object"]
+    log.info(f"[BILLING] Webhook received: {event_type}")
 
-    log.info(f"Stripe webhook: {event_type}")
-
-    # ── checkout.session.completed ────────────────────────────────────────────
+    # ── checkout.session.completed ─────────────────────────────────────────────
     if event_type == "checkout.session.completed":
-        customer_id   = data.get("customer")
-        subscription_id = data.get("subscription")
-        client_ref_id = data.get("client_reference_id")  # user_id passed at checkout
+        user_id      = data.get("metadata", {}).get("user_id", "")
+        customer_id  = data.get("customer", "")
+        sub_id       = data.get("subscription", "")
+        price_id     = ""
 
-        if client_ref_id and customer_id:
-            # Get subscription details
+        # Fetch subscription to get price ID and period end
+        if sub_id:
             try:
-                sub_obj  = stripe.Subscription.retrieve(subscription_id)
-                price_id = sub_obj["items"]["data"][0]["price"]["id"]
-                tier     = _tier_from_price_id(price_id)
-                _upsert_subscription({
-                    "user_id"              : client_ref_id,
-                    "tier"                 : tier,
-                    "stripe_customer_id"   : customer_id,
-                    "stripe_subscription_id": subscription_id,
-                    "status"               : sub_obj["status"],
-                    "current_period_end"   : sub_obj["current_period_end"],
-                    "cancel_at_period_end" : sub_obj["cancel_at_period_end"],
+                sub      = stripe.Subscription.retrieve(sub_id)
+                price_id = sub["items"]["data"][0]["price"]["id"]
+                period_end = datetime.fromtimestamp(
+                    sub["current_period_end"], tz=timezone.utc
+                ).isoformat()
+                tier = PRICE_TO_TIER.get(price_id, "trader")
+                _upsert_subscription(user_id, {
+                    "tier":                   tier,
+                    "stripe_customer_id":     customer_id,
+                    "stripe_subscription_id": sub_id,
+                    "status":                 "active",
+                    "current_period_end":     period_end,
+                    "cancel_at_period_end":   False,
                 })
-                log.info(f"Checkout complete: {client_ref_id} → {tier}")
+                log.info(f"[BILLING] ✅ Subscription activated: {user_id} → {tier}")
             except Exception as e:
-                log.warning(f"Checkout subscription lookup error: {e}")
+                log.error(f"[BILLING] Failed to retrieve subscription {sub_id}: {e}")
 
-    # ── customer.subscription.created / updated ───────────────────────────────
-    elif event_type in ("customer.subscription.created", "customer.subscription.updated"):
-        customer_id     = data.get("customer")
-        subscription_id = data.get("id")
-        status          = data.get("status")
-        period_end      = data.get("current_period_end")
-        cancel_at_end   = data.get("cancel_at_period_end", False)
+    # ── customer.subscription.updated ─────────────────────────────────────────
+    elif event_type == "customer.subscription.updated":
+        sub_id      = data.get("id", "")
+        customer_id = data.get("customer", "")
+        price_id    = data["items"]["data"][0]["price"]["id"]
+        period_end  = datetime.fromtimestamp(
+            data["current_period_end"], tz=timezone.utc
+        ).isoformat()
+        tier   = PRICE_TO_TIER.get(price_id, "trader")
+        status = data.get("status", "active")
+        cancel = data.get("cancel_at_period_end", False)
 
+        # Look up user_id by stripe_customer_id
         try:
-            price_id = data["items"]["data"][0]["price"]["id"]
-            tier     = _tier_from_price_id(price_id)
+            sb = _get_supabase()
+            r  = sb.table("user_subscriptions").select("user_id").eq(
+                "stripe_customer_id", customer_id
+            ).single().execute()
+            user_id = r.data.get("user_id", "") if r.data else ""
         except Exception:
-            tier = "trader"
+            user_id = ""
 
-        # If subscription is past_due or canceled, downgrade
-        if status in ("past_due", "unpaid"):
-            tier = "free"
-        elif status == "canceled":
-            tier = "free"
-
-        user_id = _get_user_id_by_customer(customer_id)
         if user_id:
-            _upsert_subscription({
-                "user_id"              : user_id,
-                "tier"                 : tier,
-                "stripe_customer_id"   : customer_id,
-                "stripe_subscription_id": subscription_id,
-                "status"               : status,
-                "current_period_end"   : period_end,
-                "cancel_at_period_end" : cancel_at_end,
+            _upsert_subscription(user_id, {
+                "tier":                   tier,
+                "stripe_customer_id":     customer_id,
+                "stripe_subscription_id": sub_id,
+                "status":                 status,
+                "current_period_end":     period_end,
+                "cancel_at_period_end":   cancel,
             })
+            log.info(f"[BILLING] 🔄 Subscription updated: {user_id} → {tier} ({status})")
 
-    # ── customer.subscription.deleted ────────────────────────────────────────
+    # ── customer.subscription.deleted ─────────────────────────────────────────
     elif event_type == "customer.subscription.deleted":
-        customer_id = data.get("customer")
-        user_id     = _get_user_id_by_customer(customer_id)
+        customer_id = data.get("customer", "")
+        try:
+            sb = _get_supabase()
+            r  = sb.table("user_subscriptions").select("user_id").eq(
+                "stripe_customer_id", customer_id
+            ).single().execute()
+            user_id = r.data.get("user_id", "") if r.data else ""
+        except Exception:
+            user_id = ""
+
         if user_id:
-            _upsert_subscription({
-                "user_id"              : user_id,
-                "tier"                 : "free",
-                "stripe_customer_id"   : customer_id,
-                "stripe_subscription_id": None,
-                "status"               : "canceled",
-                "current_period_end"   : None,
-                "cancel_at_period_end" : False,
+            _upsert_subscription(user_id, {
+                "tier":   "free",
+                "status": "cancelled",
+                "stripe_customer_id": customer_id,
             })
-            log.info(f"Subscription canceled: {user_id} → free")
+            log.info(f"[BILLING] ❌ Subscription cancelled: {user_id}")
 
-    return Response(status_code=200)
+    # ── invoice.payment_failed ─────────────────────────────────────────────────
+    elif event_type == "invoice.payment_failed":
+        customer_id = data.get("customer", "")
+        try:
+            sb = _get_supabase()
+            r  = sb.table("user_subscriptions").select("user_id").eq(
+                "stripe_customer_id", customer_id
+            ).single().execute()
+            user_id = r.data.get("user_id", "") if r.data else ""
+        except Exception:
+            user_id = ""
 
+        if user_id:
+            _upsert_subscription(user_id, {
+                "status": "past_due",
+                "stripe_customer_id": customer_id,
+            })
+            log.info(f"[BILLING] ⚠️ Payment failed: {user_id}")
+
+    return JSONResponse({"status": "ok"})
+
+
+# ── GET /api/v1/billing/{user_id} ─────────────────────────────────────────────
+@billing_router.get("/api/v1/billing/{user_id}")
+async def get_billing(user_id: str):
+    """Returns billing state for a user from Supabase."""
+    data = _get_subscription(user_id)
+    if not data:
+        return {
+            "user_id":            user_id,
+            "tier":               "free",
+            "plan_name":          "Free",
+            "status":             "active",
+            "current_period_end": None,
+            "cancel_at_period_end": False,
+            "stripe_customer_id": None,
+        }
+    tier_names = {
+        "free":         "Free",
+        "trader":       "Trader — $49/mo",
+        "elite_trader": "Elite Trader — $129/mo",
+    }
+    return {
+        "user_id":              user_id,
+        "tier":                 data.get("tier", "free"),
+        "plan_name":            tier_names.get(data.get("tier","free"), "Free"),
+        "status":               data.get("status", "active"),
+        "current_period_end":   data.get("current_period_end"),
+        "cancel_at_period_end": data.get("cancel_at_period_end", False),
+        "stripe_customer_id":   data.get("stripe_customer_id"),
+    }
+
+
+# ── POST /api/v1/billing/{user_id}/upgrade ────────────────────────────────────
+@billing_router.post("/api/v1/billing/{user_id}/upgrade")
+async def create_checkout(user_id: str, payload: UpgradeRequest):
+    """Creates a Stripe Checkout session and returns the URL."""
+    if not stripe.api_key:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": payload.price_id, "quantity": 1}],
+            customer_email=payload.user_email,
+            metadata={"user_id": user_id},
+            success_url=f"{FRONTEND_URL}?billing=success",
+            cancel_url=f"{FRONTEND_URL}?billing=cancelled",
+        )
+        return {"checkout_url": session.url}
+    except Exception as e:
+        log.error(f"[BILLING] Checkout session failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── POST /api/billing/portal ──────────────────────────────────────────────────
+@billing_router.post("/api/billing/portal")
+async def customer_portal(payload: PortalRequest):
+    """Creates a Stripe Customer Portal session for managing subscriptions."""
+    data = _get_subscription(payload.user_id)
+    customer_id = data.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=404, detail="No Stripe customer found")
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=f"{FRONTEND_URL}?billing=portal_return",
+        )
+        return {"portal_url": session.url}
+    except Exception as e:
+        log.error(f"[BILLING] Portal session failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── GET /api/billing/config ───────────────────────────────────────────────────
+@billing_router.get("/api/billing/config")
+async def billing_config():
+    """Returns public Stripe config for the frontend."""
+    return {
+        "publishable_key":    STRIPE_PUBLISHABLE_KEY,
+        "price_trader":       PRICE_TRADER,
+        "price_elite_trader": PRICE_ELITE_TRADER,
+    }
