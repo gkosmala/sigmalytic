@@ -323,7 +323,7 @@ async def lifespan(app: FastAPI):
         def _initial_bme_training():
             import time as _t
             # Short initial wait for radar bars to start loading
-            _t.sleep(30)
+            _t.sleep(180)  # Wait 3 min for radar bars to load
             last_trained = 0
             for _attempt in range(48):  # Try every 5 min for 4 hours
                 try:
