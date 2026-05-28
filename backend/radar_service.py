@@ -87,6 +87,14 @@ except Exception as _we:
     _WEIS_RADAR_AVAILABLE = False
     logging.getLogger("radar").warning(f"Weis Wave radar not loaded: {_we}")
 
+# ── GEX engine (safe import) ───────────────────────────────────────────────────
+try:
+    from gex_engine import score_gex
+    _GEX_AVAILABLE = True
+except Exception as _ge:
+    _GEX_AVAILABLE = False
+    logging.getLogger("radar").warning(f"GEX engine not loaded: {_ge}")
+
 # ── Confluence engine direct import for divergence scoring ─────────────────────
 try:
     from confluence_engine import (
@@ -110,6 +118,7 @@ ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
 SCAN_INTERVAL_SECONDS = 480   # 8 minutes — lightweight only, completes fast
+GEX_FOCUS_SYMBOLS = ["SPY","QQQ","IWM","AAPL","NVDA","TSLA","AMD","META","MSFT","AMZN"]
 SNAPSHOT_INTERVAL     = 300
 SCORE_THRESHOLD       = 75
 TOP_N                 = 100
@@ -123,6 +132,8 @@ INTELLIGENCE_CACHE: Dict[str, dict] = {}  # divergence watchlist deep scores
 DIVERGENCE_WATCHLIST: List[dict]    = []  # populated by EOD audit
 
 LAST_SCAN_TIME:         Optional[float] = None
+GEX_SCORE_CACHE:        Dict[str, dict]  = {}   # symbol → {gex_score, gex_regime, gex_wall, ts}
+GEX_CACHE_TTL           = 1800  # 30 minutes
 LAST_INTELLIGENCE_TIME: Optional[float] = None
 LAST_EOD_AUDIT_TIME:    Optional[float] = None
 SYMBOLS: List[str] = []
@@ -498,6 +509,129 @@ def _refresh_historical_bars():
         log.warning(f"Historical bar refresh failed: {e}")
     finally:
         _bars_loading = False
+
+# ── GEX score helper ──────────────────────────────────────────────────────────
+
+def _gex_score_from_cache(symbol: str) -> dict:
+    """Return cached GEX result if fresh, else empty."""
+    cached = GEX_SCORE_CACHE.get(symbol, {})
+    if cached and (time.time() - cached.get("ts", 0)) < GEX_CACHE_TTL:
+        return cached
+    return {}
+
+
+def _gex_to_composite_score(gex: dict, price: float) -> float:
+    """
+    Convert GEX result to a 0-100 composite sub-score.
+    Used to blend into composite_score with 10% weight.
+
+    Scoring logic:
+      Positive GEX + near put wall  = 75-100 (strong support)
+      Positive GEX + mid-range      = 55-70  (stable, range-bound)
+      Neutral GEX                   = 50     (no adjustment)
+      Negative GEX + breakout setup = 70-85  (momentum confirmed)
+      Negative GEX + at resistance  = 20-40  (reversal risk)
+      No GEX data                   = 50     (neutral)
+    """
+    if not gex or not gex.get("gex_available"):
+        return 50.0
+
+    regime    = gex.get("gex_regime", "NEUTRAL")
+    gex_score = float(gex.get("gex_score", 50) or 50)
+    wall      = gex.get("gex_wall")
+
+    base = gex_score  # already 0-100 from engine
+
+    # Regime adjustment
+    if regime == "POSITIVE":
+        base = max(base, 55)  # floor at 55 for positive regime
+        # Bonus if price is near put wall (support)
+        if wall and price and abs(price - wall) / price < 0.02:
+            base = min(100, base + 15)
+    elif regime == "NEGATIVE":
+        # Negative GEX can be good (momentum) or bad (reversal risk)
+        # Engine already captures this in gex_score
+        pass
+    elif regime in ("PLACEHOLDER", "NO_DATA", "ERROR"):
+        return 50.0
+
+    return round(max(0, min(100, base)), 1)
+
+
+# ── GEX focused scan — runs on key symbols every 8 minutes ───────────────────
+
+def run_gex_scan():
+    """
+    Fetches intraday bars and scores GEX for focus symbols + divergence watchlist.
+    Lightweight — only 10-20 symbols, runs in under 30 seconds.
+    """
+    if not _GEX_AVAILABLE:
+        return
+
+    # Combine focus symbols + divergence watchlist + Armed/Triggered symbols
+    action_symbols = [
+        s for s, d in RADAR_CACHE.items()
+        if d.get("status") in ("Armed", "Triggered", "Confirmed", "Building")
+    ]
+    symbols = list(set(
+        GEX_FOCUS_SYMBOLS +
+        [d["symbol"] for d in DIVERGENCE_WATCHLIST] +
+        action_symbols[:20]  # cap at 20 to avoid overload
+    ))
+    log.info(f"GEX scan starting — {len(symbols)} symbols")
+
+    for symbol in symbols:
+        try:
+            cached = RADAR_CACHE.get(symbol, {})
+            price  = cached.get("price", 0)
+            if not price:
+                continue
+
+            bars_5m = fetch_intraday_bars(symbol, "5Min", limit=78)
+            if not bars_5m:
+                continue
+
+            gex = score_gex(symbol, price, bars_5m, is_intelligence_layer=False)
+
+            # Cache GEX result
+            gex["ts"] = time.time()
+            GEX_SCORE_CACHE[symbol] = gex
+
+            # Compute composite GEX sub-score
+            cached_radar = RADAR_CACHE.get(symbol, {})
+            price_now    = cached_radar.get("price", 0) or 0
+            gex_sub      = _gex_to_composite_score(gex, price_now)
+
+            if symbol in RADAR_CACHE:
+                RADAR_CACHE[symbol]["gex_score"]     = gex.get("gex_score")
+                RADAR_CACHE[symbol]["gex_regime"]    = gex.get("gex_regime")
+                RADAR_CACHE[symbol]["gex_available"] = gex.get("gex_available", False)
+                RADAR_CACHE[symbol]["gex_strategy"]  = gex.get("gex_strategy")
+                RADAR_CACHE[symbol]["gex_wall"]      = gex.get("gex_wall") or gex.get("nearest_wall")
+                RADAR_CACHE[symbol]["gex_sub_score"] = gex_sub
+
+                # Recompute composite score with GEX (10% weight)
+                old_composite = cached_radar.get("composite_score", 50) or 50
+                new_composite = round(
+                    old_composite * 0.90 + gex_sub * 0.10, 1
+                )
+                RADAR_CACHE[symbol]["composite_score"] = new_composite
+                log.info(
+                    f"GEX {symbol}: regime={gex.get('gex_regime')} "
+                    f"score={gex.get('gex_score'):.1f} "
+                    f"composite {old_composite:.1f}→{new_composite:.1f}"
+                )
+
+            if INTELLIGENCE_CACHE.get(symbol):
+                INTELLIGENCE_CACHE[symbol]["gex_score"]  = gex.get("gex_score")
+                INTELLIGENCE_CACHE[symbol]["gex_regime"] = gex.get("gex_regime")
+
+        except Exception as e:
+            log.debug(f"GEX scan error {symbol}: {e}")
+        time.sleep(0.1)
+
+    log.info(f"GEX scan complete — {len(symbols)} symbols")
+
 
 # ── Layer 1 — Main scan loop (lightweight only) ────────────────────────────────
 
@@ -965,6 +1099,17 @@ def start_radar_scheduler():
         log.info("Historical bar fetch started in background thread")
 
     _scheduler = BackgroundScheduler(timezone="UTC")
+
+    # GEX focused scan — runs every 8 minutes during market hours
+    if _GEX_AVAILABLE:
+        _scheduler.add_job(
+            lambda: threading.Thread(target=run_gex_scan, daemon=True).start(),
+            trigger="interval",
+            seconds=SCAN_INTERVAL_SECONDS,
+            id="gex_scan",
+            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=90),
+        )
+        log.info("GEX scan scheduled every 8 minutes")
 
     # Layer 1 — Lightweight universe scan every 8 minutes
     _scheduler.add_job(
