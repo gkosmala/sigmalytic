@@ -895,12 +895,27 @@ async def debug_radar(symbol: str):
         internal = intel_data.get("internal_scores", {})
         factor   = intel_data.get("factor_scores", {})
         return {
+            # ── Radar (lightweight) ──────────────────────────────────────────
             "symbol"              : clean,
             "composite_score"     : radar_data.get("composite_score"),
-            "intelligence_score"  : intel_data.get("score"),
-            "confidence"          : intel_data.get("confidence"),
             "status"              : intel_data.get("status") or radar_data.get("status"),
             "regime"              : intel_data.get("regime") or radar_data.get("regime"),
+            "price"               : radar_data.get("price"),
+            "change_pct"          : radar_data.get("change_pct"),
+            "rel_volume"          : radar_data.get("rel_volume"),
+            "trigger"             : radar_data.get("trigger"),
+            "invalidation"        : radar_data.get("invalidation"),
+            "setup_type"          : radar_data.get("setup_type"),
+            "on_divergence_watchlist": radar_data.get("on_divergence_watchlist"),
+            # ── Weis Wave (radar — daily bars) ───────────────────────────────
+            "weis_signal"         : radar_data.get("weis_signal"),
+            "weis_score"          : radar_data.get("weis_score"),
+            "weis_macro_bias"     : radar_data.get("weis_macro_bias"),
+            "three_bar_reversal"  : radar_data.get("three_bar_reversal"),
+            "three_bar_note"      : radar_data.get("three_bar_note"),
+            # ── Intelligence (deep — divergence watchlist only) ──────────────
+            "intelligence_score"  : intel_data.get("score"),
+            "confidence"          : intel_data.get("confidence"),
             "direction"           : intel_data.get("direction"),
             "setup"               : intel_data.get("setup"),
             "wyckoff_phase"       : intel_data.get("wyckoff_phase"),
@@ -908,7 +923,7 @@ async def debug_radar(symbol: str):
             "gex_score"           : internal.get("options_liquidity"),
             "gex_available"       : False,
             "bme_score"           : internal.get("behavioral"),
-            "weis_score"          : internal.get("wyckoff_weis"),
+            "weis_score_deep"     : internal.get("wyckoff_weis"),
             "hurst_score"         : internal.get("time_cycle"),
             "vsa_score"           : internal.get("vsa"),
             "gann_score"          : internal.get("gann_geometry"),
