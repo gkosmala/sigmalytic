@@ -75,9 +75,9 @@ input{{font-family:inherit;outline:none;}}
 .sig-anchor:hover .sig-popup{{display:block;}}
 .sig-row{{display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);}}
 .sig-row:last-child{{border-bottom:none;}}
-.sig-label{{font-size:10px;font-weight:700;color:{MUTED};text-transform:uppercase;letter-spacing:.1em;}}
+.sig-label{{font-size:10px;font-weight:700;color:{WHITE};text-transform:uppercase;letter-spacing:.1em;}}
 .sig-val{{font-size:11px;font-weight:800;color:{WHITE};text-align:right;max-width:180px;}}
-.sig-sub{{font-size:9px;font-weight:600;color:{MUTED};display:block;margin-top:1px;text-align:right;}}
+.sig-sub{{font-size:9px;font-weight:600;color:{TEXT};display:block;margin-top:1px;text-align:right;}}
 .sig-title{{font-size:12px;font-weight:900;color:{WHITE};margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid {BORDER_T};letter-spacing:.04em;}}
 """
 
