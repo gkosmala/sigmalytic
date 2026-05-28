@@ -55,6 +55,30 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
 ::-webkit-scrollbar-thumb{{background:{TEAL};border-radius:2px;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input{{font-family:inherit;outline:none;}}
+
+/* ── Signal Intelligence Hover Popup ─────────────────────────────────────── */
+.sig-anchor{{position:relative;display:inline-block;}}
+.sig-popup{{
+    display:none;
+    position:absolute;
+    top:calc(100% + 8px);
+    left:0;
+    z-index:9000;
+    width:320px;
+    background:{NAVY_CARD};
+    border:1px solid {BORDER_T};
+    border-radius:16px;
+    padding:16px;
+    box-shadow:0 16px 48px rgba(0,0,0,.6);
+    pointer-events:none;
+}}
+.sig-anchor:hover .sig-popup{{display:block;}}
+.sig-row{{display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);}}
+.sig-row:last-child{{border-bottom:none;}}
+.sig-label{{font-size:10px;font-weight:700;color:{MUTED};text-transform:uppercase;letter-spacing:.1em;}}
+.sig-val{{font-size:11px;font-weight:800;color:{WHITE};text-align:right;max-width:180px;}}
+.sig-sub{{font-size:9px;font-weight:600;color:{MUTED};display:block;margin-top:1px;text-align:right;}}
+.sig-title{{font-size:12px;font-weight:900;color:{WHITE};margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid {BORDER_T};letter-spacing:.04em;}}
 """
 
 def _auth_headers(session: dict) -> dict:
@@ -343,6 +367,83 @@ def ai_narrative(sym):
         "borderTop":f"1px solid {BORDER}","marginTop":"6px"
     })
 
+# ── GEX Regime Labels ────────────────────────────────────────────────────────
+GEX_LABELS = {
+    "POSITIVE_GEX": ("Mean Reverting Regime",    "Stabilized Volatility State",  BLUE_DIM),
+    "NEGATIVE_GEX": ("Momentum Amplified Regime","Accelerated Volatility State",  RED_DIM),
+    "NEUTRAL":      ("Balanced Regime",           "Transitional State",            YELLOW_DIM),
+}
+
+def gex_display(gex_regime):
+    return GEX_LABELS.get(gex_regime, ("GEX Unavailable", "—", MUTED))
+
+# ── Volume by Price display label for Weis signal ────────────────────────────
+VBP_LABELS = {
+    "BULLISH":     ("Bullish",     TEAL_DIM),
+    "BEARISH":     ("Bearish",     RED_DIM),
+    "SOT_BULLISH": ("SOT Bullish", TEAL_DIM),
+    "SOT_BEARISH": ("SOT Bearish", RED_DIM),
+    "SPRING":      ("Spring",      TEAL_DIM),
+    "UPTHRUST":    ("Upthrust",    RED_DIM),
+    "NEUTRAL":     ("Neutral",     YELLOW_DIM),
+}
+
+def vbp_display(weis_signal):
+    if not weis_signal: return ("—", MUTED)
+    return VBP_LABELS.get(weis_signal, (weis_signal, TEXT))
+
+# ── Signal Intelligence Hover Popup ──────────────────────────────────────────
+def sig_row_item(label, value, sub=None, color=None):
+    val_color = color or WHITE
+    return html.Div([
+        html.Span(label, className="sig-label"),
+        html.Div([
+            html.Span(value, className="sig-val", style={"color": val_color}),
+            html.Span(sub, className="sig-sub") if sub else html.Span(),
+        ]),
+    ], className="sig-row")
+
+def signal_intelligence_popup(sym):
+    gex_regime  = sym.get("gex_regime","")
+    gex_score   = sym.get("gex_score")
+    gex_strat   = sym.get("gex_strategy","")
+    weis_signal = sym.get("weis_signal","")
+    weis_score  = sym.get("weis_score")
+    reversal    = sym.get("three_bar_reversal")
+    bme         = sym.get("bme_score")
+    hurst       = sym.get("hurst_score")
+    vsa         = sym.get("vsa_score")
+    score       = sym.get("composite_score", 0)
+    symbol      = sym.get("symbol","")
+
+    gex_primary, gex_sub, gex_color = gex_display(gex_regime)
+    vbp_val, vbp_color = vbp_display(weis_signal)
+
+    def fmt(val, suffix=""):
+        if val is None: return "Pending"
+        return f"{val:.0f}{suffix}"
+
+    reversal_val   = reversal if reversal else "None"
+    reversal_color = RED_DIM if reversal == "BEARISH" else (TEAL_DIM if reversal == "BULLISH" else MUTED)
+
+    return html.Div([
+        html.Div(className="sig-popup", children=[
+            html.Div(f"⚡ {symbol} — Signal Intelligence", className="sig-title"),
+            sig_row_item("Confluence Score", f"{score:.0f}",
+                "Multi-layer structural alignment", _score_color(score)),
+            sig_row_item("GEX Regime", gex_primary, gex_sub, gex_color),
+            sig_row_item("GEX Strategy", gex_strat or "—", f"Score: {fmt(gex_score)}", gex_color),
+            sig_row_item("Volume by Price", vbp_val, f"Score: {fmt(weis_score)}", vbp_color),
+            sig_row_item("3-Bar Reversal", reversal_val, None, reversal_color),
+            sig_row_item("Behavioral Memory", fmt(bme),
+                "High = persistent participation", TEAL_DIM if (bme or 0)>=70 else MUTED),
+            sig_row_item("Hurst Timing", fmt(hurst),
+                "Cycle timing score", TEAL_DIM if (hurst or 0)>=70 else MUTED),
+            sig_row_item("VSA Score", fmt(vsa),
+                "Volume spread analysis", TEAL_DIM if (vsa or 0)>=70 else MUTED),
+        ]),
+    ], className="sig-anchor")
+
 # ── Updated Radar Row ─────────────────────────────────────────────────────────
 def build_radar_row(sym):
     score=sym.get("composite_score",0); status=sym.get("status","Watching")
@@ -371,9 +472,12 @@ def build_radar_row(sym):
 
     return html.Div([
         html.Div([
-            # Symbol + abbreviated setup type
+            # Symbol + hover popup
             html.Div([
-                html.Span(sym.get("symbol",""),style={"fontWeight":"800","fontSize":"14px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
+                html.Div([
+                    html.Span(sym.get("symbol",""),style={"fontWeight":"800","fontSize":"14px","color":WHITE,"fontFamily":"DM Mono, monospace","cursor":"pointer","textDecoration":"underline dotted","textUnderlineOffset":"3px"}),
+                    signal_intelligence_popup(sym),
+                ], className="sig-anchor"),
                 html.Span(setup_short,
                     title=sym.get("setup_type",""),
                     style={"fontSize":"10px","color":MUTED,"display":"block","marginTop":"2px","cursor":"help"})
