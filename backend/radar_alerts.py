@@ -129,19 +129,16 @@ def maybe_send_alert(symbol_data: dict, old_status: str, new_status: str) -> boo
     }
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(dispatch_alert_to_all_users(
+        import threading
+
+        def _run():
+            asyncio.run(dispatch_alert_to_all_users(
                 alert=alert_meta,
                 subject=subject,
                 html_body=html_body,
             ))
-        else:
-            loop.run_until_complete(dispatch_alert_to_all_users(
-                alert=alert_meta,
-                subject=subject,
-                html_body=html_body,
-            ))
+
+        threading.Thread(target=_run, daemon=True).start()
         return True
     except Exception as e:
         logger.error(f"[maybe_send_alert] Failed for {symbol}: {e}")
@@ -207,19 +204,16 @@ def send_daily_summary(top_symbols: list[dict]) -> bool:
     }
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(dispatch_alert_to_all_users(
+        import threading
+
+        def _run():
+            asyncio.run(dispatch_alert_to_all_users(
                 alert=alert_meta,
                 subject=subject,
                 html_body=html_body,
             ))
-        else:
-            loop.run_until_complete(dispatch_alert_to_all_users(
-                alert=alert_meta,
-                subject=subject,
-                html_body=html_body,
-            ))
+
+        threading.Thread(target=_run, daemon=True).start()
         return True
     except Exception as e:
         logger.error(f"[send_daily_summary] Failed: {e}")
