@@ -148,8 +148,9 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
         # Fetch next 60 days expiries — meaningful gamma lives here
         exp_from = today.strftime("%Y-%m-%d")
         exp_to   = (today + timedelta(days=60)).strftime("%Y-%m-%d")
+        # Use option chain endpoint — includes Greeks (gamma, delta, IV)
         r = _req.get(
-            f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
+            f"{ALPACA_BASE_URL}/v1beta1/options/chain/{symbol}",
             headers={
                 "APCA-API-KEY-ID"    : ALPACA_API_KEY,
                 "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
@@ -163,9 +164,26 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
             timeout=15,
         )
         if r.status_code != 200:
-            log.debug(f"Alpaca options {symbol} status {r.status_code}: {r.text[:200]}")
-            return {}
-        chain = r.json().get("snapshots", {})
+            log.debug(f"Alpaca options chain {symbol} status {r.status_code}: {r.text[:200]}")
+            # Fallback to snapshots endpoint
+            r = _req.get(
+                f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
+                headers={
+                    "APCA-API-KEY-ID"    : ALPACA_API_KEY,
+                    "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+                },
+                params={
+                    "feed"                : "indicative",
+                    "limit"               : 1000,
+                    "expiration_date_gte" : exp_from,
+                    "expiration_date_lte" : exp_to,
+                },
+                timeout=15,
+            )
+            if r.status_code != 200:
+                log.debug(f"Alpaca options snapshot {symbol} status {r.status_code}: {r.text[:200]}")
+                return {}
+        chain = r.json().get("snapshots", {}) or r.json().get("chain", {})
         if not chain:
             return {}
 
@@ -174,9 +192,18 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
         total_call_vol = 0
         total_put_vol = 0
 
+        # Debug: log first contract structure to verify Greeks field names
+        if chain:
+            first_id = next(iter(chain))
+            first_snap = chain[first_id]
+            log.info(f"GEX debug {symbol} first contract {first_id}: keys={list(first_snap.keys())}")
+            greeks_sample = first_snap.get("greeks", first_snap.get("Greeks", {})) or {}
+            log.info(f"GEX debug {symbol} greeks keys={list(greeks_sample.keys()) if greeks_sample else 'EMPTY'}")
+
         for contract_id, snap in chain.items():
-            greeks  = snap.get("greeks", {}) or {}
-            quote   = snap.get("latestQuote", {}) or {}
+            # Handle both "greeks" and "Greeks" key variations
+            greeks  = snap.get("greeks", snap.get("Greeks", {})) or {}
+            quote   = snap.get("latestQuote", snap.get("latest_quote", {})) or {}
             details = snap.get("details", {}) or {}
 
             strike   = float(details.get("strike_price", 0) or 0)
