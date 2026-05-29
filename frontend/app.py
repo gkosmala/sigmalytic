@@ -704,11 +704,10 @@ def build_scoreboard_tab():
     ],style={"display":"flex","flexDirection":"column"})
 
 
-def build_chart(candles, price, nodes):
+def build_chart(candles, price, nodes, gex_wall=None, call_wall=None, gamma_pivot=None):
     kl=get_key_levels(price)
     opens=[c["o"] for c in candles]; highs=[c["h"] for c in candles]
     lows=[c["l"] for c in candles]; closes=[c["c"] for c in candles]
-    # Use real timestamps if available, otherwise use index
     xs=[c.get("t","") if c.get("t","") else str(i) for i,c in enumerate(candles)]
     fig=go.Figure()
     fig.add_trace(go.Candlestick(x=xs,open=opens,high=highs,low=lows,close=closes,name="Price",
@@ -735,6 +734,20 @@ def build_chart(candles, price, nodes):
         fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
                       annotation_text=label,annotation_position="right",
                       annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
+    # ── Live GEX Walls ────────────────────────────────────────────────────────
+    if call_wall:
+        fig.add_hline(y=call_wall, line_color="#ff4a4a", line_dash="solid", line_width=2.5, opacity=0.9,
+                      annotation_text=f"  🧱 CALL WALL ${call_wall:.2f}", annotation_position="right",
+                      annotation_font=dict(color="#ff4a4a", size=11, family="DM Mono, monospace"))
+    if gamma_pivot:
+        fig.add_hline(y=gamma_pivot, line_color="#ff9f43", line_dash="dash", line_width=1.5, opacity=0.85,
+                      annotation_text=f"  ⚡ GAMMA PIVOT ${gamma_pivot:.2f}", annotation_position="right",
+                      annotation_font=dict(color="#ff9f43", size=11, family="DM Mono, monospace"))
+    if gex_wall:
+        fig.add_hline(y=gex_wall, line_color="#28c76f", line_dash="solid", line_width=2.5, opacity=0.9,
+                      annotation_text=f"  🧱 PUT WALL ${gex_wall:.2f}", annotation_position="right",
+                      annotation_font=dict(color="#28c76f", size=11, family="DM Mono, monospace"))
+    # ── Live Price ─────────────────────────────────────────────────────────────
     fig.add_hline(y=price,line_color=BLUE_DIM,line_dash="solid",line_width=1.5,opacity=1,
                   annotation_text=f"  ${price:.2f} LIVE",annotation_position="right",
                   annotation_font=dict(color=BLUE_DIM,size=11,family="DM Sans"))
@@ -742,7 +755,7 @@ def build_chart(candles, price, nodes):
         font=dict(family="DM Sans",color=TEXT,size=11),
         xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
         yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f",autorange=True),
-        margin=dict(l=0,r=130,t=12,b=12),height=390,showlegend=False,hovermode="x unified",
+        margin=dict(l=0,r=160,t=12,b=12),height=420,showlegend=False,hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),dragmode="pan")
     return fig
 
@@ -818,13 +831,20 @@ def build_command_tab(live, candles, symbol, tf):
         card([
             html.Div([
                 html.Div([html.H2("🧱 Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                          html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",style={"fontSize":"12px","color":TEXT})]),
+                          html.P(regime_label,style={"fontSize":"12px","color":regime_color})]),
                 badge(fb,"blue"),
             ],style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","flexWrap":"wrap","gap":"10px","marginBottom":"16px"}),
-            html.Div([zcard("Call Wall","285",f"{cp}% call-side pressure",TEAL_DIM),zcard("Put Wall","275",f"{pp}% put-side pressure",RED_DIM),
-                      zcard("Gamma Pivot","280",f"{gp}% dealer sensitivity",YELLOW_DIM),zcard("Vol Trigger","LIVE",f"{vs}% expansion energy",TEAL_DIM)],
-                     style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
-            note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+            html.Div([
+                zcard("Call Wall", f"${call_wall_val:.2f}" if call_wall_val else "—", f"{cp}% call-side pressure", TEAL_DIM),
+                zcard("Put Wall",  f"${put_wall_val:.2f}"  if put_wall_val  else "—", f"{pp}% put-side pressure",  RED_DIM),
+                zcard("Gamma Pivot",f"${gamma_pivot:.2f}"  if gamma_pivot   else "—", f"{gp}% dealer sensitivity", YELLOW_DIM),
+                zcard("Vol Trigger","LIVE", f"{vs}% expansion energy", TEAL_DIM),
+            ],style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
+            note_box(
+                "⚡ Live Institutional GEX Feed — Powered by Overnight OCC Open Interest & Real-Time Spot Gamma." if gex_available
+                else "GEX data loading — initializing options feed…",
+                "teal" if gex_available else "blue"
+            ),
         ],sx={"marginBottom":"16px"}),
         card([html.Div([metric_tile("Symbol",symbol,BLUE_DIM),metric_tile("Live Price",f"${price:.2f}",TEAL_DIM),metric_tile("Engine Score",f"{score}%",sc),metric_tile("Regime",decision["mode"],YELLOW_DIM)],
                        style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"})]),
