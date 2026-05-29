@@ -615,9 +615,24 @@ async def request_password_reset(email: str = ""):
 
 @app.get("/api/scoreboard/clean-duplicates")
 async def clean_duplicates():
-    from scoreboard_service import clear_duplicate_signals
-    deleted = clear_duplicate_signals()
-    return {"ok": True, "deleted": deleted}
+    import threading
+    result = {"deleted": 0, "error": None}
+
+    def _run():
+        try:
+            from scoreboard_service import clear_duplicate_signals
+            result["deleted"] = clear_duplicate_signals()
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(f"Duplicate clear error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=30)
+
+    if result["error"]:
+        return {"ok": False, "message": result["error"]}
+    return {"ok": True, "deleted": result["deleted"]}
 
 
 @app.get("/api/scoreboard")
@@ -628,9 +643,26 @@ async def get_scoreboard():
 
 @app.post("/api/scoreboard/grade-now")
 async def grade_now():
-    from scoreboard_service import grade_pending_signals
-    grade_pending_signals()
-    return {"ok": True, "message": "Grading complete"}
+    import threading
+    result = {"error": None}
+
+    def _run():
+        try:
+            from scoreboard_service import grade_pending_signals
+            log.info("Manual grader triggered via API")
+            grade_pending_signals()
+            log.info("Manual grader finished")
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(f"Manual grader error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=120)
+
+    if result["error"]:
+        return {"ok": False, "message": result["error"]}
+    return {"ok": True, "message": "Grading complete — check Render logs for details"}
 
 
 @app.get("/api/options/test/{symbol}")
