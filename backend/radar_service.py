@@ -1176,7 +1176,7 @@ def start_radar_scheduler():
     )
     _scheduler.add_job(
         lambda: threading.Thread(target=grade_pending_signals, daemon=True).start(),
-        trigger="cron", hour=11, minute=26, id="grade_signals",
+        trigger="cron", hour=21, minute=15, id="grade_signals",
     )
     try:
         from snapshot_service import write_intraday_snapshots, write_daily_close_snapshots

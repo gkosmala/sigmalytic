@@ -103,14 +103,33 @@ def _already_logged_recently(symbol: str, signal_type: str) -> bool:
         return False
 
 
+def _is_market_hours() -> bool:
+    """Returns True only during NYSE market hours: Mon-Fri 9:30 AM - 4:00 PM ET."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    et = datetime.now(ZoneInfo("America/New_York"))
+    if et.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    market_open  = et.replace(hour=9,  minute=30, second=0, microsecond=0)
+    market_close = et.replace(hour=16, minute=0,  second=0, microsecond=0)
+    return market_open <= et < market_close
+
+
 def log_signal(sym: dict, signal_type: str):
     """
     Log a new signal to scoreboard_signals.
     Uses database dedup — skips if same symbol+type logged within 2 hours.
     Survives backend restarts unlike in-memory tracking.
+    Only logs during NYSE market hours (9:30 AM - 4:00 PM ET, Mon-Fri).
     """
     symbol = sym.get("symbol", "")
     if not symbol or not DATABASE_URL:
+        return
+
+    # Only log during market hours — pre/after-market signals skew win rates
+    if not _is_market_hours():
         return
 
     # Only log important signal types
