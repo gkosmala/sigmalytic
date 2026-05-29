@@ -175,14 +175,15 @@ def log_signal(sym: dict, signal_type: str):
 # ── Outcome grading ────────────────────────────────────────────────────────────
 
 def _fetch_close_price(symbol: str) -> Optional[float]:
-    """Fetch the most recent closing price from Alpaca."""
+    """Fetch the most recent completed closing price from Alpaca.
+    Requests 2 bars so we always get yesterday's close even pre-market."""
     try:
         r = _req.get(
             f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
             headers=_alpaca_headers(),
             params={
                 "timeframe": "1Day",
-                "limit":     1,
+                "limit":     2,
                 "feed":      ALPACA_FEED,
                 "sort":      "desc",
             },
@@ -190,8 +191,12 @@ def _fetch_close_price(symbol: str) -> Optional[float]:
         )
         if r.status_code == 200:
             bars = r.json().get("bars") or []
-            if bars:
-                return float(bars[0].get("c", 0))
+            for bar in bars:
+                close = float(bar.get("c", 0))
+                if close > 0:
+                    return close
+        else:
+            log.warning(f"Price fetch {symbol}: status {r.status_code}")
     except Exception as e:
         log.warning(f"Price fetch error {symbol}: {e}")
     return None
