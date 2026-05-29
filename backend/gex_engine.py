@@ -198,9 +198,9 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
                 opt_type = 'put' if 'put' in opt_type else 'call'
 
                 quote = contract.latest_quote
-                oi    = float(getattr(quote, 'open_interest', 0) or 0)
-                iv    = float(getattr(contract, 'implied_volatility',
-                              getattr(quote, 'implied_volatility', 0)) or 0)
+                # OI is at top level on OptionSnapshot, not in latest_quote
+                oi    = float(getattr(contract, 'open_interest', 0) or 0)
+                iv    = float(getattr(contract, 'implied_volatility', 0) or 0)
                 bid   = float(getattr(quote, 'bid_price', 0) or 0)
                 ask   = float(getattr(quote, 'ask_price', 0) or 0)
                 mid   = (ask + bid) / 2 if ask and bid else 0
