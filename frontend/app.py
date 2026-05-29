@@ -224,6 +224,7 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
 def build_chart(candles, price, nodes, tf="5m"):
+    """Clean chart — horizontal level lines only, no right-side annotations."""
     kl = get_key_levels(price)
     xs = [c["t"] for c in candles]
     fig = go.Figure()
@@ -233,33 +234,33 @@ def build_chart(candles, price, nodes, tf="5m"):
         increasing=dict(line=dict(color=TEAL_DIM,width=1),fillcolor=TEAL_DIM),
         decreasing=dict(line=dict(color=RED_DIM,width=1),fillcolor=RED_DIM),
     ))
-    for level,label,color,dash in [
-        (kl.breakout,  f"  {kl.breakout:.2f} Breakout",   TEAL_DIM,   "dash"),
-        (kl.prior_high,f"  {kl.prior_high:.2f} Liquidity", TEAL_DIM,   "dot"),
-        (kl.expansion, f"  {kl.expansion:.2f} Expansion",  TEAL_DIM,   "dashdot"),
-        (kl.confirm,   f"  {kl.confirm:.2f} Live Anchor",  YELLOW_DIM, "solid"),
-        (kl.trigger,   f"  {kl.trigger:.2f} Trigger",      YELLOW_DIM, "dash"),
-        (kl.trap,      f"  {kl.trap:.2f} Trap Door",       RED_DIM,    "dot"),
-        (kl.fail,      f"  {kl.fail:.2f} Fail Gate",       RED_DIM,    "dash"),
+    # Level lines — no annotations (labels are in the Price Ladder panel)
+    for level,color,dash,width in [
+        (kl.breakout,   TEAL_DIM,   "dash",    1.0),
+        (kl.prior_high, TEAL_DIM,   "dot",     1.0),
+        (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
+        (kl.confirm,    YELLOW_DIM, "solid",   1.0),
+        (kl.trigger,    YELLOW_DIM, "dash",    1.0),
+        (kl.trap,       RED_DIM,    "dot",     1.0),
+        (kl.fail,       RED_DIM,    "dash",    1.0),
     ]:
-        fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
-                      annotation_text=label,annotation_position="right",
-                      annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
-    fig.add_hline(y=price,line_color=BLUE_DIM,line_dash="solid",line_width=1.5,
-                  annotation_text=f"  ${price:.2f} LIVE",annotation_position="right",
-                  annotation_font=dict(color=BLUE_DIM,size=11,family="DM Sans"))
+        fig.add_hline(y=level, line_color=color, line_dash=dash,
+                      line_width=width, opacity=0.6)
+    # Live price line
+    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
-        font=dict(family="DM Sans",color=TEXT,size=11),
-        xaxis=dict(type="date",showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,
-                   rangeslider=dict(visible=False),color=MUTED,showticklabels=True,
-                   tickformat=TF_TICKFMT.get(tf,"%H:%M"),
-                   tickfont=dict(color=MUTED,size=10,family="DM Mono, monospace"),
-                   title=dict(text=f"{tf} · {len(candles)} candles",font=dict(color=MUTED,size=10))),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,
-                   color=MUTED,side="right",tickformat=".2f"),
-        margin=dict(l=0,r=130,t=12,b=36),height=390,showlegend=False,
-        hovermode="x unified",hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
+        font=dict(family="DM Sans", color=TEXT, size=11),
+        xaxis=dict(type="date", showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
+                   rangeslider=dict(visible=False), color=MUTED, showticklabels=True,
+                   tickformat=TF_TICKFMT.get(tf, "%H:%M"),
+                   tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
+                   title=dict(text=f"{tf} · {len(candles)} candles", font=dict(color=MUTED, size=10))),
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
+                   color=MUTED, side="right", tickformat=".2f"),
+        margin=dict(l=0, r=20, t=12, b=36), height=420, showlegend=False,
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
     )
     return fig
@@ -773,7 +774,7 @@ def build_command_tab(live, candles, symbol, tf):
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
-    # ── Price ladder row helper ───────────────────────────────────────────────
+    # ── Price Ladder row helper ───────────────────────────────────────────────
     def level_row(label, level, color, is_live=False, arrow=""):
         bg  = "rgba(45,143,111,.15)" if is_live else "transparent"
         bdr = f"1px solid {BORDER_T}" if is_live else f"1px solid {BORDER}"
@@ -782,128 +783,168 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(arrow+" " if arrow else "",
                           style={"color":color,"fontWeight":"900","fontSize":"11px","marginRight":"2px"}),
                 html.Span(label,
-                          style={"fontSize":"10px","fontWeight":"800" if is_live else "600",
-                                 "color":TEXT,"textTransform":"uppercase","letterSpacing":".08em"}),
+                          style={"fontSize":"10px","fontWeight":"700","color":TEXT,
+                                 "textTransform":"uppercase","letterSpacing":".08em"}),
             ], style={"flex":"1"}),
             html.Span(f"${level:.2f}",
-                      style={"fontSize":"13px","fontWeight":"900",
-                             "color":WHITE if is_live else color,
+                      style={"fontSize":"14px","fontWeight":"900",
+                             "color":WHITE,
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
-                   "padding":"8px 12px","borderRadius":"10px","marginBottom":"5px",
+                   "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
                    "background":bg,"border":bdr})
 
-    # ── LEFT: Price Ladder panel ──────────────────────────────────────────────
-    price_ladder = card([
-        slabel("Price Ladder"),
-        level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
-        level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
-        level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
-        html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"4px 0"}),
-        level_row("Live Price",price,         BLUE_DIM,  is_live=True),
-        html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"4px 0"}),
-        level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
-        level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
-        level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
-        html.Div(style={"height":"8px"}),
-        slabel("Distance"),
+    # ── LEFT: Price Ladder — fills full height ────────────────────────────────
+    price_ladder = html.Div([
+        card([
+            slabel("Price Ladder"),
+            level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
+            level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
+            level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
+            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
+            level_row("Live Price",price,          BLUE_DIM,  is_live=True),
+            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
+            level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
+            level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
+            level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
+            html.Div(style={"height":"10px"}),
+            slabel("Distance"),
+            html.Div([
+                html.Div([
+                    html.Span("↑ Breakout", style={"fontSize":"10px","color":TEXT}),
+                    html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
+                              style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
+                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
+                html.Div([
+                    html.Span("↓ Fail Gate", style={"fontSize":"10px","color":TEXT}),
+                    html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
+                              style={"fontSize":"11px","color":RED_DIM,"fontWeight":"800"}),
+                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
+                html.Div([
+                    html.Span("R/R Ratio", style={"fontSize":"10px","color":TEXT}),
+                    html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
+                              style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800"}),
+                ], style={"display":"flex","justifyContent":"space-between"}),
+            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"10px 12px",
+                       "border":f"1px solid {BORDER}"}),
+        ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
+    ], style={"flex":"0 0 195px","minWidth":"0","display":"flex","flexDirection":"column"})
+
+    # ── CENTER: Chart (full width, no right margin) ───────────────────────────
+    chart_panel = card([
         html.Div([
             html.Div([
-                html.Span("↑ Breakout",style={"fontSize":"10px","color":TEXT}),
-                html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
-                          style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
-            ], style={"display":"flex","justifyContent":"space-between","marginBottom":"4px"}),
-            html.Div([
-                html.Span("↓ Fail Gate",style={"fontSize":"10px","color":TEXT}),
-                html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
-                          style={"fontSize":"11px","color":RED_DIM,"fontWeight":"800"}),
-            ], style={"display":"flex","justifyContent":"space-between","marginBottom":"4px"}),
-            html.Div([
-                html.Span("R/R Ratio",style={"fontSize":"10px","color":TEXT}),
-                html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
-                          style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800"}),
-            ], style={"display":"flex","justifyContent":"space-between"}),
-        ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"8px 12px",
-                   "border":f"1px solid {BORDER}"}),
-    ], sx={"flex":"0 0 190px","minWidth":"0","alignSelf":"stretch"})
+                html.H2(f"📊 {symbol}  ·  Smart Chart + Live Levels",
+                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 2px"}),
+                html.P(f"Last update {live_age}  ·  Vol {live['volume']:,}  ·  {tf}  ·  Regime: {regime.replace('_',' ').title()}",
+                       style={"fontSize":"11px","color":TEXT}),
+            ]),
+            html.Div([badge(f"Last ${price:.2f}","blue"),
+                      html.Span("CONFLUENCE ENGINE v1.0",
+                                style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                                       "letterSpacing":".12em","textTransform":"uppercase"})],
+                     style={"display":"flex","alignItems":"center","gap":"10px"}),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
+                   "flexWrap":"wrap","marginBottom":"10px","gap":"8px"}),
+        dcc.Graph(figure=fig,
+                  config={"displayModeBar":True,"scrollZoom":True,
+                          "modeBarButtonsToRemove":["select2d","lasso2d","autoScale2d"],
+                          "displaylogo":False},
+                  style={"borderRadius":"12px","overflow":"hidden"}),
+    ], sx={"flex":"1","minWidth":"0"})
 
-    # ── CENTER+RIGHT: Chart (full width) + Decision Engine strip below ────────
-    chart_and_engine = html.Div([
-        # Chart — full width
+    # ── Row 1: Price Ladder + Chart ───────────────────────────────────────────
+    row1 = html.Div([price_ladder, chart_panel],
+                    style={**ROW,"alignItems":"stretch","marginBottom":"16px"})
+
+    # ── Row 2: Decision Engine (full width horizontal strip) ──────────────────
+    row2 = card([
+        html.Div([
+            # Signal status
+            html.Div([
+                slabel("Decision Engine"),
+                html.Div(decision["status"],
+                         style={"color":sc,"fontSize":"30px","fontWeight":"900",
+                                "lineHeight":"1","letterSpacing":"-.02em","marginTop":"6px"}),
+                html.Div(f"LIVE STATE: {decision['behavior']}",
+                         style={"fontSize":"9px","fontWeight":"800","color":TEXT,
+                                "textTransform":"uppercase","letterSpacing":".12em","marginTop":"5px"}),
+            ], style={"flex":"0 0 150px","minWidth":"0"}),
+
+            # Execution directive
+            html.Div([
+                slabel("Execution Directive"),
+                html.Div(decision["next_action"],
+                         style={"color":WHITE,"fontSize":"12px","fontWeight":"700",
+                                "lineHeight":"1.5","marginTop":"4px"}),
+                html.P(f"${price:.2f}  ·  {top.get('public_label','—')} {top.get('score',0)}%",
+                       style={"fontSize":"10px","color":TEXT,"marginTop":"3px"}),
+            ], style={"flex":"1.5","minWidth":"140px"}),
+
+            # Signal strength + metrics grid
+            html.Div([
+                pbar("Signal Strength", score),
+                html.Div([
+                    metric_tile("Bias",       decision["bias"],       sc),
+                    metric_tile("Grade",      decision["grade"],      sc),
+                    metric_tile("Confidence", decision["confidence"], sc),
+                    metric_tile("Mode",       decision["mode"],       BLUE_DIM),
+                ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr 1fr",
+                           "gap":"8px","marginTop":"10px"}),
+            ], style={"flex":"2","minWidth":"200px"}),
+
+            # Probability ladder inline
+            html.Div([
+                slabel("Probability Ladder"),
+                html.Div(style={"height":"4px"}),
+                brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
+                html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
+                html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                brow("Hold / Balance", score, "neutral"),
+                html.P(f"Level ${kl.confirm:.2f}",
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                brow("Failure Gate", 100-score, "down"),
+                html.P(f"Level ${kl.fail:.2f}",
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px"}),
+            ], style={"flex":"1.2","minWidth":"160px"}),
+
+        ], style={"display":"flex","gap":"16px","alignItems":"flex-start","flexWrap":"wrap"}),
+    ], sx={"marginBottom":"16px"})
+
+    # ── Row 3: Trade Card + Probability Ladder ───────────────────────────────
+    row3 = html.Div([
+        # Trade Card (Tactical Box)
         card([
+            html.H2("🎯 Trade Card",
+                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
             html.Div([
-                html.Div([
-                    html.H2(f"📊 {symbol}  ·  Smart Chart + Live Levels",
-                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 2px"}),
-                    html.P(f"Last update {live_age}  ·  Vol {live['volume']:,}  ·  {tf}  ·  Regime: {regime.replace('_',' ').title()}",
-                           style={"fontSize":"11px","color":TEXT}),
-                ]),
-                html.Div([badge(f"Last ${price:.2f}","blue"),
-                          html.Span("CONFLUENCE ENGINE v1.0",
-                                    style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                                           "letterSpacing":".12em","textTransform":"uppercase"})],
-                         style={"display":"flex","alignItems":"center","gap":"10px"}),
-            ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
-                       "flexWrap":"wrap","marginBottom":"10px","gap":"8px"}),
-            dcc.Graph(figure=fig,
-                      config={"displayModeBar":True,"scrollZoom":True,
-                              "modeBarButtonsToRemove":["select2d","lasso2d","autoScale2d"],
-                              "displaylogo":False},
-                      style={"borderRadius":"12px","overflow":"hidden"}),
-        ], sx={"marginBottom":"16px"}),
-
-        # Decision Engine — horizontal strip below chart
-        card([
+                slabel("Bias"),
+                html.Div(decision["bias"],
+                         style={"color":sc,"fontSize":"22px","fontWeight":"900","marginTop":"4px","marginBottom":"12px"}),
+            ]),
             html.Div([
-                # Signal status — big
-                html.Div([
-                    slabel("Decision Engine"),
-                    html.Div(decision["status"],
-                             style={"color":sc,"fontSize":"32px","fontWeight":"900",
-                                    "lineHeight":"1","letterSpacing":"-.02em","marginTop":"6px"}),
-                    html.Div(f"LIVE STATE: {decision['behavior']}",
-                             style={"fontSize":"10px","fontWeight":"800","color":TEXT,
-                                    "textTransform":"uppercase","letterSpacing":".14em","marginTop":"6px"}),
-                ], style={"flex":"1","minWidth":"120px"}),
+                slabel("Setup"),
+                html.Div(decision["status"],
+                         style={"color":sc,"fontSize":"18px","fontWeight":"900","marginTop":"4px","marginBottom":"12px"}),
+            ]),
+            html.Div([
+                slabel("Suggested Size"),
+                html.Div(size,
+                         style={"color":sc,"fontSize":"28px","fontWeight":"900",
+                                "letterSpacing":"-.01em","marginTop":"4px","marginBottom":"10px"}),
+            ]),
+            note_box("Entry logic: tactical only above trigger; A-grade requires live-volume expansion.","yellow"),
+            html.P(f"Reference: ${price:.2f}",
+                   style={"fontSize":"11px","color":MUTED,"marginTop":"8px"}),
+        ], sx={"flex":"1"}),
 
-                # Execution directive
-                html.Div([
-                    slabel("Execution Directive"),
-                    html.Div(decision["next_action"],
-                             style={"color":WHITE,"fontSize":"13px","fontWeight":"700",
-                                    "lineHeight":"1.5","marginTop":"4px"}),
-                    html.P(f"${price:.2f}  ·  {top.get('public_label','—')} {top.get('score',0)}%",
-                           style={"fontSize":"11px","color":TEXT,"marginTop":"4px"}),
-                ], style={"flex":"1.5","minWidth":"140px"}),
-
-                # Signal strength + metrics
-                html.Div([
-                    pbar("Signal Strength", score),
-                    html.Div([
-                        metric_tile("Bias",       decision["bias"],       sc),
-                        metric_tile("Grade",      decision["grade"],      sc),
-                        metric_tile("Confidence", decision["confidence"], sc),
-                        metric_tile("Mode",       decision["mode"],       BLUE_DIM),
-                    ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr 1fr",
-                               "gap":"8px","marginTop":"10px"}),
-                ], style={"flex":"2","minWidth":"200px"}),
-
-                # Suggested size
-                html.Div([
-                    slabel("Suggested Size"),
-                    html.Div(size,style={"color":sc,"fontSize":"28px","fontWeight":"900",
-                                         "letterSpacing":"-.01em","marginTop":"6px"}),
-                    note_box("A-grade requires live-volume expansion.","yellow"),
-                ], style={"flex":"0 0 140px","minWidth":"0"}),
-
-            ], style={"display":"flex","gap":"20px","alignItems":"flex-start","flexWrap":"wrap"}),
-        ]),
-    ], style={"flex":"1","minWidth":"0"})
-
-    # ── Row 2: Probability Ladder | Time Engine | Alerts ─────────────────────
-    row2 = html.Div([
+        # Probability Ladder
         card([
-            html.H2("🪜 Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+            html.H2("🪜 Probability Ladder",
+                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
             brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
             html.P(f"Level ${nodes[0]['level']:.2f}  ·  Current ${price:.2f}" if nodes else "",
                    style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px"}),
@@ -916,75 +957,75 @@ def build_command_tab(live, candles, symbol, tf):
             brow("Failure Gate", 100-score, "down"),
             html.P(f"Level ${kl.fail:.2f}  ·  Current ${price:.2f}",
                    style={"fontSize":"10px","color":MUTED,"marginTop":"-4px"}),
-        ], sx={"flex":"1"}),
-
-        card([html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-              *_build_clock_inline()], sx={"flex":"1"}),
-
-        card([
-            html.Div([
-                html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
-                html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
-                    style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
-                           "borderRadius":"20px","padding":"4px 12px","fontSize":"11px",
-                           "fontWeight":"800","cursor":"pointer"}),
-            ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"14px"}),
-            html.Div(as_,style={
-                "borderRadius":"14px","padding":"14px","textAlign":"center","fontWeight":"900",
-                "fontSize":"13px","letterSpacing":".06em","textTransform":"uppercase",
-                **({"border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM} if aa
-                   else {"border":"1px solid rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM}),
-            }),
-            html.Div([
-                html.Div(f"Score: {score}",
-                    style={"fontSize":"12px","color":TEXT,"marginTop":"10px"}),
-                html.Div(
-                    "🔴 Trap Door Active" if score<35 else
-                    ("🟢 A-Grade Signal — Audio Active" if score>=80 else
-                     "🟡 B-Grade Signal — Audio Active" if score>=55 else
-                     "⚪ Monitoring"),
-                    style={"fontSize":"11px","fontWeight":"700",
-                           "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED),
-                           "marginTop":"4px"}),
-            ]),
-        ], sx={"flex":"1"}),
+        ], sx={"flex":"2"}),
     ], style={**ROW,"alignItems":"start"})
 
-    # ── Row 3: Options Matrix ─────────────────────────────────────────────────
-    row3 = card([
+    # ── Row 4: Options Matrix ─────────────────────────────────────────────────
+    row4 = card([
         html.Div([
-            html.Div([html.H2("🧱 Dynamic Options Matrix + Flow Map",
-                              style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                      html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
-                             style={"fontSize":"12px","color":TEXT})]),
+            html.Div([
+                html.H2("🧱 Dynamic Options Matrix + Flow Map",
+                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                       style={"fontSize":"12px","color":TEXT})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
-                   "flexWrap":"wrap","gap":"10px","marginBottom":"16px"}),
+                   "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
         html.Div([
             zcard("Call Wall","285",f"{cp}% call-side pressure",TEAL_DIM),
             zcard("Put Wall","275",f"{pp}% put-side pressure",RED_DIM),
             zcard("Gamma Pivot","280",f"{gp}% dealer sensitivity",YELLOW_DIM),
             zcard("Vol Trigger","LIVE",f"{vs}% expansion energy",TEAL_DIM),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
         note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
-    # ── Row 4: Footer bar ─────────────────────────────────────────────────────
-    row4 = card([html.Div([
-        metric_tile("Symbol",      symbol,                           BLUE_DIM),
-        metric_tile("Live Price",  f"${price:.2f}",                 TEAL_DIM),
-        metric_tile("Engine Score",f"{score}%",                     sc),
-        metric_tile("Regime",      regime.replace("_"," ").title(), YELLOW_DIM),
-    ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"})])
+    # ── Row 5: Time Engine + Alerts + Footer bar ──────────────────────────────
+    row5 = html.Div([
+        card([
+            html.H2("⏱️ Time Engine",
+                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 12px"}),
+            *_build_clock_inline(),
+        ], sx={"flex":"1"}),
 
-    return html.Div([
-        # Row 1: Price Ladder LEFT + Chart+Engine RIGHT
-        html.Div([price_ladder, chart_and_engine],
-                 style={**ROW,"alignItems":"stretch"}),
-        row2,
-        row3,
-        row4,
-    ], style={"display":"flex","flexDirection":"column"})
+        card([
+            html.Div([
+                html.H2("🔔 Visual + Audio Alerts",
+                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
+                html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
+                    style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
+                           "borderRadius":"20px","padding":"4px 12px","fontSize":"11px",
+                           "fontWeight":"800","cursor":"pointer"}),
+            ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"12px"}),
+            html.Div(as_, style={
+                "borderRadius":"12px","padding":"12px","textAlign":"center","fontWeight":"900",
+                "fontSize":"12px","letterSpacing":".06em","textTransform":"uppercase",
+                **({"border":f"1px solid {BORDER_T}","background":TEAL_GLOW,"color":TEAL_DIM} if aa
+                   else {"border":"1px solid rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":YELLOW_DIM}),
+            }),
+            html.Div([
+                html.Span(f"Score: {score}",
+                          style={"fontSize":"11px","color":TEXT,"marginTop":"8px","display":"block"}),
+                html.Span(
+                    "🔴 Trap Door" if score<35 else
+                    ("🟢 A-Grade — Audio Active" if score>=80 else
+                     "🟡 B-Grade — Audio Active" if score>=55 else "⚪ Monitoring"),
+                    style={"fontSize":"11px","fontWeight":"700","marginTop":"3px","display":"block",
+                           "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
+            ]),
+        ], sx={"flex":"1"}),
+
+        card([html.Div([
+            metric_tile("Symbol",      symbol,                           BLUE_DIM),
+            metric_tile("Live Price",  f"${price:.2f}",                 TEAL_DIM),
+            metric_tile("Engine Score",f"{score}%",                     sc),
+            metric_tile("Regime",      regime.replace("_"," ").title(), YELLOW_DIM),
+        ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"10px"})], sx={"flex":"1"}),
+
+    ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
+
+    return html.Div([row1, row2, row3, row4, row5],
+                    style={"display":"flex","flexDirection":"column"})
 
 
 def build_feed_tab(live, live_mode):
