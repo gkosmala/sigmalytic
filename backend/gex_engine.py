@@ -191,6 +191,17 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
         total_put_vol  = 0.0
         contracts_used = 0
 
+        # Debug first contract to see actual attributes
+        if chain_data:
+            first_sym = next(iter(chain_data))
+            first_c = chain_data[first_sym]
+            log.info(f"GEX SDK debug {symbol} first={first_sym}")
+            log.info(f"GEX SDK contract attrs={[a for a in dir(first_c) if not a.startswith('_')]}")
+            try:
+                log.info(f"GEX SDK option_contract attrs={[a for a in dir(first_c.option_contract) if not a.startswith('_')]}")
+            except Exception as de:
+                log.info(f"GEX SDK option_contract error: {de}")
+
         for contract_symbol, contract in chain_data.items():
             try:
                 strike   = float(getattr(contract.option_contract, 'strike', 0) or 0)
@@ -655,4 +666,3 @@ def score_gex(symbol: str, price: float,
             "gex_available": False,
             "gex_notes"    : [f"GEX engine error: {e}"],
         }
-
