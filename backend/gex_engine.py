@@ -192,30 +192,43 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
         total_call_vol = 0
         total_put_vol = 0
 
-        # Debug: log first contract structure to verify Greeks field names
-        if chain:
-            first_id = next(iter(chain))
-            first_snap = chain[first_id]
-            log.info(f"GEX debug {symbol} first contract {first_id}: keys={list(first_snap.keys())}")
-            greeks_sample = first_snap.get("greeks", first_snap.get("Greeks", {})) or {}
-            log.info(f"GEX debug {symbol} greeks keys={list(greeks_sample.keys()) if greeks_sample else 'EMPTY'}")
+        # Count contracts with Greeks for debug
+        contracts_with_greeks = sum(1 for s in chain.values() if s.get("greeks"))
+        log.info(f"GEX {symbol}: {len(chain)} contracts, {contracts_with_greeks} have Greeks")
 
         for contract_id, snap in chain.items():
-            # Handle both "greeks" and "Greeks" key variations
-            greeks  = snap.get("greeks", snap.get("Greeks", {})) or {}
-            quote   = snap.get("latestQuote", snap.get("latest_quote", {})) or {}
+            greeks  = snap.get("greeks", {}) or {}
+            quote   = snap.get("latestQuote", {}) or {}
             details = snap.get("details", {}) or {}
 
-            strike   = float(details.get("strike_price", 0) or 0)
+            # Skip contracts without Greeks — deep ITM/OTM have null Greeks
+            gamma = float(greeks.get("gamma", 0) or 0)
+            if gamma <= 0:
+                continue
+
+            # Parse strike from contract ID if details missing
+            # Contract format: SPY260529C00750000 = strike $750.00
+            strike = float(details.get("strike_price", 0) or 0)
+            if strike <= 0:
+                try:
+                    # Extract strike from contract ID (last 8 digits / 1000)
+                    strike = int(contract_id[-8:]) / 1000.0
+                except Exception:
+                    continue
+
             opt_type = details.get("type", "call").lower()
-            gamma    = float(greeks.get("gamma", 0) or 0)
-            oi       = float(snap.get("openInterest", 0) or 0)
+            if "P" in contract_id and opt_type == "call":
+                opt_type = "put"
+            elif "C" in contract_id and opt_type == "put":
+                opt_type = "call"
+
+            oi       = float(snap.get("openInterest", snap.get("open_interest", 0)) or 0)
             volume   = float((snap.get("dailyBar", {}) or {}).get("v", 0) or 0)
             ask      = float(quote.get("ap", 0) or 0)
             bid      = float(quote.get("bp", 0) or 0)
             mid      = (ask + bid) / 2 if ask and bid else 0
 
-            if strike > 0 and gamma >= 0:
+            if strike > 0 and gamma > 0:
                 gex_profile.append({
                     "strike": strike, "type": opt_type,
                     "gamma": gamma, "open_interest": oi,
