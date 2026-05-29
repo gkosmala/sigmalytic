@@ -143,14 +143,24 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
     """
     import requests as _req
     try:
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        # Fetch next 60 days expiries — meaningful gamma lives here
+        exp_from = today.strftime("%Y-%m-%d")
+        exp_to   = (today + timedelta(days=60)).strftime("%Y-%m-%d")
         r = _req.get(
             f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
             headers={
                 "APCA-API-KEY-ID"    : ALPACA_API_KEY,
                 "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
             },
-            params={"feed": "opra", "limit": 200},
-            timeout=10,
+            params={
+                "feed"                : "indicative",
+                "limit"               : 1000,
+                "expiration_date_gte" : exp_from,
+                "expiration_date_lte" : exp_to,
+            },
+            timeout=15,
         )
         if r.status_code != 200:
             log.debug(f"Alpaca options {symbol} status {r.status_code}: {r.text[:200]}")
@@ -295,6 +305,11 @@ def _calculate_gex(gex_profile: List[dict], spot_price: float) -> tuple:
     """
     GEX formula: Gamma × OI × 100 × Spot² × 0.01
     Puts = negative GEX (dealers short gamma on puts)
+
+    Wall detection: find the strike cluster with highest positive GEX
+    concentration — that is where market makers are most hedged and
+    where price will gravitate toward or bounce from.
+
     Returns (net_gex, strike_gex_map, nearest_wall)
     """
     net_gex = 0.0
@@ -306,6 +321,9 @@ def _calculate_gex(gex_profile: List[dict], spot_price: float) -> tuple:
         oi     = float(strike.get("open_interest", 0))
         s_type = strike.get("type", "call").lower()
 
+        if s <= 0 or gamma <= 0 or oi <= 0:
+            continue
+
         gex_val = gamma * oi * 100 * (spot_price ** 2) * 0.01
         if s_type == "put":
             gex_val *= -1
@@ -313,11 +331,20 @@ def _calculate_gex(gex_profile: List[dict], spot_price: float) -> tuple:
         net_gex += gex_val
         strike_map[s] = strike_map.get(s, 0.0) + gex_val
 
-    # Find nearest positive GEX wall (market maker support floor)
+    # Find the GEX wall — strike with highest positive GEX cluster
+    # This is where OI concentrates and market makers defend most aggressively
     positive_strikes = {k: v for k, v in strike_map.items() if v > 0}
     nearest_wall = None
     if positive_strikes:
-        nearest_wall = min(positive_strikes, key=lambda k: abs(k - spot_price))
+        # Primary wall = highest GEX concentration (biggest cluster)
+        biggest_wall = max(positive_strikes, key=lambda k: positive_strikes[k])
+        # Secondary check = nearest positive strike to spot (support/resistance)
+        nearest_positive = min(positive_strikes, key=lambda k: abs(k - spot_price))
+        # Use biggest cluster if it's within 15% of spot, else use nearest
+        if abs(biggest_wall - spot_price) / spot_price <= 0.15:
+            nearest_wall = biggest_wall
+        else:
+            nearest_wall = nearest_positive
 
     return net_gex, strike_map, nearest_wall
 
