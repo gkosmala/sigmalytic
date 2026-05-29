@@ -862,8 +862,9 @@ def build_command_tab(live, candles, symbol, tf):
         dcc.Graph(figure=fig,
                   config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
                   style={"borderRadius":"0 0 18px 18px","overflow":"hidden",
-                         "margin":"0 -20px -20px -20px"}),
-    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px","overflow":"hidden"})
+                         "margin":"8px -20px -20px -20px"}),
+    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px",
+            "overflow":"hidden","display":"flex","flexDirection":"column"})
 
     # ── Row 1 ─────────────────────────────────────────────────────────────────
     row1 = html.Div([price_ladder, chart_panel],
@@ -1216,7 +1217,7 @@ app.layout = html.Div([
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Div(id="btn-live", style={"display":"none"}),  # live only
+
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
         ], style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
 
@@ -1363,23 +1364,31 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
     if not ctx.triggered: return no_update,no_update,no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
     vol = TF_VOLATILITY.get(tf, 0.60)
-    if live_mode and trigger=="i-alpaca":
+    # Always attempt Alpaca first on any interval trigger.
+    # If Alpaca fails, use synthetic movement to keep chart alive.
+    prev = current["price"] if current else 280.15
+    price = None; volume = None
+
+    if trigger == "i-alpaca":
         try:
-            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4); r.raise_for_status()
-            d = r.json(); price=float(d["price"]); volume=int(d.get("volume",0))
-        except: return no_update,no_update,no_update
-    elif not live_mode and trigger=="i-synth":
-        prev = current["price"] if current else 280.15
-        # Scale per-tick price movement to TF — a 1W candle moves more than a 1m
-        # but each individual synthetic tick should be small (it's just updating
-        # the close). The accumulated high/low range grows naturally over time.
-        tick_scale = {
-            "1m": 0.05, "5m": 0.08, "15m": 0.12,
-            "1H": 0.18, "1D": 0.30, "1W":  0.50,
-        }.get(tf, 0.08)
-        price  = round(max(1.0, prev + (random.random() - 0.48) * tick_scale), 2)
-        volume = round(500_000 + random.random() * 5_000_000)
-    else: return no_update,no_update,no_update
+            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
+            r.raise_for_status()
+            d = r.json()
+            price  = float(d["price"])
+            volume = int(d.get("volume", 0))
+        except Exception:
+            pass  # fall through to synthetic below
+
+    if price is None:
+        if trigger == "i-synth":
+            tick_scale = {
+                "1m": 0.05, "5m": 0.08, "15m": 0.12,
+                "1H": 0.18, "1D": 0.30, "1W":  0.50,
+            }.get(tf, 0.08)
+            price  = round(max(1.0, prev + (random.random() - 0.48) * tick_scale), 2)
+            volume = round(500_000 + random.random() * 5_000_000)
+        else:
+            return no_update, no_update, no_update
     new_seq  = (seq or 0)+1
     new_live = create_live_update(symbol,price,volume,new_seq,candles).to_dict()
     if candles:
@@ -1440,12 +1449,12 @@ def render_price_ctrl(live_mode, live):
 
 @app.callback(
     Output("b-connected","children"), Output("b-feed","children"), Output("b-tick","children"),
-    Input("s-live","data"), Input("s-live-mode","data"),
+    Input("s-live","data"),
 )
-def update_badges(live, live_mode):
+def update_badges(live):
     seq = live["sequence"] if live else 0
     return (badge("LIVE","teal"),
-            badge("Alpaca IEX" if live_mode else "Data Feed","blue"),
+            badge("Alpaca IEX","blue"),
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
