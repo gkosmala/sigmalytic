@@ -775,13 +775,55 @@ def build_command_tab(live, candles, symbol, tf):
     sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size="FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
     top=nodes[0] if nodes else {"public_label":"—","score":0}
-    vs=max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
-    cp=max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
-    pp=max(8,min(92,100-cp)); gp=max(20,min(95,round(55+(price-kl.confirm)*7)))
-    fb="Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
-    as_="Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
-    aa=as_!="Monitoring"; fig=build_chart(candles,price,nodes)
-    ROW={"display":"flex","gap":"16px","marginBottom":"16px"}
+
+    # ── Live GEX Data from backend ────────────────────────────────────────────
+    import requests as _req
+    gex_data = {}
+    try:
+        _r = _req.get(f"{BACKEND_HTTP}/api/debug/radar/{symbol}", timeout=4)
+        if _r.ok: gex_data = _r.json()
+    except Exception: pass
+
+    gex_regime    = gex_data.get("gex_regime", "")
+    gex_wall      = gex_data.get("gex_wall")
+    gex_score_val = float(gex_data.get("gex_score") or 50)
+    gex_available = bool(gex_data.get("gex_available", False))
+
+    if gex_wall and price:
+        put_wall_val  = float(gex_wall)
+        dist          = abs(price - put_wall_val)
+        call_wall_val = round(price + dist, 2)
+        gamma_pivot   = round((put_wall_val + call_wall_val) / 2, 2)
+    else:
+        put_wall_val = call_wall_val = gamma_pivot = None
+
+    if gex_regime in ("POSITIVE", "POSITIVE_GEX"):
+        regime_label = "Mean Reverting Regime · Stabilized Volatility"
+        regime_color = BLUE_DIM
+        fb = "Call Accumulation / Supportive Flow"
+    elif gex_regime in ("NEGATIVE", "NEGATIVE_GEX"):
+        regime_label = "Momentum Amplified Regime · Accelerated Volatility"
+        regime_color = RED_DIM
+        fb = "Put Dominance / Directional Expansion"
+    else:
+        regime_label = "GEX Regime Calculating…"
+        regime_color = MUTED
+        fb = "Call Accumulation / Supportive Flow" if price >= kl.confirm else "Neutral Rotation / Pinning"
+
+    if gex_available and gex_score_val:
+        cp = min(94, max(12, int(gex_score_val)))
+        pp = 100 - cp
+        gp = min(95, max(20, int((gex_score_val + 50) / 2)))
+    else:
+        cp = max(12, min(94, round(score + (8 if price > kl.confirm else -10) + (seq % 5))))
+        pp = max(8, min(92, 100 - cp))
+        gp = max(20, min(95, round(55 + (price - kl.confirm) * 7)))
+
+    vs  = max(18, min(96, round(abs(price - kl.trigger) * 18 + (seq % 9) * 4)))
+    as_ = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
+    aa  = as_ != "Monitoring"
+    fig = build_chart(candles, price, nodes, gex_wall=put_wall_val, call_wall=call_wall_val, gamma_pivot=gamma_pivot)
+    ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
     return html.Div([
         html.Div([
             card([
