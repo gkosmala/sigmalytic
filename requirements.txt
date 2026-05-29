@@ -16,3 +16,4 @@ supabase
 scipy
 scikit-learn
 stripe>=7.0.0
+alpaca-py>=0.8.0

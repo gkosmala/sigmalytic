@@ -137,120 +137,112 @@ def _cache_set(key: str, data: dict, ttl: int = GEX_CACHE_TTL):
 
 def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
     """
-    Fetches options chain from Alpaca and calculates GEX.
-    ACTIVATE: set OPTIONS_FEED=alpaca in Render env vars.
-    Requires Alpaca options data subscription.
+    Fetches options chain from Alpaca using the official SDK.
+    Uses OptionChainRequest which returns OI and IV needed for proper GEX calculation.
+    Calculates Gamma using Black-Scholes from IV.
     """
-    import requests as _req
     try:
+        import numpy as np
+        import scipy.stats as si
         from datetime import datetime, timedelta
-        today = datetime.now()
-        # Fetch next 60 days expiries — meaningful gamma lives here
-        exp_from = today.strftime("%Y-%m-%d")
-        exp_to   = (today + timedelta(days=60)).strftime("%Y-%m-%d")
-        # Use option chain endpoint — includes Greeks (gamma, delta, IV)
-        r = _req.get(
-            f"{ALPACA_BASE_URL}/v1beta1/options/chain/{symbol}",
-            headers={
-                "APCA-API-KEY-ID"    : ALPACA_API_KEY,
-                "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-            },
-            params={
-                "feed"                : "indicative",
-                "limit"               : 1000,
-                "expiration_date_gte" : exp_from,
-                "expiration_date_lte" : exp_to,
-            },
-            timeout=15,
+        from alpaca.data.historical import OptionHistoricalDataClient
+        from alpaca.data.requests import OptionChainRequest
+
+        client = OptionHistoricalDataClient(
+            api_key=ALPACA_API_KEY,
+            secret_key=ALPACA_API_SECRET,
         )
-        if r.status_code != 200:
-            log.debug(f"Alpaca options chain {symbol} status {r.status_code}: {r.text[:200]}")
-            # Fallback to snapshots endpoint
-            r = _req.get(
-                f"{ALPACA_BASE_URL}/v1beta1/options/snapshots/{symbol}",
-                headers={
-                    "APCA-API-KEY-ID"    : ALPACA_API_KEY,
-                    "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-                },
-                params={
-                    "feed"                : "indicative",
-                    "limit"               : 1000,
-                    "expiration_date_gte" : exp_from,
-                    "expiration_date_lte" : exp_to,
-                },
-                timeout=15,
-            )
-            if r.status_code != 200:
-                log.debug(f"Alpaca options snapshot {symbol} status {r.status_code}: {r.text[:200]}")
-                return {}
-        chain = r.json().get("snapshots", {}) or r.json().get("chain", {})
-        if not chain:
+
+        today = datetime.now()
+        exp_from = (today + timedelta(days=1)).strftime("%Y-%m-%d")
+        exp_to   = (today + timedelta(days=60)).strftime("%Y-%m-%d")
+        strike_low  = current_price * 0.90
+        strike_high = current_price * 1.10
+
+        req = OptionChainRequest(
+            underlying_symbol=symbol,
+            expiration_date_gte=exp_from,
+            expiration_date_lte=exp_to,
+            strike_price_gte=strike_low,
+            strike_price_lte=strike_high,
+        )
+        chain_data = client.get_option_chain(req)
+
+        if not chain_data:
+            log.debug(f"GEX {symbol}: no chain data returned")
             return {}
 
-        gex_profile = []
-        sweeps = []
-        total_call_vol = 0
-        total_put_vol = 0
+        r_rate = 0.045
+        t_exp  = 30 / 365
 
-        # Count contracts with Greeks for debug
-        contracts_with_greeks = sum(1 for s in chain.values() if s.get("greeks"))
-        log.info(f"GEX {symbol}: {len(chain)} contracts, {contracts_with_greeks} have Greeks")
+        def bs_gamma(spot, strike, iv, t):
+            if iv <= 0 or t <= 0 or spot <= 0 or strike <= 0:
+                return 0.0
+            try:
+                d1 = (np.log(spot / strike) + (r_rate + 0.5 * iv ** 2) * t) / (iv * np.sqrt(t))
+                return float(si.norm.pdf(d1) / (spot * iv * np.sqrt(t)))
+            except Exception:
+                return 0.0
 
-        for contract_id, snap in chain.items():
-            greeks  = snap.get("greeks", {}) or {}
-            quote   = snap.get("latestQuote", {}) or {}
-            details = snap.get("details", {}) or {}
+        gex_profile    = []
+        sweeps         = []
+        ivs            = []
+        total_call_vol = 0.0
+        total_put_vol  = 0.0
+        contracts_used = 0
 
-            # Skip contracts without Greeks — deep ITM/OTM have null Greeks
-            gamma = float(greeks.get("gamma", 0) or 0)
-            if gamma <= 0:
-                continue
+        for contract_symbol, contract in chain_data.items():
+            try:
+                strike   = float(getattr(contract.option_contract, 'strike', 0) or 0)
+                opt_type = str(getattr(contract.option_contract, 'type', 'call')).lower()
+                opt_type = 'put' if 'put' in opt_type else 'call'
 
-            # Parse strike from contract ID if details missing
-            # Contract format: SPY260529C00750000 = strike $750.00
-            strike = float(details.get("strike_price", 0) or 0)
-            if strike <= 0:
-                try:
-                    # Extract strike from contract ID (last 8 digits / 1000)
-                    strike = int(contract_id[-8:]) / 1000.0
-                except Exception:
+                quote = contract.latest_quote
+                oi    = float(getattr(quote, 'open_interest', 0) or 0)
+                iv    = float(getattr(contract, 'implied_volatility',
+                              getattr(quote, 'implied_volatility', 0)) or 0)
+                bid   = float(getattr(quote, 'bid_price', 0) or 0)
+                ask   = float(getattr(quote, 'ask_price', 0) or 0)
+                mid   = (ask + bid) / 2 if ask and bid else 0
+
+                if strike <= 0 or oi <= 0:
                     continue
 
-            opt_type = details.get("type", "call").lower()
-            if "P" in contract_id and opt_type == "call":
-                opt_type = "put"
-            elif "C" in contract_id and opt_type == "put":
-                opt_type = "call"
+                if iv > 0:
+                    ivs.append(iv)
 
-            oi       = float(snap.get("openInterest", snap.get("open_interest", 0)) or 0)
-            volume   = float((snap.get("dailyBar", {}) or {}).get("v", 0) or 0)
-            ask      = float(quote.get("ap", 0) or 0)
-            bid      = float(quote.get("bp", 0) or 0)
-            mid      = (ask + bid) / 2 if ask and bid else 0
+                gamma = bs_gamma(current_price, strike, iv if iv > 0 else 0.20, t_exp)
+                if gamma > 0:
+                    gex_profile.append({
+                        "strike"       : strike,
+                        "type"         : opt_type,
+                        "gamma"        : gamma,
+                        "open_interest": oi,
+                    })
+                    contracts_used += 1
 
-            if strike > 0 and gamma > 0:
-                gex_profile.append({
-                    "strike": strike, "type": opt_type,
-                    "gamma": gamma, "open_interest": oi,
-                })
+                daily_bar = contract.latest_trade
+                volume = float(getattr(daily_bar, 'size', 0) or 0)
+                premium = volume * mid * 100
+                if opt_type == 'call':
+                    total_call_vol += premium
+                else:
+                    total_put_vol += premium
 
-            premium = volume * mid * 100
-            if opt_type == "call":
-                total_call_vol += premium
-            else:
-                total_put_vol += premium
+                if volume > 100 and ask > 0 and mid >= ask * 0.95:
+                    sweeps.append({
+                        "condition"    : "SWEEP",
+                        "position_side": "ASK",
+                        "type"         : opt_type,
+                        "premium"      : premium,
+                    })
 
-            if volume > 100 and ask > 0 and mid >= ask * 0.95:
-                sweeps.append({
-                    "condition": "SWEEP",
-                    "position_side": "ASK",
-                    "type": opt_type,
-                    "premium": premium,
-                })
+            except Exception as e:
+                log.debug(f"GEX {symbol} contract parse error: {e}")
+                continue
 
-        ivs = [float((chain[c].get("greeks", {}) or {}).get("impliedVolatility", 0) or 0)
-               for c in chain if chain[c].get("greeks")]
-        iv_rank = _calc_iv_rank([v for v in ivs if v > 0])
+        log.info(f"GEX {symbol}: {len(chain_data)} contracts fetched, {contracts_used} used for GEX")
+        iv_rank = _calc_iv_rank(ivs)
 
         return {
             "gex_profile"              : gex_profile,
@@ -259,10 +251,10 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
             "iv_rank"                  : iv_rank,
             "option_bid_ask_spread_pct": 0.02,
         }
-    except Exception as e:
-        log.debug(f"Alpaca options fetch error {symbol}: {e}")
-        return {}
 
+    except Exception as e:
+        log.warning(f"Alpaca options fetch error {symbol}: {e}")
+        return {}
 
 def _fetch_unusual_whales(symbol: str, current_price: float) -> dict:
     """
