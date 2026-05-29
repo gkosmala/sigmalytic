@@ -711,8 +711,9 @@ def build_chart(candles, price, nodes, gex_wall=None, call_wall=None, gamma_pivo
     xs=[c.get("t","") if c.get("t","") else str(i) for i,c in enumerate(candles)]
     fig=go.Figure()
     fig.add_trace(go.Candlestick(x=xs,open=opens,high=highs,low=lows,close=closes,name="Price",
-        increasing=dict(line=dict(color=TEAL_DIM,width=1),fillcolor=TEAL_DIM),
-        decreasing=dict(line=dict(color=RED_DIM,width=1),fillcolor=RED_DIM)))
+        increasing=dict(line=dict(color=TEAL_DIM,width=1.5),fillcolor=TEAL_DIM),
+        decreasing=dict(line=dict(color=RED_DIM,width=1.5),fillcolor=RED_DIM),
+        whiskerwidth=0.5))
     for level,label,color,dash in [
         (kl.breakout,f"  {kl.breakout:.2f} Breakout",TEAL_DIM,"dash"),
         (kl.prior_high,f"  {kl.prior_high:.2f} Liquidity",TEAL_DIM,"dot"),
@@ -731,9 +732,9 @@ def build_chart(candles, price, nodes, gex_wall=None, call_wall=None, gamma_pivo
         nodes.get("persons_pivot"), f"  {nodes.get('persons_pivot',0):.2f} PP Pivot",
         "rgba(147,197,253,.6)", "dot"
     )] if isinstance(nodes, dict) and nodes.get("persons_pivot") else []):
-        fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1,opacity=0.75,
+        fig.add_hline(y=level,line_color=color,line_dash=dash,line_width=1.5,opacity=0.85,
                       annotation_text=label,annotation_position="right",
-                      annotation_font=dict(color=color,size=10,family="DM Mono, monospace"))
+                      annotation_font=dict(color=color,size=11,family="DM Mono, monospace"))
     # ── Live GEX Walls ────────────────────────────────────────────────────────
     if call_wall:
         fig.add_hline(y=call_wall, line_color="#ff4a4a", line_dash="solid", line_width=2.5, opacity=0.9,
@@ -748,15 +749,21 @@ def build_chart(candles, price, nodes, gex_wall=None, call_wall=None, gamma_pivo
                       annotation_text=f"  🧱 PUT WALL ${gex_wall:.2f}", annotation_position="right",
                       annotation_font=dict(color="#28c76f", size=11, family="DM Mono, monospace"))
     # ── Live Price ─────────────────────────────────────────────────────────────
-    fig.add_hline(y=price,line_color=BLUE_DIM,line_dash="solid",line_width=1.5,opacity=1,
-                  annotation_text=f"  ${price:.2f} LIVE",annotation_position="right",
-                  annotation_font=dict(color=BLUE_DIM,size=11,family="DM Sans"))
+    fig.add_hline(y=price,line_color=BLUE_DIM,line_dash="solid",line_width=2.5,opacity=1,
+                  annotation_text=f"  ▶ ${price:.2f} LIVE",annotation_position="right",
+                  annotation_font=dict(color=WHITE,size=13,family="DM Sans"))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor=NAVY,
-        font=dict(family="DM Sans",color=TEXT,size=11),
-        xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,showticklabels=False,rangeslider=dict(visible=False),color=MUTED),
-        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",zeroline=False,color=MUTED,side="right",tickformat=".2f",autorange=True),
-        margin=dict(l=0,r=160,t=12,b=12),height=420,showlegend=False,hovermode="x unified",
-        hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=12),dragmode="pan")
+        font=dict(family="DM Mono",color=WHITE,size=12),
+        xaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.06)",zeroline=False,
+                   showticklabels=True,tickfont=dict(size=11,color=MUTED),
+                   rangeslider=dict(visible=False),color=MUTED),
+        yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.06)",zeroline=False,
+                   color=WHITE,side="right",tickformat=".2f",autorange=True,
+                   tickfont=dict(size=12,color=WHITE,family="DM Mono")),
+        margin=dict(l=0,r=180,t=16,b=16),height=520,showlegend=False,
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor=NAVY_CARD,font_color=WHITE,bordercolor=BORDER,font_size=13),
+        dragmode="pan")
     return fig
 
 def build_command_tab(live, candles, symbol, tf):
@@ -833,7 +840,7 @@ def build_command_tab(live, candles, symbol, tf):
                     html.Div([badge(f"Last ${price:.2f}","blue"),html.Span("MODEL: CONFLUENCE ENGINE v1.0",style={"fontSize":"10px","color":MUTED,"fontWeight":"700","letterSpacing":".14em","textTransform":"uppercase"})],style={"display":"flex","alignItems":"center","gap":"10px"}),
                 ],style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","flexWrap":"wrap","marginBottom":"14px","gap":"10px"}),
                 dcc.Graph(figure=fig,config={"displayModeBar":True,"scrollZoom":True,"modeBarButtonsToRemove":["select2d","lasso2d","autoScale2d"],"displaylogo":False},style={"borderRadius":"12px","overflow":"hidden"}),
-            ],sx={"flex":"1.4","minWidth":"0"}),
+            ],sx={"flex":"2","minWidth":"0"}),
             card([
                 slabel("Decision Engine"),
                 html.Div(decision["status"],style={"color":sc,"fontSize":"40px","fontWeight":"900","lineHeight":"1","letterSpacing":"-.02em","margin":"8px 0 4px"}),
