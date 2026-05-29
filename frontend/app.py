@@ -231,9 +231,13 @@ def build_chart(candles, price, nodes, tf="5m"):
     fig.add_trace(go.Candlestick(
         x=xs, open=[c["o"] for c in candles], high=[c["h"] for c in candles],
         low=[c["l"] for c in candles], close=[c["c"] for c in candles], name="Price",
-        increasing=dict(line=dict(color=TEAL_DIM,width=1),fillcolor=TEAL_DIM),
-        decreasing=dict(line=dict(color=RED_DIM,width=1),fillcolor=RED_DIM),
+        increasing=dict(line=dict(color=TEAL_DIM, width=1), fillcolor=TEAL_DIM),
+        decreasing=dict(line=dict(color=RED_DIM,  width=1), fillcolor=RED_DIM),
+        whiskerwidth=0.3,
     ))
+    # Make candles wider — auto width based on data density
+    fig.update_traces(selector=dict(type="candlestick"),
+                      increasing_line_width=2, decreasing_line_width=2)
     # Level lines — no annotations (labels are in the Price Ladder panel)
     for level,color,dash,width in [
         (kl.breakout,   TEAL_DIM,   "dash",    1.0),
@@ -250,16 +254,26 @@ def build_chart(candles, price, nodes, tf="5m"):
     fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
-        font=dict(family="DM Sans", color=TEXT, size=11),
-        xaxis=dict(type="date", showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
-                   rangeslider=dict(visible=False), color=MUTED, showticklabels=True,
-                   tickformat=TF_TICKFMT.get(tf, "%H:%M"),
-                   tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
-                   title=dict(text=f"{tf} · {len(candles)} candles", font=dict(color=MUTED, size=10))),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.08)", zeroline=False,
-                   color=WHITE, side="right", tickformat=".2f",
-                   tickfont=dict(color=WHITE, size=11, family="DM Mono, monospace")),
-        margin=dict(l=0, r=56, t=4, b=0), height=460, showlegend=False,
+        font=dict(family="DM Sans", color=WHITE, size=12),
+        xaxis=dict(
+            type="date", showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
+            rangeslider=dict(visible=False),
+            showticklabels=True,
+            tickformat=TF_TICKFMT.get(tf, "%H:%M"),
+            tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
+            title=dict(text=f"{tf} · {len(candles)} candles",
+                       font=dict(color=WHITE, size=11)),
+            color=WHITE,
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
+            color=WHITE, side="right", tickformat=".2f",
+            tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
+        ),
+        # Enough right margin for y-axis labels, bottom for x-axis labels
+        margin=dict(l=0, r=60, t=8, b=40),
+        height=460,
+        showlegend=False,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
@@ -812,21 +826,21 @@ def build_command_tab(live, candles, symbol, tf):
             slabel("Distance"),
             html.Div([
                 html.Div([
-                    html.Span("↑ Breakout",style={"fontSize":"10px","color":TEXT}),
+                    html.Span("↑ Breakout",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
                     html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
-                              style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
+                              style={"fontSize":"14px","color":TEAL_DIM,"fontWeight":"900"}),
+                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
                 html.Div([
-                    html.Span("↓ Fail Gate",style={"fontSize":"10px","color":TEXT}),
+                    html.Span("↓ Fail Gate",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
                     html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
-                              style={"fontSize":"11px","color":RED_DIM,"fontWeight":"800"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
+                              style={"fontSize":"14px","color":RED_DIM,"fontWeight":"900"}),
+                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
                 html.Div([
-                    html.Span("R/R Ratio",style={"fontSize":"10px","color":TEXT}),
+                    html.Span("R/R Ratio",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
                     html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
-                              style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800"}),
+                              style={"fontSize":"14px","color":YELLOW_DIM,"fontWeight":"900"}),
                 ], style={"display":"flex","justifyContent":"space-between"}),
-            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"10px 12px",
+            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"14px",
                        "border":f"1px solid {BORDER}"}),
         ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
     ], style={"flex":"0 0 230px","minWidth":"0","display":"flex","flexDirection":"column"})
@@ -847,8 +861,9 @@ def build_command_tab(live, candles, symbol, tf):
                    "marginBottom":"6px"}),
         dcc.Graph(figure=fig,
                   config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
-                  style={"borderRadius":"8px","overflow":"hidden","margin":"0 -20px -20px -20px"}),
-    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px"})
+                  style={"borderRadius":"0 0 18px 18px","overflow":"hidden",
+                         "margin":"0 -20px -20px -20px"}),
+    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px","overflow":"hidden"})
 
     # ── Row 1 ─────────────────────────────────────────────────────────────────
     row1 = html.Div([price_ladder, chart_panel],
@@ -1201,9 +1216,7 @@ app.layout = html.Div([
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button("Use Synthetic Feed", id="btn-live", n_clicks=0,
-                            style={"background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px",
-                                   "padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
+                html.Div(id="btn-live", style={"display":"none"}),  # live only
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
         ], style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
 
@@ -1308,13 +1321,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
     return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
 
-@app.callback(
-    Output("s-live-mode","data"), Output("btn-live","children"), Output("sim-label","children"),
-    Input("btn-live","n_clicks"), State("s-live-mode","data"), prevent_initial_call=True,
-)
-def toggle_live(_, current):
-    new = not current
-    return (new, "Use Synthetic Feed" if new else "Use Live Alpaca Feed", "")
+# Live-only mode — no toggle callback needed
 
 @app.callback(
     Output("s-symbol","data"), Output("ticker-input","value"),
