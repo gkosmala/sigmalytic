@@ -20,7 +20,7 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles,
     get_key_levels, build_confluence_nodes, run_decision,
 )
-from preferences_tab import build_preferences_tab, register_preferences_callbacks
+from frontend.preferences_tab import build_preferences_tab, register_preferences_callbacks
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
