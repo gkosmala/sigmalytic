@@ -1286,6 +1286,32 @@ def build_divergence_tab(session=None):
 
 
 def build_billing_tab(session=None, perms=None):
+    def _feature_row(label, value, enabled=True):
+        color = TEAL_DIM if enabled else MUTED
+        icon  = "✓" if enabled else "—"
+        return html.Div([
+            html.Span(f"{icon}  {label}", style={"color": color, "fontSize": "13px"}),
+            html.Span(str(value), style={"color": TEXT, "fontSize": "12px", "marginLeft": "8px"}),
+        ], style={"padding": "8px 0", "borderBottom": f"1px solid {BORDER}"})
+
+    def _badge(text, color=None):
+        color = color or TEAL_DIM
+        return html.Span(text, style={
+            "background": "rgba(45,143,111,.15)", "border": f"1px solid {BORDER_T}",
+            "borderRadius": "20px", "color": color, "fontSize": "11px",
+            "fontWeight": "800", "padding": "4px 12px", "letterSpacing": ".08em",
+        })
+
+    def _metric(label, value, color=None):
+        color = color or WHITE
+        return html.Div([
+            html.Div(label, style={"color": MUTED, "fontSize": "10px", "fontWeight": "800",
+                                   "textTransform": "uppercase", "letterSpacing": ".2em",
+                                   "marginBottom": "6px"}),
+            html.Div(value, style={"color": color, "fontSize": "16px", "fontWeight": "800"}),
+        ], style={"background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
+                  "borderRadius": "12px", "padding": "14px 16px"})
+
     user_id = (session or {}).get("user_id", "")
     email   = (session or {}).get("email", "")
 
@@ -1337,22 +1363,22 @@ def build_billing_tab(session=None, perms=None):
     })
 
     # ── Current plan card (only if logged in and subscribed) ──────────────────
-    plan_card = _card([
+    plan_card = card([
         html.Div([
             html.Div([
                 html.H2(plan_name, style={"color": WHITE, "fontSize": "20px",
                                           "fontWeight": "900", "margin": "0 0 4px"}),
                 html.Div(plan_price, style={"color": TEAL_DIM, "fontSize": "24px",
                                             "fontWeight": "900", "marginBottom": "12px"}),
-                _badge("ACTIVE" if status == "active" else status.upper()),
+                badge("ACTIVE" if status == "active" else status.upper()),
             ]),
         ], style={"marginBottom": "20px"}),
 
         html.Div([
-            _metric("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
-            _metric("Renews",     period_end or "—",        TEXT),
-            _metric("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
-            _metric("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
+            metric_tile("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
+            metric_tile("Renews",     period_end or "—",        TEXT),
+            metric_tile("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
+            metric_tile("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
                                   else f"{features.get('sms_limit',0)}/day"
                                   if features.get("sms_limit",0) > 0 else "None", WHITE),
         ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)",
@@ -1388,7 +1414,7 @@ def build_billing_tab(session=None, perms=None):
     ]) if user_id else html.Div()
 
     # ── Stripe pricing table ───────────────────────────────────────────────────
-    pricing_section = _card([
+    pricing_section = card([
         html.H2("Choose Your Plan", style={"color": WHITE, "fontSize": "18px",
                                             "fontWeight": "900", "marginBottom": "8px"}),
         html.P("Upgrade or change your plan anytime. Cancel anytime.",
@@ -1434,7 +1460,7 @@ def build_billing_tab(session=None, perms=None):
 
     return html.Div([
         # Header
-        _card([
+        card([
             html.H2("💳 Billing & Plans", style={"color": WHITE, "fontSize": "18px",
                                                    "fontWeight": "900", "margin": "0 0 6px"}),
             html.P("Manage your Sigmalytic subscription.",
