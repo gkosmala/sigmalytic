@@ -847,6 +847,7 @@ def build_command_tab(live, candles, symbol, tf):
 
     # ── CENTER: Chart — fills the card tile completely ────────────────────────
     chart_panel = card([
+        # Header row
         html.Div([
             html.Div([
                 html.Span(f"📊 {symbol}  ·  Smart Chart",
@@ -859,11 +860,26 @@ def build_command_tab(live, candles, symbol, tf):
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "marginBottom":"6px"}),
-        dcc.Graph(figure=fig,
-                  config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
-                  style={"borderRadius":"0 0 18px 18px","overflow":"hidden",
-                         "margin":"8px -20px -20px -20px"}),
-    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px",
+
+        # Chart — fills remaining space
+        html.Div(
+            dcc.Graph(figure=fig,
+                      config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
+                      style={"height":"100%"}),
+            style={"flex":"1","margin":"0 -20px 0 -20px","overflow":"hidden"},
+        ),
+
+        # Footer — aligned with Distance box at bottom of price ladder
+        html.Div([
+            html.Span(f"{tf} · {len(candles)} candles",
+                      style={"fontSize":"12px","color":WHITE,"fontWeight":"600",
+                             "fontFamily":"DM Mono, monospace"}),
+            html.Span(f"Vol {live['volume']:,}",
+                      style={"fontSize":"12px","color":MUTED}),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+                   "padding":"10px 0 0 0","borderTop":f"1px solid {BORDER}","marginTop":"8px"}),
+
+    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 12px 20px",
             "overflow":"hidden","display":"flex","flexDirection":"column"})
 
     # ── Row 1 ─────────────────────────────────────────────────────────────────
