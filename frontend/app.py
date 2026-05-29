@@ -821,7 +821,7 @@ def build_command_tab(live, candles, symbol, tf):
             level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
             level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
             level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
-            html.Div(style={"height":"16px"}),
+            html.Div(style={"flex":"1"}),  # pushes Distance to bottom
             html.Hr(style={"border":"none","borderTop":f"1px solid {BORDER}","margin":"0 0 12px"}),
             slabel("Distance"),
             html.Div([
@@ -868,7 +868,8 @@ def build_command_tab(live, candles, symbol, tf):
 
     # ── Row 1 ─────────────────────────────────────────────────────────────────
     row1 = html.Div([price_ladder, chart_panel],
-                    style={**ROW,"alignItems":"stretch","marginBottom":"16px"})
+                    style={"display":"flex","gap":"16px","marginBottom":"16px",
+                           "alignItems":"stretch"})
 
     # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
     row2 = card([
@@ -953,10 +954,10 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
                    "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
         html.Div([
-            zcard("Call Wall","285",f"{cp}% call-side pressure",TEAL_DIM),
-            zcard("Put Wall","275",f"{pp}% put-side pressure",RED_DIM),
-            zcard("Gamma Pivot","280",f"{gp}% dealer sensitivity",YELLOW_DIM),
-            zcard("Vol Trigger","LIVE",f"{vs}% expansion energy",TEAL_DIM),
+            zcard("Call Wall",   f"${round(kl.breakout):.0f}",  f"{cp}% call-side pressure", TEAL_DIM),
+            zcard("Put Wall",    f"${round(kl.fail):.0f}",     f"{pp}% put-side pressure",  RED_DIM),
+            zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
+            zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
         note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
