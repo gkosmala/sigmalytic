@@ -261,8 +261,7 @@ def build_chart(candles, price, nodes, tf="5m"):
             showticklabels=True,
             tickformat=TF_TICKFMT.get(tf, "%H:%M"),
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
-            title=dict(text=f"{tf} · {len(candles)} candles",
-                       font=dict(color=WHITE, size=11)),
+            title=None,
             color=WHITE,
         ),
         yaxis=dict(
@@ -271,7 +270,7 @@ def build_chart(candles, price, nodes, tf="5m"):
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
         ),
         # Enough right margin for y-axis labels, bottom for x-axis labels
-        margin=dict(l=0, r=60, t=8, b=40),
+        margin=dict(l=0, r=60, t=8, b=2),
         height=460,
         showlegend=False,
         hovermode="x unified",
@@ -866,18 +865,19 @@ def build_command_tab(live, candles, symbol, tf):
             dcc.Graph(figure=fig,
                       config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
                       style={"height":"100%"}),
-            style={"flex":"1","margin":"0 -20px 0 -20px","overflow":"hidden"},
+            style={"flex":"1","margin":"0 -20px -8px -20px","overflow":"hidden"},
         ),
 
         # Footer — aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"{tf} · {len(candles)} candles",
-                      style={"fontSize":"12px","color":WHITE,"fontWeight":"600",
+            html.Span(f"{tf}  ·  {len(candles)} candles",
+                      style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
             html.Span(f"Vol {live['volume']:,}",
-                      style={"fontSize":"12px","color":MUTED}),
+                      style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
+                             "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
-                   "padding":"10px 0 0 0","borderTop":f"1px solid {BORDER}","marginTop":"8px"}),
+                   "padding":"8px 0 0 0","borderTop":f"1px solid {BORDER}","marginTop":"4px"}),
 
     ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 12px 20px",
             "overflow":"hidden","display":"flex","flexDirection":"column"})
