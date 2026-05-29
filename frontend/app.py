@@ -258,7 +258,7 @@ def build_chart(candles, price, nodes, tf="5m"):
                    title=dict(text=f"{tf} · {len(candles)} candles", font=dict(color=MUTED, size=10))),
         yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
                    color=MUTED, side="right", tickformat=".2f"),
-        margin=dict(l=0, r=20, t=12, b=36), height=420, showlegend=False,
+        margin=dict(l=0, r=0, t=4, b=0), height=440, showlegend=False,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
@@ -787,14 +787,13 @@ def build_command_tab(live, candles, symbol, tf):
                                  "textTransform":"uppercase","letterSpacing":".08em"}),
             ], style={"flex":"1"}),
             html.Span(f"${level:.2f}",
-                      style={"fontSize":"14px","fontWeight":"900",
-                             "color":WHITE,
+                      style={"fontSize":"14px","fontWeight":"900","color":WHITE,
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
                    "background":bg,"border":bdr})
 
-    # ── LEFT: Price Ladder — fills full height ────────────────────────────────
+    # ── LEFT: Price Ladder ────────────────────────────────────────────────────
     price_ladder = html.Div([
         card([
             slabel("Price Ladder"),
@@ -811,17 +810,17 @@ def build_command_tab(live, candles, symbol, tf):
             slabel("Distance"),
             html.Div([
                 html.Div([
-                    html.Span("↑ Breakout", style={"fontSize":"10px","color":TEXT}),
+                    html.Span("↑ Breakout",style={"fontSize":"10px","color":TEXT}),
                     html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
                               style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
                 ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
                 html.Div([
-                    html.Span("↓ Fail Gate", style={"fontSize":"10px","color":TEXT}),
+                    html.Span("↓ Fail Gate",style={"fontSize":"10px","color":TEXT}),
                     html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
                               style={"fontSize":"11px","color":RED_DIM,"fontWeight":"800"}),
                 ], style={"display":"flex","justifyContent":"space-between","marginBottom":"5px"}),
                 html.Div([
-                    html.Span("R/R Ratio", style={"fontSize":"10px","color":TEXT}),
+                    html.Span("R/R Ratio",style={"fontSize":"10px","color":TEXT}),
                     html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
                               style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800"}),
                 ], style={"display":"flex","justifyContent":"space-between"}),
@@ -830,138 +829,102 @@ def build_command_tab(live, candles, symbol, tf):
         ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
     ], style={"flex":"0 0 195px","minWidth":"0","display":"flex","flexDirection":"column"})
 
-    # ── CENTER: Chart (full width, no right margin) ───────────────────────────
+    # ── CENTER: Chart — fills the card tile completely ────────────────────────
     chart_panel = card([
         html.Div([
             html.Div([
-                html.H2(f"📊 {symbol}  ·  Smart Chart + Live Levels",
-                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 2px"}),
-                html.P(f"Last update {live_age}  ·  Vol {live['volume']:,}  ·  {tf}  ·  Regime: {regime.replace('_',' ').title()}",
-                       style={"fontSize":"11px","color":TEXT}),
+                html.Span(f"📊 {symbol}  ·  Smart Chart",
+                          style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
+                html.Span(f"  {live_age}  ·  {tf}  ·  {regime.replace('_',' ').title()}",
+                          style={"fontSize":"10px","color":MUTED}),
             ]),
-            html.Div([badge(f"Last ${price:.2f}","blue"),
-                      html.Span("CONFLUENCE ENGINE v1.0",
-                                style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                                       "letterSpacing":".12em","textTransform":"uppercase"})],
-                     style={"display":"flex","alignItems":"center","gap":"10px"}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
-                   "flexWrap":"wrap","marginBottom":"10px","gap":"8px"}),
+            html.Span(f"${price:.2f}",
+                      style={"fontSize":"14px","fontWeight":"900","color":WHITE,
+                             "fontFamily":"DM Mono, monospace"}),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+                   "marginBottom":"6px"}),
         dcc.Graph(figure=fig,
-                  config={"displayModeBar":True,"scrollZoom":True,
-                          "modeBarButtonsToRemove":["select2d","lasso2d","autoScale2d"],
-                          "displaylogo":False},
-                  style={"borderRadius":"12px","overflow":"hidden"}),
-    ], sx={"flex":"1","minWidth":"0"})
+                  config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
+                  style={"borderRadius":"8px","overflow":"hidden","margin":"0 -20px -20px -20px"}),
+    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 0 20px"})
 
-    # ── Row 1: Price Ladder + Chart ───────────────────────────────────────────
+    # ── Row 1 ─────────────────────────────────────────────────────────────────
     row1 = html.Div([price_ladder, chart_panel],
                     style={**ROW,"alignItems":"stretch","marginBottom":"16px"})
 
-    # ── Row 2: Decision Engine (full width horizontal strip) ──────────────────
+    # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
     row2 = card([
         html.Div([
-            # Signal status
+
+            # Column A — Decision Engine signal
             html.Div([
                 slabel("Decision Engine"),
                 html.Div(decision["status"],
-                         style={"color":sc,"fontSize":"30px","fontWeight":"900",
-                                "lineHeight":"1","letterSpacing":"-.02em","marginTop":"6px"}),
+                         style={"color":sc,"fontSize":"28px","fontWeight":"900",
+                                "lineHeight":"1","letterSpacing":"-.02em","margin":"6px 0 4px"}),
                 html.Div(f"LIVE STATE: {decision['behavior']}",
                          style={"fontSize":"9px","fontWeight":"800","color":TEXT,
-                                "textTransform":"uppercase","letterSpacing":".12em","marginTop":"5px"}),
-            ], style={"flex":"0 0 150px","minWidth":"0"}),
-
-            # Execution directive
-            html.Div([
-                slabel("Execution Directive"),
+                                "textTransform":"uppercase","letterSpacing":".1em","marginBottom":"8px"}),
                 html.Div(decision["next_action"],
-                         style={"color":WHITE,"fontSize":"12px","fontWeight":"700",
-                                "lineHeight":"1.5","marginTop":"4px"}),
-                html.P(f"${price:.2f}  ·  {top.get('public_label','—')} {top.get('score',0)}%",
-                       style={"fontSize":"10px","color":TEXT,"marginTop":"3px"}),
-            ], style={"flex":"1.5","minWidth":"140px"}),
-
-            # Signal strength + metrics grid
-            html.Div([
+                         style={"color":TEXT,"fontSize":"11px","fontWeight":"600",
+                                "lineHeight":"1.5","marginBottom":"6px"}),
                 pbar("Signal Strength", score),
+                html.Div(style={"height":"8px"}),
                 html.Div([
                     metric_tile("Bias",       decision["bias"],       sc),
                     metric_tile("Grade",      decision["grade"],      sc),
                     metric_tile("Confidence", decision["confidence"], sc),
                     metric_tile("Mode",       decision["mode"],       BLUE_DIM),
-                ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr 1fr",
-                           "gap":"8px","marginTop":"10px"}),
-            ], style={"flex":"2","minWidth":"200px"}),
+                ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"6px"}),
+            ], style={"flex":"1.2","minWidth":"160px",
+                       "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
-            # Probability ladder inline
+            # Column B — Trade Card
+            html.Div([
+                slabel("Trade Card"),
+                html.Div(style={"height":"6px"}),
+                html.Div([
+                    html.Span("Bias  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                                              "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(decision["bias"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"8px"}),
+                html.Div([
+                    html.Span("Setup  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                                               "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(decision["status"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"8px"}),
+                html.Div([
+                    html.Span("Size  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                                              "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"10px"}),
+                note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.","yellow"),
+            ], style={"flex":"1","minWidth":"140px",
+                       "borderRight":f"1px solid {BORDER}","padding":"0 16px"}),
+
+            # Column C — Probability Ladder
             html.Div([
                 slabel("Probability Ladder"),
-                html.Div(style={"height":"4px"}),
+                html.Div(style={"height":"6px"}),
                 brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
                 html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
                 html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Hold / Balance", score, "neutral"),
                 html.P(f"Level ${kl.confirm:.2f}",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"5px"}),
+                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Failure Gate", 100-score, "down"),
                 html.P(f"Level ${kl.fail:.2f}",
                        style={"fontSize":"9px","color":MUTED,"marginTop":"-3px"}),
-            ], style={"flex":"1.2","minWidth":"160px"}),
+            ], style={"flex":"1.5","minWidth":"180px","paddingLeft":"16px"}),
 
-        ], style={"display":"flex","gap":"16px","alignItems":"flex-start","flexWrap":"wrap"}),
+        ], style={"display":"flex","gap":"0","alignItems":"flex-start","flexWrap":"wrap"}),
     ], sx={"marginBottom":"16px"})
 
-    # ── Row 3: Trade Card + Probability Ladder ───────────────────────────────
-    row3 = html.Div([
-        # Trade Card (Tactical Box)
-        card([
-            html.H2("🎯 Trade Card",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-            html.Div([
-                slabel("Bias"),
-                html.Div(decision["bias"],
-                         style={"color":sc,"fontSize":"22px","fontWeight":"900","marginTop":"4px","marginBottom":"12px"}),
-            ]),
-            html.Div([
-                slabel("Setup"),
-                html.Div(decision["status"],
-                         style={"color":sc,"fontSize":"18px","fontWeight":"900","marginTop":"4px","marginBottom":"12px"}),
-            ]),
-            html.Div([
-                slabel("Suggested Size"),
-                html.Div(size,
-                         style={"color":sc,"fontSize":"28px","fontWeight":"900",
-                                "letterSpacing":"-.01em","marginTop":"4px","marginBottom":"10px"}),
-            ]),
-            note_box("Entry logic: tactical only above trigger; A-grade requires live-volume expansion.","yellow"),
-            html.P(f"Reference: ${price:.2f}",
-                   style={"fontSize":"11px","color":MUTED,"marginTop":"8px"}),
-        ], sx={"flex":"1"}),
-
-        # Probability Ladder
-        card([
-            html.H2("🪜 Probability Ladder",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
-            brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
-            html.P(f"Level ${nodes[0]['level']:.2f}  ·  Current ${price:.2f}" if nodes else "",
-                   style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px"}),
-            brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
-            html.P(f"Level ${nodes[1]['level']:.2f}  ·  Current ${price:.2f}" if len(nodes)>1 else "",
-                   style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px"}),
-            brow("Hold / Balance", score, "neutral"),
-            html.P(f"Level ${kl.confirm:.2f}  ·  Current ${price:.2f}",
-                   style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px"}),
-            brow("Failure Gate", 100-score, "down"),
-            html.P(f"Level ${kl.fail:.2f}  ·  Current ${price:.2f}",
-                   style={"fontSize":"10px","color":MUTED,"marginTop":"-4px"}),
-        ], sx={"flex":"2"}),
-    ], style={**ROW,"alignItems":"start"})
-
-    # ── Row 4: Options Matrix ─────────────────────────────────────────────────
-    row4 = card([
+    # ── Row 3: Options Matrix ─────────────────────────────────────────────────
+    row3 = card([
         html.Div([
             html.Div([
                 html.H2("🧱 Dynamic Options Matrix + Flow Map",
@@ -980,18 +943,30 @@ def build_command_tab(live, candles, symbol, tf):
         note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
-    # ── Row 5: Time Engine + Alerts + Footer bar ──────────────────────────────
-    row5 = html.Div([
+    # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
+    # Clock with white text
+    EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
+    minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
+    phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
+             else "Midday Auction" if minutes<840 else "Closing Auction")
+    phase_color = TEAL_DIM if in_sess else MUTED
+
+    row4 = html.Div([
         card([
             html.H2("⏱️ Time Engine",
-                    style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 12px"}),
-            *_build_clock_inline(),
+                    style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0 0 12px"}),
+            html.Div(now.strftime("%I:%M:%S %p")+" ET",
+                     style={"fontSize":"22px","fontWeight":"900","color":WHITE,
+                            "fontFamily":"DM Mono, monospace","marginBottom":"8px"}),
+            html.Div(phase,
+                     style={"fontSize":"13px","fontWeight":"800","color":phase_color,"marginBottom":"8px"}),
+            note_box("Future: economic releases, auction windows, proprietary cycle layers."),
         ], sx={"flex":"1"}),
 
         card([
             html.Div([
                 html.H2("🔔 Visual + Audio Alerts",
-                        style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
+                        style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0"}),
                 html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
                     style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                            "borderRadius":"20px","padding":"4px 12px","fontSize":"11px",
@@ -1005,7 +980,7 @@ def build_command_tab(live, candles, symbol, tf):
             }),
             html.Div([
                 html.Span(f"Score: {score}",
-                          style={"fontSize":"11px","color":TEXT,"marginTop":"8px","display":"block"}),
+                          style={"fontSize":"11px","color":WHITE,"marginTop":"8px","display":"block","fontWeight":"700"}),
                 html.Span(
                     "🔴 Trap Door" if score<35 else
                     ("🟢 A-Grade — Audio Active" if score>=80 else
@@ -1016,15 +991,15 @@ def build_command_tab(live, candles, symbol, tf):
         ], sx={"flex":"1"}),
 
         card([html.Div([
-            metric_tile("Symbol",      symbol,                           BLUE_DIM),
-            metric_tile("Live Price",  f"${price:.2f}",                 TEAL_DIM),
-            metric_tile("Engine Score",f"{score}%",                     sc),
-            metric_tile("Regime",      regime.replace("_"," ").title(), YELLOW_DIM),
+            metric_tile("Symbol",       symbol,                           WHITE),
+            metric_tile("Live Price",   f"${price:.2f}",                 WHITE),
+            metric_tile("Engine Score", f"{score}%",                     sc),
+            metric_tile("Regime",       regime.replace("_"," ").title(), YELLOW_DIM),
         ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"10px"})], sx={"flex":"1"}),
 
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
-    return html.Div([row1, row2, row3, row4, row5],
+    return html.Div([row1, row2, row3, row4],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -1193,8 +1168,7 @@ app.layout = html.Div([
                 html.Div([
                     html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",
                              style={"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".32em","color":TEAL_DIM}),
-                    html.Div(id="sim-label",
-                             style={"fontSize":"10px","fontWeight":"700","textTransform":"uppercase","letterSpacing":".18em","color":BLUE_DIM,"marginTop":"3px"}),
+                    html.Div(id="sim-label", style={"display":"none"}),
                 ], style={"textAlign":"center"}),
                 html.Div(style={"width":"120px"}),
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","width":"100%","marginBottom":"6px"}),
@@ -1338,9 +1312,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
 )
 def toggle_live(_, current):
     new = not current
-    return (new, "Use Synthetic Feed" if new else "Use Live Alpaca Feed",
-            "LIVE MARKET FEED · ALPACA IEX · SYNTHETIC OPTIONS INTELLIGENCE" if new
-            else "SIMULATION MODE · SYNTHETIC FEED · CONTROLLED ENVIRONMENT")
+    return (new, "Use Synthetic Feed" if new else "Use Live Alpaca Feed", "")
 
 @app.callback(
     Output("s-symbol","data"), Output("ticker-input","value"),
@@ -1451,12 +1423,10 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
 )
 def render_price_ctrl(live_mode, live):
     price=live["price"] if live else 280.15
-    color=TEAL_DIM if live_mode else BLUE_DIM; border=BORDER_T if live_mode else BORDER
-    label="Live Price" if live_mode else "Sim Price"
     return html.Div([
-        html.Span(label,style={"fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
-        html.Strong(f"${price:.2f}",style={"fontSize":"17px","color":color,"fontWeight":"900"}),
-    ], style={"background":NAVY_MID,"border":f"1px solid {border}","borderRadius":"12px",
+        html.Span("LIVE PRICE",style={"fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+        html.Strong(f"${price:.2f}",style={"fontSize":"17px","color":WHITE,"fontWeight":"900"}),
+    ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}","borderRadius":"12px",
                "padding":"8px 14px","width":"130px","minHeight":"50px","display":"flex","flexDirection":"column","justifyContent":"center"})
 
 @app.callback(
@@ -1466,7 +1436,7 @@ def render_price_ctrl(live_mode, live):
 def update_badges(live, live_mode):
     seq = live["sequence"] if live else 0
     return (badge("LIVE" if live_mode else "SIM","teal" if live_mode else "gray"),
-            badge("Alpaca IEX" if live_mode else "Synthetic Feed","blue"),
+            badge("Alpaca IEX" if live_mode else "Live Data","blue"),
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
