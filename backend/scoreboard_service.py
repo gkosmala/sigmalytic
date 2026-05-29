@@ -117,23 +117,81 @@ def _is_market_hours() -> bool:
     return market_open <= et < market_close
 
 
+# Setup types with strong R/R — always log if score threshold met
+HIGH_RR_SETUPS = {
+    "Compression Breakout Candidate",
+    "Momentum Leader",
+    "Trend Continuation",
+}
+
+# Minimum score by setup type
+def _meets_score_threshold(setup_type: str, score: float) -> bool:
+    """
+    Springs and Upthrusts (Wyckoff) have best R/R — log at 70+
+    Standard setups require 75+
+    Everything else requires 80+
+    """
+    if not score or score <= 0:
+        return False
+    setup = (setup_type or "").lower()
+    # Wyckoff spring/upthrust — best R/R, lower threshold
+    if "spring" in setup or "upthrust" in setup:
+        return score >= 70
+    # High R/R setups
+    if setup_type in HIGH_RR_SETUPS:
+        return score >= 75
+    # All other setups
+    return score >= 80
+
+
+def _regime_aligned(signal_type: str, regime: str) -> bool:
+    """Only log when signal direction aligns with regime."""
+    if not regime:
+        return True  # no regime data, allow through
+    regime_lower = regime.lower()
+    is_short = "Short" in signal_type
+    is_long  = not is_short
+
+    # Bull regimes — only log longs
+    if any(r in regime_lower for r in ["bull", "expansion", "recovery", "trend"]):
+        return is_long
+    # Bear regimes — only log shorts
+    if any(r in regime_lower for r in ["bear", "distribution", "volatility shock"]):
+        return is_short
+    # Neutral/compression — log both
+    return True
+
+
 def log_signal(sym: dict, signal_type: str):
     """
     Log a new signal to scoreboard_signals.
-    Uses database dedup — skips if same symbol+type logged within 2 hours.
-    Survives backend restarts unlike in-memory tracking.
-    Only logs during NYSE market hours (9:30 AM - 4:00 PM ET, Mon-Fri).
+    Only logs HIGH QUALITY signals:
+    - During NYSE market hours (9:30 AM - 4:00 PM ET, Mon-Fri)
+    - Score meets threshold by setup type (70-80 minimum)
+    - Regime aligned with signal direction
+    - No duplicate within 2 hours
     """
     symbol = sym.get("symbol", "")
     if not symbol or not DATABASE_URL:
         return
 
-    # Only log during market hours — pre/after-market signals skew win rates
+    # Only log during market hours
     if not _is_market_hours():
         return
 
     # Only log important signal types
     if signal_type not in SCOREBOARD_SIGNAL_TYPES:
+        return
+
+    # Score threshold by setup type
+    score      = float(sym.get("composite_score", 0) or 0)
+    setup_type = sym.get("setup_type", "")
+    if not _meets_score_threshold(setup_type, score):
+        return
+
+    # Regime alignment check
+    regime = sym.get("regime", "")
+    if not _regime_aligned(signal_type, regime):
         return
 
     # Database-backed deduplication — restart-safe
