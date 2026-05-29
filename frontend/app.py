@@ -256,9 +256,10 @@ def build_chart(candles, price, nodes, tf="5m"):
                    tickformat=TF_TICKFMT.get(tf, "%H:%M"),
                    tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
                    title=dict(text=f"{tf} · {len(candles)} candles", font=dict(color=MUTED, size=10))),
-        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.04)", zeroline=False,
-                   color=MUTED, side="right", tickformat=".2f"),
-        margin=dict(l=0, r=0, t=4, b=0), height=440, showlegend=False,
+        yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,.08)", zeroline=False,
+                   color=WHITE, side="right", tickformat=".2f",
+                   tickfont=dict(color=WHITE, size=11, family="DM Mono, monospace")),
+        margin=dict(l=0, r=56, t=4, b=0), height=460, showlegend=False,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
@@ -783,11 +784,11 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(arrow+" " if arrow else "",
                           style={"color":color,"fontWeight":"900","fontSize":"11px","marginRight":"2px"}),
                 html.Span(label,
-                          style={"fontSize":"10px","fontWeight":"700","color":TEXT,
+                          style={"fontSize":"11px","fontWeight":"700","color":TEXT,
                                  "textTransform":"uppercase","letterSpacing":".08em"}),
             ], style={"flex":"1"}),
             html.Span(f"${level:.2f}",
-                      style={"fontSize":"14px","fontWeight":"900","color":WHITE,
+                      style={"fontSize":"16px","fontWeight":"900","color":WHITE,
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
@@ -806,7 +807,8 @@ def build_command_tab(live, candles, symbol, tf):
             level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
             level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
             level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
-            html.Div(style={"height":"10px"}),
+            html.Div(style={"height":"16px"}),
+            html.Hr(style={"border":"none","borderTop":f"1px solid {BORDER}","margin":"0 0 12px"}),
             slabel("Distance"),
             html.Div([
                 html.Div([
@@ -827,7 +829,7 @@ def build_command_tab(live, candles, symbol, tf):
             ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"10px 12px",
                        "border":f"1px solid {BORDER}"}),
         ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
-    ], style={"flex":"0 0 195px","minWidth":"0","display":"flex","flexDirection":"column"})
+    ], style={"flex":"0 0 230px","minWidth":"0","display":"flex","flexDirection":"column"})
 
     # ── CENTER: Chart — fills the card tile completely ────────────────────────
     chart_panel = card([
@@ -1146,7 +1148,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
-    dcc.Store(id="s-live-mode", data=False),
+    dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="command"),
@@ -1199,7 +1201,7 @@ app.layout = html.Div([
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-                html.Button("Use Live Alpaca Feed", id="btn-live", n_clicks=0,
+                html.Button("Use Synthetic Feed", id="btn-live", n_clicks=0,
                             style={"background":WHITE,"color":NAVY,"border":"none","borderRadius":"12px",
                                    "padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
@@ -1435,8 +1437,8 @@ def render_price_ctrl(live_mode, live):
 )
 def update_badges(live, live_mode):
     seq = live["sequence"] if live else 0
-    return (badge("LIVE" if live_mode else "SIM","teal" if live_mode else "gray"),
-            badge("Alpaca IEX" if live_mode else "Live Data","blue"),
+    return (badge("LIVE","teal"),
+            badge("Alpaca IEX" if live_mode else "Data Feed","blue"),
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
