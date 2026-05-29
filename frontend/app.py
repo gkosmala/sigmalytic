@@ -1071,6 +1071,16 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_stub_tab(title, description):
+    """Placeholder for tabs under development."""
+    return card([
+        html.H2(title, style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        note_box(description, "blue"),
+        html.Div(style={"height":"12px"}),
+        note_box("This feature is under active development and will be available in an upcoming release.", "yellow"),
+    ])
+
+
 def build_setup_tab():
     return card([
         html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
@@ -1169,12 +1179,18 @@ _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = _scaled_candles(280.15, "5m")
 
 ALL_TABS = [
-    ("command",    "Command Center"),
-    ("feed",       "Live Feed"),
-    ("performance","Performance"),
-    ("behavior",   "Behavioral Intelligence"),
-    ("import",     "Import History"),
-    ("setup",      "Setup"),
+    ("command",     "Command Center"),
+    ("feed",        "Live Feed"),
+    ("performance", "Performance"),
+    ("behavior",    "Behavioral Intelligence"),
+    ("import",      "Import History"),
+    ("radar",       "Radar Screen"),
+    ("scoreboard",  "Scoreboard"),
+    ("divergence",  "🔍 Divergence"),
+    ("billing",     "Billing"),
+    ("preferences", "Preferences"),
+    ("admin",       "Admin"),
+    ("setup",       "Setup"),
 ]
 
 app.layout = html.Div([
@@ -1198,29 +1214,29 @@ app.layout = html.Div([
 
     html.Div([html.Div([
         html.Header([
+            # ── Compact single-row header ──────────────────────────────────
             html.Div([
                 LOGO,
                 html.Div([
-                    html.Div("SIGMALYTIC SYSTEM // DECISION LAYER",
-                             style={"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".32em","color":TEAL_DIM}),
-                    html.Div(id="sim-label", style={"display":"none"}),
+                    html.H1("Decision Command Center",
+                            style={"fontSize":"22px","fontWeight":"900","color":WHITE,
+                                   "letterSpacing":"-.02em","margin":"0"}),
+                    html.Div([
+                        html.Span(id="b-connected"),
+                        html.Span(id="b-feed"),
+                        html.Span(id="b-tick"),
+                    ], style={"display":"flex","gap":"6px","marginTop":"4px"}),
                 ], style={"textAlign":"center"}),
-                html.Div(style={"width":"120px"}),
-            ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","width":"100%","marginBottom":"6px"}),
-            html.P("Real-time decision intelligence — scores, interprets, and projects market behavior via multi-layer confluence.",
-                   style={"fontSize":"12px","color":MUTED,"textAlign":"center","maxWidth":"640px","margin":"0 auto"}),
-            html.P("Powered by Confluence Engine · Expansion Node Modeling · Forward Projection Layer · Behavioral Intelligence",
-                   style={"fontSize":"11px","color":"#475569","textAlign":"center","letterSpacing":".06em","marginTop":"4px"}),
-            html.Hr(style={"border":"none","height":"1px","background":BORDER,"width":"60%","margin":"12px auto 0"}),
-            html.Div([
-                html.H1("Decision Command Center",
-                        style={"fontSize":"30px","fontWeight":"900","lineHeight":"1","letterSpacing":"-.02em","color":WHITE}),
-                html.Span(id="b-connected"), html.Span(id="b-feed"), html.Span(id="b-tick"),
-            ], style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
+                html.Div(id="sim-label", style={"display":"none"}),
+            ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+                       "width":"100%","marginBottom":"8px"}),
+
+            # ── Controls row ───────────────────────────────────────────────
             html.Div([
                 dcc.Input(id="ticker-input", value="AAPL", debounce=False,
-                          style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}","borderRadius":"12px",
-                                 "padding":"10px 14px","width":"120px","fontSize":"14px","fontWeight":"700"}),
+                          style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
+                                 "borderRadius":"12px","padding":"10px 14px","width":"110px",
+                                 "fontSize":"14px","fontWeight":"700"}),
                 html.Button("Load Symbol", id="btn-load", n_clicks=0,
                             style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                                    "borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
@@ -1234,9 +1250,10 @@ app.layout = html.Div([
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
-
-            ], style={"display":"flex","flexWrap":"wrap","alignItems":"center","justifyContent":"center","gap":"10px"}),
-        ], style={"display":"flex","flexDirection":"column","alignItems":"center","gap":"14px","paddingBottom":"4px"}),
+            ], style={"display":"flex","flexWrap":"wrap","alignItems":"center",
+                       "justifyContent":"center","gap":"10px"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                   "gap":"8px","paddingBottom":"0"}),
 
         html.Nav([
             html.Button(label, id=f"tab-{key}", n_clicks=0,
@@ -1356,9 +1373,12 @@ def load_symbol(_, ticker, live):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-command","n_clicks"), Input("tab-feed","n_clicks"),
-    Input("tab-performance","n_clicks"), Input("tab-behavior","n_clicks"),
-    Input("tab-import","n_clicks"), Input("tab-setup","n_clicks"),
+    Input("tab-command","n_clicks"),      Input("tab-feed","n_clicks"),
+    Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
+    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
+    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
+    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
+    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
@@ -1502,6 +1522,12 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="import":      main = build_import_tab()
+    elif tab=="radar":       main = build_stub_tab("📡 Radar Screen", "Multi-symbol signal scanner. Monitors all watched symbols for A-grade setups in real time.")
+    elif tab=="scoreboard":  main = build_stub_tab("🏆 Scoreboard", "Leaderboard of decision scores across all logged trades. Tracks your best and worst sessions.")
+    elif tab=="divergence":  main = build_stub_tab("🔍 Divergence", "Divergence watchlist — symbols where price and behavioral score are moving in opposite directions.")
+    elif tab=="billing":     main = build_stub_tab("💳 Billing", "Subscription management, usage credits, and account settings.")
+    elif tab=="preferences": main = build_stub_tab("⚙️ Preferences", "Customize your signal thresholds, alert settings, watchlist, and display preferences.")
+    elif tab=="admin":       main = build_stub_tab("🔐 Admin", "Platform administration — user management, system health, audit logs, and feature flags.")
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
