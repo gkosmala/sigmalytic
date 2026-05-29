@@ -138,19 +138,20 @@ def _cache_set(key: str, data: dict, ttl: int = GEX_CACHE_TTL):
 def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
     """
     Fetches options chain from Alpaca using the official SDK.
-    
-    Two-step approach:
-    1. Fetch OI from contracts metadata endpoint (static, updated daily at open)
-    2. Fetch Greeks/IV from snapshots (real-time)
-    3. Calculate GEX using real OI x real Gamma for accurate wall detection
+    Uses OptionChainRequest which returns OI and IV needed for proper GEX calculation.
+    Calculates Gamma using Black-Scholes from IV.
     """
     try:
         import numpy as np
         import scipy.stats as si
-        import requests as _req
         from datetime import datetime, timedelta
         from alpaca.data.historical import OptionHistoricalDataClient
         from alpaca.data.requests import OptionChainRequest
+
+        client = OptionHistoricalDataClient(
+            api_key=ALPACA_API_KEY,
+            secret_key=ALPACA_API_SECRET,
+        )
 
         today = datetime.now()
         exp_from = (today + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -158,45 +159,6 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
         strike_low  = current_price * 0.90
         strike_high = current_price * 1.10
 
-        # ── Step 1: Fetch OI from contracts metadata endpoint ─────────────────
-        # This endpoint returns static EOD OI — updated once per morning
-        # This is the structural dealer inventory we need for accurate walls
-        oi_map = {}
-        try:
-            r_oi = _req.get(
-                f"{ALPACA_BASE_URL}/v1beta1/options/contracts",
-                headers={
-                    "APCA-API-KEY-ID"    : ALPACA_API_KEY,
-                    "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-                },
-                params={
-                    "underlying_symbols"  : symbol,
-                    "expiration_date_gte" : exp_from,
-                    "expiration_date_lte" : exp_to,
-                    "strike_price_gte"    : strike_low,
-                    "strike_price_lte"    : strike_high,
-                    "limit"               : 1000,
-                },
-                timeout=15,
-            )
-            if r_oi.status_code == 200:
-                contracts_meta = r_oi.json().get("option_contracts", [])
-                for c in contracts_meta:
-                    sym_key = c.get("symbol", "")
-                    oi_val  = int(c.get("open_interest", 0) or 0)
-                    if sym_key and oi_val > 0:
-                        oi_map[sym_key] = oi_val
-                log.info(f"GEX {symbol}: OI fetched for {len(oi_map)} contracts")
-            else:
-                log.warning(f"GEX {symbol}: OI endpoint status {r_oi.status_code}: {r_oi.text[:200]}")
-        except Exception as oi_err:
-            log.warning(f"GEX {symbol}: OI fetch error: {oi_err}")
-
-        # ── Step 2: Fetch real-time snapshots for Greeks/IV ───────────────────
-        client = OptionHistoricalDataClient(
-            api_key=ALPACA_API_KEY,
-            secret_key=ALPACA_API_SECRET,
-        )
         req = OptionChainRequest(
             underlying_symbol=symbol,
             expiration_date_gte=exp_from,
@@ -222,71 +184,47 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
             except Exception:
                 return 0.0
 
-        def parse_contract_symbol(sym):
-            """Parse strike and type from OCC symbol e.g. SPY260603C00770000"""
-            try:
-                for i, ch in enumerate(sym):
-                    if ch in ("C", "P") and i > 3:
-                        opt_type = "call" if ch == "C" else "put"
-                        strike = int(sym[i+1:]) / 1000.0
-                        return strike, opt_type
-            except Exception:
-                pass
-            return 0.0, "call"
-
-        # ── Step 3: Build GEX profile using real OI x real Gamma ─────────────
         gex_profile    = []
         sweeps         = []
         ivs            = []
         total_call_vol = 0.0
         total_put_vol  = 0.0
         contracts_used = 0
-        contracts_no_oi = 0
 
         for contract_symbol, contract in chain_data.items():
             try:
-                strike, opt_type = parse_contract_symbol(contract_symbol)
-                if strike <= 0:
-                    continue
+                strike   = float(getattr(contract.option_contract, 'strike', 0) or 0)
+                opt_type = str(getattr(contract.option_contract, 'type', 'call')).lower()
+                opt_type = 'put' if 'put' in opt_type else 'call'
 
-                # Get real OI from metadata map
-                oi = oi_map.get(contract_symbol, 0)
-                if oi <= 0:
-                    contracts_no_oi += 1
-                    continue  # Skip — no structural OI means no real wall contribution
+                quote = contract.latest_quote
+                # OI is at top level on OptionSnapshot, not in latest_quote
+                oi    = float(getattr(contract, 'open_interest', 0) or 0)
+                iv    = float(getattr(contract, 'implied_volatility', 0) or 0)
+                bid   = float(getattr(quote, 'bid_price', 0) or 0)
+                ask   = float(getattr(quote, 'ask_price', 0) or 0)
+                mid   = (ask + bid) / 2 if ask and bid else 0
 
-                iv = float(getattr(contract, "implied_volatility", 0) or 0)
-
-                # Use SDK greeks if available, else Black-Scholes
-                greeks = getattr(contract, "greeks", None)
-                if greeks and getattr(greeks, "gamma", None):
-                    gamma = float(greeks.gamma or 0)
-                else:
-                    gamma = bs_gamma(current_price, strike, iv if iv > 0 else 0.20, t_exp)
-
-                if gamma <= 0:
+                if strike <= 0 or oi <= 0:
                     continue
 
                 if iv > 0:
                     ivs.append(iv)
 
-                gex_profile.append({
-                    "strike"       : strike,
-                    "type"         : opt_type,
-                    "gamma"        : gamma,
-                    "open_interest": oi,
-                })
-                contracts_used += 1
+                gamma = bs_gamma(current_price, strike, iv if iv > 0 else 0.20, t_exp)
+                if gamma > 0:
+                    gex_profile.append({
+                        "strike"       : strike,
+                        "type"         : opt_type,
+                        "gamma"        : gamma,
+                        "open_interest": oi,
+                    })
+                    contracts_used += 1
 
-                latest_quote = getattr(contract, "latest_quote", None)
-                latest_trade = getattr(contract, "latest_trade", None)
-                bid   = float(getattr(latest_quote, "bid_price", 0) or 0) if latest_quote else 0
-                ask   = float(getattr(latest_quote, "ask_price", 0) or 0) if latest_quote else 0
-                mid   = (ask + bid) / 2 if ask and bid else 0
-                volume = float(getattr(latest_trade, "size", 0) or 0) if latest_trade else 0
+                daily_bar = contract.latest_trade
+                volume = float(getattr(daily_bar, 'size', 0) or 0)
                 premium = volume * mid * 100
-
-                if opt_type == "call":
+                if opt_type == 'call':
                     total_call_vol += premium
                 else:
                     total_put_vol += premium
@@ -303,7 +241,7 @@ def _fetch_alpaca_options(symbol: str, current_price: float) -> dict:
                 log.debug(f"GEX {symbol} contract parse error: {e}")
                 continue
 
-        log.info(f"GEX {symbol}: {len(chain_data)} snapshots, {contracts_used} with real OI used, {contracts_no_oi} skipped (no OI)")
+        log.info(f"GEX {symbol}: {len(chain_data)} contracts fetched, {contracts_used} used for GEX")
         iv_rank = _calc_iv_rank(ivs)
 
         return {
@@ -717,3 +655,4 @@ def score_gex(symbol: str, price: float,
             "gex_available": False,
             "gex_notes"    : [f"GEX engine error: {e}"],
         }
+
