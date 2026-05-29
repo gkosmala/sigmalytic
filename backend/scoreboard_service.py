@@ -175,28 +175,42 @@ def log_signal(sym: dict, signal_type: str):
 # ── Outcome grading ────────────────────────────────────────────────────────────
 
 def _fetch_close_price(symbol: str) -> Optional[float]:
-    """Fetch the most recent completed closing price from Alpaca.
-    Requests 2 bars so we always get yesterday's close even pre-market."""
+    """Fetch the most recent closing price.
+    First tries RADAR_CACHE (already loaded in memory),
+    then falls back to direct Alpaca API call."""
+
+    # Try RADAR_CACHE first
+    try:
+        from radar_service import RADAR_CACHE
+        cached = RADAR_CACHE.get(symbol.upper())
+        if cached:
+            price = cached.get("price")
+            if price and float(price) > 0:
+                log.info(f"Price fetch {symbol}: used RADAR_CACHE ${price}")
+                return float(price)
+    except Exception as e:
+        log.warning(f"RADAR_CACHE fetch error {symbol}: {e}")
+
+    # Fall back to Alpaca
     try:
         r = _req.get(
             f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
             headers=_alpaca_headers(),
             params={
                 "timeframe": "1Day",
-                "limit":     2,
+                "limit":     3,
                 "feed":      ALPACA_FEED,
                 "sort":      "desc",
             },
             timeout=10,
         )
+        log.info(f"Alpaca bars {symbol}: status={r.status_code} body={r.text[:200]}")
         if r.status_code == 200:
             bars = r.json().get("bars") or []
             for bar in bars:
                 close = float(bar.get("c", 0))
                 if close > 0:
                     return close
-        else:
-            log.warning(f"Price fetch {symbol}: status {r.status_code}")
     except Exception as e:
         log.warning(f"Price fetch error {symbol}: {e}")
     return None
