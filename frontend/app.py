@@ -2184,6 +2184,7 @@ ALL_TABS = [
 
 app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
+    dcc.Store(id="s-session",   data={"user_id":"demo_user_001","email":""}), 
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
     dcc.Store(id="s-live-mode", data=True),
@@ -2216,7 +2217,14 @@ app.layout = html.Div([
                         html.Span(id="b-tick"),
                     ], style={"display":"flex","gap":"6px","marginTop":"4px"}),
                 ], style={"textAlign":"center"}),
-                html.Div(id="sim-label", style={"display":"none"}),
+                html.Div([
+                    html.Div(id="sim-label", style={"display":"none"}),
+                    html.Button("⏻ Log Out", id="btn-logout", n_clicks=0,
+                        style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
+                               "borderRadius":"10px","color":"#f87171","cursor":"pointer",
+                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
+                               "fontFamily":"DM Sans, sans-serif"}),
+                ], style={"display":"flex","alignItems":"center","gap":"8px"}),
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                        "width":"100%","marginBottom":"8px"}),
 
@@ -2746,6 +2754,17 @@ def toggle_alerts(n, currently_on):
     if not new_on:
         style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":MUTED})
     return new_on, label, style
+
+
+@app.callback(
+    Output("s-session", "data"),
+    Input("btn-logout", "n_clicks"),
+    prevent_initial_call=True,
+)
+def logout(n):
+    if n:
+        return {"user_id": "", "email": ""}
+    return no_update
 
 
 if __name__ == "__main__":
