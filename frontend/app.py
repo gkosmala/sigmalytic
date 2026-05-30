@@ -22,7 +22,9 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles, get_key_levels,
 )
 
-BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
+SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
@@ -788,6 +790,92 @@ def build_behavior_tab():
                      html.Div(style={"height":"16px"}), section4])
 
 # ── Command tab ────────────────────────────────────────────────────────────────
+
+def build_login_page(error=""):
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            html.Div([
+                # Login section
+                html.Div(id="login-section", children=[
+                    html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="login-email", type="email", placeholder="you@example.com",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"16px"}),
+                    html.Div([
+                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Sign In", id="login-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer","marginBottom":"16px"}),
+                    html.Div([
+                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                        html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
+                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                    ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
+                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                        style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
+                               "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
+                               "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
+                    html.Div([
+                        html.Span("Don't have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                        html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                    ], style={"textAlign":"center"}),
+                ]),
+
+                # Signup section (hidden initially)
+                html.Div(id="signup-section", style={"display":"none"}, children=[
+                    html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"16px"}),
+                    html.Div([
+                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Create Account", id="signup-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer","marginBottom":"24px"}),
+                    html.Div([
+                        html.Span("Already have an account? ", style={"color":MUTED,"fontSize":"12px"}),
+                        html.Button("Sign In", id="goto-login-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                    ], style={"textAlign":"center"}),
+                ]),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
 
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
@@ -2184,8 +2272,12 @@ ALL_TABS = [
 
 app.layout = html.Div([
     dcc.Location(id="url", refresh=True),
+    html.Div(id="auth-overlay", children=build_login_page(),
+             style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":"#0a1628","overflowY":"auto"}),
     dcc.Store(id="s-live",      data=_init_live),
-    dcc.Store(id="s-session",   data={"user_id":"demo_user_001","email":""}), 
+    dcc.Store(id="s-session",    data=None, storage_type="session"),
+    dcc.Store(id="s-page",       data="login"), 
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
     dcc.Store(id="s-live-mode", data=True),
@@ -2757,6 +2849,84 @@ def toggle_alerts(n, currently_on):
     return new_on, label, style
 
 
+@app.callback(Output("auth-overlay","style"),
+              Input("s-session","data"))
+def route_page(session):
+    overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    hidden = {"display":"none"}
+    if session and session.get("user_id"):
+        return hidden
+    return overlay_base
+
+@app.callback(Output("login-section","style"), Output("signup-section","style"),
+              Input("goto-signup-btn","n_clicks"), Input("goto-login-btn","n_clicks"),
+              prevent_initial_call=True)
+def toggle_auth_section(to_signup, to_login):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    if trigger == "goto-signup-btn":
+        return {"display":"none"}, {"display":"block"}
+    return {"display":"block"}, {"display":"none"}
+
+@app.callback(Output("s-session","data"),Output("s-page","data"),
+              Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
+              Input("signup-btn","n_clicks"),
+              State("login-email","value"),State("login-password","value"),
+              State("signup-email","value"),State("signup-password","value"),
+              prevent_initial_call=True)
+def handle_auth(login_clicks, demo_clicks, signup_clicks,
+                login_email, login_password, signup_email, signup_password):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "demo-btn":
+        return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
+
+    if trigger == "login-btn":
+        if not login_email or not login_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":login_email,"password":login_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    if trigger == "signup-btn":
+        if not signup_email or not signup_password: return no_update, no_update
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/signup",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":signup_email,"password":signup_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return {"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app"
+        except Exception:
+            pass
+        return no_update, no_update
+
+    return no_update, no_update
+
+# ── Main app callbacks ────────────────────────────────────────────────────────
+
+
+
 @app.callback(
     Output("s-session", "data"),
     Output("url", "href"),
@@ -2765,7 +2935,7 @@ def toggle_alerts(n, currently_on):
 )
 def logout(n):
     if n:
-        return {"user_id": "", "email": ""}, "/"
+        return None, "/"
     return no_update, no_update
 
 
