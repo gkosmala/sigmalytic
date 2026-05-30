@@ -1311,70 +1311,159 @@ def build_divergence_tab(session=None):
 
 
 def build_billing_tab(session=None, perms=None):
-    """Billing tab — Stripe pricing table + institutional contact."""
+    user_id = (session or {}).get("user_id", "")
+    email   = (session or {}).get("email", "")
 
-    PLANS_FEATURES = [
-        ("Free",         "$0/mo",   MUTED,      ["Command Center", "Live Price Feed", "Basic Decision Engine"]),
-        ("Pro",          "$49/mo",  TEAL_DIM,   ["Full Radar Screen", "Behavioral Intelligence", "Audio + SMS Alerts", "Divergence Watchlist"]),
-        ("Elite",        "$99/mo",  YELLOW_DIM, ["GEX Intelligence", "Weis Wave + 3-Bar", "Priority Support"]),
-    ]
+    # Fetch billing state
+    billing = {}
+    if user_id:
+        try:
+            import requests as _breq
+            r = _breq.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", timeout=5)
+            if r.ok:
+                billing = r.json()
+        except Exception:
+            pass
 
-    return html.Div([
-        # Header
-        card([
-            html.H2("💳 Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 6px"}),
-            html.P("Upgrade or manage your Sigmalytic subscription.",
-                   style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-        ], sx={"marginBottom":"16px"}),
+    tier         = billing.get("tier", "free")
+    plan_name    = billing.get("plan_name", "Free")
+    plan_price   = billing.get("plan_price", "$0")
+    status       = billing.get("status", "active")
+    period_end   = billing.get("current_period_end", "—")
+    cancel_end   = billing.get("cancel_at_period_end", False)
+    features     = billing.get("features", {})
+    has_customer = bool(billing.get("stripe_customer_id"))
 
-        # Stripe Pricing Table
-        card([
-            html.H3("Choose Your Plan", style={"color":WHITE,"fontSize":"16px","fontWeight":"800","marginBottom":"16px"}),
+    def _bc(children, sx=None):
+        s = {"background": NAVY_CARD, "border": f"1px solid {BORDER}",
+             "borderRadius": "20px", "padding": "24px",
+             "boxShadow": "0 8px 32px rgba(0,0,0,.32)", "marginBottom": "16px"}
+        if sx: s.update(sx)
+        return html.Section(children, style=s)
 
-            # Load Stripe via script tag in a div
-            html.Div([
-                html.Script(src="https://js.stripe.com/v3/pricing-table.js", async_=True),
-            ], id="stripe-script-holder", style={"display":"none"}),
+    def _feat(label, value, enabled=True):
+        color = TEAL_DIM if enabled else MUTED
+        icon  = "✓" if enabled else "—"
+        return html.Div([
+            html.Span(f"{icon}  {label}", style={"color": color, "fontSize": "13px"}),
+            html.Span(str(value), style={"color": TEXT, "fontSize": "12px", "marginLeft": "8px"}),
+        ], style={"padding": "8px 0", "borderBottom": f"1px solid {BORDER}"})
 
-            # Stripe pricing table element
-            html.Iframe(
-                srcDoc=f"""<!DOCTYPE html>
+    def _met(label, value, color=WHITE):
+        return html.Div([
+            html.Div(label, style={"color": MUTED, "fontSize": "10px", "fontWeight": "800",
+                                   "textTransform": "uppercase", "letterSpacing": ".2em", "marginBottom": "6px"}),
+            html.Div(value, style={"color": color, "fontSize": "16px", "fontWeight": "800"}),
+        ], style={"background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
+                  "borderRadius": "12px", "padding": "14px 16px"})
+
+    # Status banner
+    if status == "past_due":
+        bc, bb, bbr, bt = RED_DIM, "rgba(239,68,68,.08)", "rgba(239,68,68,.25)", "⚠️ Payment past due — please update your payment method."
+    elif cancel_end:
+        bc, bb, bbr, bt = YELLOW_DIM, "rgba(245,158,11,.08)", "rgba(245,158,11,.25)", f"⚠️ Plan cancels on {period_end}. Reactivate anytime."
+    elif tier == "free":
+        bc, bb, bbr, bt = BLUE_DIM, "rgba(59,130,246,.08)", "rgba(59,130,246,.25)", "You are on the Free plan. Upgrade to unlock live data, alerts, and intelligence scoring."
+    else:
+        bc, bb, bbr, bt = TEAL_DIM, TEAL_GLOW, BORDER_T, f"✅ {plan_name} — Active. All features unlocked."
+
+    banner = html.Div(bt, style={"background": bb, "border": f"1px solid {bbr}",
+        "borderRadius": "12px", "color": bc, "fontSize": "13px",
+        "padding": "14px 18px", "marginBottom": "16px"})
+
+    # Current plan card
+    plan_card = _bc([
+        html.Div([
+            html.H2(plan_name, style={"color": WHITE, "fontSize": "20px", "fontWeight": "900", "margin": "0 0 4px"}),
+            html.Div(plan_price, style={"color": TEAL_DIM, "fontSize": "24px", "fontWeight": "900", "marginBottom": "12px"}),
+            html.Span("ACTIVE" if status=="active" else status.upper(),
+                      style={"background":"rgba(45,143,111,.15)","border":f"1px solid {BORDER_T}",
+                             "borderRadius":"20px","color":TEAL_DIM,"fontSize":"11px",
+                             "fontWeight":"800","padding":"4px 12px"}),
+        ], style={"marginBottom": "20px"}),
+        html.Div([
+            _met("Status",     status.title(),  TEAL_DIM if status=="active" else RED_DIM),
+            _met("Renews",     period_end or "—", TEXT),
+            _met("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
+            _met("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
+                               else f"{features.get('sms_limit',0)}/day"
+                               if features.get("sms_limit",0)>0 else "None", WHITE),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"20px"}),
+        html.Div([
+            _feat("Live Market Data",     "SIP Feed",          features.get("live_data", False)),
+            _feat("Radar Screen",         f"{features.get('radar_limit',50)} symbols", True),
+            _feat("Status Alerts",        "Armed / Triggered", features.get("alerts", False)),
+            _feat("Intelligence Layer",   "GEX · BME · Hurst · VSA", features.get("intelligence", False)),
+            _feat("Weis Wave + 3-Bar",    "All 1,403 symbols", True),
+            _feat("Divergence Watchlist", "EOD Audit",         features.get("intelligence", False)),
+            _feat("SMS Alerts",           "Via Twilio",        features.get("sms_limit",0)!=0),
+        ], style={"marginBottom": "20px"}),
+        html.Div([
+            html.Button("Manage Plan / Cancel", id="btn-manage-plan", n_clicks=0,
+                style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+                       "borderRadius":"10px","color":TEXT,"cursor":"pointer",
+                       "fontFamily":"DM Sans, sans-serif","fontSize":"13px",
+                       "fontWeight":"700","padding":"10px 20px"}
+                if has_customer else {"display":"none"}),
+            html.Div(id="billing-portal-status",
+                     style={"fontSize":"12px","color":MUTED,"marginTop":"8px"}),
+        ]) if tier != "free" else html.Div(),
+    ]) if user_id else html.Div()
+
+    # Stripe pricing table — sandboxed iframe with full HTML doc
+    pricing_section = _bc([
+        html.H2("Choose Your Plan", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"8px"}),
+        html.P("Upgrade or change your plan anytime. Cancel anytime.",
+               style={"color":TEXT,"fontSize":"13px","marginBottom":"24px"}),
+
+        html.Iframe(
+            srcDoc=f"""<!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
-<style>body{margin:0;background:transparent;}</style>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:transparent; font-family:sans-serif; }}
+</style>
 </head>
 <body>
 <stripe-pricing-table
-    pricing-table-id="prctbl_1Tc35NDRUJk6Un01beNdvTak"
-    publishable-key="pk_test_51TO3CQDRUJk6Un01sFsuiZdCp248v1zFUBmLSbzYyQtvaGRbP3agOWAXnTX60gRCqxjOjLyDZeogZuO4dPZhwdhE00hNQoOw1V">
+    pricing-table-id="{PRICING_TABLE_ID}"
+    publishable-key="{PUBLISHABLE_KEY}"
+    client-reference-id="{user_id}"
+    customer-email="{email}">
 </stripe-pricing-table>
 </body>
 </html>""",
-                style={
-                    "width":"100%","border":"none","minHeight":"500px",
-                    "background":"transparent","borderRadius":"12px",
-                },
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation",
-            ),
-        ], sx={"marginBottom":"16px"}),
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation",
+            style={{"width":"100%","border":"none","minHeight":"620px","background":"transparent"}},
+        ),
 
-        # Institutional tile - email only
-        card([
-            html.Div([
-                html.Div("🏛️", style={"fontSize":"32px","marginBottom":"8px"}),
-                html.H3("Institutional", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 8px"}),
-                html.P("Custom universe · API access · Priority support · Dedicated onboarding · White-label option",
-                       style={"color":TEXT,"fontSize":"13px","marginBottom":"16px"}),
-                html.A("Contact Us →",
-                       href="mailto:support@sigmalytic.com?subject=Sigmalytic Institutional Inquiry",
-                       style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
-                              "borderRadius":"10px","color":TEAL_DIM,"cursor":"pointer",
-                              "display":"inline-block","fontSize":"14px","fontWeight":"800",
-                              "padding":"12px 24px","textDecoration":"none"}),
-            ], style={"textAlign":"center"}),
-        ]),
-    ], style={"maxWidth":"1000px","margin":"0 auto","padding":"8px"})
+        # Institutional contact — email only
+        html.Div([
+            html.Div("🏛️ Institutional", style={{"color":WHITE,"fontSize":"16px","fontWeight":"800","marginBottom":"8px"}}),
+            html.Div("Custom universe · API access · Priority support · Dedicated onboarding",
+                     style={{"color":TEXT,"fontSize":"13px","marginBottom":"16px"}}),
+            html.A("Contact Us →",
+                   href=f"mailto:{CONTACT_EMAIL}?subject=Sigmalytic Institutional Inquiry",
+                   style={{"background":TEAL_GLOW,"border":f"1px solid {{BORDER_T}}",
+                          "borderRadius":"10px","color":TEAL_DIM,"cursor":"pointer",
+                          "display":"inline-block","fontSize":"14px","fontWeight":"800",
+                          "padding":"12px 24px","textDecoration":"none"}}),
+        ], style={{"background":"rgba(0,0,0,.2)","border":f"1px solid {{BORDER}}",
+                   "borderRadius":"16px","marginTop":"24px","padding":"24px","textAlign":"center"}}),
+    ])
+
+    return html.Div([
+        _bc([
+            html.H2("💳 Billing & Plans", style={{"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 6px"}}),
+            html.P("Manage your Sigmalytic subscription.", style={{"color":TEXT,"fontSize":"13px","margin":"0"}}),
+        ], sx={{"marginBottom":"16px","padding":"20px"}}),
+        banner,
+        plan_card,
+        pricing_section,
+    ], style={{"maxWidth":"900px","margin":"0 auto","padding":"24px 16px"}})
 
 
 def register_billing_callbacks(app):
