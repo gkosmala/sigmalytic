@@ -2183,6 +2183,7 @@ ALL_TABS = [
 ]
 
 app.layout = html.Div([
+    dcc.Location(id="url", refresh=True),
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-session",   data={"user_id":"demo_user_001","email":""}), 
     dcc.Store(id="s-candles",   data=_init_candles),
@@ -2758,13 +2759,14 @@ def toggle_alerts(n, currently_on):
 
 @app.callback(
     Output("s-session", "data"),
+    Output("url", "href"),
     Input("btn-logout", "n_clicks"),
     prevent_initial_call=True,
 )
 def logout(n):
     if n:
-        return {"user_id": "", "email": ""}
-    return no_update
+        return {"user_id": "", "email": ""}, "/"
+    return no_update, no_update
 
 
 if __name__ == "__main__":
