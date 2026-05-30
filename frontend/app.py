@@ -2251,6 +2251,20 @@ app = dash.Dash(__name__, title="Sigmalytic Quant Corporation — Decision Intel
                            {"name":"theme-color","content":NAVY}])
 server = app.server
 
+# Allow Stripe scripts and iframes via CSP
+@server.after_request
+def add_csp_headers(response):
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; "
+        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
+        "connect-src 'self' https://api.stripe.com; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:;"
+    )
+    return response
+
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
 <style>{GLOBAL_CSS}</style></head>
