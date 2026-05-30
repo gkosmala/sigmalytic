@@ -1198,14 +1198,25 @@ def build_stub_tab(title, description):
 def build_radar_tab(session=None):
     """Radar Screen — multi-symbol signal scanner."""
     import requests as _rq
-    user_id = (session or {}).get("user_id", "demo_user_001")
-    
+    session    = session or {}
+    user_id    = session.get("user_id", "demo_user_001")
+    features   = session.get("features", {})
+    is_free    = session.get("plan", "free") == "free" or session.get("is_demo", False)
+    radar_limit= features.get("radar_limit", 10) if is_free else 9999
+    score_only = features.get("composite_score_only", False)
+    delayed    = features.get("delayed_data", False)
+    delay_min  = features.get("delay_minutes", 15)
+
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         data = r.json() if r.ok else []
         signals = data if isinstance(data, list) else data.get("signals", data.get("scores", []))
     except Exception:
         signals = []
+
+    # Enforce free plan limit
+    if is_free:
+        signals = signals[:radar_limit]
 
     def _sig_row(s):
         score = s.get("composite_score", s.get("score", 0))
@@ -1234,13 +1245,21 @@ def build_radar_tab(session=None):
         html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
     ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
 
+    free_banner = html.Div(
+        f"🔒 Free Plan — Top {radar_limit} symbols · {delay_min}-minute delayed data · Composite score only · No alerts. Upgrade to unlock full access.",
+        style={"background":"rgba(59,130,246,.08)","border":"1px solid rgba(59,130,246,.25)",
+               "borderRadius":"10px","color":BLUE_DIM,"fontSize":"12px","padding":"10px 14px",
+               "marginBottom":"12px"}
+    ) if is_free else html.Div()
+
     return html.Div([
         card([
             html.Div([
                 html.H2("📡 Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
                 html.P("Live multi-symbol signal scanner — A-grade setups across your universe.",
                        style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"16px"}),
+            ], style={"marginBottom":"12px"}),
+            free_banner,
             header_row,
             html.Div([_sig_row(s) for s in signals] if signals else [
                 html.Div("No signals available. Backend may be initializing or market is closed.",
@@ -2592,8 +2611,9 @@ def update_badges(live):
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
     Input("s-live-mode","data"), Input("i-clock","n_intervals"),
     State("s-symbol","data"), State("s-tf","data"),
+    State("s-session","data"),
 )
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -2612,7 +2632,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="import":      main = build_import_tab()
-    elif tab=="radar":       main = build_radar_tab(session=None)
+    elif tab=="radar":       main = build_radar_tab(session=session)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
     elif tab=="divergence":  main = build_divergence_tab(session=None)
     elif tab=="billing":
@@ -2883,7 +2903,23 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
 
     if trigger == "demo-btn":
-        return {"user_id":"demo_user_001","email":"demo@sigmalytic.com","is_demo":True}, "app"
+        return {
+            "user_id": "demo_user_001",
+            "email": "demo@sigmalytic.com",
+            "is_demo": True,
+            "plan": "free",
+            "plan_name": "Free",
+            "features": {
+                "radar_limit": 10,
+                "delayed_data": True,
+                "delay_minutes": 15,
+                "alerts": False,
+                "sms_limit": 0,
+                "live_data": False,
+                "intelligence": False,
+                "composite_score_only": True,
+            }
+        }, "app"
 
     if trigger == "login-btn":
         if not login_email or not login_password: return no_update, no_update
