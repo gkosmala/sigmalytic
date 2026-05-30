@@ -2928,7 +2928,7 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
 
 
 @app.callback(
-    Output("s-session", "data"),
+    Output("s-session", "data", allow_duplicate=True),
     Output("url", "href"),
     Input("btn-logout", "n_clicks"),
     prevent_initial_call=True,
