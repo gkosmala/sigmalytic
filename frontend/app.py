@@ -1311,52 +1311,68 @@ def build_divergence_tab(session=None):
 
 
 def build_billing_tab(session=None, perms=None):
-    """Billing tab — clean, no external dependencies."""
-    PLANS = [
-        {"name": "Free",        "price": "$0/mo",    "color": MUTED,      "features": ["Command Center", "Live Price Feed", "Basic Decision Engine", "5 Symbols"]},
-        {"name": "Pro",         "price": "$49/mo",   "color": TEAL_DIM,   "features": ["Everything in Free", "Full Radar Screen (1,403 symbols)", "Behavioral Intelligence", "Audio + SMS Alerts", "All Timeframes", "Divergence Watchlist"]},
-        {"name": "Elite",       "price": "$99/mo",   "color": YELLOW_DIM, "features": ["Everything in Pro", "GEX Intelligence Layer", "Weis Wave + 3-Bar", "Priority Support", "Advanced Scoreboard"]},
-        {"name": "Institutional","price": "Custom",  "color": BLUE_DIM,   "features": ["Custom Symbol Universe", "API Access", "Dedicated Onboarding", "White-Label Option", "SLA Support"]},
+    """Billing tab — Stripe pricing table + institutional contact."""
+
+    PLANS_FEATURES = [
+        ("Free",         "$0/mo",   MUTED,      ["Command Center", "Live Price Feed", "Basic Decision Engine"]),
+        ("Pro",          "$49/mo",  TEAL_DIM,   ["Full Radar Screen", "Behavioral Intelligence", "Audio + SMS Alerts", "Divergence Watchlist"]),
+        ("Elite",        "$99/mo",  YELLOW_DIM, ["GEX Intelligence", "Weis Wave + 3-Bar", "Priority Support"]),
     ]
 
-    plan_cards = []
-    for p in PLANS:
-        plan_cards.append(html.Div([
-            html.Div(p["name"], style={"fontSize":"11px","fontWeight":"800","color":p["color"],
-                                       "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"8px"}),
-            html.Div(p["price"], style={"fontSize":"26px","fontWeight":"900","color":WHITE,"marginBottom":"16px"}),
-            html.Div([
-                html.Div([
-                    html.Span("✓  ", style={"color":p["color"],"fontWeight":"900"}),
-                    html.Span(f, style={"fontSize":"12px","color":TEXT}),
-                ], style={"marginBottom":"6px"}) for f in p["features"]
-            ], style={"marginBottom":"20px"}),
-            html.A("Contact Us" if p["name"]=="Institutional" else "Subscribe →",
-                   href=f"mailto:support@sigmalytic.com?subject=Sigmalytic {p['name']} Plan",
-                   style={"background":TEAL_GLOW if p["name"]=="Pro" else "rgba(0,0,0,.2)",
-                          "border":f"1px solid {BORDER_T if p['name']=='Pro' else BORDER}",
-                          "borderRadius":"10px","color":p["color"],"cursor":"pointer",
-                          "display":"block","fontSize":"13px","fontWeight":"800",
-                          "padding":"10px","textAlign":"center","textDecoration":"none"}),
-        ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER_T if p['name']=='Pro' else BORDER}",
-                  "borderRadius":"16px","flex":"1","minWidth":"200px","padding":"20px"}))
-
     return html.Div([
+        # Header
         card([
             html.H2("💳 Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 6px"}),
-            html.P("Upgrade or manage your Sigmalytic subscription. All plans include live Alpaca IEX data.",
+            html.P("Upgrade or manage your Sigmalytic subscription.",
                    style={"color":TEXT,"fontSize":"13px","margin":"0"}),
         ], sx={"marginBottom":"16px"}),
 
-        html.Div(plan_cards, style={"display":"flex","gap":"16px","flexWrap":"wrap","marginBottom":"16px"}),
-
+        # Stripe Pricing Table
         card([
-            html.P("To subscribe or manage your plan, contact us at ",
-                   style={"color":TEXT,"fontSize":"13px","margin":"0","display":"inline"}),
-            html.A("support@sigmalytic.com", href="mailto:support@sigmalytic.com",
-                   style={"color":TEAL_DIM,"fontWeight":"700","textDecoration":"none"}),
-            html.P(" — Stripe billing portal coming soon.",
-                   style={"color":MUTED,"fontSize":"12px","marginTop":"8px"}),
+            html.H3("Choose Your Plan", style={"color":WHITE,"fontSize":"16px","fontWeight":"800","marginBottom":"16px"}),
+
+            # Load Stripe via script tag in a div
+            html.Div([
+                html.Script(src="https://js.stripe.com/v3/pricing-table.js", async_=True),
+            ], id="stripe-script-holder", style={"display":"none"}),
+
+            # Stripe pricing table element
+            html.Iframe(
+                srcDoc=f"""<!DOCTYPE html>
+<html>
+<head>
+<script async src="https://js.stripe.com/v3/pricing-table.js"></script>
+<style>body{margin:0;background:transparent;}</style>
+</head>
+<body>
+<stripe-pricing-table
+    pricing-table-id="prctbl_1Tc35NDRUJk6Un01beNdvTak"
+    publishable-key="pk_test_51TO3CQDRUJk6Un01sFsuiZdCp248v1zFUBmLSbzYyQtvaGRbP3agOWAXnTX60gRCqxjOjLyDZeogZuO4dPZhwdhE00hNQoOw1V">
+</stripe-pricing-table>
+</body>
+</html>""",
+                style={
+                    "width":"100%","border":"none","minHeight":"500px",
+                    "background":"transparent","borderRadius":"12px",
+                },
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation",
+            ),
+        ], sx={"marginBottom":"16px"}),
+
+        # Institutional tile - email only
+        card([
+            html.Div([
+                html.Div("🏛️", style={"fontSize":"32px","marginBottom":"8px"}),
+                html.H3("Institutional", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 8px"}),
+                html.P("Custom universe · API access · Priority support · Dedicated onboarding · White-label option",
+                       style={"color":TEXT,"fontSize":"13px","marginBottom":"16px"}),
+                html.A("Contact Us →",
+                       href="mailto:support@sigmalytic.com?subject=Sigmalytic Institutional Inquiry",
+                       style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
+                              "borderRadius":"10px","color":TEAL_DIM,"cursor":"pointer",
+                              "display":"inline-block","fontSize":"14px","fontWeight":"800",
+                              "padding":"12px 24px","textDecoration":"none"}),
+            ], style={"textAlign":"center"}),
         ]),
     ], style={"maxWidth":"1000px","margin":"0 auto","padding":"8px"})
 
