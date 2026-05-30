@@ -460,7 +460,20 @@ def build_import_tab():
         html.Div(broker_cards,
                  style={"display":"flex","flexWrap":"wrap","gap":"12px","marginBottom":"20px"}),
 
-        # Upload widget
+        # Upload widget + reset button
+        html.Div([
+            html.Div([
+                html.Div("Upload Brokerage Statement",
+                         style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
+                html.Button("🗑️ Clear All Trades", id="btn-reset-imports", n_clicks=0,
+                    style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
+                           "borderRadius":"10px","color":"#f87171","cursor":"pointer",
+                           "fontSize":"12px","fontWeight":"700","padding":"6px 14px",
+                           "fontFamily":"DM Sans, sans-serif"}),
+            ], style={"display":"flex","justifyContent":"space-between",
+                       "alignItems":"center","marginBottom":"12px"}),
+            html.Div(id="reset-status"),
+        ]),
         html.Div([
             dcc.Upload(
                 id="csv-upload",
@@ -616,6 +629,15 @@ def build_import_tab():
 
 
 # ── Behavioral Dashboard Tab ───────────────────────────────────────────────────
+
+def _behavior_empty_state():
+    return card([
+        html.H2("🧠 Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+        note_box("Behavioral tracking activates after your first trade upload. Go to Import History to upload a brokerage statement.", "blue"),
+        html.Div(style={"height":"12px"}),
+        note_box("Once trades are imported, your decision scores, regime memory, and behavioral patterns will appear here.", "yellow"),
+    ])
+
 
 def build_behavior_tab():
     dash_data = _get(f"/api/behavior/dashboard/{USER_ID}")
@@ -2666,8 +2688,22 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="radar":       main = build_radar_tab(session=None)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
     elif tab=="divergence":  main = build_divergence_tab(session=None)
-    elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
-    elif tab=="preferences": main = build_preferences_tab(user_id="", session=None)
+    elif tab=="billing":
+        try:
+            main = build_billing_tab(session=None, perms=None)
+        except Exception as e:
+            main = card([
+                html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box(f"Billing module loading. Please refresh in a moment.", "blue"),
+            ])
+    elif tab=="preferences":
+        try:
+            main = build_preferences_tab(user_id="", session=None)
+        except Exception as e:
+            main = card([
+                html.H2("⚙️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Preferences loading. Please refresh in a moment.", "blue"),
+            ])
     elif tab=="admin":       main = build_admin_tab(session={}, backend_url=BACKEND_HTTP)
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
