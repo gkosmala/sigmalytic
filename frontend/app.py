@@ -1091,8 +1091,9 @@ def build_radar_tab(session=None):
     user_id = (session or {}).get("user_id", "demo_user_001")
     
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/signals", timeout=6)
-        signals = r.json() if r.ok else []
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
+        data = r.json() if r.ok else []
+        signals = data if isinstance(data, list) else data.get("signals", data.get("scores", []))
     except Exception:
         signals = []
 
@@ -1144,14 +1145,15 @@ def build_scoreboard_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard/leaderboard", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
         board = r.json() if r.ok else {}
     except Exception:
         board = {}
 
-    entries   = board.get("entries", [])
+    # Backend /api/scoreboard returns {signals, stats, generated_at}
+    entries   = board.get("entries", board.get("signals", []))
     generated = board.get("generated_at", "")
-    summary   = board.get("summary", {})
+    summary   = board.get("summary", board.get("stats", {}))
 
     def _entry_row(e, rank):
         score = e.get("composite_score", e.get("score", 0))
@@ -1234,6 +1236,7 @@ def build_divergence_tab(session=None):
 
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/divergence/watchlist", timeout=6)
+        if r.status_code == 404: r = type("R", (), {"ok": False})()
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
