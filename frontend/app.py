@@ -1211,7 +1211,7 @@ def build_radar_tab(session=None):
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         data = r.json() if r.ok else []
-        signals = data if isinstance(data, list) else data.get("signals", data.get("scores", []))
+        signals = data if isinstance(data, list) else data.get("symbols", data.get("signals", data.get("scores", [])))
     except Exception:
         signals = []
 
