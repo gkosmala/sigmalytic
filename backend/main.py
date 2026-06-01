@@ -1000,3 +1000,11 @@ async def get_open_trade(user_id: str):
         "status": "no_open_trade",
         "message": "No open trade found"
     }
+@app.get("/api/behavior/open-trade/{user_id}")
+async def get_open_trade(user_id: str):
+    return {
+        "user_id": user_id,
+        "open_trade": None,
+        "status": "no_open_trade",
+        "message": "No open trade found"
+    }
