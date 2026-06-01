@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 # Sigmalytic v2.2 â€” integer x-axis for proper candle rendering
 """
 Sigmalytic Quant Corporation â€” Decision Intelligence Platform
