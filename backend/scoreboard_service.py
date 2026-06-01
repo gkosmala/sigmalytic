@@ -2,37 +2,27 @@
 """
 backend/scoreboard_service.py
 ------------------------------
-Sigmalytic Radar — Historical Signal Scoreboard
+Sigmalytic Radar — Confidence-Based Signal Scoreboard
 
 HOW IT WORKS
 ────────────
 1. When a symbol hits Armed, Triggered, Short Trigger, or Short Armed —
-   a signal row is written to scoreboard_signals with entry price + levels.
-   Deduplication is database-backed — same symbol+type within 2 hours = skip.
+   a signal row is written to scoreboard_signals.
+   Grade is assigned IMMEDIATELY based on confluence confidence score.
+   No waiting for price targets — signal quality is judged at signal time.
 
-2. Every day at 4:15 PM ET (after close), the outcome checker runs:
-   - Finds all Pending signals older than 1 trading day
-   - Fetches current/closing price from Alpaca
-   - Grades the signal: A / B / C / Miss / Short-A / Short-B / Short-C / Short-Miss
-   - Updates the row with outcome price, pct, and grade
+2. Every day at 4:15 PM ET, the outcome tracker runs:
+   - Records actual price movement for transparency and learning
+   - Does NOT change the grade — grade is permanent at signal time
 
-3. The scoreboard API exposes this data publicly — transparency by design.
+3. The scoreboard shows confidence distribution, not win/loss rates.
 
-GRADE DEFINITIONS
-─────────────────
-Long signals:
-  A     — Hit target2 (full projection)
-  B     — Hit target1 (partial projection)
-  C     — Moved in right direction but didn't reach target1
-  Miss  — Hit invalidation (stop loss triggered)
-
-Short signals:
-  Short-A    — Dropped to bear target2
-  Short-B    — Dropped to bear target1
-  Short-C    — Moved lower but didn't reach bear target1
-  Short-Miss — Recovered above entry (short failed)
-
-Pending — Not yet graded (< 1 trading day old)
+CONFIDENCE GRADE DEFINITIONS
+─────────────────────────────
+  A  — Score ≥ 80 · High confluence · Multiple engines aligned
+  B  — Score 70–79 · Good confluence · Signal confirmed
+  C  — Score 60–69 · Moderate confluence · Watch closely
+  W  — Score 55–59 · Marginal · Educational only
 """
 
 from __future__ import annotations
@@ -54,13 +44,11 @@ ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
 ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 
-# Signal types that get logged to scoreboard
 SCOREBOARD_SIGNAL_TYPES = {
     "Armed", "Triggered",
     "Short Armed", "Short Trigger",
 }
 
-# Minimum time between logging the same symbol+signal_type (2 hours)
 DEDUP_WINDOW_HOURS = 2
 
 
@@ -75,13 +63,20 @@ def _alpaca_headers():
     }
 
 
-# ── Signal logging ─────────────────────────────────────────────────────────────
+def _is_market_hours() -> bool:
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    et = datetime.now(ZoneInfo("America/New_York"))
+    if et.weekday() >= 5:
+        return False
+    market_open  = et.replace(hour=9,  minute=30, second=0, microsecond=0)
+    market_close = et.replace(hour=16, minute=0,  second=0, microsecond=0)
+    return market_open <= et < market_close
+
 
 def _already_logged_recently(symbol: str, signal_type: str) -> bool:
-    """
-    Check database to see if this symbol+signal_type was logged
-    within the dedup window. Survives restarts.
-    """
     if not DATABASE_URL:
         return False
     try:
@@ -90,9 +85,7 @@ def _already_logged_recently(symbol: str, signal_type: str) -> bool:
         cur  = conn.cursor()
         cur.execute("""
             SELECT COUNT(*) FROM scoreboard_signals
-            WHERE symbol = %s
-              AND signal_type = %s
-              AND signal_date >= %s
+            WHERE symbol = %s AND signal_type = %s AND signal_date >= %s
         """, (symbol, signal_type, cutoff))
         count = cur.fetchone()[0]
         cur.close()
@@ -103,109 +96,75 @@ def _already_logged_recently(symbol: str, signal_type: str) -> bool:
         return False
 
 
-def _is_market_hours() -> bool:
-    """Returns True only during NYSE market hours: Mon-Fri 9:30 AM - 4:00 PM ET."""
-    try:
-        from zoneinfo import ZoneInfo
-    except ImportError:
-        from backports.zoneinfo import ZoneInfo
-    et = datetime.now(ZoneInfo("America/New_York"))
-    if et.weekday() >= 5:  # Saturday=5, Sunday=6
-        return False
-    market_open  = et.replace(hour=9,  minute=30, second=0, microsecond=0)
-    market_close = et.replace(hour=16, minute=0,  second=0, microsecond=0)
-    return market_open <= et < market_close
-
-
-# Setup types with strong R/R — always log if score threshold met
-HIGH_RR_SETUPS = {
-    "Compression Breakout Candidate",
-    "Momentum Leader",
-    "Trend Continuation",
-}
-
-# Minimum score by setup type
-def _meets_score_threshold(setup_type: str, score: float) -> bool:
+def _confidence_grade(score: float, sym: dict) -> str:
     """
-    Springs and Upthrusts (Wyckoff) have best R/R — log at 70+
-    Standard setups require 75+
-    Everything else requires 80+
+    Assign confidence grade immediately at signal time.
+    Based on composite score + engine alignment bonuses.
     """
-    if not score or score <= 0:
-        return False
-    setup = (setup_type or "").lower()
-    # Wyckoff spring/upthrust — best R/R, lower threshold
-    if "spring" in setup or "upthrust" in setup:
-        return score >= 70
-    # High R/R setups
-    if setup_type in HIGH_RR_SETUPS:
-        return score >= 75
-    # All other setups
-    return score >= 80
+    if score <= 0:
+        return "W"
 
+    # Engine alignment bonuses
+    bonus = 0
+    weis = sym.get("weis_signal", "NONE") or "NONE"
+    gex  = sym.get("gex_regime", "") or ""
+    bme  = float(sym.get("bme_score", 50) or 50)
 
-def _regime_aligned(signal_type: str, regime: str) -> bool:
-    """Only log when signal direction aligns with regime."""
-    if not regime:
-        return True  # no regime data, allow through
-    regime_lower = regime.lower()
-    is_short = "Short" in signal_type
-    is_long  = not is_short
+    # Weis Wave confirmation
+    if weis in ("SPRING", "CLIMAX_SELL", "3BAR_BULLISH"):
+        bonus += 3
+    elif weis in ("UPTHRUST", "CLIMAX_BUY", "3BAR_BEARISH"):
+        bonus += 3
 
-    # Bull regimes — only log longs
-    if any(r in regime_lower for r in ["bull", "expansion", "recovery", "trend"]):
-        return is_long
-    # Bear regimes — only log shorts
-    if any(r in regime_lower for r in ["bear", "distribution", "volatility shock"]):
-        return is_short
-    # Neutral/compression — log both
-    return True
+    # GEX regime alignment
+    signal_type = sym.get("status", "")
+    if "Short" in signal_type and gex == "NEGATIVE":
+        bonus += 2
+    elif "Short" not in signal_type and gex == "POSITIVE":
+        bonus += 2
+
+    # BME behavioral confirmation
+    if bme >= 65:
+        bonus += 2
+    elif bme <= 35:
+        bonus += 2  # strong bearish also confirms short signals
+
+    adjusted = score + bonus
+
+    if adjusted >= 80:
+        return "A"
+    elif adjusted >= 70:
+        return "B"
+    elif adjusted >= 60:
+        return "C"
+    return "W"
 
 
 def log_signal(sym: dict, signal_type: str):
     """
-    Log a new signal to scoreboard_signals.
-    Only logs HIGH QUALITY signals:
-    - During NYSE market hours (9:30 AM - 4:00 PM ET, Mon-Fri)
-    - Score meets threshold by setup type (70-80 minimum)
-    - Regime aligned with signal direction
-    - No duplicate within 2 hours
+    Log a signal with immediate confidence grade.
+    Grade is based on confluence score + engine alignment at signal time.
     """
     symbol = sym.get("symbol", "")
     if not symbol or not DATABASE_URL:
         return
 
-    # Only log during market hours
     if not _is_market_hours():
         return
 
-    # Only log important signal types
     if signal_type not in SCOREBOARD_SIGNAL_TYPES:
         return
 
-    # Score threshold by setup type
-    score      = float(sym.get("composite_score", 0) or 0)
-    setup_type = sym.get("setup_type", "")
-    if not _meets_score_threshold(setup_type, score):
+    score = float(sym.get("composite_score", 0) or 0)
+    if score < 55:
         return
 
-    # Regime alignment check
-    regime = sym.get("regime", "")
-    if not _regime_aligned(signal_type, regime):
-        return
-
-    # Database-backed deduplication — restart-safe
     if _already_logged_recently(symbol, signal_type):
         return
 
     signal_id = "sig_" + uuid.uuid4().hex[:14]
     price     = sym.get("price", 0)
-    atr       = sym.get("atr", 1)
-
-    # Bear targets for short signals
-    inval  = sym.get("invalidation", 0)
-    bear1  = round(inval - atr, 2) if inval > 0 else 0
-    bear2  = round(inval - atr * 2, 2) if inval > 0 else 0
+    grade     = _confidence_grade(score, sym)
 
     try:
         conn = _db()
@@ -222,7 +181,7 @@ def log_signal(sym: dict, signal_type: str):
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,
                 %s,%s,%s,
-                %s,%s,'Pending'
+                %s,%s,%s
             )
             ON CONFLICT (signal_id) DO NOTHING
         """, (
@@ -230,9 +189,9 @@ def log_signal(sym: dict, signal_type: str):
             price,
             sym.get("trigger", 0),
             sym.get("invalidation", 0),
-            sym.get("target1", 0) if "Short" not in signal_type else bear1,
-            sym.get("target2", 0) if "Short" not in signal_type else bear2,
-            sym.get("composite_score", 0),
+            sym.get("target1", 0),
+            sym.get("target2", 0),
+            score,
             sym.get("setup_type", ""),
             sym.get("regime", ""),
             sym.get("confluence", 0),
@@ -240,48 +199,35 @@ def log_signal(sym: dict, signal_type: str):
             sym.get("relative_strength", 0),
             sym.get("volume_pressure", 0),
             sym.get("behavioral", 0),
+            grade,
         ))
         conn.commit()
         cur.close()
         conn.close()
-        log.info(f"Scoreboard signal logged: {symbol} → {signal_type} @ ${price}")
+        log.info(f"Scoreboard: {symbol} → {signal_type} | Score:{score} | Grade:{grade}")
     except Exception as e:
         log.warning(f"Signal log error: {e}")
 
 
-# ── Outcome grading ────────────────────────────────────────────────────────────
-
 def _fetch_close_price(symbol: str) -> Optional[float]:
-    """Fetch the most recent closing price.
-    First tries RADAR_CACHE (already loaded in memory),
-    then falls back to direct Alpaca API call."""
-
-    # Try RADAR_CACHE first
+    """Fetch the most recent closing price for outcome tracking."""
     try:
         from radar_service import RADAR_CACHE
         cached = RADAR_CACHE.get(symbol.upper())
         if cached:
             price = cached.get("price")
             if price and float(price) > 0:
-                log.info(f"Price fetch {symbol}: used RADAR_CACHE ${price}")
                 return float(price)
-    except Exception as e:
-        log.warning(f"RADAR_CACHE fetch error {symbol}: {e}")
+    except Exception:
+        pass
 
-    # Fall back to Alpaca
     try:
         r = _req.get(
             f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
             headers=_alpaca_headers(),
-            params={
-                "timeframe": "1Day",
-                "limit":     3,
-                "feed":      ALPACA_FEED,
-                "sort":      "desc",
-            },
+            params={"timeframe": "1Day", "limit": 3, "feed": ALPACA_FEED, "sort": "desc"},
             timeout=10,
         )
-        log.info(f"Alpaca bars {symbol}: status={r.status_code} body={r.text[:200]}")
         if r.status_code == 200:
             bars = r.json().get("bars") or []
             for bar in bars:
@@ -293,46 +239,11 @@ def _fetch_close_price(symbol: str) -> Optional[float]:
     return None
 
 
-def _grade_long(entry, target1, target2, invalidation, outcome) -> tuple[str, bool, bool, bool]:
-    """Grade a long signal. Returns (grade, hit_t1, hit_t2, hit_inval)."""
-    if outcome <= 0 or entry <= 0:
-        return "Pending", False, False, False
-
-    hit_t2    = outcome >= target2      if target2 > 0 else False
-    hit_t1    = outcome >= target1      if target1 > 0 else False
-    hit_inval = outcome <= invalidation if invalidation > 0 else False
-
-    if hit_t2:    return "A",    True,  True,  False
-    if hit_t1:    return "B",    True,  False, False
-    if hit_inval: return "Miss", False, False, True
-
-    pct = (outcome - entry) / entry * 100
-    if pct > 0:   return "C",    False, False, False
-    return "Miss", False, False, True
-
-
-def _grade_short(entry, target1, target2, invalidation, outcome) -> tuple[str, bool, bool, bool]:
-    """Grade a short signal. Returns (grade, hit_t1, hit_t2, hit_inval)."""
-    if outcome <= 0 or entry <= 0:
-        return "Pending", False, False, False
-
-    hit_t2    = outcome <= target2      if target2 > 0 else False
-    hit_t1    = outcome <= target1      if target1 > 0 else False
-    hit_inval = outcome >= invalidation if invalidation > 0 else False
-
-    if hit_t2:    return "Short-A",    True,  True,  False
-    if hit_t1:    return "Short-B",    True,  False, False
-    if hit_inval: return "Short-Miss", False, False, True
-
-    pct = (entry - outcome) / entry * 100
-    if pct > 0:   return "Short-C", False, False, False
-    return "Short-Miss", False, False, True
-
-
 def grade_pending_signals():
     """
-    Grade all Pending signals that are at least 1 trading day old.
-    Called daily at 4:15 PM ET by the scheduler.
+    Outcome tracker — records actual price movement for transparency.
+    Grade is NOT changed — it was assigned at signal time.
+    Runs daily at 4:15 PM ET.
     """
     if not DATABASE_URL:
         return
@@ -346,44 +257,45 @@ def grade_pending_signals():
             SELECT signal_id, symbol, signal_type, signal_date,
                    entry_price, target1, target2, invalidation
             FROM scoreboard_signals
-            WHERE grade = 'Pending'
+            WHERE outcome_price IS NULL
               AND signal_date < %s
             ORDER BY signal_date ASC
-            LIMIT 100
+            LIMIT 200
         """, (cutoff,))
         pending = cur.fetchall()
         cur.close()
         conn.close()
     except Exception as e:
-        log.warning(f"Pending fetch error: {e}")
+        log.warning(f"Outcome fetch error: {e}")
         return
 
     if not pending:
-        log.info("No pending signals to grade")
+        log.info("No signals need outcome tracking")
         return
 
-    log.info(f"Grading {len(pending)} pending signals")
-    graded = 0
+    log.info(f"Tracking outcomes for {len(pending)} signals")
+    tracked = 0
 
     for row in pending:
         sig_id, symbol, sig_type, sig_date, entry, t1, t2, inval = row
         outcome = _fetch_close_price(symbol)
-        if not outcome:
+        if not outcome or not entry:
             continue
         time.sleep(0.1)
 
-        days = (datetime.now(timezone.utc) - sig_date).days
+        days        = (datetime.now(timezone.utc) - sig_date).days
+        outcome_pct = round((outcome - entry) / entry * 100, 2)
+        is_short    = "Short" in sig_type
 
-        is_short = "Short" in sig_type
+        # Outcome direction
         if is_short:
-            grade, hit_t1, hit_t2, hit_inval = _grade_short(entry, t1, t2, inval, outcome)
+            hit_t1    = outcome <= t1    if t1 > 0 else False
+            hit_t2    = outcome <= t2    if t2 > 0 else False
+            hit_inval = outcome >= inval if inval > 0 else False
         else:
-            grade, hit_t1, hit_t2, hit_inval = _grade_long(entry, t1, t2, inval, outcome)
-
-        if grade == "Pending":
-            continue
-
-        outcome_pct = round((outcome - entry) / entry * 100, 2) if entry > 0 else 0
+            hit_t1    = outcome >= t1    if t1 > 0 else False
+            hit_t2    = outcome >= t2    if t2 > 0 else False
+            hit_inval = outcome <= inval if inval > 0 else False
 
         try:
             conn = _db()
@@ -393,40 +305,33 @@ def grade_pending_signals():
                 SET outcome_price    = %s,
                     outcome_date     = %s,
                     outcome_pct      = %s,
-                    grade            = %s,
                     graded_at        = %s,
                     days_to_outcome  = %s,
                     hit_target1      = %s,
                     hit_target2      = %s,
                     hit_invalidation = %s
                 WHERE signal_id = %s
+                  AND outcome_price IS NULL
             """, (
                 outcome, datetime.now(timezone.utc), outcome_pct,
-                grade, datetime.now(timezone.utc), days,
+                datetime.now(timezone.utc), days,
                 hit_t1, hit_t2, hit_inval,
                 sig_id,
             ))
             conn.commit()
             cur.close()
             conn.close()
-            graded += 1
-            log.info(f"Graded {symbol} {sig_type}: {grade} @ ${outcome} ({outcome_pct:+.1f}%)")
+            tracked += 1
         except Exception as e:
-            log.warning(f"Grade update error {sig_id}: {e}")
+            log.warning(f"Outcome update error {sig_id}: {e}")
 
-    log.info(f"Grading complete — {graded}/{len(pending)} signals graded")
+    log.info(f"Outcome tracking complete — {tracked}/{len(pending)} signals updated")
 
-
-# ── Clear duplicate signals ────────────────────────────────────────────────────
 
 def clear_duplicate_signals():
-    """
-    Remove duplicate Pending signals — keep only the most recent
-    per symbol+signal_type within the same day.
-    Run once to clean up the existing 259 duplicates.
-    """
+    """Remove duplicate signals — keep only the most recent per symbol+signal_type per day."""
     if not DATABASE_URL:
-        return
+        return 0
     try:
         conn = _db()
         cur  = conn.cursor()
@@ -441,7 +346,6 @@ def clear_duplicate_signals():
                                ORDER BY signal_date DESC
                            ) AS rn
                     FROM scoreboard_signals
-                    WHERE grade = 'Pending'
                 ) ranked
                 WHERE rn > 1
             )
@@ -450,17 +354,15 @@ def clear_duplicate_signals():
         conn.commit()
         cur.close()
         conn.close()
-        log.info(f"Cleared {deleted} duplicate pending signals")
+        log.info(f"Cleared {deleted} duplicate signals")
         return deleted
     except Exception as e:
         log.warning(f"Duplicate clear error: {e}")
         return 0
 
 
-# ── Scoreboard stats ───────────────────────────────────────────────────────────
-
 def get_scoreboard_stats() -> dict:
-    """Returns summary statistics for the public scoreboard."""
+    """Returns confidence-based scoreboard statistics."""
     if not DATABASE_URL:
         return {}
     try:
@@ -469,24 +371,34 @@ def get_scoreboard_stats() -> dict:
 
         cur.execute("""
             SELECT
-                COUNT(*) FILTER (WHERE grade != 'Pending')                    AS total_graded,
-                COUNT(*) FILTER (WHERE grade = 'Pending')                     AS pending,
-                COUNT(*) FILTER (WHERE grade IN ('A','B'))                    AS long_winners,
-                COUNT(*) FILTER (WHERE grade = 'Miss')                        AS long_misses,
-                COUNT(*) FILTER (WHERE grade IN ('Short-A','Short-B'))        AS short_winners,
-                COUNT(*) FILTER (WHERE grade = 'Short-Miss')                  AS short_misses,
-                COUNT(*) FILTER (WHERE grade = 'A')                           AS grade_a,
-                COUNT(*) FILTER (WHERE grade = 'B')                           AS grade_b,
-                COUNT(*) FILTER (WHERE grade = 'C')                           AS grade_c,
-                ROUND(AVG(outcome_pct) FILTER (WHERE grade NOT IN ('Pending','Miss','Short-Miss'))::numeric, 2) AS avg_winner_pct,
-                ROUND(AVG(days_to_outcome) FILTER (WHERE grade != 'Pending')::numeric, 1) AS avg_days
+                COUNT(*)                                           AS total_signals,
+                COUNT(*) FILTER (WHERE outcome_price IS NOT NULL) AS with_outcomes,
+                COUNT(*) FILTER (WHERE outcome_price IS NULL)     AS pending_outcomes,
+                COUNT(*) FILTER (WHERE grade = 'A')               AS grade_a,
+                COUNT(*) FILTER (WHERE grade = 'B')               AS grade_b,
+                COUNT(*) FILTER (WHERE grade = 'C')               AS grade_c,
+                COUNT(*) FILTER (WHERE grade = 'W')               AS grade_w,
+                ROUND(AVG(outcome_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                    AND signal_type NOT LIKE 'Short%%'
+                )::numeric, 2)                                     AS avg_long_pct,
+                ROUND(AVG(outcome_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                    AND signal_type LIKE 'Short%%'
+                )::numeric, 2)                                     AS avg_short_pct,
+                ROUND(AVG(days_to_outcome) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 1)                                     AS avg_days,
+                COUNT(*) FILTER (WHERE hit_target1 = true)        AS hit_t1_count,
+                COUNT(*) FILTER (WHERE hit_target2 = true)        AS hit_t2_count
             FROM scoreboard_signals
         """)
         row = cur.fetchone()
 
         cur.execute("""
             SELECT symbol, signal_type, signal_date, entry_price,
-                   composite_score, setup_type, regime, grade, outcome_pct, days_to_outcome
+                   composite_score, setup_type, regime, grade,
+                   outcome_pct, days_to_outcome, hit_target1, hit_target2
             FROM scoreboard_signals
             ORDER BY signal_date DESC
             LIMIT 50
@@ -495,39 +407,39 @@ def get_scoreboard_stats() -> dict:
         cur.close()
         conn.close()
 
-        total_graded  = row[0] or 0
-        long_winners  = row[2] or 0
-        long_misses   = row[3] or 0
-        short_winners = row[4] or 0
-        short_misses  = row[5] or 0
-
-        long_total  = long_winners + long_misses
-        short_total = short_winners + short_misses
-        long_wr  = round(long_winners  / long_total  * 100, 1) if long_total  > 0 else 0
-        short_wr = round(short_winners / short_total * 100, 1) if short_total > 0 else 0
+        total    = row[0] or 0
+        grade_a  = row[3] or 0
+        grade_b  = row[4] or 0
+        grade_ab = grade_a + grade_b
 
         return {
-            "total_graded":   total_graded,
-            "pending":        row[1] or 0,
-            "long_win_rate":  long_wr,
-            "short_win_rate": short_wr,
-            "grade_a":        row[6] or 0,
-            "grade_b":        row[7] or 0,
-            "grade_c":        row[8] or 0,
-            "avg_winner_pct": float(row[9] or 0),
-            "avg_days":       float(row[10] or 0),
+            "total_signals":    total,
+            "with_outcomes":    row[1] or 0,
+            "pending_outcomes": row[2] or 0,
+            "grade_a":          grade_a,
+            "grade_b":          grade_b,
+            "grade_c":          row[5] or 0,
+            "grade_w":          row[6] or 0,
+            "high_confidence":  round(grade_ab / total * 100, 1) if total > 0 else 0,
+            "avg_long_pct":     float(row[7] or 0),
+            "avg_short_pct":    float(row[8] or 0),
+            "avg_days":         float(row[9] or 0),
+            "hit_target1_rate": round((row[10] or 0) / max(row[1] or 1, 1) * 100, 1),
+            "hit_target2_rate": round((row[11] or 0) / max(row[1] or 1, 1) * 100, 1),
             "recent_signals": [
                 {
                     "symbol":      s[0],
                     "signal_type": s[1],
                     "signal_date": s[2].isoformat() if s[2] else None,
-                    "entry_price": s[3],
-                    "score":       s[4],
+                    "entry_price": float(s[3]) if s[3] else None,
+                    "score":       float(s[4]) if s[4] else None,
                     "setup_type":  s[5],
                     "regime":      s[6],
                     "grade":       s[7],
-                    "outcome_pct": s[8],
-                    "days":        s[9],
+                    "outcome_pct": float(s[8]) if s[8] else None,
+                    "days":        float(s[9]) if s[9] else None,
+                    "hit_t1":      s[10],
+                    "hit_t2":      s[11],
                 }
                 for s in signals
             ],
