@@ -227,10 +227,31 @@ def calculate_behavioral_score(candles: list[dict]) -> BehavioralScore:
 
 def fetch_options_bias(symbol: str, price: float) -> Optionsbias:
     """
-    Fetches delayed options chain from Alpaca and derives
-    put/call ratio, gamma level, IV skew, and net bias.
-    Falls back to synthetic if API unavailable.
+    Fetches live options data via GEX engine (Alpaca OPRA).
+    Falls back to direct Alpaca call, then synthetic if unavailable.
     """
+    # Try GEX engine first — it has live OPRA data
+    try:
+        from gex_engine import score_gex
+        gex = score_gex(symbol, price, [], is_intelligence_layer=False)
+        if gex and gex.get("gex_available"):
+            regime    = gex.get("gex_regime", "NEUTRAL")
+            gex_score = gex.get("gex_score", 50) or 50
+            wall      = gex.get("gex_wall") or price
+            net_bias  = "BULLISH" if regime == "POSITIVE" else "BEARISH" if regime == "NEGATIVE" else "NEUTRAL"
+            confidence= min(100, int(abs(gex_score - 50) * 2))
+            pcr       = 0.75 if regime == "POSITIVE" else 1.25 if regime == "NEGATIVE" else 1.0
+            return Optionsbias(
+                put_call_ratio=round(pcr, 3),
+                gamma_level=round(wall, 2),
+                iv_skew=round((pcr - 1.0) * 0.05, 4),
+                net_bias=net_bias,
+                confidence=confidence,
+                source="LIVE",
+            )
+    except Exception:
+        pass
+
     if not ALPACA_API_KEY or not ALPACA_API_SECRET:
         return _synthetic_options_bias(price)
 
