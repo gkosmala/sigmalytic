@@ -988,3 +988,15 @@ async def debug_radar(symbol: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/behavior/open-trade/{user_id}")
+async def get_open_trade(user_id: str):
+    """
+    Open trade endpoint — returns empty response until
+    Alpaca order execution is built in v1.1
+    """
+    return {
+        "user_id": user_id,
+        "open_trade": None,
+        "status": "no_open_trade",
+        "message": "No open trade found"
+    }
