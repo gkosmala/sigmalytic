@@ -1086,7 +1086,7 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+        note_box(""Live institutional options flow | Powered by Alpaca OPRA","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
