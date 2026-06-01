@@ -1145,7 +1145,71 @@ def build_command_tab(live, candles, symbol, tf):
 
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
-    return html.Div([row1, row2, row3, row4],
+    # ── Engine Intelligence Strip ────────────────────────────────────────────
+    # Fetch radar data for this symbol
+    _radar_data = {}
+    try:
+        import requests as _rqc
+        _r = _rqc.get(f"{BACKEND_HTTP}/api/radar/symbol/{symbol}", timeout=3)
+        if _r.ok:
+            _radar_data = _r.json()
+    except Exception:
+        pass
+
+    def _eng_badge(label, value, color=TEXT, bg="rgba(0,0,0,.2)"):
+        return html.Div([
+            html.Span(label, style={"fontSize":"9px","color":MUTED,"fontWeight":"700",
+                      "textTransform":"uppercase","letterSpacing":".12em","display":"block","marginBottom":"2px"}),
+            html.Span(str(value), style={"fontSize":"12px","fontWeight":"800","color":color}),
+        ], style={"background":bg,"border":f"1px solid {BORDER}","borderRadius":"10px",
+                  "padding":"8px 14px","minWidth":"90px"})
+
+    # GEX
+    _gex_regime = _radar_data.get("gex_regime") or "—"
+    _gex_color  = TEAL_DIM if _gex_regime=="POSITIVE" else RED_DIM if _gex_regime=="NEGATIVE" else TEXT
+    _gex_label  = "Positive — Stabilizing" if _gex_regime=="POSITIVE" else "Negative — Amplifying" if _gex_regime=="NEGATIVE" else "—"
+    _gex_wall   = _radar_data.get("gex_wall")
+    _gex_wall_str = f"Wall ${_gex_wall:,.2f}" if _gex_wall else ""
+
+    # Wave Signal
+    _wave_map = {
+        "SPRING":"Spring — Reversal Up","UPTHRUST":"Upthrust — Reversal Down",
+        "CLIMAX_BUY":"Buying Climax","CLIMAX_SELL":"Selling Climax",
+        "3BAR_BULLISH":"3-Bar Bullish","3BAR_BEARISH":"3-Bar Bearish","NONE":"No Signal",
+    }
+    _wave_raw   = _radar_data.get("weis_signal") or "NONE"
+    _wave_label = _wave_map.get(_wave_raw, _wave_raw)
+    _wave_color = TEAL_DIM if "Spring" in _wave_label or "Bullish" in _wave_label else                   RED_DIM if "Upthrust" in _wave_label or "Bearish" in _wave_label or "Climax" in _wave_label else TEXT
+
+    # Status from radar
+    _radar_status = _radar_data.get("status") or "—"
+    _status_color = TEAL_DIM if _radar_status in ("Armed","Triggered","Confirmed") else                     YELLOW_DIM if _radar_status=="Building" else                     RED_DIM if _radar_status in ("Avoid","Failed","Short Trigger") else TEXT
+
+    # BME
+    _bme = _radar_data.get("bme_score")
+    _bme_str = f"{_bme:.0f}" if _bme else "—"
+    _bme_color = TEAL_DIM if _bme and _bme>=65 else RED_DIM if _bme and _bme<35 else TEXT
+
+    # Setup
+    _setup = _radar_data.get("setup_type") or "—"
+
+    engine_strip = html.Div([
+        html.Div([
+            html.Span("Engine Intelligence", style={"fontSize":"9px","color":MUTED,"fontWeight":"800",
+                      "textTransform":"uppercase","letterSpacing":".15em"}),
+            html.Span(f"  ·  {symbol}", style={"fontSize":"9px","color":MUTED}),
+        ], style={"marginBottom":"10px"}),
+        html.Div([
+            _eng_badge("Options Positioning", _gex_label + (f" · {_gex_wall_str}" if _gex_wall_str else ""), _gex_color),
+            _eng_badge("Wave Signal",         _wave_label,  _wave_color),
+            _eng_badge("Radar Status",        _radar_status, _status_color),
+            _eng_badge("Behavioral Score",    _bme_str,     _bme_color),
+            _eng_badge("Setup Type",          _setup,       WHITE),
+        ], style={"display":"flex","gap":"8px","flexWrap":"wrap"}),
+    ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"16px",
+              "padding":"14px 18px","marginBottom":"16px"})
+
+    return html.Div([row1, engine_strip, row2, row3, row4],
                     style={"display":"flex","flexDirection":"column"})
 
 
