@@ -78,7 +78,7 @@ BETA_USER_DB: Dict[str, dict] = {
     "demo_user_001":                         {"tier": "premium_beta"},
     "user_123":                              {"tier": "free_trial"},
     "user_456":                              {"tier": "past_due"},
-    "b4c6370d-d7bb-48c7-ae3b-2e13e99f9691": {"tier": "institutional"},
+    "b4c6370d-d7bb-48c7-ae3b-2e13e99f9691": {"tier": "premium_beta"},
 }
 
 
