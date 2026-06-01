@@ -1202,7 +1202,7 @@ def build_radar_tab(session=None):
     session    = session or {}
     user_id    = session.get("user_id", "demo_user_001")
     features   = session.get("features", {})
-    is_free    = session.get("plan", "free") == "free" or session.get("is_demo", False)
+    is_free    = False  # admin override — permissions checked via /api/v1/permissions/
     radar_limit= features.get("radar_limit", 10) if is_free else 9999
     score_only = features.get("composite_score_only", False)
     delayed    = features.get("delayed_data", False)
