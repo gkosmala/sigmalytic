@@ -247,12 +247,15 @@ async def get_billing(user_id: str):
     tier_names = {
         "free":         "Free",
         "trader":       "Trader — $49/mo",
-        "elite_trader": "Elite Trader — $129/mo",
+        "elite_trader": "Elite Trader � $129/mo",
+        "institutional": "Institutional",
     }
     return {
         "user_id":              user_id,
         "tier":                 data.get("tier", "free"),
         "plan_name":            tier_names.get(data.get("tier","free"), "Free"),
+        "plan_price":           {"free":""plan_name":            tier_names.get(data.get("tier","free"), "Free"),","trader":"$49/mo","elite_trader":"$129/mo","institutional":"Contact Us"}.get(data.get("tier","free"),""plan_name":            tier_names.get(data.get("tier","free"), "Free"),"),
+        "features":             {"live_data":True,"alerts":True,"intelligence":True,"radar_limit":1403,"sms_limit":-1} if data.get("tier","free") != "free" else {"live_data":False,"alerts":False,"intelligence":False,"radar_limit":50,"sms_limit":0},
         "status":               data.get("status", "active"),
         "current_period_end":   data.get("current_period_end"),
         "cancel_at_period_end": data.get("cancel_at_period_end", False),
