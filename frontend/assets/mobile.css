@@ -1,0 +1,215 @@
+/* ============================================================
+   Sigmalytic — Mobile Responsive Styles
+   Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+   
+   Applies ONLY on screens under 768px (phones).
+   Desktop layout is completely unchanged.
+   ============================================================ */
+
+/* ── Base mobile reset ──────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Prevent horizontal scroll */
+  body, #react-entry-point, ._dash-loading {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+
+  /* ── Header / ticker bar ─────────────────────────────────── */
+  /* Top announcement bar — smaller text */
+  div[style*="font-size:11px"] {
+    font-size: 9px !important;
+    padding: 4px 8px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Logo + title row */
+  div[style*="SIGMALYTIC SYSTEM"] {
+    font-size: 11px !important;
+    letter-spacing: .08em !important;
+  }
+
+  /* Live price badge row */
+  div[style*="LIVE PRICE"] {
+    font-size: 10px !important;
+  }
+
+  /* Main title "Decision Command Center" */
+  h1[style*="fontSize:\"28px\""],
+  div[style*="fontSize:\"28px\""] {
+    font-size: 18px !important;
+  }
+
+  /* ── Symbol input + Load button ──────────────────────────── */
+  div[style*="display:\"flex\""][style*="gap:\"12px\""] {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  input[type="text"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    font-size: 14px !important;
+  }
+
+  /* ── Navigation tabs ─────────────────────────────────────── */
+  /* Scrollable horizontal nav on mobile */
+  div[style*="borderBottom"][style*="display:\"flex\""] {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding-bottom: 2px !important;
+  }
+
+  div[style*="borderBottom"][style*="display:\"flex\""]::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Individual tab buttons — smaller on mobile */
+  div[style*="borderBottom"] button,
+  div[style*="borderBottom"] a {
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Preferences gear icon tab */
+  button[id="tab-preferences"] {
+    font-size: 11px !important;
+    padding: 8px 10px !important;
+  }
+
+  /* ── Command Center — chart area ─────────────────────────── */
+  /* Stack chart and price ladder vertically */
+  div[style*="display:\"flex\""][style*="gap:\"16px\""] {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  /* Chart container — full width */
+  div[style*="flex:\"1\""] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Plotly chart — full width */
+  .js-plotly-plot, .plotly, .plot-container {
+    width: 100% !important;
+    max-width: 100vw !important;
+  }
+
+  /* Timeframe buttons row */
+  div[style*="1m"][style*="display:\"flex\""],
+  div[id*="tf"] {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
+  /* ── Metric cards / stat grids ───────────────────────────── */
+  /* Stack 4-column grids into 2-column on mobile */
+  div[style*="gridTemplateColumns:\"repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* Stack 3-column grids into 1-column */
+  div[style*="gridTemplateColumns:\"repeat(3"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* ── Radar screen ────────────────────────────────────────── */
+  /* Radar table — horizontal scroll */
+  div[id*="radar"] table,
+  div[id*="radar-table"] {
+    display: block !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+  }
+
+  /* ── Scoreboard ──────────────────────────────────────────── */
+  /* Stack scoreboard stat cards */
+  div[style*="gridTemplateColumns:\"repeat(4,1fr)\""] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* ── Cards / panels ──────────────────────────────────────── */
+  section[style*="borderRadius:\"20px\""],
+  div[style*="borderRadius:\"20px\""] {
+    padding: 14px !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* ── Billing pricing table ───────────────────────────────── */
+  iframe[srcdoc*="pricing-table"] {
+    min-height: 800px !important;
+  }
+
+  /* ── Preferences tab ─────────────────────────────────────── */
+  div[style*="maxWidth:\"600px\""] {
+    padding: 12px 8px !important;
+  }
+
+  /* ── Typography ──────────────────────────────────────────── */
+  h2[style*="fontSize:\"22px\""] {
+    font-size: 17px !important;
+  }
+
+  h2[style*="fontSize:\"16px\""] {
+    font-size: 14px !important;
+  }
+
+  /* ── Buttons — full width on mobile ─────────────────────── */
+  button[style*="width:\"100%\""] {
+    font-size: 13px !important;
+    padding: 12px !important;
+  }
+
+  /* ── Footer / bottom bar ─────────────────────────────────── */
+  div[style*="fontSize:\"10px\""] {
+    font-size: 9px !important;
+  }
+
+  /* ── Slider components ───────────────────────────────────── */
+  .rc-slider {
+    margin: 8px 0 !important;
+  }
+
+  /* ── Intelligence / factor score rows ───────────────────── */
+  div[style*="display:\"grid\""][style*="gridTemplateColumns:\"repeat(2"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Level / path cards ──────────────────────────────────── */
+  div[style*="display:\"flex\""][style*="justifyContent:\"space-between\""] {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+}
+
+/* ── Small phones (under 390px — iPhone SE etc) ─────────────── */
+@media (max-width: 390px) {
+  div[style*="borderBottom"] button,
+  div[style*="borderBottom"] a {
+    font-size: 10px !important;
+    padding: 6px 8px !important;
+  }
+
+  div[style*="gridTemplateColumns:\"repeat(2"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  section[style*="borderRadius:\"20px\""],
+  div[style*="borderRadius:\"20px\""] {
+    padding: 10px !important;
+  }
+}
