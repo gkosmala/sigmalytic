@@ -34,39 +34,39 @@ from typing import Dict, List
 
 # ── Tier hierarchy (order matters for display; not used for logic) ─────────────
 
-TIERS = ["free_trial", "past_due", "premium_beta"]
+TIERS = ["free_trial", "past_due", "premium_beta", "institutional"]
 
 # ── Feature → allowed tiers map ───────────────────────────────────────────────
 # Add every gated feature here. A feature NOT listed = open to all tiers.
 
 FEATURE_MAP: Dict[str, List[str]] = {
     # Command Center
-    "command_center_view":          ["free_trial", "premium_beta", "past_due"],
-    "live_feed_view":               ["free_trial", "premium_beta", "past_due"],
+    "command_center_view":          ["free_trial", "premium_beta", "past_due", "institutional"],
+    "live_feed_view":               ["free_trial", "premium_beta", "past_due", "institutional"],
 
     # Behavioral Intelligence — CSV upload gated to premium
-    "behavioral_intel_view":        ["free_trial", "premium_beta", "past_due"],
-    "behavioral_intel_csv_upload":  ["premium_beta"],          # upgrade prompt for free_trial
-    "behavioral_intel_history":     ["premium_beta"],          # per-user history (roadmap item)
+    "behavioral_intel_view":        ["free_trial", "premium_beta", "past_due", "institutional"],
+    "behavioral_intel_csv_upload":  ["premium_beta", "institutional"],          # upgrade prompt for free_trial
+    "behavioral_intel_history":     ["premium_beta", "institutional"],          # per-user history (roadmap item)
 
     # Performance tab — basic metrics free, deep analytics premium
-    "performance_basic":            ["free_trial", "premium_beta", "past_due"],
-    "performance_advanced":         ["premium_beta"],
+    "performance_basic":            ["free_trial", "premium_beta", "past_due", "institutional"],
+    "performance_advanced":         ["premium_beta", "institutional"],
 
     # Radar Screen (not yet built — stubbed here for future gating)
-    "radar_screen":                 ["premium_beta"],
+    "radar_screen":                 ["premium_beta", "institutional"],
 
     # Options Window (not yet built)
-    "options_window":               ["premium_beta"],
+    "options_window":               ["premium_beta", "institutional"],
 
     # Alpaca Paper Trading (not yet built)
-    "paper_trading":                ["premium_beta"],
+    "paper_trading":                ["premium_beta", "institutional"],
 
     # Billing page — all tiers can see it (it adapts based on tier)
-    "billing_view":                 ["free_trial", "premium_beta", "past_due"],
+    "billing_view":                 ["free_trial", "premium_beta", "past_due", "institutional"],
 
     # Admin / reset — internal only; not exposed via user-facing endpoints
-    "admin_reset_history":          ["premium_beta"],          # tighten this in production
+    "admin_reset_history":          ["premium_beta", "institutional"],          # tighten this in production
 }
 
 # ── In-memory user store (shared with billing_stub.py) ────────────────────────
@@ -75,9 +75,10 @@ FEATURE_MAP: Dict[str, List[str]] = {
 # Duplicated here so this module is self-contained during development.
 
 BETA_USER_DB: Dict[str, dict] = {
-    "demo_user_001": {"tier": "premium_beta"},
-    "user_123":      {"tier": "free_trial"},
-    "user_456":      {"tier": "past_due"},
+    "demo_user_001":                         {"tier": "premium_beta"},
+    "user_123":                              {"tier": "free_trial"},
+    "user_456":                              {"tier": "past_due"},
+    "b4c6370d-d7bb-48c7-ae3b-2e13e99f9691": {"tier": "institutional"},
 }
 
 
