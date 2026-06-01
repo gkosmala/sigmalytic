@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 select_universe.py
 Sigmalytic Quant Corporation

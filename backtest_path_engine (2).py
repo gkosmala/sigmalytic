@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backtest_path_engine.py
 Sigmalytic Quant Corporation

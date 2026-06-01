@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 Sigmalytic Decision Engine — Shared Core Logic
 Used by both the backend (FastAPI) and frontend (Dash).

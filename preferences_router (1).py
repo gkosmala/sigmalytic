@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 preferences_router.py — Sigmalytic Quant
 FastAPI router for reading and updating user alert preferences.

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 import dash
 from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -282,3 +283,4 @@ def layout():
 
         ], style={"backgroundColor": "#0A0F1E", "minHeight": "100vh"})
     ])
+
