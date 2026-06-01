@@ -230,20 +230,29 @@ def fetch_options_bias(symbol: str, price: float) -> Optionsbias:
     Fetches live options data via GEX engine (Alpaca OPRA).
     Falls back to direct Alpaca call, then synthetic if unavailable.
     """
-    # Try GEX engine first — it has live OPRA data
+    # Try radar cache first — it has live GEX data already scored
     try:
-        from gex_engine import score_gex
-        gex = score_gex(symbol, price, [], is_intelligence_layer=False)
+        import sys, os
+        # Add backend path so we can access radar cache
+        backend_path = os.path.join(os.path.dirname(__file__), '..', 'backend')
+        if backend_path not in sys.path:
+            sys.path.insert(0, backend_path)
+        from radar_service import RADAR_CACHE, GEX_SCORE_CACHE
+        # Check GEX cache first
+        gex = GEX_SCORE_CACHE.get(symbol.upper(), {})
+        if not gex:
+            # Fall back to radar cache
+            gex = RADAR_CACHE.get(symbol.upper(), {})
         if gex and gex.get("gex_available"):
             regime    = gex.get("gex_regime", "NEUTRAL")
-            gex_score = gex.get("gex_score", 50) or 50
+            gex_score = float(gex.get("gex_score", 50) or 50)
             wall      = gex.get("gex_wall") or price
             net_bias  = "BULLISH" if regime == "POSITIVE" else "BEARISH" if regime == "NEGATIVE" else "NEUTRAL"
             confidence= min(100, int(abs(gex_score - 50) * 2))
             pcr       = 0.75 if regime == "POSITIVE" else 1.25 if regime == "NEGATIVE" else 1.0
             return Optionsbias(
                 put_call_ratio=round(pcr, 3),
-                gamma_level=round(wall, 2),
+                gamma_level=round(float(wall), 2),
                 iv_skew=round((pcr - 1.0) * 0.05, 4),
                 net_bias=net_bias,
                 confidence=confidence,
