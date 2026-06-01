@@ -2638,7 +2638,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
     elif tab=="divergence":  main = build_divergence_tab(session=None)
     elif tab=="billing":
         try:
-            main = build_billing_tab(session=None, perms=None)
+            main = build_billing_tab(session=session, perms=perms)
         except Exception as e:
             main = card([
                 html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
