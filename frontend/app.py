@@ -1154,10 +1154,10 @@ def build_feed_tab(live, live_mode):
         html.Div([
             html.Div([html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                       html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":MUTED})]),
-            badge("Connected" if live_mode else "Synthetic","teal" if live_mode else "gray"),
+            badge("Connected", "teal"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"16px"}),
         html.Div([
-            metric_tile("Feed Mode","Live Alpaca" if live_mode else "Synthetic"),
+            metric_tile("Feed Mode","Live Alpaca"),
             metric_tile("Symbol",live["symbol"]),
             metric_tile("Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Volume",f"{live['volume']:,}"),
@@ -1327,16 +1327,16 @@ def build_radar_tab(session=None):
            onMouseLeave=f"document.getElementById('{tooltip_id}').style.display='none'")
 
     header_row = html.Div([
-        html.Span("Symbol", style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase"}),
-        _hdr("Price",   "0 0 70px"),
-        _hdr("Chg%",    "0 0 55px"),
-        _hdr("Score",   "0 0 40px"),
-        _hdr("Grd",     "0 0 30px"),
-        _hdr("Bias",    "0 0 60px"),
-        _hdr("Setup",   "1.5"),
-        _hdr("Regime",  "1"),
-        _hdr("Target",  "0 0 70px"),
-        _hdr("Stop",    "0 0 70px"),
+        html.Span("Symbol",  style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Price",   style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Chg%",    style={"flex":"0 0 55px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Score",   style={"flex":"0 0 40px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Grd",     style={"flex":"0 0 30px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Bias",    style={"flex":"0 0 60px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Regime",  style={"flex":"0 0 80px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Target",  style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Stop",    style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
     ], style={"display":"flex","gap":"8px","paddingBottom":"8px",
                "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
 
@@ -2428,7 +2428,6 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
 
@@ -2618,87 +2617,34 @@ def set_tab(*_):
     Output("s-live","data"),
     Output("s-seq","data",allow_duplicate=True),
     Output("s-candles","data",allow_duplicate=True),
-    Input("i-synth","n_intervals"), Input("i-alpaca","n_intervals"),
+    Input("i-alpaca","n_intervals"),
     State("s-live","data"), State("s-seq","data"), State("s-candles","data"),
     State("s-live-mode","data"), State("s-symbol","data"), State("s-tf","data"),
     prevent_initial_call=True,
 )
-def tick(_,__,current,seq,candles,live_mode,symbol,tf):
-    ctx = callback_context
-    if not ctx.triggered: return no_update,no_update,no_update
-    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-    vol = TF_VOLATILITY.get(tf, 0.60)
-    # Always attempt Alpaca first on any interval trigger.
-    # If Alpaca fails, use synthetic movement to keep chart alive.
-    prev = current["price"] if current else 280.15
-    price = None; volume = None
+def on_tick(_, current, seq, candles, live_mode, symbol, tf):
+    trigger = "i-alpaca"
+    prev   = current["price"] if current else 280.15
+    price  = None
+    volume = None
 
-    if trigger == "i-alpaca":
-        try:
-            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
-            r.raise_for_status()
-            d = r.json()
-            price  = float(d["price"])
-            volume = int(d.get("volume", 0))
-        except Exception:
-            pass  # fall through to synthetic below
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
+        r.raise_for_status()
+        d     = r.json()
+        price  = float(d["price"])
+        volume = int(d.get("volume", 0))
+    except Exception:
+        return no_update, no_update, no_update
 
     if price is None:
-        if trigger == "i-synth":
-            tick_scale = {
-                "1m": 0.05, "5m": 0.08, "15m": 0.12,
-                "1H": 0.18, "1D": 0.30, "1W":  0.50,
-            }.get(tf, 0.08)
-            price  = round(max(1.0, prev + (random.random() - 0.48) * tick_scale), 2)
-            volume = round(500_000 + random.random() * 5_000_000)
-        else:
-            return no_update, no_update, no_update
-    new_seq  = (seq or 0)+1
-    new_live = create_live_update(symbol,price,volume,new_seq,candles).to_dict()
-    if candles:
-        prior    = candles[-1]
-        interval = TF_INTERVAL.get(tf, 300)
-        now_utc  = datetime.now(timezone.utc)
+        return no_update, no_update, no_update
 
-        try:    last_ts = datetime.fromisoformat(prior["t"])
-        except: last_ts = now_utc - timedelta(seconds=interval)
-
-        # Only open a NEW candle if enough real time has passed for this TF.
-        # Otherwise update the current candle in-place (high/low/close update,
-        # timestamp stays fixed). This prevents weekly/daily candles from
-        # printing dates far into the future.
-        elapsed = (now_utc - last_ts).total_seconds()
-
-        if elapsed >= interval:
-            # Enough real time has passed — open a fresh candle.
-            # New candle: open = prior close, high = low = open (price hasn't moved yet),
-            # close = current price. No artificial offset on high/low at open.
-            new_ts  = last_ts + timedelta(seconds=interval)
-            o_price = prior["c"]          # open is prior close
-            new_c   = {
-                "o": o_price,
-                "h": round(max(o_price, price), 2),   # true high so far
-                "l": round(min(o_price, price), 2),   # true low so far
-                "c": price,
-                "t": new_ts.isoformat(),
-            }
-            new_candles = candles[-49:] + [new_c]
-        else:
-            # Still within the current candle period — update in-place.
-            # Open is permanently locked to candle start.
-            # High only moves up, low only moves down, close is latest price.
-            updated_last = {
-                "o": prior["o"],                         # LOCKED — never changes
-                "h": round(max(prior["h"], price), 2),   # only moves up
-                "l": round(min(prior["l"], price), 2),   # only moves down
-                "c": price,                              # always latest
-                "t": prior["t"],                         # timestamp locked to open
-            }
-            new_candles = candles[:-1] + [updated_last]
-    else:
-        new_candles = _init_candles
-    return new_live, new_seq, new_candles
-
+    new_seq  = (seq or 0) + 1
+    new_live = create_live_update(symbol, price, volume, new_seq)
+    interval = TF_SECONDS.get(tf, 300)
+    new_candles = update_candles(candles, price, volume, interval)
+    return new_live.to_dict(), new_seq, new_candles
 @app.callback(
     Output("price-ctrl","children"),
     Input("s-live-mode","data"), Input("s-live","data"),
@@ -3095,4 +3041,3 @@ def logout(n):
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
-_hdr = lambda txt, flex: __import__('dash').html.Span(txt)
