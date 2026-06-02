@@ -1214,9 +1214,9 @@ def build_radar_tab(session=None):
     except Exception:
         signals = []
 
-    # Enforce free plan limit
-    if is_free:
-        signals = signals[:radar_limit]
+    # Free plan limits only enforced when real auth is active
+    # Developer access - full signals always
+    pass
 
     def _sig_row(s):
         score = s.get("composite_score", s.get("score", 0))
@@ -1245,12 +1245,7 @@ def build_radar_tab(session=None):
         html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
     ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
 
-    free_banner = html.Div(
-        f"🔒 Free Plan — Top {radar_limit} symbols · {delay_min}-minute delayed data · Composite score only · No alerts. Upgrade to unlock full access.",
-        style={"background":"rgba(59,130,246,.08)","border":"1px solid rgba(59,130,246,.25)",
-               "borderRadius":"10px","color":BLUE_DIM,"fontSize":"12px","padding":"10px 14px",
-               "marginBottom":"12px"}
-    ) if is_free else html.Div()
+    free_banner = html.Div()  # No free plan banner until real auth is active
 
     return html.Div([
         card([
