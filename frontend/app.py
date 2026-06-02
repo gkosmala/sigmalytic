@@ -1223,31 +1223,122 @@ def build_radar_tab(session=None):
     pass
 
     def _sig_row(s):
-        score = s.get("composite_score", s.get("score", 0))
-        sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        chg = s.get("change_pct", 0)
+        score     = s.get("composite_score", s.get("score", 0)) or 0
+        sc        = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
+        chg       = s.get("change_pct", 0) or 0
+        setup     = s.get("setup_type", "") or ""
+        status    = s.get("status", "—") or "—"
+        regime    = (s.get("regime", "—") or "—").replace("_"," ").title()
+        intel_reg = (s.get("intelligence_regime", "") or "").replace("_"," ").title()
+        tgt1      = s.get("target1", 0) or 0
+        tgt2      = s.get("target2", 0) or 0
+        trigger   = s.get("trigger", 0) or 0
+        invalid   = s.get("invalidation", 0) or 0
+        rel_vol   = s.get("rel_volume", 0) or 0
+        behavioral= s.get("behavioral", 0) or 0
+        bme       = s.get("bme_score", 0) or 0
+        prox      = s.get("trigger_proximity", 0) or 0
+        conf      = s.get("confluence", 0) or 0
+        exp_node  = s.get("expansion_node", 0) or 0
+
+        if status == "Armed":      grade, gc = "A", TEAL_DIM
+        elif status == "Building": grade, gc = "B", YELLOW_DIM
+        else:                      grade, gc = "C", MUTED
+
+        st_low = setup.lower()
+        if any(x in st_low for x in ["breakout","long","bull","accumul"]):
+            bias, bc = "LONG", TEAL_DIM
+        elif any(x in st_low for x in ["breakdown","short","bear","distrib"]):
+            bias, bc = "SHORT", RED_DIM
+        else:
+            bias, bc = "NEUTRAL", MUTED
+
+        prox_icon = "🔥 " if prox <= 0.05 else ("📍 " if prox <= 0.25 else "")
+
+        # Tooltip shown on hover via CSS :hover
+        tooltip_id = f"tt-{s.get('symbol','').replace('.','')}"
+        tooltip = html.Div([
+            html.Div(s.get("symbol",""), style={"fontSize":"14px","fontWeight":"900","color":WHITE,
+                "fontFamily":"DM Mono, monospace","marginBottom":"8px",
+                "borderBottom":f"1px solid {BORDER}","paddingBottom":"6px"}),
+            html.Div([
+                html.Span("Setup  ", style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+                html.Span(setup or "—", style={"fontSize":"11px","color":sc,"fontWeight":"700"}),
+            ], style={"marginBottom":"4px"}),
+            html.Div([
+                html.Span("Status  ", style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+                html.Span(f"{status}  ·  {intel_reg}" if intel_reg else status,
+                    style={"fontSize":"11px","color":gc,"fontWeight":"700"}),
+            ], style={"marginBottom":"8px"}),
+            html.Div([
+                html.Div([html.Span("Score",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"{score:.0f}",style={"fontSize":"20px","fontWeight":"900","color":sc})],
+                         style={"flex":"1","textAlign":"center","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"8px"}),
+                html.Div([html.Span("Confluence",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"{conf:.0f}",style={"fontSize":"20px","fontWeight":"900","color":BLUE_DIM})],
+                         style={"flex":"1","textAlign":"center","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"8px"}),
+                html.Div([html.Span("Behavioral",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"{behavioral:.0f}",style={"fontSize":"20px","fontWeight":"900","color":YELLOW_DIM})],
+                         style={"flex":"1","textAlign":"center","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"8px"}),
+            ], style={"display":"flex","gap":"6px","marginBottom":"8px"}),
+            html.Div([
+                html.Div([html.Span("Trigger",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"${trigger:.2f}" if trigger else "—",style={"fontSize":"12px","fontWeight":"800","color":YELLOW_DIM,"fontFamily":"DM Mono, monospace"})],
+                         style={"flex":"1","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"6px"}),
+                html.Div([html.Span("Target 1",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"${tgt1:.2f}" if tgt1 else "—",style={"fontSize":"12px","fontWeight":"800","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"})],
+                         style={"flex":"1","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"6px"}),
+                html.Div([html.Span("Target 2",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"${tgt2:.2f}" if tgt2 else "—",style={"fontSize":"12px","fontWeight":"800","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"})],
+                         style={"flex":"1","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"6px"}),
+                html.Div([html.Span("Stop",style={"fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","display":"block"}),
+                          html.Span(f"${invalid:.2f}" if invalid else "—",style={"fontSize":"12px","fontWeight":"800","color":RED_DIM,"fontFamily":"DM Mono, monospace"})],
+                         style={"flex":"1","background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"6px"}),
+            ], style={"display":"flex","gap":"6px","marginBottom":"8px"}),
+            html.Div(f"Rel Vol: {rel_vol:.1f}x  ·  BME: {bme:.0f}  ·  Exp Node: {exp_node:.0f}"
+                     + (f"  ·  {prox_icon}Proximity: {prox:.2f}" if prox else ""),
+                     style={"fontSize":"10px","color":MUTED}),
+        ], id=tooltip_id, style={
+            "position":"absolute","zIndex":"1000","top":"0","left":"100%","marginLeft":"8px",
+            "background":NAVY_CARD,"border":f"1px solid {BORDER_T}",
+            "borderRadius":"16px","padding":"16px","width":"320px",
+            "boxShadow":"0 16px 48px rgba(0,0,0,.7)",
+            "display":"none","pointerEvents":"none",
+        })
+
         return html.Div([
-            html.Span(s.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"${s.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":WHITE}),
-            html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
-                       "color":TEAL_DIM if chg>=0 else RED_DIM}),
-            html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
-            html.Span(s.get("status","—"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(s.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(s.get("bias","—"), style={"flex":"1","fontSize":"11px","color":BLUE_DIM}),
-        ], style={"display":"flex","alignItems":"center","gap":"12px",
-                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
+            html.Div([
+                html.Span(s.get("symbol",""), style={"flex":"0 0 70px","fontWeight":"900","fontSize":"13px",
+                           "color":TEAL_DIM,"fontFamily":"DM Mono, monospace","cursor":"pointer"}),
+                html.Span(f"${s.get('price',0):,.2f}", style={"flex":"0 0 70px","fontSize":"12px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
+                html.Span(f"{chg:+.2f}%", style={"flex":"0 0 55px","fontSize":"12px","fontWeight":"700","color":TEAL_DIM if chg>=0 else RED_DIM}),
+                html.Span(f"{score:.0f}", style={"flex":"0 0 40px","fontSize":"15px","fontWeight":"900","color":sc}),
+                html.Span(grade, style={"flex":"0 0 30px","fontSize":"13px","fontWeight":"900","color":gc}),
+                html.Span(bias, style={"flex":"0 0 60px","fontSize":"11px","fontWeight":"800","color":bc}),
+                html.Span(setup or "—", style={"flex":"1.5","fontSize":"10px","color":sc,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".05em"}),
+                html.Span(regime, style={"flex":"1","fontSize":"10px","color":MUTED}),
+                html.Span(f"{prox_icon}${tgt1:.2f}" if tgt1 else "—", style={"flex":"0 0 70px","fontSize":"10px","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"}),
+                html.Span(f"${invalid:.2f}" if invalid else "—", style={"flex":"0 0 70px","fontSize":"10px","color":RED_DIM,"fontFamily":"DM Mono, monospace"}),
+            ], style={"display":"flex","alignItems":"center","gap":"8px"}),
+            tooltip,
+        ], style={"position":"relative","padding":"10px 0","borderBottom":f"1px solid {BORDER}"},
+           **{"data-tooltip": tooltip_id},
+           onMouseEnter=f"document.getElementById('{tooltip_id}').style.display='block'",
+           onMouseLeave=f"document.getElementById('{tooltip_id}').style.display='none'")
 
     header_row = html.Div([
-        html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Price",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Chg%",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Status",  style={"flex":"1.5","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-    ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
+        _hdr("Symbol",  "0 0 70px"),
+        _hdr("Price",   "0 0 70px"),
+        _hdr("Chg%",    "0 0 55px"),
+        _hdr("Score",   "0 0 40px"),
+        _hdr("Grd",     "0 0 30px"),
+        _hdr("Bias",    "0 0 60px"),
+        _hdr("Setup",   "1.5"),
+        _hdr("Regime",  "1"),
+        _hdr("Target",  "0 0 70px"),
+        _hdr("Stop",    "0 0 70px"),
+    ], style={"display":"flex","gap":"8px","paddingBottom":"8px",
+               "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
 
     free_banner = html.Div()  # No free plan banner until real auth is active
 
