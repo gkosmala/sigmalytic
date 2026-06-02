@@ -1209,8 +1209,12 @@ def build_radar_tab(session=None):
 
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
-        data = r.json() if r.ok else []
-        signals = data if isinstance(data, list) else data.get("signals", data.get("scores", []))
+        data = r.json() if r.ok else {}
+        # Backend returns {count: N, symbols: [...]}
+        if isinstance(data, list):
+            signals = data
+        else:
+            signals = data.get("symbols", data.get("signals", data.get("scores", [])))
     except Exception:
         signals = []
 
@@ -1275,9 +1279,11 @@ def build_scoreboard_tab(session=None):
         board = {}
 
     # Backend /api/scoreboard returns {signals, stats, generated_at}
-    entries   = board.get("entries", board.get("signals", []))
-    generated = board.get("generated_at", "")
-    summary   = board.get("summary", board.get("stats", {}))
+    # Backend /api/scoreboard returns {count, symbols, stats, generated_at}
+    raw = board.get("symbols", board.get("entries", board.get("signals", [])))
+    entries   = raw if isinstance(raw, list) else []
+    generated = board.get("generated_at", board.get("last_updated", ""))
+    summary   = board.get("stats", board.get("summary", {}))
 
     def _entry_row(e, rank):
         score = e.get("composite_score", e.get("score", 0))
