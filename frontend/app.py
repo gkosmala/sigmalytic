@@ -1198,14 +1198,26 @@ def build_stub_tab(title, description):
 def build_radar_tab(session=None):
     """Radar Screen — multi-symbol signal scanner."""
     import requests as _rq
+
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         data = r.json() if r.ok else {}
+
         if isinstance(data, list):
             signals = data
         else:
-            signals = data.get("symbols", data.get("signals", data.get("scores", [])))
-    except Exception:
+            signals = (
+                data.get("symbols")
+                or data.get("signals")
+                or data.get("scores")
+                or data.get("results")
+                or data.get("data")
+                or data.get("radar")
+                or []
+            )
+
+    except Exception as e:
+        print(f"Radar fetch error: {e}")
         signals = []
 
     def _row(s):
