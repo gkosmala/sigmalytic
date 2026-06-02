@@ -2514,27 +2514,41 @@ def set_tab(*_):
     prevent_initial_call=True,
 )
 def on_tick(_, current, seq, candles, live_mode, symbol, tf):
-    trigger = "i-alpaca"
-    prev   = current["price"] if current else 280.15
-    price  = None
-    volume = None
-
     try:
         r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
         r.raise_for_status()
-        d     = r.json()
+        d      = r.json()
         price  = float(d["price"])
         volume = int(d.get("volume", 0))
     except Exception:
         return no_update, no_update, no_update
 
-    if price is None:
-        return no_update, no_update, no_update
-
     new_seq  = (seq or 0) + 1
     new_live = create_live_update(symbol, price, volume, new_seq)
+
+    # Update candles inline
     interval = {"1m":60,"5m":300,"15m":900,"1H":3600,"1D":86400,"1W":604800}.get(tf, 300)
-    new_candles = update_candles(candles, price, volume, interval)
+    if candles:
+        prior = candles[-1]
+        try:
+            last_ts = datetime.fromisoformat(prior["t"])
+        except Exception:
+            last_ts = datetime.now(timezone.utc) - timedelta(seconds=interval)
+        elapsed = (datetime.now(timezone.utc) - last_ts.astimezone(timezone.utc)).total_seconds()
+        if elapsed >= interval:
+            new_c = {"o": prior["c"], "h": max(prior["c"], price),
+                     "l": min(prior["c"], price), "c": price,
+                     "t": datetime.now(timezone.utc).isoformat()}
+            new_candles = candles[-49:] + [new_c]
+        else:
+            candles[-1]["h"] = max(candles[-1]["h"], price)
+            candles[-1]["l"] = min(candles[-1]["l"], price)
+            candles[-1]["c"] = price
+            new_candles = candles
+    else:
+        new_candles = [{"o":price,"h":price,"l":price,"c":price,
+                        "t":datetime.now(timezone.utc).isoformat()}]
+
     return new_live.to_dict(), new_seq, new_candles
 @app.callback(
     Output("price-ctrl","children"),
