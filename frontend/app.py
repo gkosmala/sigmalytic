@@ -1198,19 +1198,9 @@ def build_stub_tab(title, description):
 def build_radar_tab(session=None):
     """Radar Screen — multi-symbol signal scanner."""
     import requests as _rq
-    session    = session or {}
-    user_id    = session.get("user_id", "demo_user_001")
-    features   = session.get("features", {})
-    is_free    = session.get("plan", "free") == "free" or session.get("is_demo", False)
-    radar_limit= features.get("radar_limit", 10) if is_free else 9999
-    score_only = features.get("composite_score_only", False)
-    delayed    = features.get("delayed_data", False)
-    delay_min  = features.get("delay_minutes", 15)
-
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         data = r.json() if r.ok else {}
-        # Backend returns {count: N, symbols: [...]}
         if isinstance(data, list):
             signals = data
         else:
@@ -1218,77 +1208,45 @@ def build_radar_tab(session=None):
     except Exception:
         signals = []
 
-    # Free plan limits only enforced when real auth is active
-    # Developer access - full signals always
-    pass
-
-    def _sig_row(s):
-        score    = s.get("composite_score", s.get("score", 0)) or 0
-        sc       = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        chg      = s.get("change_pct", 0) or 0
-        setup    = s.get("setup_type", "") or ""
-        status   = s.get("status", "—") or "—"
-        regime   = (s.get("regime", "—") or "—").replace("_"," ").title()
-        tgt1     = s.get("target1", 0) or 0
-        invalid  = s.get("invalidation", 0) or 0
-        prox     = s.get("trigger_proximity", 0) or 0
-        prox_icon = "🔥 " if prox <= 0.05 else ("📍 " if prox <= 0.25 else "")
-
-        if status == "Armed":      grade, gc = "A", TEAL_DIM
-        elif status == "Building": grade, gc = "B", YELLOW_DIM
-        else:                      grade, gc = "C", MUTED
-
-        st_low = setup.lower()
-        if any(x in st_low for x in ["breakout","long","bull","accumul"]):
-            bias, bc = "LONG", TEAL_DIM
-        elif any(x in st_low for x in ["breakdown","short","bear","distrib"]):
-            bias, bc = "SHORT", RED_DIM
-        else:
-            bias, bc = "NEUTRAL", MUTED
-
+    def _row(s):
+        score  = s.get("composite_score", s.get("score", 0)) or 0
+        sc     = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
+        chg    = s.get("change_pct", 0) or 0
+        status = s.get("status", "—") or "—"
+        regime = (s.get("regime", "—") or "—").replace("_"," ").title()
+        bias   = s.get("bias", "—") or "—"
         return html.Div([
-            html.Span(s.get("symbol",""), style={"flex":"0 0 70px","fontWeight":"900","fontSize":"13px","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"${s.get('price',0):,.2f}", style={"flex":"0 0 70px","fontSize":"12px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"{chg:+.2f}%", style={"flex":"0 0 55px","fontSize":"12px","fontWeight":"700","color":TEAL_DIM if chg>=0 else RED_DIM}),
-            html.Span(f"{score:.0f}", style={"flex":"0 0 40px","fontSize":"15px","fontWeight":"900","color":sc}),
-            html.Span(grade, style={"flex":"0 0 30px","fontSize":"13px","fontWeight":"900","color":gc}),
-            html.Span(bias, style={"flex":"0 0 60px","fontSize":"11px","fontWeight":"800","color":bc}),
-            html.Span(setup or "—", style={"flex":"1","fontSize":"10px","color":sc,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".05em"}),
-            html.Span(regime, style={"flex":"0 0 80px","fontSize":"10px","color":MUTED}),
-            html.Span(f"{prox_icon}${tgt1:.2f}" if tgt1 else "—", style={"flex":"0 0 70px","fontSize":"10px","color":TEAL_DIM,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"${invalid:.2f}" if invalid else "—", style={"flex":"0 0 70px","fontSize":"10px","color":RED_DIM,"fontFamily":"DM Mono, monospace"}),
-        ], style={"display":"flex","alignItems":"center","gap":"8px","padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
+            html.Span(s.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
+            html.Span(f"${s.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":WHITE}),
+            html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700","color":TEAL_DIM if chg>=0 else RED_DIM}),
+            html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
+            html.Span(status, style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
+            html.Span(regime, style={"flex":"1","fontSize":"11px","color":MUTED}),
+            html.Span(bias, style={"flex":"1","fontSize":"11px","color":BLUE_DIM}),
+        ], style={"display":"flex","alignItems":"center","gap":"12px","padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
 
-    header_row = html.Div([
-        html.Span("Symbol",  style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Price",   style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Chg%",    style={"flex":"0 0 55px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Score",   style={"flex":"0 0 40px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Grd",     style={"flex":"0 0 30px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Bias",    style={"flex":"0 0 60px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Regime",  style={"flex":"0 0 80px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Target",  style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Stop",    style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-    ], style={"display":"flex","gap":"8px","paddingBottom":"8px",
-               "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
-
-    free_banner = html.Div()  # No free plan banner until real auth is active
+    header = html.Div([
+        html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Price",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Chg%",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Status",  style={"flex":"1.5","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+    ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
 
     return html.Div([
         card([
             html.Div([
                 html.H2("📡 Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live multi-symbol signal scanner — A-grade setups across your universe.",
-                       style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"12px"}),
-            free_banner,
-            header_row,
-            html.Div([_sig_row(s) for s in signals] if signals else [
+                html.P("Live multi-symbol signal scanner — A-grade setups across your universe.", style={"color":TEXT,"fontSize":"13px","margin":"0"}),
+            ], style={"marginBottom":"16px"}),
+            header,
+            html.Div([_row(s) for s in signals] if signals else [
                 html.Div("No signals available. Backend may be initializing or market is closed.",
                          style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
             ]),
-        ], sx={"marginBottom":"16px"}),
+        ]),
     ])
 
 
