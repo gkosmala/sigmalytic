@@ -2524,32 +2524,19 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         return no_update, no_update, no_update
 
     new_seq  = (seq or 0) + 1
-    new_live = create_live_update(symbol, price, volume, new_seq)
+    new_live = create_live_update(symbol, price, volume, new_seq).to_dict()
 
-    # Update candles inline
-    interval = {"1m":60,"5m":300,"15m":900,"1H":3600,"1D":86400,"1W":604800}.get(tf, 300)
     if candles:
         prior = candles[-1]
-        try:
-            last_ts = datetime.fromisoformat(prior["t"])
-        except Exception:
-            last_ts = datetime.now(timezone.utc) - timedelta(seconds=interval)
-        elapsed = (datetime.now(timezone.utc) - last_ts.astimezone(timezone.utc)).total_seconds()
-        if elapsed >= interval:
-            new_c = {"o": prior["c"], "h": max(prior["c"], price),
-                     "l": min(prior["c"], price), "c": price,
-                     "t": datetime.now(timezone.utc).isoformat()}
-            new_candles = candles[-49:] + [new_c]
-        else:
-            candles[-1]["h"] = max(candles[-1]["h"], price)
-            candles[-1]["l"] = min(candles[-1]["l"], price)
-            candles[-1]["c"] = price
-            new_candles = candles
+        new_c = {"o": prior["c"],
+                 "h": round(max(prior["c"], price) + 0.12, 2),
+                 "l": round(min(prior["c"], price) - 0.12, 2),
+                 "c": price, "t": str(new_seq)}
+        new_candles = candles[-49:] + [new_c]
     else:
-        new_candles = [{"o":price,"h":price,"l":price,"c":price,
-                        "t":datetime.now(timezone.utc).isoformat()}]
+        new_candles = _init_candles
 
-    return new_live.to_dict(), new_seq, new_candles
+    return new_live, new_seq, new_candles
 @app.callback(
     Output("price-ctrl","children"),
     Input("s-live-mode","data"), Input("s-live","data"),
