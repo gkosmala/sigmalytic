@@ -323,7 +323,7 @@ async def lifespan(app: FastAPI):
         def _initial_bme_training():
             import time as _t
             # Short initial wait for radar bars to start loading
-            _t.sleep(180)  # Wait 3 min for radar bars to load
+            _t.sleep(30)
             last_trained = 0
             for _attempt in range(48):  # Try every 5 min for 4 hours
                 try:
@@ -615,24 +615,9 @@ async def request_password_reset(email: str = ""):
 
 @app.get("/api/scoreboard/clean-duplicates")
 async def clean_duplicates():
-    import threading
-    result = {"deleted": 0, "error": None}
-
-    def _run():
-        try:
-            from scoreboard_service import clear_duplicate_signals
-            result["deleted"] = clear_duplicate_signals()
-        except Exception as e:
-            result["error"] = str(e)
-            log.error(f"Duplicate clear error: {e}")
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=30)
-
-    if result["error"]:
-        return {"ok": False, "message": result["error"]}
-    return {"ok": True, "deleted": result["deleted"]}
+    from scoreboard_service import clear_duplicate_signals
+    deleted = clear_duplicate_signals()
+    return {"ok": True, "deleted": deleted}
 
 
 @app.get("/api/scoreboard")
@@ -643,26 +628,9 @@ async def get_scoreboard():
 
 @app.post("/api/scoreboard/grade-now")
 async def grade_now():
-    import threading
-    result = {"error": None}
-
-    def _run():
-        try:
-            from scoreboard_service import grade_pending_signals
-            log.info("Manual grader triggered via API")
-            grade_pending_signals()
-            log.info("Manual grader finished")
-        except Exception as e:
-            result["error"] = str(e)
-            log.error(f"Manual grader error: {e}")
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=120)
-
-    if result["error"]:
-        return {"ok": False, "message": result["error"]}
-    return {"ok": True, "message": "Grading complete — check Render logs for details"}
+    from scoreboard_service import grade_pending_signals
+    grade_pending_signals()
+    return {"ok": True, "message": "Grading complete"}
 
 
 @app.get("/api/options/test/{symbol}")
@@ -965,7 +933,7 @@ async def debug_radar(symbol: str):
             "gex_strategy"        : radar_data.get("gex_strategy"),
             "gex_wall"            : radar_data.get("gex_wall"),
             "gex_sub_score"       : radar_data.get("gex_sub_score"),
-            "bme_score"           : radar_data.get("bme_score") or internal.get("behavioral"),
+            "bme_score"           : internal.get("behavioral"),
             "weis_score_deep"     : internal.get("wyckoff_weis"),
             "hurst_score"         : internal.get("time_cycle"),
             "vsa_score"           : internal.get("vsa"),
@@ -988,23 +956,3 @@ async def debug_radar(symbol: str):
     except Exception as e:
         return {"error": str(e)}
 
-@app.get("/api/behavior/open-trade/{user_id}")
-async def get_open_trade(user_id: str):
-    """
-    Open trade endpoint — returns empty response until
-    Alpaca order execution is built in v1.1
-    """
-    return {
-        "user_id": user_id,
-        "open_trade": None,
-        "status": "no_open_trade",
-        "message": "No open trade found"
-    }
-@app.get("/api/behavior/open-trade/{user_id}")
-async def get_open_trade(user_id: str):
-    return {
-        "user_id": user_id,
-        "open_trade": None,
-        "status": "no_open_trade",
-        "message": "No open trade found"
-    }
