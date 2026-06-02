@@ -2533,7 +2533,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
 
     new_seq  = (seq or 0) + 1
     new_live = create_live_update(symbol, price, volume, new_seq)
-    interval = TF_SECONDS.get(tf, 300)
+    interval = {"1m":60,"5m":300,"15m":900,"1H":3600,"1D":86400,"1W":604800}.get(tf, 300)
     new_candles = update_candles(candles, price, volume, interval)
     return new_live.to_dict(), new_seq, new_candles
 @app.callback(
