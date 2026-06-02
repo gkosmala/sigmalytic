@@ -16,7 +16,8 @@ HOW IT WORKS
    - Records actual price movement for transparency and learning
    - Does NOT change the grade — grade is permanent at signal time
 
-3. The scoreboard shows confidence distribution, not win/loss rates.
+3. The scoreboard shows confidence distribution plus outcome path metrics
+   such as direction correctness, MFE, and MAE.
 
 CONFIDENCE GRADE DEFINITIONS
 ─────────────────────────────
@@ -247,6 +248,106 @@ def _fetch_close_price(symbol: str) -> Optional[float]:
     return None
 
 
+
+def _ensure_outcome_metric_columns():
+    """Create launch analytics columns if they do not already exist."""
+    if not DATABASE_URL:
+        return
+    try:
+        conn = _db()
+        cur  = conn.cursor()
+        cur.execute("""
+            ALTER TABLE scoreboard_signals
+            ADD COLUMN IF NOT EXISTS direction_correct BOOLEAN,
+            ADD COLUMN IF NOT EXISTS mfe_pct NUMERIC,
+            ADD COLUMN IF NOT EXISTS mae_pct NUMERIC,
+            ADD COLUMN IF NOT EXISTS outcome_window_hours INTEGER;
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        log.warning(f"Outcome metric column check failed: {e}")
+
+
+def _fetch_outcome_bars(symbol: str, signal_date: datetime, limit: int = 1000) -> list[dict]:
+    """Fetch intraday bars from signal time through now for MFE/MAE calculations."""
+    try:
+        start = signal_date.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        end   = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        r = _req.get(
+            f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
+            headers=_alpaca_headers(),
+            params={
+                "timeframe": "5Min",
+                "start": start,
+                "end": end,
+                "limit": limit,
+                "feed": ALPACA_FEED,
+                "adjustment": "raw",
+                "sort": "asc",
+            },
+            timeout=12,
+        )
+        if r.status_code == 200:
+            return r.json().get("bars") or []
+        log.warning(f"Outcome bars fetch failed {symbol}: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        log.warning(f"Outcome bars fetch error {symbol}: {e}")
+    return []
+
+
+def _compute_path_metrics(
+    symbol: str,
+    sig_type: str,
+    sig_date: datetime,
+    entry: float,
+    outcome: float,
+) -> tuple[bool, float, float]:
+    """
+    Returns direction_correct, MFE%, and MAE%.
+
+    MFE = maximum favorable excursion after the signal.
+    MAE = maximum adverse excursion after the signal.
+    Both are positive percentages so they are easy to compare.
+    """
+    is_short = "Short" in (sig_type or "")
+    direction_correct = outcome < entry if is_short else outcome > entry
+
+    bars = _fetch_outcome_bars(symbol, sig_date)
+    highs = []
+    lows  = []
+
+    for b in bars:
+        try:
+            highs.append(float(b.get("h", 0) or 0))
+            lows.append(float(b.get("l", 0) or 0))
+        except Exception:
+            continue
+
+    if not highs or not lows:
+        # Fallback: use final outcome only when intraday path is unavailable.
+        if is_short:
+            favorable = max(0.0, (entry - outcome) / entry * 100)
+            adverse   = max(0.0, (outcome - entry) / entry * 100)
+        else:
+            favorable = max(0.0, (outcome - entry) / entry * 100)
+            adverse   = max(0.0, (entry - outcome) / entry * 100)
+        return direction_correct, round(favorable, 2), round(adverse, 2)
+
+    max_high = max(highs)
+    min_low  = min(lows)
+
+    if is_short:
+        mfe = max(0.0, (entry - min_low) / entry * 100)
+        mae = max(0.0, (max_high - entry) / entry * 100)
+    else:
+        mfe = max(0.0, (max_high - entry) / entry * 100)
+        mae = max(0.0, (entry - min_low) / entry * 100)
+
+    return direction_correct, round(mfe, 2), round(mae, 2)
+
+
 def grade_pending_signals():
     """
     Outcome tracker — records actual price movement for transparency.
@@ -256,6 +357,8 @@ def grade_pending_signals():
     """
     if not DATABASE_URL:
         return
+
+    _ensure_outcome_metric_columns()
 
     cutoff = datetime.now(timezone.utc) - timedelta(
         hours=SCOREBOARD_OUTCOME_HOURS
@@ -308,6 +411,10 @@ def grade_pending_signals():
             hit_t2    = outcome >= t2    if t2 > 0 else False
             hit_inval = outcome <= inval if inval > 0 else False
 
+        direction_correct, mfe_pct, mae_pct = _compute_path_metrics(
+            symbol, sig_type, sig_date, float(entry), float(outcome)
+        )
+
         try:
             conn = _db()
             cur  = conn.cursor()
@@ -320,13 +427,18 @@ def grade_pending_signals():
                     days_to_outcome  = %s,
                     hit_target1      = %s,
                     hit_target2      = %s,
-                    hit_invalidation = %s
+                    hit_invalidation = %s,
+                    direction_correct= %s,
+                    mfe_pct          = %s,
+                    mae_pct          = %s,
+                    outcome_window_hours = %s
                 WHERE signal_id = %s
                   AND outcome_price IS NULL
             """, (
                 outcome, datetime.now(timezone.utc), outcome_pct,
                 datetime.now(timezone.utc), days,
                 hit_t1, hit_t2, hit_inval,
+                direction_correct, mfe_pct, mae_pct, SCOREBOARD_OUTCOME_HOURS,
                 sig_id,
             ))
             conn.commit()
@@ -377,6 +489,7 @@ def get_scoreboard_stats() -> dict:
     if not DATABASE_URL:
         return {}
     try:
+        _ensure_outcome_metric_columns()
         conn = _db()
         cur  = conn.cursor()
 
@@ -401,7 +514,14 @@ def get_scoreboard_stats() -> dict:
                     WHERE outcome_price IS NOT NULL
                 )::numeric, 1)                                     AS avg_days,
                 COUNT(*) FILTER (WHERE hit_target1 = true)        AS hit_t1_count,
-                COUNT(*) FILTER (WHERE hit_target2 = true)        AS hit_t2_count
+                COUNT(*) FILTER (WHERE hit_target2 = true)        AS hit_t2_count,
+                COUNT(*) FILTER (WHERE direction_correct = true)  AS direction_correct_count,
+                ROUND(AVG(mfe_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 2)                                     AS avg_mfe_pct,
+                ROUND(AVG(mae_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 2)                                     AS avg_mae_pct
             FROM scoreboard_signals
         """)
         row = cur.fetchone()
@@ -409,7 +529,8 @@ def get_scoreboard_stats() -> dict:
         cur.execute("""
             SELECT symbol, signal_type, signal_date, entry_price,
                    composite_score, setup_type, regime, grade,
-                   outcome_pct, days_to_outcome, hit_target1, hit_target2
+                   outcome_pct, days_to_outcome, hit_target1, hit_target2,
+                   direction_correct, mfe_pct, mae_pct
             FROM scoreboard_signals
             ORDER BY signal_date DESC
             LIMIT 50
@@ -437,6 +558,11 @@ def get_scoreboard_stats() -> dict:
             "avg_days":         float(row[9] or 0),
             "hit_target1_rate": round((row[10] or 0) / max(row[1] or 1, 1) * 100, 1),
             "hit_target2_rate": round((row[11] or 0) / max(row[1] or 1, 1) * 100, 1),
+            "direction_correct_rate": round((row[12] or 0) / max(row[1] or 1, 1) * 100, 1),
+            "avg_mfe_pct": float(row[13] or 0),
+            "avg_mae_pct": float(row[14] or 0),
+            "edge_ratio": round(float(row[13] or 0) / max(float(row[14] or 0), 0.01), 2),
+            "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
             "recent_signals": [
                 {
                     "symbol":      s[0],
@@ -451,6 +577,9 @@ def get_scoreboard_stats() -> dict:
                     "days":        float(s[9]) if s[9] else None,
                     "hit_t1":      s[10],
                     "hit_t2":      s[11],
+                    "direction_correct": s[12],
+                    "mfe_pct":     float(s[13]) if s[13] is not None else None,
+                    "mae_pct":     float(s[14]) if s[14] is not None else None,
                 }
                 for s in signals
             ],
