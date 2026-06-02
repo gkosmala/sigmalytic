@@ -11,7 +11,8 @@ HOW IT WORKS
    Grade is assigned IMMEDIATELY based on confluence confidence score.
    No waiting for price targets — signal quality is judged at signal time.
 
-2. Every day at 4:15 PM ET, the outcome tracker runs:
+2. The outcome tracker runs periodically and evaluates signals older than
+   SCOREBOARD_OUTCOME_HOURS:
    - Records actual price movement for transparency and learning
    - Does NOT change the grade — grade is permanent at signal time
 
@@ -50,6 +51,13 @@ SCOREBOARD_SIGNAL_TYPES = {
 }
 
 DEDUP_WINDOW_HOURS = 2
+
+# Launch / Production outcome tracking window
+# Default is 4 hours for launch responsiveness.
+# Set SCOREBOARD_OUTCOME_HOURS=20 or 24 in Render for a longer production window.
+SCOREBOARD_OUTCOME_HOURS = int(
+    os.getenv("SCOREBOARD_OUTCOME_HOURS", "4")
+)
 
 
 def _db():
@@ -243,12 +251,15 @@ def grade_pending_signals():
     """
     Outcome tracker — records actual price movement for transparency.
     Grade is NOT changed — it was assigned at signal time.
-    Runs daily at 4:15 PM ET.
+    Runs periodically and evaluates signals older than
+    SCOREBOARD_OUTCOME_HOURS.
     """
     if not DATABASE_URL:
         return
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=20)
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        hours=SCOREBOARD_OUTCOME_HOURS
+    )
 
     try:
         conn = _db()
