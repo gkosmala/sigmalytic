@@ -451,6 +451,144 @@ def grade_pending_signals():
     log.info(f"Outcome tracking complete — {tracked}/{len(pending)} signals updated")
 
 
+
+def repair_scoreboard_history(limit: int = 500) -> dict:
+    """
+    Backfill/repair older scoreboard rows that were created before the
+    path-metric engine existed.
+
+    Repairs:
+    1. Missing confidence grades that still say Pending/null/blank.
+    2. Missing direction_correct, mfe_pct, mae_pct for rows that already
+       have outcome_price populated.
+
+    This is safe to run repeatedly. It only updates missing/legacy fields.
+    """
+    result = {"grades_repaired": 0, "path_metrics_repaired": 0, "errors": []}
+    if not DATABASE_URL:
+        result["errors"].append("DATABASE_URL is not configured")
+        return result
+
+    _ensure_outcome_metric_columns()
+
+    # 1) Repair legacy Pending/null grades using the same confidence logic.
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT signal_id, composite_score, signal_type,
+                   confluence, expansion_node, relative_strength,
+                   volume_pressure, behavioral, setup_type, regime
+            FROM scoreboard_signals
+            WHERE grade IS NULL
+               OR grade = ''
+               OR LOWER(grade) = 'pending'
+            ORDER BY signal_date ASC
+            LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        for row in rows:
+            sig_id, score, sig_type, confluence, expansion_node, rs, vol, behavioral, setup_type, regime = row
+            sym = {
+                "status": sig_type or "",
+                "composite_score": float(score or 0),
+                "confluence": float(confluence or 0),
+                "expansion_node": float(expansion_node or 0),
+                "relative_strength": float(rs or 0),
+                "volume_pressure": float(vol or 0),
+                "behavioral": float(behavioral or 0),
+                "bme_score": float(behavioral or 50),
+                "setup_type": setup_type or "",
+                "regime": regime or "",
+            }
+            grade = _confidence_grade(float(score or 0), sym)
+            try:
+                conn = _db()
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE scoreboard_signals
+                    SET grade = %s
+                    WHERE signal_id = %s
+                      AND (grade IS NULL OR grade = '' OR LOWER(grade) = 'pending')
+                """, (grade, sig_id))
+                result["grades_repaired"] += cur.rowcount
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception as e:
+                result["errors"].append(f"grade repair {sig_id}: {e}")
+    except Exception as e:
+        result["errors"].append(f"grade repair fetch: {e}")
+
+    # 2) Repair missing path metrics for already-graded outcome rows.
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT signal_id, symbol, signal_type, signal_date,
+                   entry_price, outcome_price
+            FROM scoreboard_signals
+            WHERE outcome_price IS NOT NULL
+              AND entry_price IS NOT NULL
+              AND (
+                    direction_correct IS NULL
+                 OR mfe_pct IS NULL
+                 OR mae_pct IS NULL
+                 OR outcome_window_hours IS NULL
+              )
+            ORDER BY signal_date ASC
+            LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        for row in rows:
+            sig_id, symbol, sig_type, sig_date, entry, outcome = row
+            try:
+                direction_correct, mfe_pct, mae_pct = _compute_path_metrics(
+                    symbol, sig_type, sig_date, float(entry), float(outcome)
+                )
+                conn = _db()
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE scoreboard_signals
+                    SET direction_correct = %s,
+                        mfe_pct = %s,
+                        mae_pct = %s,
+                        outcome_window_hours = %s
+                    WHERE signal_id = %s
+                      AND (
+                            direction_correct IS NULL
+                         OR mfe_pct IS NULL
+                         OR mae_pct IS NULL
+                         OR outcome_window_hours IS NULL
+                      )
+                """, (
+                    direction_correct, mfe_pct, mae_pct,
+                    SCOREBOARD_OUTCOME_HOURS, sig_id,
+                ))
+                result["path_metrics_repaired"] += cur.rowcount
+                conn.commit()
+                cur.close()
+                conn.close()
+                time.sleep(0.05)
+            except Exception as e:
+                result["errors"].append(f"path repair {sig_id}: {e}")
+    except Exception as e:
+        result["errors"].append(f"path repair fetch: {e}")
+
+    log.info(
+        "Scoreboard repair complete — grades:%s path_metrics:%s errors:%s",
+        result["grades_repaired"],
+        result["path_metrics_repaired"],
+        len(result["errors"]),
+    )
+    return result
+
 def clear_duplicate_signals():
     """Remove duplicate signals — keep only the most recent per symbol+signal_type per day."""
     if not DATABASE_URL:
@@ -516,6 +654,7 @@ def get_scoreboard_stats() -> dict:
                 COUNT(*) FILTER (WHERE hit_target1 = true)        AS hit_t1_count,
                 COUNT(*) FILTER (WHERE hit_target2 = true)        AS hit_t2_count,
                 COUNT(*) FILTER (WHERE direction_correct = true)  AS direction_correct_count,
+                COUNT(*) FILTER (WHERE direction_correct IS NOT NULL) AS direction_evaluated_count,
                 ROUND(AVG(mfe_pct) FILTER (
                     WHERE outcome_price IS NOT NULL
                 )::numeric, 2)                                     AS avg_mfe_pct,
@@ -558,10 +697,11 @@ def get_scoreboard_stats() -> dict:
             "avg_days":         float(row[9] or 0),
             "hit_target1_rate": round((row[10] or 0) / max(row[1] or 1, 1) * 100, 1),
             "hit_target2_rate": round((row[11] or 0) / max(row[1] or 1, 1) * 100, 1),
-            "direction_correct_rate": round((row[12] or 0) / max(row[1] or 1, 1) * 100, 1),
-            "avg_mfe_pct": float(row[13] or 0),
-            "avg_mae_pct": float(row[14] or 0),
-            "edge_ratio": round(float(row[13] or 0) / max(float(row[14] or 0), 0.01), 2),
+            "direction_evaluated": row[13] or 0,
+            "direction_correct_rate": round((row[12] or 0) / max(row[13] or 1, 1) * 100, 1),
+            "avg_mfe_pct": float(row[14] or 0),
+            "avg_mae_pct": float(row[15] or 0),
+            "edge_ratio": round(float(row[14] or 0) / max(float(row[15] or 0), 0.01), 2),
             "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
             "recent_signals": [
                 {
