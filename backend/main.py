@@ -88,7 +88,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 # ── Shared engine ──────────────────────────────────────────────────────────
 from shared.engine import (
-    sanitize_symbol, create_live_update, generate_initial_candles
+    sanitize_symbol, create_live_update
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────
@@ -189,34 +189,99 @@ def fetch_latest_quote(symbol: str) -> dict[str, Any]:
         raise HTTPException(503, f"Data fetch failed: {e}")
 
 
-def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 50) -> list[dict]:
-    print(f"BAR_FETCH_CALLED {symbol} {timeframe} key={bool(ALPACA_API_KEY)}", flush=True)
-    if not ALPACA_API_KEY:
-        candles = generate_initial_candles(280.15)
-        return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
-    url = f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars"
-    params = {"timeframe": timeframe, "limit": limit, "feed": "sip"}
-    try:
-        r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=8)
-        r.raise_for_status()
-        raw = r.json()
-        if not raw or not isinstance(raw, dict):
-            print(f"BAR_FETCH_NULL {symbol} {timeframe}: raw={raw}", flush=True)
-            raise ValueError(f"Null/invalid response for {symbol}")
-        bars = raw.get("bars", []) or []
-        print(f"BAR_FETCH_DEBUG {symbol} {timeframe}: status={r.status_code} bars={len(bars)} raw_keys={list(raw.keys())}", flush=True)
-        if not bars:
-            print(f"BAR_FETCH_EMPTY {symbol} {timeframe}: {str(raw)[:200]}", flush=True)
-        return [
-            {"o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]),
-             "c": float(b["c"]), "v": int(b["v"]), "t": b["t"]}
-            for b in bars
-        ]
-    except Exception as e:
-        log.warning(f"Bar fetch failed for {symbol}: {e}")
-        candles = generate_initial_candles(280.15)
-        return [{"o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": 0, "t": ""} for c in candles]
+def fetch_bars(symbol: str, timeframe: str = "1Min", limit: int = 200) -> list[dict]:
+    """
+    Fetch REAL OHLCV bars from Alpaca only.
 
+    No synthetic candles are generated here. If Alpaca credentials are missing,
+    Alpaca rejects the request, or Alpaca returns no bars, this function returns
+    an empty list and logs the reason.
+    """
+    clean = sanitize_symbol(symbol)
+    if not clean:
+        log.warning(f"BAR_FETCH_INVALID_SYMBOL {symbol!r}")
+        return []
+
+    if not ALPACA_API_KEY or not ALPACA_API_SECRET:
+        log.warning("BAR_FETCH_SKIPPED: Alpaca API key/secret not configured")
+        return []
+
+    # Normalize app timeframe labels into Alpaca timeframe names.
+    tf_map = {
+        "1m": "1Min",
+        "1min": "1Min",
+        "1Min": "1Min",
+        "5m": "5Min",
+        "5min": "5Min",
+        "5Min": "5Min",
+        "15m": "15Min",
+        "15min": "15Min",
+        "15Min": "15Min",
+        "1h": "1Hour",
+        "1H": "1Hour",
+        "1Hour": "1Hour",
+        "1d": "1Day",
+        "1D": "1Day",
+        "1Day": "1Day",
+        "1w": "1Week",
+        "1W": "1Week",
+        "1Week": "1Week",
+    }
+    alpaca_timeframe = tf_map.get(str(timeframe), str(timeframe) or "5Min")
+
+    # Keep limits reasonable for chart rendering and Alpaca response size.
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 200
+    limit = max(1, min(limit, 1000))
+
+    url = f"{ALPACA_BASE_URL}/v2/stocks/{clean}/bars"
+    params = {
+        "timeframe": alpaca_timeframe,
+        "limit": limit,
+        "feed": os.getenv("ALPACA_FEED", "sip"),
+        "adjustment": "raw",
+        "sort": "asc",
+    }
+
+    try:
+        r = requests.get(url, headers=_alpaca_headers(), params=params, timeout=10)
+
+        if r.status_code != 200:
+            log.warning(
+                f"BAR_FETCH_FAILED {clean} {alpaca_timeframe}: "
+                f"status={r.status_code} body={r.text[:300]}"
+            )
+            return []
+
+        raw = r.json()
+        bars = raw.get("bars", []) if isinstance(raw, dict) else []
+
+        if not bars:
+            log.warning(f"BAR_FETCH_EMPTY {clean} {alpaca_timeframe}: raw={str(raw)[:300]}")
+            return []
+
+        cleaned = []
+        for b in bars:
+            try:
+                cleaned.append({
+                    "o": float(b["o"]),
+                    "h": float(b["h"]),
+                    "l": float(b["l"]),
+                    "c": float(b["c"]),
+                    "v": int(b.get("v", 0) or 0),
+                    "t": b.get("t", ""),
+                })
+            except Exception as row_error:
+                log.debug(f"BAR_ROW_SKIPPED {clean}: {row_error} row={b}")
+
+        log.info(f"BAR_FETCH_OK {clean} {alpaca_timeframe}: bars={len(cleaned)} feed={params['feed']}")
+        return cleaned
+
+    except Exception as e:
+        log.warning(f"BAR_FETCH_EXCEPTION {clean} {alpaca_timeframe}: {e}")
+        return []
 
 # ── Alpaca WebSocket stream ────────────────────────────────────────────────
 
