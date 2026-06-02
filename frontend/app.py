@@ -1326,12 +1326,8 @@ def build_radar_tab(session=None):
            onMouseEnter=f"document.getElementById('{tooltip_id}').style.display='block'",
            onMouseLeave=f"document.getElementById('{tooltip_id}').style.display='none'")
 
-    def _hdr(txt, flex):
-        return html.Span(txt, style={"flex":flex,"fontSize":"9px","color":MUTED,
-            "fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"})
-
     header_row = html.Div([
-        _hdr("Symbol",  "0 0 70px"),
+        html.Span("Symbol", style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase"}),
         _hdr("Price",   "0 0 70px"),
         _hdr("Chg%",    "0 0 55px"),
         _hdr("Score",   "0 0 40px"),
@@ -3099,3 +3095,4 @@ def logout(n):
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
+_hdr = lambda txt, flex: __import__('dash').html.Span(txt)
