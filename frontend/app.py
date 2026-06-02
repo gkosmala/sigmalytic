@@ -1487,25 +1487,70 @@ def build_scoreboard_tab(session=None):
     ])
 
 
+def classify_transition(old_status, new_status, delta):
+    """
+    Intelligence Change Detector transition classifier.
+
+    Delta is calculated as:
+        deep_score - composite_score
+
+    Positive delta = deeper intelligence is stronger than surface composite.
+    Negative delta = deeper intelligence is weaker than surface composite.
+    """
+    old_status_l = str(old_status or "").strip().lower()
+    new_status_l = str(new_status or "").strip().lower()
+
+    # Explicit state transitions first
+    if old_status_l == "avoid" and new_status_l in ("watching", "armed", "triggered", "opportunity"):
+        return "🟢 UPGRADE", "teal"
+
+    if old_status_l == "watching" and new_status_l in ("armed", "triggered", "opportunity"):
+        return "🟢 STRONG UPGRADE", "teal"
+
+    if old_status_l in ("armed", "triggered", "opportunity") and new_status_l == "watching":
+        return "🔴 DOWNGRADE", "red"
+
+    if old_status_l in ("watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
+        return "🔴 MAJOR DOWNGRADE", "red"
+
+    # Score-delta based interpretation
+    if delta >= 20:
+        return "🟢 INTELLIGENCE LEAD", "teal"
+
+    if delta >= 10:
+        return "🟢 MODEST UPGRADE", "teal"
+
+    if delta <= -20:
+        return "🔴 INTELLIGENCE WARNING", "red"
+
+    if delta <= -10:
+        return "🔴 MODEST DOWNGRADE", "red"
+
+    return "🟡 MONITOR", "yellow"
+
+
 def build_divergence_tab(session=None):
     """
-    Divergence Intelligence — uses backend divergence/watchlist fields
-    instead of the old score > 50 / score < 50 shortcut.
+    Intelligence Change Detector.
+
+    This page uses the actual backend divergence endpoint fields:
+    symbol, composite_score, deep_score, delta, old_status, new_status,
+    regime, price, audited_at.
     """
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=8)
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
 
     raw_symbols = data.get("symbols", []) if isinstance(data, dict) else []
     audit_label = (
-        data.get("last_audit", "Pending — runs nightly at 8:30 PM ET")
-        if isinstance(data, dict)
-        else "Pending — runs nightly at 8:30 PM ET"
-    ) or "Pending — runs nightly at 8:30 PM ET"
+        data.get("last_audit")
+        or data.get("audited_at")
+        or "Pending — runs nightly after the EOD audit"
+    ) if isinstance(data, dict) else "Pending — runs nightly after the EOD audit"
 
     def _num(value, default=0.0):
         try:
@@ -1515,142 +1560,123 @@ def build_divergence_tab(session=None):
         except Exception:
             return default
 
-    def _get_behavioral_score(s):
-        """
-        Prefer behavioral/BME fields if available.
-        Falls back to internal or factor scores if the backend shape changes.
-        """
-        return _num(
-            s.get("behavioral")
-            or s.get("bme_score")
-            or s.get("behavioral_score")
-            or s.get("behavioral_factor")
-            or s.get("B")
-            or 50
-        )
-
-    def _get_intelligence_score(s, composite):
-        return _num(
-            s.get("intelligence_score")
-            or s.get("deep_score")
-            or s.get("score")
-            or composite
-        )
-
-    def _derive_divergence(s):
-        """
-        Derive divergence direction from actual backend fields:
-        - on_divergence_watchlist
-        - change_pct
-        - behavioral/BME score
-        - intelligence_score vs composite_score delta
-        - regime/status context
-        """
-        change_pct = _num(s.get("change_pct"), 0)
-        composite = _num(s.get("composite_score") or s.get("score"), 0)
-        behavioral = _get_behavioral_score(s)
-        intelligence = _get_intelligence_score(s, composite)
-        delta = intelligence - composite
-
-        on_watchlist = bool(
-            s.get("on_divergence_watchlist")
-            or s.get("divergence")
-            or s.get("is_divergence")
-            or s.get("delta")
-            or abs(delta) >= 15
-        )
-
-        regime = str(
-            s.get("intelligence_regime")
-            or s.get("regime")
-            or s.get("new_status")
-            or s.get("status")
-            or "—"
-        )
-
-        if not on_watchlist:
-            return "NEUTRAL", delta, behavioral, intelligence
-
-        # Price rising while behavioral/BME confirmation is weak.
-        if change_pct > 0 and behavioral < 50:
-            return "BEARISH DIVERGENCE", delta, behavioral, intelligence
-
-        # Price falling while behavioral/BME confirmation remains strong.
-        if change_pct < 0 and behavioral >= 60:
-            return "BULLISH DIVERGENCE", delta, behavioral, intelligence
-
-        # Backend deep intelligence materially stronger than surface composite.
-        if delta >= 15:
-            return "BULLISH INTELLIGENCE DIVERGENCE", delta, behavioral, intelligence
-
-        # Surface composite materially stronger than deep intelligence.
-        if delta <= -15:
-            return "CAUTION / OVEREXTENDED", delta, behavioral, intelligence
-
-        # Regime/context fallback.
-        rlow = regime.lower()
-        if any(word in rlow for word in ["accumulation", "spring", "bull", "support"]):
-            return "BULLISH WATCH", delta, behavioral, intelligence
-        if any(word in rlow for word in ["exhaustion", "upthrust", "bear", "distribution"]):
-            return "BEARISH WATCH", delta, behavioral, intelligence
-
-        return "DIVERGENCE WATCH", delta, behavioral, intelligence
-
     items = []
     for s in (raw_symbols if isinstance(raw_symbols, list) else []):
-        if isinstance(s, dict):
-            composite = _num(s.get("composite_score") or s.get("score"), 0)
-            direction, delta, behavioral, intelligence = _derive_divergence(s)
-            items.append({
-                "symbol":             s.get("symbol", ""),
-                "price":              _num(s.get("price"), 0),
-                "composite_score":    composite,
-                "intelligence_score": intelligence,
-                "behavioral_score":   behavioral,
-                "delta":              delta,
-                "direction":          direction,
-                "regime":             s.get("intelligence_regime") or s.get("regime") or s.get("status") or "—",
-                "change_pct":         _num(s.get("change_pct"), 0),
-            })
-        elif isinstance(s, str):
-            items.append({
-                "symbol": s,
-                "price": 0,
-                "composite_score": 0,
-                "intelligence_score": 0,
-                "behavioral_score": 0,
-                "delta": 0,
-                "direction": "DIVERGENCE WATCH",
-                "regime": "—",
-                "change_pct": 0,
-            })
+        if not isinstance(s, dict):
+            continue
 
-    # Most meaningful first: largest absolute intelligence/composite gap.
+        composite = _num(s.get("composite_score"), 0)
+        deep = _num(s.get("deep_score"), 0)
+
+        # Use intuitive displayed delta: deep intelligence minus surface composite.
+        # Example: Composite 62.5, Deep 34.85 = -27.65 = deeper engine downgraded it.
+        delta = round(deep - composite, 2)
+
+        old_status = s.get("old_status") or "—"
+        new_status = s.get("new_status") or s.get("status") or "—"
+        transition, tone = classify_transition(old_status, new_status, delta)
+
+        items.append({
+            "symbol": s.get("symbol", ""),
+            "price": _num(s.get("price"), 0),
+            "composite_score": composite,
+            "deep_score": deep,
+            "delta": delta,
+            "old_status": old_status,
+            "new_status": new_status,
+            "transition": transition,
+            "tone": tone,
+            "regime": s.get("regime") or "—",
+            "audited_at": s.get("audited_at") or audit_label,
+        })
+
+    # Largest intelligence gap first.
     items = sorted(items, key=lambda d: abs(d.get("delta", 0)), reverse=True)
 
-    def _direction_color(direction):
-        d = str(direction).upper()
-        if "BULLISH" in d:
+    upgrades = sum(1 for d in items if d["tone"] == "teal")
+    downgrades = sum(1 for d in items if d["tone"] == "red")
+    monitoring = sum(1 for d in items if d["tone"] == "yellow")
+
+    best_upgrade = max(items, key=lambda d: d["delta"], default=None)
+    best_downgrade = min(items, key=lambda d: d["delta"], default=None)
+
+    def _tone_color(tone):
+        if tone == "teal":
             return TEAL_DIM
-        if "BEARISH" in d or "CAUTION" in d or "OVEREXTENDED" in d:
+        if tone == "red":
             return RED_DIM
-        if "WATCH" in d:
+        if tone == "yellow":
             return YELLOW_DIM
         return MUTED
 
-    def _div_row(d):
-        direction = d.get("direction", "—")
-        dir_color = _direction_color(direction)
+    def _state_badge(value, tone="gray"):
+        color = _tone_color(tone)
+        bg = TEAL_GLOW if tone == "teal" else RED_GLOW if tone == "red" else "rgba(245,158,11,.10)" if tone == "yellow" else "rgba(100,116,139,.12)"
+        border = BORDER_T if tone == "teal" else "rgba(239,68,68,.35)" if tone == "red" else "rgba(245,158,11,.35)" if tone == "yellow" else "rgba(100,116,139,.25)"
+        return html.Span(
+            str(value),
+            style={
+                "display": "inline-block",
+                "borderRadius": "999px",
+                "border": f"1px solid {border}",
+                "background": bg,
+                "color": color,
+                "fontSize": "10px",
+                "fontWeight": "900",
+                "letterSpacing": ".06em",
+                "padding": "4px 9px",
+                "textTransform": "uppercase",
+                "whiteSpace": "nowrap",
+            }
+        )
+
+    summary_card = card([
+        html.Div([
+            html.Div([
+                html.H2(
+                    "🧠 Intelligence Change Detector",
+                    style={"color": WHITE, "fontSize": "20px", "fontWeight": "900", "margin": "0 0 4px"}
+                ),
+                html.P(
+                    "Detects where the deeper intelligence engine disagrees with the surface radar score.",
+                    style={"color": TEXT, "fontSize": "13px", "margin": "0"}
+                ),
+            ]),
+            _state_badge(f"{len(items)} Symbols Audited", "gray"),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "gap": "16px", "marginBottom": "16px"}),
+
+        html.Div([
+            metric_tile("🟢 Upgrades", str(upgrades), TEAL_DIM),
+            metric_tile("🟡 Monitoring", str(monitoring), YELLOW_DIM),
+            metric_tile("🔴 Downgrades", str(downgrades), RED_DIM),
+            metric_tile("Last Audit", str(audit_label)[:22], BLUE_DIM),
+        ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)", "gap": "10px", "marginBottom": "14px"}),
+
+        html.Div([
+            note_box(
+                f"Strongest Upgrade: {(best_upgrade or {}).get('symbol','—')} "
+                f"({(best_upgrade or {}).get('delta',0):+.1f})",
+                "teal"
+            ),
+            note_box(
+                f"Strongest Downgrade: {(best_downgrade or {}).get('symbol','—')} "
+                f"({(best_downgrade or {}).get('delta',0):+.1f})",
+                "red"
+            ),
+        ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px"}),
+    ], sx={"marginBottom": "16px"})
+
+    def _row(d):
         delta = d.get("delta", 0)
+        tone = d.get("tone", "gray")
+        color = _tone_color(tone)
         delta_color = TEAL_DIM if delta > 0 else (RED_DIM if delta < 0 else MUTED)
-        chg = d.get("change_pct", 0)
-        chg_color = TEAL_DIM if chg > 0 else (RED_DIM if chg < 0 else MUTED)
 
         return html.Div([
             html.Span(
                 d.get("symbol", ""),
                 style={
-                    "flex": "1",
+                    "flex": "0.75",
                     "fontWeight": "900",
                     "fontSize": "14px",
                     "color": WHITE,
@@ -1659,35 +1685,35 @@ def build_divergence_tab(session=None):
             ),
             html.Span(
                 f"${d.get('price', 0):,.2f}",
-                style={"flex": "1", "fontSize": "13px", "color": TEXT}
+                style={"flex": "0.85", "fontSize": "13px", "color": TEXT, "fontFamily": "DM Mono, monospace"}
             ),
             html.Span(
-                f"{chg:+.2f}%",
-                style={"flex": "1", "fontSize": "13px", "fontWeight": "700", "color": chg_color}
+                f"{d.get('composite_score', 0):.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "800", "color": YELLOW_DIM}
             ),
             html.Span(
-                f"{d.get('composite_score', 0):.0f}",
-                style={"flex": "1", "fontSize": "13px", "fontWeight": "700", "color": YELLOW_DIM}
+                f"{d.get('deep_score', 0):.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "800", "color": BLUE_DIM}
             ),
             html.Span(
-                f"{d.get('intelligence_score', 0):.0f}",
-                style={"flex": "1", "fontSize": "13px", "fontWeight": "700", "color": BLUE_DIM}
+                f"{delta:+.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "900", "color": delta_color}
             ),
             html.Span(
-                f"{d.get('behavioral_score', 0):.0f}",
-                style={"flex": "1", "fontSize": "13px", "fontWeight": "700", "color": PURPLE}
+                d.get("old_status", "—"),
+                style={"flex": "0.9", "fontSize": "12px", "fontWeight": "700", "color": MUTED}
             ),
             html.Span(
-                f"{delta:+.0f}",
-                style={"flex": "1", "fontSize": "13px", "fontWeight": "800", "color": delta_color}
+                d.get("new_status", "—"),
+                style={"flex": "0.9", "fontSize": "12px", "fontWeight": "900", "color": color}
             ),
             html.Span(
-                direction,
-                style={"flex": "1.6", "fontSize": "11px", "fontWeight": "900", "color": dir_color}
+                d.get("transition", "—"),
+                style={"flex": "1.65", "fontSize": "11px", "fontWeight": "900", "color": color}
             ),
             html.Span(
                 d.get("regime", "—"),
-                style={"flex": "1", "fontSize": "11px", "color": MUTED}
+                style={"flex": "0.95", "fontSize": "11px", "color": TEXT}
             ),
         ], style={
             "display": "flex",
@@ -1697,50 +1723,48 @@ def build_divergence_tab(session=None):
             "borderBottom": f"1px solid {BORDER}",
         })
 
-    return html.Div([
-        card([
-            html.Div([
-                html.H2(
-                    "🔍 Divergence Intelligence",
-                    style={"color": WHITE, "fontSize": "18px", "fontWeight": "900", "margin": "0 0 4px"}
-                ),
-                html.P(
-                    "Uses backend divergence watchlist, behavioral/BME confirmation, and intelligence-vs-composite score delta.",
-                    style={"color": TEXT, "fontSize": "13px", "margin": "0"}
-                ),
-            ], style={"marginBottom": "8px"}),
+    header = html.Div([
+        html.Span("Symbol", style={"flex": "0.75", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Price", style={"flex": "0.85", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Composite", style={"flex": "0.75", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Deep Score", style={"flex": "0.75", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Delta", style={"flex": "0.75", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Previous", style={"flex": "0.9", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Current", style={"flex": "0.9", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Transition", style={"flex": "1.65", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Regime", style={"flex": "0.95", "fontSize": "9px", "color": MUTED, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+    ], style={
+        "display": "flex",
+        "gap": "12px",
+        "paddingBottom": "8px",
+        "borderBottom": f"1px solid {BORDER}",
+        "marginBottom": "4px",
+    })
 
-            html.Div(
-                f"Last audit: {audit_label}",
-                style={"fontSize": "11px", "color": MUTED, "marginBottom": "16px"}
+    table_card = card([
+        html.Div([
+            html.H3(
+                "Intelligence Transitions",
+                style={"color": WHITE, "fontSize": "16px", "fontWeight": "900", "margin": "0"}
             ),
+            html.P(
+                "Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
+                style={"color": TEXT, "fontSize": "12px", "margin": "4px 0 0"}
+            ),
+        ], style={"marginBottom": "14px"}),
 
-            html.Div([
-                html.Span("Symbol", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Price", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Change", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Composite", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Intel", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Behavior", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Delta", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Direction", style={"flex": "1.6", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-                html.Span("Regime", style={"flex": "1", "fontSize": "9px", "color": MUTED, "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em"}),
-            ], style={
-                "display": "flex",
-                "gap": "12px",
-                "paddingBottom": "8px",
-                "borderBottom": f"1px solid {BORDER}",
-                "marginBottom": "4px",
-            }),
+        header,
 
-            html.Div([_div_row(d) for d in items] if items else [
-                html.Div(
-                    "No divergence signals yet. The watchlist populates nightly after the EOD audit.",
-                    style={"color": MUTED, "fontSize": "13px", "padding": "24px 0", "textAlign": "center"}
-                )
-            ]),
+        html.Div([_row(d) for d in items] if items else [
+            html.Div(
+                "No intelligence changes yet. The detector populates after the EOD audit.",
+                style={"color": MUTED, "fontSize": "13px", "padding": "24px 0", "textAlign": "center"}
+            )
         ]),
     ])
+
+    return html.Div([summary_card, table_card])
+
 
 def build_billing_tab(session=None, perms=None):
     """Delegate to billing_ui module."""
@@ -2607,7 +2631,7 @@ ALL_TABS = [
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
-    ("divergence",  "🔍 Divergence"),
+    ("divergence",  "🧠 Intelligence Change Detector"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
     ("admin",       "Admin"),
