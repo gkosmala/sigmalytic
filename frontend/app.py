@@ -1496,24 +1496,45 @@ def classify_transition(old_status, new_status, delta):
 
     Positive delta = deeper intelligence is stronger than surface composite.
     Negative delta = deeper intelligence is weaker than surface composite.
+
+    State transition has priority over delta:
+    - Building -> Watching = Improving / upgrade
+    - Watching -> Watching = Monitor
+    - Watching -> Avoid = Major downgrade
     """
     old_status_l = str(old_status or "").strip().lower()
     new_status_l = str(new_status or "").strip().lower()
 
-    # Explicit state transitions first
-    if old_status_l == "avoid" and new_status_l in ("watching", "armed", "triggered", "opportunity"):
-        return "🟢 UPGRADE", "teal"
+    # Normalize common backend labels.
+    upgrade_states = ("watching", "armed", "triggered", "opportunity")
+    high_states = ("armed", "triggered", "opportunity")
 
-    if old_status_l == "watching" and new_status_l in ("armed", "triggered", "opportunity"):
+    # No state change should remain a monitor, even if the score delta is negative.
+    # This prevents Watching -> Watching rows from being counted as downgrades.
+    if old_status_l == new_status_l and old_status_l:
+        return "🟡 MONITOR", "yellow"
+
+    # Explicit improvement transitions first.
+    if old_status_l == "building" and new_status_l == "watching":
+        return "🟢 IMPROVING", "teal"
+
+    if old_status_l == "building" and new_status_l in high_states:
         return "🟢 STRONG UPGRADE", "teal"
 
-    if old_status_l in ("armed", "triggered", "opportunity") and new_status_l == "watching":
+    if old_status_l == "avoid" and new_status_l in upgrade_states:
+        return "🟢 UPGRADE", "teal"
+
+    if old_status_l == "watching" and new_status_l in high_states:
+        return "🟢 STRONG UPGRADE", "teal"
+
+    # Explicit deterioration transitions.
+    if old_status_l in high_states and new_status_l == "watching":
         return "🔴 DOWNGRADE", "red"
 
-    if old_status_l in ("watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
+    if old_status_l in ("building", "watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
         return "🔴 MAJOR DOWNGRADE", "red"
 
-    # Score-delta based interpretation
+    # Score-delta interpretation only applies when the state transition is not definitive.
     if delta >= 20:
         return "🟢 INTELLIGENCE LEAD", "teal"
 
@@ -1527,7 +1548,6 @@ def classify_transition(old_status, new_status, delta):
         return "🔴 MODEST DOWNGRADE", "red"
 
     return "🟡 MONITOR", "yellow"
-
 
 def build_divergence_tab(session=None):
     """
