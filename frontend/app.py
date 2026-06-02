@@ -2280,8 +2280,8 @@ window.dash_clientside.sigmalytic = {{
 </script>
 </body></html>"""
 
-_init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
-_init_candles = _scaled_candles(280.15, "5m")
+_init_live    = create_live_update("AAPL", 0.0, 0, 0).to_dict()
+_init_candles = []
 
 ALL_TABS = [
     ("command",     "Command Center"),
