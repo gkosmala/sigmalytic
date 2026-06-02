@@ -19,7 +19,7 @@ import requests as req
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
-    sanitize_symbol, create_live_update, generate_initial_candles, get_key_levels,
+    sanitize_symbol, create_live_update, get_key_levels,
 )
 
 BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
@@ -93,35 +93,146 @@ def _post(path, body):
     except Exception:
         return {}
 
-def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
+def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
     """
-    Generate historical candles with proper OHLC structure.
-    - Open  : locked at candle start
-    - High  : max(open, close) + realistic wick scaled to TF volatility
-    - Low   : min(open, close) - realistic wick scaled to TF volatility
-    - Close : end price of that period
-    - Timestamp: real UTC time anchored so last candle = now
+    Fetch real OHLCV bars from backend Alpaca candle endpoint.
+    No synthetic candles are created here.
     """
-    vol      = TF_VOLATILITY.get(tf, 0.60)
-    interval = TF_INTERVAL.get(tf, 300)
-    base     = generate_initial_candles(anchor_price)
-    n        = len(base)
-    now      = datetime.now(timezone.utc)
-    out      = []
-    for i, c in enumerate(base):
-        # Scale body by TF volatility
-        body  = (c.c - c.o) * vol
-        mid   = (c.o + c.c) / 2
-        o     = round(mid - body / 2, 2)
-        cl    = round(mid + body / 2, 2)
-        # Wick = 30% of body on each side, minimum 0.05% of price
-        wick  = max(abs(body) * 0.3, anchor_price * 0.0005)
-        h     = round(max(o, cl) + wick, 2)
-        l     = round(min(o, cl) - wick, 2)
-        # Timestamp: last candle = now, walk backwards
-        ts    = now - timedelta(seconds=interval * (n - 1 - i))
-        out.append({"o": o, "h": h, "l": l, "c": cl, "t": ts.isoformat()})
-    return out
+    tf_map = {
+        "1m": "1Min",
+        "5m": "5Min",
+        "15m": "15Min",
+        "1H": "1Hour",
+        "1D": "1Day",
+        "1W": "1Week",
+    }
+    clean = sanitize_symbol(symbol or "")
+    if not clean:
+        return []
+
+    timeframe = tf_map.get(tf, "5Min")
+
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/candles/{clean}",
+            params={"timeframe": timeframe, "limit": limit},
+            timeout=8,
+        )
+        if not r.ok:
+            print(f"REAL_CANDLES_HTTP_ERROR {clean} {timeframe}: {r.status_code} {r.text[:200]}")
+            return []
+
+        data = r.json() if r.ok else {}
+        bars = data.get("bars", []) if isinstance(data, dict) else []
+
+        cleaned = []
+        for b in bars:
+            try:
+                cleaned.append({
+                    "o": float(b["o"]),
+                    "h": float(b["h"]),
+                    "l": float(b["l"]),
+                    "c": float(b["c"]),
+                    "v": int(b.get("v", 0) or 0),
+                    "t": str(b.get("t", "")),
+                })
+            except Exception:
+                continue
+
+        return cleaned[-limit:]
+
+    except Exception as e:
+        print(f"REAL_CANDLES_FETCH_ERROR {clean} {timeframe}: {e}")
+        return []
+
+
+def _bucket_start(dt: datetime, tf: str) -> datetime:
+    """
+    Return the beginning of the selected timeframe bucket.
+    This is what prevents the chart from creating a new candle on every tick.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+
+    if tf == "1m":
+        return dt.replace(second=0, microsecond=0)
+
+    if tf == "5m":
+        minute = (dt.minute // 5) * 5
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    if tf == "15m":
+        minute = (dt.minute // 15) * 15
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    if tf == "1H":
+        return dt.replace(minute=0, second=0, microsecond=0)
+
+    if tf == "1D":
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if tf == "1W":
+        # Monday 00:00 UTC week bucket.
+        start = dt - timedelta(days=dt.weekday())
+        return start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    minute = (dt.minute // 5) * 5
+    return dt.replace(minute=minute, second=0, microsecond=0)
+
+
+def update_current_candle(candles: list[dict], price: float, volume: int, tick_time: str, tf: str) -> list[dict]:
+    """
+    Update only the active candle while inside the selected timeframe.
+    A new candle is appended only when the timeframe bucket rolls over.
+    """
+    try:
+        tick_dt = datetime.fromisoformat(str(tick_time).replace("Z", "+00:00"))
+    except Exception:
+        tick_dt = datetime.now(timezone.utc)
+
+    current_bucket = _bucket_start(tick_dt, tf)
+    current_t = current_bucket.isoformat()
+
+    if not candles:
+        return [{
+            "o": price,
+            "h": price,
+            "l": price,
+            "c": price,
+            "v": int(volume or 0),
+            "t": current_t,
+        }]
+
+    new_candles = [dict(c) for c in candles[-199:]]
+    last = new_candles[-1]
+
+    try:
+        last_dt = datetime.fromisoformat(str(last.get("t", "")).replace("Z", "+00:00"))
+        last_bucket = _bucket_start(last_dt, tf)
+    except Exception:
+        last_bucket = current_bucket
+
+    if last_bucket == current_bucket:
+        # Same candle: keep open fixed; update H/L/C and volume.
+        last["h"] = max(float(last.get("h", price)), price)
+        last["l"] = min(float(last.get("l", price)), price)
+        last["c"] = price
+        last["v"] = int(last.get("v", 0) or 0) + int(volume or 0)
+        last["t"] = current_t
+        new_candles[-1] = last
+    else:
+        # New timeframe bucket: close previous candle, append new candle.
+        new_candles.append({
+            "o": price,
+            "h": price,
+            "l": price,
+            "c": price,
+            "v": int(volume or 0),
+            "t": current_t,
+        })
+
+    return new_candles[-200:]
 
 def _regime_from_live(live: dict) -> str:
     score = live.get("decision", {}).get("score", 50)
@@ -876,90 +987,43 @@ def build_login_page(error=""):
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
 
-
 def build_direction_panel(decision, score):
-    """Direction & Confidence panel for the Command tab."""
+    """Compact, user-readable Direction & Confidence panel."""
     bias = decision.get("bias", "Neutral")
     status = decision.get("status", "Watching")
     confidence = decision.get("confidence", f"{score}%")
     mode = decision.get("mode", "Standard")
     grade = decision.get("grade", "—")
-    behavior = decision.get("behavior", "Decision state active")
-    next_action = decision.get("next_action", "Monitor for confirmation.")
 
-    bias_text = str(bias).strip() or "Neutral"
-    bias_l = bias_text.lower()
-
-    if bias_l == "bullish":
+    if str(bias).lower() == "bullish":
         color = TEAL_DIM
         icon = "🟢"
-        tone = "teal"
-    elif bias_l == "bearish":
+    elif str(bias).lower() == "bearish":
         color = RED_DIM
         icon = "🔴"
-        tone = "red"
     else:
         color = YELLOW_DIM
         icon = "🟡"
-        tone = "yellow"
 
     return html.Div([
         slabel("Direction Intelligence"),
-
-        html.Div([
-            html.Div(
-                f"{icon} {bias_text.upper()}",
-                style={
-                    "color": color,
-                    "fontSize": "28px",
-                    "fontWeight": "900",
-                    "lineHeight": "1",
-                    "letterSpacing": "-.02em",
-                    "margin": "6px 0 6px",
-                }
-            ),
-            badge(status, tone),
-        ], style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "alignItems": "center",
-            "gap": "8px",
-            "marginBottom": "10px",
-        }),
-
-        html.Div(f"LIVE STATE: {behavior}",
-                 style={
-                     "fontSize": "9px",
-                     "fontWeight": "800",
-                     "color": TEXT,
-                     "textTransform": "uppercase",
-                     "letterSpacing": ".1em",
-                     "marginBottom": "8px",
-                 }),
-
-        html.Div(next_action,
-                 style={
-                     "color": TEXT,
-                     "fontSize": "11px",
-                     "fontWeight": "600",
-                     "lineHeight": "1.5",
-                     "marginBottom": "8px",
-                 }),
-
-        pbar("Signal Strength", score, color),
-
-        html.Div(style={"height": "8px"}),
-
+        html.Div(
+            f"{icon} {str(bias).upper()}",
+            style={
+                "color": color,
+                "fontSize": "28px",
+                "fontWeight": "900",
+                "lineHeight": "1",
+                "letterSpacing": "-.02em",
+                "margin": "6px 0 10px",
+            }
+        ),
         html.Div([
             metric_tile("Confidence", confidence, color),
             metric_tile("Status", status, color),
             metric_tile("Grade", grade, color),
             metric_tile("Mode", mode, BLUE_DIM),
-        ], style={
-            "display": "grid",
-            "gridTemplateColumns": "1fr 1fr",
-            "gap": "6px",
-        }),
+        ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
     ])
 
 
@@ -1090,12 +1154,8 @@ def build_command_tab(live, candles, symbol, tf):
             # Column A — Direction & Confidence Panel
             html.Div([
                 build_direction_panel(decision, score),
-            ], style={
-                "flex":"1.2",
-                "minWidth":"160px",
-                "borderRight":f"1px solid {BORDER}",
-                "paddingRight":"16px",
-            }),
+            ], style={"flex":"1.2","minWidth":"160px",
+                       "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
             # Column B — Trade Card
             html.Div([
@@ -2366,7 +2426,7 @@ window.dash_clientside.sigmalytic = {{
 </body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
-_init_candles = _scaled_candles(280.15, "5m")
+_init_candles = fetch_real_candles("AAPL", "5m")
 
 ALL_TABS = [
     ("command",     "Command Center"),
@@ -2546,8 +2606,9 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
         return (no_update,)*9
     btn_id = ctx.triggered[0]["prop_id"].split(".")[0]
     new_tf = btn_id.replace("tf-","")
-    price  = live["price"] if live else 280.15
-    fresh  = _scaled_candles(price, new_tf)
+    symbol = live.get("symbol", "AAPL") if live else "AAPL"
+    price  = live.get("price", 0) if live else 0
+    fresh  = fetch_real_candles(symbol, new_tf)
     # Track event
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
@@ -2561,17 +2622,26 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
 # Live-only mode — no toggle callback needed
 
 @app.callback(
-    Output("s-symbol","data"), Output("ticker-input","value"),
-    Input("btn-load","n_clicks"), State("ticker-input","value"),
-    State("s-live","data"), prevent_initial_call=True,
+    Output("s-symbol","data"),
+    Output("ticker-input","value"),
+    Output("s-candles","data", allow_duplicate=True),
+    Input("btn-load","n_clicks"),
+    State("ticker-input","value"),
+    State("s-live","data"),
+    State("s-tf","data"),
+    prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live):
+def load_symbol(_, ticker, live, tf):
     clean = sanitize_symbol(ticker or "")
-    if not clean: return no_update, no_update
-    price = live["price"] if live else 280.15
+    if not clean:
+        return no_update, no_update, no_update
+
+    price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
            decision_score=live.get("decision",{}).get("score") if live else None)
-    return clean, clean
+
+    fresh = fetch_real_candles(clean, tf or "5m")
+    return clean, clean, fresh
 
 @app.callback(
     Output("s-tab","data"),
@@ -2599,27 +2669,55 @@ def set_tab(*_):
     prevent_initial_call=True,
 )
 def on_tick(_, current, seq, candles, live_mode, symbol, tf):
+    """
+    Live price refresh + real candle bucket behavior.
+
+    Important:
+    - Does NOT create a new candle on every tick.
+    - Updates only the active candle's high/low/close while the selected timeframe is still open.
+    - Appends a new candle only when the selected timeframe rolls over.
+    """
+    clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
+
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=4)
         r.raise_for_status()
         d      = r.json()
         price  = float(d["price"])
-        volume = int(d.get("volume", 0))
+        volume = int(d.get("volume", 0) or 0)
+        tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
     except Exception:
         return no_update, no_update, no_update
 
-    new_seq  = (seq or 0) + 1
-    new_live = create_live_update(symbol, price, volume, new_seq).to_dict()
+    new_seq = (seq or 0) + 1
 
-    if candles:
-        prior = candles[-1]
-        new_c = {"o": prior["c"],
-                 "h": round(max(prior["c"], price) + 0.12, 2),
-                 "l": round(min(prior["c"], price) - 0.12, 2),
-                 "c": price, "t": str(new_seq)}
-        new_candles = candles[-49:] + [new_c]
-    else:
-        new_candles = _init_candles
+    # Preserve backend decision/confluence if present. Fall back to local engine output.
+    fallback_live = create_live_update(clean, price, volume, new_seq).to_dict()
+    new_live = {
+        **fallback_live,
+        "symbol": clean,
+        "price": price,
+        "volume": volume,
+        "timestamp": tick_time,
+        "sequence": new_seq,
+        "source": d.get("source", "alpaca"),
+    }
+    if d.get("decision"):
+        new_live["decision"] = d.get("decision")
+    if d.get("confluence"):
+        new_live["confluence"] = d.get("confluence")
+
+    # If the candle store is empty, fetch real history once.
+    if not candles:
+        candles = fetch_real_candles(clean, tf or "5m")
+
+    new_candles = update_current_candle(
+        candles=candles or [],
+        price=price,
+        volume=volume,
+        tick_time=tick_time,
+        tf=tf or "5m",
+    )
 
     return new_live, new_seq, new_candles
 @app.callback(
