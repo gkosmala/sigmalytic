@@ -877,6 +877,92 @@ def build_login_page(error=""):
     ], style={"background":NAVY})
 
 
+def build_direction_panel(decision, score):
+    """Direction & Confidence panel for the Command tab."""
+    bias = decision.get("bias", "Neutral")
+    status = decision.get("status", "Watching")
+    confidence = decision.get("confidence", f"{score}%")
+    mode = decision.get("mode", "Standard")
+    grade = decision.get("grade", "—")
+    behavior = decision.get("behavior", "Decision state active")
+    next_action = decision.get("next_action", "Monitor for confirmation.")
+
+    bias_text = str(bias).strip() or "Neutral"
+    bias_l = bias_text.lower()
+
+    if bias_l == "bullish":
+        color = TEAL_DIM
+        icon = "🟢"
+        tone = "teal"
+    elif bias_l == "bearish":
+        color = RED_DIM
+        icon = "🔴"
+        tone = "red"
+    else:
+        color = YELLOW_DIM
+        icon = "🟡"
+        tone = "yellow"
+
+    return html.Div([
+        slabel("Direction Intelligence"),
+
+        html.Div([
+            html.Div(
+                f"{icon} {bias_text.upper()}",
+                style={
+                    "color": color,
+                    "fontSize": "28px",
+                    "fontWeight": "900",
+                    "lineHeight": "1",
+                    "letterSpacing": "-.02em",
+                    "margin": "6px 0 6px",
+                }
+            ),
+            badge(status, tone),
+        ], style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "alignItems": "center",
+            "gap": "8px",
+            "marginBottom": "10px",
+        }),
+
+        html.Div(f"LIVE STATE: {behavior}",
+                 style={
+                     "fontSize": "9px",
+                     "fontWeight": "800",
+                     "color": TEXT,
+                     "textTransform": "uppercase",
+                     "letterSpacing": ".1em",
+                     "marginBottom": "8px",
+                 }),
+
+        html.Div(next_action,
+                 style={
+                     "color": TEXT,
+                     "fontSize": "11px",
+                     "fontWeight": "600",
+                     "lineHeight": "1.5",
+                     "marginBottom": "8px",
+                 }),
+
+        pbar("Signal Strength", score, color),
+
+        html.Div(style={"height": "8px"}),
+
+        html.Div([
+            metric_tile("Confidence", confidence, color),
+            metric_tile("Status", status, color),
+            metric_tile("Grade", grade, color),
+            metric_tile("Mode", mode, BLUE_DIM),
+        ], style={
+            "display": "grid",
+            "gridTemplateColumns": "1fr 1fr",
+            "gap": "6px",
+        }),
+    ])
+
+
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price)
@@ -1001,28 +1087,15 @@ def build_command_tab(live, candles, symbol, tf):
     row2 = card([
         html.Div([
 
-            # Column A — Decision Engine signal
+            # Column A — Direction & Confidence Panel
             html.Div([
-                slabel("Decision Engine"),
-                html.Div(decision["status"],
-                         style={"color":sc,"fontSize":"28px","fontWeight":"900",
-                                "lineHeight":"1","letterSpacing":"-.02em","margin":"6px 0 4px"}),
-                html.Div(f"LIVE STATE: {decision['behavior']}",
-                         style={"fontSize":"9px","fontWeight":"800","color":TEXT,
-                                "textTransform":"uppercase","letterSpacing":".1em","marginBottom":"8px"}),
-                html.Div(decision["next_action"],
-                         style={"color":TEXT,"fontSize":"11px","fontWeight":"600",
-                                "lineHeight":"1.5","marginBottom":"6px"}),
-                pbar("Signal Strength", score),
-                html.Div(style={"height":"8px"}),
-                html.Div([
-                    metric_tile("Bias",       decision["bias"],       sc),
-                    metric_tile("Grade",      decision["grade"],      sc),
-                    metric_tile("Confidence", decision["confidence"], sc),
-                    metric_tile("Mode",       decision["mode"],       BLUE_DIM),
-                ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"6px"}),
-            ], style={"flex":"1.2","minWidth":"160px",
-                       "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
+                build_direction_panel(decision, score),
+            ], style={
+                "flex":"1.2",
+                "minWidth":"160px",
+                "borderRight":f"1px solid {BORDER}",
+                "paddingRight":"16px",
+            }),
 
             # Column B — Trade Card
             html.Div([
