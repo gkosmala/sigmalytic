@@ -1326,6 +1326,10 @@ def build_radar_tab(session=None):
            onMouseEnter=f"document.getElementById('{tooltip_id}').style.display='block'",
            onMouseLeave=f"document.getElementById('{tooltip_id}').style.display='none'")
 
+    def _hdr(txt, flex):
+        return html.Span(txt, style={"flex":flex,"fontSize":"9px","color":MUTED,
+            "fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"})
+
     header_row = html.Div([
         _hdr("Symbol",  "0 0 70px"),
         _hdr("Price",   "0 0 70px"),
