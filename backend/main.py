@@ -19,6 +19,7 @@ Endpoints:
   GET  /api/admin/report/public       — dev admin report (no auth)
   POST /api/admin/snapshot/write-now  — force snapshot write
   GET  /api/debug/user-emails         — list all alert recipients
+  POST /api/admin/run-eod-audit       — manually trigger EOD divergence audit
 
 Run:
   uvicorn backend.main:app --reload --port 8000
@@ -267,6 +268,167 @@ def ensure_stream(symbol: str):
         log.info(f"Started Alpaca stream task for {symbol}")
 
 
+# ── EOD Audit — runs nightly at 8:30 PM ET ────────────────────────────────
+
+async def run_eod_audit():
+    """
+    Scores all cached symbols with the full ConfluenceEngine.
+    Symbols where deep score diverges >=15 pts from composite
+    are written to the divergence_watchlist table in Supabase.
+    These symbols receive intraday deep scoring the following day.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+
+    log.info("EOD AUDIT: Starting full ConfluenceEngine run on all symbols...")
+
+    try:
+        from confluence_engine import ConfluenceEngine, MarketData, OptionsData
+        from radar_service import RADAR_CACHE
+    except Exception as e:
+        log.error(f"EOD AUDIT: Import failed — {e}")
+        return
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+    if not supabase_url or not supabase_key:
+        log.error("EOD AUDIT: Supabase credentials missing — aborting")
+        return
+
+    if not RADAR_CACHE:
+        log.error("EOD AUDIT: RADAR_CACHE is empty — aborting")
+        return
+
+    engine = ConfluenceEngine()
+    divergence_rows = []
+    processed = 0
+    errors = 0
+
+    log.info(f"EOD AUDIT: Processing {len(RADAR_CACHE)} symbols...")
+
+    for symbol, cached in list(RADAR_CACHE.items()):
+        try:
+            composite_score = cached.get("composite_score", 0)
+            price = cached.get("price", 0)
+
+            if composite_score < 30 or price <= 0:
+                continue
+
+            market = MarketData(
+                symbol               = symbol,
+                price                = price,
+                previous_close       = cached.get("prev_close") or price,
+                day_open             = cached.get("day_open") or price,
+                day_high             = cached.get("day_high") or price,
+                day_low              = cached.get("day_low") or price,
+                volume               = int(cached.get("volume", 0)),
+                avg_volume           = int(cached.get("avg_volume", 1)) or 1,
+                vwap                 = cached.get("vwap"),
+                atr                  = cached.get("atr"),
+                benchmark_change_pct = cached.get("benchmark_change_pct"),
+            )
+
+            result = engine.evaluate(market, OptionsData())
+            deep_score = result.score
+            delta = abs(deep_score - composite_score)
+            processed += 1
+
+            if delta >= 15:
+                divergence_rows.append({
+                    "symbol"         : symbol,
+                    "composite_score": round(composite_score, 2),
+                    "deep_score"     : round(deep_score, 2),
+                    "delta"          : round(delta, 2),
+                    "direction"      : result.direction,
+                    "old_status"     : cached.get("status", "Unknown"),
+                    "new_status"     : result.status,
+                    "regime"         : result.regime,
+                    "price"          : round(price, 4),
+                    "audited_at"     : _dt.now(_tz.utc).isoformat(),
+                })
+
+        except Exception as e:
+            errors += 1
+            if errors <= 10:
+                log.warning(f"EOD AUDIT: Error on {symbol} — {e}")
+
+    log.info(
+        f"EOD AUDIT: Processed {processed} symbols | "
+        f"{len(divergence_rows)} divergences found | "
+        f"{errors} errors"
+    )
+
+    if not divergence_rows:
+        log.info("EOD AUDIT: No divergences found — watchlist unchanged")
+        return
+
+    # ── Write to Supabase ────────────────────────────────────────────────
+    headers = {
+        "apikey"       : supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type" : "application/json",
+        "Prefer"       : "return=minimal",
+    }
+
+    try:
+        # Delete all existing rows first
+        del_resp = requests.delete(
+            f"{supabase_url}/rest/v1/divergence_watchlist",
+            headers={**headers, "Prefer": ""},
+            params={"audited_at": "not.is.null"},
+            timeout=15,
+        )
+        log.info(f"EOD AUDIT: Cleared old watchlist rows — status {del_resp.status_code}")
+    except Exception as e:
+        log.warning(f"EOD AUDIT: Failed to clear old rows — {e}")
+
+    # Insert new rows in batches of 50
+    batch_size = 50
+    written = 0
+    for i in range(0, len(divergence_rows), batch_size):
+        batch = divergence_rows[i:i + batch_size]
+        try:
+            resp = requests.post(
+                f"{supabase_url}/rest/v1/divergence_watchlist",
+                headers=headers,
+                json=batch,
+                timeout=15,
+            )
+            if resp.status_code in (200, 201):
+                written += len(batch)
+                log.info(f"EOD AUDIT: Wrote batch {i // batch_size + 1} ({len(batch)} rows)")
+            else:
+                log.error(f"EOD AUDIT: Supabase write failed — {resp.status_code} {resp.text[:200]}")
+        except Exception as e:
+            log.error(f"EOD AUDIT: Supabase write exception — {e}")
+
+    log.info(f"EOD AUDIT: Complete — {written}/{len(divergence_rows)} rows written to divergence_watchlist")
+
+
+def _eod_audit_scheduler():
+    """Background thread — fires run_eod_audit() nightly at 8:30 PM ET (00:30 UTC)."""
+    import time as _t
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    while True:
+        now = _dt.now(_tz.utc)
+        # 8:30 PM ET = 00:30 UTC (during EDT, UTC-4)
+        target = now.replace(hour=0, minute=30, second=0, microsecond=0)
+        if now >= target:
+            target += _td(days=1)
+        sleep_secs = (target - now).total_seconds()
+        log.info(f"EOD AUDIT: Scheduler sleeping {sleep_secs / 3600:.1f}h until next run at 00:30 UTC")
+        _t.sleep(sleep_secs)
+
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_eod_audit())
+            loop.close()
+        except Exception as e:
+            log.error(f"EOD AUDIT: Scheduler run failed — {e}")
+
+
 # ── App lifecycle ──────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -275,7 +437,7 @@ async def lifespan(app: FastAPI):
     log.info("Sigmalytic backend starting…")
     start_radar_scheduler()
 
-    # ── Nightly geometry recalculation at 20:00 UTC ───────────────────────────
+    # ── Nightly geometry recalculation at 20:00 UTC ───────────────────────
     import threading as _threading
     from datetime import datetime as _dt, timezone as _tz
     import time as _t
@@ -284,7 +446,6 @@ async def lifespan(app: FastAPI):
         """Runs Wyckoff + Gann recalculation nightly at 20:00 UTC."""
         while True:
             now = _dt.now(_tz.utc)
-            # Calculate seconds until next 20:00 UTC
             target = now.replace(hour=20, minute=0, second=0, microsecond=0)
             if now >= target:
                 target = target.replace(day=target.day + 1)
@@ -311,9 +472,12 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_geometry_runner, daemon=True).start()
     log.info("Nightly geometry scheduler started (20:00 UTC)")
 
-    # ── Initial BME — load cache from Supabase first, then retrain if needed ──
+    # ── EOD Audit scheduler — 8:30 PM ET (00:30 UTC) ─────────────────────
+    _threading.Thread(target=_eod_audit_scheduler, daemon=True).start()
+    log.info("EOD audit scheduler started (runs nightly at 8:30 PM ET)")
+
+    # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
-        # Load persisted bank immediately (no wait needed)
         try:
             loaded = bme_load_cache()
             log.info(f"BME cache loaded from Supabase: {loaded} symbols")
@@ -322,8 +486,7 @@ async def lifespan(app: FastAPI):
 
         def _initial_bme_training():
             import time as _t
-            # Short initial wait for radar bars to start loading
-            _t.sleep(30)
+            _t.sleep(180)  # Wait 3 min for radar bars to load
             last_trained = 0
             for _attempt in range(48):  # Try every 5 min for 4 hours
                 try:
@@ -333,25 +496,29 @@ async def lifespan(app: FastAPI):
                         trained = bme_train_batch(dict(_historical_bars))
                         last_trained = current
                         log.info(f"BME training pass {_attempt+1}: {trained}/{current} symbols trained")
-                        if current > 1000:  # Full Russell 1000 loaded
+                        if current > 1000:
                             log.info("BME fully trained on complete universe.")
                             break
                 except Exception as _e:
                     log.warning(f"BME training attempt {_attempt+1} failed: {_e}")
                 _t.sleep(300)
+
         import threading as _bme_thread
         _bme_thread.Thread(target=_initial_bme_training, daemon=True).start()
-        log.info("BME training thread started (30s initial delay, then every 5 min)")
+        log.info("BME training thread started (3min initial delay, then every 5 min)")
 
     # ── Supabase heartbeat — prevents free tier auto-pause ─────────────────
     import threading, time as _time
+
     def _supabase_heartbeat():
         import requests as _req
         while True:
             try:
                 _supabase_url = os.getenv("SUPABASE_URL", "")
                 _supabase_key = os.getenv("SUPABASE_ANON_KEY", "")
-                if not _supabase_url: _time.sleep(3600); continue
+                if not _supabase_url:
+                    _time.sleep(3600)
+                    continue
                 _req.get(
                     f"{_supabase_url}/rest/v1/user_preferences?limit=1",
                     headers={"apikey": _supabase_key, "Authorization": f"Bearer {_supabase_key}"},
@@ -360,10 +527,9 @@ async def lifespan(app: FastAPI):
                 log.info("Supabase heartbeat OK")
             except Exception as e:
                 log.warning(f"Supabase heartbeat failed: {e}")
-            _time.sleep(3600)  # ping every hour
+            _time.sleep(3600)
 
     threading.Thread(target=_supabase_heartbeat, daemon=True).start()
-    # ── End heartbeat ──────────────────────────────────────────────────────
 
     yield
     stop_radar_scheduler()
@@ -393,7 +559,7 @@ app.include_router(billing_router)
 app.include_router(radar_router)
 app.include_router(snapshot_router)
 app.include_router(legal_router)
-app.include_router(email_router)        # ← EMAIL ALERT ROUTER
+app.include_router(email_router)
 app.include_router(preferences_router)
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
@@ -615,9 +781,24 @@ async def request_password_reset(email: str = ""):
 
 @app.get("/api/scoreboard/clean-duplicates")
 async def clean_duplicates():
-    from scoreboard_service import clear_duplicate_signals
-    deleted = clear_duplicate_signals()
-    return {"ok": True, "deleted": deleted}
+    import threading
+    result = {"deleted": 0, "error": None}
+
+    def _run():
+        try:
+            from scoreboard_service import clear_duplicate_signals
+            result["deleted"] = clear_duplicate_signals()
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(f"Duplicate clear error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=30)
+
+    if result["error"]:
+        return {"ok": False, "message": result["error"]}
+    return {"ok": True, "deleted": result["deleted"]}
 
 
 @app.get("/api/scoreboard")
@@ -628,9 +809,58 @@ async def get_scoreboard():
 
 @app.post("/api/scoreboard/grade-now")
 async def grade_now():
-    from scoreboard_service import grade_pending_signals
-    grade_pending_signals()
-    return {"ok": True, "message": "Grading complete"}
+    import threading
+    result = {"error": None}
+
+    def _run():
+        try:
+            from scoreboard_service import grade_pending_signals
+            log.info("Manual grader triggered via API")
+            grade_pending_signals()
+            log.info("Manual grader finished")
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(f"Manual grader error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=120)
+
+    if result["error"]:
+        return {"ok": False, "message": result["error"]}
+    return {"ok": True, "message": "Grading complete — check Render logs for details"}
+
+
+# ── EOD Audit — manual trigger ─────────────────────────────────────────────
+
+@app.post("/api/admin/run-eod-audit")
+async def trigger_eod_audit():
+    """Manually trigger the EOD divergence audit. Runs async in background."""
+    asyncio.create_task(run_eod_audit())
+    return {
+        "ok": True,
+        "status": "EOD audit started",
+        "message": "Running in background — check Render logs for progress. Takes 2-3 minutes.",
+    }
+
+
+@app.get("/api/admin/divergence-watchlist")
+async def get_divergence_watchlist():
+    """Returns current contents of the divergence watchlist from Supabase."""
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not supabase_key:
+        return {"error": "Supabase not configured"}
+    try:
+        r = requests.get(
+            f"{supabase_url}/rest/v1/divergence_watchlist?order=delta.desc&limit=100",
+            headers={"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"},
+            timeout=10,
+        )
+        data = r.json()
+        return {"count": len(data), "symbols": data}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/options/test/{symbol}")
@@ -719,7 +949,6 @@ async def get_stock(symbol: str):
     clean = sanitize_symbol(symbol)
     if not clean:
         raise HTTPException(400, "Invalid symbol")
-    # Try cache first for instant response
     cached = get_cached_price(clean)
     try:
         quote = fetch_latest_quote(clean)
@@ -831,7 +1060,7 @@ async def _synthetic_feed(ws: WebSocket, symbol: str):
             break
 
 
-# ── Geometry seeding endpoints ─────────────────────────────────────────────────
+# ── Geometry seeding endpoints ─────────────────────────────────────────────
 
 @app.get("/api/admin/seed-geometry")
 async def seed_geometry():
@@ -902,7 +1131,6 @@ async def debug_radar(symbol: str):
         internal = intel_data.get("internal_scores", {})
         factor   = intel_data.get("factor_scores", {})
         return {
-            # ── Radar (lightweight) ──────────────────────────────────────────
             "symbol"              : clean,
             "composite_score"     : radar_data.get("composite_score"),
             "status"              : intel_data.get("status") or radar_data.get("status"),
@@ -914,13 +1142,11 @@ async def debug_radar(symbol: str):
             "invalidation"        : radar_data.get("invalidation"),
             "setup_type"          : radar_data.get("setup_type"),
             "on_divergence_watchlist": radar_data.get("on_divergence_watchlist"),
-            # ── Weis Wave (radar — daily bars) ───────────────────────────────
             "weis_signal"         : radar_data.get("weis_signal"),
             "weis_score"          : radar_data.get("weis_score"),
             "weis_macro_bias"     : radar_data.get("weis_macro_bias"),
             "three_bar_reversal"  : radar_data.get("three_bar_reversal"),
             "three_bar_note"      : radar_data.get("three_bar_note"),
-            # ── Intelligence (deep — divergence watchlist only) ──────────────
             "intelligence_score"  : intel_data.get("score"),
             "confidence"          : intel_data.get("confidence"),
             "direction"           : intel_data.get("direction"),
@@ -933,7 +1159,7 @@ async def debug_radar(symbol: str):
             "gex_strategy"        : radar_data.get("gex_strategy"),
             "gex_wall"            : radar_data.get("gex_wall"),
             "gex_sub_score"       : radar_data.get("gex_sub_score"),
-            "bme_score"           : internal.get("behavioral"),
+            "bme_score"           : radar_data.get("bme_score") or internal.get("behavioral"),
             "weis_score_deep"     : internal.get("wyckoff_weis"),
             "hurst_score"         : internal.get("time_cycle"),
             "vsa_score"           : internal.get("vsa"),
@@ -956,3 +1182,16 @@ async def debug_radar(symbol: str):
     except Exception as e:
         return {"error": str(e)}
 
+
+@app.get("/api/behavior/open-trade/{user_id}")
+async def get_open_trade(user_id: str):
+    """
+    Open trade endpoint — returns empty response until
+    Alpaca order execution is built in v1.1
+    """
+    return {
+        "user_id"   : user_id,
+        "open_trade": None,
+        "status"    : "no_open_trade",
+        "message"   : "No open trade found",
+    }
