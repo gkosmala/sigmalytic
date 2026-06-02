@@ -1,4 +1,3 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 # Sigmalytic v2.2 — integer x-axis for proper candle rendering
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
@@ -1086,7 +1085,7 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Live institutional options flow | Powered by Alpaca OPRA","blue"),
+        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
@@ -1145,71 +1144,7 @@ def build_command_tab(live, candles, symbol, tf):
 
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
-    # ── Engine Intelligence Strip ────────────────────────────────────────────
-    # Fetch radar data for this symbol
-    _radar_data = {}
-    try:
-        import requests as _rqc
-        _r = _rqc.get(f"{BACKEND_HTTP}/api/radar/symbol/{symbol}", timeout=3)
-        if _r.ok:
-            _radar_data = _r.json()
-    except Exception:
-        pass
-
-    def _eng_badge(label, value, color=TEXT, bg="rgba(0,0,0,.2)"):
-        return html.Div([
-            html.Span(label, style={"fontSize":"9px","color":MUTED,"fontWeight":"700",
-                      "textTransform":"uppercase","letterSpacing":".12em","display":"block","marginBottom":"2px"}),
-            html.Span(str(value), style={"fontSize":"12px","fontWeight":"800","color":color}),
-        ], style={"background":bg,"border":f"1px solid {BORDER}","borderRadius":"10px",
-                  "padding":"8px 14px","minWidth":"90px"})
-
-    # GEX
-    _gex_regime = _radar_data.get("gex_regime") or "—"
-    _gex_color  = TEAL_DIM if _gex_regime=="POSITIVE" else RED_DIM if _gex_regime=="NEGATIVE" else TEXT
-    _gex_label  = "Positive — Stabilizing" if _gex_regime=="POSITIVE" else "Negative — Amplifying" if _gex_regime=="NEGATIVE" else "—"
-    _gex_wall   = _radar_data.get("gex_wall")
-    _gex_wall_str = f"Wall ${_gex_wall:,.2f}" if _gex_wall else ""
-
-    # Wave Signal
-    _wave_map = {
-        "SPRING":"Spring — Reversal Up","UPTHRUST":"Upthrust — Reversal Down",
-        "CLIMAX_BUY":"Buying Climax","CLIMAX_SELL":"Selling Climax",
-        "3BAR_BULLISH":"3-Bar Bullish","3BAR_BEARISH":"3-Bar Bearish","NONE":"No Signal",
-    }
-    _wave_raw   = _radar_data.get("weis_signal") or "NONE"
-    _wave_label = _wave_map.get(_wave_raw, _wave_raw)
-    _wave_color = TEAL_DIM if "Spring" in _wave_label or "Bullish" in _wave_label else                   RED_DIM if "Upthrust" in _wave_label or "Bearish" in _wave_label or "Climax" in _wave_label else TEXT
-
-    # Status from radar
-    _radar_status = _radar_data.get("status") or "—"
-    _status_color = TEAL_DIM if _radar_status in ("Armed","Triggered","Confirmed") else                     YELLOW_DIM if _radar_status=="Building" else                     RED_DIM if _radar_status in ("Avoid","Failed","Short Trigger") else TEXT
-
-    # BME
-    _bme = _radar_data.get("bme_score")
-    _bme_str = f"{_bme:.0f}" if _bme else "—"
-    _bme_color = TEAL_DIM if _bme and _bme>=65 else RED_DIM if _bme and _bme<35 else TEXT
-
-    # Setup
-    _setup = _radar_data.get("setup_type") or "—"
-
-    engine_strip = html.Div([
-        html.Div([
-            html.Span("Engine Intelligence", style={"fontSize":"9px","color":MUTED,"fontWeight":"800",
-                      "textTransform":"uppercase","letterSpacing":".15em"}),
-            html.Span(f"  ·  {symbol}", style={"fontSize":"9px","color":MUTED}),
-        ], style={"marginBottom":"10px"}),
-        html.Div([
-            _eng_badge("Options Positioning", _gex_label + (f" · {_gex_wall_str}" if _gex_wall_str else ""), _gex_color),
-            _eng_badge("Wave Signal",         _wave_label,  _wave_color),
-            _eng_badge("Radar Status",        _radar_status, _status_color),
-            _eng_badge("Behavioral Score",    _bme_str,     _bme_color),
-            _eng_badge("Setup Type",          _setup,       WHITE),
-        ], style={"display":"flex","gap":"8px","flexWrap":"wrap"}),
-    ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"16px",
-              "padding":"14px 18px","marginBottom":"16px"})
-
-    return html.Div([row1, engine_strip, row2, row3, row4],
+    return html.Div([row1, row2, row3, row4],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -1261,154 +1196,44 @@ def build_stub_tab(title, description):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def build_radar_tab(session=None):
-    """Radar Screen — multi-symbol signal scanner with click-to-expand detail panel."""
+    """Radar Screen — multi-symbol signal scanner."""
     import requests as _rq
     session    = session or {}
     user_id    = session.get("user_id", "demo_user_001")
     features   = session.get("features", {})
-    is_free    = False
+    is_free    = session.get("plan", "free") == "free" or session.get("is_demo", False)
     radar_limit= features.get("radar_limit", 10) if is_free else 9999
+    score_only = features.get("composite_score_only", False)
+    delayed    = features.get("delayed_data", False)
+    delay_min  = features.get("delay_minutes", 15)
 
     try:
         r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         data = r.json() if r.ok else []
-        signals = data if isinstance(data, list) else data.get("symbols", data.get("signals", data.get("scores", [])))
+        signals = data if isinstance(data, list) else data.get("signals", data.get("scores", []))
     except Exception:
         signals = []
 
-    def _wave_label(sig):
-        mapping = {
-            "SPRING":     "Spring — Potential Reversal Up",
-            "UPTHRUST":   "Upthrust — Potential Reversal Down",
-            "CLIMAX_BUY": "Buying Climax — Exhaustion Risk",
-            "CLIMAX_SELL":"Selling Climax — Exhaustion Risk",
-            "SOT":        "Sign of Termination",
-            "3BAR_BULLISH":"3-Bar Bullish Reversal",
-            "3BAR_BEARISH":"3-Bar Bearish Reversal",
-            "NONE":       "No Signal",
-        }
-        return mapping.get(sig, sig or "—")
+    # Enforce free plan limit
+    if is_free:
+        signals = signals[:radar_limit]
 
-    def _options_label(regime):
-        mapping = {
-            "POSITIVE": "Positive — Stabilizing",
-            "NEGATIVE": "Negative — Amplifying",
-            "NEUTRAL":  "Neutral",
-        }
-        return mapping.get(regime, regime or "—")
-
-    def _52w_position(price, high, low):
-        if not high or not low or high <= low:
-            return "—"
-        pct = (price - low) / (high - low) * 100
-        return f"{pct:.0f}% of range"
-
-    def _detail_panel(s):
-        price      = s.get("price", 0)
-        score      = s.get("composite_score", 0)
-        sc         = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        chg        = s.get("change_pct", 0)
-        rel_vol    = s.get("rel_volume", 0)
-        setup      = s.get("setup_type", "—")
-        status     = s.get("status", "—")
-        trigger    = s.get("trigger", 0)
-        invalid    = s.get("invalidation", 0)
-        target1    = s.get("target1", 0)
-        target2    = s.get("target2", 0)
-        atr        = s.get("atr", 0)
-        high52     = s.get("high_52w", 0)
-        low52      = s.get("low_52w", 0)
-        wave_sig   = _wave_label(s.get("weis_signal", "NONE"))
-        wave_score = s.get("weis_score", 0)
-        gex_regime = _options_label(s.get("gex_regime"))
-        gex_wall   = s.get("gex_wall")
-        bme        = s.get("bme_score", 0)
-        tbr        = s.get("three_bar_reversal")
-        on_wl      = s.get("on_divergence_watchlist", False)
-
-        def _dp(label, value, color=TEXT):
-            return html.Div([
-                html.Span(label, style={"color":MUTED,"fontSize":"10px","fontWeight":"700",
-                          "textTransform":"uppercase","letterSpacing":".1em","display":"block","marginBottom":"2px"}),
-                html.Span(str(value), style={"color":color,"fontSize":"13px","fontWeight":"700"}),
-            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"8px","padding":"8px 12px"})
-
-        return html.Div([
-            # Row 1 — Price & Movement
-            html.Div("Price & Movement", style={"color":MUTED,"fontSize":"9px","fontWeight":"800",
-                     "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"8px"}),
-            html.Div([
-                _dp("Price",            f"${price:,.2f}",                    WHITE),
-                _dp("Change",           f"{chg:+.2f}%",                      TEAL_DIM if chg>=0 else RED_DIM),
-                _dp("Volume Intensity", f"{rel_vol:.1f}x avg",               YELLOW_DIM if rel_vol>1.5 else TEXT),
-                _dp("Confluence Score", f"{score:.0f}",                      sc),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"8px","marginBottom":"12px"}),
-
-            # Row 2 — Signal Quality
-            html.Div("Signal Quality", style={"color":MUTED,"fontSize":"9px","fontWeight":"800",
-                     "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"8px"}),
-            html.Div([
-                _dp("Setup Type",       setup,                               WHITE),
-                _dp("Status",          status,                               sc),
-                _dp("Entry Trigger",   f"${trigger:,.2f}" if trigger else "—", TEAL_DIM),
-                _dp("Stop Level",      f"${invalid:,.2f}" if invalid else "—", RED_DIM),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"8px","marginBottom":"12px"}),
-
-            # Row 3 — Structural Analysis
-            html.Div("Structural Analysis", style={"color":MUTED,"fontSize":"9px","fontWeight":"800",
-                     "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"8px"}),
-            html.Div([
-                _dp("Wave Signal",         wave_sig,                         TEAL_DIM if "Spring" in wave_sig or "Bullish" in wave_sig else RED_DIM if "Upthrust" in wave_sig or "Bearish" in wave_sig or "Climax" in wave_sig else TEXT),
-                _dp("Options Positioning", gex_regime,                       TEAL_DIM if "Stabiliz" in gex_regime else RED_DIM if "Amplify" in gex_regime else TEXT),
-                _dp("Options Wall",        f"${gex_wall:,.2f}" if gex_wall else "—", TEXT),
-                _dp("Behavioral Score",    f"{bme:.0f}" if bme else "—",    TEAL_DIM if bme and bme>=65 else RED_DIM if bme and bme<35 else TEXT),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"8px","marginBottom":"12px"}),
-
-            # Row 4 — Price Targets
-            html.Div("Price Targets", style={"color":MUTED,"fontSize":"9px","fontWeight":"800",
-                     "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"8px"}),
-            html.Div([
-                _dp("Target 1",        f"${target1:,.2f}" if target1 else "—", TEAL_DIM),
-                _dp("Target 2",        f"${target2:,.2f}" if target2 else "—", TEAL_DIM),
-                _dp("Volatility Range",f"${atr:,.2f}" if atr else "—",       TEXT),
-                _dp("52W Position",    _52w_position(price, high52, low52),  TEXT),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"8px","marginBottom":"12px"}),
-
-            # Flags row
-            html.Div([
-                html.Span("⚡ On Watchlist" if on_wl else "", style={"color":YELLOW_DIM,"fontSize":"11px","fontWeight":"700","marginRight":"12px"}),
-                html.Span(f"3-Bar {tbr.title()} Reversal" if tbr else "", style={"color":TEAL_DIM if tbr=="BULLISH" else RED_DIM,"fontSize":"11px","fontWeight":"700"}),
-            ]) if (on_wl or tbr) else html.Div(),
-
-        ], style={
-            "background":"rgba(0,0,0,.25)",
-            "border":f"1px solid {BORDER_T}",
-            "borderRadius":"12px",
-            "padding":"16px",
-            "margin":"4px 0 8px 0",
-        })
-
-    def _sig_row_with_detail(s):
+    def _sig_row(s):
         score = s.get("composite_score", s.get("score", 0))
         sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
         chg = s.get("change_pct", 0)
-        sym = s.get("symbol", "")
-        return html.Details([
-            html.Summary([
-                html.Span(sym, style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                           "color":WHITE,"fontFamily":"DM Mono, monospace","minWidth":"60px"}),
-                html.Span(f"${s.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":WHITE}),
-                html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
-                           "color":TEAL_DIM if chg>=0 else RED_DIM}),
-                html.Span(f"{score:.0f}", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
-                html.Span(s.get("status","—"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
-                html.Span(s.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-                html.Span(s.get("weis_signal","—") or "—", style={"flex":"1","fontSize":"11px","color":BLUE_DIM}),
-            ], style={"display":"flex","alignItems":"center","gap":"12px",
-                      "padding":"12px 0","borderBottom":f"1px solid {BORDER}",
-                      "cursor":"pointer","listStyle":"none","WebkitAppearance":"none"}),
-            _detail_panel(s),
-        ], style={"borderBottom":f"1px solid {BORDER}"})
+        return html.Div([
+            html.Span(s.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
+                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
+            html.Span(f"${s.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":WHITE}),
+            html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
+                       "color":TEAL_DIM if chg>=0 else RED_DIM}),
+            html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
+            html.Span(s.get("status","—"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
+            html.Span(s.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
+            html.Span(s.get("bias","—"), style={"flex":"1","fontSize":"11px","color":BLUE_DIM}),
+        ], style={"display":"flex","alignItems":"center","gap":"12px",
+                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
 
     header_row = html.Div([
         html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
@@ -1417,18 +1242,26 @@ def build_radar_tab(session=None):
         html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Status",  style={"flex":"1.5","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Signal",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
     ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
+
+    free_banner = html.Div(
+        f"🔒 Free Plan — Top {radar_limit} symbols · {delay_min}-minute delayed data · Composite score only · No alerts. Upgrade to unlock full access.",
+        style={"background":"rgba(59,130,246,.08)","border":"1px solid rgba(59,130,246,.25)",
+               "borderRadius":"10px","color":BLUE_DIM,"fontSize":"12px","padding":"10px 14px",
+               "marginBottom":"12px"}
+    ) if is_free else html.Div()
 
     return html.Div([
         card([
             html.Div([
                 html.H2("📡 Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live multi-symbol signal scanner — click any row to expand details.",
+                html.P("Live multi-symbol signal scanner — A-grade setups across your universe.",
                        style={"color":TEXT,"fontSize":"13px","margin":"0"}),
             ], style={"marginBottom":"12px"}),
+            free_banner,
             header_row,
-            html.Div([_sig_row_with_detail(s) for s in signals] if signals else [
+            html.Div([_sig_row(s) for s in signals] if signals else [
                 html.Div("No signals available. Backend may be initializing or market is closed.",
                          style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
             ]),
@@ -1531,14 +1364,40 @@ def build_divergence_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/divergence/watchlist", timeout=6)
-        if r.status_code == 404: r = type("R", (), {"ok": False})()
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=6)
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
 
-    items = data.get("items", [])
-    audit_label = data.get("last_audit", "Pending — runs nightly at 8:30 PM ET")
+    raw_symbols = data.get("symbols", [])
+    audit_label = data.get("last_audit", "Pending — runs nightly at 8:30 PM ET") or "Pending — runs nightly at 8:30 PM ET"
+
+    # Build items list from symbols data
+    items = []
+    for s in (raw_symbols if isinstance(raw_symbols, list) else []):
+        if isinstance(s, dict):
+            chg   = s.get("change_pct", 0) or 0
+            score = s.get("composite_score", s.get("score", 0)) or 0
+            if chg > 0 and score < 50:
+                direction = "BEARISH"
+            elif chg < 0 and score > 50:
+                direction = "BULLISH"
+            else:
+                direction = "NEUTRAL"
+            items.append({
+                "symbol":           s.get("symbol", s if isinstance(s, str) else ""),
+                "price":            s.get("price", 0),
+                "score":            score,
+                "behavioral_score": s.get("bme_score", 0),
+                "delta":            abs(score - 50),
+                "direction":        direction,
+                "regime":           s.get("regime", "—"),
+                "change_pct":       chg,
+            })
+        elif isinstance(s, str):
+            items.append({"symbol": s, "price": 0, "score": 0,
+                          "behavioral_score": 0, "delta": 0,
+                          "direction": "—", "regime": "—", "change_pct": 0})
 
     def _div_row(d):
         direction = d.get("direction","—")
@@ -2804,7 +2663,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
     elif tab=="divergence":  main = build_divergence_tab(session=None)
     elif tab=="billing":
         try:
-            main = build_billing_tab(session=session, perms=perms)
+            main = build_billing_tab(session=None, perms=None)
         except Exception as e:
             main = card([
                 html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
