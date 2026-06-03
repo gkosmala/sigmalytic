@@ -1396,93 +1396,266 @@ def build_radar_tab(session=None):
 
 
 def build_scoreboard_tab(session=None):
-    """Scoreboard — decision score leaderboard."""
+    """Scoreboard — live outcome analytics from /api/scoreboard."""
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=8)
         board = r.json() if r.ok else {}
     except Exception:
         board = {}
 
-    # Backend /api/scoreboard returns {signals, stats, generated_at}
-    # Backend /api/scoreboard returns {count, symbols, stats, generated_at}
-    raw = board.get("symbols", board.get("entries", board.get("signals", [])))
-    entries   = raw if isinstance(raw, list) else []
-    generated = board.get("generated_at", board.get("last_updated", ""))
-    summary   = board.get("stats", board.get("summary", {}))
+    # Current backend contract:
+    # total_signals, with_outcomes, pending_outcomes,
+    # direction_evaluated, direction_correct_rate,
+    # avg_mfe_pct, avg_mae_pct, edge_ratio,
+    # hit_target1_rate, hit_target2_rate,
+    # outcome_window_hours, recent_signals
+    entries = board.get("recent_signals", [])
+    if not isinstance(entries, list):
+        entries = []
+
+    generated = datetime.now(timezone(timedelta(hours=-4))).strftime("%b %d, %Y %I:%M %p ET")
+
+    def _safe_float(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    def _safe_int(value, default=0):
+        try:
+            if value is None or value == "":
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    def _fmt_pct(value, digits=1, signed=False):
+        if value is None or value == "":
+            return "—"
+        try:
+            v = float(value)
+            sign = "+" if signed and v > 0 else ""
+            return f"{sign}{v:.{digits}f}%"
+        except Exception:
+            return "—"
+
+    def _fmt_money(value):
+        if value is None or value == "":
+            return "—"
+        try:
+            return f"${float(value):,.2f}"
+        except Exception:
+            return "—"
+
+    total_signals = _safe_int(board.get("total_signals"))
+    with_outcomes = _safe_int(board.get("with_outcomes"))
+    pending_outcomes = _safe_int(board.get("pending_outcomes"))
+    direction_evaluated = _safe_int(board.get("direction_evaluated"))
+    direction_correct_rate = _safe_float(board.get("direction_correct_rate"))
+    avg_mfe_pct = _safe_float(board.get("avg_mfe_pct"))
+    avg_mae_pct = _safe_float(board.get("avg_mae_pct"))
+    edge_ratio = _safe_float(board.get("edge_ratio"))
+    hit_target1_rate = _safe_float(board.get("hit_target1_rate"))
+    hit_target2_rate = _safe_float(board.get("hit_target2_rate"))
+    outcome_window_hours = _safe_int(board.get("outcome_window_hours"))
+
+    def _metric(label, value, color=WHITE, sub=None):
+        return html.Div([
+            html.Div(label, style={
+                "fontSize":"10px","color":MUTED,"fontWeight":"800",
+                "textTransform":"uppercase","letterSpacing":".12em",
+                "marginBottom":"5px"
+            }),
+            html.Div(value, style={
+                "fontSize":"22px","fontWeight":"900","color":color,
+                "fontFamily":"DM Mono, monospace" if any(ch.isdigit() for ch in str(value)) else "inherit"
+            }),
+            html.Div(sub or "", style={
+                "fontSize":"10px","color":MUTED,"marginTop":"3px",
+                "minHeight":"14px"
+            }),
+        ], style={
+            "background":"rgba(0,0,0,.22)",
+            "border":f"1px solid {BORDER}",
+            "borderRadius":"14px",
+            "padding":"14px 16px",
+            "minHeight":"86px"
+        })
 
     def _entry_row(e, rank):
-        score = e.get("composite_score", e.get("score", 0))
-        sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        grade = e.get("grade","—")
-        gc = TEAL_DIM if grade.startswith("A") else (BLUE_DIM if grade.startswith("B") else (YELLOW_DIM if grade=="C" else RED_DIM))
-        return html.Div([
-            html.Span(f"#{rank}", style={"flex":"0 0 32px","fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-            html.Span(e.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"{score:.0f}", style={"flex":"1","fontSize":"20px","fontWeight":"900","color":sc}),
-            html.Span(grade, style={"flex":"0 0 40px","fontSize":"16px","fontWeight":"900","color":gc}),
-            html.Span(e.get("status","—"), style={"flex":"2","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(e.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(f"${e.get('price',0):,.2f}", style={"flex":"1","fontSize":"12px","color":TEXT}),
-            html.Span(f"{e.get('change_pct',0):+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
-                       "color":TEAL_DIM if e.get('change_pct',0)>=0 else RED_DIM}),
-        ], style={"display":"flex","alignItems":"center","gap":"12px",
-                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
+        symbol = e.get("symbol", "—")
+        signal_type = e.get("signal_type", e.get("status", "—"))
+        score = _safe_float(e.get("score", e.get("composite_score", 0)))
+        setup_type = e.get("setup_type", "—")
+        regime = e.get("regime", "—")
+        grade = str(e.get("grade", "—") or "—")
+        entry_price = e.get("entry_price", e.get("price"))
+        outcome_pct = e.get("outcome_pct")
+        mfe_pct = e.get("mfe_pct")
+        mae_pct = e.get("mae_pct")
+        direction_correct = e.get("direction_correct")
+        hit_t1 = e.get("hit_t1")
+        hit_t2 = e.get("hit_t2")
 
-    top3_colors = [YELLOW_DIM, TEXT, "#CD7F32"]  # gold, silver, bronze
+        score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
+        grade_color = (
+            TEAL_DIM if grade.startswith("A")
+            else BLUE_DIM if grade.startswith("B")
+            else YELLOW_DIM if grade.startswith("C")
+            else RED_DIM if grade.startswith(("W", "F"))
+            else MUTED
+        )
+
+        if outcome_pct is None or outcome_pct == "":
+            outcome_color = MUTED
+        else:
+            outcome_color = TEAL_DIM if _safe_float(outcome_pct) >= 0 else RED_DIM
+
+        if direction_correct is True:
+            dir_text, dir_color = "✓", TEAL_DIM
+        elif direction_correct is False:
+            dir_text, dir_color = "✕", RED_DIM
+        else:
+            dir_text, dir_color = "—", MUTED
+
+        target_text = "T2" if hit_t2 else ("T1" if hit_t1 else "—")
+        target_color = TEAL_DIM if hit_t2 else (YELLOW_DIM if hit_t1 else MUTED)
+
+        return html.Div([
+            html.Span(f"#{rank}", style={"flex":"0 0 34px","fontSize":"11px","color":MUTED,"fontWeight":"800"}),
+            html.Span(symbol, style={
+                "flex":"0 0 68px","fontWeight":"900","fontSize":"14px",
+                "color":WHITE,"fontFamily":"DM Mono, monospace"
+            }),
+            html.Span(signal_type, style={"flex":"0 0 92px","fontSize":"11px","color":score_color,"fontWeight":"800"}),
+            html.Span(f"{score:.1f}", style={"flex":"0 0 58px","fontSize":"15px","fontWeight":"900","color":score_color}),
+            html.Span(grade, style={"flex":"0 0 42px","fontSize":"15px","fontWeight":"900","color":grade_color}),
+            html.Span(_fmt_money(entry_price), style={"flex":"0 0 84px","fontSize":"12px","color":TEXT,"fontFamily":"DM Mono, monospace"}),
+            html.Span(_fmt_pct(outcome_pct, 2, signed=True), style={"flex":"0 0 74px","fontSize":"12px","fontWeight":"800","color":outcome_color}),
+            html.Span(_fmt_pct(mfe_pct, 2), style={"flex":"0 0 62px","fontSize":"12px","color":TEAL_DIM if mfe_pct not in (None, "") else MUTED}),
+            html.Span(_fmt_pct(mae_pct, 2), style={"flex":"0 0 62px","fontSize":"12px","color":RED_DIM if mae_pct not in (None, "") else MUTED}),
+            html.Span(dir_text, style={"flex":"0 0 36px","fontSize":"14px","fontWeight":"900","color":dir_color,"textAlign":"center"}),
+            html.Span(target_text, style={"flex":"0 0 42px","fontSize":"12px","fontWeight":"900","color":target_color,"textAlign":"center"}),
+            html.Span(regime, style={"flex":"0 0 115px","fontSize":"11px","color":MUTED}),
+            html.Span(setup_type, style={"flex":"1","fontSize":"11px","color":TEXT,"minWidth":"160px"}),
+        ], style={
+            "display":"flex",
+            "alignItems":"center",
+            "gap":"10px",
+            "padding":"11px 0",
+            "borderBottom":f"1px solid {BORDER}",
+            "minWidth":"1100px"
+        })
+
+    header = html.Div([
+        html.Span("#",       style={"flex":"0 0 34px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Symbol",  style={"flex":"0 0 68px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Signal",  style={"flex":"0 0 92px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Score",   style={"flex":"0 0 58px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Grade",   style={"flex":"0 0 42px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Entry",   style={"flex":"0 0 84px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Outcome", style={"flex":"0 0 74px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("MFE",     style={"flex":"0 0 62px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("MAE",     style={"flex":"0 0 62px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Dir",     style={"flex":"0 0 36px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Tgt",     style={"flex":"0 0 42px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Regime",  style={"flex":"0 0 115px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
+    ], style={
+        "display":"flex",
+        "gap":"10px",
+        "paddingBottom":"8px",
+        "borderBottom":f"1px solid {BORDER}",
+        "marginBottom":"4px",
+        "minWidth":"1100px"
+    })
+
+    if edge_ratio >= 1.2 and with_outcomes > 0:
+        edge_note = "Positive path edge: average favorable movement is larger than average adverse movement."
+        edge_variant = "teal"
+    elif with_outcomes > 0:
+        edge_note = "Path edge is not yet confirmed. Continue collecting outcomes before relying on this metric."
+        edge_variant = "yellow"
+    else:
+        edge_note = "Outcome statistics populate after signals have enough forward price data."
+        edge_variant = "blue"
 
     return html.Div([
         card([
             html.Div([
-                html.H2("🏆 Scoreboard", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live leaderboard — highest composite decision scores across the universe.",
-                       style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"16px"}),
+                html.Div([
+                    html.H2("🏆 Scoreboard", style={
+                        "color":WHITE,"fontSize":"18px","fontWeight":"900",
+                        "margin":"0 0 4px"
+                    }),
+                    html.P(
+                        f"Live outcome validation · {outcome_window_hours}h window · backend /api/scoreboard",
+                        style={"color":TEXT,"fontSize":"13px","margin":"0"}
+                    ),
+                ]),
+                badge("LIVE BACKEND", "teal" if board else "red"),
+            ], style={
+                "display":"flex",
+                "justifyContent":"space-between",
+                "alignItems":"start",
+                "gap":"16px",
+                "marginBottom":"16px"
+            }),
 
-            # Summary strip
+            html.Div([
+                _metric("Total Signals", f"{total_signals}", WHITE, "All logged signals"),
+                _metric("Evaluated", f"{with_outcomes}", TEAL_DIM, "Signals with outcomes"),
+                _metric("Pending", f"{pending_outcomes}", YELLOW_DIM if pending_outcomes else MUTED, "Awaiting outcome window"),
+                _metric("Direction Accuracy", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} direction-graded"),
+                _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
+                _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
+                _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
+                _metric("Targets", f"T1 {hit_target1_rate:.1f}% / T2 {hit_target2_rate:.1f}%", BLUE_DIM, "Hit-rate snapshot"),
+            ], style={
+                "display":"grid",
+                "gridTemplateColumns":"repeat(4,1fr)",
+                "gap":"12px",
+                "marginBottom":"16px"
+            }),
+
+            note_box(edge_note, edge_variant),
+
+            html.Div(style={"height":"16px"}),
+
             html.Div([
                 html.Div([
-                    html.Div("Total Symbols", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("total_symbols","—")), style={"fontSize":"20px","fontWeight":"900","color":WHITE}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("Armed", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("armed","—")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("Avg Score", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(f"{summary.get('avg_score',0):.0f}%", style={"fontSize":"20px","fontWeight":"900","color":YELLOW_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("A-Grade", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("a_grade","—")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"20px"}),
+                    html.Div("Recent Signal Outcomes", style={
+                        "fontSize":"12px","fontWeight":"900","color":WHITE,
+                        "textTransform":"uppercase","letterSpacing":".08em"
+                    }),
+                    html.Div("Pending rows show dashes until MFE / MAE / direction fields are populated.",
+                             style={"fontSize":"11px","color":MUTED,"marginTop":"3px"}),
+                ]),
+            ], style={"marginBottom":"12px"}),
 
-            # Table header
             html.Div([
-                html.Span("#",       style={"flex":"0 0 32px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Grade",   style={"flex":"0 0 40px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Status",  style={"flex":"2","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Price",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Chg%",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
+                header,
+                html.Div([_entry_row(e, i+1) for i, e in enumerate(entries)] if entries else [
+                    html.Div(
+                        "Scoreboard data not yet available. Backend returned no recent_signals.",
+                        style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"}
+                    )
+                ]),
+            ], style={
+                "overflowX":"auto",
+                "border":f"1px solid {BORDER}",
+                "borderRadius":"14px",
+                "padding":"12px",
+                "background":"rgba(0,0,0,.14)"
+            }),
 
-            html.Div([_entry_row(e, i+1) for i, e in enumerate(entries)] if entries else [
-                html.Div("Scoreboard data not yet available. Populates after first market snapshot.",
-                         style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
-            ]),
-
-            html.Div(f"Last updated: {generated}", style={"fontSize":"10px","color":MUTED,"marginTop":"12px"}) if generated else html.Div(),
+            html.Div(f"Last updated: {generated}", style={
+                "fontSize":"10px","color":MUTED,"marginTop":"12px"
+            }),
         ]),
     ])
 
