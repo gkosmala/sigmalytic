@@ -893,7 +893,12 @@ async def grade_now():
 
     if result["error"]:
         return {"ok": False, "message": result["error"]}
-    return {"ok": True, "message": "Grading complete — check Render logs for details"}
+    
+return {
+        "ok": True,
+        "message": "Scoreboard repair complete",
+        "result": result["repair"]
+    }
 
 
 # ── EOD Audit — manual trigger ─────────────────────────────────────────────
