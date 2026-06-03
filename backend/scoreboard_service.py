@@ -835,7 +835,23 @@ def get_scoreboard_stats() -> dict:
                 )::numeric, 2)                                     AS avg_mfe_pct,
                 ROUND(AVG(mae_pct) FILTER (
                     WHERE outcome_price IS NOT NULL
-                )::numeric, 2)                                     AS avg_mae_pct
+                )::numeric, 2)                                     AS avg_mae_pct,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mae_pct IS NOT NULL
+                      AND mfe_pct > mae_pct
+                )                                                   AS edge_win_count,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mae_pct IS NOT NULL
+                )                                                   AS edge_evaluated_count,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mfe_pct >= 1.5
+                )                                                   AS tradeable_mfe_count
             FROM scoreboard_signals
         """)
         row = cur.fetchone()
@@ -856,7 +872,23 @@ def get_scoreboard_stats() -> dict:
                 )::numeric, 2) AS avg_mae_pct,
                 ROUND(AVG(outcome_pct) FILTER (
                     WHERE outcome_price IS NOT NULL
-                )::numeric, 2) AS avg_outcome_pct
+                )::numeric, 2) AS avg_outcome_pct,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mae_pct IS NOT NULL
+                      AND mfe_pct > mae_pct
+                ) AS edge_win_count,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mae_pct IS NOT NULL
+                ) AS edge_evaluated_count,
+                COUNT(*) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                      AND mfe_pct IS NOT NULL
+                      AND mfe_pct >= 1.5
+                ) AS tradeable_mfe_count
             FROM scoreboard_signals
             GROUP BY COALESCE(agreement_bucket, '<70 Warning')
             ORDER BY
@@ -871,11 +903,18 @@ def get_scoreboard_stats() -> dict:
 
         agreement_buckets = []
         for b in bucket_rows:
-            bucket, total_b, evaluated_b, correct_b, direction_eval_b, mfe_b, mae_b, avg_outcome_b = b
+            (
+                bucket, total_b, evaluated_b, correct_b, direction_eval_b,
+                mfe_b, mae_b, avg_outcome_b,
+                edge_win_b, edge_eval_b, tradeable_mfe_b
+            ) = b
             mfe = float(mfe_b or 0)
             mae = float(mae_b or 0)
             direction_eval = direction_eval_b or 0
             correct = correct_b or 0
+            edge_eval = edge_eval_b or 0
+            edge_win = edge_win_b or 0
+            tradeable_mfe = tradeable_mfe_b or 0
             agreement_buckets.append({
                 "bucket": bucket,
                 "total_signals": total_b or 0,
@@ -886,6 +925,11 @@ def get_scoreboard_stats() -> dict:
                 "avg_mae_pct": mae,
                 "edge_ratio": _safe_ratio(mfe, mae),
                 "avg_outcome_pct": float(avg_outcome_b or 0),
+                "edge_evaluated": edge_eval,
+                "edge_win_count": edge_win,
+                "edge_accuracy_rate": round(edge_win / max(edge_eval, 1) * 100, 1),
+                "tradeable_mfe_count": tradeable_mfe,
+                "tradeable_mfe_rate": round(tradeable_mfe / max(edge_eval, 1) * 100, 1),
             })
 
         # Threshold validation. This lets the frontend answer:
@@ -906,16 +950,39 @@ def get_scoreboard_stats() -> dict:
                     )::numeric, 2) AS avg_mae_pct,
                     ROUND(AVG(outcome_pct) FILTER (
                         WHERE outcome_price IS NOT NULL
-                    )::numeric, 2) AS avg_outcome_pct
+                    )::numeric, 2) AS avg_outcome_pct,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mae_pct IS NOT NULL
+                          AND mfe_pct > mae_pct
+                    ) AS edge_win_count,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mae_pct IS NOT NULL
+                    ) AS edge_evaluated_count,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mfe_pct >= 1.5
+                    ) AS tradeable_mfe_count
                 FROM scoreboard_signals
                 WHERE agreement_score >= %s
             """, (threshold,))
             tr = cur.fetchone()
-            total_t, evaluated_t, correct_t, direction_eval_t, mfe_t, mae_t, avg_outcome_t = tr
+            (
+                total_t, evaluated_t, correct_t, direction_eval_t,
+                mfe_t, mae_t, avg_outcome_t,
+                edge_win_t, edge_eval_t, tradeable_mfe_t
+            ) = tr
             mfe = float(mfe_t or 0)
             mae = float(mae_t or 0)
             direction_eval = direction_eval_t or 0
             correct = correct_t or 0
+            edge_eval = edge_eval_t or 0
+            edge_win = edge_win_t or 0
+            tradeable_mfe = tradeable_mfe_t or 0
             agreement_thresholds.append({
                 "threshold": threshold,
                 "total_signals": total_t or 0,
@@ -926,6 +993,11 @@ def get_scoreboard_stats() -> dict:
                 "avg_mae_pct": mae,
                 "edge_ratio": _safe_ratio(mfe, mae),
                 "avg_outcome_pct": float(avg_outcome_t or 0),
+                "edge_evaluated": edge_eval,
+                "edge_win_count": edge_win,
+                "edge_accuracy_rate": round(edge_win / max(edge_eval, 1) * 100, 1),
+                "tradeable_mfe_count": tradeable_mfe,
+                "tradeable_mfe_rate": round(tradeable_mfe / max(edge_eval, 1) * 100, 1),
             })
 
         cur.execute("""
@@ -966,6 +1038,11 @@ def get_scoreboard_stats() -> dict:
             "avg_mfe_pct": float(row[14] or 0),
             "avg_mae_pct": float(row[15] or 0),
             "edge_ratio": _safe_ratio(float(row[14] or 0), float(row[15] or 0)),
+            "edge_evaluated": row[17] or 0,
+            "edge_win_count": row[16] or 0,
+            "edge_accuracy_rate": round((row[16] or 0) / max(row[17] or 1, 1) * 100, 1),
+            "tradeable_mfe_count": row[18] or 0,
+            "tradeable_mfe_rate": round((row[18] or 0) / max(row[17] or 1, 1) * 100, 1),
             "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
             "agreement_buckets": agreement_buckets,
             "agreement_thresholds": agreement_thresholds,
