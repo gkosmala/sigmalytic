@@ -788,8 +788,10 @@ def run_eod_audit():
         except Exception as e:
             log.debug(f"EOD audit error {symbol}: {e}")
 
-    # Sort by absolute delta descending
-    divergences.sort(key=lambda x: abs(x["delta"]), reverse=True)
+    # Sort by signed delta descending.
+    # Positive delta first = deep intelligence scores stronger than radar.
+    # Negative delta last = deep intelligence scores weaker than radar.
+    divergences.sort(key=lambda x: x.get("delta", 0), reverse=True)
     DIVERGENCE_WATCHLIST = divergences
 
     log.info(f"EOD audit complete — {len(divergences)} divergences found")
@@ -862,7 +864,7 @@ def _load_divergence_watchlist_from_db():
         try:
             conn = psycopg2.connect(DATABASE_URL)
             cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute("SELECT * FROM divergence_watchlist ORDER BY ABS(delta) DESC")
+            cur.execute("SELECT * FROM divergence_watchlist ORDER BY delta DESC")
             rows = [dict(r) for r in cur.fetchall()]
             cur.close()
             conn.close()
@@ -1251,6 +1253,61 @@ def stop_radar_scheduler():
         _scheduler.shutdown(wait=False)
         log.info("Radar scheduler stopped")
 
+
+def _divergence_bias_summary(rows: list) -> dict:
+    """
+    Summarize signed divergence direction.
+
+    delta > 0 means deep intelligence is stronger than radar.
+    delta < 0 means deep intelligence is weaker than radar.
+    """
+    rows = rows or []
+
+    positive = [r for r in rows if float(r.get("delta", 0) or 0) > 0]
+    negative = [r for r in rows if float(r.get("delta", 0) or 0) < 0]
+    neutral  = [r for r in rows if float(r.get("delta", 0) or 0) == 0]
+
+    total = len(rows)
+    pos_count = len(positive)
+    neg_count = len(negative)
+    neutral_count = len(neutral)
+
+    pos_pct = round(pos_count / max(total, 1) * 100, 1)
+    neg_pct = round(neg_count / max(total, 1) * 100, 1)
+
+    if total == 0:
+        audit_bias = "No Divergence Data"
+    elif pos_pct >= 80:
+        audit_bias = "Bullish Intelligence Upgrade"
+    elif neg_pct >= 80:
+        audit_bias = "Bearish Intelligence Downgrade"
+    elif pos_count > neg_count:
+        audit_bias = "Mixed / Bullish Lean"
+    elif neg_count > pos_count:
+        audit_bias = "Mixed / Bearish Lean"
+    else:
+        audit_bias = "Balanced / Mixed"
+
+    return {
+        "audit_bias": audit_bias,
+        "positive_delta_count": pos_count,
+        "negative_delta_count": neg_count,
+        "neutral_delta_count": neutral_count,
+        "positive_delta_pct": pos_pct,
+        "negative_delta_pct": neg_pct,
+        "total": total,
+        "positive_divergence": sorted(
+            positive,
+            key=lambda x: float(x.get("delta", 0) or 0),
+            reverse=True,
+        ),
+        "negative_divergence": sorted(
+            negative,
+            key=lambda x: float(x.get("delta", 0) or 0),
+        ),
+    }
+
+
 # ── API Endpoints ──────────────────────────────────────────────────────────────
 
 @radar_router.get("/status")
@@ -1307,19 +1364,39 @@ def get_divergence_watchlist():
             source = "fallback_error"
             log.warning(f"Divergence endpoint fallback load failed: {e}")
 
+    # Always sort current endpoint by signed delta, highest positive first.
+    sorted_watchlist = sorted(
+        DIVERGENCE_WATCHLIST,
+        key=lambda x: float(x.get("delta", 0) or 0),
+        reverse=True,
+    )
+    bias = _divergence_bias_summary(sorted_watchlist)
+
     return {
-        "count":          len(DIVERGENCE_WATCHLIST),
-        "symbols":        DIVERGENCE_WATCHLIST,
+        "count":          len(sorted_watchlist),
+        "symbols":        sorted_watchlist,
         "last_audit":     LAST_EOD_AUDIT_TIME,
         "threshold":      DIVERGENCE_THRESHOLD,
         "source":         source,
+
+        # New clarity fields for frontend / debugging.
+        "audit_bias":     bias["audit_bias"],
+        "positive_delta_count": bias["positive_delta_count"],
+        "negative_delta_count": bias["negative_delta_count"],
+        "neutral_delta_count":  bias["neutral_delta_count"],
+        "positive_delta_pct":   bias["positive_delta_pct"],
+        "negative_delta_pct":   bias["negative_delta_pct"],
+        "positive_divergence":  bias["positive_divergence"],
+        "negative_divergence":  bias["negative_divergence"],
+        "sort_mode":      "signed_delta_desc",
+        "delta_definition": "delta = deep_score - composite_score",
     }
 
 
 @radar_router.get("/intelligence")
 def get_intelligence():
     results = list(INTELLIGENCE_CACHE.values())
-    results.sort(key=lambda x: abs(x.get("divergence_delta", 0) or 0), reverse=True)
+    results.sort(key=lambda x: float(x.get("divergence_delta", 0) or 0), reverse=True)
     return {
         "count":        len(results),
         "symbols":      results,
