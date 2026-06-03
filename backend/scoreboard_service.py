@@ -149,6 +149,85 @@ def _confidence_grade(score: float, sym: dict) -> str:
     return "W"
 
 
+def _to_float(value, default: float = 0.0) -> float:
+    """Safe float conversion used by intelligence agreement scoring."""
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _agreement_bucket(agreement: float) -> str:
+    """
+    Bucket agreement score for validation reporting.
+
+    Agreement 90-100 = Strong Confirmation
+    Agreement 80-89  = Good Confirmation
+    Agreement 70-79  = Mixed
+    Agreement <70    = Warning / Filter Out
+    """
+    if agreement >= 90:
+        return "90-100 Strong Confirmation"
+    if agreement >= 80:
+        return "80-89 Good Confirmation"
+    if agreement >= 70:
+        return "70-79 Mixed"
+    return "<70 Warning"
+
+
+def _derive_intelligence_metrics(sym: dict) -> tuple[float, float, float, str]:
+    """
+    Derive deep_score, intelligence_delta, agreement_score, and agreement_bucket.
+
+    The radar payload may use different field names depending on which engine
+    produced the symbol. This function accepts all known aliases.
+
+    Preferred:
+      composite_score = surface radar score
+      deep_score      = deeper intelligence/BME score
+      delta           = deep_score - composite_score
+
+    Agreement:
+      100 - abs(delta)
+    """
+    composite = _to_float(
+        sym.get("composite_score", sym.get("score", 0)),
+        0.0,
+    )
+
+    deep = _to_float(
+        sym.get(
+            "deep_score",
+            sym.get(
+                "intelligence_score",
+                sym.get(
+                    "behavioral",
+                    sym.get(
+                        "bme_score",
+                        sym.get("behavioral_score", composite),
+                    ),
+                ),
+            ),
+        ),
+        composite,
+    )
+
+    # Prefer backend-provided delta if present; otherwise compute it.
+    if sym.get("intelligence_delta") is not None:
+        delta = _to_float(sym.get("intelligence_delta"), deep - composite)
+    elif sym.get("delta") is not None:
+        delta = _to_float(sym.get("delta"), deep - composite)
+    else:
+        delta = deep - composite
+
+    agreement = max(0.0, min(100.0, 100.0 - abs(delta)))
+    bucket = _agreement_bucket(agreement)
+
+    return round(deep, 2), round(delta, 2), round(agreement, 2), bucket
+
+
 def log_signal(sym: dict, signal_type: str):
     """
     Log a signal with immediate confidence grade.
@@ -174,6 +253,9 @@ def log_signal(sym: dict, signal_type: str):
     signal_id = "sig_" + uuid.uuid4().hex[:14]
     price     = sym.get("price", 0)
     grade     = _confidence_grade(score, sym)
+    deep_score, intelligence_delta, agreement_score, agreement_bucket = _derive_intelligence_metrics(sym)
+
+    _ensure_outcome_metric_columns()
 
     try:
         conn = _db()
@@ -184,13 +266,15 @@ def log_signal(sym: dict, signal_type: str):
                 entry_price, trigger_level, invalidation, target1, target2,
                 composite_score, setup_type, regime,
                 confluence, expansion_node, relative_strength,
-                volume_pressure, behavioral, grade
+                volume_pressure, behavioral, grade,
+                deep_score, intelligence_delta, agreement_score, agreement_bucket
             ) VALUES (
                 %s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,
                 %s,%s,%s,
-                %s,%s,%s
+                %s,%s,%s,
+                %s,%s,%s,%s
             )
             ON CONFLICT (signal_id) DO NOTHING
         """, (
@@ -209,11 +293,18 @@ def log_signal(sym: dict, signal_type: str):
             sym.get("volume_pressure", 0),
             sym.get("behavioral", 0),
             grade,
+            deep_score,
+            intelligence_delta,
+            agreement_score,
+            agreement_bucket,
         ))
         conn.commit()
         cur.close()
         conn.close()
-        log.info(f"Scoreboard: {symbol} → {signal_type} | Score:{score} | Grade:{grade}")
+        log.info(
+            f"Scoreboard: {symbol} → {signal_type} | Score:{score} | "
+            f"Grade:{grade} | Agreement:{agreement_score} | Delta:{intelligence_delta}"
+        )
     except Exception as e:
         log.warning(f"Signal log error: {e}")
 
@@ -261,7 +352,11 @@ def _ensure_outcome_metric_columns():
             ADD COLUMN IF NOT EXISTS direction_correct BOOLEAN,
             ADD COLUMN IF NOT EXISTS mfe_pct NUMERIC,
             ADD COLUMN IF NOT EXISTS mae_pct NUMERIC,
-            ADD COLUMN IF NOT EXISTS outcome_window_hours INTEGER;
+            ADD COLUMN IF NOT EXISTS outcome_window_hours INTEGER,
+            ADD COLUMN IF NOT EXISTS deep_score NUMERIC,
+            ADD COLUMN IF NOT EXISTS intelligence_delta NUMERIC,
+            ADD COLUMN IF NOT EXISTS agreement_score NUMERIC,
+            ADD COLUMN IF NOT EXISTS agreement_bucket TEXT;
         """)
         conn.commit()
         cur.close()
@@ -464,7 +559,7 @@ def repair_scoreboard_history(limit: int = 500) -> dict:
 
     This is safe to run repeatedly. It only updates missing/legacy fields.
     """
-    result = {"grades_repaired": 0, "path_metrics_repaired": 0, "errors": []}
+    result = {"grades_repaired": 0, "path_metrics_repaired": 0, "agreement_repaired": 0, "errors": []}
     if not DATABASE_URL:
         result["errors"].append("DATABASE_URL is not configured")
         return result
@@ -581,10 +676,68 @@ def repair_scoreboard_history(limit: int = 500) -> dict:
     except Exception as e:
         result["errors"].append(f"path repair fetch: {e}")
 
+
+    # 3) Backfill agreement metrics for existing rows using stored
+    # composite_score and behavioral score as the deep intelligence proxy.
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT signal_id, composite_score, behavioral
+            FROM scoreboard_signals
+            WHERE agreement_score IS NULL
+               OR intelligence_delta IS NULL
+               OR deep_score IS NULL
+               OR agreement_bucket IS NULL
+            ORDER BY signal_date ASC
+            LIMIT %s
+        """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        for row in rows:
+            sig_id, composite_score, behavioral = row
+            sym = {
+                "composite_score": float(composite_score or 0),
+                "behavioral": float(behavioral or composite_score or 0),
+            }
+            deep_score, intelligence_delta, agreement_score, agreement_bucket = _derive_intelligence_metrics(sym)
+            try:
+                conn = _db()
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE scoreboard_signals
+                    SET deep_score = %s,
+                        intelligence_delta = %s,
+                        agreement_score = %s,
+                        agreement_bucket = %s
+                    WHERE signal_id = %s
+                      AND (
+                            agreement_score IS NULL
+                         OR intelligence_delta IS NULL
+                         OR deep_score IS NULL
+                         OR agreement_bucket IS NULL
+                      )
+                """, (
+                    deep_score, intelligence_delta,
+                    agreement_score, agreement_bucket,
+                    sig_id,
+                ))
+                result["agreement_repaired"] += cur.rowcount
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception as e:
+                result["errors"].append(f"agreement repair {sig_id}: {e}")
+    except Exception as e:
+        result["errors"].append(f"agreement repair fetch: {e}")
+
     log.info(
-        "Scoreboard repair complete — grades:%s path_metrics:%s errors:%s",
+        "Scoreboard repair complete — grades:%s path_metrics:%s agreement:%s errors:%s",
         result["grades_repaired"],
         result["path_metrics_repaired"],
+        result["agreement_repaired"],
         len(result["errors"]),
     )
     return result
@@ -622,10 +775,32 @@ def clear_duplicate_signals():
         return 0
 
 
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    """Avoid divide-by-zero while keeping scoreboard values readable."""
+    try:
+        return round(float(numerator or 0) / max(float(denominator or 0), 0.01), 2)
+    except Exception:
+        return 0.0
+
+
 def get_scoreboard_stats() -> dict:
-    """Returns confidence-based scoreboard statistics."""
+    """
+    Returns confidence-based scoreboard statistics plus intelligence
+    agreement validation.
+
+    Agreement validates whether the deeper intelligence layer agrees with
+    the surface radar score:
+        agreement_score = 100 - abs(deep_score - composite_score)
+
+    Buckets:
+        90-100 Strong Confirmation
+        80-89 Good Confirmation
+        70-79 Mixed
+        <70 Warning
+    """
     if not DATABASE_URL:
         return {}
+
     try:
         _ensure_outcome_metric_columns()
         conn = _db()
@@ -665,11 +840,100 @@ def get_scoreboard_stats() -> dict:
         """)
         row = cur.fetchone()
 
+        # Agreement bucket validation.
+        cur.execute("""
+            SELECT
+                COALESCE(agreement_bucket, '<70 Warning') AS bucket,
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE outcome_price IS NOT NULL) AS evaluated,
+                COUNT(*) FILTER (WHERE direction_correct = true) AS direction_correct,
+                COUNT(*) FILTER (WHERE direction_correct IS NOT NULL) AS direction_evaluated,
+                ROUND(AVG(mfe_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 2) AS avg_mfe_pct,
+                ROUND(AVG(mae_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 2) AS avg_mae_pct,
+                ROUND(AVG(outcome_pct) FILTER (
+                    WHERE outcome_price IS NOT NULL
+                )::numeric, 2) AS avg_outcome_pct
+            FROM scoreboard_signals
+            GROUP BY COALESCE(agreement_bucket, '<70 Warning')
+            ORDER BY
+                CASE COALESCE(agreement_bucket, '<70 Warning')
+                    WHEN '90-100 Strong Confirmation' THEN 1
+                    WHEN '80-89 Good Confirmation' THEN 2
+                    WHEN '70-79 Mixed' THEN 3
+                    ELSE 4
+                END
+        """)
+        bucket_rows = cur.fetchall()
+
+        agreement_buckets = []
+        for b in bucket_rows:
+            bucket, total_b, evaluated_b, correct_b, direction_eval_b, mfe_b, mae_b, avg_outcome_b = b
+            mfe = float(mfe_b or 0)
+            mae = float(mae_b or 0)
+            direction_eval = direction_eval_b or 0
+            correct = correct_b or 0
+            agreement_buckets.append({
+                "bucket": bucket,
+                "total_signals": total_b or 0,
+                "with_outcomes": evaluated_b or 0,
+                "direction_evaluated": direction_eval,
+                "direction_correct_rate": round(correct / max(direction_eval, 1) * 100, 1),
+                "avg_mfe_pct": mfe,
+                "avg_mae_pct": mae,
+                "edge_ratio": _safe_ratio(mfe, mae),
+                "avg_outcome_pct": float(avg_outcome_b or 0),
+            })
+
+        # Threshold validation. This lets the frontend answer:
+        # "What happens if we only take agreement >= 70/80/90?"
+        agreement_thresholds = []
+        for threshold in (60, 70, 80, 90):
+            cur.execute("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE outcome_price IS NOT NULL) AS evaluated,
+                    COUNT(*) FILTER (WHERE direction_correct = true) AS direction_correct,
+                    COUNT(*) FILTER (WHERE direction_correct IS NOT NULL) AS direction_evaluated,
+                    ROUND(AVG(mfe_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_mfe_pct,
+                    ROUND(AVG(mae_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_mae_pct,
+                    ROUND(AVG(outcome_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_outcome_pct
+                FROM scoreboard_signals
+                WHERE agreement_score >= %s
+            """, (threshold,))
+            tr = cur.fetchone()
+            total_t, evaluated_t, correct_t, direction_eval_t, mfe_t, mae_t, avg_outcome_t = tr
+            mfe = float(mfe_t or 0)
+            mae = float(mae_t or 0)
+            direction_eval = direction_eval_t or 0
+            correct = correct_t or 0
+            agreement_thresholds.append({
+                "threshold": threshold,
+                "total_signals": total_t or 0,
+                "with_outcomes": evaluated_t or 0,
+                "direction_evaluated": direction_eval,
+                "direction_correct_rate": round(correct / max(direction_eval, 1) * 100, 1),
+                "avg_mfe_pct": mfe,
+                "avg_mae_pct": mae,
+                "edge_ratio": _safe_ratio(mfe, mae),
+                "avg_outcome_pct": float(avg_outcome_t or 0),
+            })
+
         cur.execute("""
             SELECT symbol, signal_type, signal_date, entry_price,
                    composite_score, setup_type, regime, grade,
                    outcome_pct, days_to_outcome, hit_target1, hit_target2,
-                   direction_correct, mfe_pct, mae_pct
+                   direction_correct, mfe_pct, mae_pct,
+                   deep_score, intelligence_delta, agreement_score, agreement_bucket
             FROM scoreboard_signals
             ORDER BY signal_date DESC
             LIMIT 50
@@ -701,8 +965,10 @@ def get_scoreboard_stats() -> dict:
             "direction_correct_rate": round((row[12] or 0) / max(row[13] or 1, 1) * 100, 1),
             "avg_mfe_pct": float(row[14] or 0),
             "avg_mae_pct": float(row[15] or 0),
-            "edge_ratio": round(float(row[14] or 0) / max(float(row[15] or 0), 0.01), 2),
+            "edge_ratio": _safe_ratio(float(row[14] or 0), float(row[15] or 0)),
             "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
+            "agreement_buckets": agreement_buckets,
+            "agreement_thresholds": agreement_thresholds,
             "recent_signals": [
                 {
                     "symbol":      s[0],
@@ -720,10 +986,15 @@ def get_scoreboard_stats() -> dict:
                     "direction_correct": s[12],
                     "mfe_pct":     float(s[13]) if s[13] is not None else None,
                     "mae_pct":     float(s[14]) if s[14] is not None else None,
+                    "deep_score":  float(s[15]) if s[15] is not None else None,
+                    "intelligence_delta": float(s[16]) if s[16] is not None else None,
+                    "agreement_score": float(s[17]) if s[17] is not None else None,
+                    "agreement_bucket": s[18],
                 }
                 for s in signals
             ],
         }
+
     except Exception as e:
         log.warning(f"Scoreboard stats error: {e}")
         return {}
