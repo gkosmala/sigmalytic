@@ -1917,8 +1917,10 @@ def build_divergence_tab(session=None):
             "audited_at": s.get("audited_at") or audit_label,
         })
 
-    # Largest intelligence gap first.
-    items = sorted(items, key=lambda d: abs(d.get("delta", 0)), reverse=True)
+    # Highest positive intelligence delta first.
+    # Positive delta means the deeper intelligence engine scores the setup
+    # stronger than the surface composite radar score.
+    items = sorted(items, key=lambda d: d.get("delta", 0), reverse=True)
 
     upgrades = sum(1 for d in items if d["tone"] == "teal")
     downgrades = sum(1 for d in items if d["tone"] == "red")
@@ -2075,7 +2077,7 @@ def build_divergence_tab(session=None):
                 style={"color": WHITE, "fontSize": "16px", "fontWeight": "900", "margin": "0"}
             ),
             html.P(
-                "Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
+                "Sorted by highest positive delta first. Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
                 style={"color": TEXT, "fontSize": "12px", "margin": "4px 0 0"}
             ),
         ], style={"marginBottom": "14px"}),
