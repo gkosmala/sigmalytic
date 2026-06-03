@@ -159,6 +159,50 @@ def _to_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _delta_quality_label(delta: float) -> str:
+    """
+    Converts Intelligence Delta into a decision-quality label.
+
+    Positive delta means the deeper intelligence layer sees more strength
+    than the surface composite radar score.
+    """
+    try:
+        d = float(delta or 0)
+    except Exception:
+        d = 0.0
+
+    if d >= 20:
+        return "Delta Surge"
+    if d >= 10:
+        return "Delta Boost"
+    if d >= 0:
+        return "Delta Confirm"
+    if d >= -10:
+        return "Delta Caution"
+    return "Delta Reject"
+
+
+def _delta_action(delta: float) -> str:
+    """
+    Converts Intelligence Delta into a practical action label.
+
+    For now this does NOT block signals. It only tags them.
+    """
+    try:
+        d = float(delta or 0)
+    except Exception:
+        d = 0.0
+
+    if d >= 10:
+        return "Trade Candidate"
+    if d >= 0:
+        return "Qualified Watch"
+    if d >= -10:
+        return "Observation Only"
+    return "Reject / Avoid"
+
+
+
 def _agreement_bucket(agreement: float) -> str:
     """
     Bucket agreement score for validation reporting.
@@ -224,8 +268,17 @@ def _derive_intelligence_metrics(sym: dict) -> tuple[float, float, float, str]:
 
     agreement = max(0.0, min(100.0, 100.0 - abs(delta)))
     bucket = _agreement_bucket(agreement)
+    delta_quality_label = _delta_quality_label(delta)
+    delta_action = _delta_action(delta)
 
-    return round(deep, 2), round(delta, 2), round(agreement, 2), bucket
+    return (
+        round(deep, 2),
+        round(delta, 2),
+        round(agreement, 2),
+        bucket,
+        delta_quality_label,
+        delta_action,
+    )
 
 
 def log_signal(sym: dict, signal_type: str):
@@ -253,7 +306,14 @@ def log_signal(sym: dict, signal_type: str):
     signal_id = "sig_" + uuid.uuid4().hex[:14]
     price     = sym.get("price", 0)
     grade     = _confidence_grade(score, sym)
-    deep_score, intelligence_delta, agreement_score, agreement_bucket = _derive_intelligence_metrics(sym)
+    (
+        deep_score,
+        intelligence_delta,
+        agreement_score,
+        agreement_bucket,
+        delta_quality_label,
+        delta_action,
+    ) = _derive_intelligence_metrics(sym)
 
     _ensure_outcome_metric_columns()
 
@@ -267,14 +327,16 @@ def log_signal(sym: dict, signal_type: str):
                 composite_score, setup_type, regime,
                 confluence, expansion_node, relative_strength,
                 volume_pressure, behavioral, grade,
-                deep_score, intelligence_delta, agreement_score, agreement_bucket
+                deep_score, intelligence_delta, agreement_score, agreement_bucket,
+                delta_quality_label, delta_action
             ) VALUES (
                 %s,%s,%s,%s,
                 %s,%s,%s,%s,%s,
                 %s,%s,%s,
                 %s,%s,%s,
                 %s,%s,%s,
-                %s,%s,%s,%s
+                %s,%s,%s,%s,
+                %s,%s
             )
             ON CONFLICT (signal_id) DO NOTHING
         """, (
@@ -297,6 +359,8 @@ def log_signal(sym: dict, signal_type: str):
             intelligence_delta,
             agreement_score,
             agreement_bucket,
+            delta_quality_label,
+            delta_action,
         ))
         conn.commit()
         cur.close()
@@ -356,7 +420,9 @@ def _ensure_outcome_metric_columns():
             ADD COLUMN IF NOT EXISTS deep_score NUMERIC,
             ADD COLUMN IF NOT EXISTS intelligence_delta NUMERIC,
             ADD COLUMN IF NOT EXISTS agreement_score NUMERIC,
-            ADD COLUMN IF NOT EXISTS agreement_bucket TEXT;
+            ADD COLUMN IF NOT EXISTS agreement_bucket TEXT,
+            ADD COLUMN IF NOT EXISTS delta_quality_label TEXT,
+            ADD COLUMN IF NOT EXISTS delta_action TEXT;
         """)
         conn.commit()
         cur.close()
@@ -689,6 +755,8 @@ def repair_scoreboard_history(limit: int = 500) -> dict:
                OR intelligence_delta IS NULL
                OR deep_score IS NULL
                OR agreement_bucket IS NULL
+               OR delta_quality_label IS NULL
+               OR delta_action IS NULL
             ORDER BY signal_date ASC
             LIMIT %s
         """, (limit,))
@@ -702,7 +770,14 @@ def repair_scoreboard_history(limit: int = 500) -> dict:
                 "composite_score": float(composite_score or 0),
                 "behavioral": float(behavioral or composite_score or 0),
             }
-            deep_score, intelligence_delta, agreement_score, agreement_bucket = _derive_intelligence_metrics(sym)
+            (
+                deep_score,
+                intelligence_delta,
+                agreement_score,
+                agreement_bucket,
+                delta_quality_label,
+                delta_action,
+            ) = _derive_intelligence_metrics(sym)
             try:
                 conn = _db()
                 cur = conn.cursor()
@@ -711,17 +786,22 @@ def repair_scoreboard_history(limit: int = 500) -> dict:
                     SET deep_score = %s,
                         intelligence_delta = %s,
                         agreement_score = %s,
-                        agreement_bucket = %s
+                        agreement_bucket = %s,
+                        delta_quality_label = %s,
+                        delta_action = %s
                     WHERE signal_id = %s
                       AND (
                             agreement_score IS NULL
                          OR intelligence_delta IS NULL
                          OR deep_score IS NULL
                          OR agreement_bucket IS NULL
+                         OR delta_quality_label IS NULL
+                         OR delta_action IS NULL
                       )
                 """, (
                     deep_score, intelligence_delta,
                     agreement_score, agreement_bucket,
+                    delta_quality_label, delta_action,
                     sig_id,
                 ))
                 result["agreement_repaired"] += cur.rowcount
@@ -1133,6 +1213,14 @@ def get_scoreboard_stats() -> dict:
                 "COALESCE(signal_type, 'Unknown')",
                 "Signal Type",
             ),
+            "by_delta_quality": _fetch_attribution(
+                "COALESCE(delta_quality_label, 'Unknown')",
+                "Delta Quality",
+            ),
+            "by_delta_action": _fetch_attribution(
+                "COALESCE(delta_action, 'Unknown')",
+                "Delta Action",
+            ),
         }
 
         cur.execute("""
@@ -1140,7 +1228,8 @@ def get_scoreboard_stats() -> dict:
                    composite_score, setup_type, regime, grade,
                    outcome_pct, days_to_outcome, hit_target1, hit_target2,
                    direction_correct, mfe_pct, mae_pct,
-                   deep_score, intelligence_delta, agreement_score, agreement_bucket
+                   deep_score, intelligence_delta, agreement_score, agreement_bucket,
+                   delta_quality_label, delta_action
             FROM scoreboard_signals
             ORDER BY signal_date DESC
             LIMIT 50
@@ -1179,6 +1268,13 @@ def get_scoreboard_stats() -> dict:
             "tradeable_mfe_count": row[18] or 0,
             "tradeable_mfe_rate": round((row[18] or 0) / max(row[17] or 1, 1) * 100, 1),
             "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
+            "delta_filter_rules": {
+                "delta_surge": "intelligence_delta >= +20",
+                "delta_boost": "+10 <= intelligence_delta < +20",
+                "delta_confirm": "0 <= intelligence_delta < +10",
+                "delta_caution": "-10 <= intelligence_delta < 0",
+                "delta_reject": "intelligence_delta < -10",
+            },
             "agreement_buckets": agreement_buckets,
             "agreement_thresholds": agreement_thresholds,
             "attribution_report": attribution_report,
@@ -1203,6 +1299,8 @@ def get_scoreboard_stats() -> dict:
                     "intelligence_delta": float(s[16]) if s[16] is not None else None,
                     "agreement_score": float(s[17]) if s[17] is not None else None,
                     "agreement_bucket": s[18],
+                    "delta_quality_label": s[19],
+                    "delta_action": s[20],
                 }
                 for s in signals
             ],

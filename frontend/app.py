@@ -1509,6 +1509,8 @@ def build_scoreboard_tab(session=None):
         agreement_score = e.get("agreement_score")
         intelligence_delta = e.get("intelligence_delta")
         agreement_bucket = e.get("agreement_bucket") or "—"
+        delta_quality_label = e.get("delta_quality_label") or "—"
+        delta_action = e.get("delta_action") or "—"
 
         score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
         grade_color = (
@@ -1560,6 +1562,8 @@ def build_scoreboard_tab(session=None):
                 "—" if intelligence_delta in (None, "") else f"{float(intelligence_delta):+.1f}",
                 style={"flex":"0 0 62px","fontSize":"12px","fontWeight":"800","color":agreement_color,"textAlign":"center"}
             ),
+            html.Span(delta_quality_label, style={"flex":"0 0 104px","fontSize":"10px","fontWeight":"900","color":agreement_color,"textAlign":"center"}),
+            html.Span(delta_action, style={"flex":"0 0 118px","fontSize":"10px","fontWeight":"900","color":agreement_color,"textAlign":"center"}),
             html.Span(agreement_bucket.replace(" Confirmation", ""), style={"flex":"0 0 150px","fontSize":"10px","color":agreement_color}),
             html.Span(regime, style={"flex":"0 0 115px","fontSize":"11px","color":MUTED}),
             html.Span(setup_type, style={"flex":"1","fontSize":"11px","color":TEXT,"minWidth":"160px"}),
@@ -1569,7 +1573,7 @@ def build_scoreboard_tab(session=None):
             "gap":"10px",
             "padding":"11px 0",
             "borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1380px"
+            "minWidth":"1620px"
         })
 
     header = html.Div([
@@ -1586,6 +1590,8 @@ def build_scoreboard_tab(session=None):
         html.Span("Tgt",     style={"flex":"0 0 42px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
         html.Span("Agree",   style={"flex":"0 0 74px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
         html.Span("Delta",   style={"flex":"0 0 62px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("D-Quality", style={"flex":"0 0 104px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("D-Action", style={"flex":"0 0 118px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
         html.Span("Bucket",  style={"flex":"0 0 150px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Regime",  style={"flex":"0 0 115px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
@@ -1595,7 +1601,7 @@ def build_scoreboard_tab(session=None):
         "paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}",
         "marginBottom":"4px",
-        "minWidth":"1380px"
+        "minWidth":"1620px"
     })
 
     def _bucket_card(b):
@@ -1844,6 +1850,11 @@ def build_scoreboard_tab(session=None):
             html.Div([
                 _attribution_table("Grade", attribution_report.get("by_grade", [])),
                 _attribution_table("Signal Type", attribution_report.get("by_signal_type", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Delta Quality", attribution_report.get("by_delta_quality", [])),
+                _attribution_table("Delta Action", attribution_report.get("by_delta_action", [])),
             ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"18px"}),
 
             html.Div([
