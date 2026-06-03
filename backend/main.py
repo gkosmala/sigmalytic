@@ -893,8 +893,51 @@ async def grade_now():
 
     if result["error"]:
         return {"ok": False, "message": result["error"]}
-    
-return {
+
+    return {
+        "ok": True,
+        "message": "Grading complete — check Render logs for details"
+    }
+
+
+@app.post("/api/scoreboard/repair-history")
+async def repair_scoreboard_history_api():
+    import threading
+
+    result = {
+        "repair": None,
+        "error": None,
+    }
+
+    def _run():
+        try:
+            from scoreboard_service import repair_scoreboard_history
+
+            log.info("Manual scoreboard repair triggered via API")
+
+            result["repair"] = repair_scoreboard_history(limit=5000)
+
+            log.info(
+                f"Manual scoreboard repair finished: {result['repair']}"
+            )
+
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(
+                f"Manual scoreboard repair error: {e}"
+            )
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=300)
+
+    if result["error"]:
+        return {
+            "ok": False,
+            "message": result["error"]
+        }
+
+    return {
         "ok": True,
         "message": "Scoreboard repair complete",
         "result": result["repair"]
