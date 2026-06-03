@@ -52,6 +52,14 @@ from radar_alerts import maybe_send_alert, send_daily_summary
 from scoreboard_service import log_signal, grade_pending_signals
 from sms_alerts import maybe_send_sms
 
+# ── Behavioral Transition Engine (safe import) ────────────────────────────────
+try:
+    from behavioral_transition_engine import evaluate_behavioral_transition
+    _BEHAVIORAL_TRANSITIONS_AVAILABLE = True
+except Exception as _bt:
+    _BEHAVIORAL_TRANSITIONS_AVAILABLE = False
+    logging.getLogger("radar").warning(f"Behavioral Transition Engine not loaded: {_bt}")
+
 # ── Redis heartbeat client ─────────────────────────────────────────────────────
 try:
     _redis_url = os.getenv("REDIS_URL", "")
@@ -402,7 +410,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     except Exception:
         pass
 
-    return {
+    result = {
         "symbol":            symbol,
         "price":             round(price, 2),
         "change_pct":        round(change_pct, 2),
@@ -439,6 +447,8 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "bme_score"         : round(bme_score, 1) if bme_score is not None else None,
         "bme_regime"        : bme_regime,
     }
+
+    return _attach_behavioral_transition(result)
 
 
 def _calc_atr(highs, lows, closes, period=14) -> float:
@@ -970,7 +980,7 @@ def run_divergence_scan():
 
             result = _intelligence_engine.evaluate(market, OptionsData())
 
-            INTELLIGENCE_CACHE[symbol] = {
+            intelligence_row = {
                 "symbol":          symbol,
                 "price":           result.price,
                 "score":           result.score,
@@ -993,7 +1003,19 @@ def run_divergence_scan():
                 "divergence_delta": next(
                     (d["delta"] for d in DIVERGENCE_WATCHLIST if d["symbol"] == symbol), None
                 ),
+                "composite_score": RADAR_CACHE.get(symbol, {}).get("composite_score"),
+                "trigger": RADAR_CACHE.get(symbol, {}).get("trigger"),
+                "invalidation": RADAR_CACHE.get(symbol, {}).get("invalidation"),
+                "target1": RADAR_CACHE.get(symbol, {}).get("target1"),
+                "target2": RADAR_CACHE.get(symbol, {}).get("target2"),
+                "volume_pressure": RADAR_CACHE.get(symbol, {}).get("volume_pressure"),
+                "relative_strength": RADAR_CACHE.get(symbol, {}).get("relative_strength"),
+                "expansion_node": RADAR_CACHE.get(symbol, {}).get("expansion_node"),
+                "behavioral": RADAR_CACHE.get(symbol, {}).get("behavioral"),
+                "rel_volume": RADAR_CACHE.get(symbol, {}).get("rel_volume"),
             }
+
+            INTELLIGENCE_CACHE[symbol] = _attach_behavioral_transition(intelligence_row)
 
             if symbol in RADAR_CACHE:
                 RADAR_CACHE[symbol]["intelligence_score"]  = result.score
@@ -1308,6 +1330,71 @@ def _divergence_bias_summary(rows: list) -> dict:
     }
 
 
+
+def _attach_behavioral_transition(row: dict) -> dict:
+    """
+    Add Behavioral Transition Engine output to a radar/intelligence/divergence row.
+
+    Non-destructive:
+      - Returns the original row plus fields.
+      - Does not block, delete, or change the base radar score.
+    """
+    if not row or not isinstance(row, dict):
+        return row
+
+    if not _BEHAVIORAL_TRANSITIONS_AVAILABLE:
+        return row
+
+    try:
+        enriched = dict(row)
+
+        # Normalize common names so the transition engine has enough context.
+        if "composite_score" not in enriched and "score" in enriched:
+            enriched["composite_score"] = enriched.get("score")
+
+        if "deep_score" not in enriched:
+            if "intelligence_score" in enriched:
+                enriched["deep_score"] = enriched.get("intelligence_score")
+            elif "score" in enriched and "composite_score" in enriched:
+                enriched["deep_score"] = enriched.get("score")
+
+        if "intelligence_delta" not in enriched:
+            if "delta" in enriched:
+                enriched["intelligence_delta"] = enriched.get("delta")
+            elif "divergence_delta" in enriched:
+                enriched["intelligence_delta"] = enriched.get("divergence_delta")
+
+        if "setup_type" not in enriched and "setup" in enriched:
+            enriched["setup_type"] = enriched.get("setup")
+
+        bt = evaluate_behavioral_transition(enriched)
+
+        enriched["behavioral_transition"] = bt
+        enriched["behavioral_state"] = bt.get("behavioral_state")
+        enriched["transition_candidate"] = bt.get("transition_candidate")
+        enriched["opportunity_state"] = bt.get("opportunity_state")
+        enriched["readiness_score"] = bt.get("readiness_score")
+        enriched["readiness_label"] = bt.get("confidence_label")
+        enriched["trade_side"] = bt.get("side")
+        enriched["alert_type"] = bt.get("alert_type")
+        enriched["why_this_trade"] = bt.get("why_this_trade")
+        enriched["evidence"] = bt.get("evidence")
+        enriched["risk_notes"] = bt.get("risk_notes")
+        enriched["trader_summary"] = bt.get("trader_summary")
+        return enriched
+
+    except Exception as e:
+        try:
+            log.debug(f"Behavioral transition attach error {row.get('symbol')}: {e}")
+        except Exception:
+            pass
+        return row
+
+
+def _attach_behavioral_transition_many(rows: list) -> list:
+    return [_attach_behavioral_transition(r) for r in (rows or [])]
+
+
 # ── API Endpoints ──────────────────────────────────────────────────────────────
 
 @radar_router.get("/status")
@@ -1370,6 +1457,7 @@ def get_divergence_watchlist():
         key=lambda x: float(x.get("delta", 0) or 0),
         reverse=True,
     )
+    sorted_watchlist = _attach_behavioral_transition_many(sorted_watchlist)
     bias = _divergence_bias_summary(sorted_watchlist)
 
     return {
@@ -1395,12 +1483,21 @@ def get_divergence_watchlist():
 
 @radar_router.get("/intelligence")
 def get_intelligence():
-    results = list(INTELLIGENCE_CACHE.values())
-    results.sort(key=lambda x: float(x.get("divergence_delta", 0) or 0), reverse=True)
+    results = _attach_behavioral_transition_many(list(INTELLIGENCE_CACHE.values()))
+    results.sort(
+        key=lambda x: (
+            x.get("opportunity_state") == "Armed",
+            x.get("opportunity_state") == "Setting Up",
+            float(x.get("readiness_score", 0) or 0),
+            float(x.get("divergence_delta", 0) or 0),
+        ),
+        reverse=True,
+    )
     return {
         "count":        len(results),
         "symbols":      results,
         "last_updated": LAST_INTELLIGENCE_TIME,
+        "sort_mode":    "opportunity_state_readiness_delta",
     }
 
 
@@ -1412,7 +1509,7 @@ def get_intelligence_symbol(symbol: str):
         if sym not in div_symbols:
             raise HTTPException(404, f"{sym} is not on the divergence watchlist")
         raise HTTPException(404, f"{sym} intelligence data not yet available — check back after next scan")
-    return INTELLIGENCE_CACHE[sym]
+    return _attach_behavioral_transition(INTELLIGENCE_CACHE[sym])
 
 
 @radar_router.get("/ab-summary")
@@ -1451,17 +1548,26 @@ def debug_bars():
 
 @radar_router.get("/scores")
 def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0):
-    results = list(RADAR_CACHE.values())
+    results = _attach_behavioral_transition_many(list(RADAR_CACHE.values()))
     if status:
         results = [r for r in results if r.get("status") == status]
     if min_score > 0:
         results = [r for r in results if r.get("composite_score", 0) >= min_score]
-    results.sort(key=lambda x: x.get("composite_score", 0), reverse=True)
+    results.sort(
+        key=lambda x: (
+            x.get("opportunity_state") == "Armed",
+            x.get("opportunity_state") == "Setting Up",
+            float(x.get("readiness_score", 0) or 0),
+            float(x.get("composite_score", 0) or 0),
+        ),
+        reverse=True,
+    )
     return {
         "count":      len(results[:limit]),
         "symbols":    results[:limit],
         "last_scan":  LAST_SCAN_TIME,
         "data_delay": "15min" if ALPACA_FEED == "iex" else "live",
+        "sort_mode":  "opportunity_state_readiness_score",
     }
 
 
@@ -1470,7 +1576,7 @@ def get_symbol_detail(symbol: str):
     sym = symbol.upper().strip()
     if sym not in RADAR_CACHE:
         raise HTTPException(404, f"{sym} not in radar cache")
-    return RADAR_CACHE[sym]
+    return _attach_behavioral_transition(RADAR_CACHE[sym])
 
 
 @radar_router.post("/watchlist")
@@ -1506,7 +1612,7 @@ def get_watchlist(user_id: str):
         cur.close()
         conn.close()
         symbols = [r[0] for r in rows]
-        scores  = [RADAR_CACHE[s] for s in symbols if s in RADAR_CACHE]
+        scores  = [_attach_behavioral_transition(RADAR_CACHE[s]) for s in symbols if s in RADAR_CACHE]
         return {"symbols": symbols, "scores": scores}
     except Exception as e:
         return {"symbols": [], "scores": [], "error": str(e)}
