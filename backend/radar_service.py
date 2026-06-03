@@ -843,21 +843,71 @@ def _write_divergence_watchlist(divergences: list):
 
 
 def _load_divergence_watchlist_from_db():
-    """Load previous night's divergence watchlist from Supabase on startup."""
-    global DIVERGENCE_WATCHLIST
-    if not DATABASE_URL:
-        return
+    """
+    Load the previous divergence watchlist into memory.
+
+    Primary path: DATABASE_URL/Postgres.
+    Fallback path: Supabase REST using SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY.
+
+    This fallback is important on Render because the in-memory
+    DIVERGENCE_WATCHLIST can be empty after restart while Supabase
+    still contains the latest audit rows.
+    """
+    global DIVERGENCE_WATCHLIST, LAST_EOD_AUDIT_TIME
+
+    rows = []
+
+    # 1) Try direct Postgres first.
+    if DATABASE_URL:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT * FROM divergence_watchlist ORDER BY ABS(delta) DESC")
+            rows = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            log.info(f"Loaded {len(rows)} divergence rows from DATABASE_URL")
+        except Exception as e:
+            log.warning(f"Could not load divergence watchlist from DATABASE_URL: {e}")
+
+    # 2) Fallback to Supabase REST if Postgres returned nothing.
+    if not rows:
+        supabase_url = os.getenv("SUPABASE_URL", "")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        if supabase_url and supabase_key:
+            try:
+                r = _req.get(
+                    f"{supabase_url}/rest/v1/divergence_watchlist?order=delta.desc&limit=500",
+                    headers={
+                        "apikey": supabase_key,
+                        "Authorization": f"Bearer {supabase_key}",
+                    },
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    rows = r.json() if isinstance(r.json(), list) else []
+                    log.info(f"Loaded {len(rows)} divergence rows from Supabase REST fallback")
+                else:
+                    log.warning(f"Supabase REST divergence load failed: {r.status_code} {r.text[:200]}")
+            except Exception as e:
+                log.warning(f"Could not load divergence watchlist from Supabase REST: {e}")
+
+    DIVERGENCE_WATCHLIST = rows or []
+
+    # Keep the status endpoint useful after restart by deriving last audit from rows.
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM divergence_watchlist ORDER BY ABS(delta) DESC")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        DIVERGENCE_WATCHLIST = [dict(r) for r in rows]
-        log.info(f"Loaded {len(DIVERGENCE_WATCHLIST)} symbols from divergence watchlist")
+        if DIVERGENCE_WATCHLIST:
+            latest = max(
+                (str(r.get("audited_at", "")) for r in DIVERGENCE_WATCHLIST),
+                default="",
+            )
+            if latest:
+                dt = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+                LAST_EOD_AUDIT_TIME = dt.timestamp()
     except Exception as e:
-        log.warning(f"Could not load divergence watchlist: {e}")
+        log.debug(f"Could not derive LAST_EOD_AUDIT_TIME from divergence rows: {e}")
+
+    log.info(f"Loaded {len(DIVERGENCE_WATCHLIST)} symbols from divergence watchlist")
 
 # ── Divergence watchlist intraday deep scan ────────────────────────────────────
 
@@ -1243,11 +1293,26 @@ def scanner_health():
 
 @radar_router.get("/divergence")
 def get_divergence_watchlist():
+    global DIVERGENCE_WATCHLIST
+
+    source = "memory"
+
+    # Render restarts wipe memory. If memory is empty, reload the
+    # latest persisted divergence watchlist before returning a blank screen.
+    if not DIVERGENCE_WATCHLIST:
+        try:
+            _load_divergence_watchlist_from_db()
+            source = "database_fallback" if DIVERGENCE_WATCHLIST else "empty"
+        except Exception as e:
+            source = "fallback_error"
+            log.warning(f"Divergence endpoint fallback load failed: {e}")
+
     return {
         "count":          len(DIVERGENCE_WATCHLIST),
         "symbols":        DIVERGENCE_WATCHLIST,
         "last_audit":     LAST_EOD_AUDIT_TIME,
         "threshold":      DIVERGENCE_THRESHOLD,
+        "source":         source,
     }
 
 
