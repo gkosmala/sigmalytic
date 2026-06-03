@@ -1000,6 +1000,141 @@ def get_scoreboard_stats() -> dict:
                 "tradeable_mfe_rate": round(tradeable_mfe / max(edge_eval, 1) * 100, 1),
             })
 
+
+        # Live Attribution Report
+        # Ranks what is actually producing edge from the existing scoreboard database.
+        def _fetch_attribution(group_expr: str, label: str, min_signals: int = 1):
+            cur.execute(f"""
+                SELECT
+                    {group_expr} AS group_name,
+                    COUNT(*) AS total_signals,
+                    COUNT(*) FILTER (WHERE outcome_price IS NOT NULL) AS evaluated,
+                    COUNT(*) FILTER (WHERE direction_correct = true) AS direction_correct,
+                    COUNT(*) FILTER (WHERE direction_correct IS NOT NULL) AS direction_evaluated,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mae_pct IS NOT NULL
+                          AND mfe_pct > mae_pct
+                    ) AS edge_win_count,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mae_pct IS NOT NULL
+                    ) AS edge_evaluated,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mfe_pct >= 1.5
+                    ) AS tradeable_mfe_count,
+                    COUNT(*) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                          AND mfe_pct IS NOT NULL
+                          AND mfe_pct >= 3.0
+                    ) AS strong_mfe_count,
+                    ROUND(AVG(mfe_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_mfe_pct,
+                    ROUND(AVG(mae_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_mae_pct,
+                    ROUND(AVG(outcome_pct) FILTER (
+                        WHERE outcome_price IS NOT NULL
+                    )::numeric, 2) AS avg_outcome_pct
+                FROM scoreboard_signals
+                GROUP BY {group_expr}
+                HAVING COUNT(*) >= %s
+                ORDER BY
+                    CASE
+                        WHEN AVG(mae_pct) FILTER (WHERE outcome_price IS NOT NULL) IS NULL THEN 0
+                        WHEN AVG(mae_pct) FILTER (WHERE outcome_price IS NOT NULL) = 0 THEN 999
+                        ELSE AVG(mfe_pct) FILTER (WHERE outcome_price IS NOT NULL)
+                             / NULLIF(AVG(mae_pct) FILTER (WHERE outcome_price IS NOT NULL), 0)
+                    END DESC,
+                    COUNT(*) FILTER (WHERE outcome_price IS NOT NULL) DESC
+                LIMIT 25
+            """, (min_signals,))
+
+            rows = cur.fetchall()
+            out = []
+            for row_a in rows:
+                (
+                    group_name, total_a, evaluated_a,
+                    direction_correct_a, direction_evaluated_a,
+                    edge_win_a, edge_evaluated_a,
+                    tradeable_a, strong_a,
+                    mfe_a, mae_a, outcome_a,
+                ) = row_a
+
+                total_a = total_a or 0
+                evaluated_a = evaluated_a or 0
+                direction_correct_a = direction_correct_a or 0
+                direction_evaluated_a = direction_evaluated_a or 0
+                edge_win_a = edge_win_a or 0
+                edge_evaluated_a = edge_evaluated_a or 0
+                tradeable_a = tradeable_a or 0
+                strong_a = strong_a or 0
+                mfe = float(mfe_a or 0)
+                mae = float(mae_a or 0)
+
+                out.append({
+                    "dimension": label,
+                    "group": str(group_name or "Unknown"),
+                    "total_signals": total_a,
+                    "with_outcomes": evaluated_a,
+                    "direction_evaluated": direction_evaluated_a,
+                    "direction_accuracy_rate": round(direction_correct_a / max(direction_evaluated_a, 1) * 100, 1),
+                    "edge_evaluated": edge_evaluated_a,
+                    "edge_win_count": edge_win_a,
+                    "edge_accuracy_rate": round(edge_win_a / max(edge_evaluated_a, 1) * 100, 1),
+                    "tradeable_mfe_count": tradeable_a,
+                    "tradeable_mfe_rate": round(tradeable_a / max(edge_evaluated_a, 1) * 100, 1),
+                    "strong_mfe_count": strong_a,
+                    "strong_mfe_rate": round(strong_a / max(edge_evaluated_a, 1) * 100, 1),
+                    "avg_mfe_pct": mfe,
+                    "avg_mae_pct": mae,
+                    "edge_ratio": _safe_ratio(mfe, mae),
+                    "avg_outcome_pct": float(outcome_a or 0),
+                })
+
+            return out
+
+        attribution_report = {
+            "by_agreement_bucket": _fetch_attribution(
+                "COALESCE(agreement_bucket, '<70 Warning')",
+                "Agreement Bucket",
+            ),
+            "by_delta_bucket": _fetch_attribution(
+                """
+                CASE
+                    WHEN intelligence_delta >= 20 THEN '+20 or Higher'
+                    WHEN intelligence_delta >= 10 THEN '+10 to +20'
+                    WHEN intelligence_delta >= 0 THEN '0 to +10'
+                    WHEN intelligence_delta >= -10 THEN '-10 to 0'
+                    WHEN intelligence_delta >= -20 THEN '-20 to -10'
+                    ELSE '< -20'
+                END
+                """,
+                "Delta Bucket",
+            ),
+            "by_regime": _fetch_attribution(
+                "COALESCE(regime, 'Unknown')",
+                "Regime",
+            ),
+            "by_setup_type": _fetch_attribution(
+                "COALESCE(setup_type, 'Unknown')",
+                "Setup Type",
+            ),
+            "by_grade": _fetch_attribution(
+                "COALESCE(grade, 'Unknown')",
+                "Grade",
+            ),
+            "by_signal_type": _fetch_attribution(
+                "COALESCE(signal_type, 'Unknown')",
+                "Signal Type",
+            ),
+        }
+
         cur.execute("""
             SELECT symbol, signal_type, signal_date, entry_price,
                    composite_score, setup_type, regime, grade,
@@ -1046,6 +1181,7 @@ def get_scoreboard_stats() -> dict:
             "outcome_window_hours": SCOREBOARD_OUTCOME_HOURS,
             "agreement_buckets": agreement_buckets,
             "agreement_thresholds": agreement_thresholds,
+            "attribution_report": attribution_report,
             "recent_signals": [
                 {
                     "symbol":      s[0],

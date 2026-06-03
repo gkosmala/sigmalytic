@@ -1417,6 +1417,10 @@ def build_scoreboard_tab(session=None):
     if not isinstance(agreement_thresholds, list):
         agreement_thresholds = []
 
+    attribution_report = board.get("attribution_report", {})
+    if not isinstance(attribution_report, dict):
+        attribution_report = {}
+
     generated = datetime.now(timezone(timedelta(hours=-4))).strftime("%b %d, %Y %I:%M %p ET")
 
     def _safe_float(value, default=0.0):
@@ -1643,6 +1647,78 @@ def build_scoreboard_tab(session=None):
             "borderBottom":f"1px solid {BORDER}",
         })
 
+
+    def _attribution_row(row):
+        group = row.get("group", "—")
+        n = _safe_int(row.get("total_signals"))
+        evaluated = _safe_int(row.get("with_outcomes"))
+        direction = _safe_float(row.get("direction_accuracy_rate"))
+        edge_acc = _safe_float(row.get("edge_accuracy_rate"))
+        tradeable = _safe_float(row.get("tradeable_mfe_rate"))
+        strong = _safe_float(row.get("strong_mfe_rate"))
+        edge = _safe_float(row.get("edge_ratio"))
+        mfe = _safe_float(row.get("avg_mfe_pct"))
+        mae = _safe_float(row.get("avg_mae_pct"))
+        outcome = _safe_float(row.get("avg_outcome_pct"))
+
+        edge_color = TEAL_DIM if edge >= 1.5 else (YELLOW_DIM if edge >= 1 else RED_DIM)
+
+        return html.Div([
+            html.Span(group, style={"flex":"1.4","fontSize":"11px","fontWeight":"900","color":WHITE,"minWidth":"150px"}),
+            html.Span(str(n), style={"flex":"0 0 54px","fontSize":"11px","color":TEXT,"fontWeight":"800","textAlign":"center"}),
+            html.Span(str(evaluated), style={"flex":"0 0 54px","fontSize":"11px","color":TEXT,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{direction:.1f}%", style={"flex":"0 0 74px","fontSize":"11px","color":BLUE_DIM,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge_acc:.1f}%", style={"flex":"0 0 74px","fontSize":"11px","color":edge_color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{tradeable:.1f}%", style={"flex":"0 0 78px","fontSize":"11px","color":TEAL_DIM if tradeable >= 40 else YELLOW_DIM,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{strong:.1f}%", style={"flex":"0 0 72px","fontSize":"11px","color":PURPLE,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge:.2f}", style={"flex":"0 0 64px","fontSize":"11px","color":edge_color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{mfe:.2f}%/{mae:.2f}%", style={"flex":"0 0 94px","fontSize":"11px","color":TEXT,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{outcome:+.2f}%", style={"flex":"0 0 76px","fontSize":"11px","color":TEAL_DIM if outcome >= 0 else RED_DIM,"fontWeight":"900","textAlign":"center"}),
+        ], style={
+            "display":"flex",
+            "gap":"8px",
+            "alignItems":"center",
+            "padding":"8px 0",
+            "borderBottom":f"1px solid {BORDER}",
+            "minWidth":"900px"
+        })
+
+    def _attribution_table(title, rows):
+        rows = rows if isinstance(rows, list) else []
+        return html.Div([
+            html.Div(title, style={
+                "fontSize":"12px","fontWeight":"900","color":WHITE,
+                "textTransform":"uppercase","letterSpacing":".08em",
+                "marginBottom":"8px"
+            }),
+            html.Div([
+                html.Span("Group", style={"flex":"1.4","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","minWidth":"150px"}),
+                html.Span("Sig", style={"flex":"0 0 54px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Eval", style={"flex":"0 0 54px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Dir", style={"flex":"0 0 74px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Edge Acc", style={"flex":"0 0 74px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Tradeable", style={"flex":"0 0 78px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Strong", style={"flex":"0 0 72px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Edge", style={"flex":"0 0 64px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("MFE/MAE", style={"flex":"0 0 94px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Outcome", style={"flex":"0 0 76px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+            ], style={
+                "display":"flex","gap":"8px","paddingBottom":"7px",
+                "borderBottom":f"1px solid {BORDER}",
+                "minWidth":"900px"
+            }),
+            html.Div([_attribution_row(r) for r in rows[:10]] if rows else [
+                html.Div("No attribution data yet.", style={"fontSize":"12px","color":MUTED,"padding":"10px 0"})
+            ]),
+        ], style={
+            "border":f"1px solid {BORDER}",
+            "background":"rgba(0,0,0,.15)",
+            "borderRadius":"14px",
+            "padding":"14px",
+            "overflowX":"auto"
+        })
+
+
     if edge_ratio >= 1.2 and with_outcomes > 0:
         edge_note = "Positive path edge: average favorable movement is larger than average adverse movement."
         edge_variant = "teal"
@@ -1742,6 +1818,33 @@ def build_scoreboard_tab(session=None):
                 "marginBottom":"18px",
                 "maxWidth":"620px"
             }),
+
+            html.Div(style={"height":"16px"}),
+
+            html.Div([
+                html.Div([
+                    html.H3("📊 Live Performance Attribution", style={
+                        "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
+                    }),
+                    html.Div("Ranks which parts of the engine are producing direction, edge, and tradeable opportunity.",
+                             style={"fontSize":"11px","color":MUTED}),
+                ]),
+            ], style={"marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Agreement Bucket", attribution_report.get("by_agreement_bucket", [])),
+                _attribution_table("Delta Bucket", attribution_report.get("by_delta_bucket", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Regime", attribution_report.get("by_regime", [])),
+                _attribution_table("Setup Type", attribution_report.get("by_setup_type", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Grade", attribution_report.get("by_grade", [])),
+                _attribution_table("Signal Type", attribution_report.get("by_signal_type", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"18px"}),
 
             html.Div([
                 html.Div([
@@ -1917,10 +2020,8 @@ def build_divergence_tab(session=None):
             "audited_at": s.get("audited_at") or audit_label,
         })
 
-    # Highest positive intelligence delta first.
-    # Positive delta means the deeper intelligence engine scores the setup
-    # stronger than the surface composite radar score.
-    items = sorted(items, key=lambda d: d.get("delta", 0), reverse=True)
+    # Largest intelligence gap first.
+    items = sorted(items, key=lambda d: abs(d.get("delta", 0)), reverse=True)
 
     upgrades = sum(1 for d in items if d["tone"] == "teal")
     downgrades = sum(1 for d in items if d["tone"] == "red")
@@ -2077,7 +2178,7 @@ def build_divergence_tab(session=None):
                 style={"color": WHITE, "fontSize": "16px", "fontWeight": "900", "margin": "0"}
             ),
             html.P(
-                "Sorted by highest positive delta first. Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
+                "Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
                 style={"color": TEXT, "fontSize": "12px", "margin": "4px 0 0"}
             ),
         ], style={"marginBottom": "14px"}),
