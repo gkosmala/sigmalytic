@@ -1405,15 +1405,17 @@ def build_scoreboard_tab(session=None):
     except Exception:
         board = {}
 
-    # Current backend contract:
-    # total_signals, with_outcomes, pending_outcomes,
-    # direction_evaluated, direction_correct_rate,
-    # avg_mfe_pct, avg_mae_pct, edge_ratio,
-    # hit_target1_rate, hit_target2_rate,
-    # outcome_window_hours, recent_signals
     entries = board.get("recent_signals", [])
     if not isinstance(entries, list):
         entries = []
+
+    agreement_buckets = board.get("agreement_buckets", [])
+    if not isinstance(agreement_buckets, list):
+        agreement_buckets = []
+
+    agreement_thresholds = board.get("agreement_thresholds", [])
+    if not isinstance(agreement_thresholds, list):
+        agreement_thresholds = []
 
     generated = datetime.now(timezone(timedelta(hours=-4))).strftime("%b %d, %Y %I:%M %p ET")
 
@@ -1500,6 +1502,9 @@ def build_scoreboard_tab(session=None):
         direction_correct = e.get("direction_correct")
         hit_t1 = e.get("hit_t1")
         hit_t2 = e.get("hit_t2")
+        agreement_score = e.get("agreement_score")
+        intelligence_delta = e.get("intelligence_delta")
+        agreement_bucket = e.get("agreement_bucket") or "—"
 
         score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
         grade_color = (
@@ -1525,6 +1530,9 @@ def build_scoreboard_tab(session=None):
         target_text = "T2" if hit_t2 else ("T1" if hit_t1 else "—")
         target_color = TEAL_DIM if hit_t2 else (YELLOW_DIM if hit_t1 else MUTED)
 
+        agreement_value = _safe_float(agreement_score, -1)
+        agreement_color = TEAL_DIM if agreement_value >= 90 else (BLUE_DIM if agreement_value >= 80 else (YELLOW_DIM if agreement_value >= 70 else RED_DIM))
+
         return html.Div([
             html.Span(f"#{rank}", style={"flex":"0 0 34px","fontSize":"11px","color":MUTED,"fontWeight":"800"}),
             html.Span(symbol, style={
@@ -1540,6 +1548,15 @@ def build_scoreboard_tab(session=None):
             html.Span(_fmt_pct(mae_pct, 2), style={"flex":"0 0 62px","fontSize":"12px","color":RED_DIM if mae_pct not in (None, "") else MUTED}),
             html.Span(dir_text, style={"flex":"0 0 36px","fontSize":"14px","fontWeight":"900","color":dir_color,"textAlign":"center"}),
             html.Span(target_text, style={"flex":"0 0 42px","fontSize":"12px","fontWeight":"900","color":target_color,"textAlign":"center"}),
+            html.Span(
+                "—" if agreement_score in (None, "") else f"{float(agreement_score):.1f}",
+                style={"flex":"0 0 74px","fontSize":"12px","fontWeight":"900","color":agreement_color,"textAlign":"center"}
+            ),
+            html.Span(
+                "—" if intelligence_delta in (None, "") else f"{float(intelligence_delta):+.1f}",
+                style={"flex":"0 0 62px","fontSize":"12px","fontWeight":"800","color":agreement_color,"textAlign":"center"}
+            ),
+            html.Span(agreement_bucket.replace(" Confirmation", ""), style={"flex":"0 0 150px","fontSize":"10px","color":agreement_color}),
             html.Span(regime, style={"flex":"0 0 115px","fontSize":"11px","color":MUTED}),
             html.Span(setup_type, style={"flex":"1","fontSize":"11px","color":TEXT,"minWidth":"160px"}),
         ], style={
@@ -1548,7 +1565,7 @@ def build_scoreboard_tab(session=None):
             "gap":"10px",
             "padding":"11px 0",
             "borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1100px"
+            "minWidth":"1380px"
         })
 
     header = html.Div([
@@ -1563,6 +1580,9 @@ def build_scoreboard_tab(session=None):
         html.Span("MAE",     style={"flex":"0 0 62px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Dir",     style={"flex":"0 0 36px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
         html.Span("Tgt",     style={"flex":"0 0 42px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Agree",   style={"flex":"0 0 74px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Delta",   style={"flex":"0 0 62px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Bucket",  style={"flex":"0 0 150px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Regime",  style={"flex":"0 0 115px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
         html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
     ], style={
@@ -1571,8 +1591,57 @@ def build_scoreboard_tab(session=None):
         "paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}",
         "marginBottom":"4px",
-        "minWidth":"1100px"
+        "minWidth":"1380px"
     })
+
+    def _bucket_card(b):
+        bucket = b.get("bucket", "—")
+        total = _safe_int(b.get("total_signals"))
+        evaluated = _safe_int(b.get("with_outcomes"))
+        acc = _safe_float(b.get("direction_correct_rate"))
+        edge = _safe_float(b.get("edge_ratio"))
+        mfe = _safe_float(b.get("avg_mfe_pct"))
+        mae = _safe_float(b.get("avg_mae_pct"))
+        color = TEAL_DIM if bucket.startswith("90") else (BLUE_DIM if bucket.startswith("80") else (YELLOW_DIM if bucket.startswith("70") else RED_DIM))
+        return html.Div([
+            html.Div(bucket, style={"fontSize":"11px","fontWeight":"900","color":color,"marginBottom":"8px"}),
+            html.Div([
+                html.Div([html.Span("Signals", style={"color":MUTED,"fontSize":"10px"}), html.Strong(str(total), style={"color":WHITE})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Evaluated", style={"color":MUTED,"fontSize":"10px"}), html.Strong(str(evaluated), style={"color":WHITE})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Accuracy", style={"color":MUTED,"fontSize":"10px"}), html.Strong(f"{acc:.1f}%", style={"color":color})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Edge", style={"color":MUTED,"fontSize":"10px"}), html.Strong(f"{edge:.2f}", style={"color":color})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("MFE / MAE", style={"color":MUTED,"fontSize":"10px"}), html.Strong(f"{mfe:.2f}% / {mae:.2f}%", style={"color":TEXT})], style={"display":"flex","justifyContent":"space-between"}),
+            ], style={"display":"grid","gap":"5px"})
+        ], style={
+            "border":f"1px solid {BORDER}",
+            "background":"rgba(0,0,0,.2)",
+            "borderRadius":"14px",
+            "padding":"14px",
+            "minHeight":"134px"
+        })
+
+    def _threshold_row(t):
+        threshold = _safe_int(t.get("threshold"))
+        total = _safe_int(t.get("total_signals"))
+        evaluated = _safe_int(t.get("with_outcomes"))
+        acc = _safe_float(t.get("direction_correct_rate"))
+        edge = _safe_float(t.get("edge_ratio"))
+        outcome = _safe_float(t.get("avg_outcome_pct"))
+        color = TEAL_DIM if threshold >= 90 else (BLUE_DIM if threshold >= 80 else (YELLOW_DIM if threshold >= 70 else TEXT))
+        return html.Div([
+            html.Span(f">= {threshold}", style={"flex":"0 0 70px","fontWeight":"900","color":color}),
+            html.Span(str(total), style={"flex":"0 0 70px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(str(evaluated), style={"flex":"0 0 80px","color":TEXT,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{acc:.1f}%", style={"flex":"0 0 90px","color":color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge:.2f}", style={"flex":"0 0 80px","color":color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{outcome:+.2f}%", style={"flex":"0 0 90px","color":TEAL_DIM if outcome >= 0 else RED_DIM,"fontWeight":"900","textAlign":"center"}),
+        ], style={
+            "display":"flex",
+            "gap":"10px",
+            "alignItems":"center",
+            "padding":"9px 0",
+            "borderBottom":f"1px solid {BORDER}",
+        })
 
     if edge_ratio >= 1.2 and with_outcomes > 0:
         edge_note = "Positive path edge: average favorable movement is larger than average adverse movement."
@@ -1625,6 +1694,54 @@ def build_scoreboard_tab(session=None):
             note_box(edge_note, edge_variant),
 
             html.Div(style={"height":"16px"}),
+
+            html.Div([
+                html.Div([
+                    html.H3("🧠 Intelligence Agreement Validation", style={
+                        "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
+                    }),
+                    html.Div("Shows whether deeper intelligence agreement improves direction accuracy and path edge.",
+                             style={"fontSize":"11px","color":MUTED}),
+                ]),
+            ], style={"marginBottom":"12px"}),
+
+            html.Div(
+                [_bucket_card(b) for b in agreement_buckets] if agreement_buckets else [
+                    note_box("Agreement buckets are waiting for repaired or newly logged signals.", "yellow")
+                ],
+                style={
+                    "display":"grid",
+                    "gridTemplateColumns":"repeat(4,1fr)",
+                    "gap":"12px",
+                    "marginBottom":"16px"
+                }
+            ),
+
+            html.Div([
+                html.Div("Minimum Agreement Filter", style={
+                    "fontSize":"12px","fontWeight":"900","color":WHITE,
+                    "textTransform":"uppercase","letterSpacing":".08em",
+                    "marginBottom":"8px"
+                }),
+                html.Div([
+                    html.Span("Filter", style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase"}),
+                    html.Span("Signals", style={"flex":"0 0 70px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Eval", style={"flex":"0 0 80px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Accuracy", style={"flex":"0 0 90px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Edge", style={"flex":"0 0 80px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Outcome", style={"flex":"0 0 90px","fontSize":"9px","color":MUTED,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                ], style={"display":"flex","gap":"10px","borderBottom":f"1px solid {BORDER}","paddingBottom":"7px"}),
+                html.Div([_threshold_row(t) for t in agreement_thresholds] if agreement_thresholds else [
+                    html.Div("No agreement threshold data yet.", style={"fontSize":"12px","color":MUTED,"padding":"12px 0"})
+                ]),
+            ], style={
+                "border":f"1px solid {BORDER}",
+                "background":"rgba(0,0,0,.15)",
+                "borderRadius":"14px",
+                "padding":"14px",
+                "marginBottom":"18px",
+                "maxWidth":"620px"
+            }),
 
             html.Div([
                 html.Div([
