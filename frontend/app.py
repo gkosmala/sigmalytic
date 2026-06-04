@@ -3381,23 +3381,7 @@ def add_csp_headers(response):
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
-<style>{GLOBAL_CSS}</style><style>
-/* SIGMALYTIC_GLOBAL_TEXT_CONTRAST_PATCH */
-.text-muted,
-.text-secondary,
-.muted,
-.subtitle,
-.description,
-.small,
-label,
-th,
-td,
-p,
-span,
-div {
-    text-shadow: none;
-}
-</style></head>
+<style>{GLOBAL_CSS}</style></head>
 <body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}
 <script>
 window._sigmaAudioCtx = null;
