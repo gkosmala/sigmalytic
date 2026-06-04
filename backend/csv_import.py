@@ -201,3 +201,17 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+# ------------------------------------------------------------------
+# FastAPI compatibility export
+# backend.main imports: from csv_import import csv_router
+# ------------------------------------------------------------------
+
+try:
+    from fastapi import APIRouter
+
+    csv_router = APIRouter(
+        prefix="/api/csv",
+        tags=["csv"]
+    )
+except Exception:
+    csv_router = None
