@@ -2,48 +2,22 @@
 """
 backend/probability_service.py
 ------------------------------
-Sigmalytic Live Historical Probability Service v1.1
+Sigmalytic Live Historical Probability Service v1.2
 
-Purpose:
-    Attach historical probability profiles to live radar opportunities.
+Key Fix:
+    Render container storage is temporary. probability_lookup.json may disappear
+    after restart/redeploy.
 
-Reads:
-    backend/probability_lookup.json
+    This version automatically rebuilds the probability lookup when missing.
 
-Created by:
-    backend/historical_probability_engine.py
-
-Adds trader-facing fields:
-    historical_success
-    expected_return
-    expected_mfe
-    expected_mae
-    edge_ratio
-    historical_matches
-    probability_grade
-    expected_opportunity_score
-    probability_confidence
-    probability_match_type
-    probability_profile_key
-
-v1.1 Fix:
-    Live radar rows may not include useful setup_type or weekly_regime.
-    If missing, blank, Unknown, or Insufficient Data, this service now infers:
-
-        probability_setup_type
-        probability_weekly_regime
-
-    from available live fields before matching the historical lookup.
-
-This prevents every symbol from falling back to:
-    transition_only
-    48.6%
-    440 matches
-
-and allows more specific matches like:
-    weekly_setup_transition
-    setup_transition
-    weekly_setup
+What it does:
+    1. Looks for backend/probability_lookup.json
+    2. If missing, looks for the attribution CSV
+    3. If CSV is missing, runs:
+         python backend/multitimeframe_behavioral_backtest.py --symbols-file backend/backtest_symbols_50.txt --years 2
+    4. Then runs:
+         python backend/historical_probability_engine.py
+    5. Loads backend/probability_lookup.json
 """
 
 from __future__ import annotations
@@ -51,18 +25,27 @@ from __future__ import annotations
 import os
 import json
 import time
+import sys
+import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 _LOOKUP_CACHE: Optional[dict] = None
 _LOOKUP_MTIME: Optional[float] = None
-_LOOKUP_PATH = Path(os.getenv("PROBABILITY_LOOKUP_PATH", "backend/probability_lookup.json"))
+_BUILD_ATTEMPTED = False
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+BACKEND_DIR = Path(__file__).resolve().parent
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+_LOOKUP_PATH = Path(os.getenv("PROBABILITY_LOOKUP_PATH", str(BACKEND_DIR / "probability_lookup.json")))
+_OBSERVATIONS_PATH = Path(os.getenv(
+    "PROBABILITY_OBSERVATIONS_PATH",
+    str(PROJECT_ROOT / "backtests/mtf_phase1_50symbols_2years_daily_weekly/mtf_behavioral_observations.csv")
+))
+_SYMBOLS_FILE = Path(os.getenv("PROBABILITY_SYMBOLS_FILE", str(BACKEND_DIR / "backtest_symbols_50.txt")))
+_AUTO_BUILD = os.getenv("PROBABILITY_AUTO_BUILD", "1").strip().lower() not in {"0", "false", "no"}
+
 
 def _f(x: Any, default: float = 0.0) -> float:
     try:
@@ -82,17 +65,7 @@ def _clean(x: Any, default: str = "Unknown") -> str:
 
 def _bad_field(x: Any) -> bool:
     s = _clean(x).lower()
-    return s in {
-        "",
-        "unknown",
-        "none",
-        "null",
-        "n/a",
-        "na",
-        "insufficient data",
-        "insufficient weekly data",
-        "not available",
-    }
+    return s in {"", "unknown", "none", "null", "n/a", "na", "insufficient data", "insufficient weekly data", "not available"}
 
 
 def _bucket_readiness(score: float) -> str:
@@ -133,7 +106,6 @@ def _unrated(reason: str = "Probability lookup unavailable") -> dict:
         "probability_reason": reason,
         "probability_match_type": "none",
         "probability_profile_key": None,
-
         "historical_matches": 0,
         "historical_success": None,
         "historical_favorable_rate": None,
@@ -141,34 +113,79 @@ def _unrated(reason: str = "Probability lookup unavailable") -> dict:
         "expected_mfe": None,
         "expected_mae": None,
         "edge_ratio": None,
-
         "expected_opportunity_score": None,
         "probability_grade": "Unrated",
         "probability_confidence": "Insufficient",
-
         "probability_setup_type": None,
         "probability_weekly_regime": None,
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Live inference
-# ─────────────────────────────────────────────────────────────────────────────
+def _run_cmd(cmd: list[str], timeout: int = 600) -> tuple[bool, str]:
+    try:
+        p = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_ROOT),
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+        output = (p.stdout or "") + "\n" + (p.stderr or "")
+        return p.returncode == 0, output[-4000:]
+    except Exception as e:
+        return False, str(e)
+
+
+def ensure_probability_lookup() -> dict:
+    global _BUILD_ATTEMPTED
+
+    if _LOOKUP_PATH.exists():
+        return {"created": False, "available": True, "reason": "lookup exists"}
+
+    if not _AUTO_BUILD:
+        return {"created": False, "available": False, "reason": "auto build disabled"}
+
+    if _BUILD_ATTEMPTED:
+        return {"created": False, "available": _LOOKUP_PATH.exists(), "reason": "build already attempted"}
+
+    _BUILD_ATTEMPTED = True
+
+    if not _OBSERVATIONS_PATH.exists():
+        if not _SYMBOLS_FILE.exists():
+            return {"created": False, "available": False, "reason": f"symbols file missing: {_SYMBOLS_FILE}"}
+
+        ok, out = _run_cmd([
+            sys.executable,
+            str(BACKEND_DIR / "multitimeframe_behavioral_backtest.py"),
+            "--symbols-file",
+            str(_SYMBOLS_FILE),
+            "--years",
+            os.getenv("PROBABILITY_BACKTEST_YEARS", "2"),
+        ], timeout=int(os.getenv("PROBABILITY_BACKTEST_TIMEOUT", "900")))
+
+        if not ok:
+            return {"created": False, "available": False, "reason": f"backtest rebuild failed: {out}"}
+
+    ok, out = _run_cmd([
+        sys.executable,
+        str(BACKEND_DIR / "historical_probability_engine.py"),
+        "--input",
+        str(_OBSERVATIONS_PATH),
+        "--output-json",
+        str(_LOOKUP_PATH),
+        "--output-csv",
+        str(BACKEND_DIR / "probability_lookup.csv"),
+        "--summary-json",
+        str(BACKEND_DIR / "probability_summary.json"),
+    ], timeout=int(os.getenv("PROBABILITY_ENGINE_TIMEOUT", "300")))
+
+    if not ok:
+        return {"created": False, "available": False, "reason": f"probability engine failed: {out}"}
+
+    return {"created": True, "available": _LOOKUP_PATH.exists(), "reason": "lookup rebuilt automatically"}
+
 
 def infer_live_setup_type(row: dict) -> str:
-    """
-    Infer setup_type from live radar fields when setup_type is missing or bad.
-
-    This intentionally mirrors the daily attribution categories:
-        Trend Continuation
-        Momentum Leader
-        Compression Breakout Candidate
-        Volatility Expansion Candidate
-        Breakdown Risk
-        Distribution
-        Low Edge — Avoid
-        Monitoring
-    """
     existing = row.get("setup_type")
     if not _bad_field(existing):
         return _clean(existing)
@@ -186,45 +203,26 @@ def infer_live_setup_type(row: dict) -> str:
     volume_pressure = _f(row.get("volume_pressure"))
     readiness = _f(row.get("readiness_score"))
     composite = _f(row.get("composite_score", row.get("score")))
-
     trigger = _f(row.get("trigger"))
+
     trigger_distance = None
     if price > 0 and trigger > 0:
         trigger_distance = (trigger - price) / price * 100.0
 
-    # Direct bearish classifications.
     if "short" in status or "breakdown" in transition or "markdown" in transition:
         return "Breakdown Risk"
 
     if "distribution" in status or "distribution" in regime or "distribution" in behavioral_state:
         return "Distribution"
 
-    # Trend continuation / momentum.
-    if (
-        "bull expansion" in regime
-        and readiness >= 80
-        and composite >= 70
-        and rs >= 65
-        and volume_pressure >= 60
-    ):
+    if "bull expansion" in regime and readiness >= 80 and composite >= 70 and rs >= 65 and volume_pressure >= 60:
         if change_pct >= 1.0 or rel_volume >= 1.2:
             return "Trend Continuation"
 
-    if (
-        "markup" in transition
-        or "markup" in behavioral_state
-        or "bull expansion" in regime
-    ):
-        if readiness >= 75 and rs >= 60:
-            return "Momentum Leader"
+    if ("markup" in transition or "markup" in behavioral_state or "bull expansion" in regime) and readiness >= 75 and rs >= 60:
+        return "Momentum Leader"
 
-    # Compression / expansion candidates.
-    if (
-        "compression" in transition
-        or "compression" in behavioral_state
-        or "compression" in status
-        or "compression" in regime
-    ):
+    if "compression" in transition or "compression" in behavioral_state or "compression" in status or "compression" in regime:
         if trigger_distance is not None and -0.5 <= trigger_distance <= 3.0:
             return "Compression Breakout Candidate"
         return "Volatility Expansion Candidate"
@@ -235,18 +233,12 @@ def infer_live_setup_type(row: dict) -> str:
         return "Volatility Expansion Candidate"
 
     if readiness < 55 and composite < 60:
-        return "Low Edge — Avoid"
+        return "Low Edge - Avoid"
 
     return "Monitoring"
 
 
 def infer_live_weekly_regime(row: dict) -> str:
-    """
-    Approximate weekly regime from live daily/radar fields.
-
-    This is a bridge until radar_service.py calculates true weekly OHLCV regime.
-    It allows the probability engine to avoid transition-only fallback.
-    """
     existing = row.get("weekly_regime")
     if not _bad_field(existing):
         return _clean(existing)
@@ -274,12 +266,7 @@ def infer_live_weekly_regime(row: dict) -> str:
     if "distribution" in regime or "distribution" in status or "upthrust" in transition:
         return "Weekly Distribution Risk"
 
-    if (
-        "bull expansion" in regime
-        and rel_volume >= 1.3
-        and change_pct >= 2.0
-        and readiness >= 80
-    ):
+    if "bull expansion" in regime and rel_volume >= 1.3 and change_pct >= 2.0 and readiness >= 80:
         return "Weekly FOMO / Expansion"
 
     if "bull expansion" in regime or "markup" in transition or "markup" in behavioral_state:
@@ -295,14 +282,10 @@ def infer_live_weekly_regime(row: dict) -> str:
 
 
 def enrich_live_probability_keys(row: dict) -> dict:
-    """
-    Return a copy of row with inferred lookup keys added.
-    """
     out = dict(row or {})
     out["probability_setup_type"] = infer_live_setup_type(out)
     out["probability_weekly_regime"] = infer_live_weekly_regime(out)
 
-    # If setup_type / weekly_regime are missing/bad, populate them for downstream use.
     if _bad_field(out.get("setup_type")):
         out["setup_type"] = out["probability_setup_type"]
 
@@ -312,27 +295,21 @@ def enrich_live_probability_keys(row: dict) -> dict:
     return out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Lookup loading
-# ─────────────────────────────────────────────────────────────────────────────
-
 def load_probability_lookup(force: bool = False) -> dict:
     global _LOOKUP_CACHE, _LOOKUP_MTIME
 
     try:
-        path = _LOOKUP_PATH
-        if not path.exists():
-            alt = Path(__file__).resolve().parent / "probability_lookup.json"
-            if alt.exists():
-                path = alt
-            else:
-                return {}
+        if not _LOOKUP_PATH.exists():
+            ensure_probability_lookup()
 
-        mtime = path.stat().st_mtime
+        if not _LOOKUP_PATH.exists():
+            return {}
+
+        mtime = _LOOKUP_PATH.stat().st_mtime
         if not force and _LOOKUP_CACHE is not None and _LOOKUP_MTIME == mtime:
             return _LOOKUP_CACHE
 
-        with path.open("r", encoding="utf-8") as f:
+        with _LOOKUP_PATH.open("r", encoding="utf-8") as f:
             _LOOKUP_CACHE = json.load(f)
 
         _LOOKUP_MTIME = mtime
@@ -343,22 +320,23 @@ def load_probability_lookup(force: bool = False) -> dict:
 
 
 def probability_status() -> dict:
+    ensure = ensure_probability_lookup()
     lookup = load_probability_lookup()
     meta = lookup.get("metadata", {}) if isinstance(lookup, dict) else {}
     profiles = lookup.get("profiles_by_type", {}) if isinstance(lookup, dict) else {}
+
     return {
         "available": bool(lookup),
         "path": str(_LOOKUP_PATH),
+        "observations_path": str(_OBSERVATIONS_PATH),
+        "auto_build": _AUTO_BUILD,
+        "ensure": ensure,
         "rows_loaded": meta.get("rows_loaded"),
         "window_days": meta.get("window_days"),
         "profile_counts": {k: len(v or []) for k, v in profiles.items()},
         "loaded_at": time.time(),
     }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Matching
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _find_profile(row: dict, lookup: dict) -> dict:
     if not lookup:
@@ -375,42 +353,15 @@ def _find_profile(row: dict, lookup: dict) -> dict:
     opportunity_state = _clean(row.get("opportunity_state"))
 
     candidates = [
-        (
-            "strict_weekly_setup_transition_readiness",
-            [weekly, setup, transition, readiness_bucket],
-        ),
-        (
-            "weekly_setup_transition",
-            [weekly, setup, transition],
-        ),
-        (
-            "weekly_setup",
-            [weekly, setup],
-        ),
-        (
-            "setup_transition",
-            [setup, transition],
-        ),
-        (
-            "weekly_regime_only",
-            [weekly],
-        ),
-        (
-            "transition_only",
-            [transition],
-        ),
-        (
-            "setup_only",
-            [setup],
-        ),
-        (
-            "opportunity_state",
-            [opportunity_state],
-        ),
-        (
-            "readiness_bucket",
-            [readiness_bucket],
-        ),
+        ("strict_weekly_setup_transition_readiness", [weekly, setup, transition, readiness_bucket]),
+        ("weekly_setup_transition", [weekly, setup, transition]),
+        ("weekly_setup", [weekly, setup]),
+        ("setup_transition", [setup, transition]),
+        ("weekly_regime_only", [weekly]),
+        ("transition_only", [transition]),
+        ("setup_only", [setup]),
+        ("opportunity_state", [opportunity_state]),
+        ("readiness_bucket", [readiness_bucket]),
     ]
 
     attempted = []
@@ -426,20 +377,16 @@ def _find_profile(row: dict, lookup: dict) -> dict:
                 out["inferred_weekly_regime"] = weekly
                 return out
 
-    return {
-        "lookup_attempted_keys": attempted,
-        "inferred_setup_type": setup,
-        "inferred_weekly_regime": weekly,
-    }
+    return {"lookup_attempted_keys": attempted, "inferred_setup_type": setup, "inferred_weekly_regime": weekly}
 
 
 def get_probability_profile(row: dict) -> dict:
     try:
         enriched_row = enrich_live_probability_keys(row or {})
-
         lookup = load_probability_lookup()
+
         if not lookup:
-            unrated = _unrated("probability_lookup.json not found")
+            unrated = _unrated("probability_lookup.json not found and auto-build failed")
             unrated["probability_setup_type"] = enriched_row.get("probability_setup_type")
             unrated["probability_weekly_regime"] = enriched_row.get("probability_weekly_regime")
             return unrated
@@ -461,7 +408,6 @@ def get_probability_profile(row: dict) -> dict:
             "probability_match_type": profile.get("lookup_match_type", profile.get("profile_type")),
             "probability_profile_type": profile.get("profile_type"),
             "probability_profile_key": profile.get("key"),
-
             "historical_matches": matches,
             "historical_success": profile.get("tradeable_rate"),
             "historical_favorable_rate": profile.get("favorable_rate"),
@@ -469,18 +415,14 @@ def get_probability_profile(row: dict) -> dict:
             "expected_mfe": profile.get("expected_mfe"),
             "expected_mae": profile.get("expected_mae"),
             "edge_ratio": profile.get("edge_ratio"),
-
             "expected_opportunity_score": profile.get("opportunity_score"),
             "probability_grade": profile.get("grade", "Unrated"),
             "probability_confidence": confidence,
-
             "probability_window_days": profile.get("window_days"),
             "sample_confidence": profile.get("sample_confidence"),
-
             "probability_setup_type": enriched_row.get("probability_setup_type"),
             "probability_weekly_regime": enriched_row.get("probability_weekly_regime"),
             "probability_attempted_keys": profile.get("lookup_attempted_keys", []),
-
             "historical_probability_profile": profile,
         }
 
