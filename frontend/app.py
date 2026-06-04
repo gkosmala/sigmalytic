@@ -17,6 +17,17 @@ import plotly.graph_objects as go
 import requests as req
 
 import sys, pathlib
+
+# ── Safe preflight palette definitions ────────────────────────────────────────
+# These must exist before any global CSS f-strings are evaluated.
+WHITE = "#FFFFFF"
+BORDER = "rgba(148,163,184,.24)"
+TEXT = WHITE
+MUTED = WHITE
+TEXT_DIM = WHITE
+SUBTLE = WHITE
+GRAY = WHITE
+GRAY_DIM = WHITE
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
     sanitize_symbol, create_live_update, get_key_levels,
