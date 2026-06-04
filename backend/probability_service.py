@@ -424,6 +424,12 @@ def get_probability_profile(row: dict) -> dict:
             "probability_weekly_regime": enriched_row.get("probability_weekly_regime"),
             "probability_attempted_keys": profile.get("lookup_attempted_keys", []),
             "historical_probability_profile": profile,
+            "edge_score": max(0, min(round(
+                (_f(profile.get("opportunity_score")) * 0.40)
+                + min(_f(profile.get("edge_ratio")) * 12.0, 25.0)
+                + min(_f(profile.get("expected_return")) * 4.0, 20.0)
+                + min(_f(profile.get("sample_confidence")) * 2.0, 15.0)
+            ), 100)),
         }
 
     except Exception as e:
