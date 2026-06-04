@@ -89,6 +89,134 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
+# ── Historical Probability Display Helpers ───────────────────────────────────
+def _fmt_pct(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        return f"{float(v):.1f}%"
+    except Exception:
+        return default
+
+def _fmt_signed_pct(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        n = float(v)
+        return f"{n:+.2f}%"
+    except Exception:
+        return default
+
+def _fmt_num(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        n = float(v)
+        if abs(n) >= 1000:
+            return f"{n:,.0f}"
+        return f"{n:.2f}"
+    except Exception:
+        return default
+
+def _fmt_int(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        return f"{int(float(v)):,}"
+    except Exception:
+        return default
+
+def _probability_grade_color(grade):
+    g = str(grade or "").upper().strip()
+    if g.startswith("A"):
+        return TEAL
+    if g.startswith("B"):
+        return BLUE_DIM
+    if g.startswith("C"):
+        return YELLOW_DIM
+    if g in {"D", "F", "AVOID"}:
+        return RED_DIM
+    return WHITE
+
+def _historical_edge_payload(row):
+    row = row or {}
+    return {
+        "grade": row.get("probability_grade") or row.get("historical_grade") or "Unrated",
+        "success": row.get("historical_success") or row.get("historical_success_rate") or row.get("historical_tradeable_rate"),
+        "expected_return": row.get("expected_return") or row.get("historical_expected_return"),
+        "edge_ratio": row.get("edge_ratio") or row.get("historical_edge_ratio"),
+        "matches": row.get("historical_matches"),
+        "confidence": row.get("probability_confidence") or row.get("historical_confidence"),
+        "score": row.get("expected_opportunity_score"),
+        "match_type": row.get("probability_match_type"),
+        "setup": row.get("probability_setup_type") or row.get("setup_type"),
+        "weekly": row.get("probability_weekly_regime") or row.get("weekly_regime"),
+    }
+
+def historical_edge_card(row):
+    p = _historical_edge_payload(row)
+    grade = p["grade"]
+    grade_color = _probability_grade_color(grade)
+    return html.Div([
+        html.Div("Historical Edge", style={"fontSize":"13px","fontWeight":"800","color":WHITE,"letterSpacing":".4px","marginBottom":"8px"}),
+        html.Div([
+            html.Div([
+                html.Div("Grade", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(grade), style={"fontSize":"30px","fontWeight":"900","color":grade_color,"lineHeight":"1"}),
+            ], style={"minWidth":"76px"}),
+            html.Div([
+                html.Div("Historical Success", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_pct(p["success"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
+            ], style={"minWidth":"130px"}),
+            html.Div([
+                html.Div("Expected Return", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_signed_pct(p["expected_return"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
+            ], style={"minWidth":"130px"}),
+        ], style={"display":"flex","gap":"16px","flexWrap":"wrap","alignItems":"center"}),
+        html.Div([
+            html.Div([
+                html.Div("Edge Ratio", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_num(p["edge_ratio"]), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Matches", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_int(p["matches"]), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Confidence", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(p["confidence"] or "—"), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Match", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(p["match_type"] or "—").replace("_"," "), style={"fontSize":"13px","fontWeight":"700","color":WHITE}),
+            ]),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,minmax(90px,1fr))","gap":"10px","marginTop":"12px"}),
+        html.Div([
+            html.Span(str(p["weekly"] or "Weekly: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+            html.Span(" · ", style={"color":WHITE}),
+            html.Span(str(p["setup"] or "Setup: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+        ], style={"marginTop":"10px"}),
+    ], style={
+        "border":"1px solid rgba(45,212,191,.26)",
+        "background":"rgba(8,24,39,.72)",
+        "borderRadius":"16px",
+        "padding":"14px",
+        "boxShadow":"0 0 0 1px rgba(45,212,191,.08) inset",
+        "color":WHITE,
+    })
+
+def probability_metric_pills(row):
+    p = _historical_edge_payload(row)
+    grade_color = _probability_grade_color(p["grade"])
+    return html.Div([
+        html.Div([html.Span("Grade ", style={"color":WHITE}), html.B(str(p["grade"]), style={"color":grade_color})], className="prob-pill"),
+        html.Div([html.Span("Success ", style={"color":WHITE}), html.B(_fmt_pct(p["success"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Exp Ret ", style={"color":WHITE}), html.B(_fmt_signed_pct(p["expected_return"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Edge ", style={"color":WHITE}), html.B(_fmt_num(p["edge_ratio"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Matches ", style={"color":WHITE}), html.B(_fmt_int(p["matches"]), style={"color":WHITE})], className="prob-pill"),
+    ], style={"display":"flex","gap":"8px","flexWrap":"wrap","marginTop":"10px"})
+
 def _track(event_type, symbol, price=None, timeframe=None, regime=None,
            decision_score=None, decision_status=None, metadata=None):
     """Fire-and-forget behavioral event to backend."""
@@ -2135,7 +2263,7 @@ def build_scoreboard_tab(session=None):
                 _metric("Total Signals", f"{total_signals}", WHITE, "All logged signals"),
                 _metric("Evaluated", f"{with_outcomes}", TEAL_DIM, "Signals with outcomes"),
                 _metric("Pending", f"{pending_outcomes}", YELLOW_DIM if pending_outcomes else MUTED, "Awaiting outcome window"),
-                _metric("Direction Accuracy", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} direction-graded"),
+                _metric("Historical Success", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} historical matches"),
                 _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
                 _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
                 _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
@@ -3381,7 +3509,17 @@ def add_csp_headers(response):
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
-<style>{GLOBAL_CSS}</style></head>
+<style>{GLOBAL_CSS}
+.prob-pill {{
+    border: 1px solid rgba(148,163,184,.24);
+    background: rgba(15,35,55,.70);
+    color: #FFFFFF !important;
+    border-radius: 999px;
+    padding: 6px 9px;
+    font-size: 12px;
+    font-weight: 700;
+}}
+</style></head>
 <body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}
 <script>
 window._sigmaAudioCtx = null;
