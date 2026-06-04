@@ -309,15 +309,30 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     highs      = [float(b.get("h", 0)) for b in bars if b.get("h")]
     lows       = [float(b.get("l", 0)) for b in bars if b.get("l")]
 
-    ma20       = sum(closes[-20:]) / len(closes[-20:]) if len(closes) >= 20 else price
-    ma50       = sum(closes[-50:]) / len(closes[-50:]) if len(closes) >= 50 else price
-    avg_vol_20 = sum(volumes[-20:]) / len(volumes[-20:]) if len(volumes) >= 20 else volume
+    bars_count = len(closes)
+    has_ma20_history = len(closes) >= 20
+    has_ma50_history = len(closes) >= 50
+    has_volume_history = len(volumes) >= 20
+    has_atr_history = len(highs) >= 15 and len(lows) >= 15 and len(closes) >= 15
+    history_ready = has_ma20_history and has_volume_history and has_atr_history
 
-    atr     = _calc_atr(highs, lows, closes, 14)
-    rel_vol = (volume / avg_vol_20) if avg_vol_20 > 0 else 1.0
+    # IMPORTANT:
+    # Do not let missing history pretend to be real history.
+    # The old fallback used ma20=price, ma50=price, rel_vol=1.0, atr=1.0.
+    # That made every symbol look like the same trend-continuation profile.
+    ma20 = sum(closes[-20:]) / len(closes[-20:]) if has_ma20_history else price
+    ma50 = sum(closes[-50:]) / len(closes[-50:]) if has_ma50_history else ma20
 
-    high_52w = max(highs[-252:]) if len(highs) >= 52 else day_high
-    low_52w  = min(lows[-252:])  if len(lows)  >= 52 else day_low
+    avg_vol_20 = sum(volumes[-20:]) / len(volumes[-20:]) if has_volume_history else 0.0
+    rel_vol = (volume / avg_vol_20) if avg_vol_20 > 0 else 0.0
+
+    if has_atr_history:
+        atr = _calc_atr(highs, lows, closes, 14)
+    else:
+        atr = max(day_high - day_low, price * 0.02, 0.01)
+
+    high_52w = max(highs[-252:]) if len(highs) >= 52 else max(day_high, price)
+    low_52w  = min(lows[-252:])  if len(lows)  >= 52 else min(day_low, price)
 
     confluence = 50.0
     if price > vwap:          confluence += 8
@@ -404,8 +419,14 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         behavioral   * 0.15, 1
     ))
 
+    # If historical bars are missing/thin, cap the score so snapshot-only rows
+    # do not dominate the radar or all map into the same probability profile.
+    if not history_ready:
+        composite = min(composite, 67.0)
+
     setup_type   = _classify_setup(price, ma20, ma50, atr, day_high, day_low,
-                                   high_52w, rel_vol, change_pct, closes)
+                                   high_52w, rel_vol, change_pct, closes,
+                                   history_ready=history_ready, bars_count=bars_count)
     trigger      = round(day_high + atr * 0.1, 2) if atr > 0 else round(price * 1.005, 2)
     invalidation = round(day_low  - atr * 0.1, 2) if atr > 0 else round(price * 0.99,  2)
     target1      = round(price + atr * 1.0, 2)
@@ -415,7 +436,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
                                      price=price, trigger=trigger,
                                      invalidation=invalidation,
                                      prev_status=prev_status, ma20=ma20, ma50=ma50)
-    regime       = _infer_regime(change_pct, rel_vol, price, ma20, ma50)
+    regime       = _infer_regime(change_pct, rel_vol, price, ma20, ma50, history_ready=history_ready)
 
     # ── BME scoring ──────────────────────────────────────────────────────────
     bme_score  = None
@@ -462,6 +483,9 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "atr":               round(atr, 2),
         "high_52w":          round(high_52w, 2),
         "low_52w":           round(low_52w, 2),
+        "historical_bars_count": bars_count,
+        "history_ready":      bool(history_ready),
+        "data_quality":       "historical" if history_ready else "snapshot_only",
         "updated_at":        datetime.now(timezone.utc).isoformat(),
         "data_delay":        "15min" if ALPACA_FEED == "iex" else "live",
         "trigger_proximity": round((trigger - price) / price * 100, 2)
@@ -599,14 +623,15 @@ def _fallback_volume_pressure(rel_vol: float, change_pct: float,
 
 
 def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
-                    high_52w, rel_vol, change_pct, closes) -> str:
+                    high_52w, rel_vol, change_pct, closes,
+                    history_ready: bool = True, bars_count: int = 0) -> str:
     """
     Live setup classifier.
 
-    Never return "Insufficient data" for live radar rows.
-    If historical bars are thin or not loaded yet, classify from the live
-    snapshot so the probability engine can match strict profiles instead of
-    falling back to broad weekly_regime_only buckets.
+    Important guardrail:
+    Missing historical bars must NOT be treated as a confirmed trend.
+    When bars are thin, ma20/ma50/rel_vol/ATR are not reliable, so classify
+    conservatively from the live snapshot only.
     """
     atr = atr if atr and atr > 0 else max(day_high - day_low, price * 0.01, 0.01)
 
@@ -619,18 +644,36 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
     compressed = recent_range < avg_range * 0.75
     near_52w_high = high_52w > 0 and ((high_52w - price) / high_52w) < 0.04
 
+    # Snapshot-only classification. This prevents a bad data state where
+    # ma20=price, ma50=price, rel_vol=1.0, atr=1.0 turns every row into
+    # Trend Continuation.
+    if not history_ready:
+        if change_pct <= -5:
+            return "Breakdown Risk"
+        if change_pct <= -2:
+            return "Distribution"
+        if change_pct >= 6 and near_52w_high:
+            return "Momentum Leader"
+        if change_pct >= 3 and near_52w_high:
+            return "Compression Breakout Candidate"
+        if change_pct >= 2:
+            return "Volatility Expansion Candidate"
+        if abs(change_pct) < 0.5:
+            return "Low Edge - Avoid"
+        return "Monitoring"
+
     if change_pct < -3 and rel_vol >= 1.2:
         return "Breakdown Risk"
 
     if change_pct < -1 and price < ma20:
         return "Distribution"
 
-    if change_pct > 3 and price >= ma20 and ma20 >= ma50:
+    if change_pct > 4 and price >= ma20 and ma20 >= ma50:
         if rel_vol >= 1.3 and near_52w_high:
             return "Momentum Leader"
         if rel_vol >= 1.1:
             return "Trend Continuation"
-        return "Trend Continuation"
+        return "Volatility Expansion Candidate"
 
     if change_pct > 1.5 and price >= ma20 and ma20 >= ma50:
         if compressed and near_52w_high:
@@ -681,13 +724,20 @@ def _determine_status(composite, expansion, rel_vol, change_pct,
     return "Watching"
 
 
-def _infer_regime(change_pct, rel_vol, price, ma20, ma50) -> str:
+def _infer_regime(change_pct, rel_vol, price, ma20, ma50, history_ready: bool = True) -> str:
+    if not history_ready:
+        if change_pct >= 5: return "Bull Expansion"
+        if change_pct <= -5: return "Bear Expansion"
+        if abs(change_pct) < 0.3: return "Compression"
+        return "Neutral"
+
     if price > ma20 > ma50 and change_pct > 1:  return "Bull Expansion"
     if price > ma20 > ma50 and change_pct < 0:  return "Bull Pullback"
     if price < ma20 < ma50 and change_pct < -1: return "Bear Expansion"
     if price < ma20 < ma50 and change_pct > 0:  return "Bear Rally"
     if abs(change_pct) < 0.3 and rel_vol < 0.8: return "Compression"
     return "Neutral"
+
 
 # ── Historical bars ────────────────────────────────────────────────────────────
 
