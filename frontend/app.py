@@ -1603,6 +1603,18 @@ def build_radar_tab(session=None):
         status = _safe_text(s.get("status"), "—")
         alert_type = _safe_text(s.get("alert_type"), "—")
 
+        # Historical probability / edge fields from backend probability engine
+        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
+        hist_matches = _safe_float(s.get("historical_matches"))
+        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
+        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
+        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
+        prob_score = _safe_float(s.get("expected_opportunity_score"))
+        prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
+        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
+        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
+
         color = _state_color(state, readiness)
         side_color = _side_color(side)
 
@@ -1625,15 +1637,15 @@ def build_radar_tab(session=None):
                 ], style={"flex":"1"}),
 
                 html.Div([
-                    html.Div(f"{readiness:.0f}", style={
-                        "fontSize":"30px","fontWeight":"950","color":color,
+                    html.Div(prob_grade, style={
+                        "fontSize":"30px","fontWeight":"950","color":grade_color,
                         "lineHeight":"1","textAlign":"right"
                     }),
-                    html.Div("Readiness", style={
+                    html.Div("Opportunity", style={
                         "fontSize":"10px","fontWeight":"950","color":WHITE,
                         "textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"
                     }),
-                    html.Div(_readiness_label(readiness), style={
+                    html.Div(f"Ready {readiness:.0f}", style={
                         "fontSize":"10px","fontWeight":"900","color":color,
                         "textAlign":"right","marginTop":"4px"
                     }),
@@ -1664,6 +1676,29 @@ def build_radar_tab(session=None):
                     "fontSize":"10px","fontWeight":"800"
                 }),
             ]),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div([
+                html.Div([
+                    html.Div("Historical Success", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":WHITE}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":YELLOW_DIM}),
+                ], style={"flex":"1"}),
+            ], style={"display":"flex","gap":"10px","padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.035)"}),
+
+            html.Div([
+                html.Span(f"Matches {hist_matches:,.0f}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(f"Confidence {prob_conf}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(prob_weekly, style={"fontSize":"11px","fontWeight":"850","color":WHITE}),
+            ], style={"marginTop":"7px"}),
 
             html.Div(style={"height":"12px"}),
 
@@ -1712,7 +1747,7 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                html.Div(setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
+                html.Div(prob_setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
                 html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
             ]),
 
@@ -1756,10 +1791,15 @@ def build_radar_tab(session=None):
         price = s.get("price")
         trigger = s.get("trigger")
         invalidation = s.get("invalidation")
-        setup = _safe_text(s.get("setup_type"), "—")
+        setup = _safe_text(s.get("probability_setup_type", s.get("setup_type")), "—")
         status = _safe_text(s.get("status"), "—")
+        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
+        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
+        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
         color = _state_color(state, readiness)
         side_color = _side_color(side)
+        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
 
         return html.Div([
             html.Span(symbol, style={
@@ -1777,6 +1817,22 @@ def build_radar_tab(session=None):
             }),
             html.Span(f"{score:.0f}", style={
                 "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
+                "color":YELLOW_DIM,"textAlign":"center"
+            }),
+            html.Span(prob_grade, style={
+                "flex":"0 0 62px","fontSize":"12px","fontWeight":"950",
+                "color":grade_color,"textAlign":"center"
+            }),
+            html.Span(_fmt_pct(hist_success, 1), style={
+                "flex":"0 0 86px","fontSize":"12px","fontWeight":"900",
+                "color":WHITE,"textAlign":"center"
+            }),
+            html.Span(_fmt_pct(exp_return, 2, signed=True), style={
+                "flex":"0 0 92px","fontSize":"12px","fontWeight":"900",
+                "color":TEAL_DIM if exp_return >= 0 else RED_DIM,"textAlign":"center"
+            }),
+            html.Span(f"{edge_ratio:.2f}", style={
+                "flex":"0 0 72px","fontSize":"12px","fontWeight":"900",
                 "color":YELLOW_DIM,"textAlign":"center"
             }),
             html.Span(state, style={
@@ -1814,7 +1870,7 @@ def build_radar_tab(session=None):
         ], style={
             "display":"flex","alignItems":"center","gap":"10px",
             "padding":"11px 0","borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1320px"
+            "minWidth":"1630px"
         })
 
     header = html.Div([
@@ -1823,6 +1879,10 @@ def build_radar_tab(session=None):
         html.Span("Chg%", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
         html.Span("Ready", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("Score", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Grade", style={"flex":"0 0 62px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Hist %", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Exp Ret", style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Edge", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("State", style={"flex":"0 0 100px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("Side", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("Transition", style={"flex":"1.4","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"190px"}),
@@ -1834,7 +1894,7 @@ def build_radar_tab(session=None):
     ], style={
         "display":"flex","gap":"10px","paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
-        "minWidth":"1320px"
+        "minWidth":"1630px"
     })
 
     # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
@@ -1884,7 +1944,7 @@ def build_radar_tab(session=None):
                 html.H3("Full Opportunity Radar", style={
                     "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
                 }),
-                html.Div("Sorted by Armed → Setting Up → Readiness Score. Use this table to see what may move next, not what already moved.",
+                html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
                          style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
                 html.Div([
                     header,
