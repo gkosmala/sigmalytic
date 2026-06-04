@@ -167,8 +167,9 @@ class WatchlistAdd(BaseModel):
 
 # ── Symbol universe ────────────────────────────────────────────────────────────
 
-# Controlled clean universe: base verified 250 symbols plus Alpaca active-asset expansion to 750.
-# Uses active tradable US equities and falls back to the verified list if Alpaca assets are unavailable.
+# Full production universe loader.
+# Primary source: backend/csv_import.py if it exposes a symbol list or loader.
+# Fallback source: active Alpaca assets expanded to the requested target.
 CLEAN_STARTER_UNIVERSE = [
     'AAPL', 'MSFT', 'NVDA', 'GOOG', 'GOOGL',
     'AMZN', 'META', 'TSLA', 'SPY', 'QQQ',
@@ -190,92 +191,10 @@ CLEAN_STARTER_UNIVERSE = [
     'GEV', 'MMM', 'ETN', 'EMR', 'NOC',
     'PG', 'KO', 'PEP', 'CROX', 'CL',
     'KMB', 'MO', 'PM', 'MDLZ', 'GIS',
-    'AMGN', 'GILD', 'BMY', 'CVS', 'CI',
-    'HUM', 'ISRG', 'SYK', 'MDT', 'BSX',
-    'VRTX', 'REGN', 'ZTS', 'ELV', 'HCA',
-    'MCK', 'COR', 'CNC', 'EW', 'IDXX',
-    'NEE', 'DUK', 'SO', 'D', 'AEP',
-    'EXC', 'SRE', 'XEL', 'PEG', 'ED',
-    'WEC', 'EIX', 'PCG', 'AWK', 'ATO',
-    'NI', 'CMS', 'FE', 'PPL', 'AES',
-    'LIN', 'APD', 'SHW', 'ECL', 'FCX',
-    'NEM', 'DD', 'DOW', 'CTVA', 'ALB',
-    'MLM', 'VMC', 'NUE', 'STLD', 'CF',
-    'MOS', 'PKG', 'BALL', 'IFF', 'CE',
-    'PLD', 'AMT', 'EQIX', 'CCI', 'PSA',
-    'WELL', 'SPG', 'O', 'DLR', 'VICI',
-    'CBRE', 'EXR', 'AVB', 'EQR', 'ARE',
-    'INVH', 'MAA', 'UDR', 'ESS', 'BXP',
-    'EL', 'LULU', 'TJX', 'ROST', 'ULTA',
-    'YUM', 'CMG', 'DPZ', 'MAR', 'HLT',
-    'RCL', 'CCL', 'DAL', 'UAL', 'AAL',
-    'GM', 'F', 'ORLY', 'AZO', 'GPC',
-    'ADP', 'PAYX', 'FI', 'FIS', 'GPN',
-    'ICE', 'CME', 'SPGI', 'MCO', 'MSCI',
-    'NDAQ', 'COF', 'USB', 'PNC', 'TFC',
-    'BK', 'STT', 'AON', 'MMC', 'AJG',
-    'BX', 'KKR', 'ARES', 'APO', 'RJF',
-    'AMP', 'DFS', 'MET', 'PRU', 'AFL',
-    'ALL', 'TRV', 'CB', 'PGR', 'AIG',
-    'HIG', 'CINF', 'WRB', 'BRO', 'ACGL',
-    'KLAC', 'SNPS', 'CDNS', 'MCHP', 'ADI',
-    'NXPI', 'ON', 'MPWR', 'MRVL', 'APH',
 ]
 
 
-def load_russell1000() -> List[str]:
-    """
-    Temporary safe universe loader.
-
-    The prior 1,429-symbol universe contained stale/delisted symbols that caused
-    the startup historical-bar loader to hang with bars_loaded=0. For now, force
-    the scanner to use a clean, active, tradable universe so the radar can produce
-    true historical-bar-based scores immediately. The first 250 are already
-    verified; the rest are pulled from Alpaca active assets.
-    """
-    use_clean = os.getenv("RADAR_USE_CLEAN_STARTER_UNIVERSE", "true").lower() not in ("0", "false", "no")
-    target = int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "750"))
-
-    if use_clean:
-        symbols = _build_active_clean_universe(target=target)
-        log.warning(f"Using active clean universe with {len(symbols)} symbols; target={target}")
-        return symbols
-
-    # Fallback path for later CSV restoration. Keep this available, but do not
-    # use it during the current clean-universe expansion unless explicitly enabled.
-    csv_path = pathlib.Path(__file__).parent / "data" / "russell1000.csv"
-    if not csv_path.exists():
-        log.warning("russell1000.csv not found — using active clean universe")
-        return _build_active_clean_universe(target=target)
-
-    symbols = []
-    with open(csv_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or line.lower().startswith("symbol"):
-                continue
-            sym = line.split(",")[0].strip().upper()
-            if sym and 1 <= len(sym) <= 8:
-                symbols.append(sym)
-
-    benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
-    for b in benchmarks:
-        if b not in symbols:
-            symbols.append(b)
-
-    log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
-    return symbols if symbols else _build_active_clean_universe(target=target)
-
-
-def _build_active_clean_universe(target: int = 750) -> List[str]:
-    """
-    Build a clean active universe.
-
-    Start with the verified base list, then expand using Alpaca active tradable
-    US equities. This avoids stale/delisted tickers while allowing the universe
-    to scale beyond the hand-verified 250 names.
-    """
-    target = max(int(target or 750), len(CLEAN_STARTER_UNIVERSE))
+def _sanitize_symbols(items, max_symbols: int | None = None) -> List[str]:
     out: List[str] = []
     seen: Set[str] = set()
 
@@ -283,12 +202,124 @@ def _build_active_clean_universe(target: int = 750) -> List[str]:
         sym = str(sym or "").strip().upper()
         if not sym or sym in seen:
             return
-        # Avoid unusual symbols that can break snapshot joins. Keep common class
-        # share format like BRK.B, but reject warrants/rights/units.
-        bad_markers = ["/", "^", "-", "=", "+", "WS", "WT", "W", "U", "R"]
         if len(sym) > 8:
             return
         if any(sym.endswith(m) for m in ["WS", "WT", "W", "U", "R"]):
+            return
+        if any(x in sym for x in ["/", "^", "=", "+"]):
+            return
+        out.append(sym)
+        seen.add(sym)
+
+    for item in items or []:
+        if isinstance(item, dict):
+            add(item.get("symbol") or item.get("ticker") or item.get("Symbol") or item.get("Ticker"))
+        else:
+            add(item)
+        if max_symbols and len(out) >= max_symbols:
+            break
+    return out
+
+
+def _load_symbols_from_csv_import(max_symbols: int | None = None) -> List[str]:
+    """
+    Safely read symbols from backend/csv_import.py without assuming one exact API.
+    This preserves compatibility with the existing app while letting csv_import be
+    the authoritative universe source.
+    """
+    try:
+        import csv_import as ci
+    except Exception as e:
+        log.warning(f"csv_import unavailable for universe loading: {e}")
+        return []
+
+    # Common function names.
+    for name in (
+        "get_symbols",
+        "load_symbols",
+        "get_universe",
+        "load_universe",
+        "get_active_symbols",
+        "load_active_symbols",
+        "get_active_universe",
+        "load_active_universe",
+    ):
+        fn = getattr(ci, name, None)
+        if callable(fn):
+            try:
+                data = fn()
+                symbols = _sanitize_symbols(data, max_symbols=max_symbols)
+                if symbols:
+                    log.info(f"Loaded {len(symbols)} symbols from csv_import.{name}()")
+                    return symbols
+            except Exception as e:
+                log.warning(f"csv_import.{name}() failed: {e}")
+
+    # Common variable names.
+    for name in (
+        "SYMBOLS",
+        "ACTIVE_SYMBOLS",
+        "ACTIVE_UNIVERSE",
+        "UNIVERSE",
+        "TICKERS",
+    ):
+        data = getattr(ci, name, None)
+        symbols = _sanitize_symbols(data, max_symbols=max_symbols)
+        if symbols:
+            log.info(f"Loaded {len(symbols)} symbols from csv_import.{name}")
+            return symbols
+
+    log.warning("csv_import imported, but no symbol loader/list was found")
+    return []
+
+
+def load_russell1000() -> List[str]:
+    """
+    Production universe loader.
+
+    1. Try csv_import.py first.
+    2. If csv_import does not expose a usable list, use active Alpaca assets.
+    3. Preserve benchmarks.
+    """
+    target = int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "1500"))
+    use_csv_import = os.getenv("RADAR_USE_CSV_IMPORT_UNIVERSE", "true").lower() not in ("0", "false", "no")
+
+    symbols: List[str] = []
+    if use_csv_import:
+        symbols = _load_symbols_from_csv_import(max_symbols=target)
+
+    if not symbols:
+        symbols = _build_active_clean_universe(target=target)
+        log.warning(f"Using active Alpaca universe fallback with {len(symbols)} symbols; target={target}")
+
+    benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
+    for b in benchmarks:
+        if b not in symbols:
+            symbols.append(b)
+
+    symbols = _sanitize_symbols(symbols, max_symbols=target)
+    log.info(f"Production radar universe loaded: {len(symbols)} symbols")
+    return symbols
+
+
+def _build_active_clean_universe(target: int = 1500) -> List[str]:
+    """
+    Build a clean active universe from Alpaca active tradable US equities.
+    Starts with verified major symbols, then fills from active assets.
+    """
+    target = max(int(target or 1500), len(CLEAN_STARTER_UNIVERSE))
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def add(sym: str):
+        sym = str(sym or "").strip().upper()
+        if not sym or sym in seen:
+            return
+        if len(sym) > 8:
+            return
+        if any(sym.endswith(m) for m in ["WS", "WT", "W", "U", "R"]):
+            return
+        if any(x in sym for x in ["/", "^", "=", "+"]):
             return
         out.append(sym)
         seen.add(sym)
@@ -296,8 +327,6 @@ def _build_active_clean_universe(target: int = 750) -> List[str]:
     for sym in CLEAN_STARTER_UNIVERSE:
         add(sym)
 
-    # Pull active Alpaca assets for expansion. If this fails, the verified base
-    # list still keeps the app live.
     try:
         asset_base = os.getenv("ALPACA_TRADING_BASE_URL", "https://api.alpaca.markets")
         r = _req.get(
@@ -323,14 +352,10 @@ def _build_active_clean_universe(target: int = 750) -> List[str]:
                         continue
                     if asset_class and asset_class not in ("us_equity", "us equity"):
                         continue
-                    if not sym or len(sym) > 8:
-                        continue
                     candidates.append(sym)
                 except Exception:
                     continue
 
-            # Stable ordering keeps deployments reproducible. The verified base
-            # list retains priority, then active assets fill the rest.
             for sym in sorted(set(candidates)):
                 if len(out) >= target:
                     break
@@ -345,7 +370,7 @@ def _build_active_clean_universe(target: int = 750) -> List[str]:
 
 
 def _fallback_universe() -> List[str]:
-    return _build_active_clean_universe(target=int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "750")))
+    return _build_active_clean_universe(target=int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "1500")))
 
 # ── Alpaca helpers ─────────────────────────────────────────────────────────────
 
