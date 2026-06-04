@@ -233,27 +233,47 @@ def fetch_snapshots(symbols: List[str]) -> dict:
     return results
 
 
-def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
+def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 260) -> dict:
+    """
+    Fetch enough historical daily bars for live setup classification.
+
+    Previous version used roughly 90 calendar days and the first scan could run
+    before bars finished loading. That caused most live rows to show:
+        setup_type = Insufficient data
+        regime = Neutral
+        relative_strength = 50
+        volume_pressure = 50
+
+    This version requests approximately 18 months of history and passes an
+    explicit limit so MA20/MA50/52-week context can be calculated reliably.
+    """
     results    = {}
-    start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+    lookback_days = 560 if timeframe == "1Day" else 10
+    start_date = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     for symbol in symbols:
         try:
             r = _req.get(
                 f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
                 headers=_alpaca_headers(),
                 params={
-                    "timeframe": timeframe, "start": start_date,
-                    "feed": ALPACA_FEED, "sort": "asc", "adjustment": "raw",
+                    "timeframe": timeframe,
+                    "start": start_date,
+                    "feed": ALPACA_FEED,
+                    "sort": "asc",
+                    "limit": limit,
+                    "adjustment": "raw",
                 },
-                timeout=10,
+                timeout=12,
             )
             if r.status_code == 200:
                 bars = r.json().get("bars") or []
                 if bars:
-                    results[symbol] = bars
+                    results[symbol] = bars[-limit:]
             elif r.status_code == 429:
                 log.warning("Rate limit during bar fetch — pausing 5s")
                 time.sleep(5)
+            else:
+                log.debug(f"Bar fetch {symbol}: {r.status_code} {r.text[:120]}")
         except Exception as e:
             log.debug(f"Bar fetch error {symbol}: {e}")
         time.sleep(0.02)
@@ -397,6 +417,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
                                      invalidation=invalidation,
                                      prev_status=prev_status, ma20=ma20, ma50=ma50)
     regime       = _infer_regime(change_pct, rel_vol, price, ma20, ma50)
+    weekly_regime = _infer_weekly_regime_from_daily(bars)
 
     # ── BME scoring ──────────────────────────────────────────────────────────
     bme_score  = None
@@ -437,6 +458,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "target1":           target1,
         "target2":           target2,
         "regime":            regime,
+        "weekly_regime":     weekly_regime,
         "vwap":              round(vwap, 2),
         "ma20":              round(ma20, 2),
         "ma50":              round(ma50, 2),
@@ -529,6 +551,76 @@ def _infer_regime(change_pct, rel_vol, price, ma20, ma50) -> str:
     if abs(change_pct) < 0.3 and rel_vol < 0.8: return "Compression"
     return "Neutral"
 
+
+def _infer_weekly_regime_from_daily(bars: list) -> str:
+    """Infer weekly trend/regime from daily bars without another API call."""
+    try:
+        if not bars or len(bars) < 60:
+            return "Insufficient Weekly Data"
+
+        # Build simple weekly bars from daily OHLCV.
+        buckets = {}
+        for b in bars:
+            ts = b.get("t")
+            if not ts:
+                continue
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            key = (dt.isocalendar().year, dt.isocalendar().week)
+            buckets.setdefault(key, []).append(b)
+
+        weekly = []
+        for key in sorted(buckets.keys()):
+            rows = buckets[key]
+            if not rows:
+                continue
+            weekly.append({
+                "t": rows[-1].get("t"),
+                "o": float(rows[0].get("o", 0) or 0),
+                "h": max(float(x.get("h", 0) or 0) for x in rows),
+                "l": min(float(x.get("l", 0) or 0) for x in rows),
+                "c": float(rows[-1].get("c", 0) or 0),
+                "v": sum(float(x.get("v", 0) or 0) for x in rows),
+            })
+
+        if len(weekly) < 12:
+            return "Insufficient Weekly Data"
+
+        closes = [float(w.get("c", 0) or 0) for w in weekly]
+        highs  = [float(w.get("h", 0) or 0) for w in weekly]
+        lows   = [float(w.get("l", 0) or 0) for w in weekly]
+        vols   = [float(w.get("v", 0) or 0) for w in weekly]
+
+        close = closes[-1]
+        prev = closes[-2] if len(closes) > 1 else close
+        ma10 = sum(closes[-10:]) / min(10, len(closes))
+        ma20 = sum(closes[-20:]) / min(20, len(closes))
+        avg_vol = sum(vols[-10:]) / min(10, len(vols)) if vols else 1
+        rel_vol = vols[-1] / avg_vol if avg_vol > 0 else 1
+        change = ((close - prev) / prev * 100) if prev > 0 else 0
+
+        recent_high = max(highs[-12:])
+        near_high = recent_high > 0 and (recent_high - close) / recent_high < 0.04
+        weak_close = close < (lows[-1] + (highs[-1] - lows[-1]) * 0.45)
+
+        if close > ma10 > ma20 and change >= 0:
+            if rel_vol >= 1.3 and change > 3:
+                return "Weekly FOMO / Expansion"
+            return "Weekly Markup"
+        if close > ma10 > ma20 and change < 0:
+            return "Weekly Pullback Within Markup"
+        if close < ma10 < ma20 and change <= 0:
+            if rel_vol >= 1.4 and change < -4:
+                return "Weekly Capitulation / Markdown"
+            return "Weekly Markdown"
+        if close < ma10 < ma20 and change > 0:
+            return "Weekly Bear Rally / Recovery Attempt"
+        if near_high and weak_close and rel_vol >= 1.1:
+            return "Weekly Distribution Risk"
+        return "Weekly Neutral"
+    except Exception as e:
+        log.debug(f"Weekly regime inference error: {e}")
+        return "Weekly Neutral"
+
 # ── Historical bars ────────────────────────────────────────────────────────────
 
 _historical_bars: Dict[str, list] = {}
@@ -541,7 +633,7 @@ def _refresh_historical_bars():
     _bars_loading = True
     log.info("Refreshing historical bars…")
     try:
-        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
+        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=260)
         for sym, bars in raw.items():
             _historical_bars[sym] = bars
         _bars_last_refresh = time.time()
@@ -695,7 +787,12 @@ def run_radar_scan():
         _populate_synthetic_cache()
         return
 
-    if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
+    # Historical bars are required for meaningful setup/probability scoring.
+    # First scan must load them synchronously; later refreshes can be background.
+    if not _historical_bars and not _bars_loading:
+        log.info("No historical bars loaded yet — loading synchronously before radar scan")
+        _refresh_historical_bars()
+    elif time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
 
     log.info(f"Radar scan starting — {len(SYMBOLS)} symbols (lightweight)")
@@ -723,6 +820,15 @@ def run_radar_scan():
         if not snap:
             continue
         bars = _historical_bars.get(symbol, [])
+        # If a symbol missed the bulk bar load, fetch it once before scoring.
+        if len(bars) < 20:
+            try:
+                one = fetch_bars_batch([symbol], timeframe="1Day", limit=260).get(symbol, [])
+                if one:
+                    _historical_bars[symbol] = one
+                    bars = one
+            except Exception as _bar_e:
+                log.debug(f"On-demand historical bar fetch failed {symbol}: {_bar_e}")
         try:
             result = score_symbol(symbol, snap, bars)
             if result and result.get("composite_score", 0) > 0:
