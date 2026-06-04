@@ -35,12 +35,12 @@ TF_TICKFMT    = {"1m": "%H:%M", "5m": "%H:%M", "15m": "%H:%M",
                  "1H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
 
 # ── Brand tokens ───────────────────────────────────────────────────────────────
+WHITE = "#FFFFFF"
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
 BLUE_DIM  = "#93c5fd"; MUTED = WHITE; TEXT = WHITE
-WHITE = "#FFFFFF"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
 PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
 GLOBAL_CSS = f"""
