@@ -181,8 +181,18 @@ def classify_transition_candidate(state: str, data: Dict[str, Any]) -> str:
     if "Distribution" in state:
         return "Distribution to Markdown"
 
-    if "Markup" in state and ("breakout" in setup or "trend" in setup or "momentum" in setup):
+    if "Markup" in state and "breakout" in setup:
+        return "Compression to Expansion Attempt"
+
+    if "Markup" in state and "trend" in setup:
         return "Markup Continuation"
+
+    if "Markup" in state and "momentum" in setup:
+        if delta >= 10:
+            return "Markup Continuation"
+        if delta <= -5:
+            return "Markup Exhaustion Watch"
+        return "No Clear Transition"
 
     if "Markdown" in state:
         return "Markdown Continuation"

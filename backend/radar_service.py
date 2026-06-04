@@ -625,13 +625,19 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
     if change_pct < -1 and price < ma20:
         return "Distribution"
 
-    if change_pct > 2 and price >= ma20:
+    if change_pct > 3 and price >= ma20 and ma20 >= ma50:
+        if rel_vol >= 1.3 and near_52w_high:
+            return "Momentum Leader"
         if rel_vol >= 1.1:
             return "Trend Continuation"
-        return "Momentum Leader"
+        return "Trend Continuation"
 
-    if change_pct > 1 and price >= ma20 and ma20 >= ma50:
-        return "Momentum Leader"
+    if change_pct > 1.5 and price >= ma20 and ma20 >= ma50:
+        if compressed and near_52w_high:
+            return "Compression Breakout Candidate"
+        if rel_vol >= 1.2:
+            return "Trend Continuation"
+        return "Monitoring"
 
     if compressed and near_52w_high:
         return "Compression Breakout Candidate"
