@@ -2063,26 +2063,73 @@ def get_probability_engine_status():
 
 
 @radar_router.get("/scores")
-def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0):
-    results = _attach_behavioral_transition_many(list(RADAR_CACHE.values()))
+def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_score: float = 0):
+    """
+    Fast radar scores endpoint.
+
+    Important production rule:
+    The backend may scan 1,500+ symbols, but this endpoint must not enrich and
+    serialize the entire universe on every frontend request. The frontend has
+    an 8-second timeout, so we rank from cached lightweight rows first, slice
+    the requested page, and only then attach the heavier behavioral/probability
+    display fields.
+    """
+    try:
+        limit = int(limit or 100)
+    except Exception:
+        limit = 100
+    try:
+        offset = int(offset or 0)
+    except Exception:
+        offset = 0
+
+    # Hard caps keep Dash/frontend calls fast even when the full universe is live.
+    limit = max(1, min(limit, 250))
+    offset = max(0, offset)
+
+    results = list(RADAR_CACHE.values())
+
     if status:
         results = [r for r in results if r.get("status") == status]
     if min_score > 0:
-        results = [r for r in results if r.get("composite_score", 0) >= min_score]
-    results.sort(
-        key=lambda x: (
-            x.get("opportunity_state") == "Armed",
-            x.get("opportunity_state") == "Setting Up",
-            float(x.get("expected_opportunity_score", 0) or 0),
-            float(x.get("historical_success", 0) or 0),
-            float(x.get("readiness_score", 0) or 0),
-            float(x.get("composite_score", 0) or 0),
-        ),
-        reverse=True,
-    )
+        results = [r for r in results if float(r.get("composite_score", 0) or 0) >= min_score]
+
+    total = len(results)
+
+    def _safe_float(row, key, default=0.0):
+        try:
+            return float(row.get(key, default) or default)
+        except Exception:
+            return default
+
+    def _rank_key(x):
+        opportunity_state = str(x.get("opportunity_state", ""))
+        return (
+            opportunity_state == "Armed",
+            opportunity_state == "Setting Up",
+            _safe_float(x, "expected_opportunity_score"),
+            _safe_float(x, "historical_success"),
+            _safe_float(x, "readiness_score"),
+            _safe_float(x, "edge_score"),
+            _safe_float(x, "composite_score"),
+        )
+
+    results.sort(key=_rank_key, reverse=True)
+
+    page = results[offset:offset + limit]
+
+    # Attach heavier transition/probability display information only to the page.
+    try:
+        page = _attach_behavioral_transition_many(page)
+    except Exception as e:
+        log.warning(f"Radar score enrichment failed; returning lightweight page: {e}")
+
     return {
-        "count":      len(results[:limit]),
-        "symbols":    results[:limit],
+        "count":      len(page),
+        "total":      total,
+        "limit":      limit,
+        "offset":     offset,
+        "symbols":    page,
         "last_scan":  LAST_SCAN_TIME,
         "data_delay": "15min" if ALPACA_FEED == "iex" else "live",
         "sort_mode":  "opportunity_state_probability_readiness_score",
