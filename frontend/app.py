@@ -21,13 +21,25 @@ import sys, pathlib
 # ── Safe preflight palette definitions ────────────────────────────────────────
 # These must exist before any global CSS f-strings are evaluated.
 WHITE = "#FFFFFF"
-BORDER = "rgba(148,163,184,.24)"
 TEXT = WHITE
 MUTED = WHITE
 TEXT_DIM = WHITE
 SUBTLE = WHITE
 GRAY = WHITE
 GRAY_DIM = WHITE
+
+NAVY = "#081827"
+NAVY_MID = "#0B1F35"
+NAVY_LIGHT = "#102A44"
+BORDER = "rgba(148,163,184,.24)"
+BORDER_T = "rgba(45,212,191,.55)"
+TEAL = "#2DD4BF"
+TEAL_DIM = "#34D399"
+TEAL_GLOW = "rgba(45,212,191,.16)"
+BLUE_DIM = "#93C5FD"
+YELLOW_DIM = "#FDE68A"
+RED_DIM = "#FB7185"
+PURPLE = "#C4B5FD"
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
     sanitize_symbol, create_live_update, get_key_levels,
