@@ -255,6 +255,15 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
 
+    log.info(
+        f"Fetching historical bars for {len(symbols)} symbols | "
+        f"timeframe={timeframe} limit={target_limit} "
+        f"start={start_date} end={end_date} feed={ALPACA_FEED}"
+    )
+
+    debug_samples = []
+    error_samples = []
+
     for symbol in symbols:
         try:
             params = {
@@ -279,21 +288,38 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
 
                 # Keep the most recent `limit` bars and ignore obviously empty rows.
                 cleaned = [b for b in bars if b.get("c") and b.get("v") is not None]
+                if len(debug_samples) < 8:
+                    debug_samples.append(f"{symbol}:status=200 raw={len(bars)} clean={len(cleaned)}")
+
                 if cleaned:
-                    results[symbol] = cleaned[-int(limit or 60):]
+                    results[symbol] = cleaned[-target_limit:]
                 else:
-                    log.debug(f"No usable historical bars for {symbol}")
+                    log.warning(f"No usable historical bars for {symbol}; raw={len(bars)}")
 
             elif r.status_code == 429:
+                msg = f"{symbol}:429 rate_limit"
+                if len(error_samples) < 8:
+                    error_samples.append(msg)
                 log.warning("Rate limit during bar fetch — pausing 5s")
                 time.sleep(5)
             else:
-                log.debug(f"Bar fetch {symbol} failed {r.status_code}: {r.text[:160]}")
+                msg = f"{symbol}:status={r.status_code} body={r.text[:160]}"
+                if len(error_samples) < 8:
+                    error_samples.append(msg)
+                log.warning(f"Bar fetch failed: {msg}")
 
         except Exception as e:
-            log.debug(f"Bar fetch error {symbol}: {e}")
+            msg = f"{symbol}:exception={e}"
+            if len(error_samples) < 8:
+                error_samples.append(msg)
+            log.warning(f"Bar fetch error: {msg}")
 
         time.sleep(0.02)
+
+    if debug_samples:
+        log.info("Historical bar sample responses: " + " | ".join(debug_samples))
+    if error_samples:
+        log.warning("Historical bar sample errors: " + " | ".join(error_samples))
 
     log.info(
         f"Bar fetch complete — {len(results)}/{len(symbols)} symbols "
@@ -794,6 +820,17 @@ def _refresh_historical_bars():
     try:
         target_limit = int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252"))
         raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=target_limit)
+        sample_raw = list(raw.items())[:8]
+        if sample_raw:
+            log.info(
+                "fetch_bars_batch returned "
+                + str(len(raw))
+                + " symbols; samples="
+                + " | ".join(f"{sym}:{len(bars)}" for sym, bars in sample_raw)
+            )
+        else:
+            log.warning("fetch_bars_batch returned 0 symbols")
+
         loaded = 0
         for sym, bars in raw.items():
             if bars:
