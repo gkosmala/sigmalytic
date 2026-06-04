@@ -80,6 +80,37 @@ def _bucket_readiness(score: float) -> str:
     return "<60 Low"
 
 
+
+def _bucket_rs(score: float) -> str:
+    if score >= 80:
+        return "RS80+"
+    if score >= 70:
+        return "RS70-79"
+    if score >= 60:
+        return "RS60-69"
+    return "RS<60"
+
+
+def _bucket_expansion(score: float) -> str:
+    if score >= 80:
+        return "EXP80+"
+    if score >= 70:
+        return "EXP70-79"
+    if score >= 60:
+        return "EXP60-69"
+    return "EXP<60"
+
+
+def _bucket_volume(score: float) -> str:
+    if score >= 80:
+        return "VOL80+"
+    if score >= 70:
+        return "VOL70-79"
+    if score >= 60:
+        return "VOL60-69"
+    return "VOL<60"
+
+
 def _profile_key(parts: list) -> str:
     return " | ".join(_clean(p) for p in parts)
 
@@ -100,6 +131,17 @@ def _confidence_label(matches: int) -> str:
     return "Insufficient"
 
 
+
+def _sigmalytic_edge_score(profile: dict) -> int:
+    score = (
+        _f(profile.get("opportunity_score")) * 0.40
+        + min(_f(profile.get("edge_ratio")) * 12.0, 25.0)
+        + min(_f(profile.get("expected_return")) * 4.0, 20.0)
+        + min(_f(profile.get("sample_confidence")) * 2.0, 15.0)
+    )
+    return int(max(0, min(round(score), 100)))
+
+
 def _unrated(reason: str = "Probability lookup unavailable") -> dict:
     return {
         "probability_available": False,
@@ -118,6 +160,7 @@ def _unrated(reason: str = "Probability lookup unavailable") -> dict:
         "probability_confidence": "Insufficient",
         "probability_setup_type": None,
         "probability_weekly_regime": None,
+        "edge_score": None,
     }
 
 
@@ -352,8 +395,23 @@ def _find_profile(row: dict, lookup: dict) -> dict:
     transition = _clean(row.get("transition_candidate"))
     opportunity_state = _clean(row.get("opportunity_state"))
 
+    rs_bucket = _bucket_rs(_f(row.get("relative_strength")))
+    expansion_bucket = _bucket_expansion(_f(row.get("expansion_node")))
+    volume_bucket = _bucket_volume(_f(row.get("volume_pressure")))
+
     candidates = [
-        ("strict_weekly_setup_transition_readiness", [weekly, setup, transition, readiness_bucket]),
+        (
+            "strict_weekly_setup_transition_readiness",
+            [
+                weekly,
+                setup,
+                transition,
+                readiness_bucket,
+                rs_bucket,
+                expansion_bucket,
+                volume_bucket,
+            ],
+        ),
         ("weekly_setup_transition", [weekly, setup, transition]),
         ("weekly_setup", [weekly, setup]),
         ("setup_transition", [setup, transition]),
@@ -424,12 +482,7 @@ def get_probability_profile(row: dict) -> dict:
             "probability_weekly_regime": enriched_row.get("probability_weekly_regime"),
             "probability_attempted_keys": profile.get("lookup_attempted_keys", []),
             "historical_probability_profile": profile,
-            "edge_score": max(0, min(round(
-                (_f(profile.get("opportunity_score")) * 0.40)
-                + min(_f(profile.get("edge_ratio")) * 12.0, 25.0)
-                + min(_f(profile.get("expected_return")) * 4.0, 20.0)
-                + min(_f(profile.get("sample_confidence")) * 2.0, 15.0)
-            ), 100)),
+            "edge_score": _sigmalytic_edge_score(profile),
         }
 
     except Exception as e:

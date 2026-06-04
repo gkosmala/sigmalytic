@@ -477,21 +477,52 @@ def _clamp(v: float, lo=0.0, hi=100.0) -> float:
 
 def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
                     high_52w, rel_vol, change_pct, closes) -> str:
-    if len(closes) < 5:
-        return "Insufficient data"
-    recent_range  = max(closes[-5:]) - min(closes[-5:])
-    avg_range     = atr * 5 if atr > 0 else recent_range
-    compressed    = recent_range < avg_range * 0.6
-    near_52w_high = high_52w > 0 and ((high_52w - price) / high_52w) < 0.03
-    if compressed and near_52w_high:                       return "Compression Breakout Candidate"
-    if compressed:                                          return "Volatility Expansion Candidate"
-    if change_pct > 2 and rel_vol > 1.5 and price > ma20: return "Trend Continuation"
-    if change_pct > 1 and price > ma20 > ma50:            return "Momentum Leader"
-    if change_pct < -3 and rel_vol > 1.5:                 return "Breakdown Risk"
-    if change_pct < -1 and price < ma20:                  return "Distribution"
-    if abs(change_pct) < 0.5 and rel_vol < 0.8:           return "Low Edge — Avoid"
-    return "Monitoring"
+    """
+    Live setup classifier.
 
+    Never return "Insufficient data" for live radar rows.
+    If historical bars are thin or not loaded yet, classify from the live
+    snapshot so the probability engine can match strict profiles instead of
+    falling back to broad weekly_regime_only buckets.
+    """
+    atr = atr if atr and atr > 0 else max(day_high - day_low, price * 0.01, 0.01)
+
+    if closes and len(closes) >= 5:
+        recent_range = max(closes[-5:]) - min(closes[-5:])
+    else:
+        recent_range = max(day_high - day_low, atr)
+
+    avg_range = atr * 5 if atr > 0 else recent_range
+    compressed = recent_range < avg_range * 0.75
+    near_52w_high = high_52w > 0 and ((high_52w - price) / high_52w) < 0.04
+
+    if change_pct < -3 and rel_vol >= 1.2:
+        return "Breakdown Risk"
+
+    if change_pct < -1 and price < ma20:
+        return "Distribution"
+
+    if change_pct > 2 and price >= ma20:
+        if rel_vol >= 1.1:
+            return "Trend Continuation"
+        return "Momentum Leader"
+
+    if change_pct > 1 and price >= ma20 and ma20 >= ma50:
+        return "Momentum Leader"
+
+    if compressed and near_52w_high:
+        return "Compression Breakout Candidate"
+
+    if compressed:
+        return "Volatility Expansion Candidate"
+
+    if near_52w_high and change_pct >= 0:
+        return "Compression Breakout Candidate"
+
+    if abs(change_pct) < 0.5 and rel_vol < 0.8:
+        return "Low Edge - Avoid"
+
+    return "Monitoring"
 
 def _determine_status(composite, expansion, rel_vol, change_pct,
                       price=0, trigger=0, invalidation=0,
