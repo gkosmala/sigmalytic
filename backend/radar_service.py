@@ -167,7 +167,7 @@ class WatchlistAdd(BaseModel):
 
 # ── Symbol universe ────────────────────────────────────────────────────────────
 
-# Controlled clean universe: expanded from the verified 20-symbol starter list.
+# Controlled clean universe: expanded from the verified 100-symbol list to 250 liquid active symbols.
 # Uses liquid active symbols so historical bars load before broad-universe expansion.
 CLEAN_STARTER_UNIVERSE = [
     'AAPL', 'MSFT', 'NVDA', 'GOOG', 'GOOGL',
@@ -190,6 +190,36 @@ CLEAN_STARTER_UNIVERSE = [
     'GEV', 'MMM', 'ETN', 'EMR', 'NOC',
     'PG', 'KO', 'PEP', 'CROX', 'CL',
     'KMB', 'MO', 'PM', 'MDLZ', 'GIS',
+    'AMGN', 'GILD', 'BMY', 'CVS', 'CI',
+    'HUM', 'ISRG', 'SYK', 'MDT', 'BSX',
+    'VRTX', 'REGN', 'ZTS', 'ELV', 'HCA',
+    'MCK', 'COR', 'CNC', 'EW', 'IDXX',
+    'NEE', 'DUK', 'SO', 'D', 'AEP',
+    'EXC', 'SRE', 'XEL', 'PEG', 'ED',
+    'WEC', 'EIX', 'PCG', 'AWK', 'ATO',
+    'NI', 'CMS', 'FE', 'PPL', 'AES',
+    'LIN', 'APD', 'SHW', 'ECL', 'FCX',
+    'NEM', 'DD', 'DOW', 'CTVA', 'ALB',
+    'MLM', 'VMC', 'NUE', 'STLD', 'CF',
+    'MOS', 'PKG', 'BALL', 'IFF', 'CE',
+    'PLD', 'AMT', 'EQIX', 'CCI', 'PSA',
+    'WELL', 'SPG', 'O', 'DLR', 'VICI',
+    'CBRE', 'EXR', 'AVB', 'EQR', 'ARE',
+    'INVH', 'MAA', 'UDR', 'ESS', 'BXP',
+    'EL', 'LULU', 'TJX', 'ROST', 'ULTA',
+    'YUM', 'CMG', 'DPZ', 'MAR', 'HLT',
+    'RCL', 'CCL', 'DAL', 'UAL', 'AAL',
+    'GM', 'F', 'ORLY', 'AZO', 'GPC',
+    'ADP', 'PAYX', 'FI', 'FIS', 'GPN',
+    'ICE', 'CME', 'SPGI', 'MCO', 'MSCI',
+    'NDAQ', 'COF', 'USB', 'PNC', 'TFC',
+    'BK', 'STT', 'AON', 'MMC', 'AJG',
+    'BX', 'KKR', 'ARES', 'APO', 'RJF',
+    'AMP', 'DFS', 'MET', 'PRU', 'AFL',
+    'ALL', 'TRV', 'CB', 'PGR', 'AIG',
+    'HIG', 'CINF', 'WRB', 'BRO', 'ACGL',
+    'KLAC', 'SNPS', 'CDNS', 'MCHP', 'ADI',
+    'NXPI', 'ON', 'MPWR', 'MRVL', 'APH',
 ]
 
 
@@ -199,7 +229,7 @@ def load_russell1000() -> List[str]:
 
     The prior 1,429-symbol universe contained stale/delisted symbols that caused
     the startup historical-bar loader to hang with bars_loaded=0. For now, force
-    the scanner to use a controlled clean universe so the radar can produce true
+    the scanner to use a controlled clean 250-symbol universe so the radar can produce true
     historical-bar-based scores immediately.
 
     To expand later, set RADAR_USE_CLEAN_STARTER_UNIVERSE=false and restore a
