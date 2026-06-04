@@ -121,6 +121,37 @@ def _bucket_composite(score: float) -> str:
     return "<60 Weak"
 
 
+
+def _bucket_rs(score: float) -> str:
+    if score >= 80:
+        return "RS80+"
+    if score >= 70:
+        return "RS70-79"
+    if score >= 60:
+        return "RS60-69"
+    return "RS<60"
+
+
+def _bucket_expansion(score: float) -> str:
+    if score >= 80:
+        return "EXP80+"
+    if score >= 70:
+        return "EXP70-79"
+    if score >= 60:
+        return "EXP60-69"
+    return "EXP<60"
+
+
+def _bucket_volume(score: float) -> str:
+    if score >= 80:
+        return "VOL80+"
+    if score >= 70:
+        return "VOL70-79"
+    if score >= 60:
+        return "VOL60-69"
+    return "VOL<60"
+
+
 def _safe_mean(values: List[float]) -> float:
     values = [v for v in values if v is not None and not math.isnan(v)]
     return statistics.mean(values) if values else 0.0
@@ -238,6 +269,12 @@ def build_profile(
                 key_parts.append(_bucket_readiness(_f(r.get("readiness_score"))))
             elif field == "composite_bucket":
                 key_parts.append(_bucket_composite(_f(r.get("composite_score"))))
+            elif field == "rs_bucket":
+                key_parts.append(_bucket_rs(_f(r.get("relative_strength"))))
+            elif field == "expansion_bucket":
+                key_parts.append(_bucket_expansion(_f(r.get("expansion_node"))))
+            elif field == "volume_bucket":
+                key_parts.append(_bucket_volume(_f(r.get("volume_pressure"))))
             else:
                 key_parts.append(_clean(r.get(field)))
 
@@ -335,7 +372,15 @@ def build_all_profiles(rows: List[dict], window: int, min_count: int) -> Dict[st
     definitions = [
         (
             "strict_weekly_setup_transition_readiness",
-            ["weekly_regime", "setup_type", "transition_candidate", "readiness_bucket"],
+            [
+                "weekly_regime",
+                "setup_type",
+                "transition_candidate",
+                "readiness_bucket",
+                "rs_bucket",
+                "expansion_bucket",
+                "volume_bucket",
+            ],
         ),
         (
             "weekly_setup_transition",
