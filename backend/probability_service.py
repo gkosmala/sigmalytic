@@ -400,6 +400,7 @@ def _find_profile(row: dict, lookup: dict) -> dict:
     volume_bucket = _bucket_volume(_f(row.get("volume_pressure")))
 
     candidates = [
+        # Exact strict match
         (
             "strict_weekly_setup_transition_readiness",
             [
@@ -412,6 +413,56 @@ def _find_profile(row: dict, lookup: dict) -> dict:
                 volume_bucket,
             ],
         ),
+
+        # Near-strict fallback #1:
+        # Keep weekly/setup/transition/readiness/RS/EXP, but fall back to the
+        # most common historical low-volume bucket when live volume differs.
+        (
+            "strict_weekly_setup_transition_readiness",
+            [
+                weekly,
+                setup,
+                transition,
+                readiness_bucket,
+                rs_bucket,
+                expansion_bucket,
+                "VOL<60",
+            ],
+        ),
+
+        # Near-strict fallback #2:
+        # Keep weekly/setup/transition/readiness/RS/VOL, but test the common
+        # historical expansion bucket that exists in the lookup.
+        (
+            "strict_weekly_setup_transition_readiness",
+            [
+                weekly,
+                setup,
+                transition,
+                readiness_bucket,
+                rs_bucket,
+                "EXP70-79",
+                volume_bucket,
+            ],
+        ),
+
+        # Near-strict fallback #3:
+        # Keep the important behavioral identity fields and RS/readiness, but
+        # use the closest available historical EXP/VOL buckets before broad fallback.
+        (
+            "strict_weekly_setup_transition_readiness",
+            [
+                weekly,
+                setup,
+                transition,
+                readiness_bucket,
+                rs_bucket,
+                "EXP70-79",
+                "VOL<60",
+            ],
+        ),
+
+        # Existing broad fallbacks
         ("weekly_setup_transition", [weekly, setup, transition]),
         ("weekly_setup", [weekly, setup]),
         ("setup_transition", [setup, transition]),
