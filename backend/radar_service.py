@@ -234,30 +234,68 @@ def fetch_snapshots(symbols: List[str]) -> dict:
 
 
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
-    results    = {}
-    start_date = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+    """
+    Fetch historical bars for the radar universe.
+
+    Important Alpaca behavior discovered in production:
+    calling /bars with only timeframe+limit can return only the current daily
+    bar. A real start/end window is required for usable MA20, MA50, ATR and
+    relative-volume calculations.
+    """
+    results = {}
+
+    # Use a wide calendar window so we reliably get 50+ trading sessions.
+    # Alpaca treats `end` as an upper bound, so use tomorrow to include today
+    # when the current daily bar is available.
+    end_dt = datetime.now(timezone.utc) + timedelta(days=1)
+    start_dt = end_dt - timedelta(days=140)
+    start_date = start_dt.strftime("%Y-%m-%d")
+    end_date = end_dt.strftime("%Y-%m-%d")
+
     for symbol in symbols:
         try:
+            params = {
+                "timeframe": timeframe,
+                "start": start_date,
+                "end": end_date,
+                "feed": ALPACA_FEED,
+                "sort": "asc",
+                "adjustment": "raw",
+                "limit": max(int(limit or 60), 60),
+            }
+
             r = _req.get(
                 f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
                 headers=_alpaca_headers(),
-                params={
-                    "timeframe": timeframe, "start": start_date,
-                    "feed": ALPACA_FEED, "sort": "asc", "adjustment": "raw",
-                },
-                timeout=10,
+                params=params,
+                timeout=12,
             )
+
             if r.status_code == 200:
                 bars = r.json().get("bars") or []
-                if bars:
-                    results[symbol] = bars
+
+                # Keep the most recent `limit` bars and ignore obviously empty rows.
+                cleaned = [b for b in bars if b.get("c") and b.get("v") is not None]
+                if cleaned:
+                    results[symbol] = cleaned[-int(limit or 60):]
+                else:
+                    log.debug(f"No usable historical bars for {symbol}")
+
             elif r.status_code == 429:
                 log.warning("Rate limit during bar fetch — pausing 5s")
                 time.sleep(5)
+            else:
+                log.debug(f"Bar fetch {symbol} failed {r.status_code}: {r.text[:160]}")
+
         except Exception as e:
             log.debug(f"Bar fetch error {symbol}: {e}")
+
         time.sleep(0.02)
-    log.info(f"Bar fetch complete — {len(results)}/{len(symbols)} symbols")
+
+    log.info(
+        f"Bar fetch complete — {len(results)}/{len(symbols)} symbols "
+        f"from {start_date} to {end_date}"
+    )
     return results
 
 
