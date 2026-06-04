@@ -352,20 +352,39 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         elif perf_1m > 0:  rel_strength += 5
         elif perf_1m < -5: rel_strength -= 15
         elif perf_1m < -2: rel_strength -= 8
-    if price > ma20 > ma50: rel_strength += 10
-    if price < ma20 < ma50: rel_strength -= 10
-    rel_strength = _clamp(rel_strength)
+        if price > ma20 > ma50: rel_strength += 10
+        if price < ma20 < ma50: rel_strength -= 10
+        rel_strength = _clamp(rel_strength)
+    else:
+        rel_strength = _fallback_relative_strength(
+            price=price,
+            vwap=vwap,
+            day_open=day_open,
+            prev_close=prev_close,
+            change_pct=change_pct,
+            rel_vol=rel_vol,
+        )
 
-    vol_pressure = 50.0
-    if rel_vol > 3.0:   vol_pressure += 30
-    elif rel_vol > 2.0: vol_pressure += 20
-    elif rel_vol > 1.5: vol_pressure += 12
-    elif rel_vol > 1.2: vol_pressure += 6
-    elif rel_vol < 0.7: vol_pressure -= 15
-    elif rel_vol < 0.5: vol_pressure -= 25
-    if change_pct > 0 and rel_vol > 1.5: vol_pressure += 5
-    if change_pct < 0 and rel_vol > 1.5: vol_pressure -= 5
-    vol_pressure = _clamp(vol_pressure)
+    if len(volumes) >= 20:
+        vol_pressure = 50.0
+        if rel_vol > 3.0:   vol_pressure += 30
+        elif rel_vol > 2.0: vol_pressure += 20
+        elif rel_vol > 1.5: vol_pressure += 12
+        elif rel_vol > 1.2: vol_pressure += 6
+        elif rel_vol < 0.7: vol_pressure -= 15
+        elif rel_vol < 0.5: vol_pressure -= 25
+        if change_pct > 0 and rel_vol > 1.5: vol_pressure += 5
+        if change_pct < 0 and rel_vol > 1.5: vol_pressure -= 5
+        vol_pressure = _clamp(vol_pressure)
+    else:
+        vol_pressure = _fallback_volume_pressure(
+            rel_vol=rel_vol,
+            change_pct=change_pct,
+            volume=volume,
+            price=price,
+            day_open=day_open,
+            vwap=vwap,
+        )
 
     behavioral = 50.0
     if day_close > day_open:        behavioral += 10
@@ -473,6 +492,110 @@ def _calc_atr(highs, lows, closes, period=14) -> float:
 
 def _clamp(v: float, lo=0.0, hi=100.0) -> float:
     return max(lo, min(hi, v))
+
+
+def _fallback_relative_strength(price: float, vwap: float, day_open: float,
+                                prev_close: float, change_pct: float,
+                                rel_vol: float) -> float:
+    """
+    Snapshot-based relative-strength proxy used when historical bars are not
+    ready. This is NOT RSI. It is a Sigmalytic 0-100 strength factor.
+    """
+    score = 50.0
+
+    if change_pct >= 5:
+        score += 25
+    elif change_pct >= 3:
+        score += 18
+    elif change_pct >= 2:
+        score += 12
+    elif change_pct >= 1:
+        score += 7
+    elif change_pct <= -5:
+        score -= 25
+    elif change_pct <= -3:
+        score -= 18
+    elif change_pct <= -2:
+        score -= 12
+    elif change_pct <= -1:
+        score -= 7
+
+    if price > vwap:
+        score += 6
+    elif price < vwap:
+        score -= 6
+
+    if price > day_open:
+        score += 5
+    elif price < day_open:
+        score -= 5
+
+    if price > prev_close:
+        score += 4
+    elif price < prev_close:
+        score -= 4
+
+    if rel_vol >= 2.0 and change_pct > 0:
+        score += 6
+    elif rel_vol >= 2.0 and change_pct < 0:
+        score -= 6
+
+    return _clamp(round(score, 1))
+
+
+def _fallback_volume_pressure(rel_vol: float, change_pct: float,
+                              volume: float, price: float,
+                              day_open: float, vwap: float) -> float:
+    """
+    Snapshot-based volume/pressure proxy used when avg-volume history is not
+    available. Keeps 50 as neutral, but separates strong buying/selling pressure.
+    """
+    score = 50.0
+
+    if rel_vol >= 3.0:
+        score += 28
+    elif rel_vol >= 2.0:
+        score += 20
+    elif rel_vol >= 1.5:
+        score += 12
+    elif rel_vol >= 1.2:
+        score += 6
+    elif rel_vol <= 0.5:
+        score -= 18
+    elif rel_vol <= 0.7:
+        score -= 10
+
+    if change_pct >= 4:
+        score += 14
+    elif change_pct >= 2:
+        score += 9
+    elif change_pct >= 1:
+        score += 5
+    elif change_pct <= -4:
+        score -= 14
+    elif change_pct <= -2:
+        score -= 9
+    elif change_pct <= -1:
+        score -= 5
+
+    if price > day_open and price > vwap:
+        score += 6
+    elif price < day_open and price < vwap:
+        score -= 6
+
+    # Absolute activity nudge. This avoids treating very active names and very
+    # inactive names as identical when avg-volume history is missing.
+    try:
+        if volume >= 5_000_000:
+            score += 5
+        elif volume >= 1_000_000:
+            score += 3
+        elif volume < 50_000:
+            score -= 4
+    except Exception:
+        pass
+
+    return _clamp(round(score, 1))
 
 
 def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
