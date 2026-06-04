@@ -40,7 +40,7 @@ TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
 BLUE_DIM  = "#93c5fd"; MUTED = WHITE; TEXT = WHITE
-WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
+WHITE = "#FFFFFF"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
 PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
 GLOBAL_CSS = f"""
@@ -1479,8 +1479,8 @@ def build_radar_tab(session=None):
                         "lineHeight":"1","textAlign":"right"
                     }),
                     html.Div("Readiness", style={
-                        "fontSize":"9px","fontWeight":"900","color":WHITE,
-                        "textTransform":"uppercase","letterSpacing":".12em","textAlign":"right"
+                        "fontSize":"10px","fontWeight":"950","color":WHITE,
+                        "textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"
                     }),
                     html.Div(_readiness_label(readiness), style={
                         "fontSize":"10px","fontWeight":"900","color":color,
@@ -1517,15 +1517,15 @@ def build_radar_tab(session=None):
             html.Div(style={"height":"12px"}),
 
             html.Div("Behavioral Transition", style={
-                "fontSize":"9px","fontWeight":"900","color":WHITE,
-                "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"
+                "fontSize":"10px","fontWeight":"950","color":WHITE,
+                "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"4px"
             }),
             html.Div(transition, style={
                 "fontSize":"14px","fontWeight":"900","color":WHITE,
                 "lineHeight":"1.25","minHeight":"34px"
             }),
             html.Div(behavioral_state, style={
-                "fontSize":"11px","fontWeight":"700","color":BLUE_DIM,
+                "fontSize":"12px","fontWeight":"900","color":WHITE,
                 "marginTop":"4px"
             }),
 
@@ -1533,15 +1533,15 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.Div("Trigger", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em"}),
+                    html.Div("Trigger", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(_fmt_money(trigger), style={"fontSize":"13px","fontWeight":"900","color":TEAL_DIM}),
                 ], style={"flex":"1"}),
                 html.Div([
-                    html.Div("Invalid", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em"}),
+                    html.Div("Invalid", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(_fmt_money(invalidation), style={"fontSize":"13px","fontWeight":"900","color":RED_DIM}),
                 ], style={"flex":"1"}),
                 html.Div([
-                    html.Div("Score", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em"}),
+                    html.Div("Score", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":YELLOW_DIM}),
                 ], style={"flex":"1"}),
             ], style={"display":"flex","gap":"10px"}),
@@ -1553,35 +1553,35 @@ def build_radar_tab(session=None):
                 "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"6px"
             }),
             html.Div(why, style={
-                "fontSize":"11px","color":WHITE,"lineHeight":"1.45",
+                "fontSize":"12px","color":WHITE,"fontWeight":"850","lineHeight":"1.45",
                 "minHeight":"44px"
             }),
 
             html.Div(style={"height":"10px"}),
 
             html.Div([
-                html.Div("Setup", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Div(setup, style={"fontSize":"11px","color":WHITE,"fontWeight":"800"}),
-                html.Div(f"{status} · {regime}", style={"fontSize":"10px","color":WHITE,"marginTop":"3px"}),
+                html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                html.Div(setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
+                html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
             ]),
 
             html.Div([
-                html.Div("Evidence", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginTop":"10px","marginBottom":"4px"}),
+                html.Div("Evidence", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"10px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"✓ {e}", style={"fontSize":"10px","color":WHITE,"lineHeight":"1.35","marginBottom":"3px"})
+                    html.Div(f"✓ {e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
                     for e in evidence[:4]
                 ] if evidence else [
-                    html.Div("No evidence details returned yet.", style={"fontSize":"10px","color":WHITE})
+                    html.Div("No evidence details returned yet.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
                 ]),
             ]),
 
             html.Div([
-                html.Div("Risk Notes", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginTop":"8px","marginBottom":"4px"}),
+                html.Div("Risk Notes", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"8px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"⚠ {r}", style={"fontSize":"10px","color":YELLOW_DIM,"lineHeight":"1.35","marginBottom":"3px"})
+                    html.Div(f"⚠ {r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
                     for r in risk_notes[:3]
                 ] if risk_notes else [
-                    html.Div("Risk defined by setup invalidation.", style={"fontSize":"10px","color":WHITE})
+                    html.Div("Risk defined by setup invalidation.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
                 ]),
             ]),
         ], style={
@@ -1667,19 +1667,19 @@ def build_radar_tab(session=None):
         })
 
     header = html.Div([
-        html.Span("Symbol", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Price", style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Chg%", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Ready", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
-        html.Span("Score", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
-        html.Span("State", style={"flex":"0 0 100px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
-        html.Span("Side", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
-        html.Span("Transition", style={"flex":"1.4","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","minWidth":"190px"}),
-        html.Span("Behavior", style={"flex":"1.2","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
-        html.Span("Setup", style={"flex":"1.1","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
-        html.Span("Status", style={"flex":"0 0 82px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
-        html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"right"}),
-        html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".1em","textAlign":"right"}),
+        html.Span("Symbol", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Price", style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Chg%", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Ready", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Score", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("State", style={"flex":"0 0 100px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Side", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Transition", style={"flex":"1.4","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"190px"}),
+        html.Span("Behavior", style={"flex":"1.2","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"160px"}),
+        html.Span("Setup", style={"flex":"1.1","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"160px"}),
+        html.Span("Status", style={"flex":"0 0 82px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
+        html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
     ], style={
         "display":"flex","gap":"10px","paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
@@ -1705,7 +1705,7 @@ def build_radar_tab(session=None):
                 ]),
                 html.Div([
                     html.Div(f"{len(signals)}", style={"fontSize":"20px","fontWeight":"950","color":WHITE,"textAlign":"right"}),
-                    html.Div("Candidates", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","textAlign":"right"}),
+                    html.Div("Candidates", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
                 ]),
             ], style={"display":"flex","justifyContent":"space-between","gap":"14px","alignItems":"flex-start","marginBottom":"16px"}),
 
@@ -1734,7 +1734,7 @@ def build_radar_tab(session=None):
                     "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
                 }),
                 html.Div("Sorted by Armed → Setting Up → Readiness Score. Use this table to see what may move next, not what already moved.",
-                         style={"fontSize":"11px","color":WHITE,"marginBottom":"12px"}),
+                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
                 html.Div([
                     header,
                     html.Div([_row(s) for s in signals] if signals else [
@@ -3358,7 +3358,23 @@ def add_csp_headers(response):
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
-<style>{GLOBAL_CSS}</style></head>
+<style>{GLOBAL_CSS}</style><style>
+/* SIGMALYTIC_GLOBAL_TEXT_CONTRAST_PATCH */
+.text-muted,
+.text-secondary,
+.muted,
+.subtitle,
+.description,
+.small,
+label,
+th,
+td,
+p,
+span,
+div {
+    text-shadow: none;
+}
+</style></head>
 <body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}
 <script>
 window._sigmaAudioCtx = null;
@@ -4103,3 +4119,6 @@ def logout(n):
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
+
+# SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
+# Note: Opportunity Dashboard inline styles already force descriptive text to WHITE.
