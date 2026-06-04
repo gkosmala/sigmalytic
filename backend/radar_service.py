@@ -167,8 +167,8 @@ class WatchlistAdd(BaseModel):
 
 # ── Symbol universe ────────────────────────────────────────────────────────────
 
-# Controlled clean universe: expanded from the verified 100-symbol list to 250 liquid active symbols.
-# Uses liquid active symbols so historical bars load before broad-universe expansion.
+# Controlled clean universe: base verified 250 symbols plus Alpaca active-asset expansion to 750.
+# Uses active tradable US equities and falls back to the verified list if Alpaca assets are unavailable.
 CLEAN_STARTER_UNIVERSE = [
     'AAPL', 'MSFT', 'NVDA', 'GOOG', 'GOOGL',
     'AMZN', 'META', 'TSLA', 'SPY', 'QQQ',
@@ -229,21 +229,24 @@ def load_russell1000() -> List[str]:
 
     The prior 1,429-symbol universe contained stale/delisted symbols that caused
     the startup historical-bar loader to hang with bars_loaded=0. For now, force
-    the scanner to use a controlled clean 250-symbol universe so the radar can produce true
-    historical-bar-based scores immediately.
-
-    To expand later, set RADAR_USE_CLEAN_STARTER_UNIVERSE=false and restore a
-    validated CSV-backed universe.
+    the scanner to use a clean, active, tradable universe so the radar can produce
+    true historical-bar-based scores immediately. The first 250 are already
+    verified; the rest are pulled from Alpaca active assets.
     """
     use_clean = os.getenv("RADAR_USE_CLEAN_STARTER_UNIVERSE", "true").lower() not in ("0", "false", "no")
-    if use_clean:
-        log.warning(f"Using CLEAN_STARTER_UNIVERSE with {len(CLEAN_STARTER_UNIVERSE)} verified symbols")
-        return list(CLEAN_STARTER_UNIVERSE)
+    target = int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "750"))
 
+    if use_clean:
+        symbols = _build_active_clean_universe(target=target)
+        log.warning(f"Using active clean universe with {len(symbols)} symbols; target={target}")
+        return symbols
+
+    # Fallback path for later CSV restoration. Keep this available, but do not
+    # use it during the current clean-universe expansion unless explicitly enabled.
     csv_path = pathlib.Path(__file__).parent / "data" / "russell1000.csv"
     if not csv_path.exists():
-        log.warning("russell1000.csv not found — using clean starter universe")
-        return list(CLEAN_STARTER_UNIVERSE)
+        log.warning("russell1000.csv not found — using active clean universe")
+        return _build_active_clean_universe(target=target)
 
     symbols = []
     with open(csv_path, "r") as f:
@@ -252,7 +255,7 @@ def load_russell1000() -> List[str]:
             if not line or line.startswith("#") or line.lower().startswith("symbol"):
                 continue
             sym = line.split(",")[0].strip().upper()
-            if sym and 1 <= len(sym) <= 5 and sym.isalpha():
+            if sym and 1 <= len(sym) <= 8:
                 symbols.append(sym)
 
     benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
@@ -261,11 +264,88 @@ def load_russell1000() -> List[str]:
             symbols.append(b)
 
     log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
-    return symbols if symbols else list(CLEAN_STARTER_UNIVERSE)
+    return symbols if symbols else _build_active_clean_universe(target=target)
+
+
+def _build_active_clean_universe(target: int = 750) -> List[str]:
+    """
+    Build a clean active universe.
+
+    Start with the verified base list, then expand using Alpaca active tradable
+    US equities. This avoids stale/delisted tickers while allowing the universe
+    to scale beyond the hand-verified 250 names.
+    """
+    target = max(int(target or 750), len(CLEAN_STARTER_UNIVERSE))
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def add(sym: str):
+        sym = str(sym or "").strip().upper()
+        if not sym or sym in seen:
+            return
+        # Avoid unusual symbols that can break snapshot joins. Keep common class
+        # share format like BRK.B, but reject warrants/rights/units.
+        bad_markers = ["/", "^", "-", "=", "+", "WS", "WT", "W", "U", "R"]
+        if len(sym) > 8:
+            return
+        if any(sym.endswith(m) for m in ["WS", "WT", "W", "U", "R"]):
+            return
+        out.append(sym)
+        seen.add(sym)
+
+    for sym in CLEAN_STARTER_UNIVERSE:
+        add(sym)
+
+    # Pull active Alpaca assets for expansion. If this fails, the verified base
+    # list still keeps the app live.
+    try:
+        asset_base = os.getenv("ALPACA_TRADING_BASE_URL", "https://api.alpaca.markets")
+        r = _req.get(
+            f"{asset_base}/v2/assets",
+            headers=_alpaca_headers(),
+            params={"status": "active", "asset_class": "us_equity"},
+            timeout=20,
+        )
+        if r.status_code == 200:
+            assets = r.json() if isinstance(r.json(), list) else []
+            allowed_exchanges = {"NYSE", "NASDAQ", "AMEX", "ARCA", "BATS"}
+            candidates = []
+            for a in assets:
+                try:
+                    sym = str(a.get("symbol", "")).upper().strip()
+                    exch = str(a.get("exchange", "")).upper().strip()
+                    status = str(a.get("status", "")).lower().strip()
+                    tradable = bool(a.get("tradable", False))
+                    asset_class = str(a.get("class", a.get("asset_class", ""))).lower()
+                    if status != "active" or not tradable:
+                        continue
+                    if exch and exch not in allowed_exchanges:
+                        continue
+                    if asset_class and asset_class not in ("us_equity", "us equity"):
+                        continue
+                    if not sym or len(sym) > 8:
+                        continue
+                    candidates.append(sym)
+                except Exception:
+                    continue
+
+            # Stable ordering keeps deployments reproducible. The verified base
+            # list retains priority, then active assets fill the rest.
+            for sym in sorted(set(candidates)):
+                if len(out) >= target:
+                    break
+                add(sym)
+            log.info(f"Active Alpaca universe expansion: assets={len(assets)} output={len(out)} target={target}")
+        else:
+            log.warning(f"Alpaca assets fetch failed {r.status_code}: {r.text[:160]}")
+    except Exception as e:
+        log.warning(f"Active universe expansion failed: {e}")
+
+    return out[:target]
 
 
 def _fallback_universe() -> List[str]:
-    return list(CLEAN_STARTER_UNIVERSE)
+    return _build_active_clean_universe(target=int(os.getenv("RADAR_CLEAN_UNIVERSE_TARGET", "750")))
 
 # ── Alpaca helpers ─────────────────────────────────────────────────────────────
 
