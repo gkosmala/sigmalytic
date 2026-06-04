@@ -60,6 +60,14 @@ except Exception as _bt:
     _BEHAVIORAL_TRANSITIONS_AVAILABLE = False
     logging.getLogger("radar").warning(f"Behavioral Transition Engine not loaded: {_bt}")
 
+# ── Historical Probability Service (safe import) ──────────────────────────────
+try:
+    from probability_service import get_probability_profile, probability_status
+    _PROBABILITY_SERVICE_AVAILABLE = True
+except Exception as _ps:
+    _PROBABILITY_SERVICE_AVAILABLE = False
+    logging.getLogger("radar").warning(f"Historical Probability Service not loaded: {_ps}")
+
 # ── Redis heartbeat client ─────────────────────────────────────────────────────
 try:
     _redis_url = os.getenv("REDIS_URL", "")
@@ -1381,6 +1389,26 @@ def _attach_behavioral_transition(row: dict) -> dict:
         enriched["evidence"] = bt.get("evidence")
         enriched["risk_notes"] = bt.get("risk_notes")
         enriched["trader_summary"] = bt.get("trader_summary")
+
+        # Historical Probability Engine
+        try:
+            if _PROBABILITY_SERVICE_AVAILABLE:
+                hp = get_probability_profile(enriched)
+                enriched.update(hp)
+
+                # Trader-facing aliases for frontend cards.
+                enriched["historical_success_rate"] = hp.get("historical_success")
+                enriched["historical_tradeable_rate"] = hp.get("historical_success")
+                enriched["historical_expected_return"] = hp.get("expected_return")
+                enriched["historical_edge_ratio"] = hp.get("edge_ratio")
+                enriched["historical_grade"] = hp.get("probability_grade")
+                enriched["historical_confidence"] = hp.get("probability_confidence")
+        except Exception as e:
+            try:
+                log.debug(f"Probability profile attach error {symbol if 'symbol' in locals() else row.get('symbol')}: {e}")
+            except Exception:
+                pass
+
         return enriched
 
     except Exception as e:
@@ -1546,6 +1574,24 @@ def debug_bars():
             "single_symbol": single_result}
 
 
+@radar_router.get("/probability-status")
+def get_probability_engine_status():
+    if not _PROBABILITY_SERVICE_AVAILABLE:
+        return {
+            "available": False,
+            "reason": "probability_service.py not loaded",
+        }
+    try:
+        return probability_status()
+    except Exception as e:
+        return {
+            "available": False,
+            "reason": str(e),
+        }
+
+
+
+
 @radar_router.get("/scores")
 def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0):
     results = _attach_behavioral_transition_many(list(RADAR_CACHE.values()))
@@ -1557,6 +1603,8 @@ def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0)
         key=lambda x: (
             x.get("opportunity_state") == "Armed",
             x.get("opportunity_state") == "Setting Up",
+            float(x.get("expected_opportunity_score", 0) or 0),
+            float(x.get("historical_success", 0) or 0),
             float(x.get("readiness_score", 0) or 0),
             float(x.get("composite_score", 0) or 0),
         ),
@@ -1567,7 +1615,7 @@ def get_radar_scores(limit: int = 100, status: str = None, min_score: float = 0)
         "symbols":    results[:limit],
         "last_scan":  LAST_SCAN_TIME,
         "data_delay": "15min" if ALPACA_FEED == "iex" else "live",
-        "sort_mode":  "opportunity_state_readiness_score",
+        "sort_mode":  "opportunity_state_probability_readiness_score",
     }
 
 
