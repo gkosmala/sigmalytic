@@ -233,7 +233,7 @@ def fetch_snapshots(symbols: List[str]) -> dict:
     return results
 
 
-def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 60) -> dict:
+def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252) -> dict:
     """
     Fetch historical bars for the radar universe.
 
@@ -244,11 +244,14 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
     """
     results = {}
 
-    # Use a wide calendar window so we reliably get 50+ trading sessions.
-    # Alpaca treats `end` as an upper bound, so use tomorrow to include today
-    # when the current daily bar is available.
+    # Use a wide calendar window so we reliably get enough trading sessions.
+    # Default target is 252 daily bars (about one trading year) so MA20, MA50,
+    # ATR14, relative volume, compression, and trend structure are real.
+    # Alpaca needs both start and end; otherwise it may only return today's bar.
+    target_limit = max(int(limit or 252), 60)
     end_dt = datetime.now(timezone.utc) + timedelta(days=1)
-    start_dt = end_dt - timedelta(days=140)
+    calendar_days = max(180, int(target_limit * 2.2))
+    start_dt = end_dt - timedelta(days=calendar_days)
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
 
@@ -261,7 +264,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 6
                 "feed": ALPACA_FEED,
                 "sort": "asc",
                 "adjustment": "raw",
-                "limit": max(int(limit or 60), 60),
+                "limit": target_limit,
             }
 
             r = _req.get(
@@ -789,11 +792,15 @@ def _refresh_historical_bars():
     _bars_loading = True
     log.info("Refreshing historical bars…")
     try:
-        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=60)
+        target_limit = int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252"))
+        raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=target_limit)
+        loaded = 0
         for sym, bars in raw.items():
-            _historical_bars[sym] = bars
+            if bars:
+                _historical_bars[sym] = bars[-target_limit:]
+                loaded += 1
         _bars_last_refresh = time.time()
-        log.info(f"Historical bars loaded for {len(_historical_bars)} symbols")
+        log.info(f"Historical bars loaded for {loaded}/{len(SYMBOLS)} symbols; cache={len(_historical_bars)}")
         # ── Trigger BME training immediately after bars load ───────────────────
         try:
             from behavioral_memory import train_batch as _bme_train
@@ -943,7 +950,14 @@ def run_radar_scan():
         _populate_synthetic_cache()
         return
 
-    if time.time() - _bars_last_refresh > 1800 and not _bars_loading:
+    # Critical: do not let the first live scan score the universe with empty
+    # historical bars. Empty bars force ma20=price, ma50=price, rel_volume=0/1,
+    # and collapse every symbol into the same setup bucket. On startup, load
+    # bars synchronously once; later refreshes can run in the background.
+    if not _historical_bars and not _bars_loading:
+        log.info("Historical bar cache empty — loading synchronously before first radar scan")
+        _refresh_historical_bars()
+    elif time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
 
     log.info(f"Radar scan starting — {len(SYMBOLS)} symbols (lightweight)")
