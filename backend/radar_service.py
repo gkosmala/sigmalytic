@@ -167,11 +167,37 @@ class WatchlistAdd(BaseModel):
 
 # ── Symbol universe ────────────────────────────────────────────────────────────
 
+# Emergency clean universe: verified on Render against Alpaca daily bars.
+# This bypasses stale/delisted tickers while we rebuild the full universe pipeline.
+CLEAN_STARTER_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "GOOG", "GOOGL", "AMZN", "META", "TSLA",
+    "SPY", "QQQ", "IWM", "GLD", "JPM", "GS", "GE", "AMD",
+    "AVGO", "NFLX", "COST", "WMT",
+]
+
+
 def load_russell1000() -> List[str]:
+    """
+    Temporary safe universe loader.
+
+    The prior 1,429-symbol universe contained stale/delisted symbols that caused
+    the startup historical-bar loader to hang with bars_loaded=0. For now, force
+    the scanner to use a clean Alpaca-verified starter universe so the radar can
+    produce true historical-bar-based scores immediately.
+
+    To expand later, set RADAR_USE_CLEAN_STARTER_UNIVERSE=false and restore a
+    validated CSV-backed universe.
+    """
+    use_clean = os.getenv("RADAR_USE_CLEAN_STARTER_UNIVERSE", "true").lower() not in ("0", "false", "no")
+    if use_clean:
+        log.warning(f"Using CLEAN_STARTER_UNIVERSE with {len(CLEAN_STARTER_UNIVERSE)} verified symbols")
+        return list(CLEAN_STARTER_UNIVERSE)
+
     csv_path = pathlib.Path(__file__).parent / "data" / "russell1000.csv"
     if not csv_path.exists():
-        log.warning("russell1000.csv not found — using fallback universe")
-        return _fallback_universe()
+        log.warning("russell1000.csv not found — using clean starter universe")
+        return list(CLEAN_STARTER_UNIVERSE)
+
     symbols = []
     with open(csv_path, "r") as f:
         for line in f:
@@ -181,25 +207,18 @@ def load_russell1000() -> List[str]:
             sym = line.split(",")[0].strip().upper()
             if sym and 1 <= len(sym) <= 5 and sym.isalpha():
                 symbols.append(sym)
-    log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
+
     benchmarks = ["SPY", "QQQ", "IWM", "GLD", "SMH"]
     for b in benchmarks:
         if b not in symbols:
             symbols.append(b)
-    return symbols if symbols else _fallback_universe()
+
+    log.info(f"Loaded {len(symbols)} symbols from russell1000.csv")
+    return symbols if symbols else list(CLEAN_STARTER_UNIVERSE)
 
 
 def _fallback_universe() -> List[str]:
-    return [
-        "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA",
-        "JPM","BAC","GS","MS","WFC",
-        "UNH","JNJ","PFE","ABBV","MRK",
-        "XOM","CVX","COP",
-        "HD","WMT","COST","TGT",
-        "CAT","BA","RTX","GE",
-        "AMD","INTC","QCOM","AVGO",
-        "SPY","QQQ","IWM",
-    ]
+    return list(CLEAN_STARTER_UNIVERSE)
 
 # ── Alpaca helpers ─────────────────────────────────────────────────────────────
 
