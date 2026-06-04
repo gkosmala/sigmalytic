@@ -167,12 +167,29 @@ class WatchlistAdd(BaseModel):
 
 # ── Symbol universe ────────────────────────────────────────────────────────────
 
-# Emergency clean universe: verified on Render against Alpaca daily bars.
-# This bypasses stale/delisted tickers while we rebuild the full universe pipeline.
+# Controlled clean universe: expanded from the verified 20-symbol starter list.
+# Uses liquid active symbols so historical bars load before broad-universe expansion.
 CLEAN_STARTER_UNIVERSE = [
-    "AAPL", "MSFT", "NVDA", "GOOG", "GOOGL", "AMZN", "META", "TSLA",
-    "SPY", "QQQ", "IWM", "GLD", "JPM", "GS", "GE", "AMD",
-    "AVGO", "NFLX", "COST", "WMT",
+    'AAPL', 'MSFT', 'NVDA', 'GOOG', 'GOOGL',
+    'AMZN', 'META', 'TSLA', 'SPY', 'QQQ',
+    'IWM', 'GLD', 'JPM', 'GS', 'GE',
+    'AMD', 'AVGO', 'NFLX', 'COST', 'WMT',
+    'BAC', 'WFC', 'MS', 'C', 'AXP',
+    'V', 'MA', 'PYPL', 'SCHW', 'BLK',
+    'BRK.B', 'UNH', 'JNJ', 'MRK', 'LLY',
+    'ABBV', 'PFE', 'TMO', 'ABT', 'DHR',
+    'XOM', 'CVX', 'COP', 'SLB', 'EOG',
+    'MPC', 'PSX', 'VLO', 'OXY', 'KMI',
+    'HD', 'LOW', 'TGT', 'NKE', 'MCD',
+    'SBUX', 'BKNG', 'DIS', 'CMCSA', 'T',
+    'ADBE', 'CRM', 'ORCL', 'INTC', 'QCOM',
+    'TXN', 'MU', 'AMAT', 'LRCX', 'NOW',
+    'PANW', 'CRWD', 'IBM', 'CSCO', 'UBER',
+    'SHOP', 'CAT', 'DE', 'BA', 'RTX',
+    'HON', 'LMT', 'UNP', 'UPS', 'FDX',
+    'GEV', 'MMM', 'ETN', 'EMR', 'NOC',
+    'PG', 'KO', 'PEP', 'CROX', 'CL',
+    'KMB', 'MO', 'PM', 'MDLZ', 'GIS',
 ]
 
 
@@ -182,8 +199,8 @@ def load_russell1000() -> List[str]:
 
     The prior 1,429-symbol universe contained stale/delisted symbols that caused
     the startup historical-bar loader to hang with bars_loaded=0. For now, force
-    the scanner to use a clean Alpaca-verified starter universe so the radar can
-    produce true historical-bar-based scores immediately.
+    the scanner to use a controlled clean universe so the radar can produce true
+    historical-bar-based scores immediately.
 
     To expand later, set RADAR_USE_CLEAN_STARTER_UNIVERSE=false and restore a
     validated CSV-backed universe.
