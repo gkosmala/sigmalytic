@@ -149,6 +149,7 @@ def _historical_edge_payload(row):
         "matches": row.get("historical_matches"),
         "confidence": row.get("probability_confidence") or row.get("historical_confidence"),
         "score": row.get("expected_opportunity_score"),
+        "edge_score": row.get("edge_score") or row.get("expected_opportunity_score"),
         "match_type": row.get("probability_match_type"),
         "setup": row.get("probability_setup_type") or row.get("setup_type"),
         "weekly": row.get("probability_weekly_regime") or row.get("weekly_regime"),
@@ -166,8 +167,8 @@ def historical_edge_card(row):
                 html.Div(str(grade), style={"fontSize":"30px","fontWeight":"900","color":grade_color,"lineHeight":"1"}),
             ], style={"minWidth":"76px"}),
             html.Div([
-                html.Div("Historical Success", style={"fontSize":"11px","color":WHITE}),
-                html.Div(_fmt_pct(p["success"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
+                html.Div("Edge Score", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_num(p.get("edge_score")), style={"fontSize":"22px","fontWeight":"900","color":grade_color}),
             ], style={"minWidth":"130px"}),
             html.Div([
                 html.Div("Expected Return", style={"fontSize":"11px","color":WHITE}),
@@ -1611,6 +1612,7 @@ def build_radar_tab(session=None):
         prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
         prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
         prob_score = _safe_float(s.get("expected_opportunity_score"))
+        edge_score = _safe_float(s.get("edge_score", prob_score))
         prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
         prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -1681,8 +1683,8 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.Div("Historical Success", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":WHITE}),
+                    html.Div("Edge Score", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{edge_score:.0f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_score >= 70 else YELLOW_DIM}),
                 ], style={"flex":"1"}),
                 html.Div([
                     html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
@@ -2323,7 +2325,7 @@ def build_scoreboard_tab(session=None):
                 _metric("Total Signals", f"{total_signals}", WHITE, "All logged signals"),
                 _metric("Evaluated", f"{with_outcomes}", TEAL_DIM, "Signals with outcomes"),
                 _metric("Pending", f"{pending_outcomes}", YELLOW_DIM if pending_outcomes else MUTED, "Awaiting outcome window"),
-                _metric("Historical Success", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} historical matches"),
+                _metric("Edge Quality", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, f"{with_outcomes} evaluated signals"),
                 _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
                 _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
                 _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
