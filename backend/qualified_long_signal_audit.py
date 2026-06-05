@@ -509,6 +509,157 @@ def summarize(rows: List[Dict[str, Any]], horizons: List[int]) -> List[Dict[str,
     return summary
 
 
+
+def _bucket_for_factor_attribution(grade: str) -> str:
+    grade = str(grade).upper()
+    return {
+        "A+": "A_PLUS_ONLY",
+        "A": "A_ONLY",
+        "A-": "A_MINUS_ONLY",
+        "B+": "B_PLUS_ONLY",
+        "B": "B_ONLY",
+        "B-": "B_MINUS_ONLY",
+        "C+": "C_PLUS_ONLY",
+        "C": "C_ONLY",
+        "C-": "C_MINUS_ONLY",
+    }.get(grade, f"GRADE_{grade}")
+
+
+def _avg_num(rows: List[Dict[str, Any]], field: str) -> Optional[float]:
+    vals: List[float] = []
+    for r in rows:
+        try:
+            v = r.get(field)
+            if v is None or v == "":
+                continue
+            fv = float(v)
+            if math.isfinite(fv):
+                vals.append(fv)
+        except Exception:
+            continue
+    return round(sum(vals) / len(vals), 4) if vals else None
+
+
+def summarize_factor_attribution(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Explains the factor composition of each pure grade bucket.
+
+    This does not change the audit math. It only answers:
+      - What does A+ actually contain?
+      - What does B+ actually contain?
+      - Why might B+ be outperforming A+?
+    """
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        bucket = _bucket_for_factor_attribution(str(r.get("grade", "")))
+        grouped[bucket].append(r)
+        grouped["ALL_QUALIFIED_LONGS"].append(r)
+
+    bucket_order = {
+        "A_PLUS_ONLY": 0,
+        "A_ONLY": 1,
+        "A_MINUS_ONLY": 2,
+        "B_PLUS_ONLY": 3,
+        "B_ONLY": 4,
+        "B_MINUS_ONLY": 5,
+        "C_PLUS_ONLY": 6,
+        "C_ONLY": 7,
+        "C_MINUS_ONLY": 8,
+        "ALL_QUALIFIED_LONGS": 99,
+    }
+
+    out: List[Dict[str, Any]] = []
+    for bucket, vals in sorted(grouped.items(), key=lambda kv: bucket_order.get(kv[0], 50)):
+        if not vals:
+            continue
+
+        # Useful derived measures from fields already produced by the audit.
+        above_ma20 = 0
+        above_ma50 = 0
+        ma20_ge_ma50 = 0
+        ma_spread_vals: List[float] = []
+        for r in vals:
+            try:
+                price = float(r.get("entry_close") or 0)
+                ma20 = float(r.get("ma20") or 0)
+                ma50 = float(r.get("ma50") or 0)
+                if price > ma20:
+                    above_ma20 += 1
+                if price > ma50:
+                    above_ma50 += 1
+                if ma20 >= ma50:
+                    ma20_ge_ma50 += 1
+                if price > 0 and ma50 > 0:
+                    ma_spread_vals.append(((ma20 - ma50) / price) * 100)
+            except Exception:
+                continue
+
+        n = len(vals)
+        setup_counts: Dict[str, int] = defaultdict(int)
+        for r in vals:
+            setup_counts[str(r.get("setup_type", "UNKNOWN"))] += 1
+        top_setup = max(setup_counts.items(), key=lambda kv: kv[1])[0] if setup_counts else ""
+
+        out.append({
+            "bucket": bucket,
+            "signals": n,
+            "avg_audit_score": _avg_num(vals, "audit_score"),
+            "avg_rs_2h": _avg_num(vals, "rs_2h"),
+            "avg_rs_daily": _avg_num(vals, "rs_daily"),
+            "avg_daily_rs_slope_pct": _avg_num(vals, "daily_rs_slope_pct"),
+            "avg_rel_volume": _avg_num(vals, "rel_volume"),
+            "pct_price_above_ma20": round((above_ma20 / n) * 100, 2) if n else None,
+            "pct_price_above_ma50": round((above_ma50 / n) * 100, 2) if n else None,
+            "pct_ma20_above_ma50": round((ma20_ge_ma50 / n) * 100, 2) if n else None,
+            "avg_ma20_minus_ma50_pct_of_price": round(sum(ma_spread_vals) / len(ma_spread_vals), 4) if ma_spread_vals else None,
+            "top_setup_type": top_setup,
+            "top_setup_count": setup_counts.get(top_setup, 0) if top_setup else 0,
+        })
+    return out
+
+
+def summarize_setup_breakdown(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Counts setup types inside each pure grade bucket.
+    This helps determine whether B+ is dominated by expansion/breakout/trend setups.
+    """
+    counts: Dict[Tuple[str, str], int] = defaultdict(int)
+    bucket_totals: Dict[str, int] = defaultdict(int)
+
+    for r in rows:
+        bucket = _bucket_for_factor_attribution(str(r.get("grade", "")))
+        setup = str(r.get("setup_type", "UNKNOWN"))
+        counts[(bucket, setup)] += 1
+        bucket_totals[bucket] += 1
+
+        counts[("ALL_QUALIFIED_LONGS", setup)] += 1
+        bucket_totals["ALL_QUALIFIED_LONGS"] += 1
+
+    bucket_order = {
+        "A_PLUS_ONLY": 0,
+        "A_ONLY": 1,
+        "A_MINUS_ONLY": 2,
+        "B_PLUS_ONLY": 3,
+        "B_ONLY": 4,
+        "B_MINUS_ONLY": 5,
+        "C_PLUS_ONLY": 6,
+        "C_ONLY": 7,
+        "C_MINUS_ONLY": 8,
+        "ALL_QUALIFIED_LONGS": 99,
+    }
+
+    out: List[Dict[str, Any]] = []
+    for (bucket, setup), count in sorted(counts.items(), key=lambda kv: (bucket_order.get(kv[0][0], 50), kv[0][1])):
+        total = bucket_totals.get(bucket, 0)
+        out.append({
+            "bucket": bucket,
+            "setup_type": setup,
+            "signals": count,
+            "bucket_pct": round((count / total) * 100, 2) if total else None,
+        })
+    return out
+
+
 def run_audit(args: argparse.Namespace) -> None:
     feed = args.feed or _env("ALPACA_FEED", "iex")
     end_dt = datetime.now(timezone.utc)
@@ -650,8 +801,12 @@ def run_audit(args: argparse.Namespace) -> None:
     rows_csv = output_dir / "qualified_long_signal_rows.csv"
     summary_json = output_dir / "qualified_long_signal_summary.json"
     summary_csv = output_dir / "qualified_long_signal_summary.csv"
+    factor_csv = output_dir / "qualified_long_signal_factor_attribution.csv"
+    setup_breakdown_csv = output_dir / "qualified_long_signal_setup_breakdown.csv"
 
     summary = summarize(signal_rows, horizons)
+    factor_summary = summarize_factor_attribution(signal_rows)
+    setup_breakdown = summarize_setup_breakdown(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -672,6 +827,23 @@ def run_audit(args: argparse.Namespace) -> None:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(summary)
+
+    with factor_csv.open("w", newline="") as f:
+        fields = [
+            "bucket", "signals", "avg_audit_score", "avg_rs_2h", "avg_rs_daily",
+            "avg_daily_rs_slope_pct", "avg_rel_volume",
+            "pct_price_above_ma20", "pct_price_above_ma50", "pct_ma20_above_ma50",
+            "avg_ma20_minus_ma50_pct_of_price", "top_setup_type", "top_setup_count",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(factor_summary)
+
+    with setup_breakdown_csv.open("w", newline="") as f:
+        fields = ["bucket", "setup_type", "signals", "bucket_pct"]
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(setup_breakdown)
 
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -695,9 +867,13 @@ def run_audit(args: argparse.Namespace) -> None:
         },
         "total_signals": len(signal_rows),
         "summary": summary,
+        "factor_attribution": factor_summary,
+        "setup_breakdown": setup_breakdown,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
+            "factor_csv": str(factor_csv),
+            "setup_breakdown_csv": str(setup_breakdown_csv),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -707,6 +883,19 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"Rows:    {rows_csv}")
     print(f"Summary: {summary_json}")
     print(f"CSV:     {summary_csv}")
+    print(f"Factors: {factor_csv}")
+    print(f"Setups:  {setup_breakdown_csv}")
+
+    factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
+    print("\nFactor attribution:")
+    for s in factor_summary:
+        if s["bucket"] in factor_preview_buckets:
+            print(
+                f"{s['bucket']:22s} n={s['signals']:>5} "
+                f"score={s['avg_audit_score']} rs2h={s['avg_rs_2h']} "
+                f"rsD={s['avg_rs_daily']} slope={s['avg_daily_rs_slope_pct']} "
+                f"relVol={s['avg_rel_volume']} topSetup={s['top_setup_type']}({s['top_setup_count']})"
+            )
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
