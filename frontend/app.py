@@ -167,8 +167,8 @@ def historical_edge_card(row):
                 html.Div(str(grade), style={"fontSize":"30px","fontWeight":"900","color":grade_color,"lineHeight":"1"}),
             ], style={"minWidth":"76px"}),
             html.Div([
-                html.Div("Edge Score", style={"fontSize":"11px","color":WHITE}),
-                html.Div(_fmt_num(p.get("edge_score")), style={"fontSize":"22px","fontWeight":"900","color":grade_color}),
+                html.Div("Probability", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_pct(p["success"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
             ], style={"minWidth":"130px"}),
             html.Div([
                 html.Div("Expected Return", style={"fontSize":"11px","color":WHITE}),
@@ -1683,16 +1683,20 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.Div("Edge Score", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(f"{edge_score:.0f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_score >= 70 else YELLOW_DIM}),
+                    html.Div("Probability", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if hist_success >= 55 else YELLOW_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM}),
                 ], style={"flex":"1"}),
                 html.Div([
                     html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
                 ], style={"flex":"1"}),
                 html.Div([
-                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":YELLOW_DIM}),
+                    html.Div("Grade", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(prob_grade, style={"fontSize":"18px","fontWeight":"950","color":grade_color}),
                 ], style={"flex":"1"}),
             ], style={"display":"flex","gap":"10px","padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.035)"}),
 
@@ -2325,7 +2329,7 @@ def build_scoreboard_tab(session=None):
                 _metric("Total Signals", f"{total_signals}", WHITE, "All logged signals"),
                 _metric("Evaluated", f"{with_outcomes}", TEAL_DIM, "Signals with outcomes"),
                 _metric("Pending", f"{pending_outcomes}", YELLOW_DIM if pending_outcomes else MUTED, "Awaiting outcome window"),
-                _metric("Edge Quality", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, f"{with_outcomes} evaluated signals"),
+                _metric("Direction Accuracy", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} evaluated signals"),
                 _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
                 _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
                 _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
