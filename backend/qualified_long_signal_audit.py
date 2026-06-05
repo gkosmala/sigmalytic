@@ -443,16 +443,43 @@ def forward_metrics(bars: List[Bar], idx: int, horizon: int) -> Optional[Dict[st
 def summarize(rows: List[Dict[str, Any]], horizons: List[int]) -> List[Dict[str, Any]]:
     groups: Dict[Tuple[str, str, int], List[Dict[str, Any]]] = defaultdict(list)
 
+    exact_grade_buckets = {
+        "A_PLUS_ONLY": {"A+"},
+        "A_ONLY": {"A"},
+        "A_MINUS_ONLY": {"A-"},
+        "B_PLUS_ONLY": {"B+"},
+        "B_ONLY": {"B"},
+        "B_MINUS_ONLY": {"B-"},
+        "C_PLUS_ONLY": {"C+"},
+        "C_ONLY": {"C"},
+        "C_MINUS_ONLY": {"C-"},
+    }
+
     for r in rows:
-        grade = r["grade"]
+        grade = str(r["grade"]).upper()
         setup = r["setup_type"]
-        for bucket in ["C_AND_ABOVE", "B_AND_ABOVE", "A_MINUS_AND_ABOVE", f"GRADE_{grade}", f"SETUP_{setup}"]:
-            if bucket == "C_AND_ABOVE" and not grade_at_least(grade, "C"):
-                continue
-            if bucket == "B_AND_ABOVE" and not grade_at_least(grade, "B"):
-                continue
-            if bucket == "A_MINUS_AND_ABOVE" and not grade_at_least(grade, "A-"):
-                continue
+
+        buckets: List[str] = [
+            "ALL_QUALIFIED_LONGS",
+            f"GRADE_{grade}",
+            f"SETUP_{setup}",
+        ]
+
+        # Keep the original cumulative buckets for comparison.
+        if grade_at_least(grade, "C"):
+            buckets.append("C_AND_ABOVE")
+        if grade_at_least(grade, "B"):
+            buckets.append("B_AND_ABOVE")
+        if grade_at_least(grade, "A-"):
+            buckets.append("A_MINUS_AND_ABOVE")
+
+        # Add pure, non-overlapping grade buckets so we can test whether
+        # A trades actually outperform B trades without cumulative-bucket distortion.
+        for bucket_name, allowed_grades in exact_grade_buckets.items():
+            if grade in allowed_grades:
+                buckets.append(bucket_name)
+
+        for bucket in buckets:
             for h in horizons:
                 key = f"h{h}"
                 if key in r and isinstance(r[key], dict):
@@ -681,13 +708,37 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"Summary: {summary_json}")
     print(f"CSV:     {summary_csv}")
 
-    # Console preview: best B+ / A- buckets across horizons.
-    preview = [s for s in summary if s["bucket"] in {"B_AND_ABOVE", "A_MINUS_AND_ABOVE", "C_AND_ABOVE"}]
-    preview = sorted(preview, key=lambda x: (x["bucket"], x["horizon_days"]))
+    # Console preview: pure grade buckets first, then cumulative buckets for comparison.
+    preview_buckets = {
+        "A_PLUS_ONLY",
+        "A_ONLY",
+        "A_MINUS_ONLY",
+        "B_PLUS_ONLY",
+        "B_ONLY",
+        "C_ONLY",
+        "ALL_QUALIFIED_LONGS",
+        "A_MINUS_AND_ABOVE",
+        "B_AND_ABOVE",
+        "C_AND_ABOVE",
+    }
+    preview = [s for s in summary if s["bucket"] in preview_buckets]
+    preview_order = {
+        "A_PLUS_ONLY": 0,
+        "A_ONLY": 1,
+        "A_MINUS_ONLY": 2,
+        "B_PLUS_ONLY": 3,
+        "B_ONLY": 4,
+        "C_ONLY": 5,
+        "ALL_QUALIFIED_LONGS": 6,
+        "A_MINUS_AND_ABOVE": 7,
+        "B_AND_ABOVE": 8,
+        "C_AND_ABOVE": 9,
+    }
+    preview = sorted(preview, key=lambda x: (preview_order.get(x["bucket"], 99), x["horizon_days"]))
     print("\nKey summary:")
     for s in preview:
         print(
-            f"{s['bucket']:18s} h={s['horizon_days']:>3} "
+            f"{s['bucket']:22s} h={s['horizon_days']:>3} "
             f"n={s['signals']:>5} acc={s['direction_accuracy_pct']:>6.2f}% "
             f"avg={s['avg_return_pct']:>7.3f}% edge={s['edge_ratio']}"
         )
