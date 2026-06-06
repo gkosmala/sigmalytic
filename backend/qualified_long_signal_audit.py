@@ -897,6 +897,60 @@ def run_audit(args: argparse.Namespace) -> None:
                 f"relVol={s['avg_rel_volume']} topSetup={s['top_setup_type']}({s['top_setup_count']})"
             )
 
+    # ---------------------------------------------------------
+    # SETUP ALPHA ANALYSIS
+    # ---------------------------------------------------------
+    # This section does NOT change the audit math. It simply ranks
+    # the long setup types by their 90-day forward return so we can
+    # identify where the actual alpha is coming from.
+    setup_alpha: Dict[str, List[float]] = defaultdict(list)
+    setup_accuracy: Dict[str, List[float]] = defaultdict(list)
+    setup_edge_vals: Dict[str, List[Dict[str, float]]] = defaultdict(list)
+
+    for r in signal_rows:
+        setup = str(r.get("setup_type", "UNKNOWN"))
+        h90 = r.get("h90")
+        if isinstance(h90, dict):
+            try:
+                setup_alpha[setup].append(float(h90.get("return_pct", 0.0)))
+                setup_accuracy[setup].append(float(h90.get("direction_correct", 0.0)))
+                setup_edge_vals[setup].append({
+                    "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                    "mae_pct": float(h90.get("mae_pct", 0.0)),
+                })
+            except Exception:
+                continue
+
+    print("\nSetup Alpha Summary:")
+    print("-" * 96)
+
+    setup_rank: List[Tuple[str, int, float, float, Optional[float]]] = []
+    for setup, returns in setup_alpha.items():
+        if len(returns) < 25:
+            continue
+
+        count = len(returns)
+        avg_return = sum(returns) / count
+        acc = (sum(setup_accuracy.get(setup, [])) / count) * 100 if count else 0.0
+
+        edge_items = setup_edge_vals.get(setup, [])
+        avg_mfe = sum(x["mfe_pct"] for x in edge_items) / len(edge_items) if edge_items else 0.0
+        avg_mae = sum(x["mae_pct"] for x in edge_items) / len(edge_items) if edge_items else 0.0
+        edge_ratio = (avg_mfe / abs(avg_mae)) if avg_mae < 0 else None
+
+        setup_rank.append((setup, count, avg_return, acc, edge_ratio))
+
+    setup_rank.sort(key=lambda x: x[2], reverse=True)
+
+    for setup, count, avg_return, acc, edge_ratio in setup_rank:
+        print(
+            f"{setup:<38} "
+            f"n={count:>6} "
+            f"acc90={acc:>6.2f}% "
+            f"avg90={avg_return:>8.3f}% "
+            f"edge90={round(edge_ratio, 3) if edge_ratio is not None else None}"
+        )
+
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
         "A_PLUS_ONLY",
