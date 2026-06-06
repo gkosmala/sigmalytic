@@ -1323,6 +1323,213 @@ def summarize_volatility_rs_distance_relvol_matrix(rows: List[Dict[str, Any]]) -
         for name, bucket_map in grouped.items()
     }
 
+
+# -----------------------------------------------------------------------------
+# Wyckoff / Weis Phase 1: Effort vs Result
+# -----------------------------------------------------------------------------
+
+def _true_range(bars: List[Bar], idx: int) -> float:
+    if idx <= 0:
+        return max(0.0, bars[idx].h - bars[idx].l)
+    prev_close = bars[idx - 1].c
+    return max(
+        bars[idx].h - bars[idx].l,
+        abs(bars[idx].h - prev_close),
+        abs(bars[idx].l - prev_close),
+    )
+
+
+def _atr_pct(bars: List[Bar], idx: int, length: int = 20) -> Optional[float]:
+    if idx <= 0:
+        return None
+    start = max(1, idx - length + 1)
+    vals = [_true_range(bars, j) for j in range(start, idx + 1)]
+    if not vals or bars[idx].c <= 0:
+        return None
+    return (sum(vals) / len(vals)) / bars[idx].c * 100.0
+
+
+def _effort_bucket(rel_vol: float) -> str:
+    if rel_vol < 0.8:
+        return "EFFORT_LOW_UNDER_0_8X"
+    if rel_vol < 1.0:
+        return "EFFORT_QUIET_0_8_1_0X"
+    if rel_vol < 1.5:
+        return "EFFORT_NORMAL_1_0_1_5X"
+    if rel_vol < 2.0:
+        return "EFFORT_HIGH_1_5_2_0X"
+    if rel_vol < 3.0:
+        return "EFFORT_VERY_HIGH_2_0_3_0X"
+    return "EFFORT_CLIMAX_3X_PLUS"
+
+
+def _result_bucket(norm_result: float) -> str:
+    # norm_result = close-to-close return divided by ATR%.
+    # Positive means progress up; negative means progress down.
+    if norm_result >= 0.75:
+        return "RESULT_STRONG_UP"
+    if norm_result >= 0.25:
+        return "RESULT_MODEST_UP"
+    if norm_result > -0.25:
+        return "RESULT_LOW_PROGRESS"
+    if norm_result > -0.75:
+        return "RESULT_MODEST_DOWN"
+    return "RESULT_STRONG_DOWN"
+
+
+def _er_interpretation(effort_bucket: str, result_bucket: str, dist_from_high_pct: Optional[float]) -> str:
+    high_effort = effort_bucket in {"EFFORT_HIGH_1_5_2_0X", "EFFORT_VERY_HIGH_2_0_3_0X", "EFFORT_CLIMAX_3X_PLUS"}
+    low_effort = effort_bucket in {"EFFORT_LOW_UNDER_0_8X", "EFFORT_QUIET_0_8_1_0X"}
+    low_result = result_bucket == "RESULT_LOW_PROGRESS"
+    up_result = result_bucket in {"RESULT_MODEST_UP", "RESULT_STRONG_UP"}
+    down_result = result_bucket in {"RESULT_MODEST_DOWN", "RESULT_STRONG_DOWN"}
+    far_off = False
+    near_high = False
+    try:
+        if dist_from_high_pct is not None and math.isfinite(float(dist_from_high_pct)):
+            far_off = float(dist_from_high_pct) <= -20.0
+            near_high = float(dist_from_high_pct) > -5.0
+    except Exception:
+        pass
+
+    if high_effort and low_result and far_off:
+        return "ABSORPTION_CANDIDATE_HIGH_EFFORT_LOW_RESULT_FAR_OFF_HIGH"
+    if high_effort and low_result and near_high:
+        return "DISTRIBUTION_RISK_HIGH_EFFORT_LOW_RESULT_NEAR_HIGH"
+    if high_effort and low_result:
+        return "EFFORT_RESULT_DIVERGENCE_HIGH_EFFORT_LOW_RESULT"
+    if high_effort and up_result:
+        return "DEMAND_CONFIRMATION_HIGH_EFFORT_UP_RESULT"
+    if high_effort and down_result:
+        return "SUPPLY_CONFIRMATION_HIGH_EFFORT_DOWN_RESULT"
+    if low_effort and up_result:
+        return "NO_SUPPLY_UPDRIFT_LOW_EFFORT_UP_RESULT"
+    if low_effort and down_result:
+        return "NO_DEMAND_DECLINE_LOW_EFFORT_DOWN_RESULT"
+    if low_effort and low_result:
+        return "LOW_INTEREST_EQUILIBRIUM_LOW_EFFORT_LOW_RESULT"
+    if up_result:
+        return "NORMAL_EFFORT_UP_RESULT"
+    if down_result:
+        return "NORMAL_EFFORT_DOWN_RESULT"
+    return "NORMAL_EFFORT_LOW_RESULT"
+
+
+def _distance_bucket_from_value(value: Any) -> str:
+    try:
+        d = float(value)
+    except Exception:
+        return "HIGH_DISTANCE_UNKNOWN"
+    if not math.isfinite(d):
+        return "HIGH_DISTANCE_UNKNOWN"
+    if d <= -20.0:
+        return "HIGH_DISTANCE_20PCT_PLUS_OFF"
+    if d <= -10.0:
+        return "HIGH_DISTANCE_10_20PCT_OFF"
+    if d <= -5.0:
+        return "HIGH_DISTANCE_5_10PCT_OFF"
+    return "HIGH_DISTANCE_0_5PCT_OFF"
+
+
+def summarize_wyckoff_effort_result(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Wyckoff / Weis Phase 1 study: Effort vs Result.
+
+    Purpose:
+      Test whether price progress relative to volume adds forward-return
+      information on top of the completed volatility study.
+
+    Definitions:
+      Effort = relative volume bucket.
+      Result = close-to-close price progress normalized by ATR.
+      Divergence = high effort with low progress.
+      Harmony = high effort with strong directional progress.
+
+    This is intentionally not a pattern detector. It is the behavioral bridge
+    between the volatility alpha map and later Wyckoff structures.
+    """
+    grouped: Dict[str, Dict[str, List[Dict[str, float]]]] = {
+        "single_bar_effort_x_result": defaultdict(list),
+        "single_bar_interpretation": defaultdict(list),
+        "five_bar_effort_x_result": defaultdict(list),
+        "five_bar_interpretation": defaultdict(list),
+        "vol_exp_single_bar_interpretation": defaultdict(list),
+        "vol_exp_five_bar_interpretation": defaultdict(list),
+        "vol_exp_20off_single_bar_interpretation": defaultdict(list),
+        "vol_exp_20off_five_bar_interpretation": defaultdict(list),
+        "vol_exp_late_single_bar_interpretation": defaultdict(list),
+        "vol_exp_late_five_bar_interpretation": defaultdict(list),
+        "top_vol_state_single_bar_interpretation": defaultdict(list),
+        "top_vol_state_five_bar_interpretation": defaultdict(list),
+        "effort_result_x_distance": defaultdict(list),
+        "effort_result_x_rs2h": defaultdict(list),
+    }
+
+    def payload_from_h90(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h90 = r.get("h90")
+        if not isinstance(h90, dict):
+            return None
+        try:
+            return {
+                "direction_correct": float(h90.get("direction_correct", 0.0)),
+                "return_pct": float(h90.get("return_pct", 0.0)),
+                "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                "mae_pct": float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    rs_2h_buckets = [
+        (0, 60, "RS2H_50_60"),
+        (60, 70, "RS2H_60_70"),
+        (70, 80, "RS2H_70_80"),
+        (80, 90, "RS2H_80_90"),
+        (90, 101, "RS2H_90_100"),
+    ]
+
+    for r in rows:
+        payload = payload_from_h90(r)
+        if not payload:
+            continue
+
+        er_effort = str(r.get("er1_effort_bucket", "UNKNOWN"))
+        er_result = str(r.get("er1_result_bucket", "UNKNOWN"))
+        er_interp = str(r.get("er1_interpretation", "UNKNOWN"))
+        er5_effort = str(r.get("er5_effort_bucket", "UNKNOWN"))
+        er5_result = str(r.get("er5_result_bucket", "UNKNOWN"))
+        er5_interp = str(r.get("er5_interpretation", "UNKNOWN"))
+        setup = str(r.get("setup_type", ""))
+        phase = str(r.get("expansion_phase_bucket", ""))
+        dist = _distance_bucket_from_value(r.get("distance_from_252_high_pct"))
+        rs2h = _bucket_numeric(r.get("rs_2h"), rs_2h_buckets)
+
+        grouped["single_bar_effort_x_result"][f"{er_effort}|{er_result}"].append(payload)
+        grouped["single_bar_interpretation"][er_interp].append(payload)
+        grouped["five_bar_effort_x_result"][f"{er5_effort}|{er5_result}"].append(payload)
+        grouped["five_bar_interpretation"][er5_interp].append(payload)
+        grouped["effort_result_x_distance"][f"{er_interp}|{dist}"].append(payload)
+        grouped["effort_result_x_rs2h"][f"{er_interp}|{rs2h}"].append(payload)
+
+        if setup == "Volatility Expansion Candidate":
+            grouped["vol_exp_single_bar_interpretation"][er_interp].append(payload)
+            grouped["vol_exp_five_bar_interpretation"][er5_interp].append(payload)
+            if dist == "HIGH_DISTANCE_20PCT_PLUS_OFF":
+                grouped["vol_exp_20off_single_bar_interpretation"][er_interp].append(payload)
+                grouped["vol_exp_20off_five_bar_interpretation"][er5_interp].append(payload)
+            if phase == "EXP_PHASE_LATE":
+                grouped["vol_exp_late_single_bar_interpretation"][er_interp].append(payload)
+                grouped["vol_exp_late_five_bar_interpretation"][er5_interp].append(payload)
+
+            # Top prior volatility profile from completed research: far off high + strong 2H RS.
+            if dist == "HIGH_DISTANCE_20PCT_PLUS_OFF" and rs2h == "RS2H_90_100":
+                grouped["top_vol_state_single_bar_interpretation"][er_interp].append(payload)
+                grouped["top_vol_state_five_bar_interpretation"][er5_interp].append(payload)
+
+    return {
+        name: _summarize_group_perf(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
 def run_audit(args: argparse.Namespace) -> None:
     feed = args.feed or _env("ALPACA_FEED", "iex")
     end_dt = datetime.now(timezone.utc)
@@ -1442,6 +1649,41 @@ def run_audit(args: argparse.Namespace) -> None:
                 else:
                     rel_volume_bucket = "RELVOL_3X_PLUS"
 
+                # Wyckoff / Weis Phase 1: Effort vs Result.
+                # Effort = relative volume. Result = price progress normalized by ATR.
+                atr20_pct = _atr_pct(daily, i, 20) or 0.0
+                prev_close = daily[i - 1].c if i > 0 else daily[i].o
+                er1_return_pct = ((daily[i].c - prev_close) / prev_close * 100.0) if prev_close > 0 else 0.0
+                er1_norm_result = (er1_return_pct / atr20_pct) if atr20_pct > 0 else 0.0
+                er1_effort_bucket = _effort_bucket(rel_vol)
+                er1_result_bucket = _result_bucket(er1_norm_result)
+                er1_interpretation = _er_interpretation(
+                    er1_effort_bucket,
+                    er1_result_bucket,
+                    distance_from_252_high_pct,
+                )
+
+                if i >= 5:
+                    five_start_close = daily[i - 5].c
+                    er5_return_pct = ((daily[i].c - five_start_close) / five_start_close * 100.0) if five_start_close > 0 else 0.0
+                    recent_vol = sum(b.v for b in daily[i - 4:i + 1])
+                    prior_start = max(0, i - 24)
+                    prior_vols = [b.v for b in daily[prior_start:i - 4]]
+                    avg_prior_vol = (sum(prior_vols) / len(prior_vols)) if prior_vols else max(daily[i].v, 1.0)
+                    er5_rel_effort = recent_vol / max(avg_prior_vol * 5.0, 1.0)
+                    er5_norm_result = (er5_return_pct / (atr20_pct * math.sqrt(5))) if atr20_pct > 0 else 0.0
+                else:
+                    er5_return_pct = er1_return_pct
+                    er5_rel_effort = rel_vol
+                    er5_norm_result = er1_norm_result
+                er5_effort_bucket = _effort_bucket(er5_rel_effort)
+                er5_result_bucket = _result_bucket(er5_norm_result)
+                er5_interpretation = _er_interpretation(
+                    er5_effort_bucket,
+                    er5_result_bucket,
+                    distance_from_252_high_pct,
+                )
+
                 volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
                     setup=setup,
                     setup_subtype=setup_subtype,
@@ -1477,6 +1719,18 @@ def run_audit(args: argparse.Namespace) -> None:
                     "daily_rs_slope_pct": round(daily_slope_pct, 3),
                     "rel_volume": round(rel_vol, 3),
                     "rel_volume_bucket": rel_volume_bucket,
+                    "er_atr20_pct": round(atr20_pct, 3),
+                    "er1_return_pct": round(er1_return_pct, 3),
+                    "er1_norm_result": round(er1_norm_result, 3),
+                    "er1_effort_bucket": er1_effort_bucket,
+                    "er1_result_bucket": er1_result_bucket,
+                    "er1_interpretation": er1_interpretation,
+                    "er5_return_pct": round(er5_return_pct, 3),
+                    "er5_rel_effort": round(er5_rel_effort, 3),
+                    "er5_norm_result": round(er5_norm_result, 3),
+                    "er5_effort_bucket": er5_effort_bucket,
+                    "er5_result_bucket": er5_result_bucket,
+                    "er5_interpretation": er5_interpretation,
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
@@ -1516,6 +1770,7 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_json = output_dir / "qualified_long_signal_volatility_rs_matrix.json"
     volatility_rs_distance_json = output_dir / "qualified_long_signal_volatility_rs_distance_matrix.json"
     volatility_rs_distance_relvol_json = output_dir / "qualified_long_signal_volatility_rs_distance_relvol_matrix.json"
+    wyckoff_er_json = output_dir / "qualified_long_signal_wyckoff_effort_result_phase1.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -1526,6 +1781,7 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_matrix = summarize_volatility_rs_matrix(signal_rows)
     volatility_rs_distance_matrix = summarize_volatility_rs_distance_matrix(signal_rows)
     volatility_rs_distance_relvol_matrix = summarize_volatility_rs_distance_relvol_matrix(signal_rows)
+    wyckoff_er_summary = summarize_wyckoff_effort_result(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -1606,6 +1862,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "volatility_rs_matrix": volatility_rs_matrix,
         "volatility_rs_distance_matrix": volatility_rs_distance_matrix,
         "volatility_rs_distance_relvol_matrix": volatility_rs_distance_relvol_matrix,
+        "wyckoff_effort_result_phase1": wyckoff_er_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -1616,6 +1873,7 @@ def run_audit(args: argparse.Namespace) -> None:
             "volatility_rs_json": str(volatility_rs_json),
             "volatility_rs_distance_json": str(volatility_rs_distance_json),
             "volatility_rs_distance_relvol_json": str(volatility_rs_distance_relvol_json),
+            "wyckoff_effort_result_json": str(wyckoff_er_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -1623,6 +1881,7 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_json.write_text(json.dumps(volatility_rs_matrix, indent=2))
     volatility_rs_distance_json.write_text(json.dumps(volatility_rs_distance_matrix, indent=2))
     volatility_rs_distance_relvol_json.write_text(json.dumps(volatility_rs_distance_relvol_matrix, indent=2))
+    wyckoff_er_json.write_text(json.dumps(wyckoff_er_summary, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -1636,6 +1895,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"VolRS:   {volatility_rs_json}")
     print(f"VolRSD:  {volatility_rs_distance_json}")
     print(f"VolRSDV: {volatility_rs_distance_relvol_json}")
+    print(f"WyckoffER: {wyckoff_er_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -1885,6 +2145,67 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 112)
     for s in volatility_rs_distance_relvol_matrix.get("twenty_off_relvol_x_rs2h", [])[:60]:
         print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+
+    print("\nWyckoff / Weis Phase 1: Single-Bar Effort x Result")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("single_bar_effort_x_result", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1: Single-Bar Interpretation")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("single_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1: Five-Bar Effort x Result")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("five_bar_effort_x_result", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1: Five-Bar Interpretation")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("five_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Volatility Expansion: Single-Bar Interpretation")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_single_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Volatility Expansion: Five-Bar Interpretation")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_five_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Volatility Expansion + 20% Off High: Single-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_20off_single_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Volatility Expansion + 20% Off High: Five-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_20off_five_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Late Volatility Expansion: Single-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_late_single_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Late Volatility Expansion: Five-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("vol_exp_late_five_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Prior Top Vol State: Single-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("top_vol_state_single_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 1 + Prior Top Vol State: Five-Bar")
+    print("-" * 112)
+    for s in wyckoff_er_summary.get("top_vol_state_five_bar_interpretation", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
