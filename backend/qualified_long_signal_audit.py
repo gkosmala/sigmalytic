@@ -352,6 +352,89 @@ def classify_expansion_subtype(
     return f"VOL_EXP_{phase}_{vol}_{location}"
 
 
+
+
+def classify_volatility_dna_score(
+    setup: str,
+    setup_subtype: str,
+    rs_daily: float,
+    rs_2h: float,
+    rel_vol: float,
+    distance_from_252_high_pct: Optional[float],
+    expansion_phase_bucket: str,
+) -> Tuple[int, str]:
+    """
+    Scores the Volatility Expansion DNA cluster without changing the original audit math.
+
+    The scoring weights are based on the 250-symbol discovery audit:
+      - late expansion performed best
+      - 2.0x-3.0x relative volume performed best
+      - 20%+ off the 252-day high performed best
+      - RS Daily 30-40 outperformed very high daily RS
+      - 2H RS 60-70 and 90-100 were both constructive
+
+    Output tiers are intentionally broad so we can verify whether returns stair-step upward.
+    """
+    if setup != "Volatility Expansion Candidate":
+        return 0, "DNA_NON_VOL_EXP"
+
+    score = 0
+
+    # Phase: prior audit showed LATE > EARLY > MID.
+    if expansion_phase_bucket == "EXP_PHASE_LATE":
+        score += 3
+    elif expansion_phase_bucket == "EXP_PHASE_EARLY":
+        score += 1
+
+    # Volume: prior audit showed 2.0x-3.0x strongest, then 1.5x-2.0x.
+    if 2.0 <= rel_vol < 3.0:
+        score += 3
+    elif 1.5 <= rel_vol < 2.0:
+        score += 2
+    elif rel_vol >= 3.0:
+        score += 1
+    elif 1.0 <= rel_vol < 1.5:
+        score += 1
+
+    # Distance from 252-day high: prior audit showed 20%+ off highs strongest.
+    if distance_from_252_high_pct is not None and math.isfinite(float(distance_from_252_high_pct)):
+        d = float(distance_from_252_high_pct)
+        if d <= -20.0:
+            score += 3
+        elif -5.0 <= d <= 0.0:
+            score += 1
+
+    # Daily RS: prior audit showed RS 30-40 strongest, then 70-80 / 20-30 / 90-100.
+    if 30.0 <= rs_daily < 40.0:
+        score += 2
+    elif 20.0 <= rs_daily < 30.0:
+        score += 1
+    elif 70.0 <= rs_daily < 80.0:
+        score += 1
+    elif 90.0 <= rs_daily <= 100.0:
+        score += 1
+
+    # 2H RS: prior audit showed 60-70 strongest, then high 2H RS buckets.
+    if 60.0 <= rs_2h < 70.0:
+        score += 2
+    elif 50.0 <= rs_2h < 60.0:
+        score += 1
+    elif 80.0 <= rs_2h < 90.0:
+        score += 1
+    elif 90.0 <= rs_2h <= 100.0:
+        score += 1
+
+    if score >= 10:
+        tier = "DNA_10_PLUS"
+    elif score >= 7:
+        tier = "DNA_7_9"
+    elif score >= 4:
+        tier = "DNA_4_6"
+    else:
+        tier = "DNA_0_3"
+
+    return score, tier
+
 def setup_is_long(setup: str) -> bool:
     return setup in LONG_SETUP_TYPES and setup not in EXCLUDED_SETUP_TYPES
 
@@ -820,6 +903,8 @@ def summarize_volatility_dna(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[
         "vol_exp_distance_from_high_buckets": defaultdict(list),
         "vol_exp_phase_buckets": defaultdict(list),
         "vol_exp_subtype_buckets": defaultdict(list),
+        "vol_exp_dna_score_tiers": defaultdict(list),
+        "vol_exp_dna_score_exact": defaultdict(list),
     }
 
     symbol_grouped: Dict[str, List[Dict[str, float]]] = defaultdict(list)
@@ -836,6 +921,8 @@ def summarize_volatility_dna(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[
         grouped["vol_exp_distance_from_high_buckets"][_bucket_numeric(r.get("distance_from_252_high_pct"), dist_buckets)].append(payload)
         grouped["vol_exp_phase_buckets"][str(r.get("expansion_phase_bucket", "UNKNOWN"))].append(payload)
         grouped["vol_exp_subtype_buckets"][str(r.get("setup_subtype", "UNKNOWN"))].append(payload)
+        grouped["vol_exp_dna_score_tiers"][str(r.get("volatility_dna_tier", "UNKNOWN"))].append(payload)
+        grouped["vol_exp_dna_score_exact"][f"DNA_SCORE_{r.get('volatility_dna_score', 'UNKNOWN')}"] .append(payload)
         symbol_grouped[str(r.get("symbol", "UNKNOWN"))].append(payload)
         if str(r.get("setup_subtype")) == top_subtype:
             top_subtype_symbol_grouped[str(r.get("symbol", "UNKNOWN"))].append(payload)
@@ -967,6 +1054,16 @@ def run_audit(args: argparse.Namespace) -> None:
                     rel_volume_bucket = "RELVOL_2_0_3_0X"
                 else:
                     rel_volume_bucket = "RELVOL_3X_PLUS"
+
+                volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
+                    setup=setup,
+                    setup_subtype=setup_subtype,
+                    rs_daily=daily_rs,
+                    rs_2h=rs_2h,
+                    rel_vol=rel_vol,
+                    distance_from_252_high_pct=distance_from_252_high_pct,
+                    expansion_phase_bucket=expansion_phase_bucket,
+                )
                 grade, audit_score = grade_from_signal(
                     rs_2h=rs_2h,
                     rs_daily=daily_rs,
@@ -996,6 +1093,8 @@ def run_audit(args: argparse.Namespace) -> None:
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
+                    "volatility_dna_score": volatility_dna_score,
+                    "volatility_dna_tier": volatility_dna_tier,
                     "ma20": round(ma20, 4),
                     "ma50": round(ma50, 4),
                 }
