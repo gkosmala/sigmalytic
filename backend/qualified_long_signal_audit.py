@@ -994,6 +994,106 @@ def summarize_volatility_interactions(rows: List[Dict[str, Any]]) -> List[Dict[s
     return _summarize_group_perf(grouped, min_signals=25)
 
 
+
+def summarize_volatility_rs_matrix(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Volatility + Relative Strength study.
+
+    Research question:
+      WHERE does volatility alpha occur relative to RS?
+
+    This does not add Wyckoff/VSA/Gann/Elliott/etc. It only cross-tests:
+      - volatility DNA tier x daily RS bucket
+      - volatility DNA tier x 2H RS bucket
+      - strongest volatility environment x daily RS bucket
+      - strongest volatility environment x 2H RS bucket
+    """
+    rs_daily_buckets = [
+        (0, 20, "RS_DAILY_0_20"),
+        (20, 30, "RS_DAILY_20_30"),
+        (30, 40, "RS_DAILY_30_40"),
+        (40, 50, "RS_DAILY_40_50"),
+        (50, 60, "RS_DAILY_50_60"),
+        (60, 70, "RS_DAILY_60_70"),
+        (70, 80, "RS_DAILY_70_80"),
+        (80, 90, "RS_DAILY_80_90"),
+        (90, 101, "RS_DAILY_90_100"),
+    ]
+    rs_2h_buckets = [
+        (0, 20, "RS2H_0_20"),
+        (20, 30, "RS2H_20_30"),
+        (30, 40, "RS2H_30_40"),
+        (40, 50, "RS2H_40_50"),
+        (50, 60, "RS2H_50_60"),
+        (60, 70, "RS2H_60_70"),
+        (70, 80, "RS2H_70_80"),
+        (80, 90, "RS2H_80_90"),
+        (90, 101, "RS2H_90_100"),
+    ]
+
+    grouped: Dict[str, Dict[str, List[Dict[str, float]]]] = {
+        "dna_tier_x_daily_rs": defaultdict(list),
+        "dna_tier_x_2h_rs": defaultdict(list),
+        "late_2to3x_20off_x_daily_rs": defaultdict(list),
+        "late_2to3x_20off_x_2h_rs": defaultdict(list),
+        "late_highvol_offhigh_x_daily_rs": defaultdict(list),
+        "late_highvol_offhigh_x_2h_rs": defaultdict(list),
+    }
+
+    def payload_from_h90(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h90 = r.get("h90")
+        if not isinstance(h90, dict):
+            return None
+        try:
+            return {
+                "direction_correct": float(h90.get("direction_correct", 0.0)),
+                "return_pct": float(h90.get("return_pct", 0.0)),
+                "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                "mae_pct": float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    for r in rows:
+        if str(r.get("setup_type")) != "Volatility Expansion Candidate":
+            continue
+
+        payload = payload_from_h90(r)
+        if not payload:
+            continue
+
+        daily_rs_bucket = _bucket_numeric(r.get("rs_daily"), rs_daily_buckets)
+        rs2h_bucket = _bucket_numeric(r.get("rs_2h"), rs_2h_buckets)
+        dna_tier = str(r.get("volatility_dna_tier", "UNKNOWN"))
+        phase = str(r.get("expansion_phase_bucket", "UNKNOWN"))
+        relvol_bucket = str(r.get("rel_volume_bucket", "UNKNOWN"))
+        subtype = str(r.get("setup_subtype", "UNKNOWN"))
+
+        try:
+            dist = float(r.get("distance_from_252_high_pct"))
+        except Exception:
+            dist = float("nan")
+        far_off_high = math.isfinite(dist) and dist <= -20.0
+
+        grouped["dna_tier_x_daily_rs"][f"{dna_tier}|{daily_rs_bucket}"].append(payload)
+        grouped["dna_tier_x_2h_rs"][f"{dna_tier}|{rs2h_bucket}"].append(payload)
+
+        # This was the strongest clean interaction from the prior audit:
+        # Late expansion + 2.0-3.0x relative volume + 20%+ off 252-day high.
+        if phase == "EXP_PHASE_LATE" and relvol_bucket == "RELVOL_2_0_3_0X" and far_off_high:
+            grouped["late_2to3x_20off_x_daily_rs"][daily_rs_bucket].append(payload)
+            grouped["late_2to3x_20off_x_2h_rs"][rs2h_bucket].append(payload)
+
+        # This was the strongest named subtype from the subtype audit.
+        if subtype == "VOL_EXP_LATE_HIGHVOL_OFFHIGH":
+            grouped["late_highvol_offhigh_x_daily_rs"][daily_rs_bucket].append(payload)
+            grouped["late_highvol_offhigh_x_2h_rs"][rs2h_bucket].append(payload)
+
+    return {
+        name: _summarize_group_perf(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
 def run_audit(args: argparse.Namespace) -> None:
     feed = args.feed or _env("ALPACA_FEED", "iex")
     end_dt = datetime.now(timezone.utc)
@@ -1184,6 +1284,7 @@ def run_audit(args: argparse.Namespace) -> None:
     setup_breakdown_csv = output_dir / "qualified_long_signal_setup_breakdown.csv"
     expansion_subtype_csv = output_dir / "qualified_long_signal_expansion_subtype_alpha.csv"
     volatility_dna_json = output_dir / "qualified_long_signal_volatility_dna.json"
+    volatility_rs_json = output_dir / "qualified_long_signal_volatility_rs_matrix.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -1191,6 +1292,7 @@ def run_audit(args: argparse.Namespace) -> None:
     expansion_subtype_summary = summarize_expansion_subtypes(signal_rows)
     volatility_dna_summary = summarize_volatility_dna(signal_rows)
     volatility_interactions = summarize_volatility_interactions(signal_rows)
+    volatility_rs_matrix = summarize_volatility_rs_matrix(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -1268,6 +1370,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "expansion_subtype_summary": expansion_subtype_summary,
         "volatility_dna_summary": volatility_dna_summary,
         "volatility_interactions": volatility_interactions,
+        "volatility_rs_matrix": volatility_rs_matrix,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -1275,10 +1378,12 @@ def run_audit(args: argparse.Namespace) -> None:
             "setup_breakdown_csv": str(setup_breakdown_csv),
             "expansion_subtype_csv": str(expansion_subtype_csv),
             "volatility_dna_json": str(volatility_dna_json),
+            "volatility_rs_json": str(volatility_rs_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
     volatility_dna_json.write_text(json.dumps(volatility_dna_summary, indent=2))
+    volatility_rs_json.write_text(json.dumps(volatility_rs_matrix, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -1289,6 +1394,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"Setups:  {setup_breakdown_csv}")
     print(f"Subtypes:{expansion_subtype_csv}")
     print(f"VolDNA:  {volatility_dna_json}")
+    print(f"VolRS:   {volatility_rs_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -1418,6 +1524,38 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 96)
     for s in volatility_interactions[:40]:
         print(f"{s['bucket']:<78} n={s['signals']:>5} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+
+
+    print("\nVolatility + RS: DNA Tier x Daily RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("dna_tier_x_daily_rs", [])[:40]:
+        print(f"{s['bucket']:<55} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS: DNA Tier x 2H RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("dna_tier_x_2h_rs", [])[:40]:
+        print(f"{s['bucket']:<55} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS: Late 2-3x Volume + 20% Off High x Daily RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("late_2to3x_20off_x_daily_rs", [])[:30]:
+        print(f"{s['bucket']:<35} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS: Late 2-3x Volume + 20% Off High x 2H RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("late_2to3x_20off_x_2h_rs", [])[:30]:
+        print(f"{s['bucket']:<35} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS: VOL_EXP_LATE_HIGHVOL_OFFHIGH x Daily RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("late_highvol_offhigh_x_daily_rs", [])[:30]:
+        print(f"{s['bucket']:<35} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS: VOL_EXP_LATE_HIGHVOL_OFFHIGH x 2H RS")
+    print("-" * 96)
+    for s in volatility_rs_matrix.get("late_highvol_offhigh_x_2h_rs", [])[:30]:
+        print(f"{s['bucket']:<35} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
