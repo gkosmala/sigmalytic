@@ -315,6 +315,43 @@ def classify_setup(bars: List[Bar], idx: int) -> str:
     return "Monitoring"
 
 
+def classify_expansion_subtype(
+    setup: str,
+    daily_slope_pct: float,
+    rel_vol: float,
+    price: float,
+    high_252: float,
+) -> str:
+    """
+    Splits Volatility Expansion Candidate into practical alpha subtypes.
+
+    This does not change the original setup classification or grading math.
+    It only gives the audit a more granular label so we can see which
+    version of volatility expansion is actually producing forward returns.
+    """
+    if setup != "Volatility Expansion Candidate":
+        return setup
+
+    if daily_slope_pct < 1.0:
+        phase = "EARLY"
+    elif daily_slope_pct < 3.0:
+        phase = "MID"
+    else:
+        phase = "LATE"
+
+    if rel_vol >= 1.5:
+        vol = "HIGHVOL"
+    elif rel_vol >= 1.0:
+        vol = "NORMALVOL"
+    else:
+        vol = "LOWVOL"
+
+    near_high = high_252 > 0 and price >= high_252 * 0.95
+    location = "NEARHIGH" if near_high else "OFFHIGH"
+
+    return f"VOL_EXP_{phase}_{vol}_{location}"
+
+
 def setup_is_long(setup: str) -> bool:
     return setup in LONG_SETUP_TYPES and setup not in EXCLUDED_SETUP_TYPES
 
@@ -660,6 +697,57 @@ def summarize_setup_breakdown(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return out
 
 
+def summarize_expansion_subtypes(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Ranks setup_subtype labels by 90-day forward performance.
+
+    Main purpose:
+      - identify which Volatility Expansion subtype is producing alpha
+      - compare early/mid/late expansion
+      - compare low/normal/high volume expansion
+      - compare near-high vs off-high expansion
+    """
+    grouped: Dict[str, List[Dict[str, float]]] = defaultdict(list)
+
+    for r in rows:
+        subtype = str(r.get("setup_subtype") or r.get("setup_type") or "UNKNOWN")
+        h90 = r.get("h90")
+        if not isinstance(h90, dict):
+            continue
+        try:
+            grouped[subtype].append({
+                "direction_correct": float(h90.get("direction_correct", 0.0)),
+                "return_pct": float(h90.get("return_pct", 0.0)),
+                "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                "mae_pct": float(h90.get("mae_pct", 0.0)),
+            })
+        except Exception:
+            continue
+
+    out: List[Dict[str, Any]] = []
+    for subtype, vals in grouped.items():
+        if not vals:
+            continue
+        count = len(vals)
+        acc = sum(v["direction_correct"] for v in vals) / count * 100
+        avg_ret = sum(v["return_pct"] for v in vals) / count
+        avg_mfe = sum(v["mfe_pct"] for v in vals) / count
+        avg_mae = sum(v["mae_pct"] for v in vals) / count
+        edge_ratio = (avg_mfe / abs(avg_mae)) if avg_mae < 0 else None
+        out.append({
+            "setup_subtype": subtype,
+            "signals": count,
+            "direction_accuracy_90d_pct": round(acc, 2),
+            "avg_return_90d_pct": round(avg_ret, 3),
+            "avg_mfe_90d_pct": round(avg_mfe, 3),
+            "avg_mae_90d_pct": round(avg_mae, 3),
+            "edge_ratio_90d": round(edge_ratio, 3) if edge_ratio is not None else None,
+        })
+
+    out.sort(key=lambda x: (x["avg_return_90d_pct"], x["signals"]), reverse=True)
+    return out
+
+
 def run_audit(args: argparse.Namespace) -> None:
     feed = args.feed or _env("ALPACA_FEED", "iex")
     end_dt = datetime.now(timezone.utc)
@@ -750,6 +838,14 @@ def run_audit(args: argparse.Namespace) -> None:
                 ma20 = sma(closes, i, 20) or daily[i].c
                 ma50 = sma(closes, i, 50) or ma20
                 rel_vol = calc_rel_volume(daily, i, 20)
+                high_252 = max(b.h for b in daily[max(0, i - 251): i + 1])
+                setup_subtype = classify_expansion_subtype(
+                    setup=setup,
+                    daily_slope_pct=daily_slope_pct,
+                    rel_vol=rel_vol,
+                    price=daily[i].c,
+                    high_252=high_252,
+                )
                 grade, audit_score = grade_from_signal(
                     rs_2h=rs_2h,
                     rs_daily=daily_rs,
@@ -768,6 +864,7 @@ def run_audit(args: argparse.Namespace) -> None:
                     "signal_date": daily[i].date,
                     "entry_close": round(daily[i].c, 4),
                     "setup_type": setup,
+                    "setup_subtype": setup_subtype,
                     "grade": grade,
                     "audit_score": audit_score,
                     "rs_2h": round(rs_2h, 2),
@@ -803,14 +900,16 @@ def run_audit(args: argparse.Namespace) -> None:
     summary_csv = output_dir / "qualified_long_signal_summary.csv"
     factor_csv = output_dir / "qualified_long_signal_factor_attribution.csv"
     setup_breakdown_csv = output_dir / "qualified_long_signal_setup_breakdown.csv"
+    expansion_subtype_csv = output_dir / "qualified_long_signal_expansion_subtype_alpha.csv"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
     setup_breakdown = summarize_setup_breakdown(signal_rows)
+    expansion_subtype_summary = summarize_expansion_subtypes(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
-        "symbol", "signal_date", "entry_close", "setup_type", "grade", "audit_score",
+        "symbol", "signal_date", "entry_close", "setup_type", "setup_subtype", "grade", "audit_score",
         "rs_2h", "rs_daily", "daily_rs_slope_pct", "rel_volume", "ma20", "ma50",
     ]
     for h in horizons:
@@ -845,6 +944,16 @@ def run_audit(args: argparse.Namespace) -> None:
         writer.writeheader()
         writer.writerows(setup_breakdown)
 
+    with expansion_subtype_csv.open("w", newline="") as f:
+        fields = [
+            "setup_subtype", "signals", "direction_accuracy_90d_pct",
+            "avg_return_90d_pct", "avg_mfe_90d_pct", "avg_mae_90d_pct",
+            "edge_ratio_90d",
+        ]
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(expansion_subtype_summary)
+
     payload = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "rules": {
@@ -869,11 +978,13 @@ def run_audit(args: argparse.Namespace) -> None:
         "summary": summary,
         "factor_attribution": factor_summary,
         "setup_breakdown": setup_breakdown,
+        "expansion_subtype_summary": expansion_subtype_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
             "factor_csv": str(factor_csv),
             "setup_breakdown_csv": str(setup_breakdown_csv),
+            "expansion_subtype_csv": str(expansion_subtype_csv),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -885,6 +996,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"CSV:     {summary_csv}")
     print(f"Factors: {factor_csv}")
     print(f"Setups:  {setup_breakdown_csv}")
+    print(f"Subtypes:{expansion_subtype_csv}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -949,6 +1061,19 @@ def run_audit(args: argparse.Namespace) -> None:
             f"acc90={acc:>6.2f}% "
             f"avg90={avg_return:>8.3f}% "
             f"edge90={round(edge_ratio, 3) if edge_ratio is not None else None}"
+        )
+
+    print("\nVolatility Expansion Subtype Alpha:")
+    print("-" * 96)
+    for s in expansion_subtype_summary[:30]:
+        if s["signals"] < 25:
+            continue
+        print(
+            f"{s['setup_subtype']:<45} "
+            f"n={s['signals']:>6} "
+            f"acc90={s['direction_accuracy_90d_pct']:>6.2f}% "
+            f"avg90={s['avg_return_90d_pct']:>8.3f}% "
+            f"edge90={s['edge_ratio_90d']}"
         )
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
