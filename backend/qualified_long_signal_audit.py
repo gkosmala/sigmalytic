@@ -1203,6 +1203,126 @@ def summarize_volatility_rs_distance_matrix(rows: List[Dict[str, Any]]) -> Dict[
         for name, bucket_map in grouped.items()
     }
 
+
+
+def summarize_volatility_rs_distance_relvol_matrix(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Final volatility study:
+      Volatility + Relative Strength + Distance From High + Relative Volume.
+
+    Research question:
+      Does relative volume confirm, weaken, or change the alpha discovered in
+      volatility expansion + RS + distance-from-high buckets?
+
+    This intentionally shows BOTH low-volume and high-volume states.
+    """
+    rs_daily_buckets = [
+        (0, 20, "RS_DAILY_0_20"),
+        (20, 30, "RS_DAILY_20_30"),
+        (30, 40, "RS_DAILY_30_40"),
+        (40, 50, "RS_DAILY_40_50"),
+        (50, 60, "RS_DAILY_50_60"),
+        (60, 70, "RS_DAILY_60_70"),
+        (70, 80, "RS_DAILY_70_80"),
+        (80, 90, "RS_DAILY_80_90"),
+        (90, 101, "RS_DAILY_90_100"),
+    ]
+    rs_2h_buckets = [
+        (0, 20, "RS2H_0_20"),
+        (20, 30, "RS2H_20_30"),
+        (30, 40, "RS2H_30_40"),
+        (40, 50, "RS2H_40_50"),
+        (50, 60, "RS2H_50_60"),
+        (60, 70, "RS2H_60_70"),
+        (70, 80, "RS2H_70_80"),
+        (80, 90, "RS2H_80_90"),
+        (90, 101, "RS2H_90_100"),
+    ]
+
+    grouped: Dict[str, Dict[str, List[Dict[str, float]]]] = {
+        # Broad maps: show whether volume itself changes the distance/RS finding.
+        "relvol_x_distance_x_daily_rs": defaultdict(list),
+        "relvol_x_distance_x_2h_rs": defaultdict(list),
+
+        # Phase-aware maps: show whether low/high volume means different things early/mid/late.
+        "phase_x_relvol_x_distance": defaultdict(list),
+        "phase_x_relvol_x_distance_x_daily_rs": defaultdict(list),
+        "phase_x_relvol_x_distance_x_2h_rs": defaultdict(list),
+
+        # Production-candidate maps: restrict to the strongest prior volatility DNA tier.
+        "dna_tier_x_relvol_x_distance_x_daily_rs": defaultdict(list),
+        "dna_tier_x_relvol_x_distance_x_2h_rs": defaultdict(list),
+
+        # Clean answer to Greg's question: high volume confirmation vs low volume lack-of-conviction/quiet accumulation.
+        "late_phase_relvol_x_distance": defaultdict(list),
+        "twenty_off_relvol_x_rs2h": defaultdict(list),
+    }
+
+    def payload_from_h90(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h90 = r.get("h90")
+        if not isinstance(h90, dict):
+            return None
+        try:
+            return {
+                "direction_correct": float(h90.get("direction_correct", 0.0)),
+                "return_pct": float(h90.get("return_pct", 0.0)),
+                "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                "mae_pct": float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    def distance_bucket(r: Dict[str, Any]) -> str:
+        try:
+            d = float(r.get("distance_from_252_high_pct"))
+        except Exception:
+            d = float("nan")
+        if not math.isfinite(d):
+            return "HIGH_DISTANCE_UNKNOWN"
+        if d <= -20.0:
+            return "HIGH_DISTANCE_20PCT_PLUS_OFF"
+        if d <= -10.0:
+            return "HIGH_DISTANCE_10_20PCT_OFF"
+        if d <= -5.0:
+            return "HIGH_DISTANCE_5_10PCT_OFF"
+        return "HIGH_DISTANCE_0_5PCT_OFF"
+
+    for r in rows:
+        if str(r.get("setup_type")) != "Volatility Expansion Candidate":
+            continue
+
+        payload = payload_from_h90(r)
+        if not payload:
+            continue
+
+        daily_rs_bucket = _bucket_numeric(r.get("rs_daily"), rs_daily_buckets)
+        rs2h_bucket = _bucket_numeric(r.get("rs_2h"), rs_2h_buckets)
+        dist_bucket = distance_bucket(r)
+        dna_tier = str(r.get("volatility_dna_tier", "UNKNOWN"))
+        phase = str(r.get("expansion_phase_bucket", "UNKNOWN"))
+        relvol_bucket = str(r.get("rel_volume_bucket", "UNKNOWN"))
+
+        grouped["relvol_x_distance_x_daily_rs"][f"{relvol_bucket}|{dist_bucket}|{daily_rs_bucket}"].append(payload)
+        grouped["relvol_x_distance_x_2h_rs"][f"{relvol_bucket}|{dist_bucket}|{rs2h_bucket}"].append(payload)
+
+        grouped["phase_x_relvol_x_distance"][f"{phase}|{relvol_bucket}|{dist_bucket}"].append(payload)
+        grouped["phase_x_relvol_x_distance_x_daily_rs"][f"{phase}|{relvol_bucket}|{dist_bucket}|{daily_rs_bucket}"].append(payload)
+        grouped["phase_x_relvol_x_distance_x_2h_rs"][f"{phase}|{relvol_bucket}|{dist_bucket}|{rs2h_bucket}"].append(payload)
+
+        grouped["dna_tier_x_relvol_x_distance_x_daily_rs"][f"{dna_tier}|{relvol_bucket}|{dist_bucket}|{daily_rs_bucket}"].append(payload)
+        grouped["dna_tier_x_relvol_x_distance_x_2h_rs"][f"{dna_tier}|{relvol_bucket}|{dist_bucket}|{rs2h_bucket}"].append(payload)
+
+        if phase == "EXP_PHASE_LATE":
+            grouped["late_phase_relvol_x_distance"][f"{relvol_bucket}|{dist_bucket}"].append(payload)
+
+        if dist_bucket == "HIGH_DISTANCE_20PCT_PLUS_OFF":
+            grouped["twenty_off_relvol_x_rs2h"][f"{relvol_bucket}|{rs2h_bucket}"].append(payload)
+
+    return {
+        name: _summarize_group_perf(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
 def run_audit(args: argparse.Namespace) -> None:
     feed = args.feed or _env("ALPACA_FEED", "iex")
     end_dt = datetime.now(timezone.utc)
@@ -1395,6 +1515,7 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_dna_json = output_dir / "qualified_long_signal_volatility_dna.json"
     volatility_rs_json = output_dir / "qualified_long_signal_volatility_rs_matrix.json"
     volatility_rs_distance_json = output_dir / "qualified_long_signal_volatility_rs_distance_matrix.json"
+    volatility_rs_distance_relvol_json = output_dir / "qualified_long_signal_volatility_rs_distance_relvol_matrix.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -1404,6 +1525,7 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_interactions = summarize_volatility_interactions(signal_rows)
     volatility_rs_matrix = summarize_volatility_rs_matrix(signal_rows)
     volatility_rs_distance_matrix = summarize_volatility_rs_distance_matrix(signal_rows)
+    volatility_rs_distance_relvol_matrix = summarize_volatility_rs_distance_relvol_matrix(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -1483,6 +1605,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "volatility_interactions": volatility_interactions,
         "volatility_rs_matrix": volatility_rs_matrix,
         "volatility_rs_distance_matrix": volatility_rs_distance_matrix,
+        "volatility_rs_distance_relvol_matrix": volatility_rs_distance_relvol_matrix,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -1492,12 +1615,14 @@ def run_audit(args: argparse.Namespace) -> None:
             "volatility_dna_json": str(volatility_dna_json),
             "volatility_rs_json": str(volatility_rs_json),
             "volatility_rs_distance_json": str(volatility_rs_distance_json),
+            "volatility_rs_distance_relvol_json": str(volatility_rs_distance_relvol_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
     volatility_dna_json.write_text(json.dumps(volatility_dna_summary, indent=2))
     volatility_rs_json.write_text(json.dumps(volatility_rs_matrix, indent=2))
     volatility_rs_distance_json.write_text(json.dumps(volatility_rs_distance_matrix, indent=2))
+    volatility_rs_distance_relvol_json.write_text(json.dumps(volatility_rs_distance_relvol_matrix, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -1510,6 +1635,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"VolDNA:  {volatility_dna_json}")
     print(f"VolRS:   {volatility_rs_json}")
     print(f"VolRSD:  {volatility_rs_distance_json}")
+    print(f"VolRSDV: {volatility_rs_distance_relvol_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -1713,6 +1839,52 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 96)
     for s in volatility_rs_distance_matrix.get("relvol_2to3x_x_distance_x_2h_rs", [])[:50]:
         print(f"{s['bucket']:<65} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+
+    print("\nVolatility + RS + Distance + RelVol: RelVol x Distance x Daily RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("relvol_x_distance_x_daily_rs", [])[:60]:
+        print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: RelVol x Distance x 2H RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("relvol_x_distance_x_2h_rs", [])[:60]:
+        print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: Phase x RelVol x Distance")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("phase_x_relvol_x_distance", [])[:60]:
+        print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: Phase x RelVol x Distance x Daily RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("phase_x_relvol_x_distance_x_daily_rs", [])[:60]:
+        print(f"{s['bucket']:<95} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: Phase x RelVol x Distance x 2H RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("phase_x_relvol_x_distance_x_2h_rs", [])[:60]:
+        print(f"{s['bucket']:<95} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: DNA Tier x RelVol x Distance x Daily RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("dna_tier_x_relvol_x_distance_x_daily_rs", [])[:60]:
+        print(f"{s['bucket']:<95} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: DNA Tier x RelVol x Distance x 2H RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("dna_tier_x_relvol_x_distance_x_2h_rs", [])[:60]:
+        print(f"{s['bucket']:<95} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: Late Phase RelVol x Distance")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("late_phase_relvol_x_distance", [])[:60]:
+        print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nVolatility + RS + Distance + RelVol: 20%+ Off High RelVol x 2H RS")
+    print("-" * 112)
+    for s in volatility_rs_distance_relvol_matrix.get("twenty_off_relvol_x_rs2h", [])[:60]:
+        print(f"{s['bucket']:<85} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
