@@ -1743,6 +1743,572 @@ def _classify_behavior(
 # =============================================================================
 
 
+
+# =============================================================================
+# Weis Wave / Behavioral Efficiency Engine
+# =============================================================================
+#
+# Weis's central insight: price does not unfold in equal time slices.
+# It unfolds in directional waves.  Each wave has three measurable properties:
+#   length   — how far price traveled (price efficiency)
+#   duration — how many bars the wave lasted
+#   volume   — cumulative volume during the wave (volume efficiency)
+#
+# By comparing successive waves on these dimensions, we can detect:
+#   - Shortening of upward thrust  (demand tiring)
+#   - Diminishing selling pressure (supply exhausted)
+#   - Springboard formation        (tiny low-volume down-wave before markup)
+#   - Buoyancy near support        (close clustering; resolution imminent)
+#   - Failure to follow through    (threatening bar absorbed by demand)
+#
+# Research question:
+#   Do improving wave characteristics near structural levels
+#   predict asymmetric forward returns?
+# =============================================================================
+
+
+def _identify_swing_points(
+    bars: List[Bar],
+    idx: int,
+    lookback: int = 60,
+    n_confirm: int = 2,
+) -> Tuple[List[Tuple[int, float, str]], List[Tuple[int, float]]]:
+    """
+    Identify swing highs and swing lows in the lookback window.
+
+    A swing high is a bar whose high exceeds the n_confirm bars on each side.
+    A swing low  is a bar whose low  is below  the n_confirm bars on each side.
+
+    Returns two lists:
+        swing_points: [(idx, price, "high"/"low"), ...]  — all swings, sorted ascending
+        waves:        not returned directly; caller builds waves from swing_points
+    """
+    start = max(n_confirm, idx - lookback + 1)
+    end   = max(0, idx - n_confirm)   # need n_confirm bars after for confirmation
+
+    swing_highs: List[Tuple[int, float]] = []
+    swing_lows:  List[Tuple[int, float]] = []
+
+    for j in range(start, end + 1):
+        # Swing high: higher than n_confirm bars on both sides
+        is_sh = all(bars[j].h >= bars[j - k].h for k in range(1, n_confirm + 1)) and                 all(bars[j].h >= bars[j + k].h for k in range(1, n_confirm + 1))
+        if is_sh:
+            swing_highs.append((j, bars[j].h))
+
+        # Swing low: lower than n_confirm bars on both sides
+        is_sl = all(bars[j].l <= bars[j - k].l for k in range(1, n_confirm + 1)) and                 all(bars[j].l <= bars[j + k].l for k in range(1, n_confirm + 1))
+        if is_sl:
+            swing_lows.append((j, bars[j].l))
+
+    # Merge and sort
+    swings: List[Tuple[int, float, str]] = (
+        [(idx_, price, "high") for idx_, price in swing_highs] +
+        [(idx_, price, "low")  for idx_, price in swing_lows]
+    )
+    swings.sort(key=lambda x: x[0])
+
+    return swings
+
+
+def _build_waves_from_swings(
+    bars: List[Bar],
+    swings: List[Tuple[int, float, str]],
+    avg_volume_20: float,
+) -> List[Dict[str, Any]]:
+    """
+    Convert swing points into waves with length, duration, volume, and efficiency.
+
+    A wave is defined as the move from one swing point to the next in the
+    alternating sequence high→low→high or low→high→low.
+
+    Returns a list of wave dicts sorted oldest to newest.
+    """
+    if len(swings) < 2:
+        return []
+
+    waves: List[Dict[str, Any]] = []
+
+    # Deduplicate consecutive same-type swings, keeping the more extreme one
+    deduped: List[Tuple[int, float, str]] = []
+    for s in swings:
+        if deduped and deduped[-1][2] == s[2]:
+            # Same type: keep the more extreme
+            prev = deduped[-1]
+            if s[2] == "high" and s[1] > prev[1]:
+                deduped[-1] = s
+            elif s[2] == "low" and s[1] < prev[1]:
+                deduped[-1] = s
+        else:
+            deduped.append(s)
+
+    for k in range(len(deduped) - 1):
+        s1 = deduped[k]
+        s2 = deduped[k + 1]
+
+        start_idx, start_price, start_type = s1
+        end_idx,   end_price,   end_type   = s2
+
+        if start_type == end_type:
+            continue  # malformed pair, skip
+
+        direction = "up" if end_type == "high" else "down"
+        duration  = max(1, end_idx - start_idx)
+
+        # Cumulative volume across the wave bars
+        wave_vol = sum(bars[j].v for j in range(start_idx, end_idx + 1))
+
+        wave_return_pct = abs((end_price - start_price) / start_price * 100.0)                           if start_price > 0 else 0.0
+
+        # Expected volume for the same duration at 20-bar average
+        expected_vol = max(avg_volume_20 * duration, 1.0)
+        wave_vol_ratio = wave_vol / expected_vol
+
+        # Price efficiency: return per bar (speed through time)
+        wave_price_eff = round(wave_return_pct / duration, 4)
+
+        # Volume efficiency: return per unit of relative volume effort
+        # Floor at 0.1 to prevent extreme readings on ultra-quiet waves
+        wave_vol_eff = round(wave_return_pct / max(wave_vol_ratio, 0.1), 4)
+
+        waves.append({
+            "direction":          direction,
+            "start_idx":          start_idx,
+            "end_idx":            end_idx,
+            "start_price":        round(start_price, 4),
+            "end_price":          round(end_price, 4),
+            "wave_return_pct":    round(wave_return_pct, 3),
+            "wave_duration_bars": duration,
+            "wave_total_volume":  round(wave_vol, 0),
+            "wave_vol_ratio":     round(wave_vol_ratio, 3),
+            "wave_price_eff":     wave_price_eff,
+            "wave_vol_eff":       wave_vol_eff,
+        })
+
+    return waves
+
+
+def _compute_wave_variables(
+    bars: List[Bar],
+    idx: int,
+    support_level: float,
+    avg_vol_20: float,
+    atr: float,
+    lookback: int = 60,
+) -> Dict[str, Any]:
+    """
+    Compute all Weis Wave / Behavioral Efficiency variables for a signal at idx.
+
+    Returns a flat dict of wave metrics ready to store in the signal row.
+    """
+    empty = {
+        # Last 3 up-waves
+        "w_up1_return_pct": 0.0, "w_up1_duration": 0,
+        "w_up1_vol_ratio": 0.0,  "w_up1_price_eff": 0.0, "w_up1_vol_eff": 0.0,
+        "w_up2_return_pct": 0.0, "w_up2_duration": 0,
+        "w_up2_vol_ratio": 0.0,  "w_up2_price_eff": 0.0, "w_up2_vol_eff": 0.0,
+        "w_up3_return_pct": 0.0, "w_up3_duration": 0,
+        "w_up3_vol_ratio": 0.0,  "w_up3_price_eff": 0.0, "w_up3_vol_eff": 0.0,
+        # Last 3 down-waves
+        "w_dn1_return_pct": 0.0, "w_dn1_duration": 0,
+        "w_dn1_vol_ratio": 0.0,  "w_dn1_price_eff": 0.0, "w_dn1_vol_eff": 0.0,
+        "w_dn2_return_pct": 0.0, "w_dn2_duration": 0,
+        "w_dn2_vol_ratio": 0.0,  "w_dn2_price_eff": 0.0, "w_dn2_vol_eff": 0.0,
+        "w_dn3_return_pct": 0.0, "w_dn3_duration": 0,
+        "w_dn3_vol_ratio": 0.0,  "w_dn3_price_eff": 0.0, "w_dn3_vol_eff": 0.0,
+        # Derived behavioral flags
+        "w_thrust_shortening":          False,
+        "w_thrust_shortening_ratio":    1.0,
+        "w_selling_pressure_diminishing": False,
+        "w_demand_efficiency_improving": False,
+        "w_springboard_present":        False,
+        "w_buoyancy_near_support":      False,
+        "w_failure_to_follow_through":  False,
+        "w_wave_efficiency_score":      0,
+        "w_wave_efficiency_bucket":     "WAVE_INSUFFICIENT_DATA",
+    }
+
+    if idx < 10 or avg_vol_20 <= 0:
+        return empty
+
+    swings = _identify_swing_points(bars, idx, lookback=lookback, n_confirm=2)
+    if len(swings) < 4:
+        return empty
+
+    waves = _build_waves_from_swings(bars, swings, avg_vol_20)
+    if not waves:
+        return empty
+
+    # Separate into up and down waves, most recent first
+    up_waves  = [w for w in reversed(waves) if w["direction"] == "up"]
+    dn_waves  = [w for w in reversed(waves) if w["direction"] == "down"]
+
+    result: Dict[str, Any] = dict(empty)
+
+    # Store last 3 of each direction
+    for k, prefix in enumerate(["w_up1", "w_up2", "w_up3"]):
+        if k < len(up_waves):
+            w = up_waves[k]
+            result[f"{prefix}_return_pct"] = w["wave_return_pct"]
+            result[f"{prefix}_duration"]   = w["wave_duration_bars"]
+            result[f"{prefix}_vol_ratio"]  = w["wave_vol_ratio"]
+            result[f"{prefix}_price_eff"]  = w["wave_price_eff"]
+            result[f"{prefix}_vol_eff"]    = w["wave_vol_eff"]
+
+    for k, prefix in enumerate(["w_dn1", "w_dn2", "w_dn3"]):
+        if k < len(dn_waves):
+            w = dn_waves[k]
+            result[f"{prefix}_return_pct"] = w["wave_return_pct"]
+            result[f"{prefix}_duration"]   = w["wave_duration_bars"]
+            result[f"{prefix}_vol_ratio"]  = w["wave_vol_ratio"]
+            result[f"{prefix}_price_eff"]  = w["wave_price_eff"]
+            result[f"{prefix}_vol_eff"]    = w["wave_vol_eff"]
+
+    # ── Shortening of Upward Thrust ──────────────────────────────────────────
+    # Three successive up-waves where each is shorter than the prior.
+    # Ratio < 1.0 means most recent wave is smaller than two waves ago.
+    if len(up_waves) >= 3:
+        sot = (
+            up_waves[0]["wave_return_pct"] < up_waves[1]["wave_return_pct"]
+            and up_waves[1]["wave_return_pct"] < up_waves[2]["wave_return_pct"]
+        )
+        result["w_thrust_shortening"] = sot
+        if up_waves[2]["wave_return_pct"] > 0:
+            result["w_thrust_shortening_ratio"] = round(
+                up_waves[0]["wave_return_pct"] / up_waves[2]["wave_return_pct"], 3
+            )
+    elif len(up_waves) >= 2:
+        sot = up_waves[0]["wave_return_pct"] < up_waves[1]["wave_return_pct"]
+        result["w_thrust_shortening"] = sot
+
+    # ── Diminishing Selling Pressure ─────────────────────────────────────────
+    # Most recent down-wave is smaller AND has lower volume than the prior one.
+    # Sellers working less and achieving less = accumulation signature.
+    if len(dn_waves) >= 2:
+        result["w_selling_pressure_diminishing"] = (
+            dn_waves[0]["wave_return_pct"] <= dn_waves[1]["wave_return_pct"]
+            and dn_waves[0]["wave_total_volume"] < dn_waves[1]["wave_total_volume"]
+        )
+
+    # ── Demand Efficiency Improving ──────────────────────────────────────────
+    # Most recent up-wave is more price-efficient than the prior.
+    # Buyers achieving more progress per bar without proportionally more volume.
+    if len(up_waves) >= 2:
+        result["w_demand_efficiency_improving"] = (
+            up_waves[0]["wave_price_eff"] > up_waves[1]["wave_price_eff"] * 0.9
+            and up_waves[0]["wave_return_pct"] >= up_waves[1]["wave_return_pct"] * 0.7
+        )
+
+    # ── Springboard ──────────────────────────────────────────────────────────
+    # Most recent down-wave is tiny and quiet — Weis's pre-markup signal.
+    # The market is at rest before the next directional move.
+    if len(dn_waves) >= 1:
+        dn1 = dn_waves[0]
+        avg_dn_return = (
+            sum(w["wave_return_pct"] for w in dn_waves[:3]) / min(len(dn_waves), 3)
+        )
+        result["w_springboard_present"] = (
+            dn1["wave_return_pct"] < atr / bars[idx].c * 100.0 * 0.8
+            and dn1["wave_vol_ratio"] < 0.6
+            and dn1["wave_return_pct"] < avg_dn_return * 0.5
+        )
+
+    # ── Buoyancy Near Support ────────────────────────────────────────────────
+    # Closes clustering near support over prior 5 bars.
+    # Tight clustering = stock being held up; resolution imminent.
+    if support_level > 0 and atr > 0 and idx >= 4:
+        recent_closes = [bars[idx - k].c for k in range(5)]
+        closes_near = [c for c in recent_closes
+                       if abs(c - support_level) < atr * 1.2]
+        if len(closes_near) >= 3:
+            close_std = statistics.stdev(closes_near) if len(closes_near) > 1 else 0.0
+            result["w_buoyancy_near_support"] = close_std < atr * 0.35
+        else:
+            result["w_buoyancy_near_support"] = False
+
+    # ── Failure to Follow Through ────────────────────────────────────────────
+    # A bar with a threatening low (penetrating support or wide range)
+    # that does NOT produce a lower close in the next 1-2 bars.
+    if support_level > 0 and idx >= 2:
+        bar = bars[idx]
+        threatening = (
+            bar.l < support_level
+            or (bar.h - bar.l) > atr * 1.5
+        )
+        if threatening and idx + 2 < len(bars):
+            no_follow = all(bars[idx + j].c >= bar.l * 0.995 for j in range(1, 3))
+            result["w_failure_to_follow_through"] = threatening and no_follow
+        else:
+            result["w_failure_to_follow_through"] = threatening and True  # end of data, assume held
+
+    # ── Wave Efficiency Composite Score ──────────────────────────────────────
+    # 0-8 score combining all behavioral signals.
+    # Higher = more Weis-favorable conditions for a Trade About to Happen.
+    score = 0
+    if result["w_selling_pressure_diminishing"]:   score += 2
+    if result["w_demand_efficiency_improving"]:    score += 2
+    if result["w_springboard_present"]:            score += 2
+    if result["w_buoyancy_near_support"]:          score += 1
+    if result["w_failure_to_follow_through"]:      score += 1
+    # Deduct for thrust shortening (selling context, not buying setup)
+    if result["w_thrust_shortening"]:              score -= 1
+    score = max(0, score)
+
+    result["w_wave_efficiency_score"] = score
+    if score >= 6:
+        result["w_wave_efficiency_bucket"] = "WAVE_EFF_HIGH_6_PLUS"
+    elif score >= 4:
+        result["w_wave_efficiency_bucket"] = "WAVE_EFF_MID_4_5"
+    elif score >= 2:
+        result["w_wave_efficiency_bucket"] = "WAVE_EFF_LOW_2_3"
+    else:
+        result["w_wave_efficiency_bucket"] = "WAVE_EFF_NONE_0_1"
+
+    return result
+
+
+
+# =============================================================================
+# Wyckoff / Weis Phase 6: Behavioral Efficiency Study
+# =============================================================================
+#
+# Research question:
+#   Do improving wave characteristics near structural levels
+#   predict asymmetric forward returns?
+#
+# This phase tests the Weis Wave variables computed above against the same
+# target bucket used in Phase 5 (Late + 20%+ Off High + RelVol 2-3x).
+#
+# Studies:
+#   A — Wave efficiency bucket vs forward MFE and asymmetry
+#   B — Selling pressure diminishing vs forward MFE
+#   C — Demand efficiency improving vs forward MFE
+#   D — Springboard present vs forward MFE
+#   E — Buoyancy near support vs forward MFE
+#   F — Failure to follow through vs forward MFE
+#   G — Combined: diminishing selling + improving demand (the dual confirmation)
+#   H — Combined: springboard + buoyancy (the imminent resolution signal)
+#   I — Full confluence: all favorable conditions together
+#   J — Wave efficiency score tier vs forward MFE (monotonic test)
+# =============================================================================
+
+
+def summarize_wyckoff_phase6_wave_efficiency(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Phase 6: Weis Wave / Behavioral Efficiency.
+
+    For each variable, runs two parallel studies:
+      1. Full universe — establishes baseline for each bucket
+      2. Target bucket — Late + 20%+ Off High + RelVol 2-3x
+
+    The asymmetry ratio (MFE/MAE at 20 days) is the primary validation metric.
+    Target: asymmetry > 2.0 for favorable conditions vs base rate.
+    """
+
+    def _safe_float(val: Any) -> Optional[float]:
+        try:
+            v = float(val)
+            return v if math.isfinite(v) else None
+        except Exception:
+            return None
+
+    def _payload(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h20 = r.get("h20")
+        h90 = r.get("h90")
+        if not isinstance(h20, dict) or not isinstance(h90, dict):
+            return None
+        mfe20 = _safe_float(r.get("markup_20d_pct"))
+        mfe90 = _safe_float(r.get("markup_90d_pct"))
+        if mfe90 is None:
+            return None
+        mae20 = float(h20.get("mae_pct", 0.0))
+        asym  = (mfe20 / abs(mae20)) if (mfe20 and mfe20 > 0 and mae20 < 0) else 0.0
+        return {
+            "acc_20d":  float(h20.get("direction_correct", 0.0)),
+            "ret_20d":  float(h20.get("return_pct", 0.0)),
+            "mfe_20d":  mfe20 if mfe20 is not None else 0.0,
+            "mae_20d":  mae20,
+            "asym_20d": asym,
+            "acc_90d":  float(h90.get("direction_correct", 0.0)),
+            "ret_90d":  float(h90.get("return_pct", 0.0)),
+            "mfe_90d":  mfe90,
+            "mae_90d":  float(h90.get("mae_pct", 0.0)),
+        }
+
+    def _summ(bucket_map: Dict[str, List], min_n: int = 15) -> List[Dict[str, Any]]:
+        out = []
+        for bucket, vals in sorted(bucket_map.items()):
+            if len(vals) < min_n:
+                continue
+            n = len(vals)
+            avg = lambda f: round(sum(v[f] for v in vals) / n, 3)
+            asym_vals = [v["asym_20d"] for v in vals if v["asym_20d"] > 0]
+            out.append({
+                "bucket":          bucket,
+                "signals":         n,
+                "acc_20d_pct":     round(avg("acc_20d") * 100, 2),
+                "avg_mfe_20d_pct": avg("mfe_20d"),
+                "avg_mae_20d_pct": avg("mae_20d"),
+                "avg_asym_20d":    round(sum(asym_vals)/len(asym_vals), 3) if asym_vals else None,
+                "acc_90d_pct":     round(avg("acc_90d") * 100, 2),
+                "avg_ret_90d_pct": avg("ret_90d"),
+                "avg_mfe_90d_pct": avg("mfe_90d"),
+                "avg_mae_90d_pct": avg("mae_90d"),
+            })
+        out.sort(key=lambda x: x["avg_mfe_90d_pct"], reverse=True)
+        return out
+
+    universe_rows = []
+    target_rows   = []
+    for r in rows:
+        p = _payload(r)
+        if p is None:
+            continue
+        universe_rows.append((r, p))
+        if _is_target_bucket(r):
+            target_rows.append((r, p))
+
+    def _populate(population: List[tuple]) -> Dict[str, Dict[str, List]]:
+        g: Dict[str, Dict[str, List]] = {
+            # Study A
+            "wave_efficiency_bucket":   defaultdict(list),
+            # Study J — score tier (monotonic test)
+            "wave_efficiency_score_tier": defaultdict(list),
+            # Studies B-F — individual behavioral flags
+            "selling_pressure_dim":     defaultdict(list),
+            "demand_eff_improving":     defaultdict(list),
+            "springboard":              defaultdict(list),
+            "buoyancy":                 defaultdict(list),
+            "failure_follow_through":   defaultdict(list),
+            "thrust_shortening":        defaultdict(list),
+            # Study G — dual demand confirmation
+            "dual_demand_confirm":      defaultdict(list),
+            # Study H — imminent resolution
+            "imminent_resolution":      defaultdict(list),
+            # Study I — full confluence
+            "full_confluence":          defaultdict(list),
+            # Interactions
+            "buoyancy_x_springboard":   defaultdict(list),
+            "dim_sell_x_impr_demand":   defaultdict(list),
+            "wave_score_x_behavior":    defaultdict(list),
+            # Up-wave efficiency tiers
+            "up1_price_eff_tier":       defaultdict(list),
+            "dn1_vol_eff_tier":         defaultdict(list),
+        }
+
+        for r, p in population:
+            wbkt  = str(r.get("w_wave_efficiency_bucket",       "WAVE_INSUFFICIENT_DATA"))
+            score = int(r.get("w_wave_efficiency_score",         0) or 0)
+            spd   = bool(r.get("w_selling_pressure_diminishing", False))
+            dei   = bool(r.get("w_demand_efficiency_improving",  False))
+            spb   = bool(r.get("w_springboard_present",          False))
+            buy   = bool(r.get("w_buoyancy_near_support",        False))
+            ftf   = bool(r.get("w_failure_to_follow_through",    False))
+            tsh   = bool(r.get("w_thrust_shortening",            False))
+            bhv   = str(r.get("behavior_classification",         "NEUTRAL"))
+
+            # Score tier
+            if score >= 6:
+                stier = "SCORE_6_PLUS"
+            elif score >= 4:
+                stier = "SCORE_4_5"
+            elif score >= 2:
+                stier = "SCORE_2_3"
+            else:
+                stier = "SCORE_0_1"
+
+            # Up-wave price efficiency tier
+            up1_pe = _safe_float(r.get("w_up1_price_eff")) or 0.0
+            if up1_pe >= 2.0:
+                up1_tier = "UP1_PRICE_EFF_HIGH_2_PLUS"
+            elif up1_pe >= 1.0:
+                up1_tier = "UP1_PRICE_EFF_MID_1_2"
+            elif up1_pe >= 0.3:
+                up1_tier = "UP1_PRICE_EFF_LOW_0_3_1"
+            else:
+                up1_tier = "UP1_PRICE_EFF_VERY_LOW_UNDER_0_3"
+
+            # Down-wave volume efficiency tier
+            dn1_ve = _safe_float(r.get("w_dn1_vol_eff")) or 0.0
+            if dn1_ve >= 5.0:
+                dn1_tier = "DN1_VOL_EFF_HIGH_5_PLUS"
+            elif dn1_ve >= 2.0:
+                dn1_tier = "DN1_VOL_EFF_MID_2_5"
+            elif dn1_ve >= 0.5:
+                dn1_tier = "DN1_VOL_EFF_LOW_0_5_2"
+            else:
+                dn1_tier = "DN1_VOL_EFF_VERY_LOW_UNDER_0_5"
+
+            g["wave_efficiency_bucket"][wbkt].append(p)
+            g["wave_efficiency_score_tier"][stier].append(p)
+
+            g["selling_pressure_dim"]["SPD_YES" if spd else "SPD_NO"].append(p)
+            g["demand_eff_improving"]["DEI_YES"  if dei else "DEI_NO"].append(p)
+            g["springboard"]["SPB_YES"           if spb else "SPB_NO"].append(p)
+            g["buoyancy"]["BUY_YES"              if buy else "BUY_NO"].append(p)
+            g["failure_follow_through"]["FTF_YES" if ftf else "FTF_NO"].append(p)
+            g["thrust_shortening"]["TSH_YES"     if tsh else "TSH_NO"].append(p)
+
+            # Study G: diminishing selling + improving demand
+            dual = spd and dei
+            g["dual_demand_confirm"]["DUAL_CONFIRM_YES" if dual else "DUAL_CONFIRM_NO"].append(p)
+
+            # Study H: springboard + buoyancy = imminent resolution
+            imm = spb or buy
+            g["imminent_resolution"]["IMMINENT_YES" if imm else "IMMINENT_NO"].append(p)
+
+            # Study I: full confluence (both H conditions + diminishing selling)
+            full = spd and (spb or buy)
+            g["full_confluence"]["FULL_CONFLUENCE_YES" if full else "FULL_CONFLUENCE_NO"].append(p)
+
+            # Interactions
+            g["buoyancy_x_springboard"][f"BUY={'Y' if buy else 'N'}|SPB={'Y' if spb else 'N'}"].append(p)
+            g["dim_sell_x_impr_demand"][f"SPD={'Y' if spd else 'N'}|DEI={'Y' if dei else 'N'}"].append(p)
+            g["wave_score_x_behavior"][f"{stier}|{bhv}"].append(p)
+            g["up1_price_eff_tier"][up1_tier].append(p)
+            g["dn1_vol_eff_tier"][dn1_tier].append(p)
+
+        return g
+
+    universe_groups = _populate(universe_rows)
+    target_groups   = _populate(target_rows)
+
+    result: Dict[str, Any] = {
+        "target_bucket_n": len(target_rows),
+        "universe_n":      len(universe_rows),
+        "target_bucket_definition": {
+            "setup_type":        "Volatility Expansion Candidate",
+            "expansion_phase":   "EXP_PHASE_LATE",
+            "rel_volume_bucket": "RELVOL_2_0_3_0X",
+            "distance_from_high": "20PCT_PLUS_OFF",
+        },
+    }
+
+    study_names = [
+        "wave_efficiency_bucket",
+        "wave_efficiency_score_tier",
+        "selling_pressure_dim",
+        "demand_eff_improving",
+        "springboard",
+        "buoyancy",
+        "failure_follow_through",
+        "thrust_shortening",
+        "dual_demand_confirm",
+        "imminent_resolution",
+        "full_confluence",
+        "buoyancy_x_springboard",
+        "dim_sell_x_impr_demand",
+        "wave_score_x_behavior",
+        "up1_price_eff_tier",
+        "dn1_vol_eff_tier",
+    ]
+
+    for name in study_names:
+        result[f"universe_{name}"] = _summ(universe_groups[name], min_n=20)
+        result[f"target_{name}"]   = _summ(target_groups[name],   min_n=5)
+
+    return result
+
+
 def _is_target_bucket(r: Dict[str, Any]) -> bool:
     """
     Filter for the strongest bucket from prior phases:
@@ -3298,6 +3864,77 @@ def run_audit(args: argparse.Namespace) -> None:
                 #    summarize function after all rows are collected.
                 p5_mfe90_raw = markup_90d_pct  # already computed above
 
+
+                # Weis Wave / Behavioral Efficiency Engine.
+                # Computes wave structure variables from swing highs and lows
+                # over the prior 60-bar lookback.  These variables answer:
+                #   "How is the market moving into the signal?"
+                # rather than "What state is the market in today?"
+                # The trajectory of wave efficiency separates stocks that
+                # are about to move from those that merely look like they should.
+
+                _ww_avg_vol = sma([b.v for b in daily], i, 20) or 1.0
+                _ww_atr     = calc_atr(daily, i, 14) or max(
+                    daily[i].h - daily[i].l, daily[i].c * 0.01
+                )
+                _ww_support = p4_support_level if trading_range_detected else 0.0
+
+                _ww = _compute_wave_variables(
+                    bars=daily,
+                    idx=i,
+                    support_level=_ww_support,
+                    avg_vol_20=_ww_avg_vol,
+                    atr=_ww_atr,
+                    lookback=60,
+                )
+
+                # Unpack all wave variables for the row dict
+                w_up1_return_pct  = _ww["w_up1_return_pct"]
+                w_up1_duration    = _ww["w_up1_duration"]
+                w_up1_vol_ratio   = _ww["w_up1_vol_ratio"]
+                w_up1_price_eff   = _ww["w_up1_price_eff"]
+                w_up1_vol_eff     = _ww["w_up1_vol_eff"]
+
+                w_up2_return_pct  = _ww["w_up2_return_pct"]
+                w_up2_duration    = _ww["w_up2_duration"]
+                w_up2_vol_ratio   = _ww["w_up2_vol_ratio"]
+                w_up2_price_eff   = _ww["w_up2_price_eff"]
+                w_up2_vol_eff     = _ww["w_up2_vol_eff"]
+
+                w_up3_return_pct  = _ww["w_up3_return_pct"]
+                w_up3_duration    = _ww["w_up3_duration"]
+                w_up3_vol_ratio   = _ww["w_up3_vol_ratio"]
+                w_up3_price_eff   = _ww["w_up3_price_eff"]
+                w_up3_vol_eff     = _ww["w_up3_vol_eff"]
+
+                w_dn1_return_pct  = _ww["w_dn1_return_pct"]
+                w_dn1_duration    = _ww["w_dn1_duration"]
+                w_dn1_vol_ratio   = _ww["w_dn1_vol_ratio"]
+                w_dn1_price_eff   = _ww["w_dn1_price_eff"]
+                w_dn1_vol_eff     = _ww["w_dn1_vol_eff"]
+
+                w_dn2_return_pct  = _ww["w_dn2_return_pct"]
+                w_dn2_duration    = _ww["w_dn2_duration"]
+                w_dn2_vol_ratio   = _ww["w_dn2_vol_ratio"]
+                w_dn2_price_eff   = _ww["w_dn2_price_eff"]
+                w_dn2_vol_eff     = _ww["w_dn2_vol_eff"]
+
+                w_dn3_return_pct  = _ww["w_dn3_return_pct"]
+                w_dn3_duration    = _ww["w_dn3_duration"]
+                w_dn3_vol_ratio   = _ww["w_dn3_vol_ratio"]
+                w_dn3_price_eff   = _ww["w_dn3_price_eff"]
+                w_dn3_vol_eff     = _ww["w_dn3_vol_eff"]
+
+                w_thrust_shortening           = _ww["w_thrust_shortening"]
+                w_thrust_shortening_ratio     = _ww["w_thrust_shortening_ratio"]
+                w_selling_pressure_diminishing = _ww["w_selling_pressure_diminishing"]
+                w_demand_efficiency_improving  = _ww["w_demand_efficiency_improving"]
+                w_springboard_present         = _ww["w_springboard_present"]
+                w_buoyancy_near_support       = _ww["w_buoyancy_near_support"]
+                w_failure_to_follow_through   = _ww["w_failure_to_follow_through"]
+                w_wave_efficiency_score       = _ww["w_wave_efficiency_score"]
+                w_wave_efficiency_bucket      = _ww["w_wave_efficiency_bucket"]
+
                 volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
                     setup=setup,
                     setup_subtype=setup_subtype,
@@ -3402,6 +4039,47 @@ def run_audit(args: argparse.Namespace) -> None:
                     "p5_rs_traj_bucket":       p5_rs_traj_bucket,
                     "p5_days_since_252_high":  p5_days_since_252_high,
                     "p5_days_since_high_bucket": p5_days_since_high_bucket,
+
+                    # Weis Wave / Behavioral Efficiency fields.
+                    "w_up1_return_pct": w_up1_return_pct,
+                    "w_up1_duration":   w_up1_duration,
+                    "w_up1_vol_ratio":  w_up1_vol_ratio,
+                    "w_up1_price_eff":  w_up1_price_eff,
+                    "w_up1_vol_eff":    w_up1_vol_eff,
+                    "w_up2_return_pct": w_up2_return_pct,
+                    "w_up2_duration":   w_up2_duration,
+                    "w_up2_vol_ratio":  w_up2_vol_ratio,
+                    "w_up2_price_eff":  w_up2_price_eff,
+                    "w_up2_vol_eff":    w_up2_vol_eff,
+                    "w_up3_return_pct": w_up3_return_pct,
+                    "w_up3_duration":   w_up3_duration,
+                    "w_up3_vol_ratio":  w_up3_vol_ratio,
+                    "w_up3_price_eff":  w_up3_price_eff,
+                    "w_up3_vol_eff":    w_up3_vol_eff,
+                    "w_dn1_return_pct": w_dn1_return_pct,
+                    "w_dn1_duration":   w_dn1_duration,
+                    "w_dn1_vol_ratio":  w_dn1_vol_ratio,
+                    "w_dn1_price_eff":  w_dn1_price_eff,
+                    "w_dn1_vol_eff":    w_dn1_vol_eff,
+                    "w_dn2_return_pct": w_dn2_return_pct,
+                    "w_dn2_duration":   w_dn2_duration,
+                    "w_dn2_vol_ratio":  w_dn2_vol_ratio,
+                    "w_dn2_price_eff":  w_dn2_price_eff,
+                    "w_dn2_vol_eff":    w_dn2_vol_eff,
+                    "w_dn3_return_pct": w_dn3_return_pct,
+                    "w_dn3_duration":   w_dn3_duration,
+                    "w_dn3_vol_ratio":  w_dn3_vol_ratio,
+                    "w_dn3_price_eff":  w_dn3_price_eff,
+                    "w_dn3_vol_eff":    w_dn3_vol_eff,
+                    "w_thrust_shortening":            w_thrust_shortening,
+                    "w_thrust_shortening_ratio":      w_thrust_shortening_ratio,
+                    "w_selling_pressure_diminishing": w_selling_pressure_diminishing,
+                    "w_demand_efficiency_improving":  w_demand_efficiency_improving,
+                    "w_springboard_present":          w_springboard_present,
+                    "w_buoyancy_near_support":        w_buoyancy_near_support,
+                    "w_failure_to_follow_through":    w_failure_to_follow_through,
+                    "w_wave_efficiency_score":        w_wave_efficiency_score,
+                    "w_wave_efficiency_bucket":       w_wave_efficiency_bucket,
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
@@ -3446,6 +4124,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_phase3_json = output_dir / "qualified_long_signal_wyckoff_cause_effect_phase3.json"
     wyckoff_phase4_json = output_dir / "qualified_long_signal_wyckoff_juncture_phase4.json"
     wyckoff_phase5_json = output_dir / "qualified_long_signal_wyckoff_dissection_phase5.json"
+    wyckoff_phase6_json = output_dir / "qualified_long_signal_wyckoff_wave_efficiency_phase6.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -3461,6 +4140,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_phase3_summary = summarize_wyckoff_phase3_cause_effect(signal_rows)
     wyckoff_phase4_summary = summarize_wyckoff_phase4_junctures(signal_rows)
     wyckoff_phase5_summary = summarize_wyckoff_phase5_dissection(signal_rows)
+    wyckoff_phase6_summary = summarize_wyckoff_phase6_wave_efficiency(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -3484,6 +4164,16 @@ def run_audit(args: argparse.Namespace) -> None:
         "p5_vol_trend_ratio", "p5_vol_trend_bucket",
         "p5_rs_traj_10d", "p5_rs_traj_bucket",
         "p5_days_since_252_high", "p5_days_since_high_bucket",
+        "w_up1_return_pct", "w_up1_duration", "w_up1_vol_ratio", "w_up1_price_eff", "w_up1_vol_eff",
+        "w_up2_return_pct", "w_up2_duration", "w_up2_vol_ratio", "w_up2_price_eff", "w_up2_vol_eff",
+        "w_up3_return_pct", "w_up3_duration", "w_up3_vol_ratio", "w_up3_price_eff", "w_up3_vol_eff",
+        "w_dn1_return_pct", "w_dn1_duration", "w_dn1_vol_ratio", "w_dn1_price_eff", "w_dn1_vol_eff",
+        "w_dn2_return_pct", "w_dn2_duration", "w_dn2_vol_ratio", "w_dn2_price_eff", "w_dn2_vol_eff",
+        "w_dn3_return_pct", "w_dn3_duration", "w_dn3_vol_ratio", "w_dn3_price_eff", "w_dn3_vol_eff",
+        "w_thrust_shortening", "w_thrust_shortening_ratio",
+        "w_selling_pressure_diminishing", "w_demand_efficiency_improving",
+        "w_springboard_present", "w_buoyancy_near_support", "w_failure_to_follow_through",
+        "w_wave_efficiency_score", "w_wave_efficiency_bucket",
         "high_252", "distance_from_252_high_pct", "expansion_phase_bucket",
         "volatility_dna_score", "volatility_dna_tier", "ma20", "ma50",
     ]
@@ -3564,6 +4254,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "wyckoff_cause_effect_phase3": wyckoff_phase3_summary,
         "wyckoff_juncture_phase4": wyckoff_phase4_summary,
         "wyckoff_dissection_phase5": wyckoff_phase5_summary,
+        "wyckoff_wave_efficiency_phase6": wyckoff_phase6_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -3579,6 +4270,7 @@ def run_audit(args: argparse.Namespace) -> None:
             "wyckoff_cause_effect_phase3_json": str(wyckoff_phase3_json),
             "wyckoff_juncture_phase4_json": str(wyckoff_phase4_json),
             "wyckoff_dissection_phase5_json": str(wyckoff_phase5_json),
+            "wyckoff_wave_efficiency_phase6_json": str(wyckoff_phase6_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -3591,6 +4283,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_phase3_json.write_text(json.dumps(wyckoff_phase3_summary, indent=2))
     wyckoff_phase4_json.write_text(json.dumps(wyckoff_phase4_summary, indent=2))
     wyckoff_phase5_json.write_text(json.dumps(wyckoff_phase5_summary, indent=2))
+    wyckoff_phase6_json.write_text(json.dumps(wyckoff_phase6_summary, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -3609,6 +4302,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"WyckoffPhase3: {wyckoff_phase3_json}")
     print(f"WyckoffPhase4: {wyckoff_phase4_json}")
     print(f"WyckoffPhase5: {wyckoff_phase5_json}")
+    print(f"WyckoffPhase6: {wyckoff_phase6_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -4052,6 +4746,116 @@ def run_audit(args: argparse.Namespace) -> None:
     for s in wyckoff_phase4_summary.get("combined_juncture_x_behavior_x_apex", []):
         print(f"{s['bucket']:<55} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
 
+
+
+
+    # ── Phase 6: Weis Wave / Behavioral Efficiency ────────────────────────────
+    p6 = wyckoff_phase6_summary
+    p6_n  = p6.get("target_bucket_n", 0)
+    p6_un = p6.get("universe_n", 0)
+
+    print(f"\n{'='*112}")
+    print(f"Wyckoff / Weis Phase 6: Behavioral Efficiency Engine (Weis Wave)")
+    print(f"  Target: Late Expansion + 20%+ Off High + RelVol 2-3x")
+    print(f"  Target n={p6_n}   Universe n={p6_un}")
+    print(f"  Validation threshold: avg_asym_20d > 2.0 for favorable conditions")
+    print(f"{'='*112}")
+
+    def _p6_print(title: str, universe_rows: list, target_rows: list) -> None:
+        fmt = "{:<52} {:>6}  mfe20={:>7.3f}%  mfe90={:>7.3f}%  acc90={:>6.2f}%  asym={}"
+        print(f"\n{title}")
+        print(f"  --- Universe ---")
+        print("-" * 112)
+        for s in universe_rows[:10]:
+            print(fmt.format(
+                s["bucket"], s["signals"],
+                s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                s["acc_90d_pct"], str(s["avg_asym_20d"])
+            ))
+        print(f"  --- Target Bucket (Late + 20%Off + 2-3x RelVol) ---")
+        print("-" * 112)
+        for s in target_rows:
+            print(fmt.format(
+                s["bucket"], s["signals"],
+                s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                s["acc_90d_pct"], str(s["avg_asym_20d"])
+            ))
+
+    _p6_print(
+        "Phase 6 | Study A: Wave Efficiency Bucket",
+        p6.get("universe_wave_efficiency_bucket", []),
+        p6.get("target_wave_efficiency_bucket",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study J: Wave Efficiency Score Tier (Monotonic Test)",
+        p6.get("universe_wave_efficiency_score_tier", []),
+        p6.get("target_wave_efficiency_score_tier",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study B: Selling Pressure Diminishing",
+        p6.get("universe_selling_pressure_dim", []),
+        p6.get("target_selling_pressure_dim",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study C: Demand Efficiency Improving",
+        p6.get("universe_demand_eff_improving", []),
+        p6.get("target_demand_eff_improving",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study D: Springboard Present",
+        p6.get("universe_springboard", []),
+        p6.get("target_springboard",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study E: Buoyancy Near Support",
+        p6.get("universe_buoyancy", []),
+        p6.get("target_buoyancy",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study F: Failure to Follow Through",
+        p6.get("universe_failure_follow_through", []),
+        p6.get("target_failure_follow_through",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study G: Dual Demand Confirmation (Diminishing Sell + Improving Demand)",
+        p6.get("universe_dual_demand_confirm", []),
+        p6.get("target_dual_demand_confirm",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study H: Imminent Resolution (Springboard OR Buoyancy)",
+        p6.get("universe_imminent_resolution", []),
+        p6.get("target_imminent_resolution",   []),
+    )
+    _p6_print(
+        "Phase 6 | Study I: Full Confluence (Diminishing Sell + Imminent Resolution)",
+        p6.get("universe_full_confluence", []),
+        p6.get("target_full_confluence",   []),
+    )
+    _p6_print(
+        "Phase 6 | Interaction: Buoyancy x Springboard",
+        p6.get("universe_buoyancy_x_springboard", []),
+        p6.get("target_buoyancy_x_springboard",   []),
+    )
+    _p6_print(
+        "Phase 6 | Interaction: Diminishing Selling x Improving Demand",
+        p6.get("universe_dim_sell_x_impr_demand", []),
+        p6.get("target_dim_sell_x_impr_demand",   []),
+    )
+    _p6_print(
+        "Phase 6 | Interaction: Wave Score x Behavioral Classification",
+        p6.get("universe_wave_score_x_behavior", []),
+        p6.get("target_wave_score_x_behavior",   []),
+    )
+    _p6_print(
+        "Phase 6 | Up-Wave 1 Price Efficiency Tier",
+        p6.get("universe_up1_price_eff_tier", []),
+        p6.get("target_up1_price_eff_tier",   []),
+    )
+    _p6_print(
+        "Phase 6 | Down-Wave 1 Volume Efficiency Tier",
+        p6.get("universe_dn1_vol_eff_tier", []),
+        p6.get("target_dn1_vol_eff_tier",   []),
+    )
 
 
     # ── Phase 5: Dissection of the Strongest Bucket ──────────────────────────
