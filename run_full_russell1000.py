@@ -276,7 +276,7 @@ try:
     spec = importlib.util.spec_from_file_location(
         "audit", "backend/qualified_long_signal_audit.py"
     )
-    audit_mod = importlib.util.load_from_spec(spec)
+    audit_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(audit_mod)
 
     fetch_bars           = audit_mod.fetch_bars
