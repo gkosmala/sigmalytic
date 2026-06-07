@@ -271,42 +271,32 @@ def validate_environment() -> bool:
 sys.path.insert(0, str(Path("backend").absolute()))
 
 try:
-    # Import everything we need from the existing audit script
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "audit", "backend/qualified_long_signal_audit.py"
+    sys.path.insert(0, str(Path("backend").absolute()))
+    from qualified_long_signal_audit import (
+        fetch_bars,
+        load_symbols_from_file,
+        bars_by_date,
+        last_2h_rs_by_date,
+        percentile_score,
+        sma,
+        calc_rel_volume,
+        forward_metrics,
+        classify_setup,
+        classify_expansion_subtype,
+        classify_volatility_dna_score,
+        grade_from_signal,
+        grade_at_least,
+        setup_is_long,
+        _atr_pct,
+        _effort_bucket,
+        _result_bucket,
+        _er_interpretation,
+        _absorption_persistence_tier,
+        _count_absorption_candidates_in_window,
+        _compute_wave_variables,
+        calc_atr,
+        Bar,
     )
-    audit_mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(audit_mod)
-
-    fetch_bars           = audit_mod.fetch_bars
-    load_symbols_from_file = audit_mod.load_symbols_from_file
-    bars_by_date         = audit_mod.bars_by_date
-    last_2h_rs_by_date   = audit_mod.last_2h_rs_by_date
-    percentile_score     = audit_mod.percentile_score
-    sma                  = audit_mod.sma
-    calc_rel_volume      = audit_mod.calc_rel_volume
-    forward_metrics      = audit_mod.forward_metrics
-    classify_setup       = audit_mod.classify_setup
-    classify_expansion_subtype = audit_mod.classify_expansion_subtype
-    classify_volatility_dna_score = audit_mod.classify_volatility_dna_score
-    grade_from_signal    = audit_mod.grade_from_signal
-    grade_at_least       = audit_mod.grade_at_least
-    setup_is_long        = audit_mod.setup_is_long
-    _atr_pct             = audit_mod._atr_pct
-    _effort_bucket       = audit_mod._effort_bucket
-    _result_bucket       = audit_mod._result_bucket
-    _er_interpretation   = audit_mod._er_interpretation
-    _absorption_persistence_tier = audit_mod._absorption_persistence_tier
-    _count_absorption_candidates_in_window = audit_mod._count_absorption_candidates_in_window
-    _compute_wave_variables = audit_mod._compute_wave_variables
-    _identify_swing_points  = audit_mod._identify_swing_points
-    _build_waves_from_swings = audit_mod._build_waves_from_swings
-    calc_atr             = audit_mod.calc_atr
-    Bar                  = audit_mod.Bar
-    _env_audit           = audit_mod._env
-    _headers             = audit_mod._headers
-
     print("OK: Imported audit functions from backend/qualified_long_signal_audit.py")
 
 except Exception as e:
