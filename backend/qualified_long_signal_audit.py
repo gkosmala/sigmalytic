@@ -1095,6 +1095,338 @@ def summarize_volatility_rs_matrix(rows: List[Dict[str, Any]]) -> Dict[str, List
     }
 
 
+# -----------------------------------------------------------------------------
+# Wyckoff / Weis Phase 2: Persistent Absorption
+# -----------------------------------------------------------------------------
+
+def _is_high_effort_low_result(effort_bucket: str, result_bucket: str) -> bool:
+    """
+    Atomic Wyckoff/Weis absorption candidate.
+
+    This is intentionally context-neutral.  We are NOT saying this is bullish
+    absorption or bearish distribution yet.  We are only detecting the behavioral
+    footprint: unusually high effort with little price progress.
+    """
+    return (
+        effort_bucket in {"EFFORT_HIGH_1_5_2_0X", "EFFORT_VERY_HIGH_2_0_3_0X", "EFFORT_CLIMAX_3X_PLUS"}
+        and result_bucket == "RESULT_LOW_PROGRESS"
+    )
+
+
+def _absorption_persistence_tier(count: int) -> str:
+    if count <= 0:
+        return "ABS_PERSISTENCE_0_EVENTS"
+    if count == 1:
+        return "ABS_PERSISTENCE_1_EVENT"
+    if count == 2:
+        return "ABS_PERSISTENCE_2_EVENTS"
+    if count == 3:
+        return "ABS_PERSISTENCE_3_EVENTS"
+    return "ABS_PERSISTENCE_4_PLUS_EVENTS"
+
+
+def _count_absorption_candidates_in_window(
+    bars: List[Bar],
+    idx: int,
+    window: int,
+    mode: str = "single",
+) -> int:
+    """
+    Count atomic absorption candidates in a rolling window ending at idx.
+
+    mode="single": one-bar effort/result.
+    mode="five": five-bar effort/result.
+
+    This function deliberately avoids RS, volatility regime, distance from high,
+    setup type, or grade.  It tests the pure Wyckoff/Weis proposition that
+    repeated high-effort / low-result behavior may represent cause building.
+    """
+    if idx <= 0:
+        return 0
+    start = max(1, idx - window + 1)
+    count = 0
+    for j in range(start, idx + 1):
+        atr_pct = _atr_pct(bars, j, 20) or 0.0
+        if atr_pct <= 0:
+            continue
+
+        if mode == "five":
+            if j < 5:
+                continue
+            start_close = bars[j - 5].c
+            return_pct = ((bars[j].c - start_close) / start_close * 100.0) if start_close > 0 else 0.0
+            recent_vol = sum(b.v for b in bars[j - 4:j + 1])
+            prior_start = max(0, j - 24)
+            prior_vols = [b.v for b in bars[prior_start:j - 4]]
+            avg_prior_vol = (sum(prior_vols) / len(prior_vols)) if prior_vols else max(bars[j].v, 1.0)
+            rel_effort = recent_vol / max(avg_prior_vol * 5.0, 1.0)
+            norm_result = (return_pct / (atr_pct * math.sqrt(5))) if atr_pct > 0 else 0.0
+        else:
+            prev_close = bars[j - 1].c if j > 0 else bars[j].o
+            return_pct = ((bars[j].c - prev_close) / prev_close * 100.0) if prev_close > 0 else 0.0
+            rel_effort = calc_rel_volume(bars, j, 20)
+            norm_result = (return_pct / atr_pct) if atr_pct > 0 else 0.0
+
+        effort_bucket = _effort_bucket(rel_effort)
+        result_bucket = _result_bucket(norm_result)
+        if _is_high_effort_low_result(effort_bucket, result_bucket):
+            count += 1
+    return count
+
+
+
+
+def summarize_wyckoff_phase3_cause_effect(rows):
+    """
+    Wyckoff / Weis Phase 3 study: Cause -> Effect.
+
+    Research questions:
+      Study A -- Does absorption persistence exhibit monotonic alpha generation?
+                 Bucket signals by abs1/abs5 count and compare markup MFE at 20/40/60/90 days.
+      Study B -- Single-bar vs Multi-bar: does abs5 outperform abs1?
+      Study C -- Dual Confirmation: does abs1 AND abs5 together outperform either alone?
+      Study D -- Time Compression: does absorption clustered in 20 days beat absorption
+                 spread over 60 days with the same total count?
+
+    Markup is measured using Maximum Favorable Excursion (MFE) so intraperiod
+    highs are captured rather than closing-price-only returns.
+    """
+    import math
+    from collections import defaultdict
+
+    def _safe_float(val):
+        try:
+            v = float(val)
+            return v if math.isfinite(v) else None
+        except Exception:
+            return None
+
+    def _markup_payload(r):
+        m20 = _safe_float(r.get("markup_20d_pct"))
+        m40 = _safe_float(r.get("markup_40d_pct"))
+        m60 = _safe_float(r.get("markup_60d_pct"))
+        m90 = _safe_float(r.get("markup_90d_pct"))
+        if m90 is None:
+            return None
+        return {
+            "markup_20d": m20 if m20 is not None else 0.0,
+            "markup_40d": m40 if m40 is not None else 0.0,
+            "markup_60d": m60 if m60 is not None else 0.0,
+            "markup_90d": m90,
+        }
+
+    def _summarize_markup(bucket_map, min_signals=20):
+        out = []
+        for bucket, vals in sorted(bucket_map.items()):
+            if len(vals) < min_signals:
+                continue
+            n = len(vals)
+            out.append({
+                "bucket": bucket,
+                "signals": n,
+                "avg_markup_20d_mfe_pct": round(sum(v["markup_20d"] for v in vals) / n, 3),
+                "avg_markup_40d_mfe_pct": round(sum(v["markup_40d"] for v in vals) / n, 3),
+                "avg_markup_60d_mfe_pct": round(sum(v["markup_60d"] for v in vals) / n, 3),
+                "avg_markup_90d_mfe_pct": round(sum(v["markup_90d"] for v in vals) / n, 3),
+            })
+        out.sort(key=lambda x: x["avg_markup_90d_mfe_pct"], reverse=True)
+        return out
+
+    grouped = {
+        # Study A: persistence tiers.
+        "study_a_abs1_count_20_vs_markup": defaultdict(list),
+        "study_a_abs1_count_40_vs_markup": defaultdict(list),
+        "study_a_abs1_count_60_vs_markup": defaultdict(list),
+        "study_a_abs5_count_20_vs_markup": defaultdict(list),
+        "study_a_abs5_count_40_vs_markup": defaultdict(list),
+        "study_a_abs5_count_60_vs_markup": defaultdict(list),
+        # Study A: cause_score tier -> Markup.
+        "study_a_cause_score_tier_vs_markup": defaultdict(list),
+        # Study B: Single vs Multi-bar head-to-head.
+        "study_b_abs1_vs_abs5": defaultdict(list),
+        # Study C: Dual confirmation.
+        "study_c_dual_confirmation": defaultdict(list),
+        # Study D: Time compression.
+        "study_d_time_compression": defaultdict(list),
+        # Markup bucket distribution by cause score tier.
+        "markup_bucket_by_cause_score_tier": defaultdict(list),
+    }
+
+    for r in rows:
+        payload = _markup_payload(r)
+        if payload is None:
+            continue
+
+        s20 = int(r.get("abs1_count_20", 0) or 0)
+        s40 = int(r.get("abs1_count_40", 0) or 0)
+        s60 = int(r.get("abs1_count_60", 0) or 0)
+        f20 = int(r.get("abs5_count_20", 0) or 0)
+        f40 = int(r.get("abs5_count_40", 0) or 0)
+        f60 = int(r.get("abs5_count_60", 0) or 0)
+        cause = _safe_float(r.get("cause_score")) or 0.0
+
+        # Study A: persistence tiers.
+        grouped["study_a_abs1_count_20_vs_markup"][_absorption_persistence_tier(s20)].append(payload)
+        grouped["study_a_abs1_count_40_vs_markup"][_absorption_persistence_tier(s40)].append(payload)
+        grouped["study_a_abs1_count_60_vs_markup"][_absorption_persistence_tier(s60)].append(payload)
+        grouped["study_a_abs5_count_20_vs_markup"][_absorption_persistence_tier(f20)].append(payload)
+        grouped["study_a_abs5_count_40_vs_markup"][_absorption_persistence_tier(f40)].append(payload)
+        grouped["study_a_abs5_count_60_vs_markup"][_absorption_persistence_tier(f60)].append(payload)
+
+        # Study A: cause score tier.
+        if cause >= 20.0:
+            cs_tier = "CAUSE_SCORE_20_PLUS"
+        elif cause >= 12.0:
+            cs_tier = "CAUSE_SCORE_12_20"
+        elif cause >= 6.0:
+            cs_tier = "CAUSE_SCORE_6_12"
+        elif cause >= 2.0:
+            cs_tier = "CAUSE_SCORE_2_6"
+        else:
+            cs_tier = "CAUSE_SCORE_0_2"
+        grouped["study_a_cause_score_tier_vs_markup"][cs_tier].append(payload)
+
+        # Study B: Single-bar vs Five-bar head-to-head (use 60-bar windows for breadth).
+        abs1_only = s60 > 0 and f60 == 0
+        abs5_only = f60 > 0 and s60 == 0
+        both_present = s60 > 0 and f60 > 0
+        if abs1_only:
+            grouped["study_b_abs1_vs_abs5"]["ABS1_ONLY"].append(payload)
+        elif abs5_only:
+            grouped["study_b_abs1_vs_abs5"]["ABS5_ONLY"].append(payload)
+        elif both_present:
+            grouped["study_b_abs1_vs_abs5"]["BOTH_ABS1_AND_ABS5"].append(payload)
+        else:
+            grouped["study_b_abs1_vs_abs5"]["NEITHER"].append(payload)
+
+        # Study C: Dual confirmation (both single AND five-bar in the 20-bar window).
+        if s20 > 0 and f20 > 0:
+            dual_label = "DUAL_CONFIRMED_BOTH_IN_20"
+        elif s20 > 0:
+            dual_label = "SINGLE_BAR_ONLY_IN_20"
+        elif f20 > 0:
+            dual_label = "FIVE_BAR_ONLY_IN_20"
+        else:
+            dual_label = "NO_ABSORPTION_IN_20"
+        grouped["study_c_dual_confirmation"][dual_label].append(payload)
+
+        # Study D: Time compression.
+        # Clustered = same count packed into fewer days = stronger cause per Wyckoff.
+        if s20 >= 3:
+            compression = "CLUSTERED_3_PLUS_IN_20DAYS"
+        elif s20 >= 2 and s40 <= s20 + 1:
+            compression = "CLUSTERED_RECENT_TIGHT"
+        elif s60 >= 4 and s20 <= 1:
+            compression = "DISTRIBUTED_4_PLUS_IN_60DAYS"
+        elif s60 >= 2:
+            compression = "LIGHT_DISTRIBUTED"
+        else:
+            compression = "SPARSE_OR_NONE"
+        grouped["study_d_time_compression"][compression].append(payload)
+
+        # Markup bucket distribution.
+        mb = str(r.get("markup_bucket", "MARKUP_INSUFFICIENT_DATA"))
+        grouped["markup_bucket_by_cause_score_tier"][f"{cs_tier}|{mb}"].append(payload)
+
+    return {
+        name: _summarize_markup(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
+
+def summarize_wyckoff_persistent_absorption(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Wyckoff / Weis Phase 2 study: Persistent Absorption.
+
+    Research question:
+      Does repeated high-effort / low-result behavior produce better forward
+      outcomes than isolated high-effort / low-result behavior?
+
+    This is a pure Wyckoff/Weis persistence test.  It intentionally does NOT
+    filter by RS, volatility, distance from high, expansion phase, or setup type.
+    """
+    grouped: Dict[str, Dict[str, List[Dict[str, float]]]] = {
+        "single_bar_absorption_count_20": defaultdict(list),
+        "single_bar_absorption_count_40": defaultdict(list),
+        "single_bar_absorption_count_60": defaultdict(list),
+        "five_bar_absorption_count_20": defaultdict(list),
+        "five_bar_absorption_count_40": defaultdict(list),
+        "five_bar_absorption_count_60": defaultdict(list),
+        "single_bar_absorption_cluster_shape": defaultdict(list),
+        "five_bar_absorption_cluster_shape": defaultdict(list),
+        "single_vs_five_bar_absorption_overlap": defaultdict(list),
+    }
+
+    def payload_from_h90(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h90 = r.get("h90")
+        if not isinstance(h90, dict):
+            return None
+        try:
+            return {
+                "direction_correct": float(h90.get("direction_correct", 0.0)),
+                "return_pct": float(h90.get("return_pct", 0.0)),
+                "mfe_pct": float(h90.get("mfe_pct", 0.0)),
+                "mae_pct": float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    for r in rows:
+        payload = payload_from_h90(r)
+        if not payload:
+            continue
+
+        s20 = int(r.get("abs1_count_20", 0) or 0)
+        s40 = int(r.get("abs1_count_40", 0) or 0)
+        s60 = int(r.get("abs1_count_60", 0) or 0)
+        f20 = int(r.get("abs5_count_20", 0) or 0)
+        f40 = int(r.get("abs5_count_40", 0) or 0)
+        f60 = int(r.get("abs5_count_60", 0) or 0)
+
+        grouped["single_bar_absorption_count_20"][_absorption_persistence_tier(s20)].append(payload)
+        grouped["single_bar_absorption_count_40"][_absorption_persistence_tier(s40)].append(payload)
+        grouped["single_bar_absorption_count_60"][_absorption_persistence_tier(s60)].append(payload)
+        grouped["five_bar_absorption_count_20"][_absorption_persistence_tier(f20)].append(payload)
+        grouped["five_bar_absorption_count_40"][_absorption_persistence_tier(f40)].append(payload)
+        grouped["five_bar_absorption_count_60"][_absorption_persistence_tier(f60)].append(payload)
+
+        # Cluster shape: recent 20-bar persistence versus broader 60-bar persistence.
+        if s20 >= 3:
+            single_shape = "SINGLE_BAR_CLUSTERED_RECENT_3_PLUS_IN_20"
+        elif s60 >= 4:
+            single_shape = "SINGLE_BAR_DISTRIBUTED_PERSISTENT_4_PLUS_IN_60"
+        elif s20 >= 1:
+            single_shape = "SINGLE_BAR_ISOLATED_OR_LIGHT_CLUSTER"
+        else:
+            single_shape = "SINGLE_BAR_NO_ABSORPTION_CLUSTER"
+        grouped["single_bar_absorption_cluster_shape"][single_shape].append(payload)
+
+        if f20 >= 3:
+            five_shape = "FIVE_BAR_CLUSTERED_RECENT_3_PLUS_IN_20"
+        elif f60 >= 4:
+            five_shape = "FIVE_BAR_DISTRIBUTED_PERSISTENT_4_PLUS_IN_60"
+        elif f20 >= 1:
+            five_shape = "FIVE_BAR_ISOLATED_OR_LIGHT_CLUSTER"
+        else:
+            five_shape = "FIVE_BAR_NO_ABSORPTION_CLUSTER"
+        grouped["five_bar_absorption_cluster_shape"][five_shape].append(payload)
+
+        if s20 >= 2 and f20 >= 2:
+            overlap = "BOTH_SINGLE_AND_FIVE_BAR_PERSISTENT_2_PLUS_IN_20"
+        elif s20 >= 2:
+            overlap = "SINGLE_BAR_ONLY_PERSISTENT_2_PLUS_IN_20"
+        elif f20 >= 2:
+            overlap = "FIVE_BAR_ONLY_PERSISTENT_2_PLUS_IN_20"
+        else:
+            overlap = "NO_DUAL_PERSISTENCE"
+        grouped["single_vs_five_bar_absorption_overlap"][overlap].append(payload)
+
+    return {
+        name: _summarize_group_perf(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
+
 def summarize_volatility_rs_distance_matrix(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Volatility + Relative Strength + Distance From High study.
@@ -1684,6 +2016,67 @@ def run_audit(args: argparse.Namespace) -> None:
                     distance_from_252_high_pct,
                 )
 
+                # Wyckoff / Weis Phase 2: Persistent Absorption.
+                # Count repeated high-effort / low-result bars in rolling windows.
+                # This is intentionally context-neutral: no RS, no volatility filter,
+                # no distance-from-high filter, no Spring/UTAD assumption.
+                abs1_count_20 = _count_absorption_candidates_in_window(daily, i, 20, mode="single")
+                abs1_count_40 = _count_absorption_candidates_in_window(daily, i, 40, mode="single")
+                abs1_count_60 = _count_absorption_candidates_in_window(daily, i, 60, mode="single")
+                abs5_count_20 = _count_absorption_candidates_in_window(daily, i, 20, mode="five")
+                abs5_count_40 = _count_absorption_candidates_in_window(daily, i, 40, mode="five")
+                abs5_count_60 = _count_absorption_candidates_in_window(daily, i, 60, mode="five")
+
+                # Wyckoff / Weis Phase 3: Cause Score.
+                # Composite weighted score across all six absorption count windows.
+                # Longer windows and five-bar counts are weighted more heavily because
+                # they represent broader and more deliberate cause building.
+                cause_score = round(
+                    abs1_count_20 * 1.0
+                    + abs1_count_40 * 1.25
+                    + abs1_count_60 * 1.5
+                    + abs5_count_20 * 2.0
+                    + abs5_count_40 * 2.5
+                    + abs5_count_60 * 3.0,
+                    3,
+                )
+
+                # Phase 3: Markup fields using Maximum Favorable Excursion (MFE).
+                # MFE captures intraperiod highs and therefore better reflects
+                # actual Wyckoff markup than highest closing price alone.
+                def _markup_mfe(bars: List[Bar], idx: int, horizon: int) -> Optional[float]:
+                    if idx + horizon >= len(bars):
+                        return None
+                    entry = bars[idx].c
+                    if entry <= 0:
+                        return None
+                    forward_slice = bars[idx + 1 : idx + horizon + 1]
+                    if not forward_slice:
+                        return None
+                    max_high = max(b.h for b in forward_slice)
+                    return round(((max_high - entry) / entry) * 100, 3)
+
+                markup_20d_pct  = _markup_mfe(daily, i, 20)
+                markup_40d_pct  = _markup_mfe(daily, i, 40)
+                markup_60d_pct  = _markup_mfe(daily, i, 60)
+                markup_90d_pct  = _markup_mfe(daily, i, 90)
+
+                # Markup bucket: classify the best observed markup (90-day MFE).
+                def _markup_bucket(mfe: Optional[float]) -> str:
+                    if mfe is None:
+                        return "MARKUP_INSUFFICIENT_DATA"
+                    if mfe >= 20.0:
+                        return "MAJOR_MARKUP_20_PLUS"
+                    if mfe >= 10.0:
+                        return "STRONG_MARKUP_10_20"
+                    if mfe >= 5.0:
+                        return "MODERATE_MARKUP_5_10"
+                    if mfe >= 0.0:
+                        return "MINIMAL_MARKUP_0_5"
+                    return "NO_MARKUP_NEGATIVE"
+
+                markup_bucket = _markup_bucket(markup_90d_pct)
+
                 volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
                     setup=setup,
                     setup_subtype=setup_subtype,
@@ -1731,6 +2124,25 @@ def run_audit(args: argparse.Namespace) -> None:
                     "er5_effort_bucket": er5_effort_bucket,
                     "er5_result_bucket": er5_result_bucket,
                     "er5_interpretation": er5_interpretation,
+                    "abs1_count_20": abs1_count_20,
+                    "abs1_count_40": abs1_count_40,
+                    "abs1_count_60": abs1_count_60,
+                    "abs1_tier_20": _absorption_persistence_tier(abs1_count_20),
+                    "abs1_tier_40": _absorption_persistence_tier(abs1_count_40),
+                    "abs1_tier_60": _absorption_persistence_tier(abs1_count_60),
+                    "abs5_count_20": abs5_count_20,
+                    "abs5_count_40": abs5_count_40,
+                    "abs5_count_60": abs5_count_60,
+                    "abs5_tier_20": _absorption_persistence_tier(abs5_count_20),
+                    "abs5_tier_40": _absorption_persistence_tier(abs5_count_40),
+                    "abs5_tier_60": _absorption_persistence_tier(abs5_count_60),
+                    # Phase 3: Cause → Effect fields.
+                    "cause_score": cause_score,
+                    "markup_20d_pct": markup_20d_pct if markup_20d_pct is not None else "",
+                    "markup_40d_pct": markup_40d_pct if markup_40d_pct is not None else "",
+                    "markup_60d_pct": markup_60d_pct if markup_60d_pct is not None else "",
+                    "markup_90d_pct": markup_90d_pct if markup_90d_pct is not None else "",
+                    "markup_bucket": markup_bucket,
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
@@ -1771,6 +2183,8 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_distance_json = output_dir / "qualified_long_signal_volatility_rs_distance_matrix.json"
     volatility_rs_distance_relvol_json = output_dir / "qualified_long_signal_volatility_rs_distance_relvol_matrix.json"
     wyckoff_er_json = output_dir / "qualified_long_signal_wyckoff_effort_result_phase1.json"
+    wyckoff_absorption_json = output_dir / "qualified_long_signal_wyckoff_persistent_absorption_phase2.json"
+    wyckoff_phase3_json = output_dir / "qualified_long_signal_wyckoff_cause_effect_phase3.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -1782,11 +2196,19 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_distance_matrix = summarize_volatility_rs_distance_matrix(signal_rows)
     volatility_rs_distance_relvol_matrix = summarize_volatility_rs_distance_relvol_matrix(signal_rows)
     wyckoff_er_summary = summarize_wyckoff_effort_result(signal_rows)
+    wyckoff_absorption_summary = summarize_wyckoff_persistent_absorption(signal_rows)
+    wyckoff_phase3_summary = summarize_wyckoff_phase3_cause_effect(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
         "symbol", "signal_date", "entry_close", "setup_type", "setup_subtype", "grade", "audit_score",
         "rs_2h", "rs_daily", "daily_rs_slope_pct", "rel_volume", "rel_volume_bucket",
+        "er_atr20_pct", "er1_return_pct", "er1_norm_result", "er1_effort_bucket", "er1_result_bucket", "er1_interpretation",
+        "er5_return_pct", "er5_rel_effort", "er5_norm_result", "er5_effort_bucket", "er5_result_bucket", "er5_interpretation",
+        "abs1_count_20", "abs1_count_40", "abs1_count_60", "abs1_tier_20", "abs1_tier_40", "abs1_tier_60",
+        "abs5_count_20", "abs5_count_40", "abs5_count_60", "abs5_tier_20", "abs5_tier_40", "abs5_tier_60",
+        "cause_score",
+        "markup_20d_pct", "markup_40d_pct", "markup_60d_pct", "markup_90d_pct", "markup_bucket",
         "high_252", "distance_from_252_high_pct", "expansion_phase_bucket",
         "volatility_dna_score", "volatility_dna_tier", "ma20", "ma50",
     ]
@@ -1863,6 +2285,8 @@ def run_audit(args: argparse.Namespace) -> None:
         "volatility_rs_distance_matrix": volatility_rs_distance_matrix,
         "volatility_rs_distance_relvol_matrix": volatility_rs_distance_relvol_matrix,
         "wyckoff_effort_result_phase1": wyckoff_er_summary,
+        "wyckoff_persistent_absorption_phase2": wyckoff_absorption_summary,
+        "wyckoff_cause_effect_phase3": wyckoff_phase3_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -1874,6 +2298,8 @@ def run_audit(args: argparse.Namespace) -> None:
             "volatility_rs_distance_json": str(volatility_rs_distance_json),
             "volatility_rs_distance_relvol_json": str(volatility_rs_distance_relvol_json),
             "wyckoff_effort_result_json": str(wyckoff_er_json),
+            "wyckoff_persistent_absorption_json": str(wyckoff_absorption_json),
+            "wyckoff_cause_effect_phase3_json": str(wyckoff_phase3_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -1882,6 +2308,8 @@ def run_audit(args: argparse.Namespace) -> None:
     volatility_rs_distance_json.write_text(json.dumps(volatility_rs_distance_matrix, indent=2))
     volatility_rs_distance_relvol_json.write_text(json.dumps(volatility_rs_distance_relvol_matrix, indent=2))
     wyckoff_er_json.write_text(json.dumps(wyckoff_er_summary, indent=2))
+    wyckoff_absorption_json.write_text(json.dumps(wyckoff_absorption_summary, indent=2))
+    wyckoff_phase3_json.write_text(json.dumps(wyckoff_phase3_summary, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -1896,6 +2324,8 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"VolRSD:  {volatility_rs_distance_json}")
     print(f"VolRSDV: {volatility_rs_distance_relvol_json}")
     print(f"WyckoffER: {wyckoff_er_json}")
+    print(f"WyckoffAbsorption: {wyckoff_absorption_json}")
+    print(f"WyckoffPhase3: {wyckoff_phase3_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -2206,6 +2636,77 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 112)
     for s in wyckoff_er_summary.get("top_vol_state_five_bar_interpretation", [])[:60]:
         print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Single-Bar Count 20")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("single_bar_absorption_count_20", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Single-Bar Count 40")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("single_bar_absorption_count_40", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Single-Bar Count 60")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("single_bar_absorption_count_60", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Five-Bar Count 20")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("five_bar_absorption_count_20", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Five-Bar Count 40")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("five_bar_absorption_count_40", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Five-Bar Count 60")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("five_bar_absorption_count_60", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Cluster Shape")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("single_bar_absorption_cluster_shape", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 2: Persistent Absorption - Single/Five-Bar Overlap")
+    print("-" * 112)
+    for s in wyckoff_absorption_summary.get("single_vs_five_bar_absorption_overlap", [])[:60]:
+        print(f"{s['bucket']:<82} n={s['signals']:>6} acc90={s['direction_accuracy_90d_pct']:>6.2f}% avg90={s['avg_return_90d_pct']:>8.3f}% edge90={s['edge_ratio_90d']}")
+
+    print("\nWyckoff / Weis Phase 3 (Study A): Cause Score Tier vs Markup MFE")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_a_cause_score_tier_vs_markup", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+    print("\nWyckoff / Weis Phase 3 (Study A): Single-Bar Persistence Count 60 vs Markup MFE")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_a_abs1_count_60_vs_markup", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+    print("\nWyckoff / Weis Phase 3 (Study A): Five-Bar Persistence Count 60 vs Markup MFE")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_a_abs5_count_60_vs_markup", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+    print("\nWyckoff / Weis Phase 3 (Study B): Single-Bar vs Five-Bar vs Both vs Neither")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_b_abs1_vs_abs5", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+    print("\nWyckoff / Weis Phase 3 (Study C): Dual Confirmation (abs1 AND abs5 in 20-bar window)")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_c_dual_confirmation", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+    print("\nWyckoff / Weis Phase 3 (Study D): Time Compression - Clustered vs Distributed Absorption")
+    print("-" * 112)
+    for s in wyckoff_phase3_summary.get("study_d_time_compression", []):
+        print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
