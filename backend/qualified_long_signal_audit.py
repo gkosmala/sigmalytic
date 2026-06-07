@@ -1711,6 +1711,328 @@ def _classify_behavior(
     }
 
 
+
+# =============================================================================
+# Wyckoff / Weis Phase 5: Dissection of the Strongest Bucket
+# =============================================================================
+#
+# Research question:
+#   Inside the strongest performing bucket identified in prior phases
+#   (Late Expansion + 20%+ Off High + RelVol 2-3X),
+#   what behavioral and trajectory variables distinguish the top-quartile
+#   performers from the bottom-quartile performers?
+#
+#   The goal is to find the resident's address inside the profitable neighborhood.
+#
+# The dissection runs on two populations:
+#   A. The full universe — to establish what each variable means at baseline.
+#   B. The target bucket — Late + 20% Off + 2-3x RelVol — to see what differs
+#      inside the best-performing context.
+#
+# Variables dissected:
+#   1. Price trajectory (10-day) leading into the signal
+#   2. Volume trend leading into the signal
+#   3. RS daily trajectory (10-day) leading into the signal
+#   4. Days since the 252-day high was set
+#   5. DNA tier
+#   6. Five-bar absorption presence (ABS5)
+#   7. Behavioral classification (Phase 4)
+#   8. Accumulation score tier (Phase 4)
+#   9. RS daily range at signal
+#  10. Interaction: price trajectory x RS trajectory (the dual momentum test)
+# =============================================================================
+
+
+def _is_target_bucket(r: Dict[str, Any]) -> bool:
+    """
+    Filter for the strongest bucket from prior phases:
+      Late Expansion + 20%+ Off High + RelVol 2.0-3.0x.
+
+    This is the neighborhood identified in Phase 0 through Phase 4.
+    Phase 5 zooms inside it.
+    """
+    setup    = str(r.get("setup_type", ""))
+    phase    = str(r.get("expansion_phase_bucket", ""))
+    relvol   = str(r.get("rel_volume_bucket", ""))
+
+    try:
+        dist = float(r.get("distance_from_252_high_pct", 0) or 0)
+    except Exception:
+        dist = 0.0
+
+    return (
+        setup == "Volatility Expansion Candidate"
+        and phase == "EXP_PHASE_LATE"
+        and relvol == "RELVOL_2_0_3_0X"
+        and dist <= -20.0
+    )
+
+
+def summarize_wyckoff_phase5_dissection(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Phase 5: Dissect the strongest bucket to find the winning variables.
+
+    For each variable of interest, produce two tables side by side:
+      - full_universe: performance across ALL qualified long signals
+      - target_bucket: performance across LATE + 20%OFF + 2-3x only
+
+    The comparison reveals whether each variable adds information
+    beyond what the bucket membership already provides.
+
+    Outcome quartiles are assigned based on 90-day MFE within
+    each population independently, so quartile boundaries are
+    population-specific rather than universe-wide.
+    """
+
+    def _safe_float(val: Any) -> Optional[float]:
+        try:
+            v = float(val)
+            return v if math.isfinite(v) else None
+        except Exception:
+            return None
+
+    def _p5_payload(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h20 = r.get("h20")
+        h90 = r.get("h90")
+        if not isinstance(h20, dict) or not isinstance(h90, dict):
+            return None
+        mfe90 = _safe_float(r.get("markup_90d_pct"))
+        mfe20 = _safe_float(r.get("markup_20d_pct"))
+        if mfe90 is None:
+            return None
+        try:
+            mae20 = float(h20.get("mae_pct", 0.0))
+            asym  = (mfe20 / abs(mae20)) if (mfe20 and mae20 < 0) else 0.0
+            return {
+                "acc_20d":  float(h20.get("direction_correct", 0.0)),
+                "ret_20d":  float(h20.get("return_pct", 0.0)),
+                "mfe_20d":  mfe20 if mfe20 is not None else 0.0,
+                "mae_20d":  mae20,
+                "asym_20d": asym,
+                "acc_90d":  float(h90.get("direction_correct", 0.0)),
+                "ret_90d":  float(h90.get("return_pct", 0.0)),
+                "mfe_90d":  mfe90,
+                "mae_90d":  float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    def _summarize_bucket(
+        bucket_map: Dict[str, List[Dict[str, float]]],
+        min_signals: int = 15,
+    ) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for bucket, vals in sorted(bucket_map.items()):
+            if len(vals) < min_signals:
+                continue
+            n = len(vals)
+            avg = lambda f: round(sum(v[f] for v in vals) / n, 3)
+            asym_vals = [v["asym_20d"] for v in vals if v["asym_20d"] > 0]
+            out.append({
+                "bucket":          bucket,
+                "signals":         n,
+                "acc_20d_pct":     round(avg("acc_20d") * 100, 2),
+                "avg_mfe_20d_pct": avg("mfe_20d"),
+                "avg_mae_20d_pct": avg("mae_20d"),
+                "avg_asym_20d":    round(sum(asym_vals)/len(asym_vals), 3) if asym_vals else None,
+                "acc_90d_pct":     round(avg("acc_90d") * 100, 2),
+                "avg_ret_90d_pct": avg("ret_90d"),
+                "avg_mfe_90d_pct": avg("mfe_90d"),
+                "avg_mae_90d_pct": avg("mae_90d"),
+            })
+        out.sort(key=lambda x: x["avg_mfe_90d_pct"], reverse=True)
+        return out
+
+    # Separate the two populations
+    universe_rows = []
+    target_rows   = []
+    for r in rows:
+        p = _p5_payload(r)
+        if p is None:
+            continue
+        universe_rows.append((r, p))
+        if _is_target_bucket(r):
+            target_rows.append((r, p))
+
+    def _build_groups(population: List[tuple]) -> Dict[str, Dict[str, List]]:
+        """Build all variable bucket maps for one population."""
+        g: Dict[str, Dict[str, List]] = {
+            "price_trajectory":      defaultdict(list),
+            "volume_trend":          defaultdict(list),
+            "rs_trajectory":         defaultdict(list),
+            "days_since_high":       defaultdict(list),
+            "dna_tier":              defaultdict(list),
+            "abs5_presence":         defaultdict(list),
+            "behavior_class":        defaultdict(list),
+            "accumulation_tier":     defaultdict(list),
+            "rs_daily_range":        defaultdict(list),
+            "price_x_rs_trajectory": defaultdict(list),
+            "vol_trend_x_price_traj": defaultdict(list),
+            "days_since_high_x_price_traj": defaultdict(list),
+        }
+
+        rs_daily_buckets = [
+            (0, 20,  "RS_DAILY_0_20"),
+            (20, 30, "RS_DAILY_20_30"),
+            (30, 40, "RS_DAILY_30_40"),
+            (40, 50, "RS_DAILY_40_50"),
+            (50, 60, "RS_DAILY_50_60"),
+            (60, 70, "RS_DAILY_60_70"),
+            (70, 80, "RS_DAILY_70_80"),
+            (80, 90, "RS_DAILY_80_90"),
+            (90, 101,"RS_DAILY_90_100"),
+        ]
+
+        for r, p in population:
+            ptraj  = str(r.get("p5_price_traj_bucket",    "UNKNOWN"))
+            vtrend = str(r.get("p5_vol_trend_bucket",     "UNKNOWN"))
+            rstraj = str(r.get("p5_rs_traj_bucket",       "UNKNOWN"))
+            dhigh  = str(r.get("p5_days_since_high_bucket","UNKNOWN"))
+            dna    = str(r.get("volatility_dna_tier",     "UNKNOWN"))
+            bhv    = str(r.get("behavior_classification", "UNKNOWN"))
+
+            abs5_60 = int(r.get("abs5_count_60", 0) or 0)
+            abs5_label = "ABS5_PRESENT_1_PLUS" if abs5_60 >= 1 else "ABS5_ABSENT"
+
+            acc_score = int(r.get("accumulation_score", 0) or 0)
+            if acc_score >= 7:
+                acc_tier = "ACC_7_PLUS"
+            elif acc_score >= 5:
+                acc_tier = "ACC_5_6"
+            elif acc_score >= 3:
+                acc_tier = "ACC_3_4"
+            else:
+                acc_tier = "ACC_0_2"
+
+            rs_daily_val = _safe_float(r.get("rs_daily"))
+            rs_d_bucket = "RS_DAILY_UNKNOWN"
+            if rs_daily_val is not None:
+                for lo, hi, label in rs_daily_buckets:
+                    if lo <= rs_daily_val < hi:
+                        rs_d_bucket = label
+                        break
+
+            g["price_trajectory"][ptraj].append(p)
+            g["volume_trend"][vtrend].append(p)
+            g["rs_trajectory"][rstraj].append(p)
+            g["days_since_high"][dhigh].append(p)
+            g["dna_tier"][dna].append(p)
+            g["abs5_presence"][abs5_label].append(p)
+            g["behavior_class"][bhv].append(p)
+            g["accumulation_tier"][acc_tier].append(p)
+            g["rs_daily_range"][rs_d_bucket].append(p)
+
+            # Interaction: price trajectory x RS trajectory
+            g["price_x_rs_trajectory"][f"{ptraj}|{rstraj}"].append(p)
+
+            # Interaction: volume trend x price trajectory
+            g["vol_trend_x_price_traj"][f"{vtrend}|{ptraj}"].append(p)
+
+            # Interaction: days since high x price trajectory
+            g["days_since_high_x_price_traj"][f"{dhigh}|{ptraj}"].append(p)
+
+        return g
+
+    universe_groups = _build_groups(universe_rows)
+    target_groups   = _build_groups(target_rows)
+
+    # Outcome quartile analysis within target bucket
+    # Split target rows into top / bottom quartile by mfe90
+    target_mfe90_vals = sorted(
+        [p["mfe_90d"] for _, p in target_rows],
+        reverse=True
+    )
+    if len(target_mfe90_vals) >= 4:
+        q1_threshold = target_mfe90_vals[len(target_mfe90_vals) // 4]      # top 25%
+        q4_threshold = target_mfe90_vals[(len(target_mfe90_vals) * 3) // 4] # bottom 25%
+    else:
+        q1_threshold = float("inf")
+        q4_threshold = float("-inf")
+
+    top_quartile_groups    = defaultdict(lambda: defaultdict(list))
+    bottom_quartile_groups = defaultdict(lambda: defaultdict(list))
+
+    for r, p in target_rows:
+        mfe90 = p["mfe_90d"]
+        for var_name in [
+            "price_trajectory", "volume_trend", "rs_trajectory",
+            "days_since_high", "dna_tier", "abs5_presence",
+            "behavior_class", "rs_daily_range",
+        ]:
+            bucket_key = {
+                "price_trajectory": str(r.get("p5_price_traj_bucket",    "UNKNOWN")),
+                "volume_trend":     str(r.get("p5_vol_trend_bucket",     "UNKNOWN")),
+                "rs_trajectory":    str(r.get("p5_rs_traj_bucket",       "UNKNOWN")),
+                "days_since_high":  str(r.get("p5_days_since_high_bucket","UNKNOWN")),
+                "dna_tier":         str(r.get("volatility_dna_tier",     "UNKNOWN")),
+                "behavior_class":   str(r.get("behavior_classification", "UNKNOWN")),
+                "abs5_presence":    "ABS5_PRESENT_1_PLUS" if int(r.get("abs5_count_60",0) or 0) >= 1 else "ABS5_ABSENT",
+                "rs_daily_range":   "RS_DAILY_UNKNOWN",
+            }[var_name]
+
+            if var_name == "rs_daily_range":
+                rs_val = _safe_float(r.get("rs_daily"))
+                if rs_val is not None:
+                    for lo, hi, lbl in [
+                        (0,20,"RS_DAILY_0_20"),(20,30,"RS_DAILY_20_30"),
+                        (30,40,"RS_DAILY_30_40"),(40,50,"RS_DAILY_40_50"),
+                        (50,60,"RS_DAILY_50_60"),(60,70,"RS_DAILY_60_70"),
+                        (70,80,"RS_DAILY_70_80"),(80,90,"RS_DAILY_80_90"),
+                        (90,101,"RS_DAILY_90_100"),
+                    ]:
+                        if lo <= rs_val < hi:
+                            bucket_key = lbl
+                            break
+
+            if mfe90 >= q1_threshold:
+                top_quartile_groups[var_name][bucket_key].append(p)
+            if mfe90 <= q4_threshold:
+                bottom_quartile_groups[var_name][bucket_key].append(p)
+
+    # Build final output structure
+    result: Dict[str, Any] = {
+        "target_bucket_definition": {
+            "setup_type":            "Volatility Expansion Candidate",
+            "expansion_phase":       "EXP_PHASE_LATE",
+            "rel_volume_bucket":     "RELVOL_2_0_3_0X",
+            "distance_from_high":    "20PCT_PLUS_OFF",
+        },
+        "target_bucket_n":   len(target_rows),
+        "universe_n":        len(universe_rows),
+        "quartile_thresholds": {
+            "top_25pct_mfe90_threshold":    round(q1_threshold, 2) if math.isfinite(q1_threshold) else None,
+            "bottom_25pct_mfe90_threshold": round(q4_threshold, 2) if math.isfinite(q4_threshold) else None,
+        },
+    }
+
+    # Add universe and target summaries for each variable
+    var_names = [
+        "price_trajectory", "volume_trend", "rs_trajectory",
+        "days_since_high", "dna_tier", "abs5_presence",
+        "behavior_class", "accumulation_tier", "rs_daily_range",
+        "price_x_rs_trajectory", "vol_trend_x_price_traj",
+        "days_since_high_x_price_traj",
+    ]
+    for var in var_names:
+        result[f"universe_{var}"] = _summarize_bucket(universe_groups[var], min_signals=20)
+        result[f"target_{var}"]   = _summarize_bucket(target_groups[var],   min_signals=5)
+
+    # Add quartile comparison tables
+    for var in [
+        "price_trajectory", "volume_trend", "rs_trajectory",
+        "days_since_high", "dna_tier", "abs5_presence",
+        "behavior_class", "rs_daily_range",
+    ]:
+        result[f"top_quartile_{var}"]    = _summarize_bucket(
+            top_quartile_groups[var],    min_signals=3
+        )
+        result[f"bottom_quartile_{var}"] = _summarize_bucket(
+            bottom_quartile_groups[var], min_signals=3
+        )
+
+    return result
+
+
 def summarize_wyckoff_phase4_junctures(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     """
     Wyckoff / Weis Phase 4 study: Juncture Detection.
@@ -2874,6 +3196,108 @@ def run_audit(args: argparse.Namespace) -> None:
                 p4_distribution_score       = _p4_behavior["distribution_score"]
                 p4_behavior_classification  = _p4_behavior["behavior_classification"]
 
+
+                # Phase 5: Trajectory Variables.
+                # What was happening in the 10 days BEFORE the signal?
+                # The current engine measures state on the signal date.
+                # Phase 5 measures direction of travel leading into the signal.
+                # Inside the best-performing bucket (LATE + 20% OFF HIGH + 2-3X RELVOL)
+                # trajectory likely separates the 23% winners from the 4% winners.
+
+                # 1. Price trajectory over prior 10 bars
+                #    Positive = price was rising into the signal (momentum)
+                #    Negative = price was still declining into the signal
+                _p5_lookback = 10
+                if i >= _p5_lookback:
+                    _p5_price_10d_ago = daily[i - _p5_lookback].c
+                    p5_price_traj_10d_pct = round(
+                        ((daily[i].c - _p5_price_10d_ago) / _p5_price_10d_ago * 100.0)
+                        if _p5_price_10d_ago > 0 else 0.0, 3
+                    )
+                    if p5_price_traj_10d_pct >= 3.0:
+                        p5_price_traj_bucket = "TRAJ_RISING_STRONG_3PCT_PLUS"
+                    elif p5_price_traj_10d_pct >= 1.0:
+                        p5_price_traj_bucket = "TRAJ_RISING_MILD_1_3PCT"
+                    elif p5_price_traj_10d_pct >= -1.0:
+                        p5_price_traj_bucket = "TRAJ_FLAT_NEG1_TO_POS1PCT"
+                    elif p5_price_traj_10d_pct >= -3.0:
+                        p5_price_traj_bucket = "TRAJ_DECLINING_MILD_NEG3_NEG1PCT"
+                    else:
+                        p5_price_traj_bucket = "TRAJ_DECLINING_STRONG_NEG3PCT_PLUS"
+                else:
+                    p5_price_traj_10d_pct = 0.0
+                    p5_price_traj_bucket = "TRAJ_INSUFFICIENT_DATA"
+
+                # 2. Volume trend over prior 10 bars vs prior 20 bars
+                #    Are buyers increasing participation into the signal?
+                _p5_vol_recent = sma([b.v for b in daily], i, 5) or 0.0
+                _p5_vol_base   = sma([b.v for b in daily], i, 20) or 0.0
+                p5_vol_trend_ratio = round(
+                    (_p5_vol_recent / _p5_vol_base) if _p5_vol_base > 0 else 1.0, 3
+                )
+                if p5_vol_trend_ratio >= 1.5:
+                    p5_vol_trend_bucket = "VOL_TREND_EXPANDING_STRONG_1_5X_PLUS"
+                elif p5_vol_trend_ratio >= 1.1:
+                    p5_vol_trend_bucket = "VOL_TREND_EXPANDING_MILD_1_1_1_5X"
+                elif p5_vol_trend_ratio >= 0.9:
+                    p5_vol_trend_bucket = "VOL_TREND_FLAT_0_9_1_1X"
+                elif p5_vol_trend_ratio >= 0.7:
+                    p5_vol_trend_bucket = "VOL_TREND_CONTRACTING_MILD_0_7_0_9X"
+                else:
+                    p5_vol_trend_bucket = "VOL_TREND_CONTRACTING_STRONG_UNDER_0_7X"
+
+                # 3. RS Daily trajectory over prior 10 bars
+                #    Is relative strength rising or falling into the signal?
+                #    Uses the slope of the daily RS ratio over 10 bars.
+                _p5_closes = [b.c for b in daily]
+                _p5_rs_now = percentile_score(_p5_closes, i, 63)
+                _p5_rs_10d = percentile_score(_p5_closes, i - _p5_lookback, 63) if i >= _p5_lookback else None
+                if _p5_rs_now is not None and _p5_rs_10d is not None:
+                    p5_rs_traj_10d = round(_p5_rs_now - _p5_rs_10d, 2)
+                    if p5_rs_traj_10d >= 10.0:
+                        p5_rs_traj_bucket = "RS_TRAJ_RISING_STRONG_10PT_PLUS"
+                    elif p5_rs_traj_10d >= 3.0:
+                        p5_rs_traj_bucket = "RS_TRAJ_RISING_MILD_3_10PT"
+                    elif p5_rs_traj_10d >= -3.0:
+                        p5_rs_traj_bucket = "RS_TRAJ_FLAT_NEG3_TO_POS3PT"
+                    elif p5_rs_traj_10d >= -10.0:
+                        p5_rs_traj_bucket = "RS_TRAJ_DECLINING_MILD_NEG10_NEG3PT"
+                    else:
+                        p5_rs_traj_bucket = "RS_TRAJ_DECLINING_STRONG_NEG10PT_PLUS"
+                else:
+                    p5_rs_traj_10d = 0.0
+                    p5_rs_traj_bucket = "RS_TRAJ_INSUFFICIENT_DATA"
+
+                # 4. Days since the 252-day high was set
+                #    Early in the recovery = recently marked down
+                #    Later in recovery = more time for cause to build
+                _p5_high_idx = None
+                _p5_start = max(0, i - 251)
+                _p5_best_high = -1.0
+                for _p5_j in range(_p5_start, i + 1):
+                    if daily[_p5_j].h > _p5_best_high:
+                        _p5_best_high = daily[_p5_j].h
+                        _p5_high_idx = _p5_j
+                p5_days_since_252_high = (i - _p5_high_idx) if _p5_high_idx is not None else 0
+                if p5_days_since_252_high >= 180:
+                    p5_days_since_high_bucket = "DAYS_SINCE_HIGH_180_PLUS"
+                elif p5_days_since_252_high >= 120:
+                    p5_days_since_high_bucket = "DAYS_SINCE_HIGH_120_180"
+                elif p5_days_since_252_high >= 60:
+                    p5_days_since_high_bucket = "DAYS_SINCE_HIGH_60_120"
+                elif p5_days_since_252_high >= 20:
+                    p5_days_since_high_bucket = "DAYS_SINCE_HIGH_20_60"
+                else:
+                    p5_days_since_high_bucket = "DAYS_SINCE_HIGH_UNDER_20"
+
+                # 5. Outcome quartile classification (for the dissection output).
+                #    Computed using 90-day MFE.  This lets us split the best
+                #    performing bucket into top / bottom performers and ask
+                #    what is different between them.
+                #    Value is stored raw; quartile assignment happens in the
+                #    summarize function after all rows are collected.
+                p5_mfe90_raw = markup_90d_pct  # already computed above
+
                 volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
                     setup=setup,
                     setup_subtype=setup_subtype,
@@ -2968,6 +3392,16 @@ def run_audit(args: argparse.Namespace) -> None:
                     "accumulation_score":         p4_accumulation_score,
                     "distribution_score":         p4_distribution_score,
                     "behavior_classification":    p4_behavior_classification,
+
+                    # Phase 5: Trajectory and Dissection fields.
+                    "p5_price_traj_10d_pct":   p5_price_traj_10d_pct,
+                    "p5_price_traj_bucket":    p5_price_traj_bucket,
+                    "p5_vol_trend_ratio":      p5_vol_trend_ratio,
+                    "p5_vol_trend_bucket":     p5_vol_trend_bucket,
+                    "p5_rs_traj_10d":          p5_rs_traj_10d,
+                    "p5_rs_traj_bucket":       p5_rs_traj_bucket,
+                    "p5_days_since_252_high":  p5_days_since_252_high,
+                    "p5_days_since_high_bucket": p5_days_since_high_bucket,
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
@@ -3011,6 +3445,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_absorption_json = output_dir / "qualified_long_signal_wyckoff_persistent_absorption_phase2.json"
     wyckoff_phase3_json = output_dir / "qualified_long_signal_wyckoff_cause_effect_phase3.json"
     wyckoff_phase4_json = output_dir / "qualified_long_signal_wyckoff_juncture_phase4.json"
+    wyckoff_phase5_json = output_dir / "qualified_long_signal_wyckoff_dissection_phase5.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -3025,6 +3460,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_absorption_summary = summarize_wyckoff_persistent_absorption(signal_rows)
     wyckoff_phase3_summary = summarize_wyckoff_phase3_cause_effect(signal_rows)
     wyckoff_phase4_summary = summarize_wyckoff_phase4_junctures(signal_rows)
+    wyckoff_phase5_summary = summarize_wyckoff_phase5_dissection(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -3044,6 +3480,10 @@ def run_audit(args: argparse.Namespace) -> None:
         "upthrust_detected", "upthrust_quality",
         "at_support", "at_resistance", "at_juncture", "juncture_type",
         "accumulation_score", "distribution_score", "behavior_classification",
+        "p5_price_traj_10d_pct", "p5_price_traj_bucket",
+        "p5_vol_trend_ratio", "p5_vol_trend_bucket",
+        "p5_rs_traj_10d", "p5_rs_traj_bucket",
+        "p5_days_since_252_high", "p5_days_since_high_bucket",
         "high_252", "distance_from_252_high_pct", "expansion_phase_bucket",
         "volatility_dna_score", "volatility_dna_tier", "ma20", "ma50",
     ]
@@ -3123,6 +3563,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "wyckoff_persistent_absorption_phase2": wyckoff_absorption_summary,
         "wyckoff_cause_effect_phase3": wyckoff_phase3_summary,
         "wyckoff_juncture_phase4": wyckoff_phase4_summary,
+        "wyckoff_dissection_phase5": wyckoff_phase5_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -3137,6 +3578,7 @@ def run_audit(args: argparse.Namespace) -> None:
             "wyckoff_persistent_absorption_json": str(wyckoff_absorption_json),
             "wyckoff_cause_effect_phase3_json": str(wyckoff_phase3_json),
             "wyckoff_juncture_phase4_json": str(wyckoff_phase4_json),
+            "wyckoff_dissection_phase5_json": str(wyckoff_phase5_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -3148,6 +3590,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_absorption_json.write_text(json.dumps(wyckoff_absorption_summary, indent=2))
     wyckoff_phase3_json.write_text(json.dumps(wyckoff_phase3_summary, indent=2))
     wyckoff_phase4_json.write_text(json.dumps(wyckoff_phase4_summary, indent=2))
+    wyckoff_phase5_json.write_text(json.dumps(wyckoff_phase5_summary, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -3165,6 +3608,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"WyckoffAbsorption: {wyckoff_absorption_json}")
     print(f"WyckoffPhase3: {wyckoff_phase3_json}")
     print(f"WyckoffPhase4: {wyckoff_phase4_json}")
+    print(f"WyckoffPhase5: {wyckoff_phase5_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -3607,6 +4051,138 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 112)
     for s in wyckoff_phase4_summary.get("combined_juncture_x_behavior_x_apex", []):
         print(f"{s['bucket']:<55} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+
+
+    # ── Phase 5: Dissection of the Strongest Bucket ──────────────────────────
+    p5 = wyckoff_phase5_summary
+    p5_n  = p5.get("target_bucket_n", 0)
+    p5_un = p5.get("universe_n", 0)
+    p5_qt = p5.get("quartile_thresholds", {})
+
+    print(f"\n{'='*112}")
+    print(f"Wyckoff / Weis Phase 5: Dissection of Strongest Bucket")
+    print(f"  Target: Late Expansion + 20%+ Off High + RelVol 2-3x")
+    print(f"  Target n={p5_n}   Universe n={p5_un}")
+    print(f"  Top quartile mfe90 >= {p5_qt.get('top_25pct_mfe90_threshold')}%")
+    print(f"  Bottom quartile mfe90 <= {p5_qt.get('bottom_25pct_mfe90_threshold')}%")
+    print(f"{'='*112}")
+
+    def _p5_print(title: str, universe_rows: list, target_rows: list,
+                  top_rows: list = None, bot_rows: list = None) -> None:
+        """Print a Phase 5 comparison table."""
+        fmt = "{:<48} {:>6}  mfe20={:>7.3f}%  mfe90={:>7.3f}%  acc90={:>6.2f}%  asym={}"
+        print(f"\n{title}")
+        print(f"  {'--- Universe ---'}")
+        print("-" * 112)
+        for s in universe_rows[:12]:
+            print(fmt.format(
+                s["bucket"], s["signals"],
+                s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                s["acc_90d_pct"], str(s["avg_asym_20d"])
+            ))
+        print(f"  {'--- Target Bucket ---'}")
+        print("-" * 112)
+        for s in target_rows:
+            print(fmt.format(
+                s["bucket"], s["signals"],
+                s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                s["acc_90d_pct"], str(s["avg_asym_20d"])
+            ))
+        if top_rows is not None and bot_rows is not None:
+            print(f"  {'--- Top Quartile (within target) ---'}")
+            print("-" * 112)
+            for s in top_rows:
+                print(fmt.format(
+                    s["bucket"], s["signals"],
+                    s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                    s["acc_90d_pct"], str(s["avg_asym_20d"])
+                ))
+            print(f"  {'--- Bottom Quartile (within target) ---'}")
+            print("-" * 112)
+            for s in bot_rows:
+                print(fmt.format(
+                    s["bucket"], s["signals"],
+                    s["avg_mfe_20d_pct"], s["avg_mfe_90d_pct"],
+                    s["acc_90d_pct"], str(s["avg_asym_20d"])
+                ))
+
+    _p5_print(
+        "Phase 5 | Variable 1: Price Trajectory (10-day) into Signal",
+        p5.get("universe_price_trajectory", []),
+        p5.get("target_price_trajectory",   []),
+        p5.get("top_quartile_price_trajectory",    []),
+        p5.get("bottom_quartile_price_trajectory", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 2: Volume Trend (5-day vs 20-day avg)",
+        p5.get("universe_volume_trend", []),
+        p5.get("target_volume_trend",   []),
+        p5.get("top_quartile_volume_trend",    []),
+        p5.get("bottom_quartile_volume_trend", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 3: RS Daily Trajectory (10-day change)",
+        p5.get("universe_rs_trajectory", []),
+        p5.get("target_rs_trajectory",   []),
+        p5.get("top_quartile_rs_trajectory",    []),
+        p5.get("bottom_quartile_rs_trajectory", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 4: Days Since 252-Day High Was Set",
+        p5.get("universe_days_since_high", []),
+        p5.get("target_days_since_high",   []),
+        p5.get("top_quartile_days_since_high",    []),
+        p5.get("bottom_quartile_days_since_high", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 5: Volatility DNA Tier",
+        p5.get("universe_dna_tier", []),
+        p5.get("target_dna_tier",   []),
+        p5.get("top_quartile_dna_tier",    []),
+        p5.get("bottom_quartile_dna_tier", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 6: Five-Bar Absorption Presence (60-day window)",
+        p5.get("universe_abs5_presence", []),
+        p5.get("target_abs5_presence",   []),
+        p5.get("top_quartile_abs5_presence",    []),
+        p5.get("bottom_quartile_abs5_presence", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 7: Behavioral Classification (Phase 4)",
+        p5.get("universe_behavior_class", []),
+        p5.get("target_behavior_class",   []),
+        p5.get("top_quartile_behavior_class",    []),
+        p5.get("bottom_quartile_behavior_class", []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 8: Accumulation Score Tier (Phase 4)",
+        p5.get("universe_accumulation_tier", []),
+        p5.get("target_accumulation_tier",   []),
+    )
+    _p5_print(
+        "Phase 5 | Variable 9: RS Daily Range at Signal",
+        p5.get("universe_rs_daily_range", []),
+        p5.get("target_rs_daily_range",   []),
+        p5.get("top_quartile_rs_daily_range",    []),
+        p5.get("bottom_quartile_rs_daily_range", []),
+    )
+    _p5_print(
+        "Phase 5 | Interaction: Price Trajectory x RS Trajectory",
+        p5.get("universe_price_x_rs_trajectory", []),
+        p5.get("target_price_x_rs_trajectory",   []),
+    )
+    _p5_print(
+        "Phase 5 | Interaction: Volume Trend x Price Trajectory",
+        p5.get("universe_vol_trend_x_price_traj", []),
+        p5.get("target_vol_trend_x_price_traj",   []),
+    )
+    _p5_print(
+        "Phase 5 | Interaction: Days Since High x Price Trajectory",
+        p5.get("universe_days_since_high_x_price_traj", []),
+        p5.get("target_days_since_high_x_price_traj",   []),
+    )
 
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
