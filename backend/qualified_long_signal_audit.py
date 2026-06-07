@@ -1176,6 +1176,731 @@ def _count_absorption_candidates_in_window(
 
 
 
+
+# =============================================================================
+# Wyckoff / Weis Phase 4: Juncture Detection
+# =============================================================================
+#
+# Research question:
+#   Can we algorithmically identify the moments Weis calls junctures —
+#   specifically springs, upthrusts, and absorption at critical levels —
+#   and demonstrate that those moments produce asymmetric forward returns
+#   compared to absorption detected outside of structural context?
+#
+# Three juncture types are tested:
+#   1. Spring   — failed penetration of support that reverses upward
+#   2. Upthrust — failed penetration of resistance that reverses downward
+#   3. Absorption at structural level (support or resistance)
+#
+# Classification:
+#   Each signal is scored for accumulation or distribution character
+#   using location, volume asymmetry, and juncture type.
+# =============================================================================
+
+
+def _swing_lows(bars: List[Bar], idx: int, lookback: int, n: int = 3) -> List[float]:
+    """Return the n most recent swing lows in the lookback window ending at idx."""
+    start = max(2, idx - lookback + 1)
+    lows: List[float] = []
+    for j in range(start, idx - 1):
+        if bars[j].l < bars[j - 1].l and bars[j].l < bars[j + 1].l:
+            lows.append(bars[j].l)
+    return lows[-n:] if lows else []
+
+
+def _swing_highs(bars: List[Bar], idx: int, lookback: int, n: int = 3) -> List[float]:
+    """Return the n most recent swing highs in the lookback window ending at idx."""
+    start = max(2, idx - lookback + 1)
+    highs: List[float] = []
+    for j in range(start, idx - 1):
+        if bars[j].h > bars[j - 1].h and bars[j].h > bars[j + 1].h:
+            highs.append(bars[j].h)
+    return highs[-n:] if highs else []
+
+
+def _detect_trading_range(
+    bars: List[Bar],
+    idx: int,
+    lookback: int = 60,
+    min_width_pct: float = 5.0,
+    max_width_pct: float = 45.0,
+    min_touches: int = 2,
+    min_bars: int = 20,
+) -> Dict[str, Any]:
+    """
+    Detect whether price has been oscillating inside a trading range.
+
+    Returns a dict with:
+        detected       bool
+        range_high     float
+        range_low      float
+        range_width_pct float
+        support_level  float
+        resistance_level float
+        support_touches  int
+        resistance_touches int
+        bars_in_range  int
+        price_location_in_range  float   0=bottom  1=top
+    """
+    result: Dict[str, Any] = {
+        "detected": False,
+        "range_high": 0.0,
+        "range_low": 0.0,
+        "range_width_pct": 0.0,
+        "support_level": 0.0,
+        "resistance_level": 0.0,
+        "support_touches": 0,
+        "resistance_touches": 0,
+        "bars_in_range": 0,
+        "price_location_in_range": 0.5,
+    }
+
+    if idx < lookback:
+        return result
+
+    window = bars[idx - lookback: idx + 1]
+    if len(window) < min_bars:
+        return result
+
+    highs = [b.h for b in window]
+    lows  = [b.l for b in window]
+    closes = [b.c for b in window]
+
+    range_high = max(highs)
+    range_low  = min(lows)
+    if range_low <= 0:
+        return result
+
+    range_width_pct = (range_high - range_low) / range_low * 100.0
+    if not (min_width_pct <= range_width_pct <= max_width_pct):
+        return result
+
+    atr = calc_atr(bars, idx, 14) or (range_high - range_low) * 0.05
+    tolerance = atr * 1.0
+
+    # Support = average of swing lows; resistance = average of swing highs
+    s_lows  = _swing_lows(bars, idx, lookback, n=5)
+    s_highs = _swing_highs(bars, idx, lookback, n=5)
+
+    if not s_lows or not s_highs:
+        return result
+
+    support_level    = sum(s_lows)  / len(s_lows)
+    resistance_level = sum(s_highs) / len(s_highs)
+
+    if resistance_level <= support_level:
+        return result
+
+    # Count bars that touch each level within tolerance
+    support_touches    = sum(1 for b in window if abs(b.l - support_level)    <= tolerance)
+    resistance_touches = sum(1 for b in window if abs(b.h - resistance_level) <= tolerance)
+
+    if support_touches < min_touches or resistance_touches < min_touches:
+        return result
+
+    # Count bars inside the range
+    bars_in_range = sum(
+        1 for b in window
+        if support_level - tolerance <= b.l and b.h <= resistance_level + tolerance
+    )
+
+    if bars_in_range < min_bars:
+        return result
+
+    price = bars[idx].c
+    rng = resistance_level - support_level
+    price_location = (price - support_level) / rng if rng > 0 else 0.5
+
+    result.update({
+        "detected": True,
+        "range_high": round(range_high, 4),
+        "range_low": round(range_low, 4),
+        "range_width_pct": round(range_width_pct, 3),
+        "support_level": round(support_level, 4),
+        "resistance_level": round(resistance_level, 4),
+        "support_touches": support_touches,
+        "resistance_touches": resistance_touches,
+        "bars_in_range": bars_in_range,
+        "price_location_in_range": round(max(0.0, min(1.0, price_location)), 3),
+    })
+    return result
+
+
+def _detect_apex(bars: List[Bar], idx: int, lookback: int = 40) -> Dict[str, Any]:
+    """
+    Detect whether price is coiling toward an apex (converging trend lines).
+
+    Measures range compression over the lookback window.
+    When apex_proximity approaches 0, price is tightly coiled.
+    """
+    result = {"apex_detected": False, "apex_proximity": 1.0, "range_contraction_pct": 0.0}
+
+    if idx < lookback:
+        return result
+
+    # Compare recent range to earlier range
+    half = lookback // 2
+    early_window = bars[idx - lookback: idx - half]
+    recent_window = bars[idx - half: idx + 1]
+
+    if not early_window or not recent_window:
+        return result
+
+    early_range  = max(b.h for b in early_window)  - min(b.l for b in early_window)
+    recent_range = max(b.h for b in recent_window) - min(b.l for b in recent_window)
+
+    if early_range <= 0:
+        return result
+
+    contraction = (early_range - recent_range) / early_range
+    proximity   = recent_range / early_range   # 0 = fully coiled, 1 = no contraction
+
+    apex_detected = contraction >= 0.30 and proximity <= 0.70
+
+    result.update({
+        "apex_detected": apex_detected,
+        "apex_proximity": round(max(0.0, min(1.0, proximity)), 3),
+        "range_contraction_pct": round(contraction * 100.0, 2),
+    })
+    return result
+
+
+def _volume_asymmetry(bars: List[Bar], idx: int, lookback: int = 20) -> Dict[str, Any]:
+    """
+    Measure whether volume is heavier on up days vs down days within the window.
+
+    up_vol_ratio > 1.0 → demand dominant (accumulation signature)
+    up_vol_ratio < 1.0 → supply dominant (distribution signature)
+    """
+    start = max(1, idx - lookback + 1)
+    up_vol   = 0.0
+    down_vol = 0.0
+    up_days  = 0
+    down_days = 0
+
+    for j in range(start, idx + 1):
+        if bars[j].c >= bars[j - 1].c:
+            up_vol  += bars[j].v
+            up_days += 1
+        else:
+            down_vol  += bars[j].v
+            down_days += 1
+
+    avg_up   = up_vol   / up_days   if up_days   > 0 else 0.0
+    avg_down = down_vol / down_days if down_days > 0 else 0.0
+
+    ratio = avg_up / avg_down if avg_down > 0 else 1.0
+
+    return {
+        "up_vol_avg":   round(avg_up,   2),
+        "down_vol_avg": round(avg_down, 2),
+        "vol_asymmetry_ratio": round(ratio, 3),
+        "demand_dominant": ratio >= 1.10,
+    }
+
+
+def _detect_spring(
+    bars: List[Bar],
+    idx: int,
+    support_level: float,
+    atr: float,
+    lookforward: int = 3,
+) -> Dict[str, Any]:
+    """
+    Spring detection.
+
+    A spring occurs when:
+    1. Price penetrates below support (low < support)
+    2. The penetration is shallow (< 2 ATR below support)
+    3. Price closes back above support within lookforward bars
+    4. Volume on penetration bar is at or above average
+    5. The bar closes in the upper half of its range (rejection)
+
+    Returns detection flag and quality score (0-5).
+    """
+    result = {
+        "spring_detected": False,
+        "spring_quality": 0,
+        "spring_penetration_pct": 0.0,
+        "spring_recovery_bars": 0,
+    }
+
+    if support_level <= 0 or atr <= 0:
+        return result
+
+    bar = bars[idx]
+
+    # Condition 1: low penetrates support
+    if bar.l >= support_level:
+        return result
+
+    penetration = support_level - bar.l
+    penetration_pct = penetration / support_level * 100.0
+
+    # Condition 2: shallow — within 2 ATR
+    if penetration > atr * 2.0:
+        return result
+
+    # Condition 3: closes back above support (or within 0.5 ATR of it)
+    close_near_support = bar.c >= support_level - atr * 0.5
+
+    # Look forward for recovery above support
+    recovery_bar = 0
+    for j in range(1, lookforward + 1):
+        if idx + j < len(bars) and bars[idx + j].c > support_level:
+            recovery_bar = j
+            break
+
+    if not close_near_support and recovery_bar == 0:
+        return result
+
+    # Quality scoring
+    score = 0
+
+    # Volume on penetration bar vs 20-day average
+    avg_vol = sma([b.v for b in bars], idx, 20) or bars[idx].v
+    if avg_vol and avg_vol > 0:
+        vol_ratio = bar.v / avg_vol
+        if vol_ratio >= 1.5:
+            score += 2   # climactic volume on test — classic spring
+        elif vol_ratio >= 1.0:
+            score += 1
+
+    # Bar closes in upper half of its range (rejection of lows)
+    bar_range = bar.h - bar.l
+    if bar_range > 0 and (bar.c - bar.l) / bar_range >= 0.5:
+        score += 1
+
+    # Shallow penetration is better
+    if penetration_pct < 1.0:
+        score += 1
+
+    # Quick recovery
+    if recovery_bar == 1:
+        score += 1
+
+    detected = score >= 2
+
+    result.update({
+        "spring_detected": detected,
+        "spring_quality": score,
+        "spring_penetration_pct": round(penetration_pct, 3),
+        "spring_recovery_bars": recovery_bar,
+    })
+    return result
+
+
+def _detect_upthrust(
+    bars: List[Bar],
+    idx: int,
+    resistance_level: float,
+    atr: float,
+    lookforward: int = 3,
+) -> Dict[str, Any]:
+    """
+    Upthrust detection.
+
+    An upthrust occurs when:
+    1. Price penetrates above resistance (high > resistance)
+    2. The penetration is shallow (< 2 ATR above resistance)
+    3. Price closes back below resistance within lookforward bars
+    4. Volume climaxes on the breakout bar (elevated)
+    5. The bar closes in the lower half of its range (rejection)
+
+    Returns detection flag and quality score (0-5).
+    """
+    result = {
+        "upthrust_detected": False,
+        "upthrust_quality": 0,
+        "upthrust_penetration_pct": 0.0,
+        "upthrust_return_bars": 0,
+    }
+
+    if resistance_level <= 0 or atr <= 0:
+        return result
+
+    bar = bars[idx]
+
+    # Condition 1: high penetrates resistance
+    if bar.h <= resistance_level:
+        return result
+
+    penetration = bar.h - resistance_level
+    penetration_pct = penetration / resistance_level * 100.0
+
+    # Condition 2: shallow — within 2 ATR
+    if penetration > atr * 2.0:
+        return result
+
+    # Condition 3: closes back below resistance (or within 0.5 ATR)
+    close_near_resistance = bar.c <= resistance_level + atr * 0.5
+
+    # Look forward for return below resistance
+    return_bar = 0
+    for j in range(1, lookforward + 1):
+        if idx + j < len(bars) and bars[idx + j].c < resistance_level:
+            return_bar = j
+            break
+
+    if not close_near_resistance and return_bar == 0:
+        return result
+
+    # Quality scoring
+    score = 0
+
+    avg_vol = sma([b.v for b in bars], idx, 20) or bars[idx].v
+    if avg_vol and avg_vol > 0:
+        vol_ratio = bar.v / avg_vol
+        if vol_ratio >= 1.5:
+            score += 2   # volume climax on the upthrust — supply overwhelming demand
+        elif vol_ratio >= 1.0:
+            score += 1
+
+    # Bar closes in lower half (rejection of highs)
+    bar_range = bar.h - bar.l
+    if bar_range > 0 and (bar.h - bar.c) / bar_range >= 0.5:
+        score += 1
+
+    # Shallow penetration
+    if penetration_pct < 1.0:
+        score += 1
+
+    # Quick return
+    if return_bar == 1:
+        score += 1
+
+    detected = score >= 2
+
+    result.update({
+        "upthrust_detected": detected,
+        "upthrust_quality": score,
+        "upthrust_penetration_pct": round(penetration_pct, 3),
+        "upthrust_return_bars": return_bar,
+    })
+    return result
+
+
+def _absorption_at_juncture(
+    bars: List[Bar],
+    idx: int,
+    support_level: float,
+    resistance_level: float,
+    atr: float,
+) -> Dict[str, Any]:
+    """
+    Determine whether five-bar absorption is occurring AT a structural level.
+
+    Absorption in open price space = noise (Phase 3 result).
+    Absorption at support or resistance = potential signal.
+
+    Returns:
+        at_support     bool
+        at_resistance  bool
+        at_juncture    bool
+        juncture_type  str
+    """
+    price = bars[idx].c
+    tolerance = atr * 1.0
+
+    at_support    = support_level > 0    and abs(price - support_level)    <= tolerance
+    at_resistance = resistance_level > 0 and abs(price - resistance_level) <= tolerance
+
+    if at_support:
+        juncture_type = "AT_SUPPORT"
+    elif at_resistance:
+        juncture_type = "AT_RESISTANCE"
+    else:
+        juncture_type = "OPEN_SPACE"
+
+    return {
+        "at_support":    at_support,
+        "at_resistance": at_resistance,
+        "at_juncture":   at_support or at_resistance,
+        "juncture_type": juncture_type,
+    }
+
+
+def _classify_behavior(
+    distance_from_high_pct: Optional[float],
+    spring_detected: bool,
+    upthrust_detected: bool,
+    demand_dominant: bool,
+    price_location_in_range: float,
+    at_support: bool,
+    at_resistance: bool,
+    apex_detected: bool,
+) -> Dict[str, Any]:
+    """
+    Score the behavioral character of the signal.
+
+    Accumulation evidence:
+      - Deep off highs (supply has been distributed, markdown complete)
+      - Spring detected (final supply test)
+      - Demand dominant volume (buyers absorbing sellers)
+      - Price in lower portion of range (building cause at base)
+      - Absorption occurring at support
+
+    Distribution evidence:
+      - Near highs (markup complete, institutions offloading)
+      - Upthrust detected (final demand test rejected)
+      - Supply dominant volume (sellers absorbing buyers)
+      - Price in upper portion of range (distributing at top)
+      - Absorption occurring at resistance
+
+    Apex adds urgency to whichever side dominates.
+    """
+    acc_score = 0
+    dist_score = 0
+
+    try:
+        dist = float(distance_from_high_pct) if distance_from_high_pct not in (None, "") else 0.0
+    except Exception:
+        dist = 0.0
+
+    # Location relative to 252-day high
+    if dist <= -20.0:
+        acc_score  += 3
+    elif dist <= -10.0:
+        acc_score  += 1
+    elif dist >= -5.0:
+        dist_score += 3
+
+    # Juncture type
+    if spring_detected:
+        acc_score  += 3
+    if upthrust_detected:
+        dist_score += 3
+
+    # Volume character
+    if demand_dominant:
+        acc_score  += 2
+    else:
+        dist_score += 2
+
+    # Price location in range
+    if price_location_in_range <= 0.35:
+        acc_score  += 2
+    elif price_location_in_range >= 0.65:
+        dist_score += 2
+
+    # Absorption level
+    if at_support:
+        acc_score  += 1
+    if at_resistance:
+        dist_score += 1
+
+    # Apex adds urgency
+    if apex_detected:
+        acc_score  += 1
+        dist_score += 1
+
+    total = acc_score + dist_score
+    if total == 0:
+        behavior = "NEUTRAL"
+    elif acc_score >= dist_score * 1.5:
+        behavior = "ACCUMULATION"
+    elif dist_score >= acc_score * 1.5:
+        behavior = "DISTRIBUTION"
+    else:
+        behavior = "AMBIGUOUS"
+
+    return {
+        "accumulation_score": acc_score,
+        "distribution_score": dist_score,
+        "behavior_classification": behavior,
+    }
+
+
+def summarize_wyckoff_phase4_junctures(rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Wyckoff / Weis Phase 4 study: Juncture Detection.
+
+    Research question:
+      Can we algorithmically detect springs, upthrusts, and absorption at
+      structural levels, and do those junctures produce asymmetric forward
+      returns compared to the base rate and to non-juncture absorption?
+
+    Study A — Spring Detection
+      Do detected springs produce forward rallies above the base rate?
+      Is the MFE/MAE asymmetry > 2.0?
+
+    Study B — Upthrust Detection
+      Do detected upthrusts occur in signals that underperform?
+      (Upthrusts are bearish; their presence in long signals warns of risk.)
+
+    Study C — Absorption at Juncture vs Open Space
+      Does absorption at support/resistance outperform absorption in open space?
+      This directly resolves the Phase 3 null result.
+
+    Study D — Behavioral Classification
+      Does the accumulation label correctly predict positive outcomes?
+      Does the distribution label correctly predict negative outcomes?
+
+    Study E — Apex + Juncture Confluence
+      Does coiling toward an apex combined with a juncture produce
+      the highest asymmetric outcomes?
+
+    Study F — Base Rate Validation
+      What is the forward return of ALL qualified long signals?
+      All juncture studies are compared against this baseline.
+    """
+
+    def _safe_float(val: Any) -> Optional[float]:
+        try:
+            v = float(val)
+            return v if math.isfinite(v) else None
+        except Exception:
+            return None
+
+    def _juncture_payload(r: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        h20 = r.get("h20")
+        h90 = r.get("h90")
+        if not isinstance(h20, dict) or not isinstance(h90, dict):
+            return None
+        try:
+            mfe20 = _safe_float(r.get("markup_20d_pct"))
+            mfe90 = _safe_float(r.get("markup_90d_pct"))
+            mae20 = float(h20.get("mae_pct", 0.0))
+            asymmetry_20d = (mfe20 / abs(mae20)) if (mfe20 is not None and mae20 < 0) else None
+            return {
+                "direction_correct_20d": float(h20.get("direction_correct", 0.0)),
+                "return_20d":            float(h20.get("return_pct", 0.0)),
+                "mfe_20d":               mfe20 if mfe20 is not None else 0.0,
+                "mae_20d":               mae20,
+                "asymmetry_20d":         asymmetry_20d if asymmetry_20d is not None else 0.0,
+                "direction_correct_90d": float(h90.get("direction_correct", 0.0)),
+                "return_90d":            float(h90.get("return_pct", 0.0)),
+                "mfe_90d":               mfe90 if mfe90 is not None else 0.0,
+                "mae_90d":               float(h90.get("mae_pct", 0.0)),
+            }
+        except Exception:
+            return None
+
+    def _summarize_juncture(
+        bucket_map: Dict[str, List[Dict[str, float]]],
+        min_signals: int = 20,
+    ) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for bucket, vals in sorted(bucket_map.items()):
+            if len(vals) < min_signals:
+                continue
+            n = len(vals)
+            avg = lambda field: round(sum(v[field] for v in vals) / n, 3)
+            asym_vals = [v["asymmetry_20d"] for v in vals if v["asymmetry_20d"] > 0]
+            avg_asym  = round(sum(asym_vals) / len(asym_vals), 3) if asym_vals else None
+            out.append({
+                "bucket":                  bucket,
+                "signals":                 n,
+                "acc_20d_pct":             round(avg("direction_correct_20d") * 100, 2),
+                "avg_return_20d_pct":      avg("return_20d"),
+                "avg_mfe_20d_pct":         avg("mfe_20d"),
+                "avg_mae_20d_pct":         avg("mae_20d"),
+                "avg_asymmetry_20d":       avg_asym,
+                "acc_90d_pct":             round(avg("direction_correct_90d") * 100, 2),
+                "avg_return_90d_pct":      avg("return_90d"),
+                "avg_mfe_90d_pct":         avg("mfe_90d"),
+                "avg_mae_90d_pct":         avg("mae_90d"),
+            })
+        out.sort(key=lambda x: x["avg_mfe_20d_pct"], reverse=True)
+        return out
+
+    grouped: Dict[str, Dict[str, List[Dict[str, float]]]] = {
+        # Study A: Spring quality vs forward rally
+        "study_a_spring_detection":        defaultdict(list),
+        "study_a_spring_quality_vs_rally": defaultdict(list),
+
+        # Study B: Upthrust presence in long signals
+        "study_b_upthrust_detection":      defaultdict(list),
+
+        # Study C: Absorption location — juncture vs open space
+        "study_c_absorption_location":     defaultdict(list),
+        "study_c_juncture_type_detail":    defaultdict(list),
+
+        # Study D: Behavioral classification
+        "study_d_behavior_classification": defaultdict(list),
+        "study_d_accumulation_score_tier": defaultdict(list),
+
+        # Study E: Apex confluence
+        "study_e_apex_x_juncture":         defaultdict(list),
+        "study_e_apex_x_behavior":         defaultdict(list),
+
+        # Study F: Base rate — all signals
+        "study_f_base_rate":               defaultdict(list),
+
+        # Combined: Spring + Accumulation (the ideal signal)
+        "combined_spring_x_behavior":      defaultdict(list),
+        "combined_juncture_x_behavior_x_apex": defaultdict(list),
+    }
+
+    for r in rows:
+        payload = _juncture_payload(r)
+        if payload is None:
+            continue
+
+        spring      = bool(r.get("spring_detected",    False))
+        upthrust    = bool(r.get("upthrust_detected",  False))
+        at_juncture = bool(r.get("at_juncture",        False))
+        apex        = bool(r.get("apex_detected",       False))
+        behavior    = str(r.get("behavior_classification", "NEUTRAL"))
+        jtype       = str(r.get("juncture_type",        "OPEN_SPACE"))
+        spring_q    = int(r.get("spring_quality",       0) or 0)
+        acc_score   = int(r.get("accumulation_score",   0) or 0)
+        trading_range = bool(r.get("trading_range_detected", False))
+
+        # Study A
+        spring_label = f"SPRING_Q{spring_q}" if spring else "NO_SPRING"
+        grouped["study_a_spring_detection"]["SPRING_DETECTED" if spring else "NO_SPRING"].append(payload)
+        if spring:
+            grouped["study_a_spring_quality_vs_rally"][spring_label].append(payload)
+
+        # Study B
+        grouped["study_b_upthrust_detection"]["UPTHRUST_DETECTED" if upthrust else "NO_UPTHRUST"].append(payload)
+
+        # Study C
+        grouped["study_c_absorption_location"][jtype].append(payload)
+        if at_juncture:
+            grouped["study_c_juncture_type_detail"]["JUNCTURE_" + jtype].append(payload)
+        else:
+            grouped["study_c_juncture_type_detail"]["NON_JUNCTURE_OPEN_SPACE"].append(payload)
+
+        # Study D
+        grouped["study_d_behavior_classification"][behavior].append(payload)
+        if acc_score >= 7:
+            acc_tier = "ACC_SCORE_7_PLUS"
+        elif acc_score >= 5:
+            acc_tier = "ACC_SCORE_5_6"
+        elif acc_score >= 3:
+            acc_tier = "ACC_SCORE_3_4"
+        else:
+            acc_tier = "ACC_SCORE_0_2"
+        grouped["study_d_accumulation_score_tier"][acc_tier].append(payload)
+
+        # Study E
+        apex_label    = "APEX" if apex else "NO_APEX"
+        juncture_label = "AT_JUNCTURE" if at_juncture else "OPEN_SPACE"
+        grouped["study_e_apex_x_juncture"][f"{apex_label}|{juncture_label}"].append(payload)
+        grouped["study_e_apex_x_behavior"][f"{apex_label}|{behavior}"].append(payload)
+
+        # Study F — base rate
+        grouped["study_f_base_rate"]["ALL_QUALIFIED_LONGS"].append(payload)
+        if trading_range:
+            grouped["study_f_base_rate"]["IN_TRADING_RANGE"].append(payload)
+        else:
+            grouped["study_f_base_rate"]["NOT_IN_TRADING_RANGE"].append(payload)
+
+        # Combined
+        spring_bhv = f"{'SPRING' if spring else 'NO_SPRING'}|{behavior}"
+        grouped["combined_spring_x_behavior"][spring_bhv].append(payload)
+
+        apex_juncture_bhv = f"{apex_label}|{juncture_label}|{behavior}"
+        grouped["combined_juncture_x_behavior_x_apex"][apex_juncture_bhv].append(payload)
+
+    return {
+        name: _summarize_juncture(bucket_map, min_signals=20)
+        for name, bucket_map in grouped.items()
+    }
+
+
 def summarize_wyckoff_phase3_cause_effect(rows):
     """
     Wyckoff / Weis Phase 3 study: Cause -> Effect.
@@ -2077,6 +2802,78 @@ def run_audit(args: argparse.Namespace) -> None:
 
                 markup_bucket = _markup_bucket(markup_90d_pct)
 
+
+                # Phase 4: Juncture Detection.
+                # Structure → Juncture → Classification.
+                # These fields answer: is price at a critical decision point,
+                # and if so, does the behavioral evidence favor accumulation
+                # or distribution?
+
+                _p4_atr = calc_atr(daily, i, 14) or max(daily[i].h - daily[i].l, daily[i].c * 0.01)
+
+                _p4_range = _detect_trading_range(daily, i, lookback=60)
+                trading_range_detected      = _p4_range["detected"]
+                p4_range_width_pct          = _p4_range["range_width_pct"]
+                p4_support_level            = _p4_range["support_level"]
+                p4_resistance_level         = _p4_range["resistance_level"]
+                p4_support_touches          = _p4_range["support_touches"]
+                p4_resistance_touches       = _p4_range["resistance_touches"]
+                p4_bars_in_range            = _p4_range["bars_in_range"]
+                p4_price_location_in_range  = _p4_range["price_location_in_range"]
+
+                _p4_apex = _detect_apex(daily, i, lookback=40)
+                p4_apex_detected            = _p4_apex["apex_detected"]
+                p4_apex_proximity           = _p4_apex["apex_proximity"]
+                p4_range_contraction_pct    = _p4_apex["range_contraction_pct"]
+
+                _p4_vol = _volume_asymmetry(daily, i, lookback=20)
+                p4_vol_asymmetry_ratio      = _p4_vol["vol_asymmetry_ratio"]
+                p4_demand_dominant          = _p4_vol["demand_dominant"]
+
+                if trading_range_detected and p4_support_level > 0:
+                    _p4_spring = _detect_spring(daily, i, p4_support_level, _p4_atr)
+                else:
+                    _p4_spring = {"spring_detected": False, "spring_quality": 0,
+                                  "spring_penetration_pct": 0.0, "spring_recovery_bars": 0}
+                p4_spring_detected          = _p4_spring["spring_detected"]
+                p4_spring_quality           = _p4_spring["spring_quality"]
+                p4_spring_penetration_pct   = _p4_spring["spring_penetration_pct"]
+                p4_spring_recovery_bars     = _p4_spring["spring_recovery_bars"]
+
+                if trading_range_detected and p4_resistance_level > 0:
+                    _p4_upthrust = _detect_upthrust(daily, i, p4_resistance_level, _p4_atr)
+                else:
+                    _p4_upthrust = {"upthrust_detected": False, "upthrust_quality": 0,
+                                    "upthrust_penetration_pct": 0.0, "upthrust_return_bars": 0}
+                p4_upthrust_detected        = _p4_upthrust["upthrust_detected"]
+                p4_upthrust_quality         = _p4_upthrust["upthrust_quality"]
+
+                if trading_range_detected:
+                    _p4_juncture = _absorption_at_juncture(
+                        daily, i, p4_support_level, p4_resistance_level, _p4_atr
+                    )
+                else:
+                    _p4_juncture = {"at_support": False, "at_resistance": False,
+                                    "at_juncture": False, "juncture_type": "OPEN_SPACE"}
+                p4_at_support               = _p4_juncture["at_support"]
+                p4_at_resistance            = _p4_juncture["at_resistance"]
+                p4_at_juncture              = _p4_juncture["at_juncture"]
+                p4_juncture_type            = _p4_juncture["juncture_type"]
+
+                _p4_behavior = _classify_behavior(
+                    distance_from_high_pct=distance_from_252_high_pct,
+                    spring_detected=p4_spring_detected,
+                    upthrust_detected=p4_upthrust_detected,
+                    demand_dominant=p4_demand_dominant,
+                    price_location_in_range=p4_price_location_in_range,
+                    at_support=p4_at_support,
+                    at_resistance=p4_at_resistance,
+                    apex_detected=p4_apex_detected,
+                )
+                p4_accumulation_score       = _p4_behavior["accumulation_score"]
+                p4_distribution_score       = _p4_behavior["distribution_score"]
+                p4_behavior_classification  = _p4_behavior["behavior_classification"]
+
                 volatility_dna_score, volatility_dna_tier = classify_volatility_dna_score(
                     setup=setup,
                     setup_subtype=setup_subtype,
@@ -2143,6 +2940,34 @@ def run_audit(args: argparse.Namespace) -> None:
                     "markup_60d_pct": markup_60d_pct if markup_60d_pct is not None else "",
                     "markup_90d_pct": markup_90d_pct if markup_90d_pct is not None else "",
                     "markup_bucket": markup_bucket,
+
+                    # Phase 4: Juncture Detection fields.
+                    "trading_range_detected":     trading_range_detected,
+                    "range_width_pct":            p4_range_width_pct,
+                    "support_level":              p4_support_level,
+                    "resistance_level":           p4_resistance_level,
+                    "support_touches":            p4_support_touches,
+                    "resistance_touches":         p4_resistance_touches,
+                    "bars_in_range":              p4_bars_in_range,
+                    "price_location_in_range":    p4_price_location_in_range,
+                    "apex_detected":              p4_apex_detected,
+                    "apex_proximity":             p4_apex_proximity,
+                    "range_contraction_pct":      p4_range_contraction_pct,
+                    "vol_asymmetry_ratio":        p4_vol_asymmetry_ratio,
+                    "demand_dominant":            p4_demand_dominant,
+                    "spring_detected":            p4_spring_detected,
+                    "spring_quality":             p4_spring_quality,
+                    "spring_penetration_pct":     p4_spring_penetration_pct,
+                    "spring_recovery_bars":       p4_spring_recovery_bars,
+                    "upthrust_detected":          p4_upthrust_detected,
+                    "upthrust_quality":           p4_upthrust_quality,
+                    "at_support":                 p4_at_support,
+                    "at_resistance":              p4_at_resistance,
+                    "at_juncture":                p4_at_juncture,
+                    "juncture_type":              p4_juncture_type,
+                    "accumulation_score":         p4_accumulation_score,
+                    "distribution_score":         p4_distribution_score,
+                    "behavior_classification":    p4_behavior_classification,
                     "high_252": round(high_252, 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
@@ -2185,6 +3010,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_er_json = output_dir / "qualified_long_signal_wyckoff_effort_result_phase1.json"
     wyckoff_absorption_json = output_dir / "qualified_long_signal_wyckoff_persistent_absorption_phase2.json"
     wyckoff_phase3_json = output_dir / "qualified_long_signal_wyckoff_cause_effect_phase3.json"
+    wyckoff_phase4_json = output_dir / "qualified_long_signal_wyckoff_juncture_phase4.json"
 
     summary = summarize(signal_rows, horizons)
     factor_summary = summarize_factor_attribution(signal_rows)
@@ -2198,6 +3024,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_er_summary = summarize_wyckoff_effort_result(signal_rows)
     wyckoff_absorption_summary = summarize_wyckoff_persistent_absorption(signal_rows)
     wyckoff_phase3_summary = summarize_wyckoff_phase3_cause_effect(signal_rows)
+    wyckoff_phase4_summary = summarize_wyckoff_phase4_junctures(signal_rows)
 
     # Flatten rows for CSV.
     flat_fields = [
@@ -2209,6 +3036,14 @@ def run_audit(args: argparse.Namespace) -> None:
         "abs5_count_20", "abs5_count_40", "abs5_count_60", "abs5_tier_20", "abs5_tier_40", "abs5_tier_60",
         "cause_score",
         "markup_20d_pct", "markup_40d_pct", "markup_60d_pct", "markup_90d_pct", "markup_bucket",
+        "trading_range_detected", "range_width_pct", "support_level", "resistance_level",
+        "support_touches", "resistance_touches", "bars_in_range", "price_location_in_range",
+        "apex_detected", "apex_proximity", "range_contraction_pct",
+        "vol_asymmetry_ratio", "demand_dominant",
+        "spring_detected", "spring_quality", "spring_penetration_pct", "spring_recovery_bars",
+        "upthrust_detected", "upthrust_quality",
+        "at_support", "at_resistance", "at_juncture", "juncture_type",
+        "accumulation_score", "distribution_score", "behavior_classification",
         "high_252", "distance_from_252_high_pct", "expansion_phase_bucket",
         "volatility_dna_score", "volatility_dna_tier", "ma20", "ma50",
     ]
@@ -2287,6 +3122,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "wyckoff_effort_result_phase1": wyckoff_er_summary,
         "wyckoff_persistent_absorption_phase2": wyckoff_absorption_summary,
         "wyckoff_cause_effect_phase3": wyckoff_phase3_summary,
+        "wyckoff_juncture_phase4": wyckoff_phase4_summary,
         "output_files": {
             "rows_csv": str(rows_csv),
             "summary_csv": str(summary_csv),
@@ -2300,6 +3136,7 @@ def run_audit(args: argparse.Namespace) -> None:
             "wyckoff_effort_result_json": str(wyckoff_er_json),
             "wyckoff_persistent_absorption_json": str(wyckoff_absorption_json),
             "wyckoff_cause_effect_phase3_json": str(wyckoff_phase3_json),
+            "wyckoff_juncture_phase4_json": str(wyckoff_phase4_json),
         },
     }
     summary_json.write_text(json.dumps(payload, indent=2))
@@ -2310,6 +3147,7 @@ def run_audit(args: argparse.Namespace) -> None:
     wyckoff_er_json.write_text(json.dumps(wyckoff_er_summary, indent=2))
     wyckoff_absorption_json.write_text(json.dumps(wyckoff_absorption_summary, indent=2))
     wyckoff_phase3_json.write_text(json.dumps(wyckoff_phase3_summary, indent=2))
+    wyckoff_phase4_json.write_text(json.dumps(wyckoff_phase4_summary, indent=2))
 
     print("\nAudit complete")
     print(f"Signals: {len(signal_rows):,}")
@@ -2326,6 +3164,7 @@ def run_audit(args: argparse.Namespace) -> None:
     print(f"WyckoffER: {wyckoff_er_json}")
     print(f"WyckoffAbsorption: {wyckoff_absorption_json}")
     print(f"WyckoffPhase3: {wyckoff_phase3_json}")
+    print(f"WyckoffPhase4: {wyckoff_phase4_json}")
 
     factor_preview_buckets = {"A_PLUS_ONLY", "A_ONLY", "A_MINUS_ONLY", "B_PLUS_ONLY", "B_ONLY", "ALL_QUALIFIED_LONGS"}
     print("\nFactor attribution:")
@@ -2707,6 +3546,68 @@ def run_audit(args: argparse.Namespace) -> None:
     print("-" * 112)
     for s in wyckoff_phase3_summary.get("study_d_time_compression", []):
         print(f"{s['bucket']:<40} n={s['signals']:>6} mfe20={s['avg_markup_20d_mfe_pct']:>7.3f}% mfe40={s['avg_markup_40d_mfe_pct']:>7.3f}% mfe60={s['avg_markup_60d_mfe_pct']:>7.3f}% mfe90={s['avg_markup_90d_mfe_pct']:>7.3f}%")
+
+
+    print("\nWyckoff / Weis Phase 4 (Study F): Base Rate - All Signals vs In Trading Range")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_f_base_rate", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study A): Spring Detection vs No Spring")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_a_spring_detection", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study A): Spring Quality Score vs Forward Rally")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_a_spring_quality_vs_rally", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study B): Upthrust Detection in Long Signals")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_b_upthrust_detection", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study C): Absorption at Juncture vs Open Space")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_c_absorption_location", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study C): Juncture Type Detail")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_c_juncture_type_detail", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study D): Behavioral Classification")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_d_behavior_classification", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study D): Accumulation Score Tier")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_d_accumulation_score_tier", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study E): Apex x Juncture Confluence")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_e_apex_x_juncture", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 (Study E): Apex x Behavior")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("study_e_apex_x_behavior", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 Combined: Spring x Behavior Classification")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("combined_spring_x_behavior", []):
+        print(f"{s['bucket']:<45} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
+    print("\nWyckoff / Weis Phase 4 Combined: Apex x Juncture x Behavior")
+    print("-" * 112)
+    for s in wyckoff_phase4_summary.get("combined_juncture_x_behavior_x_apex", []):
+        print(f"{s['bucket']:<55} n={s['signals']:>6} acc20={s['acc_20d_pct']:>6.2f}% mfe20={s['avg_mfe_20d_pct']:>7.3f}% mfe90={s['avg_mfe_90d_pct']:>7.3f}% asym={str(s['avg_asymmetry_20d']):>6}")
+
 
     # Console preview: pure grade buckets first, then cumulative buckets for comparison.
     preview_buckets = {
