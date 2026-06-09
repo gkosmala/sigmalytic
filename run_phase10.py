@@ -359,42 +359,24 @@ def run(csv_path):
         print("%-15s  %6d (%5.1f%%)          %6d (%5.1f%%)" % (
             "-%d%%" % stop, a_killed, a_pct, b_killed, b_pct))
 
-    # ── STUDY 9: Failure Analysis — What Causes Elite Signals to Fail ─────────
+    # ── STUDY 9: Failure Analysis ─────────────────────────────────────────────
     print("\n" + SEP)
-    print("STUDY 9: FAILURE ANALYSIS — What causes TIER_1 ELITE signals to fail?")
-    print("  Profiles losing signals (h90_ret < 0) across all available dimensions.")
-    print("  A failure is a signal that produced a negative 90-day realized return.")
+    print("STUDY 9: FAILURE ANALYSIS — What causes Layer A signals to fail?")
+    print("  Profiles losing signals across all available dimensions.")
     print(SEP)
-
-    # Need scoring for tier classification — recompute quickly
-    # Use layer_a as proxy for near-elite (OBS_Q4+PROG_Q4+State1)
-    # and enrich with the signal details needed for failure profiling
-    # Re-read enriched data with full record access
-    rows_full = []
-    with open(csv_path, newline="", errors="ignore") as f:
-        for row in csv.DictReader(f): rows_full.append(row)
-
-    obs_s2, prog_s2 = [], []
-    for r in rows_full:
-        if _f(r.get("markup_90d_pct")) is None: continue
-        obs_s2.append(_obs(r)); prog_s2.append(_prog(r))
-    oq1b, oq2b, oq3b = qq(obs_s2)
-    pq1b, pq2b, pq3b = qq(prog_s2)
-
-    def ot2(v): return "Q4" if v > oq3b else ("Q3" if v > oq2b else ("Q2" if v > oq1b else "Q1"))
-    def pt2(v): return "Q4" if v > pq3b else ("Q3" if v > pq2b else ("Q2" if v > pq1b else "Q1"))
-
+    from collections import Counter
     elite_winners = []; elite_losers = []
-    for r in rows_full:
-        mfe90 = _f(r.get("markup_90d_pct"))
-        if mfe90 is None: continue
-        o = _obs(r); pr = _prog(r)
-        spd = _b(r.get("w_selling_pressure_diminishing"))
-        dei = _b(r.get("w_demand_efficiency_improving"))
-        days = _f(r.get("p5_days_since_252_high")) or 0.0
-        bhv = str(r.get("behavior_classification", "")).strip()
-        is_state1 = spd and not dei
-        is_a = (ot2(o) == "Q4" and pt2(pr) == "Q4" and is_state1)
+    for r in rows:
+        mfe90v = _f(r.get("markup_90d_pct"))
+        if mfe90v is None: continue
+        o9 = _obs(r); pr9 = _prog(r)
+        spd9 = _b(r.get("w_selling_pressure_diminishing"))
+        dei9 = _b(r.get("w_demand_efficiency_improving"))
+        days9 = _f(r.get("p5_days_since_252_high")) or 0.0
+        bhv9 = str(r.get("behavior_classification", "")).strip()
+        is_state1_9 = spd9 and not dei9
+        is_a9 = (ot(o9) == "Q4" and pt(pr9) == "Q4" and is_state1_9)
+        if not is_a9: continue
         if not is_a: continue
 
         h90_ret = _f(r.get("h90_return_pct")) or 0.0
@@ -406,10 +388,10 @@ def run(csv_path):
         sym     = str(r.get("symbol", ""))
 
         record = {
-            "h90_ret": h90_ret, "h90_dir": h90_dir, "mfe90": mfe90,
-            "mae20": mae20, "bhv": bhv, "days": days, "rs": rs,
+            "h90_ret": h90_ret, "h90_dir": h90_dir, "mfe90": mfe90v,
+            "mae20": mae20, "bhv": bhv9, "days": days9, "rs": rs,
             "rv": rv, "date": date, "sym": sym,
-            "obs": o, "prog": pr,
+            "obs": o9, "prog": pr9,
         }
         if h90_dir > 0.5:
             elite_winners.append(record)
