@@ -377,7 +377,6 @@ def run(csv_path):
         is_state1_9 = spd9 and not dei9
         is_a9 = (ot(o9) == "Q4" and pt(pr9) == "Q4" and is_state1_9)
         if not is_a9: continue
-        if not is_a: continue
 
         h90_ret = _f(r.get("h90_return_pct")) or 0.0
         h90_dir = _f(r.get("h90_direction_correct")) or 0.0
