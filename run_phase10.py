@@ -304,6 +304,243 @@ def run(csv_path):
             print("  %-15d  %9.2f%%  %9.2f%%  %9.2f%%  %9.1f%%" % (
                 n_pos, avg_ret, med_ret, avg_dd, win_rate))
 
+    # ── STUDY 8: Winners-Only MAE — True Pain Before Resolution ──────────────
+    print("\n" + SEP)
+    print("STUDY 8: WINNERS-ONLY MAE — Normal MAE for signals that ACTUALLY resolved")
+    print("  Filters to h90_direction_correct=1 only.")
+    print("  This is the true expected drawdown a patient holder experiences.")
+    print(SEP)
+    print("%-30s  %8s  %8s  %8s  %8s  %8s" % (
+        "Population", "n_winners", "MAE20_med", "MAE20_75p", "MAE20_90p", "MAE20_max"))
+    print("-" * 75)
+    for label, data in [("Universe (winners only)", universe),
+                        ("Layer A (winners only)", layer_a),
+                        ("Layer B (winners only)", layer_b)]:
+        winners = [p for p in data if p["h90_dir"] > 0.5]
+        if not winners: continue
+        mae20s = [abs(p["mae20"]) for p in winners if p["mae20"] < 0]
+        if not mae20s: continue
+        print("%-30s  %8d  %8.2f%%  %8.2f%%  %8.2f%%  %8.2f%%" % (
+            label, len(winners),
+            _percentile(mae20s, 50),
+            _percentile(mae20s, 75),
+            _percentile(mae20s, 90),
+            max(mae20s)))
+
+    # Compare winners vs losers MAE
+    print("\n  Winner vs Loser MAE Comparison (separates signal from noise):")
+    print("%-30s  %8s  %8s  %8s" % ("Population", "n", "MAE20_med", "MAE20_90p"))
+    print("-" * 55)
+    for label, data in [("Layer A", layer_a), ("Layer B", layer_b)]:
+        winners = [p for p in data if p["h90_dir"] > 0.5]
+        losers  = [p for p in data if p["h90_dir"] <= 0.5]
+        for sublabel, subset in [("  Winners", winners), ("  Losers", losers)]:
+            if not subset: continue
+            mae20s = [abs(p["mae20"]) for p in subset if p["mae20"] < 0]
+            if not mae20s: continue
+            print("%-30s  %8d  %8.2f%%  %8.2f%%" % (
+                "%s (%s)" % (label, sublabel.strip()),
+                len(subset),
+                _percentile(mae20s, 50),
+                _percentile(mae20s, 90)))
+
+    # Stop survival rate for winners only
+    print("\n  Stop survival: what % of WINNERS would survive each stop level?")
+    print("  (These are the signals a stop would incorrectly eliminate)")
+    print("%-15s  %-20s  %-20s" % ("Stop Level", "Layer A Winners Killed", "Layer B Winners Killed"))
+    print("-" * 58)
+    a_winners = [p for p in layer_a if p["h90_dir"] > 0.5]
+    b_winners = [p for p in layer_b if p["h90_dir"] > 0.5]
+    for stop in [3, 5, 8, 10, 12, 15, 20]:
+        a_killed = sum(1 for p in a_winners if abs(p["mae20"]) >= stop)
+        b_killed = sum(1 for p in b_winners if abs(p["mae20"]) >= stop)
+        a_pct = a_killed / len(a_winners) * 100 if a_winners else 0
+        b_pct = b_killed / len(b_winners) * 100 if b_winners else 0
+        print("%-15s  %6d (%5.1f%%)          %6d (%5.1f%%)" % (
+            "-%d%%" % stop, a_killed, a_pct, b_killed, b_pct))
+
+    # ── STUDY 9: Failure Analysis — What Causes Elite Signals to Fail ─────────
+    print("\n" + SEP)
+    print("STUDY 9: FAILURE ANALYSIS — What causes TIER_1 ELITE signals to fail?")
+    print("  Profiles losing signals (h90_ret < 0) across all available dimensions.")
+    print("  A failure is a signal that produced a negative 90-day realized return.")
+    print(SEP)
+
+    # Need scoring for tier classification — recompute quickly
+    # Use layer_a as proxy for near-elite (OBS_Q4+PROG_Q4+State1)
+    # and enrich with the signal details needed for failure profiling
+    # Re-read enriched data with full record access
+    rows_full = []
+    with open(csv_path, newline="", errors="ignore") as f:
+        for row in csv.DictReader(f): rows_full.append(row)
+
+    obs_s2, prog_s2 = [], []
+    for r in rows_full:
+        if _f(r.get("markup_90d_pct")) is None: continue
+        obs_s2.append(_obs(r)); prog_s2.append(_prog(r))
+    oq1b, oq2b, oq3b = qq(obs_s2)
+    pq1b, pq2b, pq3b = qq(prog_s2)
+
+    def ot2(v): return "Q4" if v > oq3b else ("Q3" if v > oq2b else ("Q2" if v > oq1b else "Q1"))
+    def pt2(v): return "Q4" if v > pq3b else ("Q3" if v > pq2b else ("Q2" if v > pq1b else "Q1"))
+
+    elite_winners = []; elite_losers = []
+    for r in rows_full:
+        mfe90 = _f(r.get("markup_90d_pct"))
+        if mfe90 is None: continue
+        o = _obs(r); pr = _prog(r)
+        spd = _b(r.get("w_selling_pressure_diminishing"))
+        dei = _b(r.get("w_demand_efficiency_improving"))
+        days = _f(r.get("p5_days_since_252_high")) or 0.0
+        bhv = str(r.get("behavior_classification", "")).strip()
+        is_state1 = spd and not dei
+        is_a = (ot2(o) == "Q4" and pt2(pr) == "Q4" and is_state1)
+        if not is_a: continue
+
+        h90_ret = _f(r.get("h90_return_pct")) or 0.0
+        h90_dir = _f(r.get("h90_direction_correct")) or 0.0
+        mae20   = _f(r.get("h20_mae_pct")) or 0.0
+        rs      = _f(r.get("rs_daily")) or 0.0
+        rv      = str(r.get("rel_volume_bucket", "")).strip()
+        date    = str(r.get("signal_date", ""))
+        sym     = str(r.get("symbol", ""))
+
+        record = {
+            "h90_ret": h90_ret, "h90_dir": h90_dir, "mfe90": mfe90,
+            "mae20": mae20, "bhv": bhv, "days": days, "rs": rs,
+            "rv": rv, "date": date, "sym": sym,
+            "obs": o, "prog": pr,
+        }
+        if h90_dir > 0.5:
+            elite_winners.append(record)
+        else:
+            elite_losers.append(record)
+
+    print("\n  Layer A population breakdown:")
+    print("    Winners (h90_dir=1): %d (%.1f%%)" % (
+        len(elite_winners),
+        len(elite_winners)/(len(elite_winners)+len(elite_losers))*100 if elite_winners or elite_losers else 0))
+    print("    Losers  (h90_dir=0): %d (%.1f%%)" % (
+        len(elite_losers),
+        len(elite_losers)/(len(elite_winners)+len(elite_losers))*100 if elite_winners or elite_losers else 0))
+
+    if elite_losers and elite_winners:
+        print("\n  FAILURE PROFILE — How do losers differ from winners?")
+
+        # Duration
+        print("\n  A. Duration Distribution:")
+        def dur_label(d):
+            if d >= 180: return "DUR_180+"
+            if d >= 120: return "DUR_120_180"
+            if d >= 60:  return "DUR_60_120"
+            if d >= 20:  return "DUR_20_60"
+            return "DUR_UNDER_20"
+        from collections import Counter
+        w_dur = Counter(dur_label(r["days"]) for r in elite_winners)
+        l_dur = Counter(dur_label(r["days"]) for r in elite_losers)
+        all_durs = ["DUR_60_120","DUR_120_180","DUR_180+","DUR_20_60","DUR_UNDER_20"]
+        print("  %-20s  %10s  %10s  %12s" % ("Duration", "Winners%", "Losers%", "Loser Ratio"))
+        for d in all_durs:
+            wp = w_dur.get(d,0)/len(elite_winners)*100
+            lp = l_dur.get(d,0)/len(elite_losers)*100
+            ratio = lp/wp if wp > 0 else 0
+            flag = "  <-- OVERREPRESENTED IN FAILURES" if ratio > 1.5 else ""
+            print("  %-20s  %9.1f%%  %9.1f%%  %11.2fx%s" % (d, wp, lp, ratio, flag))
+
+        # Behavioral Classification
+        print("\n  B. Behavioral Classification:")
+        w_bhv = Counter(r["bhv"] for r in elite_winners)
+        l_bhv = Counter(r["bhv"] for r in elite_losers)
+        for b in sorted(set(list(w_bhv.keys())+list(l_bhv.keys()))):
+            wp = w_bhv.get(b,0)/len(elite_winners)*100
+            lp = l_bhv.get(b,0)/len(elite_losers)*100
+            ratio = lp/wp if wp > 0 else 0
+            flag = "  <-- OVERREPRESENTED IN FAILURES" if ratio > 1.5 else ""
+            print("  %-20s  Winners:%5.1f%%  Losers:%5.1f%%  Ratio:%.2fx%s" % (b, wp, lp, ratio, flag))
+
+        # RS Daily
+        print("\n  C. RS Daily Distribution (winners vs losers):")
+        def rs_label(v):
+            if v >= 90: return "RS_90+"
+            if v >= 70: return "RS_70_90"
+            if v >= 50: return "RS_50_70"
+            if v >= 30: return "RS_30_50"
+            return "RS_UNDER_30"
+        w_rs = Counter(rs_label(r["rs"]) for r in elite_winners)
+        l_rs = Counter(rs_label(r["rs"]) for r in elite_losers)
+        for rslabel in ["RS_90+","RS_70_90","RS_50_70","RS_30_50","RS_UNDER_30"]:
+            wp = w_rs.get(rslabel,0)/len(elite_winners)*100
+            lp = l_rs.get(rslabel,0)/len(elite_losers)*100
+            ratio = lp/wp if wp > 0 else 0
+            flag = "  <-- OVERREPRESENTED IN FAILURES" if ratio > 1.5 else ""
+            print("  %-15s  Winners:%5.1f%%  Losers:%5.1f%%  Ratio:%.2fx%s" % (rslabel, wp, lp, ratio, flag))
+
+        # Relative Volume
+        print("\n  D. Relative Volume at Signal:")
+        w_rv = Counter(r["rv"] for r in elite_winners)
+        l_rv = Counter(r["rv"] for r in elite_losers)
+        all_rvs = sorted(set(list(w_rv.keys())+list(l_rv.keys())))
+        for rv in all_rvs:
+            if not rv: continue
+            wp = w_rv.get(rv,0)/len(elite_winners)*100
+            lp = l_rv.get(rv,0)/len(elite_losers)*100
+            ratio = lp/wp if wp > 0 else 0
+            flag = "  <-- OVERREPRESENTED IN FAILURES" if ratio > 1.5 else ""
+            print("  %-25s  Winners:%5.1f%%  Losers:%5.1f%%  Ratio:%.2fx%s" % (rv, wp, lp, ratio, flag))
+
+        # MAE of losers — were they deeper drawdowns?
+        print("\n  E. MAE Profile of Losers vs Winners:")
+        w_maes = [abs(r["mae20"]) for r in elite_winners if r["mae20"] < 0]
+        l_maes = [abs(r["mae20"]) for r in elite_losers if r["mae20"] < 0]
+        if w_maes and l_maes:
+            print("    Winners MAE20 median:  %.2f%%" % _percentile(sorted(w_maes), 50))
+            print("    Losers  MAE20 median:  %.2f%%" % _percentile(sorted(l_maes), 50))
+            print("    Winners MAE20 90th:    %.2f%%" % _percentile(sorted(w_maes), 90))
+            print("    Losers  MAE20 90th:    %.2f%%" % _percentile(sorted(l_maes), 90))
+
+        # Date clustering — are failures concentrated in time?
+        print("\n  F. Date Clustering — Are failures concentrated in specific periods?")
+        l_months = Counter(r["date"][:7] for r in elite_losers if r["date"])
+        w_months = Counter(r["date"][:7] for r in elite_winners if r["date"])
+        all_months = sorted(set(list(l_months.keys())+list(w_months.keys())))
+        print("  Month        Winners  Losers  Loss Rate")
+        print("  " + "-" * 40)
+        for m in all_months:
+            w = w_months.get(m, 0)
+            l = l_months.get(m, 0)
+            total = w + l
+            if total < 3: continue
+            loss_rate = l / total * 100
+            flag = "  *** HIGH FAILURE RATE" if loss_rate > 60 else ""
+            print("  %-12s  %7d  %6d  %8.1f%%%s" % (m, w, l, loss_rate, flag))
+
+        # Summary of failure causes
+        print("\n  G. FAILURE CAUSE SUMMARY")
+        print("  Based on the above analysis, elite signal failures are most likely caused by:")
+        # Find the most overrepresented factors
+        factors = []
+        for d in all_durs:
+            wp = w_dur.get(d,0)/len(elite_winners)*100 if elite_winners else 0
+            lp = l_dur.get(d,0)/len(elite_losers)*100 if elite_losers else 0
+            if wp > 0 and lp/wp > 1.5:
+                factors.append(("Duration: %s" % d, lp/wp))
+        for b in set(list(w_bhv.keys())+list(l_bhv.keys())):
+            wp = w_bhv.get(b,0)/len(elite_winners)*100 if elite_winners else 0
+            lp = l_bhv.get(b,0)/len(elite_losers)*100 if elite_losers else 0
+            if wp > 0 and lp/wp > 1.5:
+                factors.append(("Behavioral: %s" % b, lp/wp))
+        for rsl in ["RS_90+","RS_70_90","RS_50_70","RS_30_50","RS_UNDER_30"]:
+            wp = w_rs.get(rsl,0)/len(elite_winners)*100 if elite_winners else 0
+            lp = l_rs.get(rsl,0)/len(elite_losers)*100 if elite_losers else 0
+            if wp > 0 and lp/wp > 1.5:
+                factors.append(("RS Zone: %s" % rsl, lp/wp))
+        if factors:
+            for factor, ratio in sorted(factors, key=lambda x: -x[1]):
+                print("    %s (%.1fx overrepresented in failures)" % (factor, ratio))
+        else:
+            print("    No single factor dominates failure rate — failures appear randomly distributed.")
+            print("    This suggests failures are driven by macro/regime factors rather than signal characteristics.")
+
     # ── SUMMARY ───────────────────────────────────────────────────────────────
     print("\n" + SEP)
     print("PHASE 10 SUMMARY — Risk Model Recommendations")
