@@ -116,48 +116,79 @@ def classify_layer(r, ot_fn, pt_fn, dur_fn):
 # ODS proxy from existing metrics — scores 0-100
 
 def campaign_health(r):
+    """
+    ODS proxy health score 0-100.
+    Tracks which metrics are present vs missing to avoid penalizing
+    signals where optional metrics are not computed.
+    """
     score = 0
+    metrics_present = 0
+    metrics_total = 7
 
     # Wave efficiency (operator vs retail behavior)
-    u1pe = _f(r.get("w_up1_price_eff")) or 0.0
-    d1pe = _f(r.get("w_dn1_price_eff")) or 0.0
-    if u1pe > 0 and d1pe > 0:
+    u1pe = _f(r.get("w_up1_price_eff"))
+    d1pe = _f(r.get("w_dn1_price_eff"))
+    if u1pe is not None and d1pe is not None and u1pe > 0 and d1pe > 0:
+        metrics_present += 1
         ratio = u1pe / d1pe
         if ratio >= 3: score += 20
         elif ratio >= 2: score += 15
         elif ratio >= 1.5: score += 10
         elif ratio >= 1: score += 5
+    elif u1pe is not None or d1pe is not None:
+        metrics_present += 1  # partial credit — field exists
 
     # Volume acceptance
-    va = _f(r.get("vol_asymmetry_ratio")) or 0.0
-    if va >= 2.0: score += 20
-    elif va >= 1.0: score += 12
-    elif va >= 0.5: score += 5
+    va = _f(r.get("vol_asymmetry_ratio"))
+    if va is not None:
+        metrics_present += 1
+        if va >= 2.0: score += 20
+        elif va >= 1.0: score += 12
+        elif va >= 0.5: score += 5
 
     # Range compression
-    rc = _f(r.get("range_contraction_pct")) or 0.0
-    if rc >= 30: score += 15
-    elif rc >= 15: score += 10
-    elif rc >= 5: score += 5
+    rc = _f(r.get("range_contraction_pct"))
+    if rc is not None:
+        metrics_present += 1
+        if rc >= 30: score += 15
+        elif rc >= 15: score += 10
+        elif rc >= 5: score += 5
 
     # Demand dominant
-    if _b(r.get("demand_dominant")): score += 10
+    dd_raw = r.get("demand_dominant", "")
+    if dd_raw != "":
+        metrics_present += 1
+        if _b(dd_raw): score += 10
 
-    # Failure to follow through (sellers giving up)
-    if _b(r.get("w_failure_to_follow_through")): score += 10
+    # Failure to follow through
+    ftft_raw = r.get("w_failure_to_follow_through", "")
+    if ftft_raw != "":
+        metrics_present += 1
+        if _b(ftft_raw): score += 10
 
     # Springboard
-    if _b(r.get("w_springboard_present")): score += 10
+    sp_raw = r.get("w_springboard_present", "")
+    if sp_raw != "":
+        metrics_present += 1
+        if _b(sp_raw): score += 10
 
-    # Cause score (structural)
+    # Cause score (always present if signal qualified)
     cs = _f(r.get("cause_score")) or 0.0
     if cs >= 75: score += 15
     elif cs >= 50: score += 10
     elif cs >= 25: score += 5
 
-    return min(score, 100)
+    # If fewer than 3 metrics present, flag as insufficient data
+    if metrics_present < 3:
+        return -1  # sentinel: insufficient data
+
+    # Scale score by data completeness to avoid penalizing missing fields
+    completeness = metrics_present / metrics_total
+    adjusted = score * (0.7 + 0.3 * completeness)
+    return min(int(adjusted), 100)
 
 def health_label(score):
+    if score < 0: return "INSUFFICIENT DATA"
     if score >= 75: return "STRONG"
     if score >= 55: return "HEALTHY"
     if score >= 35: return "MODERATE"
@@ -307,7 +338,7 @@ def run(csv_path, top_n=20):
         mfe90 = _f(r.get("markup_90d_pct"))
         if mfe90 is not None:
             health_buckets[health_label(h)].append(mfe90)
-    for label in ["STRONG", "HEALTHY", "MODERATE", "WEAK"]:
+    for label in ["STRONG", "HEALTHY", "MODERATE", "WEAK", "INSUFFICIENT DATA"]:
         vals = health_buckets[label]
         if not vals: continue
         print("  {:10}  n={:5,}  med_mfe90={:7.2f}%  avg_mfe90={:7.2f}%".format(
