@@ -4400,6 +4400,7 @@ def run_audit(args: argparse.Namespace) -> None:
                     "w_wave_efficiency_score":        w_wave_efficiency_score,
                     "w_wave_efficiency_bucket":       w_wave_efficiency_bucket,
                     "high_252": round(high_252, 4),
+                    "atr_14": round(calc_atr(daily, i, 14) or (daily[i].h - daily[i].l), 4),
                     "distance_from_252_high_pct": round(distance_from_252_high_pct, 3) if distance_from_252_high_pct is not None else "",
                     "expansion_phase_bucket": expansion_phase_bucket,
                     "volatility_dna_score": volatility_dna_score,
@@ -4495,7 +4496,7 @@ def run_audit(args: argparse.Namespace) -> None:
         "w_selling_pressure_diminishing", "w_demand_efficiency_improving",
         "w_springboard_present", "w_buoyancy_near_support", "w_failure_to_follow_through",
         "w_wave_efficiency_score", "w_wave_efficiency_bucket",
-        "high_252", "distance_from_252_high_pct", "expansion_phase_bucket",
+        "high_252", "atr_14", "distance_from_252_high_pct", "expansion_phase_bucket",
         "volatility_dna_score", "volatility_dna_tier", "ma20", "ma50",
     ]
     for h in horizons:
