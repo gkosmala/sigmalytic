@@ -332,17 +332,19 @@ class MathUtils:
     def atr_estimate(candles: List[Candle], period: int = 14) -> float:
         if not candles:
             return 0.0
+        window = candles[-period:]
+        n = len(window)
         trs = []
-        for i, c in enumerate(candles[-period:]):
+        for i, c in enumerate(window):
             if i == 0:
                 trs.append(c.spread)
             else:
-                prev = candles[-(period - i)]
+                prev = window[i - 1]
                 tr = max(c.high - c.low,
                          abs(c.high - prev.close),
                          abs(c.low  - prev.close))
                 trs.append(tr)
-        return MathUtils.rolling_avg(trs)
+        return MathUtils.rolling_avg(trs) if trs else 0.0
 
 
 # ================================================================================
