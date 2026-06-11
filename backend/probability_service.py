@@ -2,7 +2,7 @@
 """
 backend/probability_service.py
 ------------------------------
-Sigmalytic Live Historical Probability Service v1.2
+Sigmalytic Live Historical Probability Service v1.3 — Strict Probability Matching
 
 Key Fix:
     Render container storage is temporary. probability_lookup.json may disappear
@@ -400,7 +400,17 @@ def _find_profile(row: dict, lookup: dict) -> dict:
     volume_bucket = _bucket_volume(_f(row.get("volume_pressure")))
 
     candidates = [
-        # Exact strict match
+        # STRICT MATCH ONLY.
+        #
+        # This prevents broad probability profiles such as:
+        #   Weekly Markup | Momentum Leader
+        #   Weekly Neutral
+        #   Weekly Neutral | Volatility Expansion Candidate
+        # from being assigned to unrelated symbols.
+        #
+        # A live symbol must match the full 7-part historical profile:
+        # weekly regime + setup + transition + readiness + RS + expansion + volume.
+        # If no strict profile exists, the symbol remains Unrated.
         (
             "strict_weekly_setup_transition_readiness",
             [
@@ -413,64 +423,6 @@ def _find_profile(row: dict, lookup: dict) -> dict:
                 volume_bucket,
             ],
         ),
-
-        # Near-strict fallback #1:
-        # Keep weekly/setup/transition/readiness/RS/EXP, but fall back to the
-        # most common historical low-volume bucket when live volume differs.
-        (
-            "strict_weekly_setup_transition_readiness",
-            [
-                weekly,
-                setup,
-                transition,
-                readiness_bucket,
-                rs_bucket,
-                expansion_bucket,
-                "VOL<60",
-            ],
-        ),
-
-        # Near-strict fallback #2:
-        # Keep weekly/setup/transition/readiness/RS/VOL, but test the common
-        # historical expansion bucket that exists in the lookup.
-        (
-            "strict_weekly_setup_transition_readiness",
-            [
-                weekly,
-                setup,
-                transition,
-                readiness_bucket,
-                rs_bucket,
-                "EXP70-79",
-                volume_bucket,
-            ],
-        ),
-
-        # Near-strict fallback #3:
-        # Keep the important behavioral identity fields and RS/readiness, but
-        # use the closest available historical EXP/VOL buckets before broad fallback.
-        (
-            "strict_weekly_setup_transition_readiness",
-            [
-                weekly,
-                setup,
-                transition,
-                readiness_bucket,
-                rs_bucket,
-                "EXP70-79",
-                "VOL<60",
-            ],
-        ),
-
-        # Existing broad fallbacks
-        ("weekly_setup_transition", [weekly, setup, transition]),
-        ("weekly_setup", [weekly, setup]),
-        ("setup_transition", [setup, transition]),
-        ("weekly_regime_only", [weekly]),
-        ("transition_only", [transition]),
-        ("setup_only", [setup]),
-        ("opportunity_state", [opportunity_state]),
-        ("readiness_bucket", [readiness_bucket]),
     ]
 
     attempted = []
@@ -484,6 +436,36 @@ def _find_profile(row: dict, lookup: dict) -> dict:
                 out["lookup_attempted_keys"] = attempted[:]
                 out["inferred_setup_type"] = setup
                 out["inferred_weekly_regime"] = weekly
+
+                # Safety control:
+                # Strict matches may keep the historical profile as-is.
+                # Controlled fallback matches are useful context, but they are
+                # not specific enough to display as institutional-grade edge.
+                # This prevents broad profiles like:
+                #   Weekly Markup | Momentum Leader
+                # from assigning identical high probability / expected return
+                # / edge values to many unrelated live symbols.
+                if profile_type in {"weekly_setup_transition", "setup_transition"}:
+                    out["broad_match_warning"] = True
+                    out["probability_context_only"] = True
+
+                    # Downgrade confidence on broad contextual matches.
+                    out["sample_confidence"] = min(_f(out.get("sample_confidence")), 45.0)
+
+                    # Cap broad fallback outputs so they cannot look like an
+                    # elite strict historical profile. The original profile is
+                    # preserved in historical_probability_profile for audit.
+                    out["expected_return"] = min(_f(out.get("expected_return")), 65.0)
+                    out["expected_mfe"] = min(_f(out.get("expected_mfe")), 65.0)
+                    out["edge_ratio"] = min(_f(out.get("edge_ratio")), 3.0)
+
+                    # Keep matches but prevent match count from creating an
+                    # "Institutional" confidence label for broad context.
+                    out["matches"] = min(int(_f(out.get("matches"), 0)), 99)
+
+                    # Conservative grade for broad contextual matches.
+                    out["grade"] = "B" if _f(out.get("favorable_rate")) >= 0.60 else "C"
+
                 return out
 
     return {"lookup_attempted_keys": attempted, "inferred_setup_type": setup, "inferred_weekly_regime": weekly}
@@ -532,6 +514,8 @@ def get_probability_profile(row: dict) -> dict:
             "probability_setup_type": enriched_row.get("probability_setup_type"),
             "probability_weekly_regime": enriched_row.get("probability_weekly_regime"),
             "probability_attempted_keys": profile.get("lookup_attempted_keys", []),
+            "probability_context_only": profile.get("probability_context_only", False),
+            "broad_match_warning": profile.get("broad_match_warning", False),
             "historical_probability_profile": profile,
             "edge_score": _sigmalytic_edge_score(profile),
         }
