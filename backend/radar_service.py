@@ -1897,9 +1897,10 @@ def _attach_behavioral_transition(row: dict) -> dict:
                     enriched["behavioral_transition"]["probability_grade"] = hp.get("probability_grade")
                     enriched["behavioral_transition"]["probability_confidence"] = hp.get("probability_confidence")
                     enriched["probability"] = prob_display
-                    # historical_success stays as decimal for internal use
-                    enriched["historical_success"] = raw_prob
+                    # Convert all success rate fields to percentage for frontend display
+                    enriched["historical_success"] = prob_display
                     enriched["historical_success_rate"] = prob_display
+                    enriched["historical_tradeable_rate"] = prob_display
         except Exception as e:
             try:
                 log.debug(f"Probability profile attach error {symbol if 'symbol' in locals() else row.get('symbol')}: {e}")
