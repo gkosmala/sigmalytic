@@ -1887,15 +1887,19 @@ def _attach_behavioral_transition(row: dict) -> dict:
                 # Inject into behavioral_transition dict so frontend card reads it
                 if isinstance(enriched.get("behavioral_transition"), dict):
                     raw_prob = hp.get("historical_success")
-                    # Convert 0.0-1.0 to percentage if needed
-                    prob_pct = round(raw_prob * 100, 1) if raw_prob is not None and raw_prob <= 1.0 else raw_prob
-                    enriched["behavioral_transition"]["probability"] = prob_pct
+                    # Frontend _fmt_pct displays value as-is with % sign
+                    # historical_success is 0-1, needs to be multiplied by 100
+                    prob_display = round(raw_prob * 100, 1) if raw_prob is not None else None
+                    enriched["behavioral_transition"]["probability"] = prob_display
                     enriched["behavioral_transition"]["edge_ratio"] = hp.get("edge_ratio")
                     enriched["behavioral_transition"]["expected_return"] = hp.get("expected_return")
                     enriched["behavioral_transition"]["historical_matches"] = hp.get("historical_matches")
                     enriched["behavioral_transition"]["probability_grade"] = hp.get("probability_grade")
                     enriched["behavioral_transition"]["probability_confidence"] = hp.get("probability_confidence")
-                    enriched["probability"] = prob_pct
+                    enriched["probability"] = prob_display
+                    # historical_success stays as decimal for internal use
+                    enriched["historical_success"] = raw_prob
+                    enriched["historical_success_rate"] = prob_display
         except Exception as e:
             try:
                 log.debug(f"Probability profile attach error {symbol if 'symbol' in locals() else row.get('symbol')}: {e}")
