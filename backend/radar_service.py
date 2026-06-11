@@ -1886,12 +1886,16 @@ def _attach_behavioral_transition(row: dict) -> dict:
                 enriched["probability_grade"] = hp.get("probability_grade")
                 # Inject into behavioral_transition dict so frontend card reads it
                 if isinstance(enriched.get("behavioral_transition"), dict):
-                    enriched["behavioral_transition"]["probability"] = hp.get("historical_success")
+                    raw_prob = hp.get("historical_success")
+                    # Convert 0.0-1.0 to percentage if needed
+                    prob_pct = round(raw_prob * 100, 1) if raw_prob is not None and raw_prob <= 1.0 else raw_prob
+                    enriched["behavioral_transition"]["probability"] = prob_pct
                     enriched["behavioral_transition"]["edge_ratio"] = hp.get("edge_ratio")
                     enriched["behavioral_transition"]["expected_return"] = hp.get("expected_return")
                     enriched["behavioral_transition"]["historical_matches"] = hp.get("historical_matches")
                     enriched["behavioral_transition"]["probability_grade"] = hp.get("probability_grade")
                     enriched["behavioral_transition"]["probability_confidence"] = hp.get("probability_confidence")
+                    enriched["probability"] = prob_pct
         except Exception as e:
             try:
                 log.debug(f"Probability profile attach error {symbol if 'symbol' in locals() else row.get('symbol')}: {e}")
