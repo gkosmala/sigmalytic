@@ -197,6 +197,13 @@ def _build_market_data(symbol: str, snap: dict, bars: list,
     volume     = float(daily_bar.get("v", 0) or 0)
     vwap       = float(daily_bar.get("vw", price) or price)
 
+    # Fallback: use last historical bar close as prev_close if snapshot is missing it
+    if prev_close <= 0 and bars:
+        try:
+            prev_close = float(bars[-2].get("c", 0) or bars[-1].get("c", 0) or 0)
+        except Exception:
+            pass
+
     if price <= 0 or prev_close <= 0:
         return None, None
 
