@@ -988,12 +988,36 @@ _bars_last_refresh: float = 0
 _bars_loading: bool = False
 
 
-def _refresh_historical_bars():
+def _refresh_historical_bars(force_alpaca: bool = False):
     global _historical_bars, _bars_last_refresh, _bars_loading
     _bars_loading = True
     log.info("Refreshing historical bars…")
     try:
         target_limit = int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252"))
+
+        # ── Step 1: Try Supabase cache first (fast startup) ───────────────────
+        if not force_alpaca and not _historical_bars:
+            try:
+                from supabase_bars import load_bars_from_supabase, supabase_bars_available
+                if supabase_bars_available():
+                    sb_bars = load_bars_from_supabase()
+                    if sb_bars:
+                        for sym, bars in sb_bars.items():
+                            _historical_bars[sym] = bars[-target_limit:]
+                        _bars_last_refresh = time.time()
+                        log.info(f"Loaded {len(_historical_bars)} symbols from Supabase cache")
+                        # Trigger BME training from Supabase data
+                        try:
+                            from behavioral_memory import train_batch as _bme_train
+                            trained = _bme_train(dict(_historical_bars))
+                            log.info(f"BME training from Supabase: {trained}/{len(_historical_bars)} symbols")
+                        except Exception as _bme_e:
+                            log.warning(f"BME training from Supabase failed: {_bme_e}")
+                        return  # Supabase load succeeded — skip Alpaca fetch
+            except Exception as _sb_e:
+                log.warning(f"Supabase bar load failed — falling back to Alpaca: {_sb_e}")
+
+        # ── Step 2: Fetch from Alpaca (nightly refresh or Supabase miss) ─────
         raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=target_limit)
         sample_raw = list(raw.items())[:8]
         if sample_raw:
@@ -1013,6 +1037,20 @@ def _refresh_historical_bars():
                 loaded += 1
         _bars_last_refresh = time.time()
         log.info(f"Historical bars loaded for {loaded}/{len(SYMBOLS)} symbols; cache={len(_historical_bars)}")
+
+        # ── Step 3: Save to Supabase for next startup ─────────────────────────
+        if loaded > 0:
+            try:
+                from supabase_bars import save_bars_to_supabase
+                threading.Thread(
+                    target=save_bars_to_supabase,
+                    args=(dict(_historical_bars),),
+                    daemon=True
+                ).start()
+                log.info("Supabase bar save started in background")
+            except Exception as _sb_save_e:
+                log.warning(f"Supabase bar save failed: {_sb_save_e}")
+
         # ── Trigger BME training immediately after bars load ───────────────────
         try:
             from behavioral_memory import train_batch as _bme_train
