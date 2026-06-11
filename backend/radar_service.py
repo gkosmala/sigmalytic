@@ -542,6 +542,10 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         return {}
 
     change_pct = ((price - prev_close) / prev_close) * 100
+
+    # Filter out data anomalies — splits, bad ticks, stale prev_close
+    if abs(change_pct) > 50:
+        return {}
     closes     = [float(b.get("c", 0)) for b in bars if b.get("c")]
     volumes    = [float(b.get("v", 0)) for b in bars if b.get("v")]
     highs      = [float(b.get("h", 0)) for b in bars if b.get("h")]
@@ -1873,6 +1877,21 @@ def _attach_behavioral_transition(row: dict) -> dict:
                 enriched["historical_edge_ratio"] = hp.get("edge_ratio")
                 enriched["historical_grade"] = hp.get("probability_grade")
                 enriched["historical_confidence"] = hp.get("probability_confidence")
+                # Frontend field name aliases
+                enriched["probability"] = hp.get("historical_success")
+                enriched["edge_ratio"] = hp.get("edge_ratio")
+                enriched["expected_return"] = hp.get("expected_return")
+                enriched["historical_matches"] = hp.get("historical_matches")
+                enriched["probability_available"] = hp.get("probability_available")
+                enriched["probability_grade"] = hp.get("probability_grade")
+                # Inject into behavioral_transition dict so frontend card reads it
+                if isinstance(enriched.get("behavioral_transition"), dict):
+                    enriched["behavioral_transition"]["probability"] = hp.get("historical_success")
+                    enriched["behavioral_transition"]["edge_ratio"] = hp.get("edge_ratio")
+                    enriched["behavioral_transition"]["expected_return"] = hp.get("expected_return")
+                    enriched["behavioral_transition"]["historical_matches"] = hp.get("historical_matches")
+                    enriched["behavioral_transition"]["probability_grade"] = hp.get("probability_grade")
+                    enriched["behavioral_transition"]["probability_confidence"] = hp.get("probability_confidence")
         except Exception as e:
             try:
                 log.debug(f"Probability profile attach error {symbol if 'symbol' in locals() else row.get('symbol')}: {e}")
