@@ -80,15 +80,14 @@ def load_bars_from_supabase(min_bars: int = 20) -> Dict[str, List[dict]]:
         try:
             r = requests.get(
                 f"{url}/rest/v1/daily_bars",
-                headers={**_headers(key), "Range-Unit": "items",
-                          "Range": f"{offset}-{offset + page_size - 1}"},
+                headers=_headers(key),
                 params={
                     "select": "symbol,date,open,high,low,close,volume",
                     "order": "symbol.asc,date.asc",
                     "limit": page_size,
                     "offset": offset,
                 },
-                timeout=30,
+                timeout=60,
             )
             if r.status_code not in (200, 206):
                 log.warning(f"Supabase bar load error: {r.status_code} {r.text[:200]}")
