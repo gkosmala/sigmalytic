@@ -78,14 +78,15 @@ def load_bars_from_supabase(min_bars: int = 20) -> Dict[str, List[dict]]:
 
     while True:
         try:
+            hdrs = {**_headers(key),
+                    "Range-Unit": "items",
+                    "Range": f"{offset}-{offset + page_size - 1}"}
             r = requests.get(
                 f"{url}/rest/v1/daily_bars",
-                headers=_headers(key),
+                headers=hdrs,
                 params={
                     "select": "symbol,date,open,high,low,close,volume",
                     "order": "symbol.asc,date.asc",
-                    "limit": page_size,
-                    "offset": offset,
                 },
                 timeout=60,
             )
