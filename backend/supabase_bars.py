@@ -131,7 +131,7 @@ def load_bars_from_supabase(min_bars: int = 20) -> Dict[str, List[dict]]:
 # ── Save bars to Supabase ─────────────────────────────────────────────────────
 
 def save_bars_to_supabase(bars_cache: Dict[str, List[dict]],
-                           batch_size: int = 500) -> int:
+                           batch_size: int = 5000) -> int:
     """
     Save HISTORICAL_BARS cache to Supabase daily_bars table.
     Uses upsert (merge-duplicates) so re-running is safe.
@@ -198,7 +198,7 @@ def save_bars_to_supabase(bars_cache: Dict[str, List[dict]],
 
 # ── Check if Supabase has usable bar data ─────────────────────────────────────
 
-def supabase_bars_available(min_symbols: int = 100) -> bool:
+def supabase_bars_available(min_symbols: int = 500) -> bool:
     """Quick check — does Supabase have enough bar data to use as startup cache?"""
     url, key = _get_client()
     if not url:
@@ -212,7 +212,7 @@ def supabase_bars_available(min_symbols: int = 100) -> bool:
         )
         content_range = r.headers.get("Content-Range", "0/0")
         total = int(content_range.split("/")[-1]) if "/" in content_range else 0
-        # Rough check: 100 symbols × 20 bars minimum
+        # Usable if at least 500 symbols worth of data present
         available = total >= min_symbols * 20
         log.info(f"Supabase bar check: {total:,} rows — {'available' if available else 'insufficient'}")
         return available
