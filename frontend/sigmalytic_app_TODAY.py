@@ -44,6 +44,13 @@ except Exception as _sc:
     _STATUS_CENTER_AVAILABLE = False
     print(f"STATUS_CENTER: FAILED — {_sc}", flush=True)
 
+try:
+    from trade_journal_tab import build_trade_journal_tab
+    _JOURNAL_TAB_AVAILABLE = True
+except Exception as _jt:
+    _JOURNAL_TAB_AVAILABLE = False
+    print(f"TRADE_JOURNAL_TAB: FAILED — {_jt}", flush=True)
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
@@ -2269,13 +2276,14 @@ _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = _scaled_candles(280.15, "5m")
 
 ALL_TABS = [
-    ("status",    "⚡ Status"),
+    ("status",      "⚡ Status"),
     ("command",     "Command Center"),
     ("feed",        "Live Feed"),
     ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
     ("campaigns",   "📊 Campaigns"),
     ("portfolio",   "💼 Portfolio"),
+    ("journal",     "📓 Journal"),
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
@@ -2619,6 +2627,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="campaigns":   main = build_campaign_tab(session=None) if _CAMPAIGN_TAB_AVAILABLE else html.Div("Campaign tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="portfolio":   main = build_portfolio_tab(session=None) if _PORTFOLIO_TAB_AVAILABLE else html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="journal":     main = build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div("Journal loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=None)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)

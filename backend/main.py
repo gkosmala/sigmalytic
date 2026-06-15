@@ -176,6 +176,15 @@ except Exception as _sa:
     send_campaign_birth_alerts = None
     print(f"SUBSCRIBER_ALERTS: FAILED — {_sa}", flush=True)
 
+try:
+    from trade_journal_api import journal_router
+    _JOURNAL_AVAILABLE = True
+    print("TRADE_JOURNAL: loaded OK", flush=True)
+except Exception as _ja:
+    _JOURNAL_AVAILABLE = False
+    journal_router = None
+    print(f"TRADE_JOURNAL: FAILED — {_ja}", flush=True)
+
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
 
@@ -832,6 +841,8 @@ if _CAMPAIGN_API_AVAILABLE and campaign_router:
     app.include_router(campaign_router)
 if _SIZING_AVAILABLE and sizing_router:
     app.include_router(sizing_router)
+if _JOURNAL_AVAILABLE and journal_router:
+    app.include_router(journal_router)
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
 
