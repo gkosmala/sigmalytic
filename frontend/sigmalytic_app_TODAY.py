@@ -37,6 +37,13 @@ except Exception as _pt:
     _PORTFOLIO_TAB_AVAILABLE = False
     print(f"PORTFOLIO_TAB: FAILED — {_pt}", flush=True)
 
+try:
+    from status_center import build_status_center
+    _STATUS_CENTER_AVAILABLE = True
+except Exception as _sc:
+    _STATUS_CENTER_AVAILABLE = False
+    print(f"STATUS_CENTER: FAILED — {_sc}", flush=True)
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
@@ -2262,6 +2269,7 @@ _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = _scaled_candles(280.15, "5m")
 
 ALL_TABS = [
+    ("status",    "⚡ Status"),
     ("command",     "Command Center"),
     ("feed",        "Live Feed"),
     ("performance", "Performance"),
@@ -2285,7 +2293,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-tab",       data="status"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -2596,6 +2604,9 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
         return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
                 HIDDEN, no_update, no_update)
 
+    if tab == "status":
+        main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+        return (main, dash.no_update, dash.no_update, dash.no_update)
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
         trade_plan  = _build_trade_plan_contents(live)
