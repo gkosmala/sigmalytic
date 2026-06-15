@@ -88,12 +88,23 @@ def send_sms(sym: dict, status: str, to_number: str = None) -> bool:
     Returns True if sent successfully.
     """
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_FROM_NUMBER:
-        log.warning("Twilio credentials not set — skipping SMS")
+        log.debug("Twilio credentials not set — skipping SMS silently")
+        return False
+
+    # Validate credentials look plausible before attempting API call
+    # Twilio Account SIDs start with AC and are 34 chars
+    if not TWILIO_ACCOUNT_SID.startswith("AC") or len(TWILIO_ACCOUNT_SID) != 34:
+        log.debug("Twilio Account SID format invalid — skipping SMS silently")
+        return False
+
+    # Auth tokens are 32 chars
+    if len(TWILIO_AUTH_TOKEN) < 20:
+        log.debug("Twilio Auth Token appears invalid — skipping SMS silently")
         return False
 
     phone = to_number or ALERT_PHONE
     if not phone:
-        log.warning("No alert phone number set — skipping SMS")
+        log.debug("No alert phone number set — skipping SMS silently")
         return False
 
     try:

@@ -28,16 +28,46 @@ SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 _supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+# ── Preference cache ──────────────────────────────────────────────────────────
+# Fetched once every 10 minutes to avoid hitting Supabase on every radar scan.
+# With 1,497 symbols scanning every 8 minutes, per-call fetching generates
+# thousands of unnecessary DB requests per hour.
+
+import time as _time
+
+_prefs_cache:       list[dict] = []
+_prefs_cache_ts:    float      = 0.0
+_PREFS_CACHE_TTL:   float      = 600.0  # 10 minutes
+
 
 # ── Preference loader ─────────────────────────────────────────────────────────
 
 async def get_all_user_preferences() -> list[dict]:
+    """
+    Returns cached user preferences. Refreshes from Supabase at most
+    once every 10 minutes to avoid per-scan DB hammering.
+    """
+    global _prefs_cache, _prefs_cache_ts
+
+    now = _time.monotonic()
+    if _prefs_cache and (now - _prefs_cache_ts) < _PREFS_CACHE_TTL:
+        return _prefs_cache
+
     try:
         result = _supabase.table("user_preferences").select("*").execute()
-        return result.data or []
+        _prefs_cache    = result.data or []
+        _prefs_cache_ts = now
+        logger.info(f"[email_service] Preferences cache refreshed: {len(_prefs_cache)} users")
+        return _prefs_cache
     except Exception as e:
         logger.error(f"[email_service] Failed to fetch user preferences: {e}")
-        return []
+        return _prefs_cache  # return stale cache on error rather than empty list
+
+
+def invalidate_prefs_cache() -> None:
+    """Force a cache refresh on the next call. Call after user preferences change."""
+    global _prefs_cache_ts
+    _prefs_cache_ts = 0.0
 
 
 # ── Filter logic ──────────────────────────────────────────────────────────────
