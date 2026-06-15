@@ -120,7 +120,7 @@ from radar_service    import radar_router, start_radar_scheduler, stop_radar_sch
 from snapshot_service import snapshot_router
 from legal_pages      import legal_router
 from email_service    import router as email_router
-from preferences_router import preferences_router
+from preferences_router import router as preferences_router
 
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
