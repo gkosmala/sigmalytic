@@ -82,6 +82,17 @@ except Exception as _cpe:
     run_nightly_campaign_pipeline = None
     print(f"CAMPAIGN_PIPELINE: FAILED — {_cpe}", flush=True)
 
+try:
+    from research_engine.signal_birth_engine import (
+        run_signal_birth_cycle,
+        _SIGNAL_BIRTH_AVAILABLE,
+    )
+    print("SIGNAL_BIRTH_ENGINE: loaded OK", flush=True)
+except Exception as _sbe:
+    _SIGNAL_BIRTH_AVAILABLE = False
+    run_signal_birth_cycle = None
+    print(f"SIGNAL_BIRTH_ENGINE: FAILED — {_sbe}", flush=True)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -551,6 +562,37 @@ async def lifespan(app: FastAPI):
     # ── EOD Audit scheduler — 8:30 PM ET (00:30 UTC) ─────────────────────
     _threading.Thread(target=_eod_audit_scheduler, daemon=True).start()
     log.info("EOD audit scheduler started (runs nightly at 8:30 PM ET)")
+
+    # ── Signal birth engine — 20:30 UTC (scores universe, births campaigns) ─
+    def _nightly_signal_birth_runner():
+        """Scores all symbols and births new TIER_1/TIER_2 campaigns at 20:30 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=20, minute=30, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            sleep_secs = (target - now).total_seconds()
+            log.info(
+                f"SIGNAL BIRTH: sleeping {sleep_secs / 3600:.1f}h "
+                f"until next run at 20:30 UTC"
+            )
+            _t.sleep(sleep_secs)
+            if _SIGNAL_BIRTH_AVAILABLE:
+                try:
+                    from radar_service import _historical_bars
+                    # Fetch existing active campaign symbols to avoid duplicates
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(
+                        run_signal_birth_cycle(dict(_historical_bars))
+                    )
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"SIGNAL BIRTH: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_signal_birth_runner, daemon=True).start()
+    log.info("Signal birth engine scheduler started (20:30 UTC)")
 
     # ── Campaign lifecycle pipeline — 21:00 UTC (5:00 PM ET) ─────────────
     def _nightly_campaign_runner():
