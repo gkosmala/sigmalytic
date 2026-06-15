@@ -71,6 +71,17 @@ except Exception as _bme:
     print(f"BME_ENGINE: FAILED — {_bme}", flush=True)
     print(_tb.format_exc(), flush=True)
 
+try:
+    from campaign_engine.nightly_campaign_pipeline import (
+        run_nightly_campaign_pipeline,
+        _CAMPAIGN_PIPELINE_AVAILABLE,
+    )
+    print("CAMPAIGN_PIPELINE: loaded OK", flush=True)
+except Exception as _cpe:
+    _CAMPAIGN_PIPELINE_AVAILABLE = False
+    run_nightly_campaign_pipeline = None
+    print(f"CAMPAIGN_PIPELINE: FAILED — {_cpe}", flush=True)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -540,6 +551,33 @@ async def lifespan(app: FastAPI):
     # ── EOD Audit scheduler — 8:30 PM ET (00:30 UTC) ─────────────────────
     _threading.Thread(target=_eod_audit_scheduler, daemon=True).start()
     log.info("EOD audit scheduler started (runs nightly at 8:30 PM ET)")
+
+    # ── Campaign lifecycle pipeline — 21:00 UTC (5:00 PM ET) ─────────────
+    def _nightly_campaign_runner():
+        """Runs campaign lifecycle FSM nightly at 21:00 UTC (after market close)."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=21, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            sleep_secs = (target - now).total_seconds()
+            log.info(
+                f"CAMPAIGN PIPELINE: sleeping {sleep_secs / 3600:.1f}h "
+                f"until next run at 21:00 UTC"
+            )
+            _t.sleep(sleep_secs)
+            if _CAMPAIGN_PIPELINE_AVAILABLE:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_nightly_campaign_pipeline())
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"CAMPAIGN PIPELINE: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_campaign_runner, daemon=True).start()
+    log.info("Campaign pipeline scheduler started (21:00 UTC)")
 
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
