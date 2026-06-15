@@ -25,6 +25,10 @@ from shared.engine import (
 
 try:
     from campaign_tab import build_campaign_tab
+    _CAMPAIGN_TAB_AVAILABLE = True
+except Exception as _ct:
+    _CAMPAIGN_TAB_AVAILABLE = False
+    print(f"CAMPAIGN_TAB: FAILED — {_ct}", flush=True)
 
 try:
     from portfolio_tab import build_portfolio_tab
@@ -32,10 +36,6 @@ try:
 except Exception as _pt:
     _PORTFOLIO_TAB_AVAILABLE = False
     print(f"PORTFOLIO_TAB: FAILED — {_pt}", flush=True)
-    _CAMPAIGN_TAB_AVAILABLE = True
-except Exception as _ct:
-    _CAMPAIGN_TAB_AVAILABLE = False
-    print(f"CAMPAIGN_TAB: FAILED — {_ct}", flush=True)
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
