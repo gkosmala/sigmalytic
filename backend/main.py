@@ -149,6 +149,24 @@ except Exception as _ca:
     campaign_router = None
     print(f"CAMPAIGN_API: FAILED — {_ca}", flush=True)
 
+try:
+    from intelligence.position_sizing_api import sizing_router
+    _SIZING_AVAILABLE = True
+    print("SIZING_ENGINE: loaded OK", flush=True)
+except Exception as _se:
+    _SIZING_AVAILABLE = False
+    sizing_router = None
+    print(f"SIZING_ENGINE: FAILED — {_se}", flush=True)
+
+try:
+    from intelligence.signal_decay_monitor import run_decay_monitoring_cycle
+    _DECAY_MONITOR_AVAILABLE = True
+    print("DECAY_MONITOR: loaded OK", flush=True)
+except Exception as _dm:
+    _DECAY_MONITOR_AVAILABLE = False
+    run_decay_monitoring_cycle = None
+    print(f"DECAY_MONITOR: FAILED — {_dm}", flush=True)
+
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
 
@@ -694,6 +712,28 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_analog_runner, daemon=True).start()
     log.info("Analog engine scheduler started (21:45 UTC)")
 
+    # ── Signal Decay Monitor — 22:00 UTC ──────────────────────────────────
+    def _nightly_decay_runner():
+        """Runs signal decay check nightly at 22:00 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=22, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            _t.sleep((target - now).total_seconds())
+            if _DECAY_MONITOR_AVAILABLE:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_decay_monitoring_cycle())
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"DECAY MONITOR: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_decay_runner, daemon=True).start()
+    log.info("Decay monitor scheduler started (22:00 UTC)")
+
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
         try:
@@ -781,6 +821,8 @@ app.include_router(email_router)
 app.include_router(preferences_router)
 if _CAMPAIGN_API_AVAILABLE and campaign_router:
     app.include_router(campaign_router)
+if _SIZING_AVAILABLE and sizing_router:
+    app.include_router(sizing_router)
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
 
