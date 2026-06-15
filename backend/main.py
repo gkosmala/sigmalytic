@@ -140,6 +140,15 @@ from legal_pages      import legal_router
 from email_service    import router as email_router
 from preferences_router import router as preferences_router
 
+try:
+    from campaign_api import campaign_router
+    _CAMPAIGN_API_AVAILABLE = True
+    print("CAMPAIGN_API: loaded OK", flush=True)
+except Exception as _ca:
+    _CAMPAIGN_API_AVAILABLE = False
+    campaign_router = None
+    print(f"CAMPAIGN_API: FAILED — {_ca}", flush=True)
+
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
 
@@ -770,6 +779,8 @@ app.include_router(snapshot_router)
 app.include_router(legal_router)
 app.include_router(email_router)
 app.include_router(preferences_router)
+if _CAMPAIGN_API_AVAILABLE and campaign_router:
+    app.include_router(campaign_router)
 
 # ── REST endpoints ─────────────────────────────────────────────────────────
 

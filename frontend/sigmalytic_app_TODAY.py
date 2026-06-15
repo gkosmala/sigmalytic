@@ -23,6 +23,13 @@ from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles, get_key_levels,
 )
 
+try:
+    from campaign_tab import build_campaign_tab
+    _CAMPAIGN_TAB_AVAILABLE = True
+except Exception as _ct:
+    _CAMPAIGN_TAB_AVAILABLE = False
+    print(f"CAMPAIGN_TAB: FAILED — {_ct}", flush=True)
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
@@ -2252,6 +2259,7 @@ ALL_TABS = [
     ("feed",        "Live Feed"),
     ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
+    ("campaigns",   "📊 Campaigns"),
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
@@ -2590,6 +2598,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="campaigns":   main = build_campaign_tab(session=None) if _CAMPAIGN_TAB_AVAILABLE else html.Div("Campaign tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=None)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
