@@ -25,6 +25,13 @@ from shared.engine import (
 
 try:
     from campaign_tab import build_campaign_tab
+
+try:
+    from portfolio_tab import build_portfolio_tab
+    _PORTFOLIO_TAB_AVAILABLE = True
+except Exception as _pt:
+    _PORTFOLIO_TAB_AVAILABLE = False
+    print(f"PORTFOLIO_TAB: FAILED — {_pt}", flush=True)
     _CAMPAIGN_TAB_AVAILABLE = True
 except Exception as _ct:
     _CAMPAIGN_TAB_AVAILABLE = False
@@ -2260,6 +2267,7 @@ ALL_TABS = [
     ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
     ("campaigns",   "📊 Campaigns"),
+    ("portfolio",   "💼 Portfolio"),
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
@@ -2599,6 +2607,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="campaigns":   main = build_campaign_tab(session=None) if _CAMPAIGN_TAB_AVAILABLE else html.Div("Campaign tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="portfolio":   main = build_portfolio_tab(session=None) if _PORTFOLIO_TAB_AVAILABLE else html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=None)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
