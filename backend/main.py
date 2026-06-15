@@ -167,6 +167,15 @@ except Exception as _dm:
     run_decay_monitoring_cycle = None
     print(f"DECAY_MONITOR: FAILED — {_dm}", flush=True)
 
+try:
+    from intelligence.subscriber_alerts import send_campaign_birth_alerts
+    _SUBSCRIBER_ALERTS_AVAILABLE = True
+    print("SUBSCRIBER_ALERTS: loaded OK", flush=True)
+except Exception as _sa:
+    _SUBSCRIBER_ALERTS_AVAILABLE = False
+    send_campaign_birth_alerts = None
+    print(f"SUBSCRIBER_ALERTS: FAILED — {_sa}", flush=True)
+
 # ── Access Control ─────────────────────────────────────────────────────────
 from access_control import get_permissions, check_access
 
