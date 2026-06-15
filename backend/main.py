@@ -93,6 +93,24 @@ except Exception as _sbe:
     run_signal_birth_cycle = None
     print(f"SIGNAL_BIRTH_ENGINE: FAILED — {_sbe}", flush=True)
 
+try:
+    from operator_dominance.operator_dominance_engine import run_nightly_ods_cycle
+    _ODS_AVAILABLE = True
+    print("ODS_ENGINE: loaded OK", flush=True)
+except Exception as _ode:
+    _ODS_AVAILABLE = False
+    run_nightly_ods_cycle = None
+    print(f"ODS_ENGINE: FAILED — {_ode}", flush=True)
+
+try:
+    from analog_engine.analog_engine import run_nightly_analog_cycle
+    _ANALOG_AVAILABLE = True
+    print("ANALOG_ENGINE: loaded OK", flush=True)
+except Exception as _ae:
+    _ANALOG_AVAILABLE = False
+    run_nightly_analog_cycle = None
+    print(f"ANALOG_ENGINE: FAILED — {_ae}", flush=True)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -620,6 +638,52 @@ async def lifespan(app: FastAPI):
 
     _threading.Thread(target=_nightly_campaign_runner, daemon=True).start()
     log.info("Campaign pipeline scheduler started (21:00 UTC)")
+
+    # ── ODS Engine — 21:30 UTC ────────────────────────────────────────────
+    def _nightly_ods_runner():
+        """Computes Operator Dominance Score for all active campaigns at 21:30 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=21, minute=30, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            _t.sleep((target - now).total_seconds())
+            if _ODS_AVAILABLE:
+                try:
+                    from radar_service import _historical_bars
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_nightly_ods_cycle(dict(_historical_bars)))
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"ODS ENGINE: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_ods_runner, daemon=True).start()
+    log.info("ODS engine scheduler started (21:30 UTC)")
+
+    # ── Analog Engine — 21:45 UTC ─────────────────────────────────────────
+    def _nightly_analog_runner():
+        """Runs historical campaign analog matching at 21:45 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=21, minute=45, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            _t.sleep((target - now).total_seconds())
+            if _ANALOG_AVAILABLE:
+                try:
+                    from radar_service import _historical_bars
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_nightly_analog_cycle(dict(_historical_bars)))
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"ANALOG ENGINE: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_analog_runner, daemon=True).start()
+    log.info("Analog engine scheduler started (21:45 UTC)")
 
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
