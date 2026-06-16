@@ -70,7 +70,7 @@ log = logging.getLogger("nightly_campaign_pipeline")
 # ---------------------------------------------------------------------------
 
 try:
-    from campaign_state_engine import (
+    from campaign_engine.campaign_state_engine import (
         CampaignEngine,
         CampaignState,
         DailyBar,
@@ -84,14 +84,14 @@ except Exception as _e:
     log.warning(f"campaign_state_engine import failed: {_e}")
 
 try:
-    from campaign_store import CampaignStore
+    from campaign_engine.campaign_store import CampaignStore
     _STORE_AVAILABLE = True
 except Exception as _e:
     _STORE_AVAILABLE = False
     log.warning(f"campaign_store import failed: {_e}")
 
 try:
-    from wyckoff_signal_bridge import (
+    from campaign_engine.wyckoff_signal_bridge import (
         build_wyckoff_signals,
         signals_from_confluence_output,
     )
@@ -199,7 +199,7 @@ def _get_wyckoff_signals_for_symbol(
             log.warning("Confluence bridge error for %s: %s", symbol, exc)
 
     # Minimal fallback — neutral signals, no state change will trigger
-    from campaign_state_engine import WyckoffSignals
+    from campaign_engine.campaign_state_engine import WyckoffSignals
     return WyckoffSignals()
 
 

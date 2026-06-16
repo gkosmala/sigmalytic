@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from campaign_state_engine import WyckoffSignals
+from campaign_engine.campaign_state_engine import WyckoffSignals
 
 log = logging.getLogger("wyckoff_signal_bridge")
 

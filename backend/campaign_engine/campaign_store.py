@@ -35,7 +35,7 @@ import requests
 # Campaign domain objects live in the engine layer (Layer 3).
 # Imported here only for type hints — no circular dependency because
 # campaign_engine imports campaign_store, not the reverse.
-from campaign_state_engine import (
+from campaign_engine.campaign_state_engine import (
     Campaign,
     CampaignState,
     DailyBar,
