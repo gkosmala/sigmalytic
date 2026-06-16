@@ -1120,7 +1120,7 @@ def build_radar_tab(session=None):
     user_id = (session or {}).get("user_id", "demo_user_001")
     
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/signals", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
         signals = r.json() if r.ok else []
     except Exception:
         signals = []
@@ -1173,7 +1173,7 @@ def build_scoreboard_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard/leaderboard", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
         board = r.json() if r.ok else {}
     except Exception:
         board = {}
@@ -1262,7 +1262,7 @@ def build_divergence_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/divergence/watchlist", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/admin/divergence-watchlist", timeout=6)
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
