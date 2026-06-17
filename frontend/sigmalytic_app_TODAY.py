@@ -2608,6 +2608,14 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
+    # Static tabs: only rebuild when tab changes, not on every clock tick
+    _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
+                    "billing","preferences","admin","setup","behavior","import","radar"}
+    triggered = [t["prop_id"] for t in dash.callback_context.triggered]
+    clock_only = all("i-clock" in t for t in triggered)
+    if clock_only and tab in _STATIC_TABS:
+        return no_update, no_update, no_update, no_update
+
     if not live:
         return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
                 HIDDEN, no_update, no_update)
