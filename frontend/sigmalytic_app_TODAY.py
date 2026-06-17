@@ -2625,8 +2625,25 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
-    elif tab=="campaigns":   main = build_campaign_tab(session=None) if _CAMPAIGN_TAB_AVAILABLE else html.Div("Campaign tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="portfolio":   main = build_portfolio_tab(session=None) if _PORTFOLIO_TAB_AVAILABLE else html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="campaigns":
+        if _CAMPAIGN_TAB_AVAILABLE:
+            try:
+                main = build_campaign_tab(session=None)
+            except Exception as _ce:
+                main = html.Div([
+                    html.Div("⚠️ Campaign tab error", style={"color":"#f87171","fontWeight":"700","marginBottom":"8px"}),
+                    html.Div(str(_ce), style={"color":"#94a3b8","fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Campaign tab unavailable — check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="portfolio":
+        if _PORTFOLIO_TAB_AVAILABLE:
+            try:
+                main = build_portfolio_tab(session=None)
+            except Exception as _pe:
+                main = html.Div(str(_pe), style={"color":"#f87171","padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="journal":     main = build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div("Journal loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=None)
