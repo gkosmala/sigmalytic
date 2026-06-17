@@ -2475,8 +2475,10 @@ def load_symbol(_, ticker, live):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-command","n_clicks"),      Input("tab-feed","n_clicks"),
-    Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
+    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
+    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
+    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
+    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
@@ -2602,19 +2604,21 @@ def update_badges(live):
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"),
-    State("i-clock","n_intervals"),
+    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
     State("s-symbol","data"), State("s-tf","data"),
 )
 def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
-    # Static tabs do not need live market data and should not be blocked
-    # by the 1-second clock. The clock is now State, not Input, so it
-    # no longer re-renders Campaigns/Scoreboard/Divergence every second.
+    # Static tabs: only skip rebuild when clock fires AND tab hasn't changed
     _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
                     "billing","preferences","admin","setup","behavior","import","radar"}
+    triggered = [t["prop_id"] for t in dash.callback_context.triggered]
+    tab_changed = any("s-tab" in t for t in triggered)
+    clock_only = all("i-clock" in t for t in triggered)
+    if clock_only and tab in _STATIC_TABS and not tab_changed:
+        return no_update, no_update, no_update, no_update
 
     if not live:
         # Don't block static tabs — they don't need live data
