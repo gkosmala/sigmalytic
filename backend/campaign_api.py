@@ -82,6 +82,11 @@ async def get_active_campaigns() -> dict[str, Any]:
             "duration_days,layer,operator_dominance,distribution_risk,"
             "decay_score,decay_band,decay_reason,decay_recommendation,"
             "conjunction_exit,exit_signal,"
+            "transition_next_state,transition_advance_prob,"
+            "transition_failure_prob,transition_continuation_prob,"
+            "transition_expected_days,transition_expected_return,"
+            "transition_expected_mfe,transition_expected_mae,"
+            "transition_bias,transition_updated_at,"
             "historical_confidence,status,close_notes,updated_at"
         ),
         "status": "eq.ACTIVE",
@@ -136,6 +141,7 @@ async def get_campaign_summary() -> dict[str, Any]:
             "current_state,historical_confidence,"
             "operator_dominance,distribution_risk,"
             "decay_score,decay_band,conjunction_exit,exit_signal,"
+            "transition_advance_prob,transition_failure_prob,transition_bias,"
             "entry_price,current_price,mfe90_expected"
         ),
         "status": "eq.ACTIVE",
@@ -195,6 +201,23 @@ async def get_campaign_summary() -> dict[str, Any]:
         s = c.get("current_state", "BIRTH")
         state_breakdown[s] = state_breakdown.get(s, 0) + 1
 
+    transition_bias_breakdown: dict[str, int] = {}
+    advance_probs = []
+    failure_probs = []
+    for c in campaigns:
+        b = c.get("transition_bias") or "UNKNOWN"
+        transition_bias_breakdown[b] = transition_bias_breakdown.get(b, 0) + 1
+        try:
+            if c.get("transition_advance_prob") is not None:
+                advance_probs.append(float(c.get("transition_advance_prob") or 0))
+            if c.get("transition_failure_prob") is not None:
+                failure_probs.append(float(c.get("transition_failure_prob") or 0))
+        except Exception:
+            pass
+
+    avg_transition_advance = sum(advance_probs) / len(advance_probs) if advance_probs else 0
+    avg_transition_failure = sum(failure_probs) / len(failure_probs) if failure_probs else 0
+
     return {
         "total_active":      total,
         "tier_1":            tier_1,
@@ -205,6 +228,9 @@ async def get_campaign_summary() -> dict[str, Any]:
         "state_breakdown":   state_breakdown,
         "decay_breakdown":   decay_counts,
         "exit_candidates":   exits,
+        "transition_bias_breakdown": transition_bias_breakdown,
+        "avg_transition_advance": round(avg_transition_advance, 1),
+        "avg_transition_failure": round(avg_transition_failure, 1),
         "as_of":             datetime.now(timezone.utc).isoformat(),
     }
 
