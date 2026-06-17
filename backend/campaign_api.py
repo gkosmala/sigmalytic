@@ -80,6 +80,8 @@ async def get_active_campaigns() -> dict[str, Any]:
             "entry_price,stop_price,current_price,pnf_target,"
             "mfe90_expected,obstacle_score,progress_score,d_score,"
             "duration_days,layer,operator_dominance,distribution_risk,"
+            "decay_score,decay_band,decay_reason,decay_recommendation,"
+            "conjunction_exit,exit_signal,"
             "historical_confidence,status,close_notes,updated_at"
         ),
         "status": "eq.ACTIVE",
@@ -103,10 +105,14 @@ async def get_active_campaigns() -> dict[str, Any]:
                 (current - entry) / pnf_span * 100, 1
             ) if pnf_span > 0 else 0.0
 
-            c["conjunction_exit"] = (
+            stored_conjunction = bool(c.get("conjunction_exit"))
+            stored_exit = bool(c.get("exit_signal"))
+            fallback_conjunction = (
                 float(c.get("operator_dominance") or 100) < 40
                 and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}
             )
+            c["conjunction_exit"] = stored_conjunction or stored_exit or fallback_conjunction
+            c["exit_signal"] = stored_exit or c["conjunction_exit"]
         except Exception:
             c["return_pct"]       = 0.0
             c["pnf_progress_pct"] = 0.0
@@ -129,6 +135,7 @@ async def get_campaign_summary() -> dict[str, Any]:
         "select": (
             "current_state,historical_confidence,"
             "operator_dominance,distribution_risk,"
+            "decay_score,decay_band,conjunction_exit,exit_signal,"
             "entry_price,current_price,mfe90_expected"
         ),
         "status": "eq.ACTIVE",
@@ -152,9 +159,24 @@ async def get_campaign_summary() -> dict[str, Any]:
     avg_ods   = sum(float(c.get("operator_dominance") or 0) for c in campaigns) / total
     exits     = sum(
         1 for c in campaigns
-        if float(c.get("operator_dominance") or 100) < 40
-        and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}
+        if bool(c.get("exit_signal"))
+        or bool(c.get("conjunction_exit"))
+        or (
+            float(c.get("operator_dominance") or 100) < 40
+            and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}
+        )
     )
+
+    decay_counts = {
+        "HEALTHY": 0,
+        "MONITOR": 0,
+        "WEAKENING": 0,
+        "EXIT_CANDIDATE": 0,
+        "UNKNOWN": 0,
+    }
+    for c in campaigns:
+        band = str(c.get("decay_band") or "UNKNOWN").upper()
+        decay_counts[band] = decay_counts.get(band, 0) + 1
 
     returns = []
     for c in campaigns:
@@ -181,6 +203,8 @@ async def get_campaign_summary() -> dict[str, Any]:
         "conjunction_exits": exits,
         "avg_return_pct":    round(avg_return, 2),
         "state_breakdown":   state_breakdown,
+        "decay_breakdown":   decay_counts,
+        "exit_candidates":   exits,
         "as_of":             datetime.now(timezone.utc).isoformat(),
     }
 

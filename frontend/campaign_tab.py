@@ -4,28 +4,15 @@ frontend/campaign_tab.py
 -------------------------
 Campaign Intelligence Tab for Sigmalytic V2.
 
-Displays all active campaigns with:
-  - State, days open, tier
-  - ODS (Operator Dominance Score)
-  - P&F progress toward target
-  - Entry price, current price, return %
-  - Distribution risk indicator
-  - Conjunction exit signal warning
+Phase 14C update:
+  - Shows Decay Score
+  - Shows Decay Band
+  - Shows Exit Signal
+  - Shows Decay Reason tooltip/text
+  - Sorts exit candidates and weakening campaigns first
 
-Plugs into sigmalytic_app_TODAY.py:
-
-  1. Import at top of app file:
-       from campaign_tab import build_campaign_tab
-
-  2. Add to ALL_TABS list:
-       ("campaigns", "📊 Campaigns"),
-
-  3. Add to tab router (in the render_tab callback):
-       if tab == "campaigns":
-           return build_campaign_tab(session=session)
-
-Requires backend endpoint: GET /api/campaigns/active
-(see campaign_api.py for the FastAPI router)
+Requires backend endpoint:
+  GET /api/campaigns/active
 """
 
 from __future__ import annotations
@@ -34,7 +21,6 @@ import os
 import requests as _rq
 from dash import html
 
-# ── Brand tokens (must match sigmalytic_app_TODAY.py) ────────────────────────
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
@@ -46,14 +32,12 @@ PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 
-# ── Helpers (mirrors patterns in main app) ────────────────────────────────────
-
 def _card(children, sx=None):
     base = {
-        "background":   NAVY_CARD,
-        "border":       f"1px solid {BORDER}",
+        "background": NAVY_CARD,
+        "border": f"1px solid {BORDER}",
         "borderRadius": "16px",
-        "padding":      "20px",
+        "padding": "20px",
         "marginBottom": "16px",
     }
     if sx:
@@ -63,40 +47,60 @@ def _card(children, sx=None):
 
 def _label(text):
     return html.Span(text, style={
-        "flex": "1", "fontSize": "9px", "color": MUTED,
-        "fontWeight": "700", "textTransform": "uppercase", "letterSpacing": ".1em",
+        "flex": "1",
+        "fontSize": "9px",
+        "color": MUTED,
+        "fontWeight": "700",
+        "textTransform": "uppercase",
+        "letterSpacing": ".1em",
     })
 
 
 def _mono(text, color=None):
     return html.Span(text, style={
         "fontFamily": "DM Mono, monospace",
-        "fontSize":   "13px",
-        "color":      color or WHITE,
+        "fontSize": "13px",
+        "color": color or WHITE,
         "fontWeight": "600",
     })
 
 
-# ── State color mapping ───────────────────────────────────────────────────────
+def _safe_float(value, default=0.0):
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
 
 _STATE_COLORS = {
-    "BIRTH":             BLUE_DIM,
-    "CONFIRMED":         TEAL_DIM,
-    "SURVIVING":         TEAL_DIM,
-    "EXPANDING":         YELLOW_DIM,
-    "MATURING":          YELLOW,
+    "BIRTH": BLUE_DIM,
+    "CONFIRMED": TEAL_DIM,
+    "SURVIVING": TEAL_DIM,
+    "EXPANDING": YELLOW_DIM,
+    "MATURING": YELLOW,
     "DISTRIBUTION_RISK": RED_DIM,
-    "CLOSED":            MUTED,
+    "CLOSED": MUTED,
 }
 
 _STATE_ICONS = {
-    "BIRTH":             "🌱",
-    "CONFIRMED":         "✅",
-    "SURVIVING":         "🛡️",
-    "EXPANDING":         "🚀",
-    "MATURING":          "📈",
+    "BIRTH": "🌱",
+    "CONFIRMED": "✅",
+    "SURVIVING": "🛡️",
+    "EXPANDING": "🚀",
+    "MATURING": "📈",
     "DISTRIBUTION_RISK": "⚠️",
-    "CLOSED":            "🔒",
+    "CLOSED": "🔒",
 }
 
 _TIER_COLORS = {
@@ -106,203 +110,224 @@ _TIER_COLORS = {
     "TIER_4": MUTED,
 }
 
+_DECAY_COLORS = {
+    "HEALTHY": TEAL_DIM,
+    "MONITOR": YELLOW_DIM,
+    "WEAKENING": RED_DIM,
+    "EXIT_CANDIDATE": RED_DIM,
+    "UNKNOWN": MUTED,
+}
 
-# ── ODS gauge bar ─────────────────────────────────────────────────────────────
+_DECAY_LABELS = {
+    "HEALTHY": "✓ HEALTHY",
+    "MONITOR": "👀 WATCH",
+    "WEAKENING": "⚠ WEAK",
+    "EXIT_CANDIDATE": "🚨 EXIT",
+    "UNKNOWN": "—",
+}
+
+
+def _bar(pct: float, color: str, width="60px") -> html.Div:
+    pct = min(100.0, max(0.0, float(pct or 0)))
+    return html.Div([
+        html.Div(style={
+            "width": f"{pct}%",
+            "height": "4px",
+            "background": color,
+            "borderRadius": "2px",
+            "transition": "width .3s",
+        }),
+    ], style={
+        "width": width,
+        "height": "4px",
+        "background": "rgba(255,255,255,.08)",
+        "borderRadius": "2px",
+        "marginTop": "4px",
+    })
+
 
 def _ods_bar(ods_score: float) -> html.Div:
-    """Render a compact horizontal ODS gauge."""
-    pct   = min(100.0, max(0.0, float(ods_score or 0)))
+    pct = min(100.0, max(0.0, float(ods_score or 0)))
     color = TEAL_DIM if pct >= 70 else (YELLOW_DIM if pct >= 40 else RED_DIM)
-    return html.Div([
-        html.Div(style={
-            "width":         f"{pct}%",
-            "height":        "4px",
-            "background":    color,
-            "borderRadius":  "2px",
-            "transition":    "width .3s",
-        }),
-    ], style={
-        "width":        "60px",
-        "height":       "4px",
-        "background":   "rgba(255,255,255,.08)",
-        "borderRadius": "2px",
-        "marginTop":    "4px",
-    })
+    return _bar(pct, color)
 
-
-# ── P&F progress bar ──────────────────────────────────────────────────────────
 
 def _pnf_bar(pct: float) -> html.Div:
-    pct   = min(100.0, max(0.0, float(pct or 0)))
+    pct = min(100.0, max(0.0, float(pct or 0)))
     color = TEAL_DIM if pct >= 75 else (YELLOW_DIM if pct >= 40 else BLUE_DIM)
-    return html.Div([
-        html.Div(style={
-            "width":        f"{pct}%",
-            "height":       "4px",
-            "background":   color,
-            "borderRadius": "2px",
-        }),
-    ], style={
-        "width":        "60px",
-        "height":       "4px",
-        "background":   "rgba(255,255,255,.08)",
-        "borderRadius": "2px",
-        "marginTop":    "4px",
+    return _bar(pct, color)
+
+
+def _decay_badge(decay_band: str, exit_signal: bool) -> html.Span:
+    band = str(decay_band or "UNKNOWN").upper()
+    if exit_signal:
+        band = "EXIT_CANDIDATE"
+    color = _DECAY_COLORS.get(band, MUTED)
+    label = _DECAY_LABELS.get(band, band)
+    return html.Span(label, style={
+        "fontSize": "10px",
+        "fontWeight": "800",
+        "color": color,
+        "background": f"{color}18",
+        "borderRadius": "6px",
+        "padding": "3px 8px",
+        "border": f"1px solid {color}40",
+        "whiteSpace": "nowrap",
     })
 
 
-# ── Campaign row ──────────────────────────────────────────────────────────────
-
 def _campaign_row(c: dict) -> html.Div:
-    state    = c.get("current_state", "BIRTH")
-    symbol   = c.get("symbol", "—")
-    tier     = c.get("historical_confidence", "—")
-    days     = int(c.get("campaign_age_days", 0))
-    ods      = float(c.get("operator_dominance") or 0)
-    dist_r   = float(c.get("distribution_risk") or 0)
-    entry    = float(c.get("entry_price") or 0)
-    current  = float(c.get("current_price") or 0)
-    pnf_t    = float(c.get("pnf_target") or 0)
-    mfe90    = float(c.get("mfe90_expected") or 0)
+    state = c.get("current_state", "BIRTH")
+    symbol = c.get("symbol", "—")
+    tier = c.get("historical_confidence", "—")
+    days = _safe_int(c.get("campaign_age_days"), 0)
+    ods = _safe_float(c.get("operator_dominance"), 0)
+    dist_r = _safe_float(c.get("distribution_risk"), 0)
+    entry = _safe_float(c.get("entry_price"), 0)
+    current = _safe_float(c.get("current_price"), 0)
+    pnf_t = _safe_float(c.get("pnf_target"), 0)
+    mfe90 = _safe_float(c.get("mfe90_expected"), 0)
+    ret_pct = _safe_float(c.get("return_pct"), 0)
+    pnf_pct = _safe_float(c.get("pnf_progress_pct"), 0)
+    decay_score = _safe_float(c.get("decay_score"), 0)
+    decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
+    decay_reason = c.get("decay_reason") or ""
+    exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
 
-    # Return %
-    ret_pct  = ((current - entry) / entry * 100) if entry > 0 else 0.0
+    # Fallback if API did not include derived fields.
+    if ret_pct == 0 and entry > 0 and current > 0:
+        ret_pct = ((current - entry) / entry * 100)
+    if pnf_pct == 0 and pnf_t > entry and current > 0:
+        pnf_pct = ((current - entry) / (pnf_t - entry) * 100)
+
     ret_color = TEAL_DIM if ret_pct >= 0 else RED_DIM
-
-    # P&F progress %
-    pnf_span = pnf_t - entry
-    pnf_pct  = ((current - entry) / pnf_span * 100) if pnf_span > 0 else 0.0
-
     state_color = _STATE_COLORS.get(state, MUTED)
-    state_icon  = _STATE_ICONS.get(state, "•")
-    tier_color  = _TIER_COLORS.get(tier, MUTED)
+    state_icon = _STATE_ICONS.get(state, "•")
+    tier_color = _TIER_COLORS.get(tier, MUTED)
+    decay_color = _DECAY_COLORS.get(decay_band, MUTED)
 
-    # Conjunction exit warning
-    conjunction = (ods < 40 and state in {"MATURING", "DISTRIBUTION_RISK"})
-
-    row_bg = "rgba(239,68,68,.06)" if conjunction else "transparent"
+    row_bg = "rgba(239,68,68,.08)" if exit_signal else (
+        "rgba(245,158,11,.05)" if decay_band in {"MONITOR", "WEAKENING"} else "transparent"
+    )
 
     return html.Div([
 
-        # Symbol + tier badge
         html.Div([
             html.Span(symbol, style={
                 "fontFamily": "DM Mono, monospace",
-                "fontSize":   "15px",
+                "fontSize": "15px",
                 "fontWeight": "900",
-                "color":      WHITE,
+                "color": WHITE,
             }),
             html.Span(tier, style={
-                "fontSize":      "9px",
-                "fontWeight":    "700",
-                "color":         tier_color,
-                "background":    f"rgba(255,255,255,.05)",
-                "borderRadius":  "6px",
-                "padding":       "2px 6px",
-                "marginLeft":    "6px",
-                "border":        f"1px solid {tier_color}30",
+                "fontSize": "9px",
+                "fontWeight": "700",
+                "color": tier_color,
+                "background": "rgba(255,255,255,.05)",
+                "borderRadius": "6px",
+                "padding": "2px 6px",
+                "marginLeft": "6px",
+                "border": f"1px solid {tier_color}30",
             }),
-        ], style={"flex": "1.2", "display": "flex", "alignItems": "center"}),
+        ], style={"flex": "1.1", "display": "flex", "alignItems": "center"}),
 
-        # State
         html.Div([
             html.Span(f"{state_icon} {state.replace('_', ' ')}", style={
-                "fontSize":   "11px",
+                "fontSize": "11px",
                 "fontWeight": "700",
-                "color":      state_color,
+                "color": state_color,
             }),
-        ], style={"flex": "1.5"}),
+        ], style={"flex": "1.4"}),
 
-        # Days open
-        html.Div([
-            _mono(f"Day {days}", BLUE_DIM),
-        ], style={"flex": ".7"}),
+        html.Div([_mono(f"Day {days}", BLUE_DIM)], style={"flex": ".55"}),
 
-        # Entry → Current → Return
         html.Div([
             html.Div(_mono(f"${entry:,.2f}", MUTED), style={"fontSize": "11px"}),
             html.Div([
                 _mono(f"${current:,.2f}", WHITE),
                 html.Span(f" {ret_pct:+.1f}%", style={
-                    "fontSize":   "11px",
+                    "fontSize": "11px",
                     "fontWeight": "700",
-                    "color":      ret_color,
+                    "color": ret_color,
                     "marginLeft": "4px",
                 }),
             ], style={"display": "flex", "alignItems": "baseline"}),
-        ], style={"flex": "1.2"}),
+        ], style={"flex": "1.15"}),
 
-        # P&F progress
         html.Div([
-            html.Div(f"{pnf_pct:.0f}% of target", style={
-                "fontSize": "11px", "color": TEXT,
-            }),
+            html.Div(f"{pnf_pct:.0f}% target", style={"fontSize": "11px", "color": TEXT}),
             _pnf_bar(pnf_pct),
-        ], style={"flex": "1"}),
+        ], style={"flex": ".95"}),
 
-        # ODS
         html.Div([
             html.Div(f"ODS {ods:.0f}", style={
-                "fontSize":   "11px",
+                "fontSize": "11px",
                 "fontWeight": "700",
-                "color":      TEAL_DIM if ods >= 70 else (YELLOW_DIM if ods >= 40 else RED_DIM),
+                "color": TEAL_DIM if ods >= 70 else (YELLOW_DIM if ods >= 40 else RED_DIM),
             }),
             _ods_bar(ods),
-        ], style={"flex": ".8"}),
+        ], style={"flex": ".75"}),
 
-        # mfe90 expectation
         html.Div([
-            _mono(f"{mfe90:.1f}%", PURPLE),
-        ], style={"flex": ".8"}),
+            html.Div(f"D{decay_score:.0f}", style={
+                "fontSize": "11px",
+                "fontWeight": "800",
+                "color": decay_color,
+                "fontFamily": "DM Mono, monospace",
+            }),
+            _bar(decay_score, decay_color),
+        ], style={"flex": ".75"}),
 
-        # Conjunction exit warning
         html.Div([
-            html.Span("⚡ EXIT", style={
-                "fontSize":     "10px",
-                "fontWeight":   "800",
-                "color":        RED_DIM,
-                "background":   RED_GLOW,
-                "borderRadius": "6px",
-                "padding":      "3px 8px",
-                "border":       f"1px solid {RED_DIM}40",
-            }) if conjunction else html.Span("—", style={"color": MUTED, "fontSize": "11px"}),
-        ], style={"flex": ".8", "textAlign": "center"}),
+            _decay_badge(decay_band, exit_signal),
+            html.Div(decay_reason[:80] + ("…" if len(decay_reason) > 80 else ""), style={
+                "fontSize": "9px",
+                "color": MUTED,
+                "marginTop": "4px",
+                "lineHeight": "1.2",
+                "maxWidth": "180px",
+            }) if decay_reason else html.Div(),
+        ], style={"flex": "1.3"}),
+
+        html.Div([_mono(f"{mfe90:.1f}%", PURPLE)], style={"flex": ".65"}),
 
     ], style={
-        "display":      "flex",
-        "alignItems":   "center",
-        "gap":          "12px",
-        "padding":      "14px 0",
+        "display": "flex",
+        "alignItems": "center",
+        "gap": "12px",
+        "padding": "14px 8px",
         "borderBottom": f"1px solid {BORDER}",
-        "background":   row_bg,
-        "borderRadius": "4px",
+        "background": row_bg,
+        "borderRadius": "6px",
     })
 
-
-# ── Summary metrics row ───────────────────────────────────────────────────────
 
 def _summary_tile(label: str, value: str, color: str = WHITE) -> html.Div:
     return html.Div([
-        html.Div(label, style={"fontSize": "10px", "color": MUTED, "fontWeight": "700",
-                               "textTransform": "uppercase", "letterSpacing": ".08em"}),
-        html.Div(value, style={"fontSize": "22px", "fontWeight": "900", "color": color,
-                               "marginTop": "4px", "fontFamily": "DM Mono, monospace"}),
+        html.Div(label, style={
+            "fontSize": "10px",
+            "color": MUTED,
+            "fontWeight": "700",
+            "textTransform": "uppercase",
+            "letterSpacing": ".08em",
+        }),
+        html.Div(value, style={
+            "fontSize": "22px",
+            "fontWeight": "900",
+            "color": color,
+            "marginTop": "4px",
+            "fontFamily": "DM Mono, monospace",
+        }),
     ], style={
-        "background":   NAVY_MID,
-        "border":       f"1px solid {BORDER}",
+        "background": NAVY_MID,
+        "border": f"1px solid {BORDER}",
         "borderRadius": "12px",
-        "padding":      "16px 20px",
-        "minWidth":     "120px",
+        "padding": "16px 20px",
+        "minWidth": "120px",
     })
 
 
-# ── Main tab builder ──────────────────────────────────────────────────────────
-
 def build_campaign_tab(session=None) -> html.Div:
-    """
-    Build the Campaign Intelligence tab.
-    Fetches active campaigns from the backend API.
-    """
     try:
         fetch_error = None
         r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
@@ -316,17 +341,15 @@ def build_campaign_tab(session=None) -> html.Div:
         fetch_error = str(_fe)
         campaigns = []
 
-    # ── Summary metrics ───────────────────────────────────────────────────
-    total     = len(campaigns)
-    tier1     = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
-    tier2     = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
-    exits     = sum(1 for c in campaigns
-                    if float(c.get("operator_dominance") or 100) < 40
-                    and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"})
-    avg_ods   = (
-        sum(float(c.get("operator_dominance") or 0) for c in campaigns) / total
-        if total else 0
-    )
+    total = len(campaigns)
+    tier1 = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
+    tier2 = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
+    avg_ods = (sum(_safe_float(c.get("operator_dominance"), 0) for c in campaigns) / total if total else 0)
+
+    healthy = sum(1 for c in campaigns if str(c.get("decay_band") or "").upper() == "HEALTHY")
+    monitor = sum(1 for c in campaigns if str(c.get("decay_band") or "").upper() == "MONITOR")
+    weakening = sum(1 for c in campaigns if str(c.get("decay_band") or "").upper() == "WEAKENING")
+    exits = sum(1 for c in campaigns if bool(c.get("exit_signal")) or bool(c.get("conjunction_exit")))
 
     state_counts: dict[str, int] = {}
     for c in campaigns:
@@ -334,14 +357,16 @@ def build_campaign_tab(session=None) -> html.Div:
         state_counts[s] = state_counts.get(s, 0) + 1
 
     summary_row = html.Div([
-        _summary_tile("Active",       str(total),          WHITE),
-        _summary_tile("TIER 1",       str(tier1),          TEAL_DIM),
-        _summary_tile("TIER 2",       str(tier2),          BLUE_DIM),
-        _summary_tile("Avg ODS",      f"{avg_ods:.0f}",    TEAL_DIM if avg_ods >= 60 else YELLOW_DIM),
-        _summary_tile("Exit Signals", str(exits),          RED_DIM if exits > 0 else MUTED),
+        _summary_tile("Active", str(total), WHITE),
+        _summary_tile("TIER 1", str(tier1), TEAL_DIM),
+        _summary_tile("TIER 2", str(tier2), BLUE_DIM),
+        _summary_tile("Avg ODS", f"{avg_ods:.0f}", TEAL_DIM if avg_ods >= 60 else YELLOW_DIM),
+        _summary_tile("Healthy", str(healthy), TEAL_DIM),
+        _summary_tile("Monitor", str(monitor), YELLOW_DIM if monitor else MUTED),
+        _summary_tile("Weakening", str(weakening), RED_DIM if weakening else MUTED),
+        _summary_tile("Exit Signals", str(exits), RED_DIM if exits > 0 else MUTED),
     ], style={"display": "flex", "gap": "12px", "marginBottom": "20px", "flexWrap": "wrap"})
 
-    # ── State breakdown ───────────────────────────────────────────────────
     state_badges = html.Div([
         html.Span([
             html.Span(f"{_STATE_ICONS.get(s, '•')} {s.replace('_', ' ')}",
@@ -349,15 +374,14 @@ def build_campaign_tab(session=None) -> html.Div:
                              "color": _STATE_COLORS.get(s, MUTED)}),
             html.Span(f" ({n})", style={"fontSize": "11px", "color": MUTED}),
         ], style={
-            "background":   "rgba(255,255,255,.04)",
+            "background": "rgba(255,255,255,.04)",
             "borderRadius": "8px",
-            "padding":      "4px 10px",
-            "border":       f"1px solid {BORDER}",
+            "padding": "4px 10px",
+            "border": f"1px solid {BORDER}",
         })
         for s, n in sorted(state_counts.items(), key=lambda x: x[1], reverse=True)
     ], style={"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginBottom": "20px"})
 
-    # ── Table header ──────────────────────────────────────────────────────
     header = html.Div([
         _label("Symbol / Tier"),
         _label("State"),
@@ -365,29 +389,27 @@ def build_campaign_tab(session=None) -> html.Div:
         _label("Entry → Price"),
         _label("P&F Progress"),
         _label("ODS"),
+        _label("Decay"),
+        _label("Signal / Reason"),
         _label("mfe90 Exp"),
-        _label("Signal"),
     ], style={
-        "display":       "flex",
-        "gap":           "12px",
+        "display": "flex",
+        "gap": "12px",
         "paddingBottom": "10px",
-        "borderBottom":  f"1px solid {BORDER}",
-        "marginBottom":  "4px",
+        "borderBottom": f"1px solid {BORDER}",
+        "marginBottom": "4px",
     })
 
-    # ── Campaign rows ─────────────────────────────────────────────────────
     if campaigns:
-        # Sort: conjunction exits first, then by TIER, then by days open
         def _sort_key(c):
-            ods   = float(c.get("operator_dominance") or 100)
-            state = c.get("current_state", "BIRTH")
-            conj  = 1 if (ods < 40 and state in {"MATURING", "DISTRIBUTION_RISK"}) else 0
-            tier  = c.get("historical_confidence", "TIER_4")
+            exit_flag = 1 if (bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))) else 0
+            band = str(c.get("decay_band") or "UNKNOWN").upper()
+            band_rank = {"EXIT_CANDIDATE": 0, "WEAKENING": 1, "MONITOR": 2, "HEALTHY": 3, "UNKNOWN": 4}.get(band, 4)
+            tier = c.get("historical_confidence", "TIER_4")
             tier_n = {"TIER_1": 0, "TIER_2": 1, "TIER_3": 2, "TIER_4": 3}.get(tier, 4)
-            return (-conj, tier_n, -int(c.get("campaign_age_days", 0)))
+            return (-exit_flag, band_rank, tier_n, -_safe_int(c.get("campaign_age_days"), 0))
 
-        campaigns_sorted = sorted(campaigns, key=_sort_key)
-        rows = [_campaign_row(c) for c in campaigns_sorted]
+        rows = [_campaign_row(c) for c in sorted(campaigns, key=_sort_key)]
     else:
         error_msg = f"API error: {fetch_error}" if fetch_error else (
             "The signal birth engine runs nightly at 20:30 UTC. "
@@ -398,27 +420,30 @@ def build_campaign_tab(session=None) -> html.Div:
             html.Div("No active campaigns yet.", style={
                 "color": WHITE, "fontSize": "16px", "fontWeight": "700",
             }),
-            html.Div(error_msg,
-                style={"color": RED_DIM if fetch_error else TEXT,
-                       "fontSize": "13px", "marginTop": "8px"}),
-            html.Div(f"Backend: {BACKEND_HTTP}",
-                style={"color": MUTED, "fontSize": "11px", "marginTop": "4px"}),
-        ], style={
-            "textAlign":  "center",
-            "padding":    "48px 24px",
-            "color":      MUTED,
-        })]
+            html.Div(error_msg, style={
+                "color": RED_DIM if fetch_error else TEXT,
+                "fontSize": "13px",
+                "marginTop": "8px",
+            }),
+            html.Div(f"Backend: {BACKEND_HTTP}", style={
+                "color": MUTED,
+                "fontSize": "11px",
+                "marginTop": "4px",
+            }),
+        ], style={"textAlign": "center", "padding": "48px 24px", "color": MUTED})]
 
     return html.Div([
         _card([
             html.Div([
                 html.H2("📊 Campaign Intelligence", style={
-                    "color": WHITE, "fontSize": "18px",
-                    "fontWeight": "900", "margin": "0 0 4px",
+                    "color": WHITE,
+                    "fontSize": "18px",
+                    "fontWeight": "900",
+                    "margin": "0 0 4px",
                 }),
                 html.P(
-                    "Active institutional campaigns — lifecycle state, "
-                    "operator dominance, and P&F progress.",
+                    "Active institutional campaigns — lifecycle state, operator dominance, "
+                    "decay monitoring, exit signals, and P&F progress.",
                     style={"color": TEXT, "fontSize": "13px", "margin": "0 0 20px"},
                 ),
             ]),
