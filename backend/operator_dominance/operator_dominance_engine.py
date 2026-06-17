@@ -576,7 +576,7 @@ async def run_nightly_ods_cycle(
                             "Prefer": "return=minimal",
                         },
                         params={
-                            "campaign_id": f"eq.{r.campaign_id}",
+                            "display_label": f"eq.{r.campaign_id}",
                         },
                         json={
                             "operator_dominance": r.ods_score,
@@ -590,7 +590,7 @@ async def run_nightly_ods_cycle(
                         written += 1
                     else:
                         log.warning(
-                            "ODS write failed campaign_id=%s status=%s body=%s",
+                            "ODS write failed display_label=%s status=%s body=%s",
                             r.campaign_id,
                             resp.status_code,
                             resp.text[:200],
@@ -598,7 +598,7 @@ async def run_nightly_ods_cycle(
 
                 except Exception as write_exc:
                     log.warning(
-                        "ODS write exception campaign_id=%s error=%s",
+                        "ODS write exception display_label=%s error=%s",
                         r.campaign_id,
                         write_exc,
                     )
