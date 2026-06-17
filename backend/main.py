@@ -177,6 +177,15 @@ except Exception as _st:
     print(f"STATE_TRANSITION: FAILED — {_st}", flush=True)
 
 try:
+    from intelligence.campaign_outcome_engine import run_campaign_outcome_cycle
+    _CAMPAIGN_OUTCOME_AVAILABLE = True
+    print("CAMPAIGN_OUTCOME: loaded OK", flush=True)
+except Exception as _co:
+    _CAMPAIGN_OUTCOME_AVAILABLE = False
+    run_campaign_outcome_cycle = None
+    print(f"CAMPAIGN_OUTCOME: FAILED — {_co}", flush=True)
+
+try:
     from intelligence.subscriber_alerts import send_campaign_birth_alerts
     _SUBSCRIBER_ALERTS_AVAILABLE = True
     print("SUBSCRIBER_ALERTS: loaded OK", flush=True)
@@ -783,6 +792,28 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_state_transition_runner, daemon=True).start()
     log.info("State transition scheduler started (22:15 UTC)")
 
+    # ── Campaign Outcome Intelligence — 22:30 UTC ────────────────────────
+    def _nightly_campaign_outcome_runner():
+        """Runs Phase 15 campaign outcome intelligence nightly at 22:30 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=22, minute=30, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            _t.sleep((target - now).total_seconds())
+            if _CAMPAIGN_OUTCOME_AVAILABLE:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_campaign_outcome_cycle())
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"CAMPAIGN OUTCOME: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_campaign_outcome_runner, daemon=True).start()
+    log.info("Campaign outcome scheduler started (22:30 UTC)")
+
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
         try:
@@ -1218,6 +1249,7 @@ async def engine_status():
         "analog_engine":         _ANALOG_AVAILABLE,
         "decay_monitor":         _DECAY_MONITOR_AVAILABLE,
         "state_transition":      _STATE_TRANSITION_AVAILABLE,
+        "campaign_outcome":      _CAMPAIGN_OUTCOME_AVAILABLE,
         "wyckoff_engine":        _WYCKOFF_AVAILABLE,
         "gann_engine":           _GANN_AVAILABLE,
         "bme_engine":            globals().get("_BME_AVAILABLE", False),
@@ -1350,11 +1382,41 @@ async def trigger_state_transition():
     }
 
 
+@app.post("/api/admin/run-campaign-outcome")
+async def trigger_campaign_outcome():
+    """Manually trigger Phase 15 Campaign Outcome Intelligence."""
+    import threading
+
+    def _run():
+        if not _CAMPAIGN_OUTCOME_AVAILABLE:
+            log.error("CAMPAIGN OUTCOME: engine not available — check import errors at startup")
+            return
+        try:
+            log.info("CAMPAIGN OUTCOME: Manual trigger starting")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_campaign_outcome_cycle())
+            loop.close()
+            log.info("CAMPAIGN OUTCOME: Manual run complete")
+        except Exception as e:
+            log.error(f"CAMPAIGN OUTCOME: Manual run failed — {e}")
+            import traceback
+            log.error(traceback.format_exc())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "Campaign outcome engine started",
+        "engine_available": _CAMPAIGN_OUTCOME_AVAILABLE,
+        "message": "Running in background — check Render logs.",
+    }
+
+
 @app.post("/api/admin/run-full-nightly")
 async def trigger_full_nightly():
     """
     Manually trigger the FULL nightly pipeline in correct sequence:
-    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor -> State Transition.
+    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor -> State Transition -> Campaign Outcome.
     Use this when a deploy happened before the scheduled 20:30 UTC run.
     """
     import threading
@@ -1455,6 +1517,21 @@ async def trigger_full_nightly():
         else:
             log.warning("FULL NIGHTLY [6/6]: State Transition NOT AVAILABLE — skipping")
 
+        # Step 7: Campaign Outcome Intelligence (22:30 UTC equivalent)
+        if _CAMPAIGN_OUTCOME_AVAILABLE:
+            try:
+                log.info("FULL NIGHTLY [7/7]: Campaign Outcome starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_campaign_outcome_cycle())
+                loop.close()
+                log.info("FULL NIGHTLY [7/7]: Campaign Outcome COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [7/7]: Campaign Outcome FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [7/7]: Campaign Outcome NOT AVAILABLE — skipping")
+
         log.info("FULL NIGHTLY: All engines complete")
 
     threading.Thread(target=_run_sequence, daemon=True).start()
@@ -1468,6 +1545,7 @@ async def trigger_full_nightly():
             "4. Analog Engine (historical pattern matching)",
             "5. Decay Monitor (signal health check)",
             "6. State Transition Intelligence (next-state probabilities)",
+            "7. Campaign Outcome Intelligence (expected trade economics)",
         ],
         "engines_available": {
             "signal_birth":      _SIGNAL_BIRTH_AVAILABLE,
@@ -1476,6 +1554,7 @@ async def trigger_full_nightly():
             "analog":            _ANALOG_AVAILABLE,
             "decay_monitor":     _DECAY_MONITOR_AVAILABLE,
             "state_transition":  _STATE_TRANSITION_AVAILABLE,
+            "campaign_outcome":   _CAMPAIGN_OUTCOME_AVAILABLE,
         },
         "message": "Engines run in sequence. Monitor Render backend logs. Full run ~15-30 min.",
     }
