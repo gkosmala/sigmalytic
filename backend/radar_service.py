@@ -1552,12 +1552,31 @@ def run_divergence_scan():
 
 
 def _bars_to_candles(bars: List[dict]) -> List["Candle"]:
+    """
+    Convert Alpaca/Supabase bar dictionaries into ConfluenceEngine Candle objects.
+
+    Important:
+    Normalize every timestamp to offset-aware UTC. The divergence engine compares
+    candle timestamps against UTC-aware datetimes. A single offset-naive candle
+    can raise:
+        can't subtract offset-naive and offset-aware datetimes
+    """
     candles = []
     for b in bars:
         try:
-            ts = datetime.fromisoformat(
-                b["t"].replace("Z", "+00:00")
-            ) if b.get("t") else datetime.now(timezone.utc)
+            raw_ts = b.get("t")
+
+            if raw_ts:
+                ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+            else:
+                ts = datetime.now(timezone.utc)
+
+            # Force UTC-aware timestamps for all downstream engine math.
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            else:
+                ts = ts.astimezone(timezone.utc)
+
             candles.append(Candle(
                 timestamp = ts,
                 open      = float(b.get("o", 0)),
@@ -1566,7 +1585,8 @@ def _bars_to_candles(bars: List[dict]) -> List["Candle"]:
                 close     = float(b.get("c", 0)),
                 volume    = float(b.get("v", 0)),
             ))
-        except Exception:
+        except Exception as e:
+            log.debug(f"Candle conversion skipped: {e}")
             continue
     return candles
 
