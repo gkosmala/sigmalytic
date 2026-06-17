@@ -19,6 +19,7 @@ import requests as req
 
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent))  # ensures campaign_tab, portfolio_tab etc. are importable
 from shared.engine import (
     sanitize_symbol, create_live_update, generate_initial_candles, get_key_levels,
 )
@@ -2601,21 +2602,19 @@ def update_badges(live):
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
+    Input("s-live-mode","data"),
+    State("i-clock","n_intervals"),
     State("s-symbol","data"), State("s-tf","data"),
 )
 def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
-    # Static tabs: only skip rebuild when clock fires AND tab hasn't changed
+    # Static tabs do not need live market data and should not be blocked
+    # by the 1-second clock. The clock is now State, not Input, so it
+    # no longer re-renders Campaigns/Scoreboard/Divergence every second.
     _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
                     "billing","preferences","admin","setup","behavior","import","radar"}
-    triggered = [t["prop_id"] for t in dash.callback_context.triggered]
-    tab_changed = any("s-tab" in t for t in triggered)
-    clock_only = all("i-clock" in t for t in triggered)
-    if clock_only and tab in _STATIC_TABS and not tab_changed:
-        return no_update, no_update, no_update, no_update
 
     if not live:
         # Don't block static tabs — they don't need live data
