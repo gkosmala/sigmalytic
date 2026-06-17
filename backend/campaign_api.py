@@ -87,6 +87,10 @@ async def get_active_campaigns() -> dict[str, Any]:
             "transition_expected_days,transition_expected_return,"
             "transition_expected_mfe,transition_expected_mae,"
             "transition_bias,transition_updated_at,"
+            "outcome_expected_return,outcome_expected_mfe,outcome_expected_mae,"
+            "outcome_expected_duration_days,outcome_target1_prob,outcome_target2_prob,"
+            "outcome_failure_prob,outcome_risk_reward,outcome_quality,"
+            "outcome_quality_score,outcome_summary,outcome_updated_at,"
             "historical_confidence,status,close_notes,updated_at"
         ),
         "status": "eq.ACTIVE",
@@ -218,6 +222,35 @@ async def get_campaign_summary() -> dict[str, Any]:
     avg_transition_advance = sum(advance_probs) / len(advance_probs) if advance_probs else 0
     avg_transition_failure = sum(failure_probs) / len(failure_probs) if failure_probs else 0
 
+    outcome_quality_breakdown: dict[str, int] = {}
+    outcome_returns = []
+    outcome_t1 = []
+    outcome_t2 = []
+    outcome_fail = []
+    outcome_rr = []
+    for c in campaigns:
+        q = c.get("outcome_quality") or "UNKNOWN"
+        outcome_quality_breakdown[q] = outcome_quality_breakdown.get(q, 0) + 1
+        try:
+            if c.get("outcome_expected_return") is not None:
+                outcome_returns.append(float(c.get("outcome_expected_return") or 0))
+            if c.get("outcome_target1_prob") is not None:
+                outcome_t1.append(float(c.get("outcome_target1_prob") or 0))
+            if c.get("outcome_target2_prob") is not None:
+                outcome_t2.append(float(c.get("outcome_target2_prob") or 0))
+            if c.get("outcome_failure_prob") is not None:
+                outcome_fail.append(float(c.get("outcome_failure_prob") or 0))
+            if c.get("outcome_risk_reward") is not None:
+                outcome_rr.append(float(c.get("outcome_risk_reward") or 0))
+        except Exception:
+            pass
+
+    avg_outcome_return = sum(outcome_returns) / len(outcome_returns) if outcome_returns else 0
+    avg_outcome_t1 = sum(outcome_t1) / len(outcome_t1) if outcome_t1 else 0
+    avg_outcome_t2 = sum(outcome_t2) / len(outcome_t2) if outcome_t2 else 0
+    avg_outcome_failure = sum(outcome_fail) / len(outcome_fail) if outcome_fail else 0
+    avg_outcome_rr = sum(outcome_rr) / len(outcome_rr) if outcome_rr else 0
+
     return {
         "total_active":      total,
         "tier_1":            tier_1,
@@ -231,6 +264,12 @@ async def get_campaign_summary() -> dict[str, Any]:
         "transition_bias_breakdown": transition_bias_breakdown,
         "avg_transition_advance": round(avg_transition_advance, 1),
         "avg_transition_failure": round(avg_transition_failure, 1),
+        "outcome_quality_breakdown": outcome_quality_breakdown,
+        "avg_outcome_return": round(avg_outcome_return, 2),
+        "avg_outcome_t1": round(avg_outcome_t1, 1),
+        "avg_outcome_t2": round(avg_outcome_t2, 1),
+        "avg_outcome_failure": round(avg_outcome_failure, 1),
+        "avg_outcome_rr": round(avg_outcome_rr, 2),
         "as_of":             datetime.now(timezone.utc).isoformat(),
     }
 
