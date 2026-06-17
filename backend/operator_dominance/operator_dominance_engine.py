@@ -565,25 +565,49 @@ async def run_nightly_ods_cycle(
                 "Prefer":        "resolution=merge-duplicates,return=minimal",
             }
 
-            rows = [
-                {
-                    "display_label":    r.campaign_id,
-                    "operator_dominance": r.ods_score,
-                    "distribution_risk":  r.distribution_risk,
-                    "updated_at":         datetime.now(timezone.utc).isoformat(),
-                }
-                for r in results
-            ]
+            written = 0
 
-            # Batch update in groups of 100
-            for i in range(0, len(rows), 100):
-                batch = rows[i:i + 100]
-                _requests.post(
-                    f"{url}/rest/v1/campaigns",
-                    headers=headers,
-                    json=batch,
-                    timeout=30,
-                )
+            for r in results:
+                try:
+                    resp = _requests.patch(
+                        f"{url}/rest/v1/campaigns",
+                        headers={
+                            **headers,
+                            "Prefer": "return=minimal",
+                        },
+                        params={
+                            "campaign_id": f"eq.{r.campaign_id}",
+                        },
+                        json={
+                            "operator_dominance": r.ods_score,
+                            "distribution_risk": r.distribution_risk,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                        timeout=20,
+                    )
+
+                    if resp.status_code in (200, 204):
+                        written += 1
+                    else:
+                        log.warning(
+                            "ODS write failed campaign_id=%s status=%s body=%s",
+                            r.campaign_id,
+                            resp.status_code,
+                            resp.text[:200],
+                        )
+
+                except Exception as write_exc:
+                    log.warning(
+                        "ODS write exception campaign_id=%s error=%s",
+                        r.campaign_id,
+                        write_exc,
+                    )
+
+            log.info(
+                "ODS Supabase write complete — %d/%d campaigns updated",
+                written,
+                len(results),
+            )
 
         except Exception as exc:
             log.error("ODS Supabase write failed: %s", exc)
