@@ -598,7 +598,7 @@ async def lifespan(app: FastAPI):
             now = _dt.now(_tz.utc)
             target = now.replace(hour=20, minute=0, second=0, microsecond=0)
             if now >= target:
-                target = target.replace(day=target.day + 1)
+                target += _td(days=1)
             sleep_secs = (target - now).total_seconds()
             _t.sleep(sleep_secs)
             if _WYCKOFF_AVAILABLE:
@@ -1171,6 +1171,234 @@ async def trigger_eod_audit():
         "ok": True,
         "status": "EOD audit started",
         "message": "Running in background — check Render logs for progress. Takes 2-3 minutes.",
+    }
+
+
+
+# ── Nightly pipeline — manual triggers ────────────────────────────────────────
+
+@app.get("/api/admin/engine-status")
+async def engine_status():
+    """Returns availability status of all nightly engines. Check this first."""
+    return {
+        "signal_birth_engine":   _SIGNAL_BIRTH_AVAILABLE,
+        "campaign_pipeline":     _CAMPAIGN_PIPELINE_AVAILABLE,
+        "ods_engine":            _ODS_AVAILABLE,
+        "analog_engine":         _ANALOG_AVAILABLE,
+        "decay_monitor":         _DECAY_MONITOR_AVAILABLE,
+        "wyckoff_engine":        _WYCKOFF_AVAILABLE,
+        "gann_engine":           _GANN_AVAILABLE,
+        "bme_engine":            globals().get("_BME_AVAILABLE", False),
+        "sizing_engine":         _SIZING_AVAILABLE,
+        "subscriber_alerts":     _SUBSCRIBER_ALERTS_AVAILABLE,
+        "campaign_api":          _CAMPAIGN_API_AVAILABLE,
+        "journal_api":           _JOURNAL_AVAILABLE,
+    }
+
+
+@app.post("/api/admin/run-signal-birth")
+async def trigger_signal_birth():
+    """Manually trigger the signal birth engine. Runs in background thread."""
+    import threading
+
+    def _run():
+        if not _SIGNAL_BIRTH_AVAILABLE:
+            log.error("SIGNAL BIRTH: engine not available — check import errors at startup")
+            return
+        try:
+            from radar_service import _historical_bars
+            log.info(f"SIGNAL BIRTH: Manual trigger — {len(_historical_bars)} symbols in bar cache")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_signal_birth_cycle(dict(_historical_bars)))
+            loop.close()
+            log.info("SIGNAL BIRTH: Manual run complete")
+        except Exception as e:
+            log.error(f"SIGNAL BIRTH: Manual run failed — {e}")
+            import traceback
+            log.error(traceback.format_exc())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "Signal birth engine started",
+        "engine_available": _SIGNAL_BIRTH_AVAILABLE,
+        "message": "Running in background — check Render logs. Takes 3-10 minutes for full universe.",
+    }
+
+
+@app.post("/api/admin/run-campaign-pipeline")
+async def trigger_campaign_pipeline():
+    """Manually trigger the campaign lifecycle FSM pipeline."""
+    import threading
+
+    def _run():
+        if not _CAMPAIGN_PIPELINE_AVAILABLE:
+            log.error("CAMPAIGN PIPELINE: engine not available — check import errors at startup")
+            return
+        try:
+            log.info("CAMPAIGN PIPELINE: Manual trigger starting")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_nightly_campaign_pipeline())
+            loop.close()
+            log.info("CAMPAIGN PIPELINE: Manual run complete")
+        except Exception as e:
+            log.error(f"CAMPAIGN PIPELINE: Manual run failed — {e}")
+            import traceback
+            log.error(traceback.format_exc())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "Campaign pipeline started",
+        "engine_available": _CAMPAIGN_PIPELINE_AVAILABLE,
+        "message": "Running in background — check Render logs for campaign state transitions.",
+    }
+
+
+@app.post("/api/admin/run-ods-engine")
+async def trigger_ods_engine():
+    """Manually trigger the Operator Dominance Score engine."""
+    import threading
+
+    def _run():
+        if not _ODS_AVAILABLE:
+            log.error("ODS ENGINE: engine not available — check import errors at startup")
+            return
+        try:
+            from radar_service import _historical_bars
+            log.info(f"ODS ENGINE: Manual trigger — {len(_historical_bars)} symbols in bar cache")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_nightly_ods_cycle(dict(_historical_bars)))
+            loop.close()
+            log.info("ODS ENGINE: Manual run complete")
+        except Exception as e:
+            log.error(f"ODS ENGINE: Manual run failed — {e}")
+            import traceback
+            log.error(traceback.format_exc())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "ODS engine started",
+        "engine_available": _ODS_AVAILABLE,
+        "message": "Running in background — check Render logs.",
+    }
+
+
+@app.post("/api/admin/run-full-nightly")
+async def trigger_full_nightly():
+    """
+    Manually trigger the FULL nightly pipeline in correct sequence:
+    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor.
+    Use this when a deploy happened before the scheduled 20:30 UTC run.
+    """
+    import threading
+
+    def _run_sequence():
+        log.info("FULL NIGHTLY: Manual trigger — running all engines in sequence")
+
+        # Step 1: Signal Birth (20:30 UTC equivalent)
+        if _SIGNAL_BIRTH_AVAILABLE:
+            try:
+                from radar_service import _historical_bars
+                log.info(f"FULL NIGHTLY [1/5]: Signal Birth — {len(_historical_bars)} symbols")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_signal_birth_cycle(dict(_historical_bars)))
+                loop.close()
+                log.info("FULL NIGHTLY [1/5]: Signal Birth COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [1/5]: Signal Birth FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [1/5]: Signal Birth NOT AVAILABLE — skipping")
+
+        # Step 2: Campaign Pipeline (21:00 UTC equivalent)
+        if _CAMPAIGN_PIPELINE_AVAILABLE:
+            try:
+                log.info("FULL NIGHTLY [2/5]: Campaign Pipeline starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_nightly_campaign_pipeline())
+                loop.close()
+                log.info("FULL NIGHTLY [2/5]: Campaign Pipeline COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [2/5]: Campaign Pipeline FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [2/5]: Campaign Pipeline NOT AVAILABLE — skipping")
+
+        # Step 3: ODS Engine (21:30 UTC equivalent)
+        if _ODS_AVAILABLE:
+            try:
+                from radar_service import _historical_bars
+                log.info("FULL NIGHTLY [3/5]: ODS Engine starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_nightly_ods_cycle(dict(_historical_bars)))
+                loop.close()
+                log.info("FULL NIGHTLY [3/5]: ODS Engine COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [3/5]: ODS Engine FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [3/5]: ODS Engine NOT AVAILABLE — skipping")
+
+        # Step 4: Analog Engine (21:45 UTC equivalent)
+        if _ANALOG_AVAILABLE:
+            try:
+                from radar_service import _historical_bars
+                log.info("FULL NIGHTLY [4/5]: Analog Engine starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_nightly_analog_cycle(dict(_historical_bars)))
+                loop.close()
+                log.info("FULL NIGHTLY [4/5]: Analog Engine COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [4/5]: Analog Engine FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [4/5]: Analog Engine NOT AVAILABLE — skipping")
+
+        # Step 5: Decay Monitor (22:00 UTC equivalent)
+        if _DECAY_MONITOR_AVAILABLE:
+            try:
+                log.info("FULL NIGHTLY [5/5]: Decay Monitor starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_decay_monitoring_cycle())
+                loop.close()
+                log.info("FULL NIGHTLY [5/5]: Decay Monitor COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [5/5]: Decay Monitor FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [5/5]: Decay Monitor NOT AVAILABLE — skipping")
+
+        log.info("FULL NIGHTLY: All engines complete")
+
+    threading.Thread(target=_run_sequence, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "Full nightly pipeline started",
+        "sequence": [
+            "1. Signal Birth Engine (births TIER_1/2 campaigns)",
+            "2. Campaign Pipeline FSM (advances campaign states)",
+            "3. ODS Engine (operator dominance scoring)",
+            "4. Analog Engine (historical pattern matching)",
+            "5. Decay Monitor (signal health check)",
+        ],
+        "engines_available": {
+            "signal_birth":      _SIGNAL_BIRTH_AVAILABLE,
+            "campaign_pipeline": _CAMPAIGN_PIPELINE_AVAILABLE,
+            "ods":               _ODS_AVAILABLE,
+            "analog":            _ANALOG_AVAILABLE,
+            "decay_monitor":     _DECAY_MONITOR_AVAILABLE,
+        },
+        "message": "Engines run in sequence. Monitor Render backend logs. Full run ~15-30 min.",
     }
 
 
