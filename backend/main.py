@@ -150,6 +150,15 @@ except Exception as _ca:
     print(f"CAMPAIGN_API: FAILED — {_ca}", flush=True)
 
 try:
+    from portfolio_api import portfolio_router
+    _PORTFOLIO_API_AVAILABLE = True
+    print("PORTFOLIO_API: loaded OK", flush=True)
+except Exception as _pa:
+    _PORTFOLIO_API_AVAILABLE = False
+    portfolio_router = None
+    print(f"PORTFOLIO_API: FAILED — {_pa}", flush=True)
+
+try:
     from intelligence.position_sizing_api import sizing_router
     _SIZING_AVAILABLE = True
     print("SIZING_ENGINE: loaded OK", flush=True)
@@ -184,15 +193,6 @@ except Exception as _co:
     _CAMPAIGN_OUTCOME_AVAILABLE = False
     run_campaign_outcome_cycle = None
     print(f"CAMPAIGN_OUTCOME: FAILED — {_co}", flush=True)
-
-try:
-    from intelligence.portfolio_intelligence_engine import run_portfolio_intelligence_cycle
-    _PORTFOLIO_INTELLIGENCE_AVAILABLE = True
-    print("PORTFOLIO_INTELLIGENCE: loaded OK", flush=True)
-except Exception as _pi:
-    _PORTFOLIO_INTELLIGENCE_AVAILABLE = False
-    run_portfolio_intelligence_cycle = None
-    print(f"PORTFOLIO_INTELLIGENCE: FAILED — {_pi}", flush=True)
 
 try:
     from intelligence.subscriber_alerts import send_campaign_birth_alerts
@@ -823,28 +823,6 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_campaign_outcome_runner, daemon=True).start()
     log.info("Campaign outcome scheduler started (22:30 UTC)")
 
-    # ── Portfolio Intelligence — 22:45 UTC ────────────────────────────────
-    def _nightly_portfolio_intelligence_runner():
-        """Runs Phase 16 portfolio intelligence nightly at 22:45 UTC."""
-        from datetime import timedelta as _td
-        while True:
-            now    = _dt.now(_tz.utc)
-            target = now.replace(hour=22, minute=45, second=0, microsecond=0)
-            if now >= target:
-                target += _td(days=1)
-            _t.sleep((target - now).total_seconds())
-            if _PORTFOLIO_INTELLIGENCE_AVAILABLE:
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(run_portfolio_intelligence_cycle())
-                    loop.close()
-                except Exception as _e:
-                    log.error(f"PORTFOLIO INTELLIGENCE: nightly run failed — {_e}")
-
-    _threading.Thread(target=_nightly_portfolio_intelligence_runner, daemon=True).start()
-    log.info("Portfolio intelligence scheduler started (22:45 UTC)")
-
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
         try:
@@ -932,6 +910,8 @@ app.include_router(email_router)
 app.include_router(preferences_router)
 if _CAMPAIGN_API_AVAILABLE and campaign_router:
     app.include_router(campaign_router)
+if _PORTFOLIO_API_AVAILABLE and portfolio_router:
+    app.include_router(portfolio_router)
 if _SIZING_AVAILABLE and sizing_router:
     app.include_router(sizing_router)
 if _JOURNAL_AVAILABLE and journal_router:
@@ -1281,13 +1261,13 @@ async def engine_status():
         "decay_monitor":         _DECAY_MONITOR_AVAILABLE,
         "state_transition":      _STATE_TRANSITION_AVAILABLE,
         "campaign_outcome":      _CAMPAIGN_OUTCOME_AVAILABLE,
-        "portfolio_intelligence": _PORTFOLIO_INTELLIGENCE_AVAILABLE,
         "wyckoff_engine":        _WYCKOFF_AVAILABLE,
         "gann_engine":           _GANN_AVAILABLE,
         "bme_engine":            globals().get("_BME_AVAILABLE", False),
         "sizing_engine":         _SIZING_AVAILABLE,
         "subscriber_alerts":     _SUBSCRIBER_ALERTS_AVAILABLE,
         "campaign_api":          _CAMPAIGN_API_AVAILABLE,
+        "portfolio_api":         _PORTFOLIO_API_AVAILABLE,
         "journal_api":           _JOURNAL_AVAILABLE,
     }
 
@@ -1444,41 +1424,11 @@ async def trigger_campaign_outcome():
     }
 
 
-@app.post("/api/admin/run-portfolio-intelligence")
-async def trigger_portfolio_intelligence():
-    """Manually trigger Phase 16 Portfolio Intelligence."""
-    import threading
-
-    def _run():
-        if not _PORTFOLIO_INTELLIGENCE_AVAILABLE:
-            log.error("PORTFOLIO INTELLIGENCE: engine not available — check import errors at startup")
-            return
-        try:
-            log.info("PORTFOLIO INTELLIGENCE: Manual trigger starting")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(run_portfolio_intelligence_cycle())
-            loop.close()
-            log.info("PORTFOLIO INTELLIGENCE: Manual run complete")
-        except Exception as e:
-            log.error(f"PORTFOLIO INTELLIGENCE: Manual run failed — {e}")
-            import traceback
-            log.error(traceback.format_exc())
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {
-        "ok": True,
-        "status": "Portfolio Intelligence started",
-        "engine_available": _PORTFOLIO_INTELLIGENCE_AVAILABLE,
-        "message": "Running in background — check Render logs.",
-    }
-
-
 @app.post("/api/admin/run-full-nightly")
 async def trigger_full_nightly():
     """
     Manually trigger the FULL nightly pipeline in correct sequence:
-    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor -> State Transition -> Campaign Outcome -> Portfolio Intelligence.
+    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor -> State Transition -> Campaign Outcome.
     Use this when a deploy happened before the scheduled 20:30 UTC run.
     """
     import threading
@@ -1594,21 +1544,6 @@ async def trigger_full_nightly():
         else:
             log.warning("FULL NIGHTLY [7/7]: Campaign Outcome NOT AVAILABLE — skipping")
 
-        # Step 8: Portfolio Intelligence (22:45 UTC equivalent)
-        if _PORTFOLIO_INTELLIGENCE_AVAILABLE:
-            try:
-                log.info("FULL NIGHTLY [8/8]: Portfolio Intelligence starting")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(run_portfolio_intelligence_cycle())
-                loop.close()
-                log.info("FULL NIGHTLY [8/8]: Portfolio Intelligence COMPLETE")
-            except Exception as e:
-                log.error(f"FULL NIGHTLY [8/8]: Portfolio Intelligence FAILED — {e}")
-                import traceback; log.error(traceback.format_exc())
-        else:
-            log.warning("FULL NIGHTLY [8/8]: Portfolio Intelligence NOT AVAILABLE — skipping")
-
         log.info("FULL NIGHTLY: All engines complete")
 
     threading.Thread(target=_run_sequence, daemon=True).start()
@@ -1623,7 +1558,6 @@ async def trigger_full_nightly():
             "5. Decay Monitor (signal health check)",
             "6. State Transition Intelligence (next-state probabilities)",
             "7. Campaign Outcome Intelligence (expected trade economics)",
-            "8. Portfolio Intelligence (portfolio ranking & capital weighting)",
         ],
         "engines_available": {
             "signal_birth":      _SIGNAL_BIRTH_AVAILABLE,
@@ -1633,7 +1567,6 @@ async def trigger_full_nightly():
             "decay_monitor":     _DECAY_MONITOR_AVAILABLE,
             "state_transition":  _STATE_TRANSITION_AVAILABLE,
             "campaign_outcome":   _CAMPAIGN_OUTCOME_AVAILABLE,
-            "portfolio_intelligence": _PORTFOLIO_INTELLIGENCE_AVAILABLE,
         },
         "message": "Engines run in sequence. Monitor Render backend logs. Full run ~15-30 min.",
     }
