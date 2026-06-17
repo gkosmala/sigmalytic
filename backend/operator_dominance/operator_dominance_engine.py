@@ -46,9 +46,11 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any, Optional
+
+import requests as _rq
 
 log = logging.getLogger("operator_dominance_engine")
 
@@ -300,6 +302,95 @@ def _campaign_health_delta(ods_history: list[float]) -> float:
     return round(score, 2)
 
 
+
+# ---------------------------------------------------------------------------
+# Alpaca fallback bars
+# ---------------------------------------------------------------------------
+
+def _normalize_alpaca_symbol(symbol: str) -> str:
+    """
+    Normalize symbols for Alpaca's stock bars endpoint.
+
+    Most common issue: preferred-share style symbols may appear as BOH.PRA.
+    Alpaca generally uses hyphen notation for share classes/preferreds.
+    """
+    clean = str(symbol or "").upper().strip()
+    if not clean:
+        return clean
+    return clean.replace(".PRA", "-PRA").replace(".PRB", "-PRB").replace(".", "-")
+
+
+def _alpaca_headers() -> dict[str, str]:
+    return {
+        "APCA-API-KEY-ID": os.environ.get("ALPACA_API_KEY", ""),
+        "APCA-API-SECRET-KEY": os.environ.get("ALPACA_API_SECRET", ""),
+    }
+
+
+def _fetch_alpaca_daily_bars(symbol: str, limit: int = 80) -> list[dict]:
+    """
+    Direct daily-bar fallback for ODS.
+
+    ODS should prefer radar_service._historical_bars when available. But manual
+    runs and fresh worker contexts may have an empty in-memory cache. This
+    fallback fetches daily OHLCV bars directly from Alpaca so active campaigns
+    can still be scored.
+    """
+    key = os.environ.get("ALPACA_API_KEY", "")
+    secret = os.environ.get("ALPACA_API_SECRET", "")
+    if not key or not secret:
+        log.warning("ODS Alpaca fallback skipped for %s — Alpaca credentials missing", symbol)
+        return []
+
+    clean = _normalize_alpaca_symbol(symbol)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=180)
+
+    url = f"{os.environ.get('ALPACA_BASE_URL', 'https://data.alpaca.markets').rstrip('/')}/v2/stocks/{clean}/bars"
+    params = {
+        "timeframe": "1Day",
+        "start": start.isoformat().replace("+00:00", "Z"),
+        "end": end.isoformat().replace("+00:00", "Z"),
+        "limit": str(limit),
+        "feed": os.environ.get("ALPACA_FEED", "sip"),
+        "adjustment": "raw",
+        "sort": "asc",
+    }
+
+    try:
+        r = _rq.get(url, headers=_alpaca_headers(), params=params, timeout=15)
+        if r.status_code != 200:
+            log.warning("ODS Alpaca fallback failed %s: %s %s", symbol, r.status_code, r.text[:200])
+            return []
+
+        raw = r.json()
+        bars = raw.get("bars", []) if isinstance(raw, dict) else []
+        cleaned: list[dict] = []
+
+        for b in bars:
+            try:
+                cleaned.append({
+                    "o": float(b.get("o", 0)),
+                    "h": float(b.get("h", 0)),
+                    "l": float(b.get("l", 0)),
+                    "c": float(b.get("c", 0)),
+                    "v": int(b.get("v", 0) or 0),
+                    "t": b.get("t", ""),
+                })
+            except Exception:
+                continue
+
+        if cleaned:
+            log.info("ODS Alpaca fallback OK %s: %d daily bars", symbol, len(cleaned))
+        else:
+            log.warning("ODS Alpaca fallback empty %s", symbol)
+
+        return cleaned
+
+    except Exception as exc:
+        log.warning("ODS Alpaca fallback exception %s: %s", symbol, exc)
+        return []
+
 # ---------------------------------------------------------------------------
 # Core ODS computation
 # ---------------------------------------------------------------------------
@@ -435,6 +526,10 @@ async def run_nightly_ods_cycle(
 
     for campaign in active_campaigns:
         bars = bars_cache.get(campaign.symbol)
+
+        if not bars or len(bars) < 10:
+            bars = _fetch_alpaca_daily_bars(campaign.symbol)
+
         if not bars or len(bars) < 10:
             log.warning("No bars for ODS computation: %s", campaign.symbol)
             continue
