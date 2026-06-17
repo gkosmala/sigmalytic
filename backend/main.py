@@ -168,6 +168,15 @@ except Exception as _dm:
     print(f"DECAY_MONITOR: FAILED — {_dm}", flush=True)
 
 try:
+    from intelligence.state_transition_engine import run_state_transition_cycle
+    _STATE_TRANSITION_AVAILABLE = True
+    print("STATE_TRANSITION: loaded OK", flush=True)
+except Exception as _st:
+    _STATE_TRANSITION_AVAILABLE = False
+    run_state_transition_cycle = None
+    print(f"STATE_TRANSITION: FAILED — {_st}", flush=True)
+
+try:
     from intelligence.subscriber_alerts import send_campaign_birth_alerts
     _SUBSCRIBER_ALERTS_AVAILABLE = True
     print("SUBSCRIBER_ALERTS: loaded OK", flush=True)
@@ -752,6 +761,28 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=_nightly_decay_runner, daemon=True).start()
     log.info("Decay monitor scheduler started (22:00 UTC)")
 
+    # ── State Transition Intelligence — 22:15 UTC ─────────────────────────
+    def _nightly_state_transition_runner():
+        """Runs Phase 14D state transition intelligence nightly at 22:15 UTC."""
+        from datetime import timedelta as _td
+        while True:
+            now    = _dt.now(_tz.utc)
+            target = now.replace(hour=22, minute=15, second=0, microsecond=0)
+            if now >= target:
+                target += _td(days=1)
+            _t.sleep((target - now).total_seconds())
+            if _STATE_TRANSITION_AVAILABLE:
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_state_transition_cycle())
+                    loop.close()
+                except Exception as _e:
+                    log.error(f"STATE TRANSITION: nightly run failed — {_e}")
+
+    _threading.Thread(target=_nightly_state_transition_runner, daemon=True).start()
+    log.info("State transition scheduler started (22:15 UTC)")
+
     # ── Initial BME — load cache from Supabase first, then retrain ────────
     if globals().get("_BME_AVAILABLE", False):
         try:
@@ -1186,6 +1217,7 @@ async def engine_status():
         "ods_engine":            _ODS_AVAILABLE,
         "analog_engine":         _ANALOG_AVAILABLE,
         "decay_monitor":         _DECAY_MONITOR_AVAILABLE,
+        "state_transition":      _STATE_TRANSITION_AVAILABLE,
         "wyckoff_engine":        _WYCKOFF_AVAILABLE,
         "gann_engine":           _GANN_AVAILABLE,
         "bme_engine":            globals().get("_BME_AVAILABLE", False),
@@ -1288,11 +1320,41 @@ async def trigger_ods_engine():
     }
 
 
+@app.post("/api/admin/run-state-transition")
+async def trigger_state_transition():
+    """Manually trigger Phase 14D State Transition Intelligence."""
+    import threading
+
+    def _run():
+        if not _STATE_TRANSITION_AVAILABLE:
+            log.error("STATE TRANSITION: engine not available — check import errors at startup")
+            return
+        try:
+            log.info("STATE TRANSITION: Manual trigger starting")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_state_transition_cycle())
+            loop.close()
+            log.info("STATE TRANSITION: Manual run complete")
+        except Exception as e:
+            log.error(f"STATE TRANSITION: Manual run failed — {e}")
+            import traceback
+            log.error(traceback.format_exc())
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {
+        "ok": True,
+        "status": "State transition engine started",
+        "engine_available": _STATE_TRANSITION_AVAILABLE,
+        "message": "Running in background — check Render logs.",
+    }
+
+
 @app.post("/api/admin/run-full-nightly")
 async def trigger_full_nightly():
     """
     Manually trigger the FULL nightly pipeline in correct sequence:
-    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor.
+    Signal Birth -> Campaign Pipeline -> ODS -> Analog -> Decay Monitor -> State Transition.
     Use this when a deploy happened before the scheduled 20:30 UTC run.
     """
     import threading
@@ -1378,6 +1440,21 @@ async def trigger_full_nightly():
         else:
             log.warning("FULL NIGHTLY [5/5]: Decay Monitor NOT AVAILABLE — skipping")
 
+        # Step 6: State Transition Intelligence (22:15 UTC equivalent)
+        if _STATE_TRANSITION_AVAILABLE:
+            try:
+                log.info("FULL NIGHTLY [6/6]: State Transition starting")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(run_state_transition_cycle())
+                loop.close()
+                log.info("FULL NIGHTLY [6/6]: State Transition COMPLETE")
+            except Exception as e:
+                log.error(f"FULL NIGHTLY [6/6]: State Transition FAILED — {e}")
+                import traceback; log.error(traceback.format_exc())
+        else:
+            log.warning("FULL NIGHTLY [6/6]: State Transition NOT AVAILABLE — skipping")
+
         log.info("FULL NIGHTLY: All engines complete")
 
     threading.Thread(target=_run_sequence, daemon=True).start()
@@ -1390,6 +1467,7 @@ async def trigger_full_nightly():
             "3. ODS Engine (operator dominance scoring)",
             "4. Analog Engine (historical pattern matching)",
             "5. Decay Monitor (signal health check)",
+            "6. State Transition Intelligence (next-state probabilities)",
         ],
         "engines_available": {
             "signal_birth":      _SIGNAL_BIRTH_AVAILABLE,
@@ -1397,6 +1475,7 @@ async def trigger_full_nightly():
             "ods":               _ODS_AVAILABLE,
             "analog":            _ANALOG_AVAILABLE,
             "decay_monitor":     _DECAY_MONITOR_AVAILABLE,
+            "state_transition":  _STATE_TRANSITION_AVAILABLE,
         },
         "message": "Engines run in sequence. Monitor Render backend logs. Full run ~15-30 min.",
     }
