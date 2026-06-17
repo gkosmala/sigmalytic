@@ -304,11 +304,16 @@ def build_campaign_tab(session=None) -> html.Div:
     Fetches active campaigns from the backend API.
     """
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=8)
-        campaigns = r.json() if r.ok else []
-        if isinstance(campaigns, dict):
-            campaigns = campaigns.get("campaigns", [])
-    except Exception:
+        fetch_error = None
+        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
+        if r.ok:
+            _d = r.json()
+            campaigns = _d.get("campaigns", []) if isinstance(_d, dict) else (_d if isinstance(_d, list) else [])
+        else:
+            campaigns = []
+            fetch_error = f"Backend {r.status_code}"
+    except Exception as _fe:
+        fetch_error = str(_fe)
         campaigns = []
 
     # ── Summary metrics ───────────────────────────────────────────────────
@@ -384,16 +389,20 @@ def build_campaign_tab(session=None) -> html.Div:
         campaigns_sorted = sorted(campaigns, key=_sort_key)
         rows = [_campaign_row(c) for c in campaigns_sorted]
     else:
+        error_msg = f"API error: {fetch_error}" if fetch_error else (
+            "The signal birth engine runs nightly at 20:30 UTC. "
+            "Check back after the first run."
+        )
         rows = [html.Div([
             html.Div("🌱", style={"fontSize": "32px", "marginBottom": "12px"}),
             html.Div("No active campaigns yet.", style={
                 "color": WHITE, "fontSize": "16px", "fontWeight": "700",
             }),
-            html.Div(
-                "The signal birth engine runs nightly at 20:30 UTC. "
-                "Check back after the first run.",
-                style={"color": TEXT, "fontSize": "13px", "marginTop": "8px"},
-            ),
+            html.Div(error_msg,
+                style={"color": RED_DIM if fetch_error else TEXT,
+                       "fontSize": "13px", "marginTop": "8px"}),
+            html.Div(f"Backend: {BACKEND_HTTP}",
+                style={"color": MUTED, "fontSize": "11px", "marginTop": "4px"}),
         ], style={
             "textAlign":  "center",
             "padding":    "48px 24px",
