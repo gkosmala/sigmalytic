@@ -1,346 +1,458 @@
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/campaign_engine/nightly_campaign_pipeline.py
------------------------------------------------------
-Nightly pipeline that drives the campaign lifecycle engine.
 
-Runs after market close (21:00 UTC / 5:00 PM ET) — after the EOD audit
-and geometry recalculation have completed.
+Phase 13D — Campaign Enrichment Layer
+-------------------------------------
+Runs after signal birth. For every ACTIVE campaign it:
 
-WHAT IT DOES EACH NIGHT
-------------------------
-1. Loads all active campaigns from Supabase via campaign_store.
-2. For each active campaign, fetches today's daily bar from the
-   existing HISTORICAL_BARS cache in radar_service.
-3. Pulls the confluence bridge output for the symbol (Weis + Wyckoff +
-   behavioral state) via the existing confluence_bridge.
-4. Translates that output into WyckoffSignals via wyckoff_signal_bridge.
-5. Runs CampaignEngine.run_daily_cycle() — FSM evaluates every campaign.
-6. Bulk-upserts all updated campaigns to Supabase in one call.
-7. Logs a summary: how many campaigns advanced, closed, or held state.
+1. Reads latest campaign rows from Supabase.
+2. Pulls cached bars/prices from radar_service when available.
+3. Computes lightweight Wyckoff lifecycle flags.
+4. Advances the campaign state machine.
+5. Enriches the campaign row:
+   - entry_price
+   - current_price
+   - stop_price
+   - pnf_target
+   - return_pct
+   - distance_to_target_pct
+   - pnf_progress_pct
+   - mfe90_expected
+   - campaign_age_days
+   - duration_days
+   - days_in_state
+   - state_changed_at
+6. Writes campaign observations and state history when those optional tables exist.
 
-SCHEDULER INTEGRATION
----------------------
-Wire into main.py lifespan() exactly like _nightly_geometry_runner:
-
-    from campaign_engine.nightly_campaign_pipeline import (
-        run_nightly_campaign_pipeline,
-        _CAMPAIGN_PIPELINE_AVAILABLE,
-    )
-
-    def _nightly_campaign_runner():
-        while True:
-            now = _dt.now(_tz.utc)
-            target = now.replace(hour=21, minute=0, second=0, microsecond=0)
-            if now >= target:
-                target += _td(days=1)
-            _t.sleep((target - now).total_seconds())
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(run_nightly_campaign_pipeline())
-                loop.close()
-            except Exception as _e:
-                log.error(f"Nightly campaign pipeline failed: {_e}")
-
-    _threading.Thread(target=_nightly_campaign_runner, daemon=True).start()
-
-CLAUDE.md compliance
---------------------
-• Credentials via os.environ only — passed through to store/bridge.
-• Decimal used for all prices in the domain objects.
-• Full type hints.
-• Structured try/except with logging throughout.
+This file is schema-tolerant except for the Phase 13D columns. Run the
+included SQL migration before deploying this replacement file.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-import time
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import datetime, timezone
 from typing import Any, Optional
+
+from campaign_engine.campaign_state_engine import (
+    CampaignState,
+    WyckoffSignals,
+    default_pnf_target,
+    transition_campaign_state,
+)
+from campaign_engine.campaign_store import (
+    get_active_campaigns,
+    insert_campaign_observation,
+    insert_campaign_state_history,
+    update_campaign,
+    utc_now_iso,
+)
 
 log = logging.getLogger("nightly_campaign_pipeline")
 
-# ---------------------------------------------------------------------------
-# Safe imports — mirrors the pattern in main.py
-# ---------------------------------------------------------------------------
-
-try:
-    from campaign_engine.campaign_state_engine import (
-        CampaignEngine,
-        CampaignState,
-        DailyBar,
-        Campaign,
-        ResearchSignal,
-        build_engine,
-    )
-    _ENGINE_AVAILABLE = True
-except Exception as _e:
-    _ENGINE_AVAILABLE = False
-    log.warning(f"campaign_state_engine import failed: {_e}")
-
-try:
-    from campaign_engine.campaign_store import CampaignStore
-    _STORE_AVAILABLE = True
-except Exception as _e:
-    _STORE_AVAILABLE = False
-    log.warning(f"campaign_store import failed: {_e}")
-
-try:
-    from campaign_engine.wyckoff_signal_bridge import (
-        build_wyckoff_signals,
-        signals_from_confluence_output,
-    )
-    _BRIDGE_AVAILABLE = True
-except Exception as _e:
-    _BRIDGE_AVAILABLE = False
-    log.warning(f"wyckoff_signal_bridge import failed: {_e}")
-
-# Confluence bridge already exists in backend — import safely
-try:
-    from confluence_bridge import get_confluence_scores
-    _CONFLUENCE_AVAILABLE = True
-except Exception as _e:
-    _CONFLUENCE_AVAILABLE = False
-    log.warning(f"confluence_bridge import failed: {_e}")
-
-# Historical bars cache from radar_service (already loaded at startup)
-try:
-    from radar_service import _historical_bars as HISTORICAL_BARS
-    _BARS_AVAILABLE = True
-except Exception as _e:
-    _BARS_AVAILABLE = False
-    HISTORICAL_BARS = {}
-    log.warning(f"radar_service bars import failed: {_e}")
-
-# Flag for main.py safe-import check
-_CAMPAIGN_PIPELINE_AVAILABLE = (
-    _ENGINE_AVAILABLE
-    and _STORE_AVAILABLE
-    and _BRIDGE_AVAILABLE
-)
+_CAMPAIGN_PIPELINE_AVAILABLE = True
 
 
 # ---------------------------------------------------------------------------
-# Daily bar extraction
+# Safe parsing helpers
 # ---------------------------------------------------------------------------
 
-def _extract_daily_bar(symbol: str, bars_cache: dict) -> Optional[DailyBar]:
-    """
-    Pull today's (or most recent) daily bar from the radar_service cache.
-
-    The cache format matches supabase_bars.py:
-    {symbol: [{"t": date_str, "o": open, "h": high, "l": low, "c": close, "v": vol}]}
-    """
-    bars = bars_cache.get(symbol)
-    if not bars:
-        return None
-
-    latest = bars[-1]
+def _float(value: Any, default: float = 0.0) -> float:
     try:
-        bar_date_raw = latest.get("t", "")
-        bar_date     = date.fromisoformat(str(bar_date_raw)[:10])
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
 
-        return DailyBar(
-            symbol   = symbol,
-            bar_date = bar_date,
-            open     = Decimal(str(latest.get("o", 0))),
-            high     = Decimal(str(latest.get("h", 0))),
-            low      = Decimal(str(latest.get("l", 0))),
-            close    = Decimal(str(latest.get("c", 0))),
-            volume   = Decimal(str(latest.get("v", 0))),
-        )
+
+def _int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
+
+
+def _parse_dt(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _days_since(value: Any) -> int:
+    dt = _parse_dt(value)
+    if not dt:
+        return 0
+    return max(0, (datetime.now(timezone.utc) - dt).days)
+
+
+def _extract_close(bar: dict[str, Any]) -> float:
+    return _float(bar.get("c") or bar.get("close") or bar.get("price"))
+
+
+def _extract_high(bar: dict[str, Any]) -> float:
+    return _float(bar.get("h") or bar.get("high") or _extract_close(bar))
+
+
+def _extract_low(bar: dict[str, Any]) -> float:
+    return _float(bar.get("l") or bar.get("low") or _extract_close(bar))
+
+
+def _extract_open(bar: dict[str, Any]) -> float:
+    return _float(bar.get("o") or bar.get("open") or _extract_close(bar))
+
+
+def _extract_volume(bar: dict[str, Any]) -> int:
+    return _int(bar.get("v") or bar.get("volume"))
+
+
+# ---------------------------------------------------------------------------
+# Price / bar source
+# ---------------------------------------------------------------------------
+
+def _get_cached_bars_and_price(symbol: str) -> tuple[list[dict[str, Any]], Optional[float]]:
+    """
+    Uses radar_service caches if present. This avoids extra provider calls.
+    """
+    bars: list[dict[str, Any]] = []
+    price: Optional[float] = None
+
+    try:
+        from radar_service import RADAR_CACHE, _historical_bars  # type: ignore
+
+        raw_bars = _historical_bars.get(symbol) or _historical_bars.get(symbol.upper()) or []
+        if isinstance(raw_bars, list):
+            bars = raw_bars
+
+        cached = RADAR_CACHE.get(symbol) or RADAR_CACHE.get(symbol.upper()) or {}
+        if isinstance(cached, dict):
+            price = _float(cached.get("price") or cached.get("current_price"), 0.0) or None
     except Exception as exc:
-        log.warning("Could not parse daily bar for %s: %s", symbol, exc)
-        return None
+        log.warning("Radar cache unavailable for %s: %s", symbol, exc)
+
+    if not price and bars:
+        price = _extract_close(bars[-1]) or None
+
+    return bars, price
 
 
 # ---------------------------------------------------------------------------
-# Confluence output → WyckoffSignals
+# Wyckoff proxy signal extraction
 # ---------------------------------------------------------------------------
 
-def _get_wyckoff_signals_for_symbol(
-    symbol:       str,
-    bars_cache:   dict,
-    supabase_url: str,
-    supabase_key: str,
-) -> Optional[Any]:
+def _compute_wed_from_bars(bars: list[dict[str, Any]]) -> int:
+    if len(bars) < 6:
+        return 0
+
+    down_eff: list[float] = []
+    for bar in bars[-12:]:
+        o = _extract_open(bar)
+        c = _extract_close(bar)
+        v = max(_extract_volume(bar), 1)
+        if c < o:
+            down_eff.append(abs(c - o) / v)
+
+    if len(down_eff) < 2:
+        return 0
+
+    wed = 0
+    for i in range(1, len(down_eff)):
+        if down_eff[i] < down_eff[i - 1]:
+            wed += 1
+        else:
+            break
+    return wed
+
+
+def _signals_from_bars(campaign: dict[str, Any], bars: list[dict[str, Any]], price: Optional[float]) -> WyckoffSignals:
     """
-    Call the existing confluence bridge for a symbol and translate
-    its output into a WyckoffSignals object.
-
-    Falls back to a neutral WyckoffSignals if confluence is unavailable.
+    Lightweight daily proxy until full Weis/Wyckoff research metrics are wired.
     """
-    if not _BRIDGE_AVAILABLE:
+    if not bars or len(bars) < 25 or not price:
+        return WyckoffSignals()
+
+    recent = bars[-25:]
+    last = bars[-1]
+
+    closes = [_extract_close(b) for b in recent if _extract_close(b) > 0]
+    highs = [_extract_high(b) for b in recent[:-1] if _extract_high(b) > 0]
+    lows = [_extract_low(b) for b in recent[:-1] if _extract_low(b) > 0]
+    volumes = [_extract_volume(b) for b in recent if _extract_volume(b) > 0]
+
+    if not closes or not highs or not lows or not volumes:
+        return WyckoffSignals()
+
+    avg_vol = sum(volumes) / len(volumes)
+    last_vol = _extract_volume(last)
+    last_open = _extract_open(last)
+    last_close = _extract_close(last)
+    last_high = _extract_high(last)
+    last_low = _extract_low(last)
+
+    max_prev_high = max(highs)
+    min_prev_low = min(lows)
+    ma10 = sum(closes[-10:]) / min(len(closes), 10)
+    ma20 = sum(closes[-20:]) / min(len(closes), 20)
+
+    sos = last_close > max_prev_high and last_vol >= avg_vol * 1.05
+    jac = sos
+    spring = last_low < min_prev_low and last_close > min_prev_low
+
+    down_bars = [b for b in recent[-10:] if _extract_close(b) < _extract_open(b)]
+    spd = False
+    if len(down_bars) >= 2:
+        prev = down_bars[-2]
+        cur = down_bars[-1]
+        prev_range = abs(_extract_close(prev) - _extract_open(prev))
+        cur_range = abs(_extract_close(cur) - _extract_open(cur))
+        spd = _extract_volume(cur) >= _extract_volume(prev) and cur_range <= prev_range
+
+    dei = last_close >= ma10 >= ma20 and last_close >= last_open
+    bu = (last_low >= ma20 * 0.98 and last_close >= ma10 and spd) or (last_close > ma20 and dei)
+    lps = bu
+
+    upthrust = last_high > max_prev_high and last_close < max_prev_high and last_vol >= avg_vol * 1.10
+    choch = last_close < ma20 * 0.97 or upthrust
+
+    wed = _compute_wed_from_bars(recent)
+    if wed >= 2 and last_close < ma10:
+        choch = True
+
+    if choch or upthrust:
+        behavior = "DISTRIBUTION"
+    elif spring or sos or spd or dei:
+        behavior = "ACCUMULATION"
+    else:
+        behavior = "AMBIGUOUS"
+
+    return WyckoffSignals(
+        sos_detected=sos,
+        jac_detected=jac,
+        bu_detected=bu,
+        lps_detected=lps,
+        choch_detected=choch,
+        spring_detected=spring,
+        upthrust_detected=upthrust,
+        spd=spd,
+        dei=dei,
+        wed_count=wed,
+        behavioral_state=behavior,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 13D enrichment
+# ---------------------------------------------------------------------------
+
+def _mfe90_expected_for_tier(tier: str) -> float:
+    tier = str(tier or "").upper()
+    if tier == "TIER_1":
+        return 25.0
+    if tier == "TIER_2":
+        return 15.0
+    if tier == "TIER_3":
+        return 8.0
+    return 10.0
+
+
+def _fallback_stop_price(entry: float, tier: str) -> Optional[float]:
+    if entry <= 0:
         return None
-
-    # If the full confluence bridge is available, use it
-    if _CONFLUENCE_AVAILABLE:
-        try:
-            bars = bars_cache.get(symbol, [])
-            if not bars:
-                return None
-
-            # confluence_bridge.get_confluence_scores() returns a dict
-            # with weis_wave, wyckoff, behavioral_state sub-keys
-            result = get_confluence_scores(
-                symbol       = symbol,
-                bars_daily   = bars,
-                bars_5m      = [],   # daily-only for nightly cycle
-                current_price= float(bars[-1].get("c", 0)),
-            )
-            return signals_from_confluence_output(result)
-
-        except Exception as exc:
-            log.warning("Confluence bridge error for %s: %s", symbol, exc)
-
-    # Minimal fallback — neutral signals, no state change will trigger
-    from campaign_engine.campaign_state_engine import WyckoffSignals
-    return WyckoffSignals()
+    tier = str(tier or "").upper()
+    risk = 0.08 if tier == "TIER_1" else 0.10 if tier == "TIER_2" else 0.12
+    return round(entry * (1.0 - risk), 4)
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline entry point
-# ---------------------------------------------------------------------------
-
-async def run_nightly_campaign_pipeline(
-    bars_cache: Optional[dict] = None,
+def _build_updates(
+    campaign: dict[str, Any],
+    price: Optional[float],
+    new_state: str,
+    state_changed: bool,
 ) -> dict[str, Any]:
-    """
-    Run the full nightly campaign evaluation cycle.
+    tier = str(campaign.get("historical_confidence") or "")
+    now_iso = utc_now_iso()
 
-    Parameters
-    ----------
-    bars_cache:
-        Optional override for the historical bars dict.
-        Defaults to the live radar_service._historical_bars cache.
+    birth_date = campaign.get("birth_date") or campaign.get("created_at")
+    state_changed_at_existing = campaign.get("state_changed_at") or campaign.get("created_at") or birth_date
 
-    Returns
-    -------
-    dict with pipeline run summary — logged and available for /health endpoint.
-    """
-    if not _CAMPAIGN_PIPELINE_AVAILABLE:
-        log.error("Nightly campaign pipeline unavailable — missing dependencies.")
-        return {"status": "unavailable", "reason": "missing dependencies"}
-
-    started_at = datetime.now(timezone.utc)
-    log.info("=" * 60)
-    log.info("NIGHTLY CAMPAIGN PIPELINE starting — %s", started_at.isoformat())
-    log.info("=" * 60)
-
-    bars = bars_cache or HISTORICAL_BARS
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    supabase_key = (
-        os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        or os.environ.get("SUPABASE_ANON_KEY", "")
+    entry = (
+        _float(campaign.get("entry_price"))
+        or _float(campaign.get("current_price"))
+        or _float(price)
     )
 
-    store  = CampaignStore()
-    engine = build_engine(store)
+    current = _float(price) or _float(campaign.get("current_price")) or entry
+    pnf_target = _float(campaign.get("pnf_target")) or (default_pnf_target(entry, tier) or 0.0)
+    stop = _float(campaign.get("stop_price")) or (_fallback_stop_price(entry, tier) or 0.0)
 
-    # ── 1. Fetch all active campaigns ─────────────────────────────────────
-    try:
-        active_campaigns: list[Campaign] = await store.fetch_active_campaigns()
-    except Exception as exc:
-        log.error("Could not fetch active campaigns: %s", exc)
-        return {"status": "error", "reason": str(exc)}
+    return_pct = 0.0
+    if entry > 0 and current > 0:
+        return_pct = ((current - entry) / entry) * 100.0
 
-    if not active_campaigns:
-        log.info("No active campaigns — pipeline complete.")
-        return {"status": "ok", "active": 0, "evaluated": 0}
+    distance_to_target_pct = 0.0
+    if current > 0 and pnf_target > 0:
+        distance_to_target_pct = ((pnf_target - current) / current) * 100.0
 
-    log.info("Active campaigns: %d", len(active_campaigns))
+    pnf_progress_pct = 0.0
+    if entry > 0 and pnf_target > entry and current > 0:
+        pnf_progress_pct = ((current - entry) / (pnf_target - entry)) * 100.0
+        pnf_progress_pct = _clamp(pnf_progress_pct, 0.0, 100.0)
 
-    # ── 2. Build bars and signals for each symbol ─────────────────────────
-    symbols = list({c.symbol for c in active_campaigns})
+    state_changed_at = now_iso if state_changed else state_changed_at_existing
+    days_in_state = 0 if state_changed else _days_since(state_changed_at_existing)
 
-    bars_by_symbol:    dict[str, DailyBar]  = {}
-    signals_by_symbol: dict[str, Any]       = {}
+    age_days = _days_since(birth_date)
 
-    for symbol in symbols:
-        bar = _extract_daily_bar(symbol, bars)
-        if bar:
-            bars_by_symbol[symbol] = bar
-        else:
-            log.warning("No daily bar available for %s — skipping", symbol)
-            continue
-
-        signals = _get_wyckoff_signals_for_symbol(
-            symbol, bars, supabase_url, supabase_key
-        )
-        if signals:
-            signals_by_symbol[symbol] = signals
-        else:
-            log.warning("No Wyckoff signals for %s — skipping", symbol)
-
-    # ── 3. Run the FSM cycle ──────────────────────────────────────────────
-    log.info(
-        "Evaluating %d campaigns across %d symbols",
-        len(active_campaigns), len(bars_by_symbol),
-    )
-
-    try:
-        results: dict[str, CampaignState] = await engine.run_daily_cycle(
-            bars_by_symbol    = bars_by_symbol,
-            signals_by_symbol = signals_by_symbol,
-        )
-    except Exception as exc:
-        log.error("Campaign engine cycle failed: %s", exc, exc_info=True)
-        return {"status": "error", "reason": str(exc)}
-
-    # ── 4. Summarise results ──────────────────────────────────────────────
-    state_counts: dict[str, int] = {}
-    for state in results.values():
-        state_counts[state.value] = state_counts.get(state.value, 0) + 1
-
-    closed_count   = state_counts.get("CLOSED", 0)
-    active_count   = len(results) - closed_count
-    elapsed        = (datetime.now(timezone.utc) - started_at).total_seconds()
-
-    summary = {
-        "status":       "ok",
-        "run_at":       started_at.isoformat(),
-        "elapsed_secs": round(elapsed, 1),
-        "active_start": len(active_campaigns),
-        "evaluated":    len(results),
-        "closed":       closed_count,
-        "remaining":    active_count,
-        "by_state":     state_counts,
+    updates: dict[str, Any] = {
+        "current_state": new_state,
+        "state_enum": new_state,
+        "campaign_age_days": age_days,
+        "duration_days": age_days,
+        "days_in_state": days_in_state,
+        "state_changed_at": state_changed_at,
+        "return_pct": round(return_pct, 2),
+        "distance_to_target_pct": round(distance_to_target_pct, 2),
+        "pnf_progress_pct": round(pnf_progress_pct, 1),
+        "mfe90_expected": round(_float(campaign.get("mfe90_expected")) or _mfe90_expected_for_tier(tier), 2),
     }
 
-    log.info("=" * 60)
-    log.info("NIGHTLY CAMPAIGN PIPELINE complete in %.1fs", elapsed)
-    log.info("  Evaluated : %d", len(results))
-    log.info("  Closed    : %d", closed_count)
-    log.info("  Remaining : %d", active_count)
-    for state, count in state_counts.items():
-        log.info("  %-20s: %d", state, count)
-    log.info("=" * 60)
+    if current > 0:
+        updates["current_price"] = round(float(current), 4)
 
-    return summary
+    if entry > 0:
+        updates["entry_price"] = round(float(entry), 4)
+
+    if pnf_target > 0:
+        updates["pnf_target"] = round(float(pnf_target), 4)
+
+    if stop > 0:
+        updates["stop_price"] = round(float(stop), 4)
+
+    return updates
 
 
 # ---------------------------------------------------------------------------
-# Sync wrapper — for the threading pattern used in main.py
+# Main pipeline
 # ---------------------------------------------------------------------------
 
-def run_nightly_campaign_pipeline_sync() -> dict[str, Any]:
+async def run_nightly_campaign_pipeline() -> dict[str, Any]:
     """
-    Synchronous wrapper for use in main.py's daemon thread pattern.
+    Entrypoint called by backend/main.py nightly scheduler and manual admin API.
+    """
+    log.info("CAMPAIGN PIPELINE: starting nightly lifecycle/enrichment run")
 
-    Usage in main.py _nightly_campaign_runner():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(run_nightly_campaign_pipeline())
-        loop.close()
-    """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(run_nightly_campaign_pipeline())
-    finally:
-        loop.close()
+        campaigns = get_active_campaigns(limit=2000)
+    except Exception as exc:
+        log.error("CAMPAIGN PIPELINE: failed to load active campaigns — %s", exc)
+        return {"ok": False, "error": str(exc), "processed": 0}
+
+    processed = 0
+    changed = 0
+    errors = 0
+    enriched = 0
+
+    for campaign in campaigns:
+        campaign_id = campaign.get("campaign_id")
+        symbol = str(campaign.get("symbol") or "").upper().strip()
+
+        if not campaign_id or not symbol:
+            continue
+
+        try:
+            bars, price = _get_cached_bars_and_price(symbol)
+            signals = _signals_from_bars(campaign, bars, price)
+
+            transition = transition_campaign_state(campaign, signals, current_price=price)
+            updates = _build_updates(
+                campaign,
+                price,
+                transition.new_state.value,
+                transition.changed,
+            )
+
+            update_campaign(campaign_id, updates)
+            enriched += 1
+
+            insert_campaign_observation({
+                "campaign_id": campaign_id,
+                "symbol": symbol,
+                "state": transition.new_state.value,
+                "current_state": transition.new_state.value,
+                "price": round(float(price), 4) if price else updates.get("current_price"),
+                "current_price": round(float(price), 4) if price else updates.get("current_price"),
+                "return_pct": updates.get("return_pct"),
+                "pnf_progress_pct": updates.get("pnf_progress_pct"),
+                "distance_to_target_pct": updates.get("distance_to_target_pct"),
+                "sos_detected": signals.sos_detected,
+                "jac_detected": signals.jac_detected,
+                "bu_detected": signals.bu_detected,
+                "lps_detected": signals.lps_detected,
+                "choch_detected": signals.choch_detected,
+                "spring_detected": signals.spring_detected,
+                "upthrust_detected": signals.upthrust_detected,
+                "spd": signals.spd,
+                "dei": signals.dei,
+                "wed_count": signals.wed_count,
+                "behavioral_state": signals.behavioral_state,
+                "notes": transition.reason,
+            })
+
+            if transition.changed:
+                changed += 1
+                insert_campaign_state_history({
+                    "campaign_id": campaign_id,
+                    "symbol": symbol,
+                    "old_state": transition.old_state.value,
+                    "new_state": transition.new_state.value,
+                    "reason": transition.reason,
+                    "confidence": transition.confidence,
+                })
+
+            processed += 1
+            log.info(
+                "CAMPAIGN PIPELINE: %s campaign_id=%s %s→%s changed=%s return=%s%% pnf=%s%% reason=%s",
+                symbol,
+                campaign_id,
+                transition.old_state.value,
+                transition.new_state.value,
+                transition.changed,
+                updates.get("return_pct"),
+                updates.get("pnf_progress_pct"),
+                transition.reason,
+            )
+
+        except Exception as exc:
+            errors += 1
+            log.error("CAMPAIGN PIPELINE: error on %s campaign_id=%s — %s", symbol, campaign_id, exc)
+
+    result = {
+        "ok": errors == 0,
+        "processed": processed,
+        "enriched": enriched,
+        "changed": changed,
+        "errors": errors,
+        "as_of": utc_now_iso(),
+    }
+
+    log.info(
+        "CAMPAIGN PIPELINE: complete processed=%s enriched=%s changed=%s errors=%s",
+        processed,
+        enriched,
+        changed,
+        errors,
+    )
+    return result
