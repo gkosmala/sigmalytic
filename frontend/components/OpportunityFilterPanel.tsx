@@ -1,0 +1,1 @@
+import React from 'react'; export default function OpportunityFilterPanel(){return <div>Opportunity Filters</div>;}

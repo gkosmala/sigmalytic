@@ -1,123 +1,143 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-"""
-backend/campaign_engine/campaign_store.py
 
-Supabase REST adapter for campaign lifecycle tracking.
-The functions are intentionally defensive: if optional tables such as
-campaign_observations or campaign_state_history do not exist yet, the nightly
-pipeline logs the issue and continues instead of killing the whole run.
+"""
+SAVE AS:
+campaign_engine/campaign_store.py
 """
 
-from __future__ import annotations
-
-import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
-import requests
-
-log = logging.getLogger("campaign_store")
+from supabase import Client, create_client
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+class CampaignStore:
+    """
+    Campaign persistence layer for Sigmalytic V2.
+    """
 
+    def __init__(
+        self,
+        supabase_url: Optional[str] = None,
+        supabase_key: Optional[str] = None,
+    ):
+        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
+        self.supabase_key = (
+            supabase_key
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            or os.getenv("SUPABASE_ANON_KEY")
+        )
 
-def _supabase_config() -> tuple[str, str]:
-    url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_ANON_KEY are required")
-    return url, key
+        self.client: Optional[Client] = None
 
+        if self.supabase_url and self.supabase_key:
+            self.client = create_client(
+                self.supabase_url,
+                self.supabase_key,
+            )
 
-def _headers(prefer: Optional[str] = None) -> dict[str, str]:
-    _, key = _supabase_config()
-    headers = {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
-    if prefer:
-        headers["Prefer"] = prefer
-    return headers
+    def configured(self) -> bool:
+        return self.client is not None
 
+    def save_campaign(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.client:
+            return {"status": "NO_DATABASE"}
 
-def _request(method: str, path: str, *, params: Optional[dict[str, str]] = None, json: Any = None, timeout: int = 20) -> requests.Response:
-    url, _ = _supabase_config()
-    resp = requests.request(
-        method=method,
-        url=f"{url}/rest/v1/{path.lstrip('/')}",
-        headers=_headers("return=representation" if method.upper() in {"POST", "PATCH"} else None),
-        params=params,
-        json=json,
-        timeout=timeout,
-    )
-    return resp
+        return (
+            self.client
+            .table("operational_campaigns")
+            .upsert(payload)
+            .execute()
+            .data
+        )
 
+    def get_campaign(self, campaign_id: str):
+        if not self.client:
+            return None
 
-def get_active_campaigns(limit: int = 1000) -> list[dict[str, Any]]:
-    params = {
-        "select": "*",
-        "status": "eq.ACTIVE",
-        "order": "created_at.asc",
-        "limit": str(limit),
-    }
-    resp = _request("GET", "campaigns", params=params)
-    if resp.status_code not in (200, 206):
-        raise RuntimeError(f"Failed to fetch active campaigns: {resp.status_code} {resp.text[:300]}")
-    data = resp.json()
-    return data if isinstance(data, list) else []
+        result = (
+            self.client
+            .table("operational_campaigns")
+            .select("*")
+            .eq("campaign_id", campaign_id)
+            .limit(1)
+            .execute()
+        )
 
+        return result.data[0] if result.data else None
 
-def update_campaign(campaign_id: int | str, updates: dict[str, Any]) -> dict[str, Any]:
-    payload = dict(updates)
-    payload["updated_at"] = utc_now_iso()
+    def get_active_campaigns(
+        self,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if not self.client:
+            return []
 
-    resp = _request(
-        "PATCH",
-        "campaigns",
-        params={"campaign_id": f"eq.{campaign_id}"},
-        json=payload,
-    )
-    if resp.status_code not in (200, 204):
-        raise RuntimeError(f"Failed to update campaign {campaign_id}: {resp.status_code} {resp.text[:300]}")
-    try:
-        data = resp.json()
-        return data[0] if isinstance(data, list) and data else {}
-    except Exception:
-        return {}
+        query = (
+            self.client
+            .table("operational_campaigns")
+            .select("*")
+        )
 
+        if symbol:
+            query = query.eq("symbol", symbol.upper())
 
-def insert_campaign_observation(row: dict[str, Any]) -> bool:
-    payload = dict(row)
-    payload.setdefault("observed_at", utc_now_iso())
-    resp = _request("POST", "campaign_observations", json=payload)
-    if resp.status_code in (200, 201, 204):
-        return True
+        if timeframe:
+            query = query.eq("timeframe", timeframe.upper())
 
-    # Optional table may not exist in older deployments.
-    log.warning("campaign_observations insert skipped: %s %s", resp.status_code, resp.text[:250])
-    return False
+        query = query.in_(
+            "campaign_state",
+            [
+                "BIRTH",
+                "CONFIRMED",
+                "SURVIVING",
+                "EXPANDING",
+                "MATURING",
+                "DISTRIBUTION_RISK",
+            ],
+        )
 
+        result = (
+            query
+            .order("ucr_score", desc=True)
+            .execute()
+        )
 
-def insert_campaign_state_history(row: dict[str, Any]) -> bool:
-    payload = dict(row)
-    payload.setdefault("changed_at", utc_now_iso())
-    resp = _request("POST", "campaign_state_history", json=payload)
-    if resp.status_code in (200, 201, 204):
-        return True
+        return result.data or []
 
-    # Optional table may not exist in older deployments.
-    log.warning("campaign_state_history insert skipped: %s %s", resp.status_code, resp.text[:250])
-    return False
+    def close_campaign(
+        self,
+        campaign_id: str,
+    ):
+        if not self.client:
+            return None
 
+        return (
+            self.client
+            .table("operational_campaigns")
+            .update(
+                {
+                    "campaign_state": "CLOSED",
+                }
+            )
+            .eq("campaign_id", campaign_id)
+            .execute()
+        )
 
-def close_campaign(campaign_id: int | str, reason: str) -> dict[str, Any]:
-    return update_campaign(campaign_id, {
-        "status": "CLOSED",
-        "close_reason": reason,
-        "close_notes": reason,
-        "closed_at": utc_now_iso(),
-    })
+    def get_top_campaigns(
+        self,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        if not self.client:
+            return []
+
+        result = (
+            self.client
+            .table("operational_campaigns")
+            .select("*")
+            .order("ucr_score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+        return result.data or []

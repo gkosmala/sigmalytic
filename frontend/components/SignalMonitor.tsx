@@ -1,0 +1,1 @@
+import React from 'react'; export default function SignalMonitor({data}:any){return <pre>{JSON.stringify(data,null,2)}</pre>;}
