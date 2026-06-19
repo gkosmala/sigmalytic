@@ -1,13 +1,15 @@
-
 """
 SAVE AS:
-campaign_engine/campaign_store.py
+backend/campaign_engine/campaign_store.py
 """
 
 import os
 from typing import Any, Dict, List, Optional
 
 from supabase import Client, create_client
+
+
+CAMPAIGN_TABLE = "campaigns"
 
 
 class CampaignStore:
@@ -44,7 +46,7 @@ class CampaignStore:
 
         return (
             self.client
-            .table("operational_campaigns")
+            .table(CAMPAIGN_TABLE)
             .upsert(payload)
             .execute()
             .data
@@ -56,7 +58,7 @@ class CampaignStore:
 
         result = (
             self.client
-            .table("operational_campaigns")
+            .table(CAMPAIGN_TABLE)
             .select("*")
             .eq("campaign_id", campaign_id)
             .limit(1)
@@ -75,7 +77,7 @@ class CampaignStore:
 
         query = (
             self.client
-            .table("operational_campaigns")
+            .table(CAMPAIGN_TABLE)
             .select("*")
         )
 
@@ -97,48 +99,28 @@ class CampaignStore:
             ],
         )
 
-        result = (
-            query
-            .order("ucr_score", desc=True)
-            .execute()
+        result = query.execute()
+
+        campaigns = result.data or []
+
+        return sorted(
+            campaigns,
+            key=lambda x: float(x.get("ucr_score") or x.get("ods_score") or 0),
+            reverse=True,
         )
 
-        return result.data or []
-
-    def close_campaign(
-        self,
-        campaign_id: str,
-    ):
+    def close_campaign(self, campaign_id: str):
         if not self.client:
             return None
 
         return (
             self.client
-            .table("operational_campaigns")
-            .update(
-                {
-                    "campaign_state": "CLOSED",
-                }
-            )
+            .table(CAMPAIGN_TABLE)
+            .update({"campaign_state": "CLOSED"})
             .eq("campaign_id", campaign_id)
             .execute()
         )
 
-    def get_top_campaigns(
-        self,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        if not self.client:
-            return []
-
-        result = (
-            self.client
-            .table("operational_campaigns")
-            .select("*")
-            .order("ucr_score", desc=True)
-            .limit(limit)
-            .execute()
-        )
-
-        return result.data or []
-
+    def get_top_campaigns(self, limit: int = 100) -> List[Dict[str, Any]]:
+        campaigns = self.get_active_campaigns()
+        return campaigns[:limit]
