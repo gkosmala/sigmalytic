@@ -88,7 +88,7 @@ class CampaignStore:
             query = query.eq("timeframe", timeframe.upper())
 
         query = query.in_(
-            "campaign_state",
+            "current_state",
             [
                 "BIRTH",
                 "CONFIRMED",
@@ -116,7 +116,7 @@ class CampaignStore:
         return (
             self.client
             .table(CAMPAIGN_TABLE)
-            .update({"campaign_state": "CLOSED"})
+            .update({"current_state": "CLOSED"})
             .eq("campaign_id", campaign_id)
             .execute()
         )
