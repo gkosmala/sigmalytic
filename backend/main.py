@@ -4,6 +4,7 @@ backend/main.py
 """
 
 from fastapi import FastAPI
+from datetime import datetime
 
 from backend.campaign_api import router as campaign_router
 from backend.research_api import router as research_router
@@ -62,13 +63,56 @@ def engine_status():
         "journal_api": True,
     }
 
+
 @app.post("/api/admin/run-full-nightly")
 def run_full_nightly():
-    return {
+    results = {
         "ok": True,
-        "status": "Full nightly pipeline route restored",
-        "message": "Route is available. Engine orchestration must be wired to actual runner next.",
+        "started_at": datetime.utcnow().isoformat(),
+        "steps": {},
     }
+
+    try:
+        from backend.campaign_engine import nightly_campaign_pipeline as pipeline
+
+        runner = None
+
+        for name in [
+            "run_nightly_campaign_pipeline",
+            "run_campaign_pipeline",
+            "run_nightly_pipeline",
+            "main",
+        ]:
+            if hasattr(pipeline, name):
+                runner = getattr(pipeline, name)
+                break
+
+        if runner is None:
+            results["ok"] = False
+            results["steps"]["campaign_pipeline"] = {
+                "status": "failed",
+                "error": "No runner function found in nightly_campaign_pipeline.py",
+            }
+            return results
+
+        pipeline_result = runner()
+
+        results["steps"]["campaign_pipeline"] = {
+            "status": "completed",
+            "runner": runner.__name__,
+            "result": pipeline_result,
+        }
+
+    except Exception as e:
+        results["ok"] = False
+        results["steps"]["campaign_pipeline"] = {
+            "status": "failed",
+            "error": str(e),
+        }
+
+    results["finished_at"] = datetime.utcnow().isoformat()
+    return results
+
 
 app.include_router(campaign_router)
 app.include_router(research_router)
