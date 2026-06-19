@@ -62,6 +62,13 @@ def engine_status():
         "journal_api": True,
     }
 
+@app.post("/api/admin/run-full-nightly")
+def run_full_nightly():
+    return {
+        "ok": True,
+        "status": "Full nightly pipeline route restored",
+        "message": "Route is available. Engine orchestration must be wired to actual runner next.",
+    }
 
 app.include_router(campaign_router)
 app.include_router(research_router)
