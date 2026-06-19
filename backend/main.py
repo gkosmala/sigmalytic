@@ -113,6 +113,24 @@ def run_full_nightly():
     results["finished_at"] = datetime.utcnow().isoformat()
     return results
 
+@app.get("/api/campaigns/active")
+def campaigns_active_alias():
+    from backend.campaign_api import active_campaigns
+    return active_campaigns()
+
+
+@app.get("/api/campaigns/summary")
+def campaigns_summary_alias():
+    from backend.campaign_api import status
+    return status()
+
+
+@app.get("/api/radar/top")
+def radar_top_alias(limit: int = 8):
+    from backend.campaign_api import rankings
+    data = rankings()
+    campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
+    return {"campaigns": campaigns[:limit]}
 
 app.include_router(campaign_router)
 app.include_router(research_router)
