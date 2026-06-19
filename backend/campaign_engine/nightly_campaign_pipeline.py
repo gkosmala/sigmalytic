@@ -3,8 +3,6 @@ SAVE AS:
 backend/campaign_engine/nightly_campaign_pipeline.py
 """
 
-from datetime import datetime
-
 from backend.campaign_engine.campaign_state_engine import (
     WyckoffSignals,
     transition_campaign_state,
@@ -13,10 +11,14 @@ from backend.campaign_engine.campaign_state_engine import (
 
 def _load_class(module_path, class_names):
     module = __import__(module_path, fromlist=["*"])
+
     for name in class_names:
         if hasattr(module, name):
             return getattr(module, name)
-    raise ImportError(f"No matching class found in {module_path}: {class_names}")
+
+    raise ImportError(
+        f"No matching class found in {module_path}: {class_names}"
+    )
 
 
 def _build_signals_from_campaign(campaign):
@@ -33,6 +35,28 @@ def _build_signals_from_campaign(campaign):
         wed_count=int(campaign.get("wed_count", 0) or 0),
         behavioral_state=str(campaign.get("behavioral_state", "AMBIGUOUS")),
     )
+
+
+def _safe_update_payload(original_campaign, transition):
+    payload = dict(original_campaign)
+
+    payload.pop("campaign_state", None)
+    payload.pop("last_pipeline_run", None)
+    payload.pop("transition_reason", None)
+    payload.pop("transition_confidence", None)
+
+    payload["current_state"] = transition.new_state.value
+
+    if "state_enum" in payload:
+        payload["state_enum"] = transition.new_state.value
+
+    if "transition_next_state" in payload:
+        payload["transition_next_state"] = transition.new_state.value
+
+    if "transition_bias" in payload:
+        payload["transition_bias"] = transition.reason
+
+    return payload
 
 
 class NightlyCampaignPipeline:
@@ -52,14 +76,12 @@ class NightlyCampaignPipeline:
                 current_price=campaign.get("current_price"),
             )
 
-            # IMPORTANT:
-            # public.campaigns uses current_state/state_enum.
-            # It does NOT have a campaign_state column.
-            campaign["current_state"] = transition.new_state.value
-            campaign["state_enum"] = transition.new_state.value
-            campaign["transition_reason"] = transition.reason
-            campaign["transition_confidence"] = transition.confidence
-            campaign["last_pipeline_run"] = datetime.utcnow().isoformat()
+            payload = _safe_update_payload(
+                original_campaign=campaign,
+                transition=transition,
+            )
+
+            self.store.save_campaign(payload)
 
             results.append(
                 {
@@ -72,8 +94,6 @@ class NightlyCampaignPipeline:
                     "confidence": transition.confidence,
                 }
             )
-
-            self.store.save_campaign(campaign)
 
         return {
             "ok": True,
@@ -90,6 +110,7 @@ def run_nightly_campaign_pipeline():
 
     store = CampaignStore()
     pipeline = NightlyCampaignPipeline(campaign_store=store)
+
     return pipeline.run()
 
 
