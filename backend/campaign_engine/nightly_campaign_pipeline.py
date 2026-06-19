@@ -52,13 +52,14 @@ class NightlyCampaignPipeline:
                 current_price=campaign.get("current_price"),
             )
 
-            campaign["campaign_state"] = transition.new_state.value
+            # IMPORTANT:
+            # public.campaigns uses current_state/state_enum.
+            # It does NOT have a campaign_state column.
             campaign["current_state"] = transition.new_state.value
+            campaign["state_enum"] = transition.new_state.value
             campaign["transition_reason"] = transition.reason
             campaign["transition_confidence"] = transition.confidence
             campaign["last_pipeline_run"] = datetime.utcnow().isoformat()
-
-            self.store.save_campaign(campaign)
 
             results.append(
                 {
@@ -71,6 +72,8 @@ class NightlyCampaignPipeline:
                     "confidence": transition.confidence,
                 }
             )
+
+            self.store.save_campaign(campaign)
 
         return {
             "ok": True,
