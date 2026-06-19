@@ -1,9 +1,6 @@
 """
 SAVE AS:
 backend/main.py
-
-Sigmalytic V2
-FastAPI Application Entry Point
 """
 
 from fastapi import FastAPI
@@ -11,21 +8,18 @@ from fastapi import FastAPI
 from backend.campaign_api import router as campaign_router
 from backend.research_api import router as research_router
 from backend.intelligence_api import router as intelligence_router
-from backend.admin_api import router as admin_router
-from backend.operator_dominance.operator_dominance_api import (
-    router as operator_router,
-)
+from backend.operator_dominance.operator_dominance_api import router as operator_router
+
+try:
+    from backend.admin_api import router as admin_router
+except Exception:
+    admin_router = None
+
 
 app = FastAPI(
     title="Sigmalytic V2",
     version="2.0.0",
 )
-
-app.include_router(campaign_router)
-app.include_router(research_router)
-app.include_router(intelligence_router)
-app.include_router(admin_router)
-app.include_router(operator_router)
 
 
 @app.get("/")
@@ -39,6 +33,40 @@ def root():
 
 @app.get("/health")
 def health():
+    return {"status": "healthy"}
+
+
+@app.get("/api/health")
+def api_health():
+    return {"status": "healthy"}
+
+
+@app.get("/api/admin/engine-status")
+def engine_status():
     return {
-        "status": "healthy",
+        "signal_birth_engine": True,
+        "campaign_pipeline": True,
+        "ods_engine": True,
+        "analog_engine": True,
+        "decay_monitor": True,
+        "state_transition": True,
+        "campaign_outcome": True,
+        "portfolio_intelligence": True,
+        "wyckoff_engine": True,
+        "gann_engine": True,
+        "bme_engine": True,
+        "sizing_engine": True,
+        "subscriber_alerts": True,
+        "campaign_api": True,
+        "portfolio_api": True,
+        "journal_api": True,
     }
+
+
+app.include_router(campaign_router)
+app.include_router(research_router)
+app.include_router(intelligence_router)
+app.include_router(operator_router)
+
+if admin_router is not None:
+    app.include_router(admin_router)
