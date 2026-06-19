@@ -11,8 +11,7 @@ from fastapi import FastAPI
 from backend.campaign_api import router as campaign_router
 from backend.research_api import router as research_router
 from backend.intelligence_api import router as intelligence_router
-
-# FIXED IMPORT
+from backend.admin_api import router as admin_router
 from backend.operator_dominance.operator_dominance_api import (
     router as operator_router,
 )
@@ -22,26 +21,15 @@ app = FastAPI(
     version="2.0.0",
 )
 
-app.include_router(
-    campaign_router
-)
-
-app.include_router(
-    research_router
-)
-
-app.include_router(
-    intelligence_router
-)
-
-app.include_router(
-    operator_router
-)
+app.include_router(campaign_router)
+app.include_router(research_router)
+app.include_router(intelligence_router)
+app.include_router(admin_router)
+app.include_router(operator_router)
 
 
 @app.get("/")
 def root():
-
     return {
         "application": "Sigmalytic V2",
         "status": "online",
@@ -51,8 +39,6 @@ def root():
 
 @app.get("/health")
 def health():
-
     return {
         "status": "healthy",
     }
-
