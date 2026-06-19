@@ -4,3 +4,4 @@ class NotificationDispatcher:
             "dispatched": True,
             "event": event
         }
+

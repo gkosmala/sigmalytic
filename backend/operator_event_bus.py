@@ -10,3 +10,4 @@ class OperatorEventBus:
         events = self.events[:]
         self.events.clear()
         return events
+

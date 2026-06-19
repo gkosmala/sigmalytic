@@ -4,3 +4,4 @@ class CampaignIntelligenceEngine:
         return {
             "campaign_intelligence": campaign
         }
+

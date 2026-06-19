@@ -12,3 +12,4 @@ class StatusCenterBuilder:
             "expanding_campaigns": len([c for c in campaigns if c.get("campaign_state", c.get("state")) == "EXPANDING"]),
             "distribution_risk": len([c for c in campaigns if c.get("campaign_state", c.get("state")) == "DISTRIBUTION_RISK"]),
         }
+

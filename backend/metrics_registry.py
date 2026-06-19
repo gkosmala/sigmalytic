@@ -11,3 +11,4 @@ class MetricsRegistry:
 
     def all(self):
         return self.metrics
+

@@ -253,3 +253,4 @@ def send_alert(symbol_data: dict, old_status: str, new_status: str) -> bool:
     """Alias for maybe_send_alert for backward compatibility."""
     return maybe_send_alert(symbol_data, old_status, new_status)
 
+

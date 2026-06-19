@@ -199,3 +199,4 @@ async def get_portfolio_state() -> dict[str, Any]:
     except Exception as exc:
         log.error("Portfolio state error: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+

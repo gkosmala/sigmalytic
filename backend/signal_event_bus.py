@@ -10,3 +10,4 @@ class SignalEventBus:
         events = self.events[:]
         self.events.clear()
         return events
+

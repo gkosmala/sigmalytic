@@ -544,3 +544,4 @@ def build_alert_from_campaign(
         campaign_id     = campaign.campaign_id,
         birth_date      = campaign.birth_date,
     )
+

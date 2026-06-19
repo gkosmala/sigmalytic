@@ -6,3 +6,4 @@ class DashboardService:
             "count": len(records),
             "status": "ready"
         }
+

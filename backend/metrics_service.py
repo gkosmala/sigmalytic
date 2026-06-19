@@ -4,3 +4,4 @@ class MetricsService:
         return {
             "count": len(records)
         }
+

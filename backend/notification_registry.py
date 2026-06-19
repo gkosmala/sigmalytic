@@ -8,3 +8,4 @@ class NotificationRegistry:
 
     def get(self, key):
         return self.notifications.get(key)
+

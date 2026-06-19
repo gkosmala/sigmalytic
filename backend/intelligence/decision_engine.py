@@ -6,3 +6,4 @@ class DecisionEngine:
         if score >= 50:
             return "WATCH"
         return "LOCKOUT"
+

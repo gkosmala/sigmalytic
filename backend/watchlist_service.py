@@ -6,3 +6,4 @@ class WatchlistService:
         return {
             "added": symbol
         }
+

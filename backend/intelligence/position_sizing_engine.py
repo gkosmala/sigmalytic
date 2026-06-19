@@ -474,3 +474,4 @@ def sizing_result_to_dict(r: SizingResult) -> dict:
         "kelly_fraction":  str(r.kelly_fraction),
         "summary":         r.summary,
     }
+

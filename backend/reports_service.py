@@ -3,3 +3,4 @@ class ReportsService:
         return {
             "generated": True
         }
+

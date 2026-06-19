@@ -7,3 +7,4 @@ class ResearchCache:
 
     def get(self, key):
         return self.cache.get(key)
+

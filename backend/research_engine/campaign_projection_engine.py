@@ -81,3 +81,4 @@ class CampaignProjectionEngine:
                 2,
             ),
         }
+

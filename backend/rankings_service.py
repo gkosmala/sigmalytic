@@ -6,3 +6,4 @@ class RankingsService:
 
     def rank(self, records=None):
         return self.ranker.rank(records or [])
+

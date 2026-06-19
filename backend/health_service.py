@@ -3,3 +3,4 @@ class HealthService:
         return {
             "healthy": True
         }
+

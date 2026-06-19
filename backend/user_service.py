@@ -4,3 +4,4 @@ class UserService:
             "user_id": user_id,
             "status": "active"
         }
+

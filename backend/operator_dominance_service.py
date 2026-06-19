@@ -7,3 +7,4 @@ class OperatorDominanceService:
             "control_regime": ods.get("control_regime"),
             "status": "evaluated"
         }
+

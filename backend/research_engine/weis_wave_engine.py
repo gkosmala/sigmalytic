@@ -22,3 +22,4 @@ class WeisWaveEngine:
     ) -> bool:
 
         return w1 < w2 < w3
+

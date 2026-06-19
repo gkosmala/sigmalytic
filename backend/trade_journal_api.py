@@ -144,3 +144,4 @@ async def get_profile(request: Request) -> dict:
     user_id = get_user_id_from_request(request)
     profile = get_trader_profile(user_id)
     return profile
+

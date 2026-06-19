@@ -59,3 +59,4 @@ class FractalRouter:
             "timeframe": tf,
             "macro_timeframes": self.get_macro_timeframes(tf),
         }
+

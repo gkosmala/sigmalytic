@@ -69,3 +69,4 @@ def projection():
     return {
         "message": "wire CampaignProjectionEngine",
     }
+

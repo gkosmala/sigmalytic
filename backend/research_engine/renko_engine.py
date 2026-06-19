@@ -33,3 +33,4 @@ class RenkoEngine:
                     bricks.append(("DN", last))
 
         return bricks
+

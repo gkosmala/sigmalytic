@@ -4,3 +4,4 @@ class NotificationService:
             "sent": True,
             "message": message
         }
+

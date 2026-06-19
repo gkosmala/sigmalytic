@@ -237,3 +237,4 @@ def update_preferences(user_id: str, payload: PreferencesUpdate):
         log.warning(f"Update preferences error: {e}")
         raise HTTPException(500, str(e))
 
+

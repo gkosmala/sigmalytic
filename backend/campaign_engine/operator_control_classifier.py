@@ -62,3 +62,4 @@ class OperatorControlClassifier:
             ),
             "campaign_state": campaign_state,
         }
+

@@ -4,3 +4,4 @@ class AdminService:
             "system": "Sigmalytic V2",
             "status": "online"
         }
+

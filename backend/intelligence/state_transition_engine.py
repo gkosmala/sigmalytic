@@ -671,3 +671,4 @@ async def run_state_transition_cycle() -> dict[str, Any]:
     )
 
     return result
+

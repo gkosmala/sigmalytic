@@ -4,3 +4,4 @@ class OperatorMonitor:
             "symbol": record.get("symbol"),
             "healthy": True
         }
+

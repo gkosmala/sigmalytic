@@ -8,3 +8,4 @@ class ResearchService:
             "wed": research.get("wed", 0),
             "status": "evaluated"
         }
+

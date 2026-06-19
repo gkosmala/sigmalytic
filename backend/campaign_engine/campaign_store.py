@@ -141,3 +141,4 @@ class CampaignStore:
         )
 
         return result.data or []
+

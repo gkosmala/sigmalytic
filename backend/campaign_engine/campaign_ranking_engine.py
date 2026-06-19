@@ -102,3 +102,4 @@ class CampaignRankingEngine:
         )
 
         return ranked
+

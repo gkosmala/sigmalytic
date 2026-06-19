@@ -1309,3 +1309,4 @@ def get_scoreboard_stats() -> dict:
     except Exception as e:
         log.warning(f"Scoreboard stats error: {e}")
         return {}
+

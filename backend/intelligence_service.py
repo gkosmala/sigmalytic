@@ -10,3 +10,4 @@ class IntelligenceService:
             research=research or {},
             operator=operator or {}
         )
+

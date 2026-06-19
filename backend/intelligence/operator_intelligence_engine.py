@@ -4,3 +4,4 @@ class OperatorIntelligenceEngine:
         return {
             "operator_intelligence": operator_data
         }
+

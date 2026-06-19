@@ -5,3 +5,4 @@ class ConfluenceEngine:
             "confluence_score": 0.0,
             "inputs": inputs
         }
+

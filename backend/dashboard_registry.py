@@ -7,3 +7,4 @@ class DashboardRegistry:
 
     def load(self, name):
         return self.snapshots.get(name)
+

@@ -47,3 +47,4 @@ class CampaignConfirmationEngine:
             "csd_score": csd_score,
             "wwe_ratio": wwe_ratio,
         }
+

@@ -6,3 +6,4 @@ class OpportunitiesService:
 
     def build(self, records=None):
         return self.builder.build(records or [])
+

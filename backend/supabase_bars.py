@@ -240,3 +240,4 @@ def supabase_bars_status() -> dict:
         return {"configured": True, "available": total > 0, "rows": total}
     except Exception as e:
         return {"configured": True, "available": False, "rows": 0, "error": str(e)}
+

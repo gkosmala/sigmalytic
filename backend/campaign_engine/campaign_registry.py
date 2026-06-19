@@ -82,3 +82,4 @@ class CampaignRegistry:
         return len(
             self._campaigns
         )
+

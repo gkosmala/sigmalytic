@@ -7,3 +7,4 @@ class AlertsService:
             "created": True,
             "payload": payload
         }
+

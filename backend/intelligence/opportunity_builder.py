@@ -15,3 +15,4 @@ class OpportunityBuilder:
                 "campaign_state": c.get("campaign_state", c.get("state")),
             })
         return rows
+

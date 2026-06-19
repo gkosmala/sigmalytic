@@ -357,3 +357,4 @@ def run_nightly_gann_recalculation() -> None:
 
 if __name__ == "__main__":
     seed_gann_vectors()
+

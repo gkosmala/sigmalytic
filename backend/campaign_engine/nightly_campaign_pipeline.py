@@ -81,3 +81,4 @@ class NightlyCampaignPipeline:
             ),
             "results": results,
         }
+

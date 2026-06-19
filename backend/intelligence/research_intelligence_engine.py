@@ -4,3 +4,4 @@ class ResearchIntelligenceEngine:
         return {
             "research_intelligence": research
         }
+

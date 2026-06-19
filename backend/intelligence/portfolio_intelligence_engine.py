@@ -440,3 +440,4 @@ async def run_portfolio_intelligence_cycle() -> dict[str, Any]:
     )
 
     return result
+

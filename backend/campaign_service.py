@@ -7,3 +7,4 @@ class CampaignService:
             "ucr_score": campaign.get("ucr_score", 0),
             "status": "evaluated"
         }
+

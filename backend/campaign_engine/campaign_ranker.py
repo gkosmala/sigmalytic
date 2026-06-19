@@ -60,3 +60,4 @@ class CampaignRanker:
             row["rank"] = idx
 
         return ranked
+

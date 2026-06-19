@@ -4,3 +4,4 @@ class AuthService:
             "authenticated": True,
             "user": username
         }
+

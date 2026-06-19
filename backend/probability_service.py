@@ -531,3 +531,4 @@ def attach_probability_profile(row: dict) -> dict:
     out = enrich_live_probability_keys(row)
     out.update(get_probability_profile(out))
     return out
+

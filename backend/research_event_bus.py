@@ -10,3 +10,4 @@ class ResearchEventBus:
         events = self.events[:]
         self.events.clear()
         return events
+

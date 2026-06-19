@@ -61,3 +61,4 @@ class IntelligencePipeline:
             "score": score,
             "decision": decision,
         }
+

@@ -5,3 +5,4 @@ class IntelligenceRouter:
             "status": "routed",
             "symbol": payload.get("symbol"),
         }
+

@@ -581,3 +581,4 @@ def _is_admin(authorization: Optional[str]) -> bool:
     except Exception as e:
         log.warning(f"Admin auth check failed: {e}")
     return False
+

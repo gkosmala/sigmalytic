@@ -7,3 +7,4 @@ class SettingsService:
             "saved": True,
             "settings": settings
         }
+

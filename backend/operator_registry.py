@@ -7,3 +7,4 @@ class OperatorRegistry:
 
     def get(self, symbol):
         return self.records.get(symbol)
+

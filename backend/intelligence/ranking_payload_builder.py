@@ -16,3 +16,4 @@ class RankingPayloadBuilder:
             })
 
         return sorted(normalized, key=lambda x: float(x.get("ucr_score", 0) or 0), reverse=True)
+

@@ -4,3 +4,4 @@ class SchedulerService:
             "status": "scheduled",
             "jobs_executed": 0
         }
+

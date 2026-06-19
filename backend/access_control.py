@@ -193,3 +193,4 @@ def _resolve_tier(user_id: str) -> str:
 #       if perms and perms.get("behavioral_intel_csv_upload"):
 #           return {"display": "block"}
 #       return {"display": "none"}   # or render an upgrade prompt instead
+

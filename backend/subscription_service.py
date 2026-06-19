@@ -4,3 +4,4 @@ class SubscriptionService:
 
     def active(self):
         return True
+

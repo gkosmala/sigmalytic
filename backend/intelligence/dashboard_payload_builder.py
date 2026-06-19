@@ -16,3 +16,4 @@ class DashboardPayloadBuilder:
             "operator_dominance": operator_dominance or {},
             "research": research or {},
         }
+

@@ -5439,3 +5439,4 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     run_audit(build_arg_parser().parse_args())
+

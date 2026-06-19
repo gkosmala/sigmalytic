@@ -73,3 +73,4 @@ class CampaignDecayEngine:
             "csd_score": csd,
             "status": status,
         }
+

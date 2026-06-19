@@ -169,3 +169,4 @@ async def send_digest(
     subject, html_body = build_html_fn(qualifying)
     await _send_via_resend(user_prefs["email"], subject, html_body)
 
+

@@ -10,3 +10,4 @@ class BillingStub:
             "feature": feature,
             "allowed": True
         }
+

@@ -8,3 +8,4 @@ class SearchIndex:
     def search(self, query):
         q = str(query or "").lower()
         return [r for r in self.records if q in str(r).lower()]
+

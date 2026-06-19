@@ -69,3 +69,4 @@ class SOTDetector:
             "confidence": "LOW",
             "direction": direction,
         }
+

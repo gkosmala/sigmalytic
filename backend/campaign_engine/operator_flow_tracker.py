@@ -67,3 +67,4 @@ class OperatorFlowTracker:
             "strengthening": delta > 0,
             "weakening": delta < 0,
         }
+

@@ -264,3 +264,4 @@ def transition_campaign_state(
         return CampaignTransition(old_state, old_state, False, "Distribution risk remains active", 0.78)
 
     return CampaignTransition(old_state, old_state, False, "No state change", 0.50)
+

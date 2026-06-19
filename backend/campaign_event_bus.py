@@ -10,3 +10,4 @@ class CampaignEventBus:
         events = self.events[:]
         self.events.clear()
         return events
+

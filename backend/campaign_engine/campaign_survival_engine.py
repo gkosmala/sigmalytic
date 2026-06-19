@@ -74,3 +74,4 @@ class CampaignSurvivalEngine:
             "survival_score": score,
             "classification": classification,
         }
+

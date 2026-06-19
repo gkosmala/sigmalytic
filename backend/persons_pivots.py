@@ -194,3 +194,4 @@ def get_pivot_levels_for_chart(result: PersonsPivotResult) -> dict:
         "persons_s2"        : result.s2,
         "persons_score"     : result.score,
     }
+

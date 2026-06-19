@@ -8,3 +8,4 @@ class AlertRegistry:
 
     def all(self):
         return list(self.alerts.values())
+

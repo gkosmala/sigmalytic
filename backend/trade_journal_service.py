@@ -681,3 +681,4 @@ def _update_trader_profile(entry_price_unused: Any, journal_id: str) -> None:
 
     except Exception as exc:
         log.error("Profile update error: %s", exc)
+

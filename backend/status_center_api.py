@@ -30,3 +30,4 @@ def health():
         "status": "ok",
         "service": "status_center",
     }
+

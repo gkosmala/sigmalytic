@@ -512,3 +512,4 @@ def evaluate_many(rows: List[Dict[str, Any]], min_readiness: float = 55.0) -> Li
         reverse=True,
     )
     return out
+

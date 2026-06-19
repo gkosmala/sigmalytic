@@ -7,3 +7,4 @@ class RankingRegistry:
 
     def load(self, name):
         return self.rankings.get(name)
+

@@ -349,3 +349,4 @@ async def run_decay_monitoring_cycle() -> dict[str, Any]:
     )
 
     return result
+

@@ -98,3 +98,4 @@ def get_auth_headers(session: dict) -> dict:
         return {}
     return {"Authorization": f"Bearer {token}"}
 
+

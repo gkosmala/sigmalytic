@@ -67,3 +67,4 @@ class PointFigureTargetEngine:
             ) * 100.0,
             2,
         )
+

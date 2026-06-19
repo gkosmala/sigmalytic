@@ -74,3 +74,4 @@ class WeisWaveAccumulator:
         )
 
         return waves
+

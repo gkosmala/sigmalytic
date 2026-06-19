@@ -7,3 +7,4 @@ class SearchService:
             r for r in records
             if q in str(r).lower()
         ]
+

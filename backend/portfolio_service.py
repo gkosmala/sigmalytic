@@ -6,3 +6,4 @@ class PortfolioService:
             "positions": len(positions),
             "total_market_value": round(total, 2)
         }
+

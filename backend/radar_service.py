@@ -2268,3 +2268,4 @@ def get_watchlist(user_id: str):
     except Exception as e:
         return {"symbols": [], "scores": [], "error": str(e)}
 
+

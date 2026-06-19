@@ -87,3 +87,4 @@ def register_campaign(
     return {
         "status": "registered"
     }
+

@@ -395,3 +395,4 @@ class OperationalCampaign:
             )
 
         return campaign
+

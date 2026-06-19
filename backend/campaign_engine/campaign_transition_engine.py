@@ -63,3 +63,4 @@ class CampaignTransitionEngine:
             return "DISTRIBUTION_RISK"
 
         return current_state
+
