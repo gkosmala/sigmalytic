@@ -1,18 +1,20 @@
-
 from fastapi import APIRouter
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
+from backend.campaign_engine.campaign_store import CampaignStore
 
 router = APIRouter(
     prefix="/api/campaign",
     tags=["campaign"],
 )
 
-_ACTIVE_CAMPAIGNS: List[Dict[str, Any]] = []
+
+def _store():
+    return CampaignStore()
 
 
 @router.get("/health")
 def health():
-
     return {
         "status": "ok",
         "service": "campaign_api",
@@ -21,70 +23,49 @@ def health():
 
 @router.get("/active")
 def active_campaigns():
-
-    return {
-        "campaigns": _ACTIVE_CAMPAIGNS
-    }
+    campaigns = _store().get_active_campaigns()
+    return {"campaigns": campaigns}
 
 
 @router.get("/rankings")
 def rankings():
+    campaigns = _store().get_top_campaigns(limit=100)
 
     ranked = sorted(
-        _ACTIVE_CAMPAIGNS,
-        key=lambda x: x.get(
-            "ucr_score",
-            0
+        campaigns,
+        key=lambda x: float(
+            x.get("operator_dominance")
+            or x.get("outcome_quality_score")
+            or x.get("obstacle_score")
+            or 0
         ),
-        reverse=True
+        reverse=True,
     )
 
-    return {
-        "campaigns": ranked
-    }
+    return {"campaigns": ranked}
 
 
 @router.get("/status")
 def status():
+    campaigns = _store().get_active_campaigns()
 
-    active = len(_ACTIVE_CAMPAIGNS)
-
-    expanding = len([
-        x for x in _ACTIVE_CAMPAIGNS
-        if x.get("state")
-        == "EXPANDING"
-    ])
-
-    birth = len([
-        x for x in _ACTIVE_CAMPAIGNS
-        if x.get("state")
-        == "BIRTH"
-    ])
-
-    distribution = len([
-        x for x in _ACTIVE_CAMPAIGNS
-        if x.get("state")
-        == "DISTRIBUTION_RISK"
-    ])
+    def state(c):
+        return str(c.get("current_state") or c.get("state_enum") or "").upper()
 
     return {
-        "active_campaigns": active,
-        "birth_candidates": birth,
-        "expanding_campaigns": expanding,
-        "distribution_risk": distribution,
+        "active_campaigns": len(campaigns),
+        "birth_candidates": sum(1 for c in campaigns if state(c) == "BIRTH"),
+        "expanding_campaigns": sum(1 for c in campaigns if state(c) == "EXPANDING"),
+        "distribution_risk": sum(
+            1 for c in campaigns if state(c) == "DISTRIBUTION_RISK"
+        ),
     }
 
 
 @router.post("/register")
-def register_campaign(
-    campaign: Dict[str, Any]
-):
-
-    _ACTIVE_CAMPAIGNS.append(
-        campaign
-    )
-
+def register_campaign(campaign: Dict[str, Any]):
+    saved = _store().save_campaign(campaign)
     return {
-        "status": "registered"
+        "status": "registered",
+        "result": saved,
     }
-
