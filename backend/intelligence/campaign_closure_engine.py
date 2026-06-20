@@ -311,22 +311,44 @@ def _patch_campaign(campaign_id: Any, updates: dict[str, Any]) -> bool:
     r = _rest(
         "PATCH",
         "campaigns",
-        params={"campaign_id": f"eq.{campaign_id}"},
+        params={
+            "campaign_id": f"eq.{campaign_id}",
+            "select": "*",
+        },
         json=payload,
         timeout=20,
     )
 
-    if r.status_code in (200, 204):
-        return True
+    if r.status_code not in (200, 204):
+        log.warning(
+            "Closure write failed campaign_id=%s status=%s body=%s",
+            campaign_id,
+            r.status_code,
+            r.text[:250],
+        )
+        return False
 
-    log.warning(
-        "Closure write failed campaign_id=%s status=%s body=%s",
-        campaign_id,
-        r.status_code,
-        r.text[:250],
-    )
+    try:
+        data = r.json()
 
-    return False
+        if isinstance(data, list) and len(data) > 0:
+            return True
+
+        log.warning(
+            "Closure write matched zero rows campaign_id=%s body=%s",
+            campaign_id,
+            r.text[:250],
+        )
+        return False
+
+    except Exception as exc:
+        log.warning(
+            "Closure write JSON parse failed campaign_id=%s error=%s body=%s",
+            campaign_id,
+            exc,
+            r.text[:250],
+        )
+        return False
 
 
 def run_campaign_closure_cycle() -> dict[str, Any]:
