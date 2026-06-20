@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import requests
+from supabase import create_client
 
 log = logging.getLogger("campaign_closure_engine")
 
@@ -305,50 +306,47 @@ def score_campaign_closure(c: dict[str, Any]) -> dict[str, Any]:
 
 
 def _patch_campaign(campaign_id: Any, updates: dict[str, Any]) -> bool:
+    """
+    Persist closure updates to public.campaigns.
+
+    Uses the Supabase client instead of raw REST so the update either
+    returns updated rows or logs a clear no-match result.
+    """
+    url, key = _supabase_config()
+
     payload = dict(updates)
     payload["updated_at"] = _utc_now_iso()
 
-    r = _rest(
-        "PATCH",
-        "campaigns",
-        params={
-            "campaign_id": f"eq.{campaign_id}",
-            "select": "*",
-        },
-        json=payload,
-        timeout=20,
+    try:
+        campaign_id_int = int(campaign_id)
+    except Exception:
+        log.warning(
+            "Closure write skipped invalid campaign_id=%s",
+            campaign_id,
+        )
+        return False
+
+    client = create_client(url, key)
+
+    result = (
+        client
+        .table("campaigns")
+        .update(payload)
+        .eq("campaign_id", campaign_id_int)
+        .execute()
     )
 
-    if r.status_code not in (200, 204):
-        log.warning(
-            "Closure write failed campaign_id=%s status=%s body=%s",
-            campaign_id,
-            r.status_code,
-            r.text[:250],
-        )
-        return False
+    data = getattr(result, "data", None)
 
-    try:
-        data = r.json()
+    if isinstance(data, list) and len(data) > 0:
+        return True
 
-        if isinstance(data, list) and len(data) > 0:
-            return True
-
-        log.warning(
-            "Closure write matched zero rows campaign_id=%s body=%s",
-            campaign_id,
-            r.text[:250],
-        )
-        return False
-
-    except Exception as exc:
-        log.warning(
-            "Closure write JSON parse failed campaign_id=%s error=%s body=%s",
-            campaign_id,
-            exc,
-            r.text[:250],
-        )
-        return False
+    log.warning(
+        "Closure write returned no updated rows campaign_id=%s result=%s",
+        campaign_id_int,
+        result,
+    )
+    return False
 
 
 def run_campaign_closure_cycle() -> dict[str, Any]:
