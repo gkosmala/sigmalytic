@@ -52,6 +52,7 @@ def engine_status():
         "decay_monitor": True,
         "state_transition": True,
         "campaign_outcome": True,
+        "campaign_closure_engine": True,
         "portfolio_intelligence": True,
         "wyckoff_engine": True,
         "gann_engine": True,
@@ -113,6 +114,16 @@ def run_full_nightly():
     results["finished_at"] = datetime.utcnow().isoformat()
     return results
 
+
+@app.post("/api/admin/run-closure-engine")
+def run_closure_engine_admin():
+    from backend.intelligence.campaign_closure_engine import (
+        run_campaign_closure_cycle,
+    )
+
+    return run_campaign_closure_cycle()
+
+
 @app.get("/api/campaigns/active")
 def campaigns_active_alias():
     from backend.campaign_api import active_campaigns
@@ -131,6 +142,7 @@ def radar_top_alias(limit: int = 8):
     data = rankings()
     campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
     return {"campaigns": campaigns[:limit]}
+
 
 app.include_router(campaign_router)
 app.include_router(research_router)
