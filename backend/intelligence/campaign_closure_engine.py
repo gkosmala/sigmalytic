@@ -228,7 +228,7 @@ def _livermore_exit_score(c: dict[str, Any]) -> float:
 def _closure_reason(c: dict[str, Any], closure_score: float) -> tuple[str, str]:
     if bool(c.get("conjunction_exit")):
         return (
-            "CONFIRMED_CONJUNCTION_EXIT",
+            "DECAY_EXIT",
             "Exit confirmed by conjunction_exit, high failure risk, and campaign deterioration.",
         )
 
