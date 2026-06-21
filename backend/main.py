@@ -46,6 +46,10 @@ def api_health():
 def engine_status():
     return {
         "signal_birth_engine": True,
+        "wyckoff_verdict_engine": True,
+        "livermore_verdict_engine": True,
+        "weis_verdict_engine": True,
+        "master_campaign_index": True,
         "campaign_pipeline": True,
         "ods_engine": True,
         "analog_engine": True,
@@ -60,6 +64,7 @@ def engine_status():
         "sizing_engine": True,
         "subscriber_alerts": True,
         "campaign_api": True,
+        "research_api": True,
         "portfolio_api": True,
         "journal_api": True,
     }
@@ -127,18 +132,21 @@ def run_closure_engine_admin():
 @app.get("/api/campaigns/active")
 def campaigns_active_alias():
     from backend.campaign_api import active_campaigns
+
     return active_campaigns()
 
 
 @app.get("/api/campaigns/summary")
 def campaigns_summary_alias():
     from backend.campaign_api import status
+
     return status()
 
 
 @app.get("/api/radar/top")
 def radar_top_alias(limit: int = 8):
     from backend.campaign_api import rankings
+
     data = rankings()
     campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
     return {"campaigns": campaigns[:limit]}
