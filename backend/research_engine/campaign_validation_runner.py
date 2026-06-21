@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import numpy as np
 
 
 # Allow running this file directly from project root or from backend folder.
@@ -222,6 +223,38 @@ def evaluate_case(case: ValidationCase) -> Dict[str, Any]:
     }
 
 
+
+def make_json_safe(obj):
+    """
+    Convert pandas/numpy objects into plain Python objects so json.dumps works.
+    """
+    if isinstance(obj, dict):
+        return {str(k): make_json_safe(v) for k, v in obj.items()}
+
+    if isinstance(obj, list):
+        return [make_json_safe(v) for v in obj]
+
+    if isinstance(obj, tuple):
+        return [make_json_safe(v) for v in obj]
+
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+
+    if isinstance(obj, (pd.Timestamp,)):
+        return obj.isoformat()
+
+    if pd.isna(obj) if not isinstance(obj, (dict, list, tuple, str)) else False:
+        return None
+
+    return obj
+
+
 def write_outputs(results: List[Dict[str, Any]]) -> Dict[str, str]:
     out_dir = ROOT / "backend" / "research_engine" / "validation_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -229,7 +262,8 @@ def write_outputs(results: List[Dict[str, Any]]) -> Dict[str, str]:
     json_path = out_dir / "campaign_validation_results.json"
     csv_path = out_dir / "campaign_validation_results.csv"
 
-    json_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    safe_results = make_json_safe(results)
+    json_path.write_text(json.dumps(safe_results, indent=2), encoding="utf-8")
 
     flat_fields = [
         "symbol",
@@ -259,7 +293,7 @@ def write_outputs(results: List[Dict[str, Any]]) -> Dict[str, str]:
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=flat_fields)
         writer.writeheader()
-        for row in results:
+        for row in safe_results:
             writer.writerow({field: row.get(field) for field in flat_fields})
 
     return {
