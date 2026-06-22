@@ -158,56 +158,99 @@ class CampaignDiscoveryEngine:
 
     @staticmethod
     def _alpaca_trading_base_url() -> str:
-        """
-        Use live Alpaca trading API by default.
-
-        Set ALPACA_PAPER=true only if intentionally using paper trading.
-        """
-        paper = str(os.getenv("ALPACA_PAPER", "false")).lower() in {
-            "1",
-            "true",
-            "yes",
-            "y",
-        }
-
-        if paper:
-            return "https://paper-api.alpaca.markets"
-
-        return "https://api.alpaca.markets"
+        paper = str(os.getenv("ALPACA_PAPER", "false")).lower() in {"1", "true", "yes", "y"}
+        return "https://paper-api.alpaca.markets" if paper else "https://api.alpaca.markets"
 
     @staticmethod
     def _json_safe(value: Any) -> Any:
-        """
-        Convert numpy/pandas scalar values into JSON-safe Python values.
-        """
         if value is None:
             return None
-
-        if isinstance(value, np.integer):
+        if isinstance(value, (np.integer,)):
             return int(value)
-
-        if isinstance(value, np.floating):
+        if isinstance(value, (np.floating,)):
             return float(value)
-
-        if isinstance(value, np.bool_):
+        if isinstance(value, (np.bool_,)):
             return bool(value)
-
         if isinstance(value, pd.Timestamp):
             return value.isoformat()
-
         if isinstance(value, dict):
-            return {
-                str(k): CampaignDiscoveryEngine._json_safe(v)
-                for k, v in value.items()
-            }
-
+            return {str(k): CampaignDiscoveryEngine._json_safe(v) for k, v in value.items()}
         if isinstance(value, (list, tuple, set)):
-            return [
-                CampaignDiscoveryEngine._json_safe(v)
-                for v in value
-            ]
-
+            return [CampaignDiscoveryEngine._json_safe(v) for v in value]
+        if hasattr(value, "item"):
+            try:
+                return value.item()
+            except Exception:
+                return str(value)
         return value
+
+    def _debug_dataframe_snapshot(self, symbol: str, df: Optional[pd.DataFrame]) -> Dict[str, Any]:
+        if str(os.getenv("CAMPAIGN_DISCOVERY_DEBUG", "false")).lower() not in {"1", "true", "yes", "y"}:
+            return {}
+
+        debug_symbols = {
+            s.strip().upper()
+            for s in os.getenv(
+                "CAMPAIGN_DISCOVERY_DEBUG_SYMBOLS",
+                "NVDA,PLTR,MSTR,META,SMCI",
+            ).split(",")
+            if s.strip()
+        }
+
+        symbol = str(symbol or "").upper().strip()
+
+        if symbol not in debug_symbols:
+            return {}
+
+        if df is None or df.empty:
+            snapshot = {"symbol": symbol, "error": "Dataframe is None or empty", "row_count": 0}
+            print(f"📢 [DEBUG SNAPSHOT] {symbol} | EMPTY DATAFRAME")
+            return snapshot
+
+        col_map = {str(c).lower(): c for c in df.columns}
+        close_col = col_map.get("close") or col_map.get("c")
+
+        def sanitize(value: Any) -> Any:
+            return CampaignDiscoveryEngine._json_safe(value)
+
+        def sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+            return {str(k): sanitize(v) for k, v in row.items()}
+
+        first_close = None
+        last_close = None
+        if close_col in df.columns:
+            try:
+                first_close = float(df[close_col].iloc[0])
+            except Exception:
+                first_close = None
+            try:
+                last_close = float(df[close_col].iloc[-1])
+            except Exception:
+                last_close = None
+
+        snapshot = {
+            "symbol": symbol,
+            "row_count": int(len(df)),
+            "columns": [str(c) for c in df.columns],
+            "index_type": str(type(df.index).__name__),
+            "first_index": str(df.index[0]),
+            "last_index": str(df.index[-1]),
+            "first_close": first_close,
+            "last_close": last_close,
+            "null_counts": {str(k): int(v) for k, v in df.isnull().sum().to_dict().items()},
+            "head": [sanitize_row(r) for r in df.head(3).to_dict("records")],
+            "tail": [sanitize_row(r) for r in df.tail(3).to_dict("records")],
+        }
+
+        print(
+            f"📢 [DEBUG SNAPSHOT] {symbol} | "
+            f"Rows={snapshot['row_count']} | "
+            f"Order={snapshot['first_index']} -> {snapshot['last_index']} | "
+            f"Close={snapshot['first_close']} -> {snapshot['last_close']} | "
+            f"Columns={snapshot['columns']}"
+        )
+
+        return snapshot
 
     @staticmethod
     def _normalize_symbol(symbol: Any) -> str:
@@ -505,9 +548,13 @@ class CampaignDiscoveryEngine:
 
         df = self._load_bars(symbol, timeframe, record=record)
         sister_df = self._load_sister_bars(symbol, timeframe, record=record)
+        debug_snapshot = self._debug_dataframe_snapshot(symbol, df)
 
         if df is None or len(df) == 0:
-            return self._empty_verdict(symbol, timeframe, "No OHLCV bars supplied or loaded.", "NO_BARS")
+            verdict = self._empty_verdict(symbol, timeframe, "No OHLCV bars supplied or loaded.", "NO_BARS")
+            if debug_snapshot:
+                verdict["debug_snapshot"] = debug_snapshot
+            return self._json_safe(verdict)
 
         if self.birth_engine is None:
             raise RuntimeError("SignalBirthEngine unavailable.")
@@ -567,6 +614,9 @@ class CampaignDiscoveryEngine:
             survival_details=survival,
             as_of=self._now(),
         ).to_dict()
+
+        if debug_snapshot:
+            verdict["debug_snapshot"] = debug_snapshot
 
         return self._json_safe(verdict)
 
