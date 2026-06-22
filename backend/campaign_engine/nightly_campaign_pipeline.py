@@ -3,10 +3,19 @@ SAVE AS:
 backend/campaign_engine/nightly_campaign_pipeline.py
 """
 
+import os
+
 from backend.campaign_engine.campaign_state_engine import (
     WyckoffSignals,
     transition_campaign_state,
 )
+
+try:
+    from backend.campaign_engine.campaign_discovery_engine import (
+        CampaignDiscoveryEngine,
+    )
+except Exception:
+    CampaignDiscoveryEngine = None
 
 
 def _load_class(module_path, class_names):
@@ -19,6 +28,27 @@ def _load_class(module_path, class_names):
     raise ImportError(
         f"No matching class found in {module_path}: {class_names}"
     )
+
+
+def _parse_discovery_symbols():
+    """
+    Optional discovery seed list.
+
+    Set in Render if desired:
+        SIGMALYTIC_DISCOVERY_SYMBOLS=NVDA,META,SMCI,PLTR,MSTR
+
+    Note:
+    CampaignDiscoveryEngine still requires OHLCV bars or a data loader.
+    This hook exists so nightly has a discovery stage without breaking the
+    existing transition pipeline.
+    """
+    raw = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
+    symbols = [
+        item.strip().upper()
+        for item in raw.split(",")
+        if item.strip()
+    ]
+    return symbols
 
 
 def _build_signals_from_campaign(campaign):
@@ -63,7 +93,45 @@ class NightlyCampaignPipeline:
     def __init__(self, campaign_store):
         self.store = campaign_store
 
+    def _run_discovery_stage(self):
+        """
+        Run discovery before lifecycle transitions.
+
+        This is deliberately non-fatal:
+        discovery problems should not prevent the transition pipeline from
+        processing existing campaigns.
+        """
+        if CampaignDiscoveryEngine is None:
+            return {
+                "ok": False,
+                "stage": "campaign_discovery",
+                "error": "CampaignDiscoveryEngine unavailable",
+                "campaigns_discovered": 0,
+            }
+
+        try:
+            discovery = CampaignDiscoveryEngine(
+                store=self.store,
+            )
+
+            symbols = _parse_discovery_symbols()
+
+            if symbols:
+                return discovery.run(symbols=symbols)
+
+            return discovery.run()
+
+        except Exception as exc:
+            return {
+                "ok": False,
+                "stage": "campaign_discovery",
+                "error": str(exc),
+                "campaigns_discovered": 0,
+            }
+
     def run(self):
+        discovery_results = self._run_discovery_stage()
+
         campaigns = self.store.get_active_campaigns()
         results = []
 
@@ -97,6 +165,7 @@ class NightlyCampaignPipeline:
 
         return {
             "ok": True,
+            "discovery": discovery_results,
             "campaigns_processed": len(results),
             "results": results,
         }
