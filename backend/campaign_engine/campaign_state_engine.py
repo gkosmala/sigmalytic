@@ -99,6 +99,7 @@ class CampaignTransition:
 
         self.symbol = kwargs.get("symbol", "")
         self.previous_state = CampaignStateEngine._normalize_state(raw_previous)
+        self.old_state = self.previous_state
         self.new_state = CampaignStateEngine._normalize_state(raw_new)
 
         self.transition = kwargs.get("transition", "UNCHANGED")
@@ -118,6 +119,8 @@ class CampaignTransition:
         data = dict(self.__dict__)
         if hasattr(self.previous_state, "value"):
             data["previous_state"] = self.previous_state.value
+        if hasattr(self.old_state, "value"):
+            data["old_state"] = self.old_state.value
         if hasattr(self.new_state, "value"):
             data["new_state"] = self.new_state.value
         return data
