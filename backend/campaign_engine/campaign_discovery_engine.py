@@ -136,10 +136,29 @@ class CampaignDiscoveryEngine:
 
     @staticmethod
     def _headers() -> Dict[str, str]:
-        key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
-        secret = os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
+        """
+        Alpaca credentials.
+
+        Render currently uses:
+            ALPACA_API_KEY
+            ALPACA_API_SECRET
+
+        Also support common Alpaca/SDK aliases.
+        """
+        key = (
+            os.getenv("ALPACA_API_KEY")
+            or os.getenv("APCA_API_KEY_ID")
+        )
+
+        secret = (
+            os.getenv("ALPACA_API_SECRET")
+            or os.getenv("ALPACA_SECRET_KEY")
+            or os.getenv("APCA_API_SECRET_KEY")
+        )
+
         if not key or not secret:
             return {}
+
         return {
             "APCA-API-KEY-ID": key,
             "APCA-API-SECRET-KEY": secret,
