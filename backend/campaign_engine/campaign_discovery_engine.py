@@ -136,15 +136,6 @@ class CampaignDiscoveryEngine:
 
     @staticmethod
     def _headers() -> Dict[str, str]:
-        """
-        Alpaca credentials.
-
-        Render currently uses:
-            ALPACA_API_KEY
-            ALPACA_API_SECRET
-
-        Also support common Alpaca/SDK aliases.
-        """
         key = (
             os.getenv("ALPACA_API_KEY")
             or os.getenv("APCA_API_KEY_ID")
@@ -163,6 +154,25 @@ class CampaignDiscoveryEngine:
             "APCA-API-KEY-ID": key,
             "APCA-API-SECRET-KEY": secret,
         }
+
+    @staticmethod
+    def _alpaca_trading_base_url() -> str:
+        """
+        Use live Alpaca trading API by default.
+
+        Set ALPACA_PAPER=true only if intentionally using paper trading.
+        """
+        paper = str(os.getenv("ALPACA_PAPER", "false")).lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+        }
+
+        if paper:
+            return "https://paper-api.alpaca.markets"
+
+        return "https://api.alpaca.markets"
 
     @staticmethod
     def _normalize_symbol(symbol: Any) -> str:
@@ -232,7 +242,7 @@ class CampaignDiscoveryEngine:
 
         try:
             response = requests.get(
-                "https://paper-api.alpaca.markets/v2/assets",
+                f"{self._alpaca_trading_base_url()}/v2/assets",
                 headers=headers,
                 params={"status": "active", "asset_class": "us_equity"},
                 timeout=25,
