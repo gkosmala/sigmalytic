@@ -51,82 +51,102 @@ except Exception:
     MasterSurvivalIndexEngine = None
 
 
+@dataclass
 class WyckoffSignals:
     """
     Backward-compatible signal container.
 
-    The existing nightly pipeline may pass legacy keyword names such as:
-    sos_detected, spring_detected, absorption_detected, etc.
-
-    This class accepts any keyword argument and exposes it as an attribute.
+    Existing nightly pipeline imports this name from campaign_state_engine.py.
+    Keep this class even though the new survival-aware state logic no longer
+    depends on it directly.
     """
-
-    def __init__(self, **kwargs):
-        self.sos_detected = kwargs.get("sos_detected", False)
-        self.spring_detected = kwargs.get("spring_detected", False)
-        self.absorption_detected = kwargs.get("absorption_detected", False)
-
-        self.stopping_climax = kwargs.get("stopping_climax", 0.0)
-        self.supply_absorption = kwargs.get("supply_absorption", 0.0)
-        self.spring = kwargs.get("spring", 0.0)
-        self.sign_of_strength = kwargs.get("sign_of_strength", 0.0)
-        self.meaningful_resistance = kwargs.get("meaningful_resistance", 0.0)
-        self.behavioral_resolution = kwargs.get("behavioral_resolution", 0.0)
-        self.survival_score = kwargs.get("survival_score", 0.0)
-        self.wyckoff_score = kwargs.get("wyckoff_score", 0.0)
-
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return dict(self.__dict__)
+    stopping_climax: float = 0.0
+    supply_absorption: float = 0.0
+    spring: float = 0.0
+    sign_of_strength: float = 0.0
+    meaningful_resistance: float = 0.0
+    behavioral_resolution: float = 0.0
+    survival_score: float = 0.0
+    wyckoff_score: float = 0.0
 
 
 class CampaignTransition:
     """
-    Backward-compatible transition object.
+    Backward-compatible transition object for nightly_campaign_pipeline.py.
 
-    Existing nightly pipeline expects:
+    The existing pipeline expects attribute access:
+        transition.old_state.value
         transition.new_state.value
-
-    Therefore previous_state and new_state are stored as CampaignState enum
-    members whenever possible, not plain strings.
+        transition.changed
+        transition.reason
+        transition.confidence
     """
 
     def __init__(self, **kwargs):
-        raw_previous = kwargs.get("previous_state", "NO_CAMPAIGN")
-        raw_new = kwargs.get("new_state", kwargs.get("state", "NO_CAMPAIGN"))
+        raw_old = kwargs.get(
+            "old_state",
+            kwargs.get("previous_state", kwargs.get("from_state", "NO_CAMPAIGN")),
+        )
+        raw_new = kwargs.get(
+            "new_state",
+            kwargs.get("state", kwargs.get("to_state", "NO_CAMPAIGN")),
+        )
 
         self.symbol = kwargs.get("symbol", "")
-        self.previous_state = CampaignStateEngine._normalize_state(raw_previous)
-        self.old_state = self.previous_state
+        self.old_state = CampaignStateEngine._normalize_state(raw_old)
+        self.previous_state = self.old_state
         self.new_state = CampaignStateEngine._normalize_state(raw_new)
 
         self.transition = kwargs.get("transition", "UNCHANGED")
         self.transition_score = kwargs.get("transition_score", 0.0)
         self.advance_allowed = kwargs.get("advance_allowed", False)
         self.failure_risk = kwargs.get("failure_risk", False)
-        self.explanation = kwargs.get("explanation", kwargs.get("reason", ""))
-        self.reason = kwargs.get("reason", self.explanation)
+
+        self.reason = kwargs.get(
+            "reason",
+            kwargs.get("explanation", kwargs.get("transition_reason", "")),
+        )
+        self.explanation = kwargs.get("explanation", self.reason)
+
+        try:
+            self.confidence = float(kwargs.get("confidence", kwargs.get("transition_score", 0.0)))
+        except Exception:
+            self.confidence = 0.0
+
+        self.changed = kwargs.get(
+            "changed",
+            self.old_state != self.new_state,
+        )
+
         self.as_of = kwargs.get("as_of", datetime.now(timezone.utc).isoformat())
 
         for key, value in kwargs.items():
-            if key in {"previous_state", "new_state", "state"}:
+            if key in {
+                "old_state",
+                "previous_state",
+                "from_state",
+                "new_state",
+                "state",
+                "to_state",
+                "changed",
+                "reason",
+                "confidence",
+            }:
                 continue
             setattr(self, key, value)
 
     def to_dict(self) -> Dict[str, Any]:
         data = dict(self.__dict__)
-        if hasattr(self.previous_state, "value"):
-            data["previous_state"] = self.previous_state.value
-        if hasattr(self.old_state, "value"):
-            data["old_state"] = self.old_state.value
-        if hasattr(self.new_state, "value"):
-            data["new_state"] = self.new_state.value
+        for key in ("old_state", "previous_state", "new_state"):
+            value = data.get(key)
+            if hasattr(value, "value"):
+                data[key] = value.value
         return data
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
+
+
 
 
 class CampaignState(str, Enum):
@@ -547,6 +567,7 @@ __all__ = [
     "run_state_transition",
 ]
 
+
 def _dict_to_campaign_transition(result: Dict[str, Any]) -> CampaignTransition:
     """
     Convert survival-aware dict verdict to legacy CampaignTransition object.
@@ -554,16 +575,23 @@ def _dict_to_campaign_transition(result: Dict[str, Any]) -> CampaignTransition:
     if isinstance(result, CampaignTransition):
         return result
 
+    old_state = result.get("old_state", result.get("previous_state", "NO_CAMPAIGN"))
+    new_state = result.get("new_state", result.get("state", "NO_CAMPAIGN"))
+    transition_score = result.get("transition_score", 0.0)
+
     return CampaignTransition(
         symbol=result.get("symbol", ""),
-        previous_state=result.get("previous_state", "NO_CAMPAIGN"),
-        new_state=result.get("new_state", result.get("state", "NO_CAMPAIGN")),
+        old_state=old_state,
+        previous_state=old_state,
+        new_state=new_state,
         transition=result.get("transition", "UNCHANGED"),
-        transition_score=result.get("transition_score", 0.0),
+        transition_score=transition_score,
         advance_allowed=result.get("advance_allowed", False),
         failure_risk=result.get("failure_risk", False),
-        explanation=result.get("explanation", result.get("reason", "")),
+        changed=str(old_state) != str(new_state),
         reason=result.get("reason", result.get("explanation", "")),
+        explanation=result.get("explanation", result.get("reason", "")),
+        confidence=result.get("confidence", transition_score),
         as_of=result.get("as_of", datetime.now(timezone.utc).isoformat()),
         birth_score=result.get("birth_score", 0.0),
         birth_state=result.get("birth_state", "UNKNOWN"),
@@ -572,13 +600,17 @@ def _dict_to_campaign_transition(result: Dict[str, Any]) -> CampaignTransition:
         survival_confirmed=result.get("survival_confirmed", False),
     )
 
+
 def transition_campaign_state(*args, **kwargs):
     """
     Backward-compatible pipeline function.
 
-    IMPORTANT:
-    Existing nightly pipeline expects an object with .new_state.
-    Therefore this function returns CampaignTransition, not a dict.
+    Existing nightly pipeline expects:
+        transition.old_state.value
+        transition.new_state.value
+        transition.changed
+        transition.reason
+        transition.confidence
     """
     engine = CampaignStateEngine()
 
