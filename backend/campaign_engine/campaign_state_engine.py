@@ -51,23 +51,33 @@ except Exception:
     MasterSurvivalIndexEngine = None
 
 
-@dataclass
 class WyckoffSignals:
     """
     Backward-compatible signal container.
 
-    Existing nightly pipeline imports this name from campaign_state_engine.py.
-    Keep this class even though the new survival-aware state logic no longer
-    depends on it directly.
+    Accepts any keyword arguments from legacy pipeline code, including
+    sos_detected, spring_detected, absorption_detected, and any future
+    Wyckoff signal names.
     """
-    stopping_climax: float = 0.0
-    supply_absorption: float = 0.0
-    spring: float = 0.0
-    sign_of_strength: float = 0.0
-    meaningful_resistance: float = 0.0
-    behavioral_resolution: float = 0.0
-    survival_score: float = 0.0
-    wyckoff_score: float = 0.0
+
+    def __init__(self, **kwargs):
+        self.sos_detected = kwargs.get("sos_detected", False)
+        self.spring_detected = kwargs.get("spring_detected", False)
+        self.absorption_detected = kwargs.get("absorption_detected", False)
+        self.stopping_climax = kwargs.get("stopping_climax", 0.0)
+        self.supply_absorption = kwargs.get("supply_absorption", 0.0)
+        self.spring = kwargs.get("spring", 0.0)
+        self.sign_of_strength = kwargs.get("sign_of_strength", 0.0)
+        self.meaningful_resistance = kwargs.get("meaningful_resistance", 0.0)
+        self.behavioral_resolution = kwargs.get("behavioral_resolution", 0.0)
+        self.survival_score = kwargs.get("survival_score", 0.0)
+        self.wyckoff_score = kwargs.get("wyckoff_score", 0.0)
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dict(self.__dict__)
 
 
 @dataclass
@@ -505,6 +515,9 @@ __all__ = [
     "CampaignLifecycleEngine",
     "evaluate_campaign_state",
     "run_campaign_state_engine",
+    "transition_campaign_state",
+    "evaluate_transition",
+    "run_state_transition",
 ]
 
 def transition_campaign_state(*args, **kwargs):
