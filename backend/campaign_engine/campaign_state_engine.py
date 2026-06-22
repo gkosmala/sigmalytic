@@ -86,17 +86,21 @@ class CampaignTransition:
     """
     Backward-compatible transition object.
 
-    The existing nightly pipeline expects attribute access:
-        transition.new_state
+    Existing nightly pipeline expects:
+        transition.new_state.value
 
-    The new survival-aware engine internally returns dicts, so this class bridges
-    both styles by exposing dict keys as attributes.
+    Therefore previous_state and new_state are stored as CampaignState enum
+    members whenever possible, not plain strings.
     """
 
     def __init__(self, **kwargs):
+        raw_previous = kwargs.get("previous_state", "NO_CAMPAIGN")
+        raw_new = kwargs.get("new_state", kwargs.get("state", "NO_CAMPAIGN"))
+
         self.symbol = kwargs.get("symbol", "")
-        self.previous_state = kwargs.get("previous_state", "NO_CAMPAIGN")
-        self.new_state = kwargs.get("new_state", kwargs.get("state", "NO_CAMPAIGN"))
+        self.previous_state = CampaignStateEngine._normalize_state(raw_previous)
+        self.new_state = CampaignStateEngine._normalize_state(raw_new)
+
         self.transition = kwargs.get("transition", "UNCHANGED")
         self.transition_score = kwargs.get("transition_score", 0.0)
         self.advance_allowed = kwargs.get("advance_allowed", False)
@@ -106,18 +110,17 @@ class CampaignTransition:
         self.as_of = kwargs.get("as_of", datetime.now(timezone.utc).isoformat())
 
         for key, value in kwargs.items():
-            if key == "state" and "new_state" not in kwargs:
-                setattr(self, "new_state", value.value if hasattr(value, "value") else str(value))
-            else:
-                setattr(self, key, value)
-
-        if hasattr(self.new_state, "value"):
-            self.new_state = self.new_state.value
-        if hasattr(self.previous_state, "value"):
-            self.previous_state = self.previous_state.value
+            if key in {"previous_state", "new_state", "state"}:
+                continue
+            setattr(self, key, value)
 
     def to_dict(self) -> Dict[str, Any]:
-        return dict(self.__dict__)
+        data = dict(self.__dict__)
+        if hasattr(self.previous_state, "value"):
+            data["previous_state"] = self.previous_state.value
+        if hasattr(self.new_state, "value"):
+            data["new_state"] = self.new_state.value
+        return data
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
