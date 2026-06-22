@@ -506,3 +506,26 @@ __all__ = [
     "evaluate_campaign_state",
     "run_campaign_state_engine",
 ]
+
+def transition_campaign_state(*args, **kwargs):
+    engine = CampaignStateEngine()
+
+    if args and isinstance(args[0], dict):
+        record = dict(args[0])
+        record.update(kwargs)
+        return engine.evaluate_record(record)
+
+    record = dict(kwargs)
+
+    if args:
+        record["symbol"] = str(args[0])
+
+    return engine.evaluate_record(record)
+
+
+def evaluate_transition(record):
+    return CampaignStateEngine().evaluate_record(record)
+
+
+def run_state_transition(record):
+    return CampaignStateEngine().evaluate_record(record)
