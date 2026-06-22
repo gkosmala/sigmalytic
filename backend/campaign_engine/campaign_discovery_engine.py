@@ -3,11 +3,25 @@ SAVE AS:
 backend/campaign_engine/campaign_discovery_engine.py
 
 Sigmalytic V2
-Campaign Discovery Engine with automatic universe + bar loading.
+Campaign Discovery Engine with direct Alpaca fallback.
 
-Uses existing radar_service infrastructure:
-- load_russell1000()
-- fetch_bars_batch(symbols, timeframe="1Day", limit=252)
+Purpose:
+Discover new campaign records by:
+1. Loading a production universe.
+2. Fetching daily OHLCV bars.
+3. Running Signal Birth.
+4. Running Master Survival Index.
+5. Saving qualifying BIRTH campaigns.
+
+This version does NOT depend on /api/radar routes being wired.
+It attempts:
+1. SIGMALYTIC_DISCOVERY_SYMBOLS env var
+2. backend.radar_service.load_russell1000()
+3. Alpaca active asset universe fallback
+
+For bars it attempts:
+1. backend.radar_service.fetch_bars_batch()
+2. Direct Alpaca market-data bars fallback
 """
 
 from __future__ import annotations
@@ -18,6 +32,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import os
 import pandas as pd
+import requests
 
 
 try:
@@ -84,14 +99,27 @@ class CampaignDiscoveryEngine:
         self.store = store or (CampaignStore() if CampaignStore is not None else None)
         self.data_loader = data_loader
         self.sister_loader = sister_loader
-        self.birth_threshold = float(birth_threshold if birth_threshold is not None else os.getenv("CAMPAIGN_DISCOVERY_BIRTH_THRESHOLD", "55"))
-        self.survival_threshold = float(survival_threshold if survival_threshold is not None else os.getenv("CAMPAIGN_DISCOVERY_SURVIVAL_THRESHOLD", "50"))
-        self.mci_threshold = float(mci_threshold if mci_threshold is not None else os.getenv("CAMPAIGN_DISCOVERY_MCI_THRESHOLD", "25"))
+
+        self.birth_threshold = float(
+            birth_threshold if birth_threshold is not None
+            else os.getenv("CAMPAIGN_DISCOVERY_BIRTH_THRESHOLD", "55")
+        )
+        self.survival_threshold = float(
+            survival_threshold if survival_threshold is not None
+            else os.getenv("CAMPAIGN_DISCOVERY_SURVIVAL_THRESHOLD", "50")
+        )
+        self.mci_threshold = float(
+            mci_threshold if mci_threshold is not None
+            else os.getenv("CAMPAIGN_DISCOVERY_MCI_THRESHOLD", "25")
+        )
+
         self.timeframe = timeframe.upper()
         self.max_symbols = int(max_symbols or os.getenv("CAMPAIGN_DISCOVERY_MAX_SYMBOLS", "1500"))
         self.bar_limit = int(bar_limit or os.getenv("CAMPAIGN_DISCOVERY_BAR_LIMIT", "252"))
+
         self.birth_engine = SignalBirthEngine() if SignalBirthEngine is not None else None
         self.survival_engine = MasterSurvivalIndexEngine() if MasterSurvivalIndexEngine is not None else None
+        self.diagnostics: Dict[str, Any] = {}
 
     @staticmethod
     def _now() -> str:
@@ -105,6 +133,41 @@ class CampaignDiscoveryEngine:
             return round(float(value), 2)
         except Exception:
             return default
+
+    @staticmethod
+    def _headers() -> Dict[str, str]:
+        key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
+        secret = os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
+        if not key or not secret:
+            return {}
+        return {
+            "APCA-API-KEY-ID": key,
+            "APCA-API-SECRET-KEY": secret,
+        }
+
+    @staticmethod
+    def _normalize_symbol(symbol: Any) -> str:
+        return str(symbol or "").upper().strip()
+
+    @staticmethod
+    def _clean_universe(symbols: Iterable[Any], limit: int) -> List[str]:
+        out: List[str] = []
+        seen = set()
+        for raw in symbols or []:
+            sym = CampaignDiscoveryEngine._normalize_symbol(raw)
+            if not sym:
+                continue
+            if "." in sym or "/" in sym or "-" in sym:
+                continue
+            if len(sym) > 6:
+                continue
+            if sym in seen:
+                continue
+            seen.add(sym)
+            out.append(sym)
+            if limit and len(out) >= limit:
+                break
+        return out
 
     @staticmethod
     def _normalize_bar_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -142,40 +205,147 @@ class CampaignDiscoveryEngine:
 
         return None
 
+    def _load_alpaca_assets(self) -> List[str]:
+        headers = self._headers()
+        if not headers:
+            self.diagnostics["alpaca_assets_error"] = "Missing Alpaca credentials."
+            return []
+
+        try:
+            response = requests.get(
+                "https://paper-api.alpaca.markets/v2/assets",
+                headers=headers,
+                params={"status": "active", "asset_class": "us_equity"},
+                timeout=25,
+            )
+            response.raise_for_status()
+            assets = response.json() or []
+            symbols = [
+                row.get("symbol")
+                for row in assets
+                if row.get("tradable") is True
+            ]
+            return self._clean_universe(symbols, self.max_symbols)
+        except Exception as exc:
+            self.diagnostics["alpaca_assets_error"] = str(exc)
+            return []
+
     def load_universe_symbols(self, symbols: Optional[Iterable[str]] = None) -> List[str]:
         if symbols:
-            return [str(s).upper().strip() for s in symbols if str(s).strip()][: self.max_symbols]
+            cleaned = self._clean_universe(symbols, self.max_symbols)
+            self.diagnostics["universe_source"] = "provided_symbols"
+            self.diagnostics["universe_count"] = len(cleaned)
+            return cleaned
 
         env_symbols = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
         if env_symbols:
-            return [s.strip().upper() for s in env_symbols.split(",") if s.strip()][: self.max_symbols]
+            cleaned = self._clean_universe(env_symbols.split(","), self.max_symbols)
+            self.diagnostics["universe_source"] = "SIGMALYTIC_DISCOVERY_SYMBOLS"
+            self.diagnostics["universe_count"] = len(cleaned)
+            return cleaned
 
-        if load_russell1000 is None:
-            return []
+        if load_russell1000 is not None:
+            try:
+                loaded = load_russell1000()
+                cleaned = self._clean_universe(loaded, self.max_symbols)
+                if cleaned:
+                    self.diagnostics["universe_source"] = "radar_service.load_russell1000"
+                    self.diagnostics["universe_count"] = len(cleaned)
+                    return cleaned
+            except Exception as exc:
+                self.diagnostics["radar_universe_error"] = str(exc)
 
-        try:
-            loaded = load_russell1000()
-            return [str(s).upper().strip() for s in loaded if str(s).strip()][: self.max_symbols]
-        except Exception:
-            return []
+        cleaned = self._load_alpaca_assets()
+        self.diagnostics["universe_source"] = "alpaca_assets_fallback"
+        self.diagnostics["universe_count"] = len(cleaned)
+        return cleaned
 
-    def build_records_from_universe(self, symbols: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
-        universe = self.load_universe_symbols(symbols=symbols)
-        if not universe or fetch_bars_batch is None:
-            return []
+    def _fetch_bars_from_radar(self, universe: List[str]) -> Dict[str, Any]:
+        if fetch_bars_batch is None:
+            self.diagnostics["radar_bars_error"] = "fetch_bars_batch unavailable."
+            return {}
 
         try:
             bars_cache = fetch_bars_batch(universe, timeframe="1Day", limit=self.bar_limit)
-        except Exception:
+            if isinstance(bars_cache, dict):
+                self.diagnostics["radar_bars_symbols"] = len(bars_cache)
+                return bars_cache
+            return {}
+        except Exception as exc:
+            self.diagnostics["radar_bars_error"] = str(exc)
+            return {}
+
+    def _fetch_bars_from_alpaca(self, universe: List[str]) -> Dict[str, Any]:
+        headers = self._headers()
+        if not headers:
+            self.diagnostics["alpaca_bars_error"] = "Missing Alpaca credentials."
+            return {}
+
+        base_url = os.getenv("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets")
+        feed = os.getenv("ALPACA_FEED", "iex")
+        batch_size = int(os.getenv("CAMPAIGN_DISCOVERY_BAR_BATCH", "100"))
+
+        results: Dict[str, Any] = {}
+
+        for start in range(0, len(universe), batch_size):
+            batch = universe[start:start + batch_size]
+            try:
+                response = requests.get(
+                    f"{base_url}/v2/stocks/bars",
+                    headers=headers,
+                    params={
+                        "symbols": ",".join(batch),
+                        "timeframe": "1Day",
+                        "limit": self.bar_limit,
+                        "feed": feed,
+                        "adjustment": "raw",
+                    },
+                    timeout=35,
+                )
+                response.raise_for_status()
+                data = response.json() or {}
+                bars = data.get("bars") or {}
+                if isinstance(bars, dict):
+                    for sym, rows in bars.items():
+                        normalized = self._normalize_bars(rows)
+                        if normalized:
+                            results[sym.upper()] = normalized
+            except Exception as exc:
+                self.diagnostics.setdefault("alpaca_bars_errors", []).append(str(exc)[:250])
+
+        self.diagnostics["alpaca_bars_symbols"] = len(results)
+        return results
+
+    def build_records_from_universe(self, symbols: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
+        self.diagnostics = {}
+        universe = self.load_universe_symbols(symbols=symbols)
+        if not universe:
             return []
 
+        bars_cache = self._fetch_bars_from_radar(universe)
+        if not bars_cache:
+            bars_cache = self._fetch_bars_from_alpaca(universe)
+
         records: List[Dict[str, Any]] = []
+
         for symbol in universe:
-            raw = bars_cache.get(symbol) or bars_cache.get(symbol.upper()) if isinstance(bars_cache, dict) else None
+            raw = None
+            if isinstance(bars_cache, dict):
+                raw = bars_cache.get(symbol) or bars_cache.get(symbol.upper())
+
             bars = self._normalize_bars(raw)
             if not bars:
                 continue
-            records.append({"symbol": symbol.upper(), "timeframe": self.timeframe, "bars": bars})
+
+            records.append(
+                {
+                    "symbol": symbol.upper(),
+                    "timeframe": self.timeframe,
+                    "bars": bars,
+                }
+            )
+
+        self.diagnostics["records_built"] = len(records)
         return records
 
     def _bars_from_record(self, record: Dict[str, Any]) -> Optional[pd.DataFrame]:
@@ -300,7 +470,6 @@ class CampaignDiscoveryEngine:
             current_close = None
 
         discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold
-
         reason = (
             f"Discovery {'accepted' if discovered else 'rejected'}; "
             f"birth={birth_score}, mci={mci}, survival={survival_score}; "
@@ -345,6 +514,7 @@ class CampaignDiscoveryEngine:
             "campaigns_discovered": len(discovered),
             "discovered_symbols": [row.get("symbol") for row in discovered],
             "results": results[:100],
+            "diagnostics": self.diagnostics,
             "as_of": self._now(),
         }
 
@@ -355,9 +525,12 @@ class CampaignDiscoveryEngine:
     def run(self, records: Optional[List[Dict[str, Any]]] = None, symbols: Optional[Iterable[str]] = None, timeframe: Optional[str] = None) -> Dict[str, Any]:
         if records:
             return self.run_records(records)
+
         records = self.build_records_from_universe(symbols=symbols)
+
         if records:
             return self.run_records(records)
+
         return {
             "ok": True,
             "engine": "campaign_discovery_engine",
@@ -365,6 +538,7 @@ class CampaignDiscoveryEngine:
             "campaigns_discovered": 0,
             "discovered_symbols": [],
             "results": [],
+            "diagnostics": self.diagnostics,
             "message": "No universe symbols or OHLCV bars available.",
             "as_of": self._now(),
         }
