@@ -32,6 +32,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import os
 import pandas as pd
+import numpy as np
 import requests
 
 
@@ -173,6 +174,40 @@ class CampaignDiscoveryEngine:
             return "https://paper-api.alpaca.markets"
 
         return "https://api.alpaca.markets"
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        """
+        Convert numpy/pandas scalar values into JSON-safe Python values.
+        """
+        if value is None:
+            return None
+
+        if isinstance(value, np.integer):
+            return int(value)
+
+        if isinstance(value, np.floating):
+            return float(value)
+
+        if isinstance(value, np.bool_):
+            return bool(value)
+
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+
+        if isinstance(value, dict):
+            return {
+                str(k): CampaignDiscoveryEngine._json_safe(v)
+                for k, v in value.items()
+            }
+
+        if isinstance(value, (list, tuple, set)):
+            return [
+                CampaignDiscoveryEngine._json_safe(v)
+                for v in value
+            ]
+
+        return value
 
     @staticmethod
     def _normalize_symbol(symbol: Any) -> str:
@@ -511,7 +546,7 @@ class CampaignDiscoveryEngine:
             if self.store is not None and getattr(self.store, "configured", lambda: False)():
                 self.store.save_campaign(payload)
 
-        return CampaignDiscoveryVerdict(
+        verdict = CampaignDiscoveryVerdict(
             symbol=symbol,
             timeframe=timeframe,
             discovered=discovered,
@@ -533,10 +568,12 @@ class CampaignDiscoveryEngine:
             as_of=self._now(),
         ).to_dict()
 
+        return self._json_safe(verdict)
+
     def run_records(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
         results = [self.evaluate_record(record) for record in records]
         discovered = [row for row in results if row.get("discovered")]
-        return {
+        return self._json_safe({
             "ok": True,
             "engine": "campaign_discovery_engine",
             "records_evaluated": len(results),
@@ -545,7 +582,7 @@ class CampaignDiscoveryEngine:
             "results": results[:100],
             "diagnostics": self.diagnostics,
             "as_of": self._now(),
-        }
+        })
 
     def run_symbols(self, symbols: Iterable[str], timeframe: Optional[str] = None) -> Dict[str, Any]:
         records = self.build_records_from_universe(symbols=symbols)
@@ -560,7 +597,7 @@ class CampaignDiscoveryEngine:
         if records:
             return self.run_records(records)
 
-        return {
+        return self._json_safe({
             "ok": True,
             "engine": "campaign_discovery_engine",
             "records_evaluated": 0,
@@ -570,7 +607,7 @@ class CampaignDiscoveryEngine:
             "diagnostics": self.diagnostics,
             "message": "No universe symbols or OHLCV bars available.",
             "as_of": self._now(),
-        }
+        })
 
 
 def run_campaign_discovery(records: Optional[List[Dict[str, Any]]] = None, symbols: Optional[Iterable[str]] = None, timeframe: str = "DAILY") -> Dict[str, Any]:
