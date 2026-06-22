@@ -55,15 +55,17 @@ class WyckoffSignals:
     """
     Backward-compatible signal container.
 
-    Accepts any keyword arguments from legacy pipeline code, including
-    sos_detected, spring_detected, absorption_detected, and any future
-    Wyckoff signal names.
+    The existing nightly pipeline may pass legacy keyword names such as:
+    sos_detected, spring_detected, absorption_detected, etc.
+
+    This class accepts any keyword argument and exposes it as an attribute.
     """
 
     def __init__(self, **kwargs):
         self.sos_detected = kwargs.get("sos_detected", False)
         self.spring_detected = kwargs.get("spring_detected", False)
         self.absorption_detected = kwargs.get("absorption_detected", False)
+
         self.stopping_climax = kwargs.get("stopping_climax", 0.0)
         self.supply_absorption = kwargs.get("supply_absorption", 0.0)
         self.spring = kwargs.get("spring", 0.0)
@@ -80,26 +82,45 @@ class WyckoffSignals:
         return dict(self.__dict__)
 
 
-@dataclass
 class CampaignTransition:
     """
-    Backward-compatible transition container.
+    Backward-compatible transition object.
 
-    Existing pipeline code may expect CampaignTransition to be importable from
-    this module.
+    The existing nightly pipeline expects attribute access:
+        transition.new_state
+
+    The new survival-aware engine internally returns dicts, so this class bridges
+    both styles by exposing dict keys as attributes.
     """
-    symbol: str = ""
-    previous_state: str = "NO_CAMPAIGN"
-    new_state: str = "NO_CAMPAIGN"
-    transition: str = "UNCHANGED"
-    transition_score: float = 0.0
-    advance_allowed: bool = False
-    failure_risk: bool = False
-    explanation: str = ""
-    as_of: str = ""
+
+    def __init__(self, **kwargs):
+        self.symbol = kwargs.get("symbol", "")
+        self.previous_state = kwargs.get("previous_state", "NO_CAMPAIGN")
+        self.new_state = kwargs.get("new_state", kwargs.get("state", "NO_CAMPAIGN"))
+        self.transition = kwargs.get("transition", "UNCHANGED")
+        self.transition_score = kwargs.get("transition_score", 0.0)
+        self.advance_allowed = kwargs.get("advance_allowed", False)
+        self.failure_risk = kwargs.get("failure_risk", False)
+        self.explanation = kwargs.get("explanation", kwargs.get("reason", ""))
+        self.reason = kwargs.get("reason", self.explanation)
+        self.as_of = kwargs.get("as_of", datetime.now(timezone.utc).isoformat())
+
+        for key, value in kwargs.items():
+            if key == "state" and "new_state" not in kwargs:
+                setattr(self, "new_state", value.value if hasattr(value, "value") else str(value))
+            else:
+                setattr(self, key, value)
+
+        if hasattr(self.new_state, "value"):
+            self.new_state = self.new_state.value
+        if hasattr(self.previous_state, "value"):
+            self.previous_state = self.previous_state.value
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return dict(self.__dict__)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class CampaignState(str, Enum):
@@ -520,25 +541,59 @@ __all__ = [
     "run_state_transition",
 ]
 
+def _dict_to_campaign_transition(result: Dict[str, Any]) -> CampaignTransition:
+    """
+    Convert survival-aware dict verdict to legacy CampaignTransition object.
+    """
+    if isinstance(result, CampaignTransition):
+        return result
+
+    return CampaignTransition(
+        symbol=result.get("symbol", ""),
+        previous_state=result.get("previous_state", "NO_CAMPAIGN"),
+        new_state=result.get("new_state", result.get("state", "NO_CAMPAIGN")),
+        transition=result.get("transition", "UNCHANGED"),
+        transition_score=result.get("transition_score", 0.0),
+        advance_allowed=result.get("advance_allowed", False),
+        failure_risk=result.get("failure_risk", False),
+        explanation=result.get("explanation", result.get("reason", "")),
+        reason=result.get("reason", result.get("explanation", "")),
+        as_of=result.get("as_of", datetime.now(timezone.utc).isoformat()),
+        birth_score=result.get("birth_score", 0.0),
+        birth_state=result.get("birth_state", "UNKNOWN"),
+        master_survival_score=result.get("master_survival_score", 0.0),
+        survival_state=result.get("survival_state", "UNKNOWN"),
+        survival_confirmed=result.get("survival_confirmed", False),
+    )
+
 def transition_campaign_state(*args, **kwargs):
+    """
+    Backward-compatible pipeline function.
+
+    IMPORTANT:
+    Existing nightly pipeline expects an object with .new_state.
+    Therefore this function returns CampaignTransition, not a dict.
+    """
     engine = CampaignStateEngine()
 
     if args and isinstance(args[0], dict):
         record = dict(args[0])
         record.update(kwargs)
-        return engine.evaluate_record(record)
+        result = engine.evaluate_record(record)
+        return _dict_to_campaign_transition(result)
 
     record = dict(kwargs)
 
     if args:
         record["symbol"] = str(args[0])
 
-    return engine.evaluate_record(record)
+    result = engine.evaluate_record(record)
+    return _dict_to_campaign_transition(result)
 
 
 def evaluate_transition(record):
-    return CampaignStateEngine().evaluate_record(record)
+    return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
 
 
 def run_state_transition(record):
-    return CampaignStateEngine().evaluate_record(record)
+    return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
