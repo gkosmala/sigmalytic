@@ -1,4 +1,4 @@
-"""
+﻿"""
 SAVE AS:
 backend/campaign_engine/campaign_state_engine.py
 
@@ -612,7 +612,10 @@ class CampaignStateEngine:
         previous_state = self._normalize_state(
             record.get("state")
             or record.get("campaign_state")
+            or record.get("current_state")
+            or record.get("state_enum")
             or record.get("previous_state")
+            or record.get("transition_next_state")
         )
 
         bars = record.get("bars")
