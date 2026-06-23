@@ -213,6 +213,7 @@ class CampaignStateVerdict:
     failure_risk: bool
 
     explanation: str
+    transition_reason: list[str]
     birth_details: Dict[str, Any]
     survival_details: Dict[str, Any]
     as_of: str
@@ -325,6 +326,38 @@ class CampaignStateEngine:
             "survival_confirmed": bool(record.get("survival_confirmed", False)),
         }
 
+    def _calculate_evidence_density_score(self, evidence: Dict[str, Any]) -> float:
+        """
+        Evidence density is explanatory only.
+
+        It does NOT determine lifecycle state.
+        State is determined by Wyckoff / Livermore / Weis evidence.
+        """
+        if not evidence:
+            return 0.0
+
+        flags = []
+
+        for category in ["wyckoff", "livermore", "weis", "context"]:
+            section = evidence.get(category, {}) or {}
+
+            for key, value in section.items():
+                if isinstance(value, bool):
+                    flags.append(value)
+                elif key == "line_of_least_resistance":
+                    flags.append(str(value).upper() == "UPWARD")
+                elif key == "reaction_quality":
+                    flags.append(str(value).upper() in {"NORMAL", "SHALLOW"})
+                elif key == "ease_of_movement":
+                    flags.append(str(value).upper() == "HIGH")
+
+        if not flags:
+            return 0.0
+
+        true_count = sum(1 for flag in flags if flag)
+        return round((true_count / len(flags)) * 100.0, 2)
+
+
     def determine_state(
         self,
         previous_state: CampaignState,
@@ -332,17 +365,26 @@ class CampaignStateEngine:
         survival: Dict[str, Any],
         record: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """
+        Evidence-based Wyckoff / Livermore / Weis campaign lifecycle engine.
+
+        Core rule:
+        - State is determined by observed campaign evidence.
+        - Scores are retained only as diagnostics.
+        - No survival-score percentage controls CONFIRMED, SURVIVING, or EXPANDING.
+        """
+
         record = record or {}
 
         birth_score = self._safe_float(birth.get("birth_score"))
-        birth_state = str(birth.get("birth_state", "UNKNOWN"))
-
         survival_score = self._safe_float(survival.get("master_survival_score"))
-        survival_state = str(survival.get("survival_state", "UNKNOWN"))
 
-        # Do not let stale/missing boolean flags veto valid numeric evidence.
-        birth_eligible = bool(birth.get("birth_eligible", False)) or birth_score >= 55.0
-        survival_confirmed = bool(survival.get("survival_confirmed", False)) or survival_score >= 50.0
+        evidence = record.get("evidence") or {}
+
+        w = evidence.get("wyckoff", {}) or {}
+        l = evidence.get("livermore", {}) or {}
+        weis = evidence.get("weis", {}) or {}
+        ctx = evidence.get("context", {}) or {}
 
         explicit_closed = bool(record.get("closed", False) or record.get("is_closed", False))
         explicit_distribution = bool(
@@ -350,117 +392,219 @@ class CampaignStateEngine:
             or record.get("decay_state") in {"EXIT_CANDIDATE", "WEAKENING"}
         )
 
-        transition_score = round((birth_score * 0.45) + (survival_score * 0.55), 2)
-
-        failure_risk = False
-        advance_allowed = False
+        evidence_density_score = self._calculate_evidence_density_score(evidence)
 
         if explicit_closed:
             return {
                 "state": CampaignState.CLOSED,
-                "transition_score": transition_score,
+                "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": True,
                 "reason": "Explicit closure flag present.",
+                "transition_reason": ["explicit_closed"],
             }
 
         if explicit_distribution:
             return {
                 "state": CampaignState.DISTRIBUTION_RISK,
-                "transition_score": transition_score,
+                "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": True,
-                "reason": "Distribution/decay risk flag present.",
+                "reason": "Distribution or decay risk flag present.",
+                "transition_reason": ["distribution_or_decay_risk"],
             }
 
-        # No birth evidence.
-        if birth_score < 55 and not birth_eligible:
-            if _STATE_RANK.get(previous_state, 0) >= _STATE_RANK[CampaignState.CONFIRMED]:
-                failure_risk = survival_score < 55
-                if failure_risk:
-                    return {
-                        "state": CampaignState.DISTRIBUTION_RISK,
-                        "transition_score": transition_score,
-                        "advance_allowed": False,
-                        "failure_risk": True,
-                        "reason": "Prior campaign lost birth edge and survival weakened.",
-                    }
+        # ------------------------------------------------------------
+        # NO_CAMPAIGN -> BIRTH
+        # Wyckoff / Weis birth logic:
+        # persistent absorption + failing downside result + shortening downside thrust
+        # ------------------------------------------------------------
+        early_accumulation = (
+            bool(w.get("persistent_absorption"))
+            and bool(w.get("failing_downside_result"))
+            and bool(weis.get("shortening_of_downside_thrust"))
+        )
+
+        if previous_state == CampaignState.NO_CAMPAIGN:
+            if early_accumulation:
+                return {
+                    "state": CampaignState.BIRTH,
+                    "transition_score": evidence_density_score,
+                    "advance_allowed": True,
+                    "failure_risk": False,
+                    "reason": (
+                        "Evidence-based BIRTH: persistent absorption, failing downside result, "
+                        "and shortening of downside thrust."
+                    ),
+                    "transition_reason": [
+                        "persistent_absorption",
+                        "failing_downside_result",
+                        "shortening_of_downside_thrust",
+                    ],
+                }
+
+            # Temporary compatibility fallback. This preserves the already-working
+            # discovery flow until the explicit evidence payload is fully wired
+            # into every campaign record. Only BIRTH may use this fallback.
+            if birth_score >= 55:
+                return {
+                    "state": CampaignState.BIRTH,
+                    "transition_score": evidence_density_score,
+                    "advance_allowed": True,
+                    "failure_risk": False,
+                    "reason": (
+                        "Legacy BIRTH fallback: birth score present, but full evidence payload "
+                        "is not yet available."
+                    ),
+                    "transition_reason": ["legacy_birth_score_fallback"],
+                }
 
             return {
-                "state": CampaignState.NO_CAMPAIGN if previous_state == CampaignState.NO_CAMPAIGN else previous_state,
-                "transition_score": transition_score,
+                "state": CampaignState.NO_CAMPAIGN,
+                "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "No current birth evidence.",
+                "reason": "No sufficient campaign birth evidence.",
+                "transition_reason": [],
             }
 
-        # Birth exists but survival not confirmed.
-        if birth_score >= 55 and not survival_confirmed:
-            if survival_score < 50 and previous_state in {
-                CampaignState.CONFIRMED,
-                CampaignState.SURVIVING,
-                CampaignState.EXPANDING,
-                CampaignState.MATURING,
-            }:
+        # ------------------------------------------------------------
+        # BIRTH -> CONFIRMED
+        # Wyckoff / Livermore confirmation logic:
+        # successful test + higher pivot + upward line of least resistance
+        # ------------------------------------------------------------
+        structural_confirmation = (
+            bool(w.get("successful_test"))
+            and bool(l.get("higher_pivot"))
+            and str(l.get("line_of_least_resistance", "")).upper() == "UPWARD"
+        )
+
+        if previous_state == CampaignState.BIRTH:
+            if structural_confirmation:
                 return {
-                    "state": CampaignState.DISTRIBUTION_RISK,
-                    "transition_score": transition_score,
-                    "advance_allowed": False,
-                    "failure_risk": True,
-                    "reason": "Birth evidence exists but survival failed after prior confirmation.",
+                    "state": CampaignState.CONFIRMED,
+                    "transition_score": evidence_density_score,
+                    "advance_allowed": True,
+                    "failure_risk": False,
+                    "reason": (
+                        "Evidence-based CONFIRMED: successful test, higher pivot, "
+                        "and upward line of least resistance."
+                    ),
+                    "transition_reason": [
+                        "successful_test",
+                        "higher_pivot",
+                        "line_of_least_resistance_upward",
+                    ],
                 }
 
             return {
                 "state": CampaignState.BIRTH,
-                "transition_score": transition_score,
-                "advance_allowed": previous_state == CampaignState.NO_CAMPAIGN,
-                "failure_risk": survival_score < 50,
-                "reason": "Birth evidence present; survival not yet confirmed.",
-            }
-
-        # Survival confirmed.
-        if birth_score >= 85 and survival_score >= 80:
-            return {
-                "state": CampaignState.EXPANDING,
-                "transition_score": transition_score,
-                "advance_allowed": True,
+                "transition_score": evidence_density_score,
+                "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Strong birth evidence and strong survival.",
+                "reason": "Holding at BIRTH: structural confirmation evidence not yet present.",
+                "transition_reason": [],
             }
 
-        if birth_score >= 70 and survival_score >= 75:
-            return {
-                "state": CampaignState.SURVIVING,
-                "transition_score": transition_score,
-                "advance_allowed": True,
-                "failure_risk": False,
-                "reason": "Early campaign with strong survival confirmation.",
-            }
+        # ------------------------------------------------------------
+        # CONFIRMED -> SURVIVING
+        # Wyckoff / Weis survival logic:
+        # normal reaction + supply failure + demand dominance + wave continuity
+        # ------------------------------------------------------------
+        structural_survival = (
+            str(ctx.get("reaction_quality", "")).upper() in {"NORMAL", "SHALLOW"}
+            and bool(w.get("supply_failure"))
+            and bool(weis.get("demand_dominance"))
+            and bool(weis.get("wave_continuity"))
+        )
 
-        if birth_score >= 55 and survival_score >= 70:
+        if previous_state == CampaignState.CONFIRMED:
+            if structural_survival:
+                return {
+                    "state": CampaignState.SURVIVING,
+                    "transition_score": evidence_density_score,
+                    "advance_allowed": True,
+                    "failure_risk": False,
+                    "reason": (
+                        "Evidence-based SURVIVING: normal reaction, supply failure, "
+                        "demand dominance, and wave continuity."
+                    ),
+                    "transition_reason": [
+                        "normal_reaction",
+                        "supply_failure",
+                        "demand_dominance",
+                        "wave_continuity",
+                    ],
+                }
+
             return {
                 "state": CampaignState.CONFIRMED,
-                "transition_score": transition_score,
-                "advance_allowed": True,
+                "transition_score": evidence_density_score,
+                "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Birth evidence survived confirmation threshold.",
+                "reason": "Holding at CONFIRMED: survival evidence not yet complete.",
+                "transition_reason": [],
             }
 
-        if survival_score >= 80 and birth_score < 55:
+        # ------------------------------------------------------------
+        # SURVIVING -> EXPANDING
+        # Weis / campaign expansion logic:
+        # ease of movement + follow-through + demand dominance
+        # ------------------------------------------------------------
+        market_expansion = (
+            str(ctx.get("ease_of_movement", "")).upper() == "HIGH"
+            and bool(ctx.get("follow_through"))
+            and bool(weis.get("demand_dominance"))
+        )
+
+        if previous_state == CampaignState.SURVIVING:
+            if market_expansion:
+                return {
+                    "state": CampaignState.EXPANDING,
+                    "transition_score": evidence_density_score,
+                    "advance_allowed": True,
+                    "failure_risk": False,
+                    "reason": (
+                        "Evidence-based EXPANDING: high ease of movement, follow-through, "
+                        "and continuing demand dominance."
+                    ),
+                    "transition_reason": [
+                        "ease_of_movement_high",
+                        "follow_through",
+                        "demand_dominance",
+                    ],
+                }
+
             return {
-                "state": CampaignState.MATURING,
-                "transition_score": transition_score,
-                "advance_allowed": True,
+                "state": CampaignState.SURVIVING,
+                "transition_score": evidence_density_score,
+                "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Strong survival remains but new birth edge has faded.",
+                "reason": "Holding at SURVIVING: expansion evidence not yet complete.",
+                "transition_reason": [],
+            }
+
+        # ------------------------------------------------------------
+        # EXPANDING / MATURING
+        # Hold unless distribution or closure appears.
+        # ------------------------------------------------------------
+        if previous_state in {CampaignState.EXPANDING, CampaignState.MATURING}:
+            return {
+                "state": previous_state,
+                "transition_score": evidence_density_score,
+                "advance_allowed": False,
+                "failure_risk": False,
+                "reason": "Advanced campaign state maintained.",
+                "transition_reason": [],
             }
 
         return {
-            "state": CampaignState.BIRTH,
-            "transition_score": transition_score,
+            "state": previous_state,
+            "transition_score": evidence_density_score,
             "advance_allowed": False,
-            "failure_risk": survival_score < 50,
-            "reason": "Default holding at birth pending cleaner survival confirmation.",
+            "failure_risk": False,
+            "reason": "No evidence-based transition condition met.",
+            "transition_reason": [],
         }
 
     def evaluate_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
@@ -515,11 +659,15 @@ class CampaignStateEngine:
         else:
             transition = "CHANGED"
 
+        transition_reason = decision.get("transition_reason", [])
+
         explanation = (
             f"Campaign state {transition}: {previous_state.value} -> {new_state.value}. "
             f"Birth={birth.get('birth_score')} ({birth.get('birth_state')}), "
             f"Survival={survival.get('master_survival_score')} ({survival.get('survival_state')}). "
-            f"Reason: {decision.get('reason')}"
+            f"EvidenceDensity={decision.get('transition_score')}. "
+            f"Reason: {decision.get('reason')}. "
+            f"TransitionEvidence={transition_reason}"
         )
 
         return CampaignStateVerdict(
@@ -538,6 +686,7 @@ class CampaignStateEngine:
             advance_allowed=bool(decision.get("advance_allowed", False)),
             failure_risk=bool(decision.get("failure_risk", False)),
             explanation=explanation,
+            transition_reason=transition_reason,
             birth_details=birth,
             survival_details=survival,
             as_of=datetime.now(timezone.utc).isoformat(),
@@ -614,6 +763,7 @@ def _dict_to_campaign_transition(result: Dict[str, Any]) -> CampaignTransition:
         reason=result.get("reason", result.get("explanation", "")),
         explanation=result.get("explanation", result.get("reason", "")),
         confidence=result.get("confidence", transition_score),
+        transition_reason=result.get("transition_reason", []),
         as_of=result.get("as_of", datetime.now(timezone.utc).isoformat()),
         birth_score=result.get("birth_score", 0.0),
         birth_state=result.get("birth_state", "UNKNOWN"),

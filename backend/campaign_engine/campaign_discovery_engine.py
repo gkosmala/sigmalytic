@@ -635,7 +635,7 @@ class CampaignDiscoveryEngine:
             "entry_price": current_close,
             "status": "active",
             "layer": "DISCOVERY",
-            "operator_dominance": self._safe_float(birth.get("master_campaign_index")),
+            "operator_dominance": None,
             "obstacle_score": self._safe_float(birth.get("resistance_score")),
             "progress_score": self._safe_float(birth.get("behavioral_resolution_score")),
             "d_score": self._safe_float(survival.get("master_survival_score")),
