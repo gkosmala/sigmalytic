@@ -614,7 +614,6 @@ class CampaignDiscoveryEngine:
             "confirmation_count": int(birth.get("confirmation_count", 0) or 0),
             "agreement_score": self._safe_float(birth.get("agreement_score")),
             "current_price": current_close,
-            "active": True,
             "discovery_source": "campaign_discovery_engine",
             "campaign_created_at": now,
             "last_discovery_run": now,
