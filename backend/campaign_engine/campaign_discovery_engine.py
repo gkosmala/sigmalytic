@@ -27,7 +27,7 @@ For bars it attempts:
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import os
@@ -278,13 +278,17 @@ class CampaignDiscoveryEngine:
 
     @staticmethod
     def _normalize_bar_row(row: Dict[str, Any]) -> Dict[str, Any]:
-        return {
+        normalized = {
             "open": row.get("open", row.get("o")),
             "high": row.get("high", row.get("h")),
             "low": row.get("low", row.get("l")),
             "close": row.get("close", row.get("c")),
             "volume": row.get("volume", row.get("v")),
         }
+        ts = row.get("timestamp") or row.get("time") or row.get("date") or row.get("t")
+        if ts is not None:
+            normalized["timestamp"] = ts
+        return normalized
 
     @classmethod
     def _normalize_bars(cls, raw_bars: Any) -> Optional[List[Dict[str, Any]]]:
@@ -383,45 +387,125 @@ class CampaignDiscoveryEngine:
             return {}
 
     def _fetch_bars_from_alpaca(self, universe: List[str]) -> Dict[str, Any]:
+        """
+        Fetch historical daily bars from Alpaca.
+
+        This uses an explicit start/end window and follows next_page_token.
+        Without this, the API can return only a one-bar snapshot per symbol,
+        which makes Wyckoff/Livermore/Weis report INSUFFICIENT_DATA.
+        """
         headers = self._headers()
         if not headers:
             self.diagnostics["alpaca_bars_error"] = "Missing Alpaca credentials."
             return {}
 
         base_url = os.getenv("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets")
-        feed = os.getenv("ALPACA_FEED", "iex")
+        feed = os.getenv("ALPACA_FEED", "sip")
         batch_size = int(os.getenv("CAMPAIGN_DISCOVERY_BAR_BATCH", "100"))
 
-        results: Dict[str, Any] = {}
+        calendar_days = int(os.getenv(
+            "CAMPAIGN_DISCOVERY_LOOKBACK_CALENDAR_DAYS",
+            str(max(390, self.bar_limit * 3)),
+        ))
 
-        for start in range(0, len(universe), batch_size):
-            batch = universe[start:start + batch_size]
-            try:
-                response = requests.get(
-                    f"{base_url}/v2/stocks/bars",
-                    headers=headers,
-                    params={
-                        "symbols": ",".join(batch),
-                        "timeframe": "1Day",
-                        "limit": self.bar_limit,
-                        "feed": feed,
-                        "adjustment": "raw",
-                    },
-                    timeout=35,
-                )
-                response.raise_for_status()
-                data = response.json() or {}
-                bars = data.get("bars") or {}
-                if isinstance(bars, dict):
-                    for sym, rows in bars.items():
-                        normalized = self._normalize_bars(rows)
-                        if normalized:
-                            results[sym.upper()] = normalized
-            except Exception as exc:
-                self.diagnostics.setdefault("alpaca_bars_errors", []).append(str(exc)[:250])
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=calendar_days)
 
-        self.diagnostics["alpaca_bars_symbols"] = len(results)
-        return results
+        results: Dict[str, List[Dict[str, Any]]] = {}
+
+        self.diagnostics["alpaca_bar_limit_requested"] = int(self.bar_limit)
+        self.diagnostics["alpaca_lookback_calendar_days"] = int(calendar_days)
+        self.diagnostics["alpaca_feed"] = str(feed)
+
+        for start_idx in range(0, len(universe), batch_size):
+            batch = universe[start_idx:start_idx + batch_size]
+            page_token = None
+            page_count = 0
+
+            while True:
+                params = {
+                    "symbols": ",".join(batch),
+                    "timeframe": "1Day",
+                    "limit": self.bar_limit,
+                    "feed": feed,
+                    "adjustment": "raw",
+                    "start": start_dt.isoformat().replace("+00:00", "Z"),
+                    "end": end_dt.isoformat().replace("+00:00", "Z"),
+                }
+                if page_token:
+                    params["page_token"] = page_token
+
+                try:
+                    response = requests.get(
+                        f"{base_url}/v2/stocks/bars",
+                        headers=headers,
+                        params=params,
+                        timeout=45,
+                    )
+                    response.raise_for_status()
+                    data = response.json() or {}
+                    bars = data.get("bars") or {}
+
+                    if isinstance(bars, dict):
+                        for sym, rows in bars.items():
+                            normalized = self._normalize_bars(rows)
+                            if normalized:
+                                key = sym.upper()
+                                results.setdefault(key, [])
+                                results[key].extend(normalized)
+
+                    page_token = data.get("next_page_token")
+                    page_count += 1
+
+                    if not page_token:
+                        break
+
+                    if page_count >= int(os.getenv("CAMPAIGN_DISCOVERY_MAX_BAR_PAGES", "20")):
+                        self.diagnostics.setdefault("alpaca_pagination_warnings", []).append(
+                            f"Stopped pagination after {page_count} pages for batch starting {batch[0]}"
+                        )
+                        break
+
+                except Exception as exc:
+                    self.diagnostics.setdefault("alpaca_bars_errors", []).append(str(exc)[:250])
+                    break
+
+        cleaned: Dict[str, List[Dict[str, Any]]] = {}
+
+        for sym, rows in results.items():
+            if not rows:
+                continue
+
+            dedup: Dict[str, Dict[str, Any]] = {}
+            no_ts_rows: List[Dict[str, Any]] = []
+
+            for row in rows:
+                ts = row.get("timestamp")
+                if ts is not None:
+                    dedup[str(ts)] = row
+                else:
+                    no_ts_rows.append(row)
+
+            final_rows = list(dedup.values()) if dedup else no_ts_rows
+
+            if final_rows and "timestamp" in final_rows[0]:
+                final_rows = sorted(final_rows, key=lambda r: str(r.get("timestamp")))
+
+            final_rows = final_rows[-self.bar_limit:]
+
+            if final_rows:
+                cleaned[sym.upper()] = final_rows
+
+        if cleaned:
+            lengths = [len(v) for v in cleaned.values()]
+            self.diagnostics["alpaca_bars_symbols"] = len(cleaned)
+            self.diagnostics["alpaca_min_bars_per_symbol"] = int(min(lengths))
+            self.diagnostics["alpaca_max_bars_per_symbol"] = int(max(lengths))
+            self.diagnostics["alpaca_avg_bars_per_symbol"] = round(float(sum(lengths) / len(lengths)), 2)
+        else:
+            self.diagnostics["alpaca_bars_symbols"] = 0
+
+        return cleaned
 
     def build_records_from_universe(self, symbols: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
         self.diagnostics = {}
@@ -453,16 +537,37 @@ class CampaignDiscoveryEngine:
             )
 
         self.diagnostics["records_built"] = len(records)
+        if records:
+            lengths = [len(r.get("bars", [])) for r in records]
+            self.diagnostics["record_min_bars"] = int(min(lengths))
+            self.diagnostics["record_max_bars"] = int(max(lengths))
+            self.diagnostics["record_avg_bars"] = round(float(sum(lengths) / len(lengths)), 2)
         return records
 
     def _bars_from_record(self, record: Dict[str, Any]) -> Optional[pd.DataFrame]:
         bars = self._normalize_bars(record.get("bars"))
         if not bars:
             return None
+
         df = pd.DataFrame(bars)
         required = {"open", "high", "low", "close", "volume"}
         if not required.issubset(df.columns):
             return None
+
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+            df = df.sort_values("timestamp", ascending=True).reset_index(drop=True)
+        else:
+            df = df.reset_index(drop=True)
+
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df.dropna(subset=["open", "high", "low", "close", "volume"]).reset_index(drop=True)
+
+        if len(df) == 0:
+            return None
+
         return df
 
     def _sister_bars_from_record(self, record: Dict[str, Any]) -> Optional[pd.DataFrame]:
