@@ -336,11 +336,15 @@ class CampaignStateEngine:
 
         birth_score = self._safe_float(birth.get("birth_score"))
         birth_state = str(birth.get("birth_state", "UNKNOWN"))
-        birth_eligible = bool(birth.get("birth_eligible", False))
 
         survival_score = self._safe_float(survival.get("master_survival_score"))
         survival_state = str(survival.get("survival_state", "UNKNOWN"))
-        survival_confirmed = bool(survival.get("survival_confirmed", False))
+
+        # Do not let stale/missing boolean flags veto valid numeric evidence.
+        # Discovery may store schema-safe numeric evidence without persisting
+        # birth_eligible or survival_confirmed as physical DB columns.
+        birth_eligible = bool(birth.get("birth_eligible", False)) or birth_score >= 55.0
+        survival_confirmed = bool(survival.get("survival_confirmed", False)) or survival_score >= 50.0
 
         explicit_closed = bool(record.get("closed", False) or record.get("is_closed", False))
         explicit_distribution = bool(
