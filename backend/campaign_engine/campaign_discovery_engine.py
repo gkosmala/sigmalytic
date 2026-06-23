@@ -390,9 +390,14 @@ class CampaignDiscoveryEngine:
         """
         Fetch historical daily bars from Alpaca.
 
-        This uses an explicit start/end window and follows next_page_token.
-        Without this, the API can return only a one-bar snapshot per symbol,
-        which makes Wyckoff/Livermore/Weis report INSUFFICIENT_DATA.
+        This fixes the incomplete universe coverage seen when pagination stopped
+        at 20 pages with too small a per-page limit.
+
+        Separate controls:
+            CAMPAIGN_DISCOVERY_BAR_LIMIT = bars kept per symbol, default 252
+            CAMPAIGN_DISCOVERY_ALPACA_PAGE_LIMIT = rows requested per API page, default 10000
+            CAMPAIGN_DISCOVERY_BAR_BATCH = symbols per API batch, default 50
+            CAMPAIGN_DISCOVERY_MAX_BAR_PAGES = safety cap per batch, default 200
         """
         headers = self._headers()
         if not headers:
@@ -401,7 +406,9 @@ class CampaignDiscoveryEngine:
 
         base_url = os.getenv("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets")
         feed = os.getenv("ALPACA_FEED", "sip")
-        batch_size = int(os.getenv("CAMPAIGN_DISCOVERY_BAR_BATCH", "100"))
+        batch_size = int(os.getenv("CAMPAIGN_DISCOVERY_BAR_BATCH", "50"))
+        page_limit = int(os.getenv("CAMPAIGN_DISCOVERY_ALPACA_PAGE_LIMIT", "10000"))
+        max_pages = int(os.getenv("CAMPAIGN_DISCOVERY_MAX_BAR_PAGES", "200"))
 
         calendar_days = int(os.getenv(
             "CAMPAIGN_DISCOVERY_LOOKBACK_CALENDAR_DAYS",
@@ -414,11 +421,18 @@ class CampaignDiscoveryEngine:
         results: Dict[str, List[Dict[str, Any]]] = {}
 
         self.diagnostics["alpaca_bar_limit_requested"] = int(self.bar_limit)
+        self.diagnostics["alpaca_page_limit_requested"] = int(page_limit)
+        self.diagnostics["alpaca_batch_size"] = int(batch_size)
+        self.diagnostics["alpaca_max_pages_per_batch"] = int(max_pages)
         self.diagnostics["alpaca_lookback_calendar_days"] = int(calendar_days)
         self.diagnostics["alpaca_feed"] = str(feed)
 
+        batches_attempted = 0
+        total_pages_loaded = 0
+
         for start_idx in range(0, len(universe), batch_size):
             batch = universe[start_idx:start_idx + batch_size]
+            batches_attempted += 1
             page_token = None
             page_count = 0
 
@@ -426,12 +440,13 @@ class CampaignDiscoveryEngine:
                 params = {
                     "symbols": ",".join(batch),
                     "timeframe": "1Day",
-                    "limit": self.bar_limit,
+                    "limit": page_limit,
                     "feed": feed,
                     "adjustment": "raw",
                     "start": start_dt.isoformat().replace("+00:00", "Z"),
                     "end": end_dt.isoformat().replace("+00:00", "Z"),
                 }
+
                 if page_token:
                     params["page_token"] = page_token
 
@@ -440,7 +455,7 @@ class CampaignDiscoveryEngine:
                         f"{base_url}/v2/stocks/bars",
                         headers=headers,
                         params=params,
-                        timeout=45,
+                        timeout=60,
                     )
                     response.raise_for_status()
                     data = response.json() or {}
@@ -456,18 +471,21 @@ class CampaignDiscoveryEngine:
 
                     page_token = data.get("next_page_token")
                     page_count += 1
+                    total_pages_loaded += 1
 
                     if not page_token:
                         break
 
-                    if page_count >= int(os.getenv("CAMPAIGN_DISCOVERY_MAX_BAR_PAGES", "20")):
+                    if page_count >= max_pages:
                         self.diagnostics.setdefault("alpaca_pagination_warnings", []).append(
                             f"Stopped pagination after {page_count} pages for batch starting {batch[0]}"
                         )
                         break
 
                 except Exception as exc:
-                    self.diagnostics.setdefault("alpaca_bars_errors", []).append(str(exc)[:250])
+                    self.diagnostics.setdefault("alpaca_bars_errors", []).append(
+                        f"batch_start={batch[0]} error={str(exc)[:220]}"
+                    )
                     break
 
         cleaned: Dict[str, List[Dict[str, Any]]] = {}
@@ -496,14 +514,22 @@ class CampaignDiscoveryEngine:
             if final_rows:
                 cleaned[sym.upper()] = final_rows
 
+        self.diagnostics["alpaca_batches_attempted"] = int(batches_attempted)
+        self.diagnostics["alpaca_total_pages_loaded"] = int(total_pages_loaded)
+
         if cleaned:
             lengths = [len(v) for v in cleaned.values()]
             self.diagnostics["alpaca_bars_symbols"] = len(cleaned)
             self.diagnostics["alpaca_min_bars_per_symbol"] = int(min(lengths))
             self.diagnostics["alpaca_max_bars_per_symbol"] = int(max(lengths))
             self.diagnostics["alpaca_avg_bars_per_symbol"] = round(float(sum(lengths) / len(lengths)), 2)
+
+            min_usable = int(os.getenv("CAMPAIGN_DISCOVERY_MIN_USABLE_BARS", "120"))
+            usable = [length for length in lengths if length >= min_usable]
+            self.diagnostics["alpaca_symbols_with_120plus_bars"] = int(len(usable))
         else:
             self.diagnostics["alpaca_bars_symbols"] = 0
+            self.diagnostics["alpaca_symbols_with_120plus_bars"] = 0
 
         return cleaned
 
@@ -603,40 +629,23 @@ class CampaignDiscoveryEngine:
             "display_label": f"{symbol.upper()} {timeframe.upper()} Campaign",
             "birth_date": now[:10],
             "campaign_age_days": 0,
-
             "current_state": "BIRTH",
             "state_enum": "BIRTH",
-
             "current_price": current_close,
             "entry_price": current_close,
-
             "status": "active",
             "layer": "DISCOVERY",
-
-            "operator_dominance": self._safe_float(
-                birth.get("master_campaign_index")
-            ),
-            "obstacle_score": self._safe_float(
-                birth.get("resistance_score")
-            ),
-            "progress_score": self._safe_float(
-                birth.get("behavioral_resolution_score")
-            ),
-            "d_score": self._safe_float(
-                survival.get("master_survival_score")
-            ),
-
-            "historical_confidence": str(
-                birth.get("campaign_quality", "UNKNOWN")
-            ),
-
+            "operator_dominance": self._safe_float(birth.get("master_campaign_index")),
+            "obstacle_score": self._safe_float(birth.get("resistance_score")),
+            "progress_score": self._safe_float(birth.get("behavioral_resolution_score")),
+            "d_score": self._safe_float(survival.get("master_survival_score")),
+            "historical_confidence": str(birth.get("campaign_quality", "UNKNOWN")),
             "close_notes": (
                 f"Discovery created by campaign_discovery_engine; "
                 f"birth={self._safe_float(birth.get('birth_score'))}, "
                 f"mci={self._safe_float(birth.get('master_campaign_index'))}, "
                 f"survival={self._safe_float(survival.get('master_survival_score'))}"
             ),
-
             "created_at": now,
             "updated_at": now,
             "state_changed_at": now,
