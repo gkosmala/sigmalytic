@@ -31,24 +31,68 @@ def _load_class(module_path, class_names):
 
 
 def _parse_discovery_symbols():
-    """
-    Optional discovery seed list.
-
-    Set in Render if desired:
-        SIGMALYTIC_DISCOVERY_SYMBOLS=NVDA,META,SMCI,PLTR,MSTR
-
-    Note:
-    CampaignDiscoveryEngine still requires OHLCV bars or a data loader.
-    This hook exists so nightly has a discovery stage without breaking the
-    existing transition pipeline.
-    """
     raw = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
-    symbols = [
+    return [
         item.strip().upper()
         for item in raw.split(",")
         if item.strip()
     ]
-    return symbols
+
+
+def _safe_float(value, default=0.0):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _hydrate_campaign_evidence(campaign):
+    """
+    Bridge database schema fields back into the evidence names expected by
+    transition_campaign_state().
+    """
+    hydrated = dict(campaign)
+
+    operator_dominance = _safe_float(hydrated.get("operator_dominance"), 0.0)
+    d_score = _safe_float(hydrated.get("d_score"), 0.0)
+    obstacle_score = _safe_float(hydrated.get("obstacle_score"), 0.0)
+    progress_score = _safe_float(hydrated.get("progress_score"), 0.0)
+
+    hydrated["master_campaign_index"] = _safe_float(
+        hydrated.get("master_campaign_index"),
+        operator_dominance,
+    )
+    hydrated["master_survival_score"] = _safe_float(
+        hydrated.get("master_survival_score"),
+        d_score,
+    )
+    hydrated["survival_score"] = _safe_float(
+        hydrated.get("survival_score"),
+        d_score,
+    )
+    hydrated["birth_score"] = _safe_float(
+        hydrated.get("birth_score"),
+        max(operator_dominance, obstacle_score, progress_score),
+    )
+    hydrated["resistance_score"] = _safe_float(
+        hydrated.get("resistance_score"),
+        obstacle_score,
+    )
+    hydrated["behavioral_resolution_score"] = _safe_float(
+        hydrated.get("behavioral_resolution_score"),
+        progress_score,
+    )
+
+    hydrated["birth_state"] = hydrated.get("birth_state") or (
+        "DISCOVERED" if hydrated["birth_score"] > 0 else "UNKNOWN"
+    )
+    hydrated["survival_state"] = hydrated.get("survival_state") or (
+        "DISCOVERED" if hydrated["master_survival_score"] > 0 else "UNKNOWN"
+    )
+
+    return hydrated
 
 
 def _build_signals_from_campaign(campaign):
@@ -75,6 +119,19 @@ def _safe_update_payload(original_campaign, transition):
     payload.pop("transition_reason", None)
     payload.pop("transition_confidence", None)
 
+    # Hydrated-only fields are not real columns in campaigns table.
+    for key in [
+        "birth_score",
+        "birth_state",
+        "master_campaign_index",
+        "master_survival_score",
+        "survival_score",
+        "survival_state",
+        "resistance_score",
+        "behavioral_resolution_score",
+    ]:
+        payload.pop(key, None)
+
     payload["current_state"] = transition.new_state.value
 
     if "state_enum" in payload:
@@ -94,13 +151,6 @@ class NightlyCampaignPipeline:
         self.store = campaign_store
 
     def _run_discovery_stage(self):
-        """
-        Run discovery before lifecycle transitions.
-
-        This is deliberately non-fatal:
-        discovery problems should not prevent the transition pipeline from
-        processing existing campaigns.
-        """
         if CampaignDiscoveryEngine is None:
             return {
                 "ok": False,
@@ -110,10 +160,7 @@ class NightlyCampaignPipeline:
             }
 
         try:
-            discovery = CampaignDiscoveryEngine(
-                store=self.store,
-            )
-
+            discovery = CampaignDiscoveryEngine(store=self.store)
             symbols = _parse_discovery_symbols()
 
             if symbols:
@@ -136,12 +183,13 @@ class NightlyCampaignPipeline:
         results = []
 
         for campaign in campaigns:
-            signals = _build_signals_from_campaign(campaign)
+            hydrated_campaign = _hydrate_campaign_evidence(campaign)
+            signals = _build_signals_from_campaign(hydrated_campaign)
 
             transition = transition_campaign_state(
-                campaign=campaign,
+                campaign=hydrated_campaign,
                 signals=signals,
-                current_price=campaign.get("current_price"),
+                current_price=hydrated_campaign.get("current_price"),
             )
 
             payload = _safe_update_payload(
@@ -160,6 +208,9 @@ class NightlyCampaignPipeline:
                     "changed": transition.changed,
                     "reason": transition.reason,
                     "confidence": transition.confidence,
+                    "birth_score": hydrated_campaign.get("birth_score"),
+                    "mci": hydrated_campaign.get("master_campaign_index"),
+                    "survival": hydrated_campaign.get("master_survival_score"),
                 }
             )
 
