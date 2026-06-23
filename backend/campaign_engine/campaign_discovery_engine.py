@@ -596,28 +596,50 @@ class CampaignDiscoveryEngine:
 
     def _build_campaign_payload(self, symbol: str, timeframe: str, birth: Dict[str, Any], survival: Dict[str, Any], current_close: Optional[float]) -> Dict[str, Any]:
         now = self._now()
+
         return {
             "symbol": symbol.upper(),
             "timeframe": timeframe.upper(),
+            "display_label": f"{symbol.upper()} {timeframe.upper()} Campaign",
+            "birth_date": now[:10],
+            "campaign_age_days": 0,
+
             "current_state": "BIRTH",
             "state_enum": "BIRTH",
-            "birth_score": self._safe_float(birth.get("birth_score")),
-            "birth_state": str(birth.get("birth_state", "UNKNOWN")),
-            "birth_eligible": bool(birth.get("birth_eligible", False)),
-            "master_campaign_index": self._safe_float(birth.get("master_campaign_index")),
-            "master_verdict": str(birth.get("master_verdict", "UNKNOWN")),
-            "campaign_quality": str(birth.get("campaign_quality", "UNKNOWN")),
-            "master_survival_score": self._safe_float(survival.get("master_survival_score")),
-            "survival_state": str(survival.get("survival_state", "UNKNOWN")),
-            "survival_grade": str(survival.get("survival_grade", "F")),
-            "survival_confirmed": bool(survival.get("survival_confirmed", False)),
-            "confirmation_count": int(birth.get("confirmation_count", 0) or 0),
-            "agreement_score": self._safe_float(birth.get("agreement_score")),
+
             "current_price": current_close,
-            "discovery_source": "campaign_discovery_engine",
-            "campaign_created_at": now,
-            "last_discovery_run": now,
-            "last_pipeline_run": now,
+            "entry_price": current_close,
+
+            "status": "active",
+            "layer": "DISCOVERY",
+
+            "operator_dominance": self._safe_float(
+                birth.get("master_campaign_index")
+            ),
+            "obstacle_score": self._safe_float(
+                birth.get("resistance_score")
+            ),
+            "progress_score": self._safe_float(
+                birth.get("behavioral_resolution_score")
+            ),
+            "d_score": self._safe_float(
+                survival.get("master_survival_score")
+            ),
+
+            "historical_confidence": str(
+                birth.get("campaign_quality", "UNKNOWN")
+            ),
+
+            "close_notes": (
+                f"Discovery created by campaign_discovery_engine; "
+                f"birth={self._safe_float(birth.get('birth_score'))}, "
+                f"mci={self._safe_float(birth.get('master_campaign_index'))}, "
+                f"survival={self._safe_float(survival.get('master_survival_score'))}"
+            ),
+
+            "created_at": now,
+            "updated_at": now,
+            "state_changed_at": now,
         }
 
     def _empty_verdict(self, symbol: str, timeframe: str, reason: str, state: str = "NO_BARS") -> Dict[str, Any]:
