@@ -646,36 +646,195 @@ class CampaignStateEngine:
         # Weis / campaign expansion logic:
         # ease of movement + follow-through + demand dominance
         # ------------------------------------------------------------
-        market_expansion = (
-            str(ctx.get("ease_of_movement", "")).upper() == "HIGH"
-            and bool(ctx.get("follow_through"))
-            and bool(weis.get("demand_dominance"))
+        raw = evidence.get("raw_metrics", {}) or {}
+
+        ease_high = str(ctx.get("ease_of_movement", "")).upper() == "HIGH"
+        follow_through = bool(ctx.get("follow_through"))
+
+        range_position_40 = self._safe_float(raw.get("range_position_40"))
+        last5_return = self._safe_float(raw.get("last5_return"))
+        up_progress_20 = self._safe_float(raw.get("up_progress_20"))
+        down_progress_20 = self._safe_float(raw.get("down_progress_20"))
+        latest_close_location = self._safe_float(raw.get("latest_close_location"))
+        latest_effort_ratio = self._safe_float(raw.get("latest_effort_ratio"))
+        latest_spread_ratio = self._safe_float(raw.get("latest_spread_ratio"))
+
+        range_position_escaping = range_position_40 >= 0.80
+        positive_recent_up_progress = bool(last5_return > 0 or up_progress_20 > 0)
+        close_near_high = latest_close_location >= 0.65
+        upwave_result_improving = up_progress_20 > max(down_progress_20, 0.0)
+        effort_producing_upside_result = bool(
+            latest_effort_ratio >= 1.0
+            and latest_spread_ratio >= 1.0
+            and close_near_high
+        )
+
+        wyckoff_expansion_flags = {
+            "successful_test": bool(w.get("successful_test")),
+            "persistent_absorption": bool(w.get("persistent_absorption")),
+            "failing_downside_result": bool(w.get("failing_downside_result")),
+            "range_position_escaping": range_position_escaping,
+            "follow_through_after_test": bool(w.get("successful_test")) and follow_through,
+        }
+
+        wyckoff_valid = bool(
+            (range_position_escaping and follow_through)
+            or (
+                bool(w.get("persistent_absorption"))
+                and bool(w.get("failing_downside_result"))
+                and close_near_high
+            )
+            or (
+                bool(w.get("successful_test"))
+                and follow_through
+                and ease_high
+            )
+        )
+
+        livermore_expansion_flags = {
+            "line_of_least_resistance_upward": line_upward,
+            "higher_pivot": higher_pivot,
+            "range_position_escaping": range_position_escaping,
+            "positive_recent_up_progress": positive_recent_up_progress,
+        }
+
+        livermore_valid = bool(
+            line_upward
+            and (
+                higher_pivot
+                or range_position_escaping
+                or positive_recent_up_progress
+            )
+        )
+
+        weis_expansion_flags = {
+            "demand_dominance": bool(weis.get("demand_dominance")),
+            "wave_continuity": bool(weis.get("wave_continuity")),
+            "shortening_of_downside_thrust": bool(weis.get("shortening_of_downside_thrust")),
+            "upwave_result_improving": upwave_result_improving,
+            "effort_producing_upside_result": effort_producing_upside_result,
+        }
+
+        weis_valid = bool(
+            bool(weis.get("demand_dominance"))
+            and (
+                bool(weis.get("wave_continuity"))
+                or bool(weis.get("shortening_of_downside_thrust"))
+                or upwave_result_improving
+                or effort_producing_upside_result
+            )
+        )
+
+        context_expansion_flags = {
+            "ease_of_movement_high": ease_high,
+            "follow_through": follow_through,
+            "range_position_escaping": range_position_escaping,
+            "positive_recent_up_progress": positive_recent_up_progress,
+            "close_near_high": close_near_high,
+        }
+
+        context_valid = bool(
+            ease_high
+            and follow_through
+            and (
+                range_position_escaping
+                or positive_recent_up_progress
+                or close_near_high
+            )
+        )
+
+        market_expansion = bool(
+            wyckoff_valid
+            and livermore_valid
+            and weis_valid
+            and context_valid
         )
 
         if previous_state == CampaignState.SURVIVING:
             if market_expansion:
+                transition_reasons = []
+
+                transition_reasons.extend(
+                    f"wyckoff_{key}"
+                    for key, value in wyckoff_expansion_flags.items()
+                    if value
+                )
+
+                transition_reasons.extend(
+                    f"livermore_{key}"
+                    for key, value in livermore_expansion_flags.items()
+                    if value
+                )
+
+                transition_reasons.extend(
+                    f"weis_{key}"
+                    for key, value in weis_expansion_flags.items()
+                    if value
+                )
+
+                transition_reasons.extend(
+                    f"context_{key}"
+                    for key, value in context_expansion_flags.items()
+                    if value
+                )
+
                 return {
                     "state": CampaignState.EXPANDING,
                     "transition_score": evidence_density_score,
                     "advance_allowed": True,
                     "failure_risk": False,
                     "reason": (
-                        "Evidence-based EXPANDING: high ease of movement, follow-through, "
-                        "and continuing demand dominance."
+                        "Evidence-based EXPANDING: Wyckoff markup behavior, "
+                        "Livermore upward path, Weis demand-wave expansion, "
+                        "and context tape confirmation are all present."
                     ),
-                    "transition_reason": [
-                        "ease_of_movement_high",
-                        "follow_through",
-                        "demand_dominance",
-                    ],
+                    "transition_reason": transition_reasons,
                 }
+
+            missing = []
+
+            if not wyckoff_valid:
+                missing.append("Missing Wyckoff SOS / markup behavior")
+
+            if not livermore_valid:
+                missing.append("Missing Livermore upward continuation / intact path")
+
+            if not weis_valid:
+                missing.append("Missing Weis demand-wave expansion")
+
+            if not context_valid:
+                context_issues = []
+
+                if not ease_high:
+                    context_issues.append("ease_of_movement_high")
+
+                if not follow_through:
+                    context_issues.append("follow_through")
+
+                if not (range_position_escaping or positive_recent_up_progress or close_near_high):
+                    context_issues.append("range_escape_or_recent_up_progress")
+
+                missing.append(
+                    "Missing Context tape confirmation"
+                    + (f" ({', '.join(context_issues)})" if context_issues else "")
+                )
+
+            present = {
+                "wyckoff": [key for key, value in wyckoff_expansion_flags.items() if value],
+                "livermore": [key for key, value in livermore_expansion_flags.items() if value],
+                "weis": [key for key, value in weis_expansion_flags.items() if value],
+                "context": [key for key, value in context_expansion_flags.items() if value],
+            }
 
             return {
                 "state": CampaignState.SURVIVING,
                 "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Holding at SURVIVING: expansion evidence not yet complete.",
+                "reason": (
+                    "Holding at SURVIVING: expansion evidence cluster not yet complete. "
+                    f"Missing={missing}. PresentClusters={present}"
+                ),
                 "transition_reason": [],
             }
 
@@ -936,5 +1095,6 @@ def evaluate_transition(record):
 
 def run_state_transition(record):
     return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
+
 
 
