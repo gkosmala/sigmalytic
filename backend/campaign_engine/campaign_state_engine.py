@@ -341,8 +341,6 @@ class CampaignStateEngine:
         survival_state = str(survival.get("survival_state", "UNKNOWN"))
 
         # Do not let stale/missing boolean flags veto valid numeric evidence.
-        # Discovery may store schema-safe numeric evidence without persisting
-        # birth_eligible or survival_confirmed as physical DB columns.
         birth_eligible = bool(birth.get("birth_eligible", False)) or birth_score >= 55.0
         survival_confirmed = bool(survival.get("survival_confirmed", False)) or survival_score >= 50.0
 
@@ -629,18 +627,49 @@ def transition_campaign_state(*args, **kwargs):
     """
     Backward-compatible pipeline function.
 
-    Existing nightly pipeline expects:
-        transition.old_state.value
-        transition.new_state.value
-        transition.changed
-        transition.reason
-        transition.confidence
+    Supports both calling styles:
+
+        transition_campaign_state(record_dict)
+
+    and the nightly pipeline style:
+
+        transition_campaign_state(
+            campaign=campaign_dict,
+            signals=signals,
+            current_price=...
+        )
+
+    The prior version treated kwargs itself as the record, which meant the
+    state engine received {"campaign": {...}} instead of the actual campaign
+    fields. That caused birth_score/survival_score to read as 0.
     """
     engine = CampaignStateEngine()
 
     if args and isinstance(args[0], dict):
         record = dict(args[0])
-        record.update(kwargs)
+        extra = dict(kwargs)
+
+        # If a nested campaign was also supplied, merge it first.
+        nested_campaign = extra.pop("campaign", None)
+        if isinstance(nested_campaign, dict):
+            merged = dict(nested_campaign)
+            merged.update(record)
+            record = merged
+
+        record.update(extra)
+        result = engine.evaluate_record(record)
+        return _dict_to_campaign_transition(result)
+
+    if isinstance(kwargs.get("campaign"), dict):
+        record = dict(kwargs.get("campaign") or {})
+
+        # Preserve useful non-campaign kwargs without nesting the whole object.
+        if "current_price" in kwargs and kwargs.get("current_price") is not None:
+            record["current_price"] = kwargs.get("current_price")
+
+        if "signals" in kwargs:
+            record["signals"] = kwargs.get("signals")
+
         result = engine.evaluate_record(record)
         return _dict_to_campaign_transition(result)
 
