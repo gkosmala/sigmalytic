@@ -673,7 +673,10 @@ class CampaignStateEngine:
         previous_state = self._normalize_state(
             record.get("state")
             or record.get("campaign_state")
+            or record.get("current_state")
+            or record.get("state_enum")
             or record.get("previous_state")
+            or record.get("transition_next_state")
         )
 
         bars = record.get("bars")
@@ -899,3 +902,4 @@ def evaluate_transition(record):
 
 def run_state_transition(record):
     return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
+
