@@ -1,4 +1,4 @@
-"""
+﻿"""
 SAVE AS:
 backend/campaign_engine/campaign_discovery_engine.py
 
@@ -46,6 +46,10 @@ try:
 except Exception:
     MasterSurvivalIndexEngine = None
 
+try:
+    from backend.campaign_engine.campaign_evidence_builder import CampaignEvidenceBuilder
+except Exception:
+    CampaignEvidenceBuilder = None
 try:
     from backend.campaign_engine.campaign_store import CampaignStore
 except Exception:
@@ -136,6 +140,36 @@ class CampaignDiscoveryEngine:
             return default
 
     @staticmethod
+    def _evidence_density_score(evidence: Optional[Dict[str, Any]]) -> float:
+        """
+        Evidence density is explanatory only.
+        It does not determine lifecycle state.
+        """
+        if not isinstance(evidence, dict) or not evidence:
+            return 0.0
+
+        flags = []
+
+        for category in ["wyckoff", "livermore", "weis", "context"]:
+            section = evidence.get(category, {}) or {}
+
+            for key, value in section.items():
+                if isinstance(value, bool):
+                    flags.append(value)
+                elif key == "line_of_least_resistance":
+                    flags.append(str(value).upper() == "UPWARD")
+                elif key == "reaction_quality":
+                    flags.append(str(value).upper() in {"NORMAL", "SHALLOW"})
+                elif key == "ease_of_movement":
+                    flags.append(str(value).upper() == "HIGH")
+
+        if not flags:
+            return 0.0
+
+        true_count = sum(1 for flag in flags if flag)
+        return round((true_count / len(flags)) * 100.0, 2)
+
+    @staticmethod
     def _headers() -> Dict[str, str]:
         key = (
             os.getenv("ALPACA_API_KEY")
@@ -204,7 +238,7 @@ class CampaignDiscoveryEngine:
 
         if df is None or df.empty:
             snapshot = {"symbol": symbol, "error": "Dataframe is None or empty", "row_count": 0}
-            print(f"📢 [DEBUG SNAPSHOT] {symbol} | EMPTY DATAFRAME")
+            print(f"ðŸ“¢ [DEBUG SNAPSHOT] {symbol} | EMPTY DATAFRAME")
             return snapshot
 
         col_map = {str(c).lower(): c for c in df.columns}
@@ -243,7 +277,7 @@ class CampaignDiscoveryEngine:
         }
 
         print(
-            f"📢 [DEBUG SNAPSHOT] {symbol} | "
+            f"ðŸ“¢ [DEBUG SNAPSHOT] {symbol} | "
             f"Rows={snapshot['row_count']} | "
             f"Order={snapshot['first_index']} -> {snapshot['last_index']} | "
             f"Close={snapshot['first_close']} -> {snapshot['last_close']} | "
@@ -620,7 +654,15 @@ class CampaignDiscoveryEngine:
             return None
         return self.sister_loader(symbol, timeframe)
 
-    def _build_campaign_payload(self, symbol: str, timeframe: str, birth: Dict[str, Any], survival: Dict[str, Any], current_close: Optional[float]) -> Dict[str, Any]:
+    def _build_campaign_payload(
+        self,
+        symbol: str,
+        timeframe: str,
+        birth: Dict[str, Any],
+        survival: Dict[str, Any],
+        current_close: Optional[float],
+        evidence: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         now = self._now()
 
         return {
@@ -640,6 +682,9 @@ class CampaignDiscoveryEngine:
             "progress_score": self._safe_float(birth.get("behavioral_resolution_score")),
             "d_score": self._safe_float(survival.get("master_survival_score")),
             "historical_confidence": str(birth.get("campaign_quality", "UNKNOWN")),
+            "evidence": self._json_safe(evidence or {}),
+            "evidence_density": self._safe_float(self._evidence_density_score(evidence or {})),
+            "evidence_updated_at": now,
             "close_notes": (
                 f"Discovery created by campaign_discovery_engine; "
                 f"birth={self._safe_float(birth.get('birth_score'))}, "
@@ -710,6 +755,29 @@ class CampaignDiscoveryEngine:
         mci = self._safe_float(birth.get("master_campaign_index"))
         survival_score = self._safe_float(survival.get("master_survival_score"))
 
+        if CampaignEvidenceBuilder is not None:
+            try:
+                evidence = CampaignEvidenceBuilder.build_from_bars(
+                    df,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+            except Exception as exc:
+                evidence = {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "wyckoff": {},
+                    "livermore": {},
+                    "weis": {},
+                    "context": {},
+                    "raw_metrics": {
+                        "error": str(exc),
+                        "source": "campaign_discovery_engine",
+                    },
+                }
+        else:
+            evidence = {}
+
         try:
             current_close = round(float(df["close"].iloc[-1]), 4)
         except Exception:
@@ -724,7 +792,14 @@ class CampaignDiscoveryEngine:
 
         payload: Dict[str, Any] = {}
         if discovered:
-            payload = self._build_campaign_payload(symbol, timeframe, birth, survival, current_close)
+            payload = self._build_campaign_payload(
+                symbol,
+                timeframe,
+                birth,
+                survival,
+                current_close,
+                evidence=evidence,
+            )
             if self.store is not None and getattr(self.store, "configured", lambda: False)():
                 self.store.save_campaign(payload)
 
@@ -749,6 +824,9 @@ class CampaignDiscoveryEngine:
             survival_details=survival,
             as_of=self._now(),
         ).to_dict()
+
+        verdict["evidence"] = self._json_safe(evidence or {})
+        verdict["evidence_density"] = self._safe_float(self._evidence_density_score(evidence or {}))
 
         if debug_snapshot:
             verdict["debug_snapshot"] = debug_snapshot
@@ -808,3 +886,4 @@ __all__ = [
     "CampaignDiscoveryRunner",
     "run_campaign_discovery",
 ]
+
