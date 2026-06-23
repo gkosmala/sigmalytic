@@ -473,70 +473,36 @@ class CampaignStateEngine:
         # Wyckoff / Livermore confirmation logic:
         # successful test + higher pivot + upward line of least resistance
         # ------------------------------------------------------------
-        line_upward = str(l.get("line_of_least_resistance", "")).upper() == "UPWARD"
-        higher_pivot = bool(l.get("higher_pivot"))
-
-        confirmation_flags = {
-            "successful_test": bool(w.get("successful_test")),
-            "supply_failure": bool(w.get("supply_failure")),
-            "persistent_absorption": bool(w.get("persistent_absorption")),
-            "demand_dominance": bool(weis.get("demand_dominance")),
-            "wave_continuity": bool(weis.get("wave_continuity")),
-            "shortening_of_downside_thrust": bool(weis.get("shortening_of_downside_thrust")),
-        }
-
-        confirmation_count = sum(1 for value in confirmation_flags.values() if value)
-
         structural_confirmation = (
-            higher_pivot
-            and line_upward
-            and confirmation_count >= 2
+            bool(w.get("successful_test"))
+            and bool(l.get("higher_pivot"))
+            and str(l.get("line_of_least_resistance", "")).upper() == "UPWARD"
         )
 
         if previous_state == CampaignState.BIRTH:
             if structural_confirmation:
-                transition_reasons = [
-                    "higher_pivot",
-                    "line_of_least_resistance_upward",
-                ]
-
-                transition_reasons.extend(
-                    key for key, value in confirmation_flags.items() if value
-                )
-
                 return {
                     "state": CampaignState.CONFIRMED,
                     "transition_score": evidence_density_score,
                     "advance_allowed": True,
                     "failure_risk": False,
                     "reason": (
-                        "Evidence-based CONFIRMED: Livermore structure is upward "
-                        "and at least two Wyckoff/Weis confirmation flags are present."
+                        "Evidence-based CONFIRMED: successful test, higher pivot, "
+                        "and upward line of least resistance."
                     ),
-                    "transition_reason": transition_reasons,
+                    "transition_reason": [
+                        "successful_test",
+                        "higher_pivot",
+                        "line_of_least_resistance_upward",
+                    ],
                 }
-
-            missing = []
-
-            if not higher_pivot:
-                missing.append("higher_pivot")
-
-            if not line_upward:
-                missing.append("line_of_least_resistance_upward")
-
-            if confirmation_count < 2:
-                missing.append("at_least_two_wyckoff_weis_confirmation_flags")
 
             return {
                 "state": CampaignState.BIRTH,
                 "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": False,
-                "reason": (
-                    "Holding at BIRTH: structural confirmation cluster incomplete. "
-                    f"Missing={missing}. PresentFlags="
-                    f"{[key for key, value in confirmation_flags.items() if value]}"
-                ),
+                "reason": "Holding at BIRTH: structural confirmation evidence not yet present.",
                 "transition_reason": [],
             }
 
@@ -545,38 +511,99 @@ class CampaignStateEngine:
         # Wyckoff / Weis survival logic:
         # normal reaction + supply failure + demand dominance + wave continuity
         # ------------------------------------------------------------
-        structural_survival = (
-            str(ctx.get("reaction_quality", "")).upper() in {"NORMAL", "SHALLOW"}
-            and bool(w.get("supply_failure"))
-            and bool(weis.get("demand_dominance"))
-            and bool(weis.get("wave_continuity"))
+        reaction_quality = str(ctx.get("reaction_quality", "")).upper()
+        constructive_reaction = reaction_quality in {"NORMAL", "SHALLOW"}
+
+        livermore_structure_intact = bool(higher_pivot or line_upward)
+
+        downside_failure_continues = bool(
+            w.get("failing_downside_result")
+            or weis.get("shortening_of_downside_thrust")
+            or constructive_reaction
+        )
+
+        campaign_support_present = bool(
+            w.get("persistent_absorption")
+            or weis.get("demand_dominance")
+            or weis.get("wave_continuity")
+        )
+
+        weis_continuity_present = bool(
+            weis.get("wave_continuity")
+            or weis.get("shortening_of_downside_thrust")
+        )
+
+        supply_failure_supporting = bool(w.get("supply_failure"))
+
+        survival_flags = {
+            "constructive_reaction": constructive_reaction,
+            "persistent_absorption": bool(w.get("persistent_absorption")),
+            "failing_downside_result": bool(w.get("failing_downside_result")),
+            "demand_dominance": bool(weis.get("demand_dominance")),
+            "wave_continuity": bool(weis.get("wave_continuity")),
+            "shortening_of_downside_thrust": bool(weis.get("shortening_of_downside_thrust")),
+            "supply_failure_supporting_wyckoff": supply_failure_supporting,
+        }
+
+        structural_survival = bool(
+            livermore_structure_intact
+            and downside_failure_continues
+            and campaign_support_present
+            and weis_continuity_present
         )
 
         if previous_state == CampaignState.CONFIRMED:
             if structural_survival:
+                transition_reasons = []
+
+                if higher_pivot:
+                    transition_reasons.append("higher_pivot")
+
+                if line_upward:
+                    transition_reasons.append("line_of_least_resistance_upward")
+
+                transition_reasons.extend(
+                    key for key, value in survival_flags.items() if value
+                )
+
                 return {
                     "state": CampaignState.SURVIVING,
                     "transition_score": evidence_density_score,
                     "advance_allowed": True,
                     "failure_risk": False,
                     "reason": (
-                        "Evidence-based SURVIVING: normal reaction, supply failure, "
-                        "demand dominance, and wave continuity."
+                        "Evidence-based SURVIVING: Livermore structure remains intact, "
+                        "downside failure continues, absorption/demand remains present, "
+                        "and Weis continuity or shortening of downside thrust confirms survival. "
+                        "Wyckoff supply failure is treated as supporting evidence, not a mandatory gate."
                     ),
-                    "transition_reason": [
-                        "normal_reaction",
-                        "supply_failure",
-                        "demand_dominance",
-                        "wave_continuity",
-                    ],
+                    "transition_reason": transition_reasons,
                 }
+
+            missing = []
+
+            if not livermore_structure_intact:
+                missing.append("livermore_structure_intact")
+
+            if not downside_failure_continues:
+                missing.append("downside_failure_continues")
+
+            if not campaign_support_present:
+                missing.append("persistent_absorption_or_demand_support")
+
+            if not weis_continuity_present:
+                missing.append("weis_wave_continuity_or_shortening_of_downside_thrust")
 
             return {
                 "state": CampaignState.CONFIRMED,
                 "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Holding at CONFIRMED: survival evidence not yet complete.",
+                "reason": (
+                    "Holding at CONFIRMED: survival evidence sequence incomplete. "
+                    f"Missing={missing}. PresentFlags="
+                    f"{[key for key, value in survival_flags.items() if value]}"
+                ),
                 "transition_reason": [],
             }
 
@@ -646,10 +673,7 @@ class CampaignStateEngine:
         previous_state = self._normalize_state(
             record.get("state")
             or record.get("campaign_state")
-            or record.get("current_state")
-            or record.get("state_enum")
             or record.get("previous_state")
-            or record.get("transition_next_state")
         )
 
         bars = record.get("bars")
@@ -875,4 +899,3 @@ def evaluate_transition(record):
 
 def run_state_transition(record):
     return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
-
