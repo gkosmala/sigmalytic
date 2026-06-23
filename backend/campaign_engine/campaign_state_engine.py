@@ -473,36 +473,70 @@ class CampaignStateEngine:
         # Wyckoff / Livermore confirmation logic:
         # successful test + higher pivot + upward line of least resistance
         # ------------------------------------------------------------
+        line_upward = str(l.get("line_of_least_resistance", "")).upper() == "UPWARD"
+        higher_pivot = bool(l.get("higher_pivot"))
+
+        confirmation_flags = {
+            "successful_test": bool(w.get("successful_test")),
+            "supply_failure": bool(w.get("supply_failure")),
+            "persistent_absorption": bool(w.get("persistent_absorption")),
+            "demand_dominance": bool(weis.get("demand_dominance")),
+            "wave_continuity": bool(weis.get("wave_continuity")),
+            "shortening_of_downside_thrust": bool(weis.get("shortening_of_downside_thrust")),
+        }
+
+        confirmation_count = sum(1 for value in confirmation_flags.values() if value)
+
         structural_confirmation = (
-            bool(w.get("successful_test"))
-            and bool(l.get("higher_pivot"))
-            and str(l.get("line_of_least_resistance", "")).upper() == "UPWARD"
+            higher_pivot
+            and line_upward
+            and confirmation_count >= 2
         )
 
         if previous_state == CampaignState.BIRTH:
             if structural_confirmation:
+                transition_reasons = [
+                    "higher_pivot",
+                    "line_of_least_resistance_upward",
+                ]
+
+                transition_reasons.extend(
+                    key for key, value in confirmation_flags.items() if value
+                )
+
                 return {
                     "state": CampaignState.CONFIRMED,
                     "transition_score": evidence_density_score,
                     "advance_allowed": True,
                     "failure_risk": False,
                     "reason": (
-                        "Evidence-based CONFIRMED: successful test, higher pivot, "
-                        "and upward line of least resistance."
+                        "Evidence-based CONFIRMED: Livermore structure is upward "
+                        "and at least two Wyckoff/Weis confirmation flags are present."
                     ),
-                    "transition_reason": [
-                        "successful_test",
-                        "higher_pivot",
-                        "line_of_least_resistance_upward",
-                    ],
+                    "transition_reason": transition_reasons,
                 }
+
+            missing = []
+
+            if not higher_pivot:
+                missing.append("higher_pivot")
+
+            if not line_upward:
+                missing.append("line_of_least_resistance_upward")
+
+            if confirmation_count < 2:
+                missing.append("at_least_two_wyckoff_weis_confirmation_flags")
 
             return {
                 "state": CampaignState.BIRTH,
                 "transition_score": evidence_density_score,
                 "advance_allowed": False,
                 "failure_risk": False,
-                "reason": "Holding at BIRTH: structural confirmation evidence not yet present.",
+                "reason": (
+                    "Holding at BIRTH: structural confirmation cluster incomplete. "
+                    f"Missing={missing}. PresentFlags="
+                    f"{[key for key, value in confirmation_flags.items() if value]}"
+                ),
                 "transition_reason": [],
             }
 
@@ -902,4 +936,5 @@ def evaluate_transition(record):
 
 def run_state_transition(record):
     return _dict_to_campaign_transition(CampaignStateEngine().evaluate_record(record))
+
 
