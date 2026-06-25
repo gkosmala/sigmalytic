@@ -50,6 +50,11 @@ try:
     from backend.campaign_engine.campaign_evidence_builder import CampaignEvidenceBuilder
 except Exception:
     CampaignEvidenceBuilder = None
+
+try:
+    from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+except Exception:
+    AlpacaOptionChainAdapter = None
 try:
     from backend.campaign_engine.campaign_store import CampaignStore
 except Exception:
@@ -122,6 +127,52 @@ class CampaignDiscoveryEngine:
         self.max_symbols = int(max_symbols or os.getenv("CAMPAIGN_DISCOVERY_MAX_SYMBOLS", "1500"))
         self.bar_limit = int(bar_limit or os.getenv("CAMPAIGN_DISCOVERY_BAR_LIMIT", "252"))
 
+        # 4F Weis-Gamma option-chain input wiring.
+        #
+        # Safety design:
+        # - Disabled only if CAMPAIGN_DISCOVERY_OPTION_CHAIN_ENABLED=false.
+        # - Fetches are capped so nightly discovery never attempts 1,500 chains.
+        # - Fetches only occur after the normal discovery thresholds are met.
+        # - Option data feeds evidence/ranking only. It does not enable lifecycle transitions.
+        self.option_chain_enabled = str(
+            os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_ENABLED", "true")
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+        try:
+            self.option_chain_max_fetches = int(os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_MAX_FETCHES", "10"))
+        except Exception:
+            self.option_chain_max_fetches = 10
+
+        try:
+            self.option_chain_limit = int(os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_LIMIT", "1000"))
+        except Exception:
+            self.option_chain_limit = 1000
+
+        try:
+            self.option_chain_max_pages = int(os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_MAX_PAGES", "2"))
+        except Exception:
+            self.option_chain_max_pages = 2
+
+        try:
+            self.option_chain_strike_band_pct = float(os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_STRIKE_BAND_PCT", "0.15"))
+        except Exception:
+            self.option_chain_strike_band_pct = 0.15
+
+        try:
+            self.option_chain_max_dte = int(os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_MAX_DTE", "45"))
+        except Exception:
+            self.option_chain_max_dte = 45
+
+        self.option_chain_feed = os.getenv("ALPACA_OPTIONS_FEED", "indicative")
+        self.option_chain_fetch_count = 0
+
+        raw_allowed_symbols = os.getenv("CAMPAIGN_DISCOVERY_OPTION_CHAIN_SYMBOLS", "")
+        self.option_chain_allowed_symbols = {
+            s.strip().upper()
+            for s in raw_allowed_symbols.split(",")
+            if s.strip()
+        }
+
         self.birth_engine = SignalBirthEngine() if SignalBirthEngine is not None else None
         self.survival_engine = MasterSurvivalIndexEngine() if MasterSurvivalIndexEngine is not None else None
         self.diagnostics: Dict[str, Any] = {}
@@ -138,6 +189,137 @@ class CampaignDiscoveryEngine:
             return round(float(value), 2)
         except Exception:
             return default
+
+    @staticmethod
+    def _status_count_add(bucket: Dict[str, Any], key: str) -> None:
+        try:
+            bucket[str(key or "UNKNOWN")] = int(bucket.get(str(key or "UNKNOWN"), 0)) + 1
+        except Exception:
+            pass
+
+    def _option_chain_allowed_for_symbol(self, symbol: str) -> bool:
+        symbol = str(symbol or "").upper().strip()
+        if not symbol:
+            return False
+        if self.option_chain_allowed_symbols and symbol not in self.option_chain_allowed_symbols:
+            return False
+        return True
+
+    def _load_option_chain_for_evidence(
+        self,
+        symbol: str,
+        current_close: Optional[float],
+        should_fetch: bool,
+    ) -> Dict[str, Any]:
+        symbol = str(symbol or "").upper().strip()
+
+        result: Dict[str, Any] = {
+            "status": "SKIPPED",
+            "symbol": symbol,
+            "options_data": [],
+            "rows": 0,
+            "source": "campaign_discovery_engine",
+            "reason": "Not fetched.",
+        }
+
+        status_counts = self.diagnostics.setdefault("option_chain_status_counts", {})
+
+        if not should_fetch:
+            result["status"] = "SKIPPED_NOT_DISCOVERED"
+            result["reason"] = "Normal discovery thresholds were not met."
+            self._status_count_add(status_counts, result["status"])
+            return result
+
+        if not self.option_chain_enabled:
+            result["status"] = "DISABLED"
+            result["reason"] = "CAMPAIGN_DISCOVERY_OPTION_CHAIN_ENABLED is false."
+            self._status_count_add(status_counts, result["status"])
+            return result
+
+        if AlpacaOptionChainAdapter is None:
+            result["status"] = "ADAPTER_UNAVAILABLE"
+            result["reason"] = "AlpacaOptionChainAdapter could not be imported."
+            self._status_count_add(status_counts, result["status"])
+            return result
+
+        if not self._option_chain_allowed_for_symbol(symbol):
+            result["status"] = "SKIPPED_SYMBOL_NOT_ALLOWED"
+            result["reason"] = "Symbol not included in CAMPAIGN_DISCOVERY_OPTION_CHAIN_SYMBOLS."
+            self._status_count_add(status_counts, result["status"])
+            return result
+
+        if self.option_chain_fetch_count >= self.option_chain_max_fetches:
+            result["status"] = "SKIPPED_FETCH_CAP_REACHED"
+            result["reason"] = "Option-chain fetch cap reached."
+            self._status_count_add(status_counts, result["status"])
+            return result
+
+        spot = None
+        try:
+            spot = float(current_close) if current_close is not None else None
+        except Exception:
+            spot = None
+
+        strike_price_gte = None
+        strike_price_lte = None
+        if spot and spot > 0:
+            band = max(float(self.option_chain_strike_band_pct), 0.01)
+            strike_price_gte = round(spot * (1.0 - band), 2)
+            strike_price_lte = round(spot * (1.0 + band), 2)
+
+        expiration_date_lte = None
+        try:
+            expiration_date_lte = (
+                datetime.now(timezone.utc).date() + timedelta(days=int(self.option_chain_max_dte))
+            ).isoformat()
+        except Exception:
+            expiration_date_lte = None
+
+        self.option_chain_fetch_count += 1
+        self.diagnostics["option_chain_fetches_attempted"] = int(
+            self.diagnostics.get("option_chain_fetches_attempted", 0)
+        ) + 1
+
+        try:
+            fetched = AlpacaOptionChainAdapter.fetch_chain(
+                symbol=symbol,
+                spot_price=spot,
+                feed=self.option_chain_feed,
+                limit=self.option_chain_limit,
+                max_pages=self.option_chain_max_pages,
+                strike_price_gte=strike_price_gte,
+                strike_price_lte=strike_price_lte,
+                expiration_date_lte=expiration_date_lte,
+            )
+
+            if not isinstance(fetched, dict):
+                fetched = {
+                    "status": "INVALID_ADAPTER_RESPONSE",
+                    "symbol": symbol,
+                    "options_data": [],
+                    "rows": 0,
+                    "source": "alpaca_option_chain",
+                }
+
+            rows = fetched.get("options_data") or []
+            fetched["rows"] = int(len(rows)) if isinstance(rows, list) else int(fetched.get("rows") or 0)
+            fetched["source"] = fetched.get("source") or "alpaca_option_chain"
+
+            self.diagnostics["option_chain_rows_loaded"] = int(
+                self.diagnostics.get("option_chain_rows_loaded", 0)
+            ) + int(fetched.get("rows") or 0)
+
+            self._status_count_add(status_counts, str(fetched.get("status", "UNKNOWN")))
+            return fetched
+
+        except Exception as exc:
+            result["status"] = "FETCH_EXCEPTION"
+            result["reason"] = str(exc)[:300]
+            self._status_count_add(status_counts, result["status"])
+            self.diagnostics.setdefault("option_chain_errors", []).append(
+                f"{symbol}: {str(exc)[:220]}"
+            )
+            return result
 
     @staticmethod
     def _evidence_density_score(evidence: Optional[Dict[str, Any]]) -> float:
@@ -755,12 +937,29 @@ class CampaignDiscoveryEngine:
         mci = self._safe_float(birth.get("master_campaign_index"))
         survival_score = self._safe_float(survival.get("master_survival_score"))
 
+        try:
+            current_close = round(float(df["close"].iloc[-1]), 4)
+        except Exception:
+            current_close = None
+
+        discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold
+
+        option_chain_result = self._load_option_chain_for_evidence(
+            symbol=symbol,
+            current_close=current_close,
+            should_fetch=bool(discovered),
+        )
+        option_chain_data = option_chain_result.get("options_data") or None
+
         if CampaignEvidenceBuilder is not None:
             try:
                 evidence = CampaignEvidenceBuilder.build_from_bars(
                     df,
                     symbol=symbol,
                     timeframe=timeframe,
+                    option_chain=option_chain_data,
+                    market_timestamp=self._now(),
+                    gamma_snapshot_time=option_chain_result.get("fetched_at"),
                 )
             except Exception as exc:
                 evidence = {
@@ -778,16 +977,20 @@ class CampaignDiscoveryEngine:
         else:
             evidence = {}
 
-        try:
-            current_close = round(float(df["close"].iloc[-1]), 4)
-        except Exception:
-            current_close = None
+        if isinstance(evidence, dict):
+            evidence.setdefault("raw_metrics", {})
+            if isinstance(evidence.get("raw_metrics"), dict):
+                evidence["raw_metrics"]["option_chain_status"] = option_chain_result.get("status")
+                evidence["raw_metrics"]["option_chain_rows"] = int(option_chain_result.get("rows") or 0)
+                evidence["raw_metrics"]["option_chain_source"] = option_chain_result.get("source")
+                evidence["raw_metrics"]["option_chain_fetch_enabled"] = bool(self.option_chain_enabled)
+                evidence["raw_metrics"]["option_chain_transition_enabled"] = False
 
-        discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold
         reason = (
             f"Discovery {'accepted' if discovered else 'rejected'}; "
             f"birth={birth_score}, mci={mci}, survival={survival_score}; "
-            f"thresholds birth>={self.birth_threshold}, mci>={self.mci_threshold}, survival>={self.survival_threshold}."
+            f"thresholds birth>={self.birth_threshold}, mci>={self.mci_threshold}, survival>={self.survival_threshold}; "
+            f"option_chain={option_chain_result.get('status')} rows={int(option_chain_result.get('rows') or 0)}."
         )
 
         payload: Dict[str, Any] = {}
@@ -827,6 +1030,9 @@ class CampaignDiscoveryEngine:
 
         verdict["evidence"] = self._json_safe(evidence or {})
         verdict["evidence_density"] = self._safe_float(self._evidence_density_score(evidence or {}))
+        verdict["option_chain_status"] = str(option_chain_result.get("status", "UNKNOWN"))
+        verdict["option_chain_rows"] = int(option_chain_result.get("rows") or 0)
+        verdict["option_chain_source"] = str(option_chain_result.get("source", ""))
 
         if debug_snapshot:
             verdict["debug_snapshot"] = debug_snapshot
