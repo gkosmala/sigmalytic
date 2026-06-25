@@ -3,7 +3,7 @@ SAVE AS:
 backend/main.py
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from datetime import datetime
 
 from backend.campaign_api import router as campaign_router
@@ -71,10 +71,46 @@ def engine_status():
 
 
 @app.post("/api/admin/run-full-nightly")
-def run_full_nightly():
+def run_full_nightly(payload: dict = Body(default=None)):
+    payload = payload or {}
+
+    requested_symbols = (
+        payload.get("symbols")
+        or payload.get("tickers")
+        or payload.get("symbol")
+        or []
+    )
+
+    if isinstance(requested_symbols, str):
+        requested_symbols = [
+            item.strip().upper()
+            for item in requested_symbols.split(",")
+            if item.strip()
+        ]
+
+    run_kwargs = {}
+
+    if requested_symbols:
+        run_kwargs["symbols"] = requested_symbols
+
+    if payload.get("max_symbols") is not None:
+        run_kwargs["max_symbols"] = payload.get("max_symbols")
+
+    if payload.get("bar_limit") is not None:
+        run_kwargs["bar_limit"] = payload.get("bar_limit")
+
+    if payload.get("timeframe") is not None:
+        run_kwargs["timeframe"] = payload.get("timeframe")
+
     results = {
         "ok": True,
         "started_at": datetime.utcnow().isoformat(),
+        "request": {
+            "symbols": requested_symbols,
+            "max_symbols": payload.get("max_symbols"),
+            "bar_limit": payload.get("bar_limit"),
+            "timeframe": payload.get("timeframe"),
+        },
         "steps": {},
     }
 
@@ -101,7 +137,7 @@ def run_full_nightly():
             }
             return results
 
-        pipeline_result = runner()
+        pipeline_result = runner(**run_kwargs)
 
         results["steps"]["campaign_pipeline"] = {
             "status": "completed",

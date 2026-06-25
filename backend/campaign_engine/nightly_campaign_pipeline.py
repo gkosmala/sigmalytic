@@ -30,13 +30,28 @@ def _load_class(module_path, class_names):
     )
 
 
+def _normalize_symbol_list(symbols=None):
+    if not symbols:
+        return []
+
+    if isinstance(symbols, str):
+        items = symbols.split(",")
+    else:
+        items = symbols
+
+    cleaned = []
+
+    for item in items:
+        value = str(item or "").strip().upper()
+        if value:
+            cleaned.append(value)
+
+    return cleaned
+
+
 def _parse_discovery_symbols():
     raw = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
-    return [
-        item.strip().upper()
-        for item in raw.split(",")
-        if item.strip()
-    ]
+    return _normalize_symbol_list(raw)
 
 
 def _safe_float(value, default=0.0):
@@ -147,8 +162,19 @@ def _safe_update_payload(original_campaign, transition):
 
 
 class NightlyCampaignPipeline:
-    def __init__(self, campaign_store):
+    def __init__(
+        self,
+        campaign_store,
+        symbols=None,
+        max_symbols=None,
+        bar_limit=None,
+        timeframe=None,
+    ):
         self.store = campaign_store
+        self.symbols = _normalize_symbol_list(symbols)
+        self.max_symbols = int(max_symbols) if max_symbols is not None else None
+        self.bar_limit = int(bar_limit) if bar_limit is not None else None
+        self.timeframe = str(timeframe or "DAILY").upper()
 
     def _run_discovery_stage(self):
         if CampaignDiscoveryEngine is None:
@@ -160,13 +186,19 @@ class NightlyCampaignPipeline:
             }
 
         try:
-            discovery = CampaignDiscoveryEngine(store=self.store)
-            symbols = _parse_discovery_symbols()
+            discovery = CampaignDiscoveryEngine(
+                store=self.store,
+                timeframe=self.timeframe,
+                max_symbols=self.max_symbols,
+                bar_limit=self.bar_limit,
+            )
+
+            symbols = self.symbols or _parse_discovery_symbols()
 
             if symbols:
-                return discovery.run(symbols=symbols)
+                return discovery.run(symbols=symbols, timeframe=self.timeframe)
 
-            return discovery.run()
+            return discovery.run(timeframe=self.timeframe)
 
         except Exception as exc:
             return {
