@@ -2665,7 +2665,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     elif tab=="divergence":  main = build_divergence_tab(session=None)
     elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
     elif tab=="preferences": main = build_preferences_tab(user_id="", session=None)
-    elif tab=="admin":       main = build_admin_tab(session={}, backend_url=BACKEND_HTTP)
+    elif tab=="admin":       main = build_admin_tab(session=(session if isinstance(session, dict) else {}), backend_url=BACKEND_HTTP)
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
