@@ -1,21 +1,30 @@
-import json
+﻿from pathlib import Path
+
+path = Path("backend/campaign_api.py")
+text = path.read_text(encoding="utf-8")
+
+old_import = '''from fastapi import APIRouter
+from typing import Any, Dict, List
+'''
+
+new_import = '''import json
 
 from fastapi import APIRouter
 from typing import Any, Dict, List
+'''
 
-from backend.campaign_engine.campaign_store import CampaignStore
+if old_import not in text:
+    raise SystemExit("Import block not found.")
 
-router = APIRouter(
-    prefix="/api/campaign",
-    tags=["campaign"],
-)
+text = text.replace(old_import, new_import, 1)
 
-
-def _store():
+insert_after = '''def _store():
     return CampaignStore()
 
 
-def _json_dict(value: Any) -> Dict[str, Any]:
+'''
+
+helper = '''def _json_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
         return value
 
@@ -112,61 +121,52 @@ def _attach_weis_gamma_summaries(
     return [_attach_weis_gamma_summary(c) for c in campaigns]
 
 
-@router.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "service": "campaign_api",
-    }
+'''
 
+if insert_after not in text:
+    raise SystemExit("Could not find _store insertion point.")
 
-@router.get("/active")
+text = text.replace(insert_after, insert_after + helper, 1)
+
+old_active = '''@router.get("/active")
+def active_campaigns():
+    campaigns = _store().get_active_campaigns()
+    return {"campaigns": campaigns}
+'''
+
+new_active = '''@router.get("/active")
 def active_campaigns():
     campaigns = _store().get_active_campaigns()
     campaigns = _attach_weis_gamma_summaries(campaigns)
     return {"campaigns": campaigns}
+'''
 
+if old_active not in text:
+    raise SystemExit("active_campaigns block not found.")
 
-@router.get("/rankings")
+text = text.replace(old_active, new_active, 1)
+
+old_rankings = '''@router.get("/rankings")
+def rankings():
+    campaigns = _store().get_top_campaigns(limit=100)
+
+    ranked = sorted(
+        campaigns,
+'''
+
+new_rankings = '''@router.get("/rankings")
 def rankings():
     campaigns = _store().get_top_campaigns(limit=100)
     campaigns = _attach_weis_gamma_summaries(campaigns)
 
     ranked = sorted(
         campaigns,
-        key=lambda x: float(
-            x.get("operator_dominance")
-            or x.get("outcome_quality_score")
-            or x.get("obstacle_score")
-            or 0
-        ),
-        reverse=True,
-    )
+'''
 
-    return {"campaigns": ranked}
+if old_rankings not in text:
+    raise SystemExit("rankings block not found.")
 
+text = text.replace(old_rankings, new_rankings, 1)
 
-@router.get("/status")
-def status():
-    campaigns = _store().get_active_campaigns()
-
-    def state(c):
-        return str(c.get("current_state") or c.get("state_enum") or "").upper()
-
-    return {
-        "active_campaigns": len(campaigns),
-        "birth_candidates": sum(1 for c in campaigns if state(c) == "BIRTH"),
-        "expanding_campaigns": sum(1 for c in campaigns if state(c) == "EXPANDING"),
-        "distribution_risk": sum(
-            1 for c in campaigns if state(c) == "DISTRIBUTION_RISK"
-        ),
-    }
-
-
-@router.post("/register")
-def register_campaign(campaign: Dict[str, Any]):
-    saved = _store().save_campaign(campaign)
-    return {
-        "status": "registered",
-        "result": saved,
-    }
+path.write_text(text, encoding="utf-8")
+print("Patched campaign_api.py with Weis-Gamma top-level API fields.")
