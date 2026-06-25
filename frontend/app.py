@@ -297,13 +297,41 @@ def _wg_metric_card(label, value, color=WHITE):
     })
 
 
+def _wg_label(value):
+    mapping = {
+        "OK": "Gamma OK",
+        "NONE": "None",
+        "EMPTY": "Empty",
+        "NO_OPTIONS_RETURNED": "No Options Returned",
+        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
+        "NO_GAMMA_INPUT": "No Gamma Input",
+        "NOT_PRESENT": "Not Present",
+        "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
+        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
+        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
+        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
+        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
+        "WEIS_EXPANSION": "Weis Expansion",
+        "WEIS_BASELINE": "Weis Baseline",
+        "WEIS_TEST": "Weis Test",
+        "WEIS_EXHAUSTION": "Weis Exhaustion",
+        "A_PLUS": "A+",
+        "LOW_PRIORITY": "Low Priority",
+        "WATCHLIST": "Watchlist",
+        "AVOID": "Avoid",
+    }
+
+    key = str(value or "NONE")
+    return mapping.get(key, key.replace("_", " ").title())
+
+
 def _wg_counts_text(counts):
     if not isinstance(counts, dict) or not counts:
         return "-"
 
     parts = []
     for key, value in counts.items():
-        parts.append(f"{key}: {value}")
+        parts.append(f"{_wg_label(key)}: {value}")
 
     return " | ".join(parts)
 
@@ -336,16 +364,25 @@ def build_weis_gamma_status_center_panel():
     total = wg.get("total_campaigns", summary.get("active_campaigns", 0))
     present = wg.get("weis_gamma_present", 0)
     missing = wg.get("weis_gamma_missing", 0)
-    transition_enabled = wg.get("transition_enabled", 0)
+
+    gamma_ok = wg.get("gamma_ok", 0)
+    no_options_returned = wg.get("gamma_no_options_returned", 0)
     no_option_chain = wg.get("gamma_no_option_chain", 0)
     stale = wg.get("gamma_stale_or_unconfirmed", 0)
+    transition_enabled = wg.get("transition_enabled", 0)
 
     phase_counts = wg.get("phase_counts") or {}
     rank_counts = wg.get("rank_bucket_counts") or {}
     gamma_counts = wg.get("gamma_status_counts") or {}
+    option_chain_counts = wg.get("option_chain_status_counts") or {}
     fusion_counts = wg.get("fusion_state_counts") or {}
 
-    safety_color = TEAL_DIM if int(transition_enabled or 0) == 0 else RED_DIM
+    transitions_off = int(transition_enabled or 0) == 0
+    safety_color = TEAL_DIM if transitions_off else RED_DIM
+    safety_label = "TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED"
+
+    stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
+    no_input_color = TEAL_DIM if int(no_option_chain or 0) == 0 else YELLOW_DIM
 
     return html.Div([
         html.Div([
@@ -355,14 +392,17 @@ def build_weis_gamma_status_center_panel():
                     "fontWeight": "900",
                     "color": WHITE,
                 }),
-                html.Div("Read-only intelligence overlay. Lifecycle transitions remain disabled.", style={
-                    "fontSize": "12px",
-                    "color": WHITE,
-                    "opacity": ".85",
-                    "marginTop": "4px",
-                }),
+                html.Div(
+                    "Gamma is a read-only execution-risk overlay. No Options Returned means Alpaca was queried and no listed chain was returned; it is not a stale Gamma failure.",
+                    style={
+                        "fontSize": "12px",
+                        "color": WHITE,
+                        "opacity": ".85",
+                        "marginTop": "4px",
+                    },
+                ),
             ]),
-            html.Div("TRANSITIONS OFF", style={
+            html.Div(safety_label, style={
                 "fontSize": "11px",
                 "fontWeight": "900",
                 "color": safety_color,
@@ -381,10 +421,12 @@ def build_weis_gamma_status_center_panel():
         html.Div([
             _wg_metric_card("Total Campaigns", total, WHITE),
             _wg_metric_card("Weis-Gamma Present", present, TEAL_DIM),
-            _wg_metric_card("Missing", missing, YELLOW_DIM),
-            _wg_metric_card("Transition Enabled", transition_enabled, safety_color),
-            _wg_metric_card("No Option Chain", no_option_chain, YELLOW_DIM),
-            _wg_metric_card("Stale / Unconfirmed", stale, RED_DIM),
+            _wg_metric_card("Gamma OK", gamma_ok, TEAL_DIM),
+            _wg_metric_card("No Options Returned", no_options_returned, YELLOW_DIM),
+            _wg_metric_card("No Option-Chain Input", no_option_chain, no_input_color),
+            _wg_metric_card("Gamma Stale / Unconfirmed", stale, stale_color),
+            _wg_metric_card("Transitions Off", "YES" if transitions_off else "NO", safety_color),
+            _wg_metric_card("Missing Overlay", missing, YELLOW_DIM),
         ], style={
             "display": "grid",
             "gridTemplateColumns": "repeat(auto-fit, minmax(150px, 1fr))",
@@ -401,11 +443,15 @@ def build_weis_gamma_status_center_panel():
                 html.Div(_wg_counts_text(rank_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
-                html.Div("Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
                 html.Div(_wg_counts_text(gamma_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
-                html.Div("Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(option_chain_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
                 html.Div(_wg_counts_text(fusion_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
         ], style={
@@ -422,6 +468,7 @@ def build_weis_gamma_status_center_panel():
         "marginBottom": "16px",
         "boxShadow": "0 0 0 1px rgba(45,212,191,.08) inset",
     })
+
 
 def _post(path, body):
     try:
