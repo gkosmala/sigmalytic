@@ -300,7 +300,7 @@ def _wg_metric_card(label, value, color=WHITE):
 def _wg_label(value):
     mapping = {
         "OK": "Gamma OK",
-        "NONE": "None",
+        "NONE": "Missing Overlay",
         "EMPTY": "Empty",
         "NO_OPTIONS_RETURNED": "No Options Returned",
         "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
@@ -4240,10 +4240,34 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
                 note_box("Preferences loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="admin":
-        main = html.Div([
-            build_weis_gamma_status_center_panel(),
-            build_admin_tab(session={}, backend_url=BACKEND_HTTP),
-        ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+        try:
+            admin_session = session if isinstance(session, dict) else {}
+            main = html.Div([
+                build_weis_gamma_status_center_panel(),
+                build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
+            ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+        except Exception as e:
+            main = html.Div([
+                build_weis_gamma_status_center_panel(),
+                html.Div([
+                    html.Div("Admin tab error", style={
+                        "color": WHITE,
+                        "fontSize": "16px",
+                        "fontWeight": "900",
+                        "marginBottom": "8px",
+                    }),
+                    html.Div(str(e), style={
+                        "color": YELLOW_DIM,
+                        "fontSize": "12px",
+                        "whiteSpace": "pre-wrap",
+                    }),
+                ], style={
+                    "border": f"1px solid {BORDER}",
+                    "background": "rgba(8,24,39,.72)",
+                    "borderRadius": "16px",
+                    "padding": "18px",
+                }),
+            ], style={"display":"flex","flexDirection":"column","gap":"16px"})
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
