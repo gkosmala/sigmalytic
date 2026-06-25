@@ -254,25 +254,66 @@ class NightlyCampaignPipeline:
         }
 
 
-def run_nightly_campaign_pipeline():
+def run_nightly_campaign_pipeline(
+    symbols=None,
+    max_symbols=None,
+    bar_limit=None,
+    timeframe=None,
+):
     CampaignStore = _load_class(
         "backend.campaign_engine.campaign_store",
         ["CampaignStore", "CampaignRepository"],
     )
 
     store = CampaignStore()
-    pipeline = NightlyCampaignPipeline(campaign_store=store)
+    pipeline = NightlyCampaignPipeline(
+        campaign_store=store,
+        symbols=symbols,
+        max_symbols=max_symbols,
+        bar_limit=bar_limit,
+        timeframe=timeframe,
+    )
 
     return pipeline.run()
 
 
-def run_campaign_pipeline():
-    return run_nightly_campaign_pipeline()
+def run_campaign_pipeline(
+    symbols=None,
+    max_symbols=None,
+    bar_limit=None,
+    timeframe=None,
+):
+    return run_nightly_campaign_pipeline(
+        symbols=symbols,
+        max_symbols=max_symbols,
+        bar_limit=bar_limit,
+        timeframe=timeframe,
+    )
 
 
-def run_nightly_pipeline():
-    return run_nightly_campaign_pipeline()
+def run_nightly_pipeline(
+    symbols=None,
+    max_symbols=None,
+    bar_limit=None,
+    timeframe=None,
+):
+    return run_nightly_campaign_pipeline(
+        symbols=symbols,
+        max_symbols=max_symbols,
+        bar_limit=bar_limit,
+        timeframe=timeframe,
+    )
 
 
-def main():
-    return run_nightly_campaign_pipeline()
+def main(
+    symbols=None,
+    max_symbols=None,
+    bar_limit=None,
+    timeframe=None,
+):
+    return run_nightly_campaign_pipeline(
+        symbols=symbols,
+        max_symbols=max_symbols,
+        bar_limit=bar_limit,
+        timeframe=timeframe,
+    )
