@@ -236,6 +236,12 @@ class WeisGammaFusionEngine:
             base_confidence = 0.0
             reason = "Gamma freshness router is RED. Fast-changing evidence is not safe to use."
 
+        elif not gamma_data_fresh:
+            fusion_state = "WEIS_ONLY_GAMMA_STALE"
+            fusion_direction = wave_direction if wave_direction in {"UP", "DOWN"} else "UNKNOWN"
+            base_confidence = 0.40
+            reason = "Weis evidence exists, but Gamma data is stale. Gamma cannot confirm the phase."
+
         elif theta_flush_risk:
             fusion_state = "THETA_FLUSH_RISK"
             fusion_direction = "RISK"
@@ -299,12 +305,6 @@ class WeisGammaFusionEngine:
             fusion_direction = "NEUTRAL"
             base_confidence = 0.60
             reason = "Positive gamma / mixed wall conditions are pinning price while Weis efficiency is weak."
-
-        elif not gamma_data_fresh:
-            fusion_state = "WEIS_ONLY_GAMMA_STALE"
-            fusion_direction = wave_direction if wave_direction in {"UP", "DOWN"} else "UNKNOWN"
-            base_confidence = 0.40
-            reason = "Weis evidence exists, but Gamma data is stale. Gamma cannot confirm the phase."
 
         else:
             fusion_state = "WEIS_GAMMA_UNRESOLVED"
