@@ -333,45 +333,161 @@ class CampaignEvidenceBuilder:
             }
             warnings.append("Weis-only overlay created because no option chain was supplied.")
         else:
-            gamma_matrix = cls._engine_build(
-                GammaStrikeMatrixEngine,
-                symbol=symbol,
-                timeframe=timeframe,
-                extra_kwargs={
-                    "option_chain": option_chain,
-                    "spot_price": cls._safe_float(bars["close"].iloc[-1]),
-                    "market_timestamp": market_timestamp,
-                    "vix_level": vix_level,
-                    "rvx_level": rvx_level,
-                },
+            spot_price = cls._safe_float(bars["close"].iloc[-1])
+
+            try:
+                close_location = cls._safe_float(bars["close_location"].iloc[-1], 0.5)
+            except Exception:
+                close_location = 0.5
+
+            wave_direction = str(
+                weis_wave.get("wave_direction")
+                or weis_wave.get("direction")
+                or "UNKNOWN"
             )
 
-            gamma_freshness = cls._engine_build(
-                GammaFreshnessEngine,
-                symbol=symbol,
-                timeframe=timeframe,
-                extra_kwargs={
-                    "gamma_matrix_result": gamma_matrix,
-                    "market_timestamp": market_timestamp,
-                    "gamma_snapshot_time": gamma_snapshot_time,
-                    "order_book_snapshot_time": order_book_snapshot_time,
-                    "vix_level": vix_level,
-                    "rvx_level": rvx_level,
-                },
+            wave_efficiency = cls._safe_float(
+                weis_wave.get("wave_efficiency")
+                or weis_wave.get("efficiency")
+                or 0.0
             )
 
-            zero_dte = cls._engine_build(
-                ZeroDTESqueezeEngine,
-                symbol=symbol,
-                timeframe=timeframe,
-                extra_kwargs={
-                    "option_chain": option_chain,
-                    "spot_price": cls._safe_float(bars["close"].iloc[-1]),
-                    "market_timestamp": market_timestamp,
-                    "minutes_to_close": minutes_to_close,
-                    "weis_wave_result": weis_wave,
-                },
+            if GammaStrikeMatrixEngine is None:
+                gamma_matrix = {
+                    "status": "NOT_AVAILABLE",
+                    "engine": "GammaStrikeMatrixEngine",
+                    "warning": "GammaStrikeMatrixEngine import unavailable.",
+                }
+            else:
+                try:
+                    gamma_matrix = cls._as_dict(
+                        GammaStrikeMatrixEngine.build(
+                            options_data=option_chain,
+                            symbol=symbol,
+                            spot_price=spot_price,
+                            top_n=5,
+                            proximity_pct=0.015,
+                            data_age_seconds=0.0,
+                        )
+                    )
+                except TypeError as exc:
+                    gamma_matrix = {
+                        "status": "CALL_SIGNATURE_MISMATCH",
+                        "engine": "GammaStrikeMatrixEngine",
+                        "error": str(exc),
+                    }
+                except Exception as exc:
+                    gamma_matrix = {
+                        "status": "ENGINE_ERROR",
+                        "engine": "GammaStrikeMatrixEngine",
+                        "error": str(exc),
+                    }
+
+            if ZeroDTESqueezeEngine is None:
+                zero_dte = {
+                    "status": "NOT_AVAILABLE",
+                    "active_0dte": False,
+                    "squeeze_state": "NO_0DTE_ENGINE",
+                    "zero_dte_vol_oi_ratio": 0.0,
+                    "theta_flush_risk": False,
+                    "liquidation_risk": False,
+                    "confidence": 0.0,
+                }
+            else:
+                try:
+                    zero_dte = cls._as_dict(
+                        ZeroDTESqueezeEngine.build(
+                            options_data=option_chain,
+                            symbol=symbol,
+                            spot_price=spot_price,
+                            close_location=close_location,
+                            wave_direction=wave_direction,
+                            wave_efficiency=wave_efficiency,
+                            minutes_to_close=minutes_to_close,
+                        )
+                    )
+                except TypeError as exc:
+                    zero_dte = {
+                        "status": "CALL_SIGNATURE_MISMATCH",
+                        "engine": "ZeroDTESqueezeEngine",
+                        "error": str(exc),
+                        "active_0dte": False,
+                        "squeeze_state": "CALL_SIGNATURE_MISMATCH",
+                        "zero_dte_vol_oi_ratio": 0.0,
+                        "theta_flush_risk": False,
+                        "liquidation_risk": False,
+                        "confidence": 0.0,
+                    }
+                except Exception as exc:
+                    zero_dte = {
+                        "status": "ENGINE_ERROR",
+                        "engine": "ZeroDTESqueezeEngine",
+                        "error": str(exc),
+                        "active_0dte": False,
+                        "squeeze_state": "ENGINE_ERROR",
+                        "zero_dte_vol_oi_ratio": 0.0,
+                        "theta_flush_risk": False,
+                        "liquidation_risk": False,
+                        "confidence": 0.0,
+                    }
+
+            gamma_regime = str(
+                gamma_matrix.get("net_gamma_regime")
+                or gamma_matrix.get("gamma_regime")
+                or "UNKNOWN"
             )
+
+            timeframe_profile = (
+                "SWING"
+                if str(timeframe or "").upper() in {"DAILY", "WEEKLY", "MONTHLY"}
+                else "INTRADAY"
+            )
+
+            if GammaFreshnessEngine is None:
+                gamma_freshness = {
+                    "status": "NOT_AVAILABLE",
+                    "router_state": "YELLOW",
+                    "gamma_data_fresh": False,
+                    "phase_confidence_modifier": 0.35,
+                    "warning": "GammaFreshnessEngine import unavailable.",
+                }
+            else:
+                try:
+                    gamma_freshness = cls._as_dict(
+                        GammaFreshnessEngine.build(
+                            symbol=symbol,
+                            gamma_regime=gamma_regime,
+                            vix=vix_level,
+                            rvx=rvx_level,
+                            timeframe_profile=timeframe_profile,
+                            active_0dte=bool(zero_dte.get("active_0dte", False)),
+                            zero_dte_vol_oi_ratio=cls._safe_float(
+                                zero_dte.get("zero_dte_vol_oi_ratio"), 0.0
+                            ),
+                            gamma_data_age_seconds=0.0,
+                            order_book_age_seconds=0.0 if order_book_snapshot_time else None,
+                            intraday_wave_age_seconds=0.0,
+                            campaign_state_age_seconds=0.0,
+                        )
+                    )
+                except TypeError as exc:
+                    gamma_freshness = {
+                        "status": "CALL_SIGNATURE_MISMATCH",
+                        "engine": "GammaFreshnessEngine",
+                        "error": str(exc),
+                        "router_state": "YELLOW",
+                        "gamma_data_fresh": False,
+                        "phase_confidence_modifier": 0.35,
+                    }
+                except Exception as exc:
+                    gamma_freshness = {
+                        "status": "ENGINE_ERROR",
+                        "engine": "GammaFreshnessEngine",
+                        "error": str(exc),
+                        "router_state": "YELLOW",
+                        "gamma_data_fresh": False,
+                        "phase_confidence_modifier": 0.35,
+                    }
 
         fusion = cls._engine_build(
             WeisGammaFusionEngine,
