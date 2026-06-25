@@ -53,6 +53,7 @@ except Exception as _jt:
     print(f"TRADE_JOURNAL_TAB: FAILED — {_jt}", flush=True)
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
