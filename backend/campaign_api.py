@@ -52,6 +52,15 @@ def _attach_weis_gamma_summary(campaign: Dict[str, Any]) -> Dict[str, Any]:
         or {}
     )
 
+    raw_metrics = (
+        evidence.get("raw_metrics")
+        if isinstance(evidence, dict)
+        else {}
+    )
+
+    if not isinstance(raw_metrics, dict):
+        raw_metrics = {}
+
     wg = evidence.get("weis_gamma") if isinstance(evidence, dict) else None
 
     if not isinstance(wg, dict):
@@ -64,7 +73,11 @@ def _attach_weis_gamma_summary(campaign: Dict[str, Any]) -> Dict[str, Any]:
         out["weis_gamma_rank_score"] = None
         out["weis_gamma_rank_bucket"] = None
         out["weis_gamma_gamma_status"] = None
+        out["weis_gamma_effective_gamma_status"] = None
         out["weis_gamma_fusion_state"] = None
+        out["weis_gamma_effective_fusion_state"] = None
+        out["weis_gamma_option_chain_status"] = raw_metrics.get("option_chain_status")
+        out["weis_gamma_option_chain_rows"] = raw_metrics.get("option_chain_rows")
         out["weis_gamma_warning"] = ""
         return out
 
@@ -91,15 +104,33 @@ def _attach_weis_gamma_summary(campaign: Dict[str, Any]) -> Dict[str, Any]:
     out["weis_gamma_rank_bucket"] = ranking.get("rank_bucket")
     out["weis_gamma_rank_reason"] = ranking.get("reason")
 
-    out["weis_gamma_gamma_status"] = gamma.get("status")
+    option_chain_status = raw_metrics.get("option_chain_status")
+    option_chain_rows = raw_metrics.get("option_chain_rows")
+
+    gamma_status = gamma.get("status")
+    fusion_state = fusion.get("fusion_state")
+
+    effective_gamma_status = gamma_status
+    effective_fusion_state = fusion_state
+
+    if option_chain_status == "NO_OPTIONS_RETURNED":
+        effective_gamma_status = "NO_OPTIONS_RETURNED"
+        if fusion_state == "WEIS_ONLY_GAMMA_STALE":
+            effective_fusion_state = "WEIS_ONLY_NO_OPTIONS_RETURNED"
+
+    out["weis_gamma_gamma_status"] = gamma_status
+    out["weis_gamma_effective_gamma_status"] = effective_gamma_status
     out["weis_gamma_gamma_regime"] = gamma.get("net_gamma_regime")
     out["weis_gamma_gamma_router"] = freshness.get("router_state")
     out["weis_gamma_gamma_fresh"] = bool(
         gamma.get("gamma_data_fresh")
         or freshness.get("gamma_data_fresh")
     )
+    out["weis_gamma_option_chain_status"] = option_chain_status
+    out["weis_gamma_option_chain_rows"] = option_chain_rows
 
-    out["weis_gamma_fusion_state"] = fusion.get("fusion_state")
+    out["weis_gamma_fusion_state"] = fusion_state
+    out["weis_gamma_effective_fusion_state"] = effective_fusion_state
     out["weis_gamma_zero_dte_state"] = zero_dte.get("squeeze_state")
     out["weis_gamma_warning"] = _first_warning(wg.get("warnings"))
 
@@ -187,23 +218,44 @@ def status():
         1 for c in campaigns if c.get("weis_gamma_transition_enabled") is True
     )
 
+    gamma_ok = sum(
+        1
+        for c in campaigns
+        if c.get("weis_gamma_effective_gamma_status") == "OK"
+    )
+
+    gamma_no_options_returned = sum(
+        1
+        for c in campaigns
+        if c.get("weis_gamma_option_chain_status") == "NO_OPTIONS_RETURNED"
+    )
+
     gamma_no_option_chain = sum(
         1
         for c in campaigns
-        if c.get("weis_gamma_gamma_status") == "NO_OPTION_CHAIN_INPUT"
+        if (
+            c.get("weis_gamma_gamma_status") == "NO_OPTION_CHAIN_INPUT"
+            and c.get("weis_gamma_option_chain_status") != "NO_OPTIONS_RETURNED"
+        )
     )
 
     gamma_stale_or_unconfirmed = sum(
         1
         for c in campaigns
         if (
-            c.get("weis_gamma_phase") == "WEIS_ONLY_GAMMA_STALE"
-            or c.get("weis_gamma_gamma_status") in {
-                "NO_OPTION_CHAIN_INPUT",
-                "NO_GAMMA_INPUT",
-                "NOT_PRESENT",
-                None,
-            }
+            c.get("weis_gamma_present") is True
+            and c.get("weis_gamma_option_chain_status") != "NO_OPTIONS_RETURNED"
+            and (
+                c.get("weis_gamma_phase") == "WEIS_ONLY_GAMMA_STALE"
+                or c.get("weis_gamma_fusion_state") == "WEIS_ONLY_GAMMA_STALE"
+                or c.get("weis_gamma_gamma_status") in {
+                    "NO_OPTION_CHAIN_INPUT",
+                    "NO_GAMMA_INPUT",
+                    "NOT_PRESENT",
+                    None,
+                }
+                or c.get("weis_gamma_gamma_fresh") is False
+            )
         )
     )
 
@@ -221,12 +273,17 @@ def status():
             "weis_gamma_missing": weis_gamma_missing,
             "transition_enabled": weis_gamma_transition_enabled,
             "transition_enabled_expected": False,
+            "gamma_ok": gamma_ok,
+            "gamma_no_options_returned": gamma_no_options_returned,
             "gamma_no_option_chain": gamma_no_option_chain,
             "gamma_stale_or_unconfirmed": gamma_stale_or_unconfirmed,
             "phase_counts": _count_by_field(campaigns, "weis_gamma_phase"),
             "rank_bucket_counts": _count_by_field(campaigns, "weis_gamma_rank_bucket"),
-            "gamma_status_counts": _count_by_field(campaigns, "weis_gamma_gamma_status"),
-            "fusion_state_counts": _count_by_field(campaigns, "weis_gamma_fusion_state"),
+            "gamma_status_counts": _count_by_field(campaigns, "weis_gamma_effective_gamma_status"),
+            "raw_gamma_status_counts": _count_by_field(campaigns, "weis_gamma_gamma_status"),
+            "option_chain_status_counts": _count_by_field(campaigns, "weis_gamma_option_chain_status"),
+            "fusion_state_counts": _count_by_field(campaigns, "weis_gamma_effective_fusion_state"),
+            "raw_fusion_state_counts": _count_by_field(campaigns, "weis_gamma_fusion_state"),
         },
     }
 
