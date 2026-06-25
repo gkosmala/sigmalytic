@@ -246,6 +246,23 @@ def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
             seen.add(key)
             unique_campaigns.append(campaign)
 
+        refresh_symbols = [
+            str(campaign.get("symbol") or "").upper()
+            for campaign in unique_campaigns
+            if str(campaign.get("symbol") or "").strip()
+        ]
+
+        bar_records = discovery.build_records_from_universe(symbols=refresh_symbols)
+
+        record_by_symbol = {
+            str(record.get("symbol") or "").upper(): record
+            for record in (bar_records or [])
+            if isinstance(record, dict) and str(record.get("symbol") or "").strip()
+        }
+
+        results["bar_record_symbols"] = sorted(record_by_symbol.keys())
+        results["bar_diagnostics"] = discovery._json_safe(discovery.diagnostics)
+
         for campaign in unique_campaigns:
             symbol = str(campaign.get("symbol") or "").upper()
             campaign_timeframe = str(campaign.get("timeframe") or timeframe).upper()
@@ -258,12 +275,20 @@ def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
                 continue
 
             try:
-                df = discovery._load_bars(symbol, campaign_timeframe, record={})
+                bar_record = record_by_symbol.get(symbol) or {}
+
+                df = discovery._load_bars(
+                    symbol,
+                    campaign_timeframe,
+                    record=bar_record,
+                )
 
                 if df is None or len(df) == 0:
                     results["skipped"].append({
                         "symbol": symbol,
                         "reason": "No OHLCV bars available.",
+                        "bar_record_present": bool(bar_record),
+                        "bar_record_symbols": sorted(record_by_symbol.keys()),
                     })
                     continue
 
