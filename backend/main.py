@@ -17,6 +17,11 @@ except Exception:
     admin_router = None
 
 
+try:
+    from backend.snapshot_service import snapshot_router
+except Exception:
+    snapshot_router = None
+
 app = FastAPI(
     title="Sigmalytic V2",
     version="2.0.0",
@@ -421,6 +426,9 @@ app.include_router(campaign_router)
 app.include_router(research_router)
 app.include_router(intelligence_router)
 app.include_router(operator_router)
+
+if snapshot_router is not None:
+    app.include_router(snapshot_router)
 
 if admin_router is not None:
     app.include_router(admin_router)

@@ -524,7 +524,10 @@ def get_admin_report(authorization: Optional[str] = Header(None)):
     if not _is_admin(authorization):
         raise HTTPException(403, "Admin access required")
 
-    from radar_service import RADAR_CACHE
+    try:
+        from backend.radar_service import RADAR_CACHE
+    except Exception:
+        from radar_service import RADAR_CACHE
     report = build_admin_report(RADAR_CACHE)
     return report
 
@@ -538,7 +541,10 @@ def get_admin_report_dev():
     admin_key = os.getenv("ADMIN_KEY","")
     if admin_key:
         raise HTTPException(403, "Use /api/admin/report with auth header in production")
-    from radar_service import RADAR_CACHE
+    try:
+        from backend.radar_service import RADAR_CACHE
+    except Exception:
+        from radar_service import RADAR_CACHE
     return build_admin_report(RADAR_CACHE)
 
 
@@ -547,7 +553,10 @@ def force_snapshot_write(authorization: Optional[str] = Header(None)):
     """Manually trigger a snapshot write — admin only."""
     if not _is_admin(authorization):
         raise HTTPException(403, "Admin access required")
-    from radar_service import RADAR_CACHE
+    try:
+        from backend.radar_service import RADAR_CACHE
+    except Exception:
+        from radar_service import RADAR_CACHE
     write_intraday_snapshots(RADAR_CACHE)
     return {"ok": True, "symbols_written": len(RADAR_CACHE)}
 

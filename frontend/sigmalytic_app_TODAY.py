@@ -2054,6 +2054,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         token = session.get("access_token","")
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         r = _req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
+        if not r.ok:
+            r = _req.get(f"{backend_url}/api/admin/report/public", timeout=15)
         data = r.json() if r.ok else {}
     except Exception as e:
         data = {}
