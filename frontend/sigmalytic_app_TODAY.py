@@ -2024,6 +2024,15 @@ def _admin_card(children, sx=None):
     return html.Div(children, style=s)
 
 
+# Compatibility aliases used inside the live Admin tab.
+def _card(children, sx=None):
+    return _admin_card(children, sx=sx)
+
+
+def _tile(label, value, color=None, sub=None):
+    return _admin_tile(label, value, color=color, sub=sub)
+
+
 def is_admin(session: dict) -> bool:
     return (session or {}).get("email","") == ADMIN_EMAIL
 
