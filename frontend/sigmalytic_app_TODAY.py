@@ -1824,6 +1824,186 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
+
+def _live_wg_label(value):
+    mapping = {
+        "OK": "Gamma OK",
+        "NONE": "Missing Overlay",
+        "EMPTY": "Empty",
+        "NO_OPTIONS_RETURNED": "No Options Returned",
+        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
+        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
+        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
+        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
+        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
+        "WEIS_EXPANSION": "Weis Expansion",
+        "WEIS_BASELINE": "Weis Baseline",
+        "WEIS_TEST": "Weis Test",
+        "WEIS_EXHAUSTION": "Weis Exhaustion",
+        "A_PLUS": "A+",
+        "LOW_PRIORITY": "Low Priority",
+        "WATCHLIST": "Watchlist",
+        "AVOID": "Avoid",
+    }
+    key = str(value or "NONE")
+    return mapping.get(key, key.replace("_", " ").title())
+
+
+def _live_wg_counts_text(counts):
+    if not isinstance(counts, dict) or not counts:
+        return "-"
+    return " | ".join([f"{_live_wg_label(k)}: {v}" for k, v in counts.items()])
+
+
+def _live_wg_metric(label, value, color):
+    return html.Div([
+        html.Div(str(label), style={
+            "fontSize": "10px",
+            "fontWeight": "900",
+            "color": WHITE,
+            "opacity": ".85",
+            "textTransform": "uppercase",
+            "letterSpacing": ".08em",
+            "marginBottom": "4px",
+        }),
+        html.Div(str(value), style={
+            "fontSize": "20px",
+            "fontWeight": "900",
+            "color": color,
+            "lineHeight": "1.1",
+        }),
+    ], style={
+        "border": f"1px solid {BORDER}",
+        "background": "rgba(15,23,42,.42)",
+        "borderRadius": "14px",
+        "padding": "12px",
+        "minHeight": "68px",
+    })
+
+
+def build_weis_gamma_status_center_panel():
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/campaigns/summary", timeout=8)
+        data = r.json() if r.ok else {}
+    except Exception as e:
+        data = {}
+
+    wg = data.get("weis_gamma_status_center") if isinstance(data, dict) else {}
+
+    if not isinstance(wg, dict) or not wg:
+        return html.Div([
+            html.Div("Weis-Gamma Status Center", style={
+                "fontSize": "15px",
+                "fontWeight": "900",
+                "color": WHITE,
+            }),
+            html.Div("Waiting for backend Weis-Gamma status data.", style={
+                "fontSize": "12px",
+                "color": WHITE,
+                "opacity": ".85",
+                "marginTop": "4px",
+            }),
+        ], style={
+            "border": f"1px solid {BORDER}",
+            "background": "rgba(8,24,39,.72)",
+            "borderRadius": "18px",
+            "padding": "16px",
+            "marginBottom": "16px",
+        })
+
+    total = wg.get("total_campaigns", 0)
+    present = wg.get("weis_gamma_present", 0)
+    missing = wg.get("weis_gamma_missing", 0)
+    gamma_ok = wg.get("gamma_ok", 0)
+    no_options = wg.get("gamma_no_options_returned", 0)
+    no_chain = wg.get("gamma_no_option_chain", 0)
+    stale = wg.get("gamma_stale_or_unconfirmed", 0)
+    transitions = wg.get("transition_enabled", 0)
+
+    transitions_off = int(transitions or 0) == 0
+    safety_color = TEAL_DIM if transitions_off else RED_DIM
+    stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
+    no_chain_color = TEAL_DIM if int(no_chain or 0) == 0 else YELLOW_DIM
+
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("Weis-Gamma Status Center", style={
+                    "fontSize": "16px",
+                    "fontWeight": "900",
+                    "color": WHITE,
+                }),
+                html.Div(
+                    "Gamma is a read-only execution-risk overlay. No Options Returned means Alpaca was queried and no listed chain was returned.",
+                    style={
+                        "fontSize": "12px",
+                        "color": WHITE,
+                        "opacity": ".85",
+                        "marginTop": "4px",
+                    },
+                ),
+            ]),
+            html.Div("TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED", style={
+                "fontSize": "11px",
+                "fontWeight": "900",
+                "color": safety_color,
+                "border": f"1px solid {safety_color}",
+                "borderRadius": "999px",
+                "padding": "6px 10px",
+            }),
+        ], style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "12px",
+            "alignItems": "center",
+            "marginBottom": "14px",
+        }),
+
+        html.Div([
+            _live_wg_metric("Total Campaigns", total, WHITE),
+            _live_wg_metric("Weis-Gamma Present", present, TEAL_DIM),
+            _live_wg_metric("Gamma OK", gamma_ok, TEAL_DIM),
+            _live_wg_metric("No Options Returned", no_options, YELLOW_DIM),
+            _live_wg_metric("No Option-Chain Input", no_chain, no_chain_color),
+            _live_wg_metric("Gamma Stale / Unconfirmed", stale, stale_color),
+            _live_wg_metric("Transitions Off", "YES" if transitions_off else "NO", safety_color),
+            _live_wg_metric("Missing Overlay", missing, YELLOW_DIM),
+        ], style={
+            "display": "grid",
+            "gridTemplateColumns": "repeat(auto-fit, minmax(150px, 1fr))",
+            "gap": "10px",
+        }),
+
+        html.Div([
+            html.Div([
+                html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_live_wg_counts_text(wg.get("gamma_status_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_live_wg_counts_text(wg.get("option_chain_status_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_live_wg_counts_text(wg.get("fusion_state_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+        ], style={
+            "display": "grid",
+            "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
+            "gap": "10px",
+            "marginTop": "12px",
+        }),
+    ], style={
+        "border": "1px solid rgba(45,212,191,.30)",
+        "background": "rgba(8,24,39,.72)",
+        "borderRadius": "18px",
+        "padding": "16px",
+        "marginBottom": "16px",
+        "boxShadow": "0 0 0 1px rgba(45,212,191,.08) inset",
+    })
+
+
+
 # ── Admin helpers ──────────────────────────────────────────────────────────────
 def _admin_tile(label, value, color=None, sub=None):
     color = color or WHITE
@@ -2634,7 +2814,10 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
         trade_plan  = _build_trade_plan_contents(live)
         active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
-        return (build_command_tab(live, candles or _init_candles, symbol, tf),
+        return (html.Div([
+                    build_weis_gamma_status_center_panel(),
+                    build_command_tab(live, candles or _init_candles, symbol, tf),
+                ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
     if tab=="feed":          main = build_feed_tab(live,live_mode)
