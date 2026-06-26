@@ -511,6 +511,66 @@ def _generate_regime_narrative(symbols, regimes, armed, triggered, avg_score) ->
     )
 
 
+
+def _safe_admin_report_fallback(error: str = "") -> dict:
+    """
+    Return a frontend-safe admin report payload if the full report builder fails.
+    This prevents the Admin tab from showing a blank/error state.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    clean_error = str(error or "")[:500]
+
+    return {
+        "ok": False if clean_error else True,
+        "error": clean_error,
+        "generated_at": now,
+        "live_stats": {
+            "total_symbols": 0,
+            "armed": 0,
+            "triggered": 0,
+        },
+        "accuracy_stats": {
+            "hit_rate": 0,
+            "conf_rate": 0,
+            "neutral_rate": 0,
+            "miss_rate": 0,
+            "a_grade": 0,
+            "total": 0,
+        },
+        "snapshot_health": {
+            "status": "Fallback Report Active",
+            "last_write": "",
+            "recent_count": 0,
+            "error": clean_error,
+        },
+        "top_scores": [],
+        "top_movers": [],
+        "anomalies": [],
+        "narrative": (
+            "Admin report route is mounted, but the full report builder returned an error: "
+            + clean_error
+            if clean_error
+            else "Admin report route is mounted. Waiting for report data."
+        ),
+        "daily_grades": [],
+        "regime_distribution": {},
+    }
+
+
+def _load_radar_cache_for_admin_report():
+    try:
+        from backend.radar_service import RADAR_CACHE
+        return RADAR_CACHE or {}
+    except Exception:
+        try:
+            from radar_service import RADAR_CACHE
+            return RADAR_CACHE or {}
+        except Exception as exc:
+            raise RuntimeError(f"RADAR_CACHE import failed: {exc}") from exc
+
+
+
 # ── Admin API endpoint ─────────────────────────────────────────────────────
 
 @snapshot_router.get("/report")
@@ -520,16 +580,15 @@ def get_admin_report(authorization: Optional[str] = Header(None)):
     Only accessible when logged in as greg.kosmala@gmail.com.
     Validates via Supabase JWT.
     """
-    # Validate admin access
     if not _is_admin(authorization):
         raise HTTPException(403, "Admin access required")
 
     try:
-        from backend.radar_service import RADAR_CACHE
-    except Exception:
-        from radar_service import RADAR_CACHE
-    report = build_admin_report(RADAR_CACHE)
-    return report
+        radar_cache = _load_radar_cache_for_admin_report()
+        return build_admin_report(radar_cache)
+    except Exception as exc:
+        log.exception("Admin report failed")
+        return _safe_admin_report_fallback(str(exc))
 
 
 @snapshot_router.get("/report/public")
@@ -538,14 +597,16 @@ def get_admin_report_dev():
     Dev/local access — no auth check. Disable in production by
     checking ADMIN_KEY env var.
     """
-    admin_key = os.getenv("ADMIN_KEY","")
+    admin_key = os.getenv("ADMIN_KEY", "")
     if admin_key:
         raise HTTPException(403, "Use /api/admin/report with auth header in production")
+
     try:
-        from backend.radar_service import RADAR_CACHE
-    except Exception:
-        from radar_service import RADAR_CACHE
-    return build_admin_report(RADAR_CACHE)
+        radar_cache = _load_radar_cache_for_admin_report()
+        return build_admin_report(radar_cache)
+    except Exception as exc:
+        log.exception("Public admin report failed")
+        return _safe_admin_report_fallback(str(exc))
 
 
 @snapshot_router.post("/snapshot/write-now")
