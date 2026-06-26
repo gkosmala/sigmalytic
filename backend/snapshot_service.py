@@ -559,15 +559,33 @@ def _safe_admin_report_fallback(error: str = "") -> dict:
 
 
 def _load_radar_cache_for_admin_report():
+    """
+    Load the live radar cache without forcing a fragile re-import.
+
+    backend.radar_service is normally already loaded by backend.main.
+    Pulling from sys.modules avoids circular/import-path issues.
+    """
+    import sys
+    errors = []
+
+    for module_name in ("backend.radar_service", "radar_service"):
+        mod = sys.modules.get(module_name)
+        if mod is not None and hasattr(mod, "RADAR_CACHE"):
+            return getattr(mod, "RADAR_CACHE") or {}
+
     try:
         from backend.radar_service import RADAR_CACHE
         return RADAR_CACHE or {}
-    except Exception:
-        try:
-            from radar_service import RADAR_CACHE
-            return RADAR_CACHE or {}
-        except Exception as exc:
-            raise RuntimeError(f"RADAR_CACHE import failed: {exc}") from exc
+    except Exception as exc:
+        errors.append(f"backend.radar_service: {exc}")
+
+    try:
+        from radar_service import RADAR_CACHE
+        return RADAR_CACHE or {}
+    except Exception as exc:
+        errors.append(f"radar_service: {exc}")
+
+    raise RuntimeError("RADAR_CACHE load failed: " + " | ".join(errors))
 
 
 
