@@ -544,6 +544,254 @@ def radar_top_alias(limit: int = 8):
     return {"campaigns": campaigns[:limit]}
 
 
+
+
+# ── Frontend compatibility routes: Radar / Scoreboard / Divergence ────────────
+# These routes expose campaign-intelligence data in the lightweight shapes the
+# Dash frontend already expects. They do not import the legacy radar service and
+# do not change SIP, campaigns, Weis-Gamma, Admin, or lifecycle transition logic.
+
+def _compat_safe_float(value, default=0.0):
+    try:
+        if value is None or value == "":
+            return float(default)
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _compat_safe_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return int(default)
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+def _compat_first(campaign, names, default=None):
+    if not isinstance(campaign, dict):
+        return default
+    for name in names:
+        value = campaign.get(name)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _compat_campaigns():
+    try:
+        from backend.campaign_api import active_campaigns
+
+        data = active_campaigns()
+        if isinstance(data, dict):
+            campaigns = data.get("campaigns") or data.get("items") or []
+        elif isinstance(data, list):
+            campaigns = data
+        else:
+            campaigns = []
+
+        return [c for c in campaigns if isinstance(c, dict)]
+    except Exception:
+        return []
+
+
+def _compat_score(campaign):
+    score = _compat_first(
+        campaign,
+        [
+            "composite_score",
+            "score",
+            "d_score",
+            "decision_score",
+            "edge_score",
+            "campaign_score",
+            "master_score",
+        ],
+        None,
+    )
+
+    if score is None:
+        obstacle = _compat_safe_float(campaign.get("obstacle_score"), 0)
+        progress = _compat_safe_float(campaign.get("progress_score"), 0)
+        if obstacle or progress:
+            score = (obstacle + progress) / 2
+        else:
+            score = 0
+
+    score = _compat_safe_float(score, 0)
+
+    # Some internal scores may be stored as 0.00-1.00.
+    if 0 < score <= 1:
+        score = score * 100
+
+    return max(0.0, min(100.0, score))
+
+
+def _compat_grade(score):
+    if score >= 85:
+        return "A+"
+    if score >= 75:
+        return "A"
+    if score >= 65:
+        return "B"
+    if score >= 50:
+        return "C"
+    return "W"
+
+
+def _compat_bias(state):
+    s = str(state or "").upper()
+    if "DISTRIBUTION" in s or "CLOSED" in s:
+        return "BEARISH"
+    if s in {"CONFIRMED", "SURVIVING", "EXPANDING", "MATURING"}:
+        return "BULLISH"
+    if s == "BIRTH":
+        return "WATCH"
+    return "NEUTRAL"
+
+
+def _compat_regime(campaign):
+    regime = _compat_first(
+        campaign,
+        ["regime", "current_regime", "weis_gamma_phase", "phase", "layer"],
+        "DISCOVERY",
+    )
+    return str(regime or "DISCOVERY")
+
+
+def _compat_to_frontend_row(campaign):
+    symbol = str(_compat_first(campaign, ["symbol", "ticker"], "") or "").upper()
+    state = str(_compat_first(campaign, ["current_state", "state", "status"], "BIRTH") or "BIRTH")
+    score = _compat_score(campaign)
+    price = _compat_safe_float(
+        _compat_first(campaign, ["current_price", "price", "last_price", "close"], 0),
+        0,
+    )
+
+    progress = _compat_safe_float(campaign.get("progress_score"), score)
+    obstacle = _compat_safe_float(campaign.get("obstacle_score"), score)
+    change_pct = _compat_safe_float(
+        _compat_first(campaign, ["change_pct", "pct_change", "return_pct"], 0),
+        0,
+    )
+
+    return {
+        "campaign_id": campaign.get("campaign_id"),
+        "symbol": symbol,
+        "price": price,
+        "change_pct": change_pct,
+        "composite_score": round(score, 2),
+        "score": round(score, 2),
+        "grade": _compat_grade(score),
+        "status": state,
+        "regime": _compat_regime(campaign),
+        "bias": _compat_bias(state),
+        "timeframe": str(_compat_first(campaign, ["timeframe"], "DAILY") or "DAILY"),
+        "layer": str(_compat_first(campaign, ["layer"], "DISCOVERY") or "DISCOVERY"),
+        "obstacle_score": round(obstacle, 2),
+        "progress_score": round(progress, 2),
+        "duration_days": _compat_safe_int(campaign.get("duration_days"), 0),
+        "source": "campaign_intelligence",
+    }
+
+
+@app.get("/api/radar/scores")
+def radar_scores_compat(limit: int = 50):
+    campaigns = _compat_campaigns()
+    rows = [_compat_to_frontend_row(c) for c in campaigns]
+    rows = [r for r in rows if r.get("symbol")]
+    rows.sort(key=lambda r: r.get("composite_score", 0), reverse=True)
+
+    return {
+        "ok": True,
+        "source": "campaign_intelligence_compat",
+        "generated_at": datetime.utcnow().isoformat(),
+        "count": len(rows[:limit]),
+        "symbols": rows[:limit],
+    }
+
+
+@app.get("/api/scoreboard")
+def scoreboard_compat(limit: int = 50):
+    campaigns = _compat_campaigns()
+    entries = [_compat_to_frontend_row(c) for c in campaigns]
+    entries = [e for e in entries if e.get("symbol")]
+    entries.sort(key=lambda e: e.get("composite_score", 0), reverse=True)
+
+    grade_counts = {}
+    state_counts = {}
+
+    for entry in entries:
+        grade = entry.get("grade", "—")
+        state = entry.get("status", "—")
+        grade_counts[grade] = grade_counts.get(grade, 0) + 1
+        state_counts[state] = state_counts.get(state, 0) + 1
+
+    return {
+        "ok": True,
+        "source": "campaign_intelligence_compat",
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "total": len(entries),
+            "grade_counts": grade_counts,
+            "state_counts": state_counts,
+        },
+        "entries": entries[:limit],
+    }
+
+
+@app.get("/api/admin/divergence-watchlist")
+def divergence_watchlist_compat(limit: int = 50):
+    campaigns = _compat_campaigns()
+    rows = []
+
+    for campaign in campaigns:
+        row = _compat_to_frontend_row(campaign)
+        if not row.get("symbol"):
+            continue
+
+        score = _compat_safe_float(row.get("score"), 0)
+        behavioral_score = _compat_safe_float(
+            _compat_first(campaign, ["progress_score", "evidence_density", "obstacle_score"], score),
+            score,
+        )
+
+        if 0 < behavioral_score <= 1:
+            behavioral_score = behavioral_score * 100
+
+        delta = round(score - behavioral_score, 2)
+
+        if delta >= 10:
+            direction = "BULLISH"
+        elif delta <= -10:
+            direction = "BEARISH"
+        else:
+            direction = "NEUTRAL"
+
+        rows.append({
+            "symbol": row["symbol"],
+            "price": row["price"],
+            "score": round(score, 2),
+            "behavioral_score": round(behavioral_score, 2),
+            "delta": delta,
+            "direction": direction,
+            "regime": row["regime"],
+            "status": row["status"],
+            "source": "campaign_intelligence",
+        })
+
+    rows.sort(key=lambda r: abs(_compat_safe_float(r.get("delta"), 0)), reverse=True)
+
+    return {
+        "ok": True,
+        "source": "campaign_intelligence_compat",
+        "last_audit": datetime.utcnow().isoformat(),
+        "count": len(rows[:limit]),
+        "items": rows[:limit],
+    }
+
+
 app.include_router(campaign_router)
 app.include_router(research_router)
 app.include_router(intelligence_router)
