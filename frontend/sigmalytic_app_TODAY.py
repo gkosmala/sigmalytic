@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-# Sigmalytic v2.2 — integer x-axis for proper candle rendering
+# Sigmalytic v2.2 — true OHLC candlestick rendering
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
@@ -256,23 +256,87 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
 def build_chart(candles, price, nodes, tf="5m"):
-    """Clean chart — integer index x-axis for proper candle rendering."""
+    """
+    True financial OHLC candlestick chart.
+
+    Each candle uses:
+    - open/close for the rectangular body
+    - high/low for the wick/shadow
+    - green body when close >= open
+    - red body when close < open
+
+    The x-axis is categorical so Plotly gives each candle a visible body instead
+    of compressing candles into thin line-like marks.
+    """
     kl = get_key_levels(price)
-    xs = list(range(len(candles)))
+
+    clean = []
+    for i, c in enumerate(candles or []):
+        if not isinstance(c, dict):
+            continue
+        try:
+            o = float(c.get("o", c.get("open")))
+            h = float(c.get("h", c.get("high")))
+            l = float(c.get("l", c.get("low")))
+            cl = float(c.get("c", c.get("close")))
+        except Exception:
+            continue
+
+        # Protect chart geometry if any upstream candle has bad high/low values.
+        h = max(h, o, cl)
+        l = min(l, o, cl)
+        label = str(i + 1)
+        raw_t = c.get("t") or c.get("time") or c.get("timestamp") or label
+        clean.append({"x": label, "o": o, "h": h, "l": l, "c": cl, "t": raw_t})
+
+    if not clean:
+        p = float(price or 0)
+        clean = [{"x": "1", "o": p, "h": p, "l": p, "c": p, "t": "No candle data"}]
+
+    xs = [c["x"] for c in clean]
+    opens = [c["o"] for c in clean]
+    highs = [c["h"] for c in clean]
+    lows = [c["l"] for c in clean]
+    closes = [c["c"] for c in clean]
+    hover_times = [c["t"] for c in clean]
+
+    y_min = min(lows + [float(price or 0)])
+    y_max = max(highs + [float(price or 0)])
+    y_span = max(y_max - y_min, max(abs(float(price or 1)) * 0.01, 0.25))
+    y_pad = y_span * 0.12
+
     fig = go.Figure()
+
     fig.add_trace(go.Candlestick(
         x=xs,
-        open=[c["o"] for c in candles],
-        high=[c["h"] for c in candles],
-        low=[c["l"] for c in candles],
-        close=[c["c"] for c in candles],
+        open=opens,
+        high=highs,
+        low=lows,
+        close=closes,
+        customdata=hover_times,
         name="Price",
-        increasing=dict(line=dict(color=TEAL_DIM, width=2), fillcolor=TEAL_DIM),
-        decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
-        whiskerwidth=1.0,
+        increasing=dict(
+            line=dict(color=TEAL_DIM, width=1.2),
+            fillcolor=TEAL_DIM,
+        ),
+        decreasing=dict(
+            line=dict(color=RED_DIM, width=1.2),
+            fillcolor=RED_DIM,
+        ),
+        whiskerwidth=0.35,
+        hovertemplate=(
+            "Candle %{x}<br>"
+            "Time %{customdata}<br>"
+            "Open %{open:.2f}<br>"
+            "High %{high:.2f}<br>"
+            "Low %{low:.2f}<br>"
+            "Close %{close:.2f}<extra></extra>"
+        ),
     ))
-    # Level lines — no annotations (labels are in the Price Ladder panel)
-    for level,color,dash,width in [
+
+    # Level lines remain as context. The y-axis range is based on the candle
+    # data so the candle bodies stay visually readable.
+    for level, color, dash, width in [
         (kl.breakout,   TEAL_DIM,   "dash",    1.0),
         (kl.prior_high, TEAL_DIM,   "dot",     1.0),
         (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
@@ -282,32 +346,48 @@ def build_chart(candles, price, nodes, tf="5m"):
         (kl.fail,       RED_DIM,    "dash",    1.0),
     ]:
         fig.add_hline(y=level, line_color=color, line_dash=dash,
-                      line_width=width, opacity=0.6)
-    # Live price line
-    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
+                      line_width=width, opacity=0.45)
+
+    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid",
+                  line_width=1.5, opacity=0.9)
+
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor=NAVY,
         font=dict(family="DM Sans", color=WHITE, size=12),
         xaxis=dict(
-            showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
+            type="category",
+            categoryorder="array",
+            categoryarray=xs,
+            showgrid=True,
+            gridcolor="rgba(255,255,255,.06)",
+            zeroline=False,
             rangeslider=dict(visible=False),
             showticklabels=False,
             title=None,
             color=WHITE,
+            fixedrange=False,
         ),
         yaxis=dict(
-            showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
-            color=WHITE, side="right", tickformat=".2f",
+            showgrid=True,
+            gridcolor="rgba(255,255,255,.06)",
+            zeroline=False,
+            color=WHITE,
+            side="right",
+            tickformat=".2f",
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
+            range=[y_min - y_pad, y_max + y_pad],
+            fixedrange=False,
         ),
-        # Enough right margin for y-axis labels, bottom for x-axis labels
         margin=dict(l=0, r=60, t=8, b=24),
         height=480,
         showlegend=False,
-        hovermode="x unified",
-        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
+        hovermode="x",
+        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE,
+                        bordercolor=BORDER, font_size=12),
         dragmode="pan",
     )
+
     return fig
 
 def _build_clock_inline():
