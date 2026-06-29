@@ -4,7 +4,7 @@ backend/main.py
 """
 
 from fastapi import FastAPI, Body
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import requests
 
@@ -680,7 +680,7 @@ def _compat_to_frontend_row(campaign):
         "campaign_id": campaign.get("campaign_id"),
         "symbol": symbol,
         "price": price,
-        "change_pct": change_pct,
+        "change_pct": round(change_pct, 2),
         "composite_score": round(score, 2),
         "score": round(score, 2),
         "grade": _compat_grade(score),
@@ -692,32 +692,140 @@ def _compat_to_frontend_row(campaign):
         "obstacle_score": round(obstacle, 2),
         "progress_score": round(progress, 2),
         "duration_days": _compat_safe_int(campaign.get("duration_days"), 0),
+        "market_enriched": False,
+        "market_price": None,
+        "previous_close": None,
+        "market_source": "campaign_intelligence",
         "source": "campaign_intelligence",
     }
 
 
-@app.get("/api/radar/scores")
-def radar_scores_compat(limit: int = 50):
-    campaigns = _compat_campaigns()
-    rows = [_compat_to_frontend_row(c) for c in campaigns]
-    rows = [r for r in rows if r.get("symbol")]
-    rows.sort(key=lambda r: r.get("composite_score", 0), reverse=True)
-
+def _compat_alpaca_headers():
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    if not key or not secret:
+        return None
     return {
-        "ok": True,
-        "source": "campaign_intelligence_compat",
-        "generated_at": datetime.utcnow().isoformat(),
-        "count": len(rows[:limit]),
-        "symbols": rows[:limit],
+        "APCA-API-KEY-ID": key,
+        "APCA-API-SECRET-KEY": secret,
     }
 
 
-@app.get("/api/scoreboard")
-def scoreboard_compat(limit: int = 50):
-    campaigns = _compat_campaigns()
-    entries = [_compat_to_frontend_row(c) for c in campaigns]
-    entries = [e for e in entries if e.get("symbol")]
-    entries.sort(key=lambda e: e.get("composite_score", 0), reverse=True)
+def _compat_enrich_market_rows(rows):
+    """
+    Add real Alpaca SIP latest price and previous daily close when available.
+
+    If Alpaca does not return data for a symbol, the row remains usable but
+    market_enriched stays false so the frontend/backend can distinguish a
+    missing market-change calculation from a real 0.00% change.
+    """
+    clean_rows = [r for r in rows if isinstance(r, dict) and r.get("symbol")]
+    headers = _compat_alpaca_headers()
+    if not headers or not clean_rows:
+        return {
+            "rows": clean_rows,
+            "market_enriched_count": 0,
+            "market_error": "missing_alpaca_credentials" if not headers else None,
+        }
+
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+    symbols = [str(r.get("symbol")).upper() for r in clean_rows if r.get("symbol")]
+    unique_symbols = []
+    seen = set()
+    for sym in symbols:
+        if sym and sym not in seen:
+            unique_symbols.append(sym)
+            seen.add(sym)
+
+    latest_by_symbol = {}
+    prev_close_by_symbol = {}
+    market_error = None
+
+    try:
+        latest_resp = requests.get(
+            f"{base_url}/v2/stocks/bars/latest",
+            headers=headers,
+            params={"symbols": ",".join(unique_symbols), "feed": "sip"},
+            timeout=15,
+        )
+        if latest_resp.ok:
+            payload = latest_resp.json() or {}
+            latest_by_symbol = payload.get("bars") or {}
+        else:
+            market_error = f"latest_http_{latest_resp.status_code}"
+    except Exception as exc:
+        market_error = f"latest_error_{str(exc)[:120]}"
+
+    try:
+        end_dt = datetime.utcnow()
+        start_dt = end_dt - timedelta(days=14)
+        daily_resp = requests.get(
+            f"{base_url}/v2/stocks/bars",
+            headers=headers,
+            params={
+                "symbols": ",".join(unique_symbols),
+                "timeframe": "1Day",
+                "start": start_dt.isoformat() + "Z",
+                "end": end_dt.isoformat() + "Z",
+                "limit": max(1000, len(unique_symbols) * 10),
+                "adjustment": "raw",
+                "feed": "sip",
+            },
+            timeout=20,
+        )
+        if daily_resp.ok:
+            payload = daily_resp.json() or {}
+            daily_bars = payload.get("bars") or {}
+            for sym, bars in daily_bars.items():
+                if isinstance(bars, list) and bars:
+                    ref_bar = bars[-2] if len(bars) >= 2 else bars[-1]
+                    prev_close_by_symbol[str(sym).upper()] = _compat_safe_float(ref_bar.get("c"), 0)
+        elif market_error is None:
+            market_error = f"daily_http_{daily_resp.status_code}"
+    except Exception as exc:
+        if market_error is None:
+            market_error = f"daily_error_{str(exc)[:120]}"
+
+    enriched_count = 0
+
+    for row in clean_rows:
+        sym = str(row.get("symbol") or "").upper()
+        latest = latest_by_symbol.get(sym) or {}
+        latest_price = _compat_safe_float(latest.get("c"), 0)
+        previous_close = _compat_safe_float(prev_close_by_symbol.get(sym), 0)
+
+        if latest_price > 0:
+            row["price"] = round(latest_price, 4)
+            row["market_price"] = round(latest_price, 4)
+
+        if previous_close > 0:
+            row["previous_close"] = round(previous_close, 4)
+
+        if latest_price > 0 and previous_close > 0:
+            row["change_pct"] = round(((latest_price - previous_close) / previous_close) * 100, 2)
+            row["market_enriched"] = True
+            row["market_source"] = "alpaca_sip"
+            enriched_count += 1
+        else:
+            row["market_enriched"] = False
+            row["market_source"] = "campaign_intelligence"
+
+    return {
+        "rows": clean_rows,
+        "market_enriched_count": enriched_count,
+        "market_error": market_error,
+    }
+
+
+def _compat_scoreboard_summary(entries):
+    total_symbols = len(entries)
+    armed_states = {"CONFIRMED", "SURVIVING", "EXPANDING", "MATURING"}
+    armed = sum(1 for e in entries if str(e.get("status") or "").upper() in armed_states)
+    a_grade = sum(1 for e in entries if str(e.get("grade") or "").upper().startswith("A"))
+    avg_score = round(
+        sum(_compat_safe_float(e.get("composite_score"), 0) for e in entries) / total_symbols,
+        2,
+    ) if total_symbols else 0
 
     grade_counts = {}
     state_counts = {}
@@ -729,15 +837,58 @@ def scoreboard_compat(limit: int = 50):
         state_counts[state] = state_counts.get(state, 0) + 1
 
     return {
+        # Keys expected by the Dash Scoreboard tiles.
+        "total_symbols": total_symbols,
+        "armed": armed,
+        "avg_score": avg_score,
+        "a_grade": a_grade,
+
+        # Compatibility/debug keys.
+        "total": total_symbols,
+        "grade_counts": grade_counts,
+        "state_counts": state_counts,
+    }
+
+
+@app.get("/api/radar/scores")
+def radar_scores_compat(limit: int = 50):
+    campaigns = _compat_campaigns()
+    rows = [_compat_to_frontend_row(c) for c in campaigns]
+    rows = [r for r in rows if r.get("symbol")]
+    rows.sort(key=lambda r: r.get("composite_score", 0), reverse=True)
+    rows = rows[:limit]
+
+    market = _compat_enrich_market_rows(rows)
+
+    return {
         "ok": True,
         "source": "campaign_intelligence_compat",
         "generated_at": datetime.utcnow().isoformat(),
-        "summary": {
-            "total": len(entries),
-            "grade_counts": grade_counts,
-            "state_counts": state_counts,
-        },
-        "entries": entries[:limit],
+        "count": len(market["rows"]),
+        "market_enriched_count": market["market_enriched_count"],
+        "market_error": market["market_error"],
+        "symbols": market["rows"],
+    }
+
+
+@app.get("/api/scoreboard")
+def scoreboard_compat(limit: int = 50):
+    campaigns = _compat_campaigns()
+    entries = [_compat_to_frontend_row(c) for c in campaigns]
+    entries = [e for e in entries if e.get("symbol")]
+    entries.sort(key=lambda e: e.get("composite_score", 0), reverse=True)
+
+    display_entries = entries[:limit]
+    market = _compat_enrich_market_rows(display_entries)
+
+    return {
+        "ok": True,
+        "source": "campaign_intelligence_compat",
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": _compat_scoreboard_summary(entries),
+        "market_enriched_count": market["market_enriched_count"],
+        "market_error": market["market_error"],
+        "entries": market["rows"],
     }
 
 
@@ -752,28 +903,29 @@ def divergence_watchlist_compat(limit: int = 50):
             continue
 
         score = _compat_safe_float(row.get("score"), 0)
-        behavioral_score = _compat_safe_float(
-            _compat_first(campaign, ["progress_score", "evidence_density", "obstacle_score"], score),
-            score,
-        )
+        progress = _compat_safe_float(row.get("progress_score"), score)
+        obstacle = _compat_safe_float(row.get("obstacle_score"), score)
+        delta = round(progress - obstacle, 2)
 
-        if 0 < behavioral_score <= 1:
-            behavioral_score = behavioral_score * 100
+        state = str(row.get("status") or "").upper()
+        regime = str(row.get("regime") or "").upper()
 
-        delta = round(score - behavioral_score, 2)
-
-        if delta >= 10:
-            direction = "BULLISH"
-        elif delta <= -10:
+        if "DISTRIBUTION" in state or "DISTRIBUTION" in regime:
             direction = "BEARISH"
+        elif "EXHAUSTION" in regime and progress < obstacle:
+            direction = "BEARISH"
+        elif state in {"CONFIRMED", "SURVIVING", "EXPANDING", "MATURING"} and progress >= obstacle:
+            direction = "BULLISH"
+        elif state in {"CONFIRMED", "SURVIVING", "EXPANDING", "MATURING"}:
+            direction = "WATCH"
         else:
-            direction = "NEUTRAL"
+            direction = "WATCH"
 
         rows.append({
             "symbol": row["symbol"],
             "price": row["price"],
             "score": round(score, 2),
-            "behavioral_score": round(behavioral_score, 2),
+            "behavioral_score": round(progress, 2),
             "delta": delta,
             "direction": direction,
             "regime": row["regime"],
@@ -781,7 +933,14 @@ def divergence_watchlist_compat(limit: int = 50):
             "source": "campaign_intelligence",
         })
 
-    rows.sort(key=lambda r: abs(_compat_safe_float(r.get("delta"), 0)), reverse=True)
+    direction_rank = {"BULLISH": 0, "BEARISH": 1, "WATCH": 2}
+    rows.sort(
+        key=lambda r: (
+            direction_rank.get(str(r.get("direction")), 9),
+            -abs(_compat_safe_float(r.get("delta"), 0)),
+            -_compat_safe_float(r.get("score"), 0),
+        )
+    )
 
     return {
         "ok": True,
@@ -790,7 +949,6 @@ def divergence_watchlist_compat(limit: int = 50):
         "count": len(rows[:limit]),
         "items": rows[:limit],
     }
-
 
 app.include_router(campaign_router)
 app.include_router(research_router)
