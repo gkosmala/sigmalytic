@@ -156,6 +156,19 @@ def get_stock_quote(symbol: str):
         }
 
 
+
+
+@app.get("/api/behavior/open-trade/{user_id}")
+def get_open_trade(user_id: str):
+    """
+    Safe placeholder for Command Center active-trade lookup.
+
+    Returns an empty object when no active trade is open.
+    This prevents repeated 404 logs without touching campaigns, SIP, Admin, Radar, or scoring.
+    """
+    return {}
+
+
 @app.get("/api/admin/engine-status")
 def engine_status():
     return {
