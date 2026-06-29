@@ -2377,7 +2377,7 @@ def build_setup_tab():
         html.Pre(
             f"Frontend  : Dash (Python)  →  Render\n"
             f"Backend   : FastAPI        →  Render\n"
-            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
+            f"Data      : Alpaca SIP (free) / SIP (paid)\n"
             f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
             f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
@@ -2502,7 +2502,7 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0),
+    dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0, disabled=True),
     dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
 
@@ -2696,9 +2696,14 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
     ctx = callback_context
     if not ctx.triggered: return no_update,no_update,no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    # Synthetic market movement is disabled.
+    # Chart updates must come from /api/stock/{symbol}, which uses Alpaca SIP only.
+    if trigger == "i-synth":
+        return no_update, no_update, no_update
     vol = TF_VOLATILITY.get(tf, 0.60)
-    # Always attempt Alpaca first on any interval trigger.
-    # If Alpaca fails, use synthetic movement to keep chart alive.
+    # Always attempt Alpaca SIP first on live interval trigger.
+    # If Alpaca SIP fails, do not create synthetic movement.
     prev = current["price"] if current else 280.15
     price = None; volume = None
 
@@ -2787,7 +2792,7 @@ def render_price_ctrl(live_mode, live):
 def update_badges(live):
     seq = live["sequence"] if live else 0
     return (badge("LIVE","teal"),
-            badge("Alpaca IEX","blue"),
+            badge("Alpaca SIP","blue"),
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(

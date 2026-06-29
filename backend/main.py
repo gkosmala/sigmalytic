@@ -5,6 +5,8 @@ backend/main.py
 
 from fastapi import FastAPI, Body
 from datetime import datetime
+import os
+import requests
 
 from backend.campaign_api import router as campaign_router
 from backend.research_api import router as research_router
@@ -45,6 +47,113 @@ def health():
 @app.get("/api/health")
 def api_health():
     return {"status": "healthy"}
+
+
+
+
+@app.get("/api/stock/{symbol}")
+def get_stock_quote(symbol: str):
+    """
+    Live stock quote endpoint for frontend chart.
+
+    Policy:
+    - Alpaca SIP only.
+    - No IEX fallback.
+    - No synthetic fallback.
+    - Does not import radar_service.
+    - Does not touch campaign logic.
+    """
+    sym = (symbol or "").upper().strip()
+
+    if not sym:
+        return {
+            "ok": False,
+            "error": "missing_symbol",
+            "source": "none",
+            "feed": "sip",
+        }
+
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+
+    if not key or not secret:
+        return {
+            "ok": False,
+            "symbol": sym,
+            "error": "missing_alpaca_credentials",
+            "source": "alpaca",
+            "feed": "sip",
+        }
+
+    url = f"{base_url}/v2/stocks/bars/latest"
+
+    headers = {
+        "APCA-API-KEY-ID": key,
+        "APCA-API-SECRET-KEY": secret,
+    }
+
+    params = {
+        "symbols": sym,
+        "feed": "sip",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+
+        if not r.ok:
+            return {
+                "ok": False,
+                "symbol": sym,
+                "error": f"alpaca_sip_http_{r.status_code}",
+                "detail": r.text[:300],
+                "source": "alpaca",
+                "feed": "sip",
+            }
+
+        payload = r.json() or {}
+        bars = payload.get("bars") or {}
+        bar = bars.get(sym)
+
+        if not bar:
+            return {
+                "ok": False,
+                "symbol": sym,
+                "error": "no_sip_latest_bar_returned",
+                "source": "alpaca",
+                "feed": "sip",
+            }
+
+        price = bar.get("c")
+        volume = bar.get("v")
+
+        if price is None:
+            return {
+                "ok": False,
+                "symbol": sym,
+                "error": "sip_bar_missing_close",
+                "source": "alpaca",
+                "feed": "sip",
+            }
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "price": float(price),
+            "volume": int(volume or 0),
+            "timestamp": bar.get("t"),
+            "source": "alpaca",
+            "feed": "sip",
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "symbol": sym,
+            "error": str(exc)[:300],
+            "source": "alpaca",
+            "feed": "sip",
+        }
 
 
 @app.get("/api/admin/engine-status")
