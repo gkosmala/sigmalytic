@@ -1,1 +1,11 @@
-dir .github\workflows
+﻿name: Qualified Long Audit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  disabled-placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Audit workflow disabled
+        run: echo "Qualified long audit workflow is disabled."
