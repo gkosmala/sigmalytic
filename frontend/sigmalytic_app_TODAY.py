@@ -299,6 +299,10 @@ def build_chart(candles, price, nodes, tf="5m"):
     lows = [c["l"] for c in clean]
     closes = [c["c"] for c in clean]
     hover_times = [c["t"] for c in clean]
+    hover_text = [
+        f"Candle {x}<br>Time {t}<br>Open {o:.2f}<br>High {h:.2f}<br>Low {l:.2f}<br>Close {cl:.2f}"
+        for x, t, o, h, l, cl in zip(xs, hover_times, opens, highs, lows, closes)
+    ]
 
     y_min = min(lows + [float(price or 0)])
     y_max = max(highs + [float(price or 0)])
@@ -313,7 +317,8 @@ def build_chart(candles, price, nodes, tf="5m"):
         high=highs,
         low=lows,
         close=closes,
-        customdata=hover_times,
+        hovertext=hover_text,
+        hoverinfo="text",
         name="Price",
         increasing=dict(
             line=dict(color=TEAL_DIM, width=1.2),
@@ -324,14 +329,6 @@ def build_chart(candles, price, nodes, tf="5m"):
             fillcolor=RED_DIM,
         ),
         whiskerwidth=0.35,
-        hovertemplate=(
-            "Candle %{x}<br>"
-            "Time %{customdata}<br>"
-            "Open %{open:.2f}<br>"
-            "High %{high:.2f}<br>"
-            "Low %{low:.2f}<br>"
-            "Close %{close:.2f}<extra></extra>"
-        ),
     ))
 
     # Level lines remain as context. The y-axis range is based on the candle
