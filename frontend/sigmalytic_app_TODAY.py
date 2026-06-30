@@ -2475,12 +2475,18 @@ LOGO = html.Div([
     html.Div(chr(931), style={
         "fontSize":"28px",
         "fontWeight":"900",
-        "color":"#B8860B",
         "lineHeight":"1",
         "fontFamily":"Georgia, serif",
         "marginRight":"4px",
         "flexShrink":"0",
-        "textShadow":"0 0 4px rgba(184,134,11,.45), 0 1px 0 #6E4700",
+
+        # BRIGHT POLISHED GOLD SIGMA
+        "color":"#FFD700",
+        "background":"linear-gradient(135deg, #FFF8B5 0%, #FFD700 22%, #FFB000 45%, #FFFFFF 55%, #FFD700 65%, #B8860B 85%, #FFE066 100%)",
+        "WebkitBackgroundClip":"text",
+        "WebkitTextFillColor":"transparent",
+        "textShadow":"0 0 6px rgba(255,215,0,.95), 0 0 12px rgba(255,190,0,.55), 0 1px 0 #7A4A00",
+        "filter":"drop-shadow(0 0 5px rgba(255,215,0,.85))",
     }),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
