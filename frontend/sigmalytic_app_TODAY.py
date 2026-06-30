@@ -68,7 +68,7 @@ NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
-BLUE_DIM  = "#93c5fd"; MUTED     = "#f8fafc"; TEXT = "#f8fafc"
+BLUE_DIM  = "#93c5fd"; MUTED = "#f8fafc"; TEXT = "#f8fafc"
 WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
 PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
@@ -2968,7 +2968,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf, session=None):
             except Exception as _ce:
                 main = html.Div([
                     html.Div("⚠️ Campaign tab error", style={"color":"#f87171","fontWeight":"700","marginBottom":"8px"}),
-                    html.Div(str(_ce), style={"color":"#94a3b8","fontSize":"12px","fontFamily":"monospace"}),
+                    html.Div(str(_ce), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
                 ], style={"padding":"60px","textAlign":"center"})
         else:
             main = html.Div("Campaign tab unavailable — check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
@@ -2993,7 +2993,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf, session=None):
         except Exception as e:
             main = html.Div([
                 html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                html.Div(str(e), style={"color":"#94a3b8","fontSize":"12px","fontFamily":"monospace"}),
+                html.Div(str(e), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
             ], style={"padding":"60px","textAlign":"center"})
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
