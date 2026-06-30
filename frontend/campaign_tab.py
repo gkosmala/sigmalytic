@@ -304,6 +304,24 @@ def _summary_tile(label: str, value: str, color: str = WHITE, sub: str = "") -> 
 
 def _campaign_row(c: dict) -> html.Div:
     state = c.get("current_state", "BIRTH")
+    # FINAL_CAMPAIGN_QUALITY_STABILIZER
+    quality = "—"
+    quality_score = 0
+    quality_score_display = "—"
+    quality_value = c.get("outcome_quality")
+    if quality_value is not None and quality_value != "" and str(quality_value).upper() not in {"UNKNOWN", "NONE", "NULL", "NAN"}:
+        quality = str(quality_value).upper()
+
+    quality_score_value = c.get("outcome_quality_score")
+    if quality_score_value is not None and quality_score_value != "" and str(quality_score_value).upper() not in {"UNKNOWN", "NONE", "NULL", "NAN"}:
+        try:
+            quality_score = float(quality_score_value)
+            quality_score_display = f"{quality_score:.0f}"
+        except Exception:
+            quality_score = 0
+            quality_score_display = "—"
+
+
     symbol = c.get("symbol", "â€”")
     tier = c.get("historical_confidence", "â€”")
     days = _campaign_days(c)
