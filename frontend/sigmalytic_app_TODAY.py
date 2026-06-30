@@ -247,6 +247,17 @@ def _input_style(width="100%"):
             "borderRadius":"10px","padding":"9px 12px","width":width,"fontSize":"13px",
             "fontWeight":"600","fontFamily":"inherit"}
 
+
+def _bias_color(value):
+    v = str(value or "").upper().strip()
+    if v == "BULLISH":
+        return TEAL_DIM
+    if v == "BEARISH":
+        return RED_DIM
+    if v == "WATCH":
+        return YELLOW_DIM
+    return WHITE
+
 def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
     s = {"background":bg,"border":f"1px solid {border}","color":color,"borderRadius":"12px",
          "padding":"10px 18px","fontSize":"13px","fontWeight":"800","cursor":"pointer","fontFamily":"inherit"}
@@ -1217,7 +1228,7 @@ def build_radar_tab(session=None):
             html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
             html.Span(s.get("status","—"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
             html.Span(s.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(s.get("bias","—"), style={"flex":"1","fontSize":"11px","color":BLUE_DIM}),
+            html.Span(s.get("bias","—"), style={ "flex":"1","fontSize":"11px","color":_bias_color(s.get("bias","—"))}),
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
 
