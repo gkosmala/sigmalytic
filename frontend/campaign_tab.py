@@ -328,8 +328,22 @@ def _campaign_row(c: dict) -> html.Div:
     fail_display = _fmt_pct_or_dash(fail_raw, 0)
     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
 
-    outcome_quality = c.get("outcome_quality")
-    quality = _label_dash(quality)
+    # CAMPAIGN_QUALITY_VARIABLE_REPAIR
+    quality_value = c.get("outcome_quality")
+    if quality_value is None or quality_value == "" or str(quality_value).upper() in {"UNKNOWN", "NONE", "NULL", "NAN"}:
+        quality = "—"
+    else:
+        quality = str(quality_value).upper()
+
+    quality_score_value = c.get("outcome_quality_score")
+    quality_score = _safe_float(quality_score_value, 0)
+    if quality_score_value is None or quality_score_value == "" or str(quality_score_value).upper() in {"UNKNOWN", "NONE", "NULL", "NAN"}:
+        quality_score_display = "—"
+    else:
+        quality_score_display = f"{quality_score:.0f}"
+
+    outcome_quality_value = c.get("outcome_quality")
+    quality = "—" if quality_value is None or quality_value == "" or str(quality_value).upper() in {"UNKNOWN", "NONE", "NULL", "NAN"} else str(quality_value).upper()
     outcome_score = _safe_float(c.get("outcome_quality_score"), 0)
     exp_ret = _safe_float(c.get("outcome_expected_return"), 0)
     exp_mfe_raw = c.get("outcome_expected_mfe")
