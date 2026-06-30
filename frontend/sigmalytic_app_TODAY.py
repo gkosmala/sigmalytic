@@ -68,7 +68,7 @@ NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
-BLUE_DIM  = "#93c5fd"; MUTED     = "#64748b"; TEXT = "#94a3b8"
+BLUE_DIM  = "#93c5fd"; MUTED     = "#f8fafc"; TEXT = "#f8fafc"
 WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
 PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
@@ -1072,7 +1072,7 @@ def build_command_tab(live, candles, symbol, tf):
             html.Div([
                 html.H2("🧱 Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                html.P("Options intelligence from price, volume, volatility proxy, and decision score.",
                        style={"fontSize":"12px","color":TEXT})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
@@ -1083,7 +1083,7 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+        note_box("Options intelligence layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
