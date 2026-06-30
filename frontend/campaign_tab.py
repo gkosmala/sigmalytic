@@ -66,6 +66,26 @@ def _mono(text, color=None, size="13px"):
     })
 
 
+
+def _has_real_value(value):
+    return value is not None and value != ""
+
+def _fmt_pct_or_dash(value, digits=0):
+    if not _has_real_value(value):
+        return "—"
+    try:
+        return f"{float(value):.{digits}f}%"
+    except Exception:
+        return "—"
+
+def _fmt_num_or_dash(value, digits=0):
+    if not _has_real_value(value):
+        return "—"
+    try:
+        return f"{float(value):.{digits}f}"
+    except Exception:
+        return "—"
+
 def _safe_float(value, default=0.0):
     try:
         if value is None or value == "":
