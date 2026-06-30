@@ -104,6 +104,54 @@ def _safe_int(value, default=0):
         return default
 
 
+def _is_missing(value):
+    return value is None or value == "" or str(value).lower() in {"none", "null", "nan"}
+
+def _fmt_num_or_dash(value, digits=0):
+    if _is_missing(value):
+        return "—"
+    try:
+        return f"{float(value):.{digits}f}"
+    except Exception:
+        return "—"
+
+def _fmt_pct_or_dash(value, digits=0):
+    if _is_missing(value):
+        return "—"
+    try:
+        return f"{float(value):.{digits}f}%"
+    except Exception:
+        return "—"
+
+def _campaign_days(c):
+    raw = c.get("campaign_age_days")
+    if not _is_missing(raw):
+        try:
+            val = int(float(raw))
+            if val > 0:
+                return str(val)
+        except Exception:
+            pass
+
+    for key in ["state_changed_at", "created_at", "birth_date", "updated_at"]:
+        dt_raw = c.get(key)
+        if _is_missing(dt_raw):
+            continue
+        try:
+            s = str(dt_raw).replace("Z", "+00:00")
+            if "T" not in s and len(s) == 10:
+                s = s + "T00:00:00+00:00"
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return str(max(0, (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).days))
+        except Exception:
+            continue
+
+    return "—"
+
+
+
 _STATE_COLORS = {
     "BIRTH": BLUE_DIM,
     "CONFIRMED": TEAL_DIM,
@@ -229,20 +277,26 @@ def _campaign_row(c: dict) -> html.Div:
     state = c.get("current_state", "BIRTH")
     symbol = c.get("symbol", "—")
     tier = c.get("historical_confidence", "—")
-    days = _safe_int(c.get("campaign_age_days"), 0)
+    days = _campaign_days(c)
 
     current = _safe_float(c.get("current_price"), 0)
     ret_pct = _safe_float(c.get("return_pct"), 0)
     pnf_pct = _safe_float(c.get("pnf_progress_pct"), 0)
 
     ods = _safe_float(c.get("operator_dominance"), 0)
-    decay_score = _safe_float(c.get("decay_score"), 0)
+    decay_raw = c.get("decay_score")
+    decay_score = _safe_float(decay_raw, 0)
+    decay_display = _fmt_num_or_dash(decay_raw, 0)
     decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
     exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
 
     next_state = str(c.get("transition_next_state") or "—").upper()
-    adv = _safe_float(c.get("transition_advance_prob"), 0)
-    fail_transition = _safe_float(c.get("transition_failure_prob"), 0)
+    adv_raw = c.get("transition_advance_prob")
+    fail_raw = c.get("transition_failure_prob")
+    adv = _safe_float(adv_raw, 0)
+    fail_transition = _safe_float(fail_raw, 0)
+    adv_display = _fmt_pct_or_dash(adv_raw, 0)
+    fail_display = _fmt_pct_or_dash(fail_raw, 0)
     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
 
     outcome_quality = str(c.get("outcome_quality") or "UNKNOWN").upper()
@@ -307,7 +361,7 @@ def _campaign_row(c: dict) -> html.Div:
                 "color": TEAL_DIM if ods >= 70 else (YELLOW_DIM if ods >= 40 else RED_DIM),
             }),
             _bar(ods, TEAL_DIM if ods >= 70 else (YELLOW_DIM if ods >= 40 else RED_DIM)),
-            html.Div(f"Decay {decay_score:.0f}", style={
+            html.Div(f"Decay {decay_display}", style={
                 "fontSize": "10px",
                 "fontWeight": "700",
                 "color": decay_color,
@@ -322,7 +376,7 @@ def _campaign_row(c: dict) -> html.Div:
                 "color": _STATE_COLORS.get(next_state, BLUE_DIM),
             }),
             _pill(_BIAS_LABELS.get(bias, bias), bias_color),
-            html.Div(f"Adv {adv:.0f}% / Fail {fail_transition:.0f}%", style={
+            html.Div(f"Adv {adv_display} / Fail {fail_display}", style={
                 "fontSize": "9px",
                 "color": MUTED,
                 "marginTop": "4px",
