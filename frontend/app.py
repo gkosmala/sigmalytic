@@ -1,7 +1,7 @@
-# Sigmalytic v2.2 — integer x-axis for proper candle rendering
+﻿# Sigmalytic v2.2 â€” integer x-axis for proper candle rendering
 """
-Sigmalytic Quant Corporation — Decision Intelligence Platform
-Institutional-Grade Frontend · Dash + Plotly
+Sigmalytic Quant Corporation â€” Decision Intelligence Platform
+Institutional-Grade Frontend Â· Dash + Plotly
 Includes: Behavioral Intelligence Layer v1.0
 """
 
@@ -18,7 +18,7 @@ import requests as req
 
 import sys, pathlib
 
-# ── Safe preflight palette definitions ────────────────────────────────────────
+# â”€â”€ Safe preflight palette definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # These must exist before any global CSS f-strings are evaluated.
 WHITE = "#FFFFFF"
 TEXT = WHITE
@@ -57,7 +57,7 @@ TF_INTERVAL   = {"1m": 60,   "5m": 300,  "15m": 900,  "1H": 3600, "1D": 86400, "
 TF_TICKFMT    = {"1m": "%H:%M", "5m": "%H:%M", "15m": "%H:%M",
                  "1H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
 
-# ── Brand tokens ───────────────────────────────────────────────────────────────
+# â”€â”€ Brand tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 WHITE = "#FFFFFF"
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
@@ -87,11 +87,11 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 .is-open .Select-control{{border-color:{BORDER_T} !important;border-radius:10px 10px 0 0 !important;}}
 """
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
-# ── Historical Probability Display Helpers ───────────────────────────────────
-def _fmt_pct(v, default="—"):
+# â”€â”€ Historical Probability Display Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def _fmt_pct(v, default="â€”"):
     try:
         if v is None or v == "":
             return default
@@ -99,7 +99,7 @@ def _fmt_pct(v, default="—"):
     except Exception:
         return default
 
-def _fmt_signed_pct(v, default="—"):
+def _fmt_signed_pct(v, default="â€”"):
     try:
         if v is None or v == "":
             return default
@@ -108,7 +108,7 @@ def _fmt_signed_pct(v, default="—"):
     except Exception:
         return default
 
-def _fmt_num(v, default="—"):
+def _fmt_num(v, default="â€”"):
     try:
         if v is None or v == "":
             return default
@@ -119,7 +119,7 @@ def _fmt_num(v, default="—"):
     except Exception:
         return default
 
-def _fmt_int(v, default="—"):
+def _fmt_int(v, default="â€”"):
     try:
         if v is None or v == "":
             return default
@@ -186,17 +186,17 @@ def historical_edge_card(row):
             ]),
             html.Div([
                 html.Div("Confidence", style={"fontSize":"11px","color":WHITE}),
-                html.Div(str(p["confidence"] or "—"), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+                html.Div(str(p["confidence"] or "â€”"), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
             ]),
             html.Div([
                 html.Div("Match", style={"fontSize":"11px","color":WHITE}),
-                html.Div(str(p["match_type"] or "—").replace("_"," "), style={"fontSize":"13px","fontWeight":"700","color":WHITE}),
+                html.Div(str(p["match_type"] or "â€”").replace("_"," "), style={"fontSize":"13px","fontWeight":"700","color":WHITE}),
             ]),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,minmax(90px,1fr))","gap":"10px","marginTop":"12px"}),
         html.Div([
-            html.Span(str(p["weekly"] or "Weekly: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
-            html.Span(" · ", style={"color":WHITE}),
-            html.Span(str(p["setup"] or "Setup: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+            html.Span(str(p["weekly"] or "Weekly: â€”"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+            html.Span(" Â· ", style={"color":WHITE}),
+            html.Span(str(p["setup"] or "Setup: â€”"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
         ], style={"marginTop":"10px"}),
     ], style={
         "border":"1px solid rgba(45,212,191,.26)",
@@ -628,7 +628,7 @@ def _regime_from_live(live: dict) -> str:
     if price <= kl.fail:                       return "reversal"
     return "compression"
 
-# ── UI primitives ──────────────────────────────────────────────────────────────
+# â”€â”€ UI primitives â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def badge(text, color="teal"):
     p = {"teal":(TEAL_DIM,TEAL_GLOW,BORDER_T),"blue":(BLUE_DIM,"rgba(59,130,246,.12)","rgba(96,165,250,.35)"),
@@ -719,10 +719,10 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
     if extra: s.update(extra)
     return html.Button(label, id=id_, n_clicks=0, style=s)
 
-# ── Chart ──────────────────────────────────────────────────────────────────────
+# â”€â”€ Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_chart(candles, price, nodes, tf="5m"):
-    """Clean chart — integer index x-axis for proper candle rendering."""
+    """Clean chart â€” integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price)
     xs = list(range(len(candles)))
     fig = go.Figure()
@@ -737,7 +737,7 @@ def build_chart(candles, price, nodes, tf="5m"):
         decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
         whiskerwidth=1.0,
     ))
-    # Level lines — no annotations (labels are in the Price Ladder panel)
+    # Level lines â€” no annotations (labels are in the Price Ladder panel)
     for level,color,dash,width in [
         (kl.breakout,   TEAL_DIM,   "dash",    1.0),
         (kl.prior_high, TEAL_DIM,   "dot",     1.0),
@@ -788,22 +788,22 @@ def _build_clock_inline():
             html.Div(style={"height":"10px"}),
             note_box("Future: economic releases, auction windows, proprietary cycle layers.")]
 
-# ── Trade Plan Panel ───────────────────────────────────────────────────────────
+# â”€â”€ Trade Plan Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # The INPUT components (buttons, fields) live in the permanent layout via their IDs.
-# This function only builds the card SHELL — the inputs are defined once in the layout.
+# This function only builds the card SHELL â€” the inputs are defined once in the layout.
 
 def _build_trade_plan_contents(live):
-    """Only updates the header label — buttons/inputs are permanent in layout."""
+    """Only updates the header label â€” buttons/inputs are permanent in layout."""
     price  = live.get("price", 0)
     symbol = live.get("symbol", "")
     return html.Div([
-        html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
-        html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":WHITE}),
+        html.H2("ðŸŽ¯ Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
+        html.Span(f"{symbol} Â· ${price:.2f}", style={"fontSize":"12px","color":WHITE}),
     ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
 
 
 
-# ── Active Trade Panel ─────────────────────────────────────────────────────────
+# â”€â”€ Active Trade Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_active_trade_panel(trade: dict, current_price: float):
     if not trade:
@@ -825,7 +825,7 @@ def build_active_trade_panel(trade: dict, current_price: float):
 
     return card([
         html.Div([
-            html.H2("📈 Active Trade", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
+            html.H2("ðŸ“ˆ Active Trade", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
             badge(direction.upper(), "teal" if direction=="long" else "red"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"14px"}),
 
@@ -836,8 +836,8 @@ def build_active_trade_panel(trade: dict, current_price: float):
         ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"8px","marginBottom":"12px"}),
 
         html.Div([
-            metric_tile("Stop",   f"${stop:.2f}"   if stop   else "—", RED_DIM),
-            metric_tile("Target", f"${target:.2f}" if target else "—", TEAL_DIM),
+            metric_tile("Stop",   f"${stop:.2f}"   if stop   else "â€”", RED_DIM),
+            metric_tile("Target", f"${target:.2f}" if target else "â€”", TEAL_DIM),
             metric_tile("Size",   str(size),        TEXT),
         ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"8px","marginBottom":"14px"}),
 
@@ -856,11 +856,11 @@ def build_active_trade_panel(trade: dict, current_price: float):
                 style={"color":WHITE,"fontSize":"12px","lineHeight":"2"},
                 inputStyle={"marginRight":"6px","accentColor":TEAL_DIM}),
             ], style={"marginBottom":"10px"}),
-            dcc.Textarea(id="exit-notes", value="", placeholder="Exit notes…",
+            dcc.Textarea(id="exit-notes", value="", placeholder="Exit notesâ€¦",
                 style={**_input_style(),"height":"50px","resize":"vertical"}),
         ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"12px","marginBottom":"12px"}),
 
-        _btn("🏁 Exit Trade", "btn-exit-trade",
+        _btn("ðŸ Exit Trade", "btn-exit-trade",
              color=RED_DIM, bg=RED_GLOW, border="rgba(239,68,68,.35)"),
         html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
 
@@ -868,45 +868,45 @@ def build_active_trade_panel(trade: dict, current_price: float):
     ])
 
 
-# ── CSV Import Tab ─────────────────────────────────────────────────────────────
+# â”€â”€ CSV Import Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 BROKER_INFO = {
-    "alpaca":       {"name": "Alpaca",                  "icon": "📊", "priority": "HIGH",   "color": TEAL_DIM},
-    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "🏦", "priority": "HIGH",   "color": TEAL_DIM},
-    "ibkr":         {"name": "Interactive Brokers",     "icon": "🌐", "priority": "HIGH",   "color": TEAL_DIM},
-    "robinhood":    {"name": "Robinhood",               "icon": "🪶", "priority": "HIGH",   "color": TEAL_DIM},
-    "webull":       {"name": "Webull",                  "icon": "🐂", "priority": "MEDIUM", "color": YELLOW_DIM},
-    "generic":      {"name": "Generic CSV",             "icon": "📄", "priority": "ALWAYS", "color": BLUE_DIM},
+    "alpaca":       {"name": "Alpaca",                  "icon": "ðŸ“Š", "priority": "HIGH",   "color": TEAL_DIM},
+    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "ðŸ¦", "priority": "HIGH",   "color": TEAL_DIM},
+    "ibkr":         {"name": "Interactive Brokers",     "icon": "ðŸŒ", "priority": "HIGH",   "color": TEAL_DIM},
+    "robinhood":    {"name": "Robinhood",               "icon": "ðŸª¶", "priority": "HIGH",   "color": TEAL_DIM},
+    "webull":       {"name": "Webull",                  "icon": "ðŸ‚", "priority": "MEDIUM", "color": YELLOW_DIM},
+    "generic":      {"name": "Generic CSV",             "icon": "ðŸ“„", "priority": "ALWAYS", "color": BLUE_DIM},
 }
 
 EXPORT_INSTRUCTIONS = {
     "alpaca": [
         "Log in to Alpaca dashboard",
-        "Go to Account → Activity",
-        "Select date range → Export CSV",
+        "Go to Account â†’ Activity",
+        "Select date range â†’ Export CSV",
         "Upload the downloaded file here",
     ],
     "tdameritrade": [
         "Log in to thinkorswim or TDA web",
-        "Go to My Account → History & Statements",
-        "Select Trade History → Export to CSV",
+        "Go to My Account â†’ History & Statements",
+        "Select Trade History â†’ Export to CSV",
         "Upload the downloaded file here",
     ],
     "ibkr": [
         "Log in to Client Portal or TWS",
-        "Go to Reports → Flex Query",
+        "Go to Reports â†’ Flex Query",
         "Create a Trade Confirmation Flex Query",
         "Export as CSV and upload here",
     ],
     "robinhood": [
         "Log in to Robinhood web (not mobile)",
-        "Go to Account → Statements & History",
+        "Go to Account â†’ Statements & History",
         "Download Account Statement CSV",
         "Upload the downloaded file here",
     ],
     "webull": [
         "Log in to Webull desktop app",
-        "Go to Orders → Order History",
+        "Go to Orders â†’ Order History",
         "Click Export in top right",
         "Upload the downloaded CSV here",
     ],
@@ -923,7 +923,7 @@ def build_import_tab():
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
-    # ── Broker cards ──────────────────────────────────────────────────────────
+    # â”€â”€ Broker cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     broker_cards = []
     for key, info in BROKER_INFO.items():
         priority_color = (TEAL_DIM if info["priority"]=="HIGH"
@@ -940,15 +940,15 @@ def build_import_tab():
                                      "letterSpacing":".1em"}),
                 ]),
             ], style={"display":"flex","alignItems":"center","gap":"10px","marginBottom":"10px"}),
-            *[html.P(f"• {step}",
+            *[html.P(f"â€¢ {step}",
                      style={"fontSize":"11px","color":WHITE,"marginBottom":"4px","lineHeight":"1.5"})
               for step in EXPORT_INSTRUCTIONS[key]],
         ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
                    "borderRadius":"14px","padding":"14px","flex":"1","minWidth":"200px"}))
 
-    # ── Upload section ────────────────────────────────────────────────────────
+    # â”€â”€ Upload section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     upload_section = card([
-        html.H2("📤 Upload Brokerage History",
+        html.H2("ðŸ“¤ Upload Brokerage History",
                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
         html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
                style={"fontSize":"12px","color":WHITE,"marginBottom":"16px"}),
@@ -962,7 +962,7 @@ def build_import_tab():
             html.Div([
                 html.Div("Upload Brokerage Statement",
                          style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
-                html.Button("🗑️ Clear All Trades", id="btn-reset-imports", n_clicks=0,
+                html.Button("ðŸ—‘ï¸ Clear All Trades", id="btn-reset-imports", n_clicks=0,
                     style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                            "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                            "fontSize":"12px","fontWeight":"700","padding":"6px 14px",
@@ -975,10 +975,10 @@ def build_import_tab():
             dcc.Upload(
                 id="csv-upload",
                 children=html.Div([
-                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("ðŸ“‚", style={"fontSize":"32px","marginBottom":"8px"}),
                     html.Div("Drag & drop your CSV here, or click to browse",
                              style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
-                    html.Div("Supports: Alpaca · TD Ameritrade · Schwab · IBKR · Robinhood · Webull · Generic CSV",
+                    html.Div("Supports: Alpaca Â· TD Ameritrade Â· Schwab Â· IBKR Â· Robinhood Â· Webull Â· Generic CSV",
                              style={"fontSize":"11px","color":WHITE}),
                 ], style={"textAlign":"center","padding":"20px"}),
                 style={
@@ -997,7 +997,7 @@ def build_import_tab():
         ]),
     ])
 
-    # ── Analysis display ──────────────────────────────────────────────────────
+    # â”€â”€ Analysis display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if not analysis:
         analysis_section = card([
             note_box("No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.", "blue")
@@ -1010,7 +1010,7 @@ def build_import_tab():
         avg_loss= analysis.get("avg_loss", 0)
         rr      = analysis.get("rr_ratio", 0)
         edge    = analysis.get("edge_score", 0)
-        hold    = analysis.get("avg_hold_time", "—")
+        hold    = analysis.get("avg_hold_time", "â€”")
         best_d  = analysis.get("best_day")
         worst_d = analysis.get("worst_day")
         best_s  = analysis.get("best_symbol")
@@ -1029,7 +1029,7 @@ def build_import_tab():
         if edge > 0:
             edge_insight = f"Your system has a positive mathematical edge of ${edge:.2f} per trade."
         else:
-            edge_insight = f"Your system has a negative edge of ${edge:.2f} per trade — the math works against you long-term."
+            edge_insight = f"Your system has a negative edge of ${edge:.2f} per trade â€” the math works against you long-term."
 
         # Top symbols table
         top_syms = sorted(sym_perf.items(), key=lambda x: x[1]["total_pnl"], reverse=True)[:8]
@@ -1046,7 +1046,7 @@ def build_import_tab():
         analysis_section = html.Div([
             # Score cards
             card([
-                html.H2("📊 Historical Behavioral Snapshot",
+                html.H2("ðŸ“Š Historical Behavioral Snapshot",
                         style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
                 html.Div([
                     metric_tile("Total Trades",    str(total),          WHITE),
@@ -1061,7 +1061,7 @@ def build_import_tab():
 
                 # Mathematical edge
                 html.Div([
-                    html.Span("⚡ Mathematical Edge: ",
+                    html.Span("âš¡ Mathematical Edge: ",
                               style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
                     html.Span(edge_insight, style={"color":WHITE,"fontSize":"12px"}),
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
@@ -1070,16 +1070,16 @@ def build_import_tab():
                 # Best/worst
                 html.Div([
                     html.Div([
-                        html.Span("🟢 Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
-                        html.Span(best_d or "—",      style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   🔴 Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
-                        html.Span(worst_d or "—",     style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("ðŸŸ¢ Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span(best_d or "â€”",      style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("   ðŸ”´ Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span(worst_d or "â€”",     style={"color":WHITE,"fontSize":"12px"}),
                     ]),
                     html.Div([
-                        html.Span("🟢 Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
-                        html.Span(best_s or "—",        style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   🔴 Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
-                        html.Span(worst_s or "—",       style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("ðŸŸ¢ Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span(best_s or "â€”",        style={"color":WHITE,"fontSize":"12px"}),
+                        html.Span("   ðŸ”´ Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span(worst_s or "â€”",       style={"color":WHITE,"fontSize":"12px"}),
                     ], style={"marginTop":"6px"}),
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
                            "border":f"1px solid {BORDER}"}),
@@ -1090,11 +1090,11 @@ def build_import_tab():
             html.Div([
                 # Behavioral flags
                 card([
-                    html.H2("🚩 Behavioral Flags",
+                    html.H2("ðŸš© Behavioral Flags",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
                     *([html.Div([
-                        html.Span("✅ " if any(w in f for w in ["Strong","Above","positive","discipline"])
-                                  else "⚠️ ",
+                        html.Span("âœ… " if any(w in f for w in ["Strong","Above","positive","discipline"])
+                                  else "âš ï¸ ",
                                   style={"fontSize":"14px"}),
                         html.Span(f, style={"fontSize":"12px","color":WHITE,"lineHeight":"1.6"}),
                     ], style={"padding":"8px 12px","borderRadius":"10px","marginBottom":"6px",
@@ -1105,7 +1105,7 @@ def build_import_tab():
 
                 # Symbol performance table
                 card([
-                    html.H2("📈 Symbol Performance",
+                    html.H2("ðŸ“ˆ Symbol Performance",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
                     html.Table([
                         html.Thead(html.Tr([
@@ -1125,11 +1125,11 @@ def build_import_tab():
     return html.Div([upload_section, html.Div(style={"height":"16px"}), analysis_section])
 
 
-# ── Behavioral Dashboard Tab ───────────────────────────────────────────────────
+# â”€â”€ Behavioral Dashboard Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _behavior_empty_state():
     return card([
-        html.H2("🧠 Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+        html.H2("ðŸ§  Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
         note_box("Behavioral tracking activates after your first trade upload. Go to Import History to upload a brokerage statement.", "blue"),
         html.Div(style={"height":"12px"}),
         note_box("Once trades are imported, your decision scores, regime memory, and behavioral patterns will appear here.", "yellow"),
@@ -1165,9 +1165,9 @@ def build_behavior_tab():
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
-    # Section 1 — Profile scores
+    # Section 1 â€” Profile scores
     section1 = card([
-        html.H2("🧠 Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+        html.H2("ðŸ§  Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
         html.Div([
             metric_tile("Total Trades",    str(total),          WHITE),
             metric_tile("Composite Score", f"{comp}%",          score_color(comp)),
@@ -1189,14 +1189,14 @@ def build_behavior_tab():
         ]),
     ])
 
-    # Section 2 — Adaptive warnings
+    # Section 2 â€” Adaptive warnings
     def warn_box(w):
         variant = "teal" if w["type"]=="strength" else "yellow"
-        icon    = "✅" if w["type"]=="strength" else "⚠️"
+        icon    = "âœ…" if w["type"]=="strength" else "âš ï¸"
         return note_box(f"{icon}  {w['message']}", variant)
 
     section2 = card([
-        html.H2("🔔 Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        html.H2("ðŸ”” Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
         *([warn_box(w) for w in warnings] if warnings
           else [note_box("No active warnings. Keep trading to build your profile.", "blue")]),
         html.Div(style={"height":"8px"}),
@@ -1214,7 +1214,7 @@ def build_behavior_tab():
         ]),
     ])
 
-    # Section 3 — Regime table
+    # Section 3 â€” Regime table
     regime_rows_html = []
     for r in regimes:
         wr_color  = TEAL_DIM if r["win_rate"]>=60 else (YELLOW_DIM if r["win_rate"]>=40 else RED_DIM)
@@ -1228,12 +1228,12 @@ def build_behavior_tab():
                     style={"color":wr_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
             html.Td(f"{r['avg_decision_score']:.0f}",
                     style={"color":dec_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
-            html.Td(r.get("common_behavior_flag","—").replace("_"," "),
+            html.Td(r.get("common_behavior_flag","â€”").replace("_"," "),
                     style={"color":WHITE,"padding":"10px 12px","fontSize":"11px"}),
         ], style={"borderBottom":f"1px solid {BORDER}"}))
 
     section3 = card([
-        html.H2("📊 Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
+        html.H2("ðŸ“Š Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
         html.Table([
             html.Thead(html.Tr([
                 html.Th("Regime",           style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
@@ -1248,15 +1248,15 @@ def build_behavior_tab():
         ], style={"width":"100%","borderCollapse":"collapse"}),
     ]) if True else html.Div()
 
-    # Section 4 — Recent scorecards
+    # Section 4 â€” Recent scorecards
     def scorecard_row(s):
         c = TEAL_DIM if s["composite_decision_score"]>=70 else (YELLOW_DIM if s["composite_decision_score"]>=45 else RED_DIM)
         pnl = s.get("pnl_percent")
-        pnl_str = f"{pnl:+.2f}%" if pnl is not None else "—"
+        pnl_str = f"{pnl:+.2f}%" if pnl is not None else "â€”"
         pnl_c = TEAL_DIM if (pnl or 0)>0 else RED_DIM
         return html.Div([
             html.Div([
-                html.Span(s.get("symbol","—"), style={"fontWeight":"800","color":WHITE,"fontSize":"13px"}),
+                html.Span(s.get("symbol","â€”"), style={"fontWeight":"800","color":WHITE,"fontSize":"13px"}),
                 html.Span(s.get("direction","").upper() if s.get("direction") else "",
                           style={"fontSize":"10px","color":WHITE,"marginLeft":"8px"}),
                 html.Span(s.get("primary_behavior_flag","").replace("_"," "),
@@ -1275,7 +1275,7 @@ def build_behavior_tab():
                    "borderRadius":"10px","background":"rgba(0,0,0,.15)","marginBottom":"6px"})
 
     section4 = card([
-        html.H2("📋 Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        html.H2("ðŸ“‹ Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
         *([scorecard_row(s) for s in cards_] if cards_
           else [note_box("No scorecards yet. Complete a trade to generate your first scorecard.", "blue")]),
     ])
@@ -1284,13 +1284,13 @@ def build_behavior_tab():
                      html.Div([section2, section3], style={**ROW,"alignItems":"start"}),
                      html.Div(style={"height":"16px"}), section4])
 
-# ── Command tab ────────────────────────────────────────────────────────────────
+# â”€â”€ Command tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_login_page(error=""):
     return html.Div([
         html.Div([
             html.Div([
-                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("Î£", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
                 html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
                 html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":WHITE,"letterSpacing":".3em","marginTop":"2px"}),
             ], style={"textAlign":"center","marginBottom":"40px"}),
@@ -1308,7 +1308,7 @@ def build_login_page(error=""):
                     ], style={"marginBottom":"16px"}),
                     html.Div([
                         html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                        dcc.Input(id="login-password", type="password", placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",
                                   style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
                                          "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
                                          "outline":"none","fontFamily":"DM Sans, sans-serif"}),
@@ -1323,7 +1323,7 @@ def build_login_page(error=""):
                         html.Span("or", style={"color":WHITE,"fontSize":"12px","padding":"0 12px"}),
                         html.Div(style={"flex":"1","height":"1px","background":BORDER}),
                     ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
-                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                    html.Button("ðŸŽ¯ Try Demo â€” No Sign Up Required", id="demo-btn", n_clicks=0,
                         style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
                                "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
                                "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
@@ -1377,17 +1377,17 @@ def build_direction_panel(decision, score):
     status = decision.get("status", "Watching")
     confidence = decision.get("confidence", f"{score}%")
     mode = decision.get("mode", "Standard")
-    grade = decision.get("grade", "—")
+    grade = decision.get("grade", "â€”")
 
     if str(bias).lower() == "bullish":
         color = TEAL_DIM
-        icon = "🟢"
+        icon = "ðŸŸ¢"
     elif str(bias).lower() == "bearish":
         color = RED_DIM
-        icon = "🔴"
+        icon = "ðŸ”´"
     else:
         color = YELLOW_DIM
-        icon = "🟡"
+        icon = "ðŸŸ¡"
 
     return html.Div([
         slabel("Direction Intelligence"),
@@ -1418,10 +1418,10 @@ def build_command_tab(live, candles, symbol, tf):
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
         ts = ts.astimezone(timezone(timedelta(hours=-4))); live_age = ts.strftime("%I:%M:%S %p")
-    except: live_age = "—"
+    except: live_age = "â€”"
     sc   = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
-    top  = nodes[0] if nodes else {"public_label":"—","score":0}
+    top  = nodes[0] if nodes else {"public_label":"â€”","score":0}
     vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
     cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
     pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
@@ -1432,7 +1432,7 @@ def build_command_tab(live, candles, symbol, tf):
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
-    # ── Price Ladder row helper ───────────────────────────────────────────────
+    # â”€â”€ Price Ladder row helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def level_row(label, level, color, is_live=False, arrow=""):
         bg  = "rgba(45,143,111,.15)" if is_live else "transparent"
         bdr = f"1px solid {BORDER_T}" if is_live else f"1px solid {BORDER}"
@@ -1451,36 +1451,36 @@ def build_command_tab(live, candles, symbol, tf):
                    "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
                    "background":bg,"border":bdr})
 
-    # ── LEFT: Price Ladder ────────────────────────────────────────────────────
+    # â”€â”€ LEFT: Price Ladder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     price_ladder = html.Div([
         card([
             slabel("Price Ladder"),
-            level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
-            level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
-            level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
+            level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="â–²"),
+            level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="â–²"),
+            level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="â–²"),
             html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
             level_row("Live Price",price,          BLUE_DIM,  is_live=True),
             html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
-            level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
-            level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
-            level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
+            level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="â–¼"),
+            level_row("Trap Door", kl.trap,       RED_DIM,   arrow="â–¼"),
+            level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="â–¼"),
             html.Div(style={"flex":"1"}),  # pushes Distance to bottom
             html.Hr(style={"border":"none","borderTop":f"1px solid {BORDER}","margin":"0 0 12px"}),
             slabel("Distance"),
             html.Div([
                 html.Div([
-                    html.Span("↑ Breakout",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
+                    html.Span("â†‘ Breakout",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
                     html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
                               style={"fontSize":"14px","color":TEAL_DIM,"fontWeight":"900"}),
                 ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
                 html.Div([
-                    html.Span("↓ Fail Gate",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
+                    html.Span("â†“ Fail Gate",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
                     html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
                               style={"fontSize":"14px","color":RED_DIM,"fontWeight":"900"}),
                 ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
                 html.Div([
                     html.Span("R/R Ratio",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
+                    html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "â€”",
                               style={"fontSize":"14px","color":YELLOW_DIM,"fontWeight":"900"}),
                 ], style={"display":"flex","justifyContent":"space-between"}),
             ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"14px",
@@ -1488,14 +1488,14 @@ def build_command_tab(live, candles, symbol, tf):
         ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
     ], style={"flex":"0 0 230px","minWidth":"0","display":"flex","flexDirection":"column"})
 
-    # ── CENTER: Chart — fills the card tile completely ────────────────────────
+    # â”€â”€ CENTER: Chart â€” fills the card tile completely â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     chart_panel = card([
         # Header row
         html.Div([
             html.Div([
-                html.Span(f"📊 {symbol}  ·  Smart Chart",
+                html.Span(f"ðŸ“Š {symbol}  Â·  Smart Chart",
                           style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
-                html.Span(f"  {live_age}  ·  {tf}  ·  {regime.replace('_',' ').title()}",
+                html.Span(f"  {live_age}  Â·  {tf}  Â·  {regime.replace('_',' ').title()}",
                           style={"fontSize":"10px","color":WHITE}),
             ]),
             html.Span(f"${price:.2f}",
@@ -1504,7 +1504,7 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "marginBottom":"6px"}),
 
-        # Chart — fills remaining space
+        # Chart â€” fills remaining space
         html.Div(
             dcc.Graph(figure=fig,
                       config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
@@ -1512,9 +1512,9 @@ def build_command_tab(live, candles, symbol, tf):
             style={"flex":"1","margin":"0 -20px -8px -20px","overflow":"hidden"},
         ),
 
-        # Footer — aligned with Distance box at bottom of price ladder
+        # Footer â€” aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"{tf}  ·  {len(candles)} candles",
+            html.Span(f"{tf}  Â·  {len(candles)} candles",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
             html.Span(f"Vol {live['volume']:,}",
@@ -1526,22 +1526,22 @@ def build_command_tab(live, candles, symbol, tf):
     ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 12px 20px",
             "overflow":"hidden","display":"flex","flexDirection":"column"})
 
-    # ── Row 1 ─────────────────────────────────────────────────────────────────
+    # â”€â”€ Row 1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     row1 = html.Div([price_ladder, chart_panel],
                     style={"display":"flex","gap":"16px","marginBottom":"16px",
                            "alignItems":"stretch"})
 
-    # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
+    # â”€â”€ Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) â”€â”€
     row2 = card([
         html.Div([
 
-            # Column A — Direction & Confidence Panel
+            # Column A â€” Direction & Confidence Panel
             html.Div([
                 build_direction_panel(decision, score),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
-            # Column B — Trade Card
+            # Column B â€” Trade Card
             html.Div([
                 slabel("Trade Card"),
                 html.Div(style={"height":"6px"}),
@@ -1560,11 +1560,11 @@ def build_command_tab(live, candles, symbol, tf):
                                               "textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
                 ], style={"marginBottom":"10px"}),
-                note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.","yellow"),
+                note_box(f"Ref: ${price:.2f}  Â·  A-grade requires live-volume expansion.","yellow"),
             ], style={"flex":"1","minWidth":"140px",
                        "borderRight":f"1px solid {BORDER}","padding":"0 16px"}),
 
-            # Column C — Probability Ladder
+            # Column C â€” Probability Ladder
             html.Div([
                 slabel("Probability Ladder"),
                 html.Div(style={"height":"6px"}),
@@ -1585,13 +1585,13 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","gap":"0","alignItems":"flex-start","flexWrap":"wrap"}),
     ], sx={"marginBottom":"16px"})
 
-    # ── Row 3: Options Matrix ─────────────────────────────────────────────────
+    # â”€â”€ Row 3: Options Matrix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     row3 = card([
         html.Div([
             html.Div([
-                html.H2("🧱 Dynamic Options Matrix + Flow Map",
+                html.H2("ðŸ§± Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                html.P("Options intelligence from Alpaca options feed, price, volume, volatility proxy, and decision score.",
                        style={"fontSize":"12px","color":WHITE})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
@@ -1602,10 +1602,10 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+        note_box("Options intelligence layer - Alpaca options feed active.","blue"),
     ], sx={"marginBottom":"16px"})
 
-    # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
+    # â”€â”€ Row 4: Time Engine + Alerts + Footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Clock with white text
     EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
     minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
@@ -1615,7 +1615,7 @@ def build_command_tab(live, candles, symbol, tf):
 
     row4 = html.Div([
         card([
-            html.H2("⏱️ Time Engine",
+            html.H2("â±ï¸ Time Engine",
                     style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0 0 12px"}),
             html.Div(now.strftime("%I:%M:%S %p")+" ET",
                      style={"fontSize":"22px","fontWeight":"900","color":WHITE,
@@ -1627,9 +1627,9 @@ def build_command_tab(live, candles, symbol, tf):
 
         card([
             html.Div([
-                html.H2("🔔 Visual + Audio Alerts",
+                html.H2("ðŸ”” Visual + Audio Alerts",
                         style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0"}),
-                html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
+                html.Button("ðŸ”” ON", id="btn-alerts-toggle", n_clicks=0,
                     style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                            "borderRadius":"20px","padding":"4px 12px","fontSize":"11px",
                            "fontWeight":"800","cursor":"pointer"}),
@@ -1644,9 +1644,9 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(f"Score: {score}",
                           style={"fontSize":"11px","color":WHITE,"marginTop":"8px","display":"block","fontWeight":"700"}),
                 html.Span(
-                    "🔴 Trap Door" if score<35 else
-                    ("🟢 A-Grade — Audio Active" if score>=80 else
-                     "🟡 B-Grade — Audio Active" if score>=55 else "⚪ Monitoring"),
+                    "ðŸ”´ Trap Door" if score<35 else
+                    ("ðŸŸ¢ A-Grade â€” Audio Active" if score>=80 else
+                     "ðŸŸ¡ B-Grade â€” Audio Active" if score>=55 else "âšª Monitoring"),
                     style={"fontSize":"11px","fontWeight":"700","marginTop":"3px","display":"block",
                            "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
             ]),
@@ -1669,7 +1669,7 @@ def build_feed_tab(live, live_mode):
     price = live["price"]
     return card([
         html.Div([
-            html.Div([html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+            html.Div([html.H2("ðŸ”Œ Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                       html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":WHITE})]),
             badge("Connected", "teal"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"16px"}),
@@ -1688,7 +1688,7 @@ def build_performance_tab(live):
     price=live["price"]; decision=live["decision"]; score=decision["score"]
     sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     return card([
-        html.H2("📈 Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("ðŸ“ˆ Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Div([
             metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Setup",decision["status"],sc),
@@ -1708,12 +1708,12 @@ def build_stub_tab(title, description):
     ])
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REAL TAB FUNCTIONS — injected from source files
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# REAL TAB FUNCTIONS â€” injected from source files
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def build_radar_tab(session=None):
-    """Opportunity Dashboard — behavioral transition radar."""
+    """Opportunity Dashboard â€” behavioral transition radar."""
     import requests as _rq
 
     try:
@@ -1724,7 +1724,7 @@ def build_radar_tab(session=None):
             signals = data
             sort_mode = "local"
             last_scan = None
-            data_delay = "—"
+            data_delay = "â€”"
         else:
             signals = (
                 data.get("symbols")
@@ -1735,16 +1735,16 @@ def build_radar_tab(session=None):
                 or data.get("radar")
                 or []
             )
-            sort_mode = data.get("sort_mode", "—")
+            sort_mode = data.get("sort_mode", "â€”")
             last_scan = data.get("last_scan")
-            data_delay = data.get("data_delay", "—")
+            data_delay = data.get("data_delay", "â€”")
 
     except Exception as e:
         print(f"Radar fetch error: {e}")
         signals = []
         sort_mode = "error"
         last_scan = None
-        data_delay = "—"
+        data_delay = "â€”"
 
     def _safe_float(value, default=0.0):
         try:
@@ -1754,7 +1754,7 @@ def build_radar_tab(session=None):
         except Exception:
             return default
 
-    def _safe_text(value, default="—"):
+    def _safe_text(value, default="â€”"):
         if value is None or value == "":
             return default
         return str(value)
@@ -1762,20 +1762,20 @@ def build_radar_tab(session=None):
     def _fmt_money(value):
         try:
             if value is None or value == "":
-                return "—"
+                return "â€”"
             return f"${float(value):,.2f}"
         except Exception:
-            return "—"
+            return "â€”"
 
     def _fmt_pct(value, digits=1, signed=False):
         try:
             if value is None or value == "":
-                return "—"
+                return "â€”"
             v = float(value)
             sign = "+" if signed and v > 0 else ""
             return f"{sign}{v:.{digits}f}%"
         except Exception:
-            return "—"
+            return "â€”"
 
     def _state_color(state, score=0):
         st = (state or "").lower()
@@ -1814,7 +1814,7 @@ def build_radar_tab(session=None):
 
     def _compact_transition(text):
         t = _safe_text(text)
-        return t.replace(" to ", " → ").replace(" / ", " / ")
+        return t.replace(" to ", " â†’ ").replace(" / ", " / ")
 
     def _opportunity_card(s, rank):
         symbol = _safe_text(s.get("symbol"), "")
@@ -1824,17 +1824,17 @@ def build_radar_tab(session=None):
         readiness = _safe_float(s.get("readiness_score"))
         state = _safe_text(s.get("opportunity_state"), "Watching")
         transition = _compact_transition(s.get("transition_candidate"))
-        behavioral_state = _safe_text(s.get("behavioral_state"), "—")
-        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        behavioral_state = _safe_text(s.get("behavioral_state"), "â€”")
+        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "â€”"))
         trigger = s.get("trigger")
         invalidation = s.get("invalidation")
         why = _safe_text(s.get("why_this_trade"), "Awaiting more evidence.")
         evidence = s.get("evidence") if isinstance(s.get("evidence"), list) else []
         risk_notes = s.get("risk_notes") if isinstance(s.get("risk_notes"), list) else []
-        setup = _safe_text(s.get("setup_type"), "—")
-        regime = _safe_text(s.get("regime"), "—")
-        status = _safe_text(s.get("status"), "—")
-        alert_type = _safe_text(s.get("alert_type"), "—")
+        setup = _safe_text(s.get("setup_type"), "â€”")
+        regime = _safe_text(s.get("regime"), "â€”")
+        status = _safe_text(s.get("status"), "â€”")
+        alert_type = _safe_text(s.get("alert_type"), "â€”")
 
         # Historical probability / edge fields from backend probability engine
         hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
@@ -1842,11 +1842,11 @@ def build_radar_tab(session=None):
         exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
         prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
-        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
+        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "â€”")
         prob_score = _safe_float(s.get("expected_opportunity_score"))
         edge_score = _safe_float(s.get("edge_score", prob_score))
         prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
-        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
+        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "â€”")), "â€”")
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
 
         color = _state_color(state, readiness)
@@ -1863,7 +1863,7 @@ def build_radar_tab(session=None):
                         "fontSize":"24px","fontWeight":"950","color":WHITE,
                         "fontFamily":"DM Mono, monospace","lineHeight":"1"
                     }),
-                    html.Div(f"{_fmt_money(price)} · {_fmt_pct(chg, 2, signed=True)}", style={
+                    html.Div(f"{_fmt_money(price)} Â· {_fmt_pct(chg, 2, signed=True)}", style={
                         "fontSize":"11px","fontWeight":"800",
                         "color":TEAL_DIM if chg >= 0 else RED_DIM,
                         "marginTop":"5px"
@@ -1986,13 +1986,13 @@ def build_radar_tab(session=None):
             html.Div([
                 html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                 html.Div(prob_setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
-                html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
+                html.Div(f"{status} Â· {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
             ]),
 
             html.Div([
                 html.Div("Evidence", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"10px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"✓ {e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
+                    html.Div(f"âœ“ {e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
                     for e in evidence[:4]
                 ] if evidence else [
                     html.Div("No evidence details returned yet.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
@@ -2002,7 +2002,7 @@ def build_radar_tab(session=None):
             html.Div([
                 html.Div("Risk Notes", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"8px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"⚠ {r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
+                    html.Div(f"âš  {r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
                     for r in risk_notes[:3]
                 ] if risk_notes else [
                     html.Div("Risk defined by setup invalidation.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
@@ -2023,18 +2023,18 @@ def build_radar_tab(session=None):
         readiness = _safe_float(s.get("readiness_score"))
         state = _safe_text(s.get("opportunity_state"), "Watching")
         transition = _compact_transition(s.get("transition_candidate"))
-        behavioral_state = _safe_text(s.get("behavioral_state"), "—")
-        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        behavioral_state = _safe_text(s.get("behavioral_state"), "â€”")
+        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "â€”"))
         chg = _safe_float(s.get("change_pct"))
         price = s.get("price")
         trigger = s.get("trigger")
         invalidation = s.get("invalidation")
-        setup = _safe_text(s.get("probability_setup_type", s.get("setup_type")), "—")
-        status = _safe_text(s.get("status"), "—")
+        setup = _safe_text(s.get("probability_setup_type", s.get("setup_type")), "â€”")
+        status = _safe_text(s.get("status"), "â€”")
         hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
         exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
-        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "â€”")
         color = _state_color(state, readiness)
         side_color = _side_color(side)
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -2146,10 +2146,10 @@ def build_radar_tab(session=None):
         card([
             html.Div([
                 html.Div([
-                    html.H2("🎯 Opportunity Dashboard", style={
+                    html.H2("ðŸŽ¯ Opportunity Dashboard", style={
                         "color":WHITE,"fontSize":"20px","fontWeight":"950","margin":"0 0 4px"
                     }),
-                    html.P("Pre-trigger trade discovery — ranked by opportunity state, readiness, and behavioral transition.",
+                    html.P("Pre-trigger trade discovery â€” ranked by opportunity state, readiness, and behavioral transition.",
                            style={"color":WHITE,"fontSize":"13px","margin":"0"}),
                 ]),
                 html.Div([
@@ -2182,7 +2182,7 @@ def build_radar_tab(session=None):
                 html.H3("Full Opportunity Radar", style={
                     "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
                 }),
-                html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
+                html.Div("Sorted by Armed â†’ Setting Up â†’ Historical Probability â†’ Readiness. Use this table to see what may move next, not what already moved.",
                          style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
                 html.Div([
                     header,
@@ -2196,7 +2196,7 @@ def build_radar_tab(session=None):
     ])
 
 def build_scoreboard_tab(session=None):
-    """Scoreboard — live outcome analytics from /api/scoreboard."""
+    """Scoreboard â€” live outcome analytics from /api/scoreboard."""
     import requests as _rq
 
     try:
@@ -2241,21 +2241,21 @@ def build_scoreboard_tab(session=None):
 
     def _fmt_pct(value, digits=1, signed=False):
         if value is None or value == "":
-            return "—"
+            return "â€”"
         try:
             v = float(value)
             sign = "+" if signed and v > 0 else ""
             return f"{sign}{v:.{digits}f}%"
         except Exception:
-            return "—"
+            return "â€”"
 
     def _fmt_money(value):
         if value is None or value == "":
-            return "—"
+            return "â€”"
         try:
             return f"${float(value):,.2f}"
         except Exception:
-            return "—"
+            return "â€”"
 
     total_signals = _safe_int(board.get("total_signals"))
     with_outcomes = _safe_int(board.get("with_outcomes"))
@@ -2293,12 +2293,12 @@ def build_scoreboard_tab(session=None):
         })
 
     def _entry_row(e, rank):
-        symbol = e.get("symbol", "—")
-        signal_type = e.get("signal_type", e.get("status", "—"))
+        symbol = e.get("symbol", "â€”")
+        signal_type = e.get("signal_type", e.get("status", "â€”"))
         score = _safe_float(e.get("score", e.get("composite_score", 0)))
-        setup_type = e.get("setup_type", "—")
-        regime = e.get("regime", "—")
-        grade = str(e.get("grade", "—") or "—")
+        setup_type = e.get("setup_type", "â€”")
+        regime = e.get("regime", "â€”")
+        grade = str(e.get("grade", "â€”") or "â€”")
         entry_price = e.get("entry_price", e.get("price"))
         outcome_pct = e.get("outcome_pct")
         mfe_pct = e.get("mfe_pct")
@@ -2308,9 +2308,9 @@ def build_scoreboard_tab(session=None):
         hit_t2 = e.get("hit_t2")
         agreement_score = e.get("agreement_score")
         intelligence_delta = e.get("intelligence_delta")
-        agreement_bucket = e.get("agreement_bucket") or "—"
-        delta_quality_label = e.get("delta_quality_label") or "—"
-        delta_action = e.get("delta_action") or "—"
+        agreement_bucket = e.get("agreement_bucket") or "â€”"
+        delta_quality_label = e.get("delta_quality_label") or "â€”"
+        delta_action = e.get("delta_action") or "â€”"
 
         score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
         grade_color = (
@@ -2327,13 +2327,13 @@ def build_scoreboard_tab(session=None):
             outcome_color = TEAL_DIM if _safe_float(outcome_pct) >= 0 else RED_DIM
 
         if direction_correct is True:
-            dir_text, dir_color = "✓", TEAL_DIM
+            dir_text, dir_color = "âœ“", TEAL_DIM
         elif direction_correct is False:
-            dir_text, dir_color = "✕", RED_DIM
+            dir_text, dir_color = "âœ•", RED_DIM
         else:
-            dir_text, dir_color = "—", MUTED
+            dir_text, dir_color = "â€”", MUTED
 
-        target_text = "T2" if hit_t2 else ("T1" if hit_t1 else "—")
+        target_text = "T2" if hit_t2 else ("T1" if hit_t1 else "â€”")
         target_color = TEAL_DIM if hit_t2 else (YELLOW_DIM if hit_t1 else MUTED)
 
         agreement_value = _safe_float(agreement_score, -1)
@@ -2355,11 +2355,11 @@ def build_scoreboard_tab(session=None):
             html.Span(dir_text, style={"flex":"0 0 36px","fontSize":"14px","fontWeight":"900","color":dir_color,"textAlign":"center"}),
             html.Span(target_text, style={"flex":"0 0 42px","fontSize":"12px","fontWeight":"900","color":target_color,"textAlign":"center"}),
             html.Span(
-                "—" if agreement_score in (None, "") else f"{float(agreement_score):.1f}",
+                "â€”" if agreement_score in (None, "") else f"{float(agreement_score):.1f}",
                 style={"flex":"0 0 74px","fontSize":"12px","fontWeight":"900","color":agreement_color,"textAlign":"center"}
             ),
             html.Span(
-                "—" if intelligence_delta in (None, "") else f"{float(intelligence_delta):+.1f}",
+                "â€”" if intelligence_delta in (None, "") else f"{float(intelligence_delta):+.1f}",
                 style={"flex":"0 0 62px","fontSize":"12px","fontWeight":"800","color":agreement_color,"textAlign":"center"}
             ),
             html.Span(delta_quality_label, style={"flex":"0 0 104px","fontSize":"10px","fontWeight":"900","color":agreement_color,"textAlign":"center"}),
@@ -2405,7 +2405,7 @@ def build_scoreboard_tab(session=None):
     })
 
     def _bucket_card(b):
-        bucket = b.get("bucket", "—")
+        bucket = b.get("bucket", "â€”")
         total = _safe_int(b.get("total_signals"))
         evaluated = _safe_int(b.get("with_outcomes"))
         acc = _safe_float(b.get("direction_correct_rate"))
@@ -2455,7 +2455,7 @@ def build_scoreboard_tab(session=None):
 
 
     def _attribution_row(row):
-        group = row.get("group", "—")
+        group = row.get("group", "â€”")
         n = _safe_int(row.get("total_signals"))
         evaluated = _safe_int(row.get("with_outcomes"))
         direction = _safe_float(row.get("direction_accuracy_rate"))
@@ -2539,12 +2539,12 @@ def build_scoreboard_tab(session=None):
         card([
             html.Div([
                 html.Div([
-                    html.H2("🏆 Scoreboard", style={
+                    html.H2("ðŸ† Scoreboard", style={
                         "color":WHITE,"fontSize":"18px","fontWeight":"900",
                         "margin":"0 0 4px"
                     }),
                     html.P(
-                        f"Live outcome validation · {outcome_window_hours}h window · backend /api/scoreboard",
+                        f"Live outcome validation Â· {outcome_window_hours}h window Â· backend /api/scoreboard",
                         style={"color":WHITE,"fontSize":"13px","margin":"0"}
                     ),
                 ]),
@@ -2564,7 +2564,7 @@ def build_scoreboard_tab(session=None):
                 _metric("Direction Accuracy", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} evaluated signals"),
                 _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
                 _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
-                _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
+                _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE Ã· MAE"),
                 _metric("Targets", f"T1 {hit_target1_rate:.1f}% / T2 {hit_target2_rate:.1f}%", BLUE_DIM, "Hit-rate snapshot"),
             ], style={
                 "display":"grid",
@@ -2579,7 +2579,7 @@ def build_scoreboard_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.H3("🧠 Intelligence Agreement Validation", style={
+                    html.H3("ðŸ§  Intelligence Agreement Validation", style={
                         "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
                     }),
                     html.Div("Shows whether deeper intelligence agreement improves direction accuracy and path edge.",
@@ -2629,7 +2629,7 @@ def build_scoreboard_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.H3("📊 Live Performance Attribution", style={
+                    html.H3("ðŸ“Š Live Performance Attribution", style={
                         "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
                     }),
                     html.Div("Ranks which parts of the engine are producing direction, edge, and tradeable opportunity.",
@@ -2716,42 +2716,42 @@ def classify_transition(old_status, new_status, delta):
     # No state change should remain a monitor, even if the score delta is negative.
     # This prevents Watching -> Watching rows from being counted as downgrades.
     if old_status_l == new_status_l and old_status_l:
-        return "🟡 MONITOR", "yellow"
+        return "ðŸŸ¡ MONITOR", "yellow"
 
     # Explicit improvement transitions first.
     if old_status_l == "building" and new_status_l == "watching":
-        return "🟢 IMPROVING", "teal"
+        return "ðŸŸ¢ IMPROVING", "teal"
 
     if old_status_l == "building" and new_status_l in high_states:
-        return "🟢 STRONG UPGRADE", "teal"
+        return "ðŸŸ¢ STRONG UPGRADE", "teal"
 
     if old_status_l == "avoid" and new_status_l in upgrade_states:
-        return "🟢 UPGRADE", "teal"
+        return "ðŸŸ¢ UPGRADE", "teal"
 
     if old_status_l == "watching" and new_status_l in high_states:
-        return "🟢 STRONG UPGRADE", "teal"
+        return "ðŸŸ¢ STRONG UPGRADE", "teal"
 
     # Explicit deterioration transitions.
     if old_status_l in high_states and new_status_l == "watching":
-        return "🔴 DOWNGRADE", "red"
+        return "ðŸ”´ DOWNGRADE", "red"
 
     if old_status_l in ("building", "watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
-        return "🔴 MAJOR DOWNGRADE", "red"
+        return "ðŸ”´ MAJOR DOWNGRADE", "red"
 
     # Score-delta interpretation only applies when the state transition is not definitive.
     if delta >= 20:
-        return "🟢 INTELLIGENCE LEAD", "teal"
+        return "ðŸŸ¢ INTELLIGENCE LEAD", "teal"
 
     if delta >= 10:
-        return "🟢 MODEST UPGRADE", "teal"
+        return "ðŸŸ¢ MODEST UPGRADE", "teal"
 
     if delta <= -20:
-        return "🔴 INTELLIGENCE WARNING", "red"
+        return "ðŸ”´ INTELLIGENCE WARNING", "red"
 
     if delta <= -10:
-        return "🔴 MODEST DOWNGRADE", "red"
+        return "ðŸ”´ MODEST DOWNGRADE", "red"
 
-    return "🟡 MONITOR", "yellow"
+    return "ðŸŸ¡ MONITOR", "yellow"
 
 def build_divergence_tab(session=None):
     """
@@ -2788,10 +2788,10 @@ def build_divergence_tab(session=None):
                 "%b %d, %Y %I:%M %p ET"
             )
         else:
-            audit_label = "Pending — runs nightly after the EOD audit"
+            audit_label = "Pending â€” runs nightly after the EOD audit"
 
     except Exception:
-        audit_label = str(audit_raw) if audit_raw else "Pending — runs nightly after the EOD audit"
+        audit_label = str(audit_raw) if audit_raw else "Pending â€” runs nightly after the EOD audit"
 
     def _num(value, default=0.0):
         try:
@@ -2813,8 +2813,8 @@ def build_divergence_tab(session=None):
         # Example: Composite 62.5, Deep 34.85 = -27.65 = deeper engine downgraded it.
         delta = round(deep - composite, 2)
 
-        old_status = s.get("old_status") or "—"
-        new_status = s.get("new_status") or s.get("status") or "—"
+        old_status = s.get("old_status") or "â€”"
+        new_status = s.get("new_status") or s.get("status") or "â€”"
         transition, tone = classify_transition(old_status, new_status, delta)
 
         items.append({
@@ -2827,7 +2827,7 @@ def build_divergence_tab(session=None):
             "new_status": new_status,
             "transition": transition,
             "tone": tone,
-            "regime": s.get("regime") or "—",
+            "regime": s.get("regime") or "â€”",
             "audited_at": s.get("audited_at") or audit_label,
         })
 
@@ -2875,7 +2875,7 @@ def build_divergence_tab(session=None):
         html.Div([
             html.Div([
                 html.H2(
-                    "🧠 Intelligence Change Detector",
+                    "ðŸ§  Intelligence Change Detector",
                     style={"color": WHITE, "fontSize": "20px", "fontWeight": "900", "margin": "0 0 4px"}
                 ),
                 html.P(
@@ -2887,20 +2887,20 @@ def build_divergence_tab(session=None):
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "gap": "16px", "marginBottom": "16px"}),
 
         html.Div([
-            metric_tile("🟢 Upgrades", str(upgrades), TEAL_DIM),
-            metric_tile("🟡 Monitoring", str(monitoring), YELLOW_DIM),
-            metric_tile("🔴 Downgrades", str(downgrades), RED_DIM),
+            metric_tile("ðŸŸ¢ Upgrades", str(upgrades), TEAL_DIM),
+            metric_tile("ðŸŸ¡ Monitoring", str(monitoring), YELLOW_DIM),
+            metric_tile("ðŸ”´ Downgrades", str(downgrades), RED_DIM),
             metric_tile("Last Audit", str(audit_label)[:22], BLUE_DIM),
         ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)", "gap": "10px", "marginBottom": "14px"}),
 
         html.Div([
             note_box(
-                f"Strongest Upgrade: {(best_upgrade or {}).get('symbol','—')} "
+                f"Strongest Upgrade: {(best_upgrade or {}).get('symbol','â€”')} "
                 f"({(best_upgrade or {}).get('delta',0):+.1f})",
                 "teal"
             ),
             note_box(
-                f"Strongest Downgrade: {(best_downgrade or {}).get('symbol','—')} "
+                f"Strongest Downgrade: {(best_downgrade or {}).get('symbol','â€”')} "
                 f"({(best_downgrade or {}).get('delta',0):+.1f})",
                 "red"
             ),
@@ -2941,19 +2941,19 @@ def build_divergence_tab(session=None):
                 style={"flex": "0.75", "fontSize": "13px", "fontWeight": "900", "color": delta_color}
             ),
             html.Span(
-                d.get("old_status", "—"),
+                d.get("old_status", "â€”"),
                 style={"flex": "0.9", "fontSize": "12px", "fontWeight": "700", "color": WHITE}
             ),
             html.Span(
-                d.get("new_status", "—"),
+                d.get("new_status", "â€”"),
                 style={"flex": "0.9", "fontSize": "12px", "fontWeight": "900", "color": color}
             ),
             html.Span(
-                d.get("transition", "—"),
+                d.get("transition", "â€”"),
                 style={"flex": "1.65", "fontSize": "11px", "fontWeight": "900", "color": color}
             ),
             html.Span(
-                d.get("regime", "—"),
+                d.get("regime", "â€”"),
                 style={"flex": "0.95", "fontSize": "11px", "color": WHITE}
             ),
         ], style={
@@ -3016,7 +3016,7 @@ def build_billing_tab(session=None, perms=None):
         return _build(session=session, perms=perms)
     except Exception as e:
         return card([
-            html.H2("💳 Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+            html.H2("ðŸ’³ Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
             note_box(f"Billing error: {str(e)[:120]}", "yellow"),
         ])
 
@@ -3061,7 +3061,7 @@ def build_preferences_tab(user_id="", session=None):
 
     def _render_watchlist(wl):
         if not wl:
-            return [html.Span("All symbols — no filter applied",
+            return [html.Span("All symbols â€” no filter applied",
                               style={"color":WHITE,"fontSize":"12px","fontStyle":"italic"})]
         return [html.Span(s, style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
                 "borderRadius":"6px","color":WHITE,"fontSize":"12px","padding":"4px 10px",
@@ -3073,9 +3073,9 @@ def build_preferences_tab(user_id="", session=None):
             r = _preqs.patch(url, json=payload, timeout=8)
             if r.status_code == 404:
                 r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
-            return ("✅ Saved", "teal") if r.ok else (f"❌ Error", "red")
+            return ("âœ… Saved", "teal") if r.ok else (f"âŒ Error", "red")
         except Exception as e:
-            return (f"❌ {str(e)[:60]}", "red")
+            return (f"âŒ {str(e)[:60]}", "red")
 
 
     """
@@ -3142,7 +3142,7 @@ def build_preferences_tab(user_id="", session=None):
                  "minHeight":"24px","marginBottom":"8px","color":TEAL_DIM}),
 
         # Delivery Mode
-        _card([_stitle("📬 Delivery Mode"), _label("How often do you want alerts?"),
+        _card([_stitle("ðŸ“¬ Delivery Mode"), _label("How often do you want alerts?"),
             html.Div([
                 html.Button("Real-time",     id="pref-btn-realtime", n_clicks=0,
                             style=_on() if mode=="realtime" else _off()),
@@ -3153,7 +3153,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
 
         # Minimum Score
-        _card([_stitle("🎯 Minimum Confluence Score"), _label("Only alert when score is at least:"),
+        _card([_stitle("ðŸŽ¯ Minimum Confluence Score"), _label("Only alert when score is at least:"),
             dcc.Slider(id="prefs-score-slider", min=0, max=100, step=5, value=score,
                 marks={0:"0",25:"25",50:"50",75:"75",100:"100"},
                 tooltip={"placement":"bottom","always_visible":True}),
@@ -3166,7 +3166,7 @@ def build_preferences_tab(user_id="", session=None):
                 "fontSize":"12px","fontWeight":"700","padding":"8px 16px","cursor":"pointer"})]),
 
         # Alert Types
-        _card([_stitle("⚡ Alert Types"), _label("Click to toggle — saves instantly:"),
+        _card([_stitle("âš¡ Alert Types"), _label("Click to toggle â€” saves instantly:"),
             html.Div([
                 html.Button("Structure Alerts", id="pref-btn-wyckoff",   n_clicks=0,
                             style=_on() if types.get("wyckoff")   else _off()),
@@ -3181,7 +3181,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
 
         # Watchlist
-        _card([_stitle("📋 Watchlist"), _label("Only alert on these symbols (leave empty for all)"),
+        _card([_stitle("ðŸ“‹ Watchlist"), _label("Only alert on these symbols (leave empty for all)"),
             html.Div([
                 dcc.Input(id="prefs-sym-input", type="text", placeholder="e.g. AAPL", maxLength=5,
                     style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
@@ -3196,11 +3196,11 @@ def build_preferences_tab(user_id="", session=None):
             html.Div(id="prefs-wl-display", children=_render_watchlist(watchlist))]),
 
         # Market Hours
-        _card([_stitle("🕐 Market Hours"),
+        _card([_stitle("ðŸ• Market Hours"),
             html.Div([
                 html.Div([
                     html.Div("Market hours only", style={"color":WHITE,"fontSize":"13px","fontWeight":"600"}),
-                    html.Div("Suppress alerts outside 9:30–4:00 PM ET",
+                    html.Div("Suppress alerts outside 9:30â€“4:00 PM ET",
                              style={"color":WHITE,"fontSize":"11px","marginTop":"2px"}),
                 ], style={"flex":"1"}),
                 html.Button("ON" if hours else "OFF", id="pref-btn-hours", n_clicks=0,
@@ -3208,7 +3208,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","alignItems":"center","gap":"16px"})]),
 
         # Hurst Cycle Profile
-        _card([_stitle("🔄 Hurst Cycle Profile"),
+        _card([_stitle("ðŸ”„ Hurst Cycle Profile"),
             _label("Lookback horizon for cycle timing analysis"),
             html.Div([
                 html.Button("Short (90d)",   id="pref-btn-hurst-short",  n_clicks=0,
@@ -3220,8 +3220,8 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
 
         # Weis Wave Sensitivity
-        _card([_stitle("〰️ Weis Wave Sensitivity"),
-            _label("Reversal threshold — lower = more sensitive"),
+        _card([_stitle("ã€°ï¸ Weis Wave Sensitivity"),
+            _label("Reversal threshold â€” lower = more sensitive"),
             dcc.Slider(id="prefs-weis-slider", min=0.1, max=3.0, step=0.1, value=weis,
                 marks={0.1:"0.1%", 0.5:"0.5%", 1.0:"1.0%", 2.0:"2.0%", 3.0:"3.0%"},
                 tooltip={"placement":"bottom","always_visible":True}),
@@ -3235,7 +3235,7 @@ def build_preferences_tab(user_id="", session=None):
 
 def register_preferences_callbacks(app):
 
-    # ── Delivery mode — instant save ───────────────────────────────────────────
+    # â”€â”€ Delivery mode â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children"),
         Output("prefs-status","style"),
@@ -3257,11 +3257,11 @@ def register_preferences_callbacks(app):
         t = ctx.triggered[0]["prop_id"].split(".")[0]
         mode_map = {"pref-btn-realtime":"realtime","pref-btn-hourly":"hourly","pref-btn-daily":"daily"}
         mode = mode_map.get(t, cur)
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
         msg, color = _save(uid, email, {"delivery_mode": mode})
         return msg,_msg_style(color),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
 
-    # ── Alert types — instant save ─────────────────────────────────────────────
+    # â”€â”€ Alert types â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3290,11 +3290,11 @@ def register_preferences_callbacks(app):
               "pref-btn-elliott":"elliott","pref-btn-fibonacci":"fibonacci"}
         if t in km: types[km[t]] = not types.get(km[t], False)
         styles = [_on() if types.get(k) else _off() for k in ["wyckoff","gann","ab_score","elliott","fibonacci"]]
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*styles,types
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),*styles,types
         msg, color = _save(uid, email, {"alert_types": types})
         return msg,_msg_style(color),*styles,types
 
-    # ── Market hours — instant save ────────────────────────────────────────────
+    # â”€â”€ Market hours â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3311,11 +3311,11 @@ def register_preferences_callbacks(app):
         new = not cur
         label = "ON" if new else "OFF"
         style = _on() if new else _off()
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),label,style,new
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),label,style,new
         msg, color = _save(uid, email, {"market_hours_only": new})
         return msg,_msg_style(color),label,style,new
 
-    # ── Min score — save on button click ───────────────────────────────────────
+    # â”€â”€ Min score â€” save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3327,11 +3327,11 @@ def register_preferences_callbacks(app):
         prevent_initial_call=True,
     )
     def save_score(n, val, uid, email):
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),val
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),val
         msg, color = _save(uid, email, {"min_score": val})
         return msg,_msg_style(color),val
 
-    # ── Hurst profile — instant save ───────────────────────────────────────────
+    # â”€â”€ Hurst profile â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3354,11 +3354,11 @@ def register_preferences_callbacks(app):
         hmap = {"pref-btn-hurst-short":"SHORT","pref-btn-hurst-medium":"MEDIUM","pref-btn-hurst-long":"LONG"}
         hurst = hmap.get(t, cur)
         styles = [_on() if h==hurst else _off() for h in ["SHORT","MEDIUM","LONG"]]
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*styles,hurst
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),*styles,hurst
         msg, color = _save(uid, email, {"hurst_profile": hurst})
         return msg,_msg_style(color),*styles,hurst
 
-    # ── Weis threshold — save on button click ──────────────────────────────────
+    # â”€â”€ Weis threshold â€” save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3370,11 +3370,11 @@ def register_preferences_callbacks(app):
         prevent_initial_call=True,
     )
     def save_weis(n, val, uid, email):
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),val
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),val
         msg, color = _save(uid, email, {"weis_threshold": val})
         return msg,_msg_style(color),val
 
-    # ── Watchlist — add symbol and save ───────────────────────────────────────
+    # â”€â”€ Watchlist â€” add symbol and save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -3393,11 +3393,11 @@ def register_preferences_callbacks(app):
         s = sym.strip().upper()
         wl = list(wl or [])
         if s and s not in wl: wl.append(s)
-        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
+        if not uid: return "âš ï¸ Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
         msg, color = _save(uid, email, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
-# ── Admin helpers ──────────────────────────────────────────────────────────────
+# â”€â”€ Admin helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _admin_tile(label, value, color=None, sub=None):
     color = color or WHITE
     return html.Div([
@@ -3427,13 +3427,13 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     if not is_admin(session):
         return html.Div([
-            html.Div("🔒", style={"fontSize":"48px","marginBottom":"16px"}),
+            html.Div("ðŸ”’", style={"fontSize":"48px","marginBottom":"16px"}),
             html.Div("Admin Access Only", style={"fontSize":"18px","fontWeight":"800","color":WHITE}),
             html.Div("This page is only accessible to the system administrator.",
                      style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
         ], style={"textAlign":"center","padding":"80px 20px"})
 
-    # ── Fetch report from backend ─────────────────────────────────────────
+    # â”€â”€ Fetch report from backend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try:
         token = session.get("access_token","")
         headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -3444,7 +3444,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
     if not data:
         return _card([
-            html.Div("⚠️ Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
+            html.Div("âš ï¸ Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
             html.Div("Backend may be initializing. Refresh in 30 seconds.",
                      style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
         ])
@@ -3455,7 +3455,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     top_scores    = data.get("top_scores", [])
     top_movers    = data.get("top_movers", [])
     anomalies     = data.get("anomalies", [])
-    narrative     = data.get("narrative","—")
+    narrative     = data.get("narrative","â€”")
     daily_grades  = data.get("daily_grades", [])
     regimes       = data.get("regime_distribution", {})
     generated_at  = data.get("generated_at","")
@@ -3468,21 +3468,21 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     except:
         gen_label = generated_at
 
-    # ── Header ────────────────────────────────────────────────────────────
+    # â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     header = _card([
         html.Div([
             html.Div([
                 html.Div([
-                    html.Span("🔒 ", style={"fontSize":"18px"}),
+                    html.Span("ðŸ”’ ", style={"fontSize":"18px"}),
                     html.Span("ADMIN PERFORMANCE MONITOR",
                               style={"fontSize":"16px","fontWeight":"900","color":GOLD,
                                      "letterSpacing":".08em"}),
                 ], style={"display":"flex","alignItems":"center","gap":"8px","marginBottom":"4px"}),
-                html.Div("Private · Internal Use Only · Sigmalytic Quant Corporation",
+                html.Div("Private Â· Internal Use Only Â· Sigmalytic Quant Corporation",
                          style={"fontSize":"11px","color":WHITE,"letterSpacing":".06em"}),
             ]),
             html.Div([
-                html.Span(snap_health.get("status","—"), style={
+                html.Span(snap_health.get("status","â€”"), style={
                     "fontSize":"10px","fontWeight":"800",
                     "color": TEAL_DIM if "Active" in snap_health.get("status","") else YELLOW_DIM,
                     "border": f"1px solid {BORDER_T}","borderRadius":"999px",
@@ -3494,7 +3494,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start"}),
     ], sx={"borderColor": "rgba(245,200,66,.3)", "marginBottom":"16px"})
 
-    # ── Accuracy stats block (mirrors your PDF scoreboard) ───────────────
+    # â”€â”€ Accuracy stats block (mirrors your PDF scoreboard) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     hit  = accuracy.get("hit_rate", 0)
     conf = accuracy.get("conf_rate", 0)
     neut = accuracy.get("neutral_rate", 0)
@@ -3511,7 +3511,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             _tile("HIT",   f"{hit:.0f}%",  TEAL_DIM,  "A + B rate"),
             _tile("NEUTRAL",f"{neut:.0f}%",YELLOW_DIM,"C rate"),
             _tile("MISS",  f"{miss:.0f}%", RED_DIM,   "F rate"),
-            _tile("PERF",  f"{perf_num}/{perf_den}" if perf_den else "—",
+            _tile("PERF",  f"{perf_num}/{perf_den}" if perf_den else "â€”",
                   GOLD,   "A grades / total"),
             _tile("SYMBOLS",str(live.get("total_symbols",0)), BLUE_DIM, "in universe"),
             _tile("ARMED",  str(live.get("armed",0)),   TEAL_DIM, "live now"),
@@ -3519,27 +3519,27 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"10px"}),
     ], sx={"marginBottom":"16px","borderColor":"rgba(245,200,66,.2)"})
 
-    # ── Snapshot writer health ────────────────────────────────────────────
+    # â”€â”€ Snapshot writer health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     snap_block = _card([
         html.Div([
-            html.Div("📸 SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
+            html.Div("ðŸ“¸ SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"4px"}),
             html.Div([
                 html.Span("Status: ", style={"color":WHITE,"fontSize":"11px"}),
-                html.Span(snap_health.get("status","—"),
+                html.Span(snap_health.get("status","â€”"),
                           style={"color": TEAL_DIM if "Active" in snap_health.get("status","") else YELLOW_DIM,
                                  "fontWeight":"700","fontSize":"11px"}),
-                html.Span("  ·  Last write: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
-                html.Span(snap_health.get("last_write","—")[:19] if snap_health.get("last_write") else "—",
+                html.Span("  Â·  Last write: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
+                html.Span(snap_health.get("last_write","â€”")[:19] if snap_health.get("last_write") else "â€”",
                           style={"color":WHITE,"fontSize":"11px"}),
-                html.Span("  ·  Writes in last 10 min: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
+                html.Span("  Â·  Writes in last 10 min: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
                 html.Span(str(snap_health.get("recent_count",0)),
                           style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"11px"}),
             ]),
         ]),
     ], sx={"marginBottom":"16px","padding":"14px 20px"})
 
-    # ── Narrative block ───────────────────────────────────────────────────
+    # â”€â”€ Narrative block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     narrative_block = _card([
         html.Div("REGIME NARRATIVE", style={"fontSize":"10px","fontWeight":"900","color":GOLD,
                   "letterSpacing":".2em","marginBottom":"12px"}),
@@ -3563,7 +3563,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"display":"flex","flexWrap":"wrap"}),
     ], sx={"marginBottom":"16px"})
 
-    # ── Anomaly flags ─────────────────────────────────────────────────────
+    # â”€â”€ Anomaly flags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     anomaly_rows = []
     for a in anomalies:
         sev_color = _severity_color(a.get("severity","INFO"))
@@ -3585,17 +3585,17 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
     anomaly_block = _card([
         html.Div([
-            html.Div("🚨 ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
+            html.Div("ðŸš¨ ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
             html.Div(f"{len(anomalies)} issues detected",
                      style={"fontSize":"11px","color": RED_DIM if anomalies else TEAL_DIM}),
         ], style={"display":"flex","justifyContent":"space-between","marginBottom":"12px"}),
         html.Div(anomaly_rows if anomaly_rows else [
-            html.Div("✅ No anomalies detected — system running clean.",
+            html.Div("âœ… No anomalies detected â€” system running clean.",
                      style={"color":TEAL_DIM,"fontSize":"13px","padding":"12px 0"})
         ]),
     ], sx={"marginBottom":"16px"})
 
-    # ── Top 10 scores table ───────────────────────────────────────────────
+    # â”€â”€ Top 10 scores table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _sym_row(s):
         score = s.get("composite_score", 0)
         sc    = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 50 else RED_DIM)
@@ -3630,7 +3630,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _card([
-        html.Div("🏆 TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("ðŸ† TOP 10 â€” COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
@@ -3646,7 +3646,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Div([_sym_row(s) for s in top_scores]),
     ], sx={"marginBottom":"16px"})
 
-    # ── Historical daily grade grid ────────────────────────────────────────
+    # â”€â”€ Historical daily grade grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Get all unique symbols across all dates
     all_syms_set = set()
     for day in daily_grades:
@@ -3654,7 +3654,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     all_syms = sorted(all_syms_set)
 
     if daily_grades and all_syms:
-        # Table header row — dates
+        # Table header row â€” dates
         date_headers = [
             html.Th("Symbol", style={"padding":"6px 10px","textAlign":"left",
                                       "fontSize":"9px","color":WHITE,"fontWeight":"700",
@@ -3681,11 +3681,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             for day in daily_grades:
                 sym_data = day.get("symbols",{}).get(sym)
                 if sym_data:
-                    grade = sym_data.get("grade","—")
+                    grade = sym_data.get("grade","â€”")
                     gc    = _grade_color(grade)
                     cells.append(html.Td(
                         html.Div([
-                            html.Div(grade or "—", style={"fontSize":"12px","fontWeight":"900",
+                            html.Div(grade or "â€”", style={"fontSize":"12px","fontWeight":"900",
                                                            "color":gc,"lineHeight":"1"}),
                             html.Div(f"{sym_data.get('score',0):.0f}",
                                      style={"fontSize":"9px","color":WHITE,"marginTop":"2px"}),
@@ -3694,15 +3694,15 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                "borderLeft":f"1px solid rgba(255,255,255,.04)"},
                     ))
                 else:
-                    cells.append(html.Td("—", style={"padding":"5px 8px","textAlign":"center",
+                    cells.append(html.Td("â€”", style={"padding":"5px 8px","textAlign":"center",
                                                        "color":WHITE,"fontSize":"11px"}))
             table_rows.append(html.Tr(cells, style={"borderBottom":f"1px solid {BORDER}"}))
 
         grade_grid = _card([
             html.Div([
-                html.Div("📋 CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
+                html.Div("ðŸ“‹ CUMULATIVE SCOREBOARD â€” DAILY GRADE GRID",
                          style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
-                html.Div("Grade / Score · A=Full target · B=Partial · C=Neutral · F=Miss",
+                html.Div("Grade / Score Â· A=Full target Â· B=Partial Â· C=Neutral Â· F=Miss",
                          style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}),
             ], style={"marginBottom":"16px"}),
             html.Div([
@@ -3722,14 +3722,14 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], sx={"marginBottom":"16px"})
     else:
         grade_grid = _card([
-            html.Div("📋 CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
+            html.Div("ðŸ“‹ CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"8px"}),
             html.Div("No daily close snapshots yet. The grade grid will populate automatically "
                      "after 4:15 PM ET on the first trading day with the snapshot writer active.",
                      style={"fontSize":"13px","color":WHITE,"lineHeight":"1.7"}),
         ], sx={"marginBottom":"16px"})
 
-    # ── Assemble full page ────────────────────────────────────────────────
+    # â”€â”€ Assemble full page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return html.Div([
         header,
         accuracy_block,
@@ -3745,7 +3745,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         grade_grid,
 
         # Footer
-        html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
+        html.Div("SIGMALYTIC QUANT CORPORATION  Â·  PROPRIETARY & CONFIDENTIAL  Â·  INTERNAL USE ONLY",
                  style={"textAlign":"center","fontSize":"9px","color":WHITE,
                         "letterSpacing":".2em","paddingTop":"16px","paddingBottom":"8px"}),
     ])
@@ -3755,29 +3755,29 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
 def build_setup_tab():
     return card([
-        html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("ðŸ§© Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Pre(
-            f"Frontend  : Dash (Python)  →  Render\n"
-            f"Backend   : FastAPI        →  Render\n"
+            f"Frontend  : Dash (Python)  â†’  Render\n"
+            f"Backend   : FastAPI        â†’  Render\n"
             f"Data      : Alpaca IEX (free) / SIP (paid)\n"
             f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
             f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
             f"Env vars:\n"
-            f"  ALPACA_API_KEY     — Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  — Alpaca secret\n"
-            f"  BACKEND_URL        — HTTP base URL\n"
-            f"  BACKEND_WS_URL     — WebSocket base URL\n"
-            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
+            f"  ALPACA_API_KEY     â€” Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  â€” Alpaca secret\n"
+            f"  BACKEND_URL        â€” HTTP base URL\n"
+            f"  BACKEND_WS_URL     â€” WebSocket base URL\n"
+            f"  BEHAVIOR_DB        â€” SQLite path (default: behavior.db)",
             style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"}),
     ])
 
-# ── App ────────────────────────────────────────────────────────────────────────
+# â”€â”€ App â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 LOGO = html.Div([
-    html.Div("Σ",style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1",
+    html.Div("Î£",style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1",
                          "fontFamily":"Georgia, serif","marginRight":"4px","flexShrink":"0"}),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
@@ -3785,7 +3785,7 @@ LOGO = html.Div([
     ]),
 ], style={"display":"flex","alignItems":"center","gap":"10px"})
 
-app = dash.Dash(__name__, title="Sigmalytic Quant Corporation — Decision Intelligence",
+app = dash.Dash(__name__, title="Sigmalytic Quant Corporation â€” Decision Intelligence",
                 update_title=None, suppress_callback_exceptions=True,
                 meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
                            {"name":"theme-color","content":NAVY}])
@@ -3844,16 +3844,16 @@ function sigmaBeep(freq, duration, gain) {{
 }}
 function sigmaAlert(level) {{
     if (level === 'A') {{
-        // Three rising tones — A grade signal
+        // Three rising tones â€” A grade signal
         sigmaBeep(523, 0.15, 0.4);
         setTimeout(function(){{ sigmaBeep(659, 0.15, 0.4); }}, 160);
         setTimeout(function(){{ sigmaBeep(784, 0.3,  0.5); }}, 320);
     }} else if (level === 'B') {{
-        // Two tones — B tactical
+        // Two tones â€” B tactical
         sigmaBeep(440, 0.15, 0.3);
         setTimeout(function(){{ sigmaBeep(554, 0.25, 0.35); }}, 180);
     }} else if (level === 'warn') {{
-        // Single low tone — warning / trap door
+        // Single low tone â€” warning / trap door
         sigmaBeep(220, 0.4, 0.3);
     }}
 }}
@@ -3882,7 +3882,7 @@ ALL_TABS = [
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
-    ("divergence",  "🧠 Intelligence Change Detector"),
+    ("divergence",  "ðŸ§  Intelligence Change Detector"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
     ("admin",       "Admin"),
@@ -3915,7 +3915,7 @@ app.layout = html.Div([
 
     html.Div([html.Div([
         html.Header([
-            # ── Compact single-row header ──────────────────────────────────
+            # â”€â”€ Compact single-row header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             html.Div([
                 LOGO,
                 html.Div([
@@ -3930,7 +3930,7 @@ app.layout = html.Div([
                 ], style={"textAlign":"center"}),
                 html.Div([
                     html.Div(id="sim-label", style={"display":"none"}),
-                    html.Button("⏻ Log Out", id="btn-logout", n_clicks=0,
+                    html.Button("â» Log Out", id="btn-logout", n_clicks=0,
                         style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                                "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                                "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
@@ -3939,7 +3939,7 @@ app.layout = html.Div([
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                        "width":"100%","marginBottom":"8px"}),
 
-            # ── Controls row ───────────────────────────────────────────────
+            # â”€â”€ Controls row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             html.Div([
                 dcc.Input(id="ticker-input", value="AAPL", debounce=False,
                           style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
@@ -3973,9 +3973,9 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
-        # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
+        # â”€â”€ Trade plan + active trade â€” ALL inputs permanent, never recreated â”€â”€
         html.Div([
-            # Trade plan card — header updates, inputs are static
+            # Trade plan card â€” header updates, inputs are static
             html.Div([
                 html.Div(id="trade-plan-panel", style={"marginBottom":"16px"}),
                 html.Div([
@@ -4018,8 +4018,8 @@ app.layout = html.Div([
                         style={**_input_style(),"height":"60px","resize":"vertical","lineHeight":"1.5"}),
                 ], style={"marginBottom":"16px"}),
                 html.Div([
-                    _btn("💾 Save Plan",   "btn-save-plan"),
-                    _btn("🚀 Enter Trade", "btn-enter-trade",
+                    _btn("ðŸ’¾ Save Plan",   "btn-save-plan"),
+                    _btn("ðŸš€ Enter Trade", "btn-enter-trade",
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
                 html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
@@ -4035,7 +4035,7 @@ app.layout = html.Div([
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
 ], style={"margin":"0","background":NAVY})
 
-# ── Callbacks ──────────────────────────────────────────────────────────────────
+# â”€â”€ Callbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.callback(
     Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
@@ -4065,7 +4065,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
     return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
 
-# Live-only mode — no toggle callback needed
+# Live-only mode â€” no toggle callback needed
 
 @app.callback(
     Output("s-symbol","data"),
@@ -4203,7 +4203,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
     if not live:
-        return (html.Div("Initializing…",style={"color":WHITE,"padding":"60px","textAlign":"center"}),
+        return (html.Div("Initializingâ€¦",style={"color":WHITE,"padding":"60px","textAlign":"center"}),
                 HIDDEN, no_update, no_update)
 
     if tab == "command":
@@ -4228,7 +4228,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
             main = build_billing_tab(session=None, perms=None)
         except Exception as e:
             main = card([
-                html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                html.H2("ðŸ’³ Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box(f"Billing module loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="preferences":
@@ -4236,7 +4236,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
             main = build_preferences_tab(user_id="", session=None)
         except Exception as e:
             main = card([
-                html.H2("⚙️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                html.H2("âš™ï¸ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box("Preferences loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="admin":
@@ -4272,7 +4272,7 @@ def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
 
-# ── Trade plan / entry / exit callbacks ───────────────────────────────────────
+# â”€â”€ Trade plan / entry / exit callbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.callback(
     Output("tp-status","children"),
@@ -4299,9 +4299,9 @@ def save_plan(n,direction,entry,stop,target,size,notes,live):
         plan_id = resp.get("plan_id")
         _track("trade_planned",symbol,price=price,regime=regime,decision_score=score,
                metadata={"plan_id":plan_id,"direction":direction})
-        return f"✅ Plan saved: {plan_id}", plan_id
+        return f"âœ… Plan saved: {plan_id}", plan_id
     except Exception as e:
-        return f"❌ Error: {e}", no_update
+        return f"âŒ Error: {e}", no_update
 
 @app.callback(
     Output("tp-status","children",allow_duplicate=True),
@@ -4328,9 +4328,9 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
         trade_id = resp.get("trade_id")
         _track("trade_entered",symbol,price=float(entry),regime=regime,decision_score=score,
                metadata={"trade_id":trade_id,"direction":direction})
-        return f"🚀 Trade entered: {trade_id}"
+        return f"ðŸš€ Trade entered: {trade_id}"
     except Exception as e:
-        return f"❌ Error: {e}"
+        return f"âŒ Error: {e}"
 
 @app.callback(
     Output("exit-status","children"),
@@ -4360,12 +4360,12 @@ def exit_trade(n,trade_id,flags,notes,live):
         scores = resp.get("scores",{})
         _track("trade_exited",live.get("symbol",""),price=price,regime=regime,decision_score=score,
                metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")})
-        return (f"🏁 Exited · P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) · "
-                f"Score: {scores.get('composite',0):.0f} · Flag: {resp.get('behavior_flag','—')}")
+        return (f"ðŸ Exited Â· P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) Â· "
+                f"Score: {scores.get('composite',0):.0f} Â· Flag: {resp.get('behavior_flag','â€”')}")
     except Exception as e:
-        return f"❌ Error: {e}"
+        return f"âŒ Error: {e}"
 
-# ── Direction toggle buttons ─────────────────────────────────────────────────
+# â”€â”€ Direction toggle buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 def _dir_styles(active):
     base = {"flex":"1","padding":"9px 0","fontSize":"13px","cursor":"pointer","fontFamily":"inherit"}
     styles = {
@@ -4410,7 +4410,7 @@ def select_direction(_l, _s, _n):
     return direction, sl, ss, sn
 
 
-# ── CSV upload callback ──────────────────────────────────────────────────────
+# â”€â”€ CSV upload callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 @app.callback(
     Output("csv-upload-status", "children"),
     Input("csv-upload", "contents"),
@@ -4435,10 +4435,10 @@ def handle_csv_upload(contents, filename):
             data = resp.json()
             a    = data.get("analysis", {})
             return html.Div([
-                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
+                html.Span(f"âœ… {data.get('broker_name','Unknown')} detected Â· ",
                           style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"{data.get('trades_closed',0)} trades imported · "
-                          f"Win rate: {a.get('win_rate',0)}% · "
+                html.Span(f"{data.get('trades_closed',0)} trades imported Â· "
+                          f"Win rate: {a.get('win_rate',0)}% Â· "
                           f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
                           style={"color":WHITE}),
                 html.Br(),
@@ -4446,12 +4446,12 @@ def handle_csv_upload(contents, filename):
                           style={"color":WHITE,"fontSize":"11px"}),
             ])
         else:
-            return f"❌ Upload failed: {resp.text[:200]}"
+            return f"âŒ Upload failed: {resp.text[:200]}"
     except Exception as e:
-        return f"❌ Error: {str(e)[:200]}"
+        return f"âŒ Error: {str(e)[:200]}"
 
 
-# ── Audio alert clientside callback ──────────────────────────────────────────
+# â”€â”€ Audio alert clientside callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.clientside_callback(
     """
     function(score, prev_score, alerts_on) {
@@ -4477,7 +4477,7 @@ app.clientside_callback(
 )
 def toggle_alerts(n, currently_on):
     new_on = not currently_on
-    label  = "🔔 ON"  if new_on else "🔕 OFF"
+    label  = "ðŸ”” ON"  if new_on else "ðŸ”• OFF"
     style  = {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                "borderRadius":"20px","padding":"4px 12px","fontSize":"11px","fontWeight":"800","cursor":"pointer"}
     if not new_on:
@@ -4575,7 +4575,7 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
 
     return no_update, no_update
 
-# ── Main app callbacks ────────────────────────────────────────────────────────
+# â”€â”€ Main app callbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 
@@ -4596,3 +4596,5 @@ if __name__ == "__main__":
 
 # SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
 # Note: Opportunity Dashboard inline styles already force descriptive text to WHITE.
+
+
