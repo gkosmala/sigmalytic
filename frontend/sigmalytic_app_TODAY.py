@@ -2472,41 +2472,17 @@ def build_setup_tab():
 # ── App ────────────────────────────────────────────────────────────────────────
 
 LOGO = html.Div([
-    html.Svg([
-        html.Defs([
-            html.LinearGradient([
-                html.Stop(offset="0%", stopColor="#7A4A00"),
-                html.Stop(offset="22%", stopColor="#D4AF37"),
-                html.Stop(offset="42%", stopColor="#FFF2A8"),
-                html.Stop(offset="58%", stopColor="#FFD700"),
-                html.Stop(offset="78%", stopColor="#B8860B"),
-                html.Stop(offset="100%", stopColor="#F7C948"),
-            ], id="sigmaGold", x1="0%", y1="0%", x2="100%", y2="100%")
-        ]),
-        html.Path(
-            d="M4 4 H30 V8 H13 L21 16 L13 24 H30 V28 H4 L16 16 Z",
-            fill="url(#sigmaGold)",
-            stroke="#FFF2A8",
-            strokeWidth="1.15",
-            strokeLinejoin="round",
-        ),
-        html.Path(
-            d="M7 6 H25",
-            stroke="#FFFFFF",
-            strokeWidth="1",
-            opacity=".45",
-            strokeLinecap="round",
-        ),
-    ],
-    width="28",
-    height="28",
-    viewBox="0 0 34 32",
-    style={
-        "marginRight":"4px",
-        "flexShrink":"0",
-        "display":"block",
-        "filter":"drop-shadow(0 0 2px rgba(255,215,0,.55))",
-    }),
+    html.Img(
+        src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='34' height='32' viewBox='0 0 34 32'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%237A4A00'/><stop offset='22%25' stop-color='%23D4AF37'/><stop offset='42%25' stop-color='%23FFF2A8'/><stop offset='58%25' stop-color='%23FFD700'/><stop offset='78%25' stop-color='%23B8860B'/><stop offset='100%25' stop-color='%23F7C948'/></linearGradient></defs><path d='M4 4 H30 V8 H13 L21 16 L13 24 H30 V28 H4 L16 16 Z' fill='url(%23g)' stroke='%23FFF2A8' stroke-width='1.15' stroke-linejoin='round'/><path d='M7 6 H25' stroke='%23FFFFFF' stroke-width='1' opacity='.45' stroke-linecap='round'/></svg>",
+        style={
+            "width":"28px",
+            "height":"28px",
+            "marginRight":"4px",
+            "flexShrink":"0",
+            "display":"block",
+            "filter":"drop-shadow(0 0 2px rgba(255,215,0,.55))",
+        }
+    ),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
         html.Span("QUANT CORPORATION",style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em","display":"block","marginTop":"2px"}),
