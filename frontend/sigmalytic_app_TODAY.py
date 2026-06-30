@@ -2753,6 +2753,10 @@ def load_symbol(_, ticker, live):
 
 @app.callback(
     Output("s-tab","data"),
+    Output("main-content","children", allow_duplicate=True),
+    Output("trade-panels-row","style", allow_duplicate=True),
+    Output("trade-plan-panel","children", allow_duplicate=True),
+    Output("active-trade-panel","children", allow_duplicate=True),
     Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
     Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
     Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
@@ -2765,9 +2769,27 @@ def load_symbol(_, ticker, live):
 )
 def set_tab(*_):
     ctx = callback_context
-    if not ctx.triggered: return no_update
+    if not ctx.triggered:
+        return no_update, no_update, no_update, no_update, no_update
+
     tab = ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
-    return tab
+
+    fast_shell = html.Div([
+        html.Div("Loading " + tab.replace("_"," ").title() + "…",
+                 style={"color":WHITE,"fontSize":"15px","fontWeight":"800","marginBottom":"8px"}),
+        html.Div("Preparing view.",
+                 style={"color":MUTED,"fontSize":"12px"}),
+    ], style={
+        "background":NAVY_CARD,
+        "border":f"1px solid {BORDER}",
+        "borderRadius":"20px",
+        "padding":"28px",
+        "minHeight":"160px",
+        "boxShadow":"0 8px 32px rgba(0,0,0,.32)",
+    })
+
+    return tab, fast_shell, {"display":"none"}, no_update, no_update
+
 
 @app.callback(
     Output("s-live","data"),
@@ -2886,11 +2908,14 @@ def update_badges(live):
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
-    Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
-    State("s-symbol","data"), State("s-tf","data"),
+    Input("s-tab","data"),
+    State("s-live","data"),
+    State("s-candles","data"),
+    State("s-live-mode","data"),
+    State("s-symbol","data"),
+    State("s-tf","data"),
 )
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(tab, live, candles, live_mode, symbol, tf, session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
