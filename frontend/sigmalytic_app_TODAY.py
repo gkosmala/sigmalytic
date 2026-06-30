@@ -1,8 +1,8 @@
 ﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-# Sigmalytic v2.2 â€” true OHLC candlestick rendering
+# Sigmalytic v2.2  true OHLC candlestick rendering
 """
-Sigmalytic Quant Corporation â€” Decision Intelligence Platform
-Institutional-Grade Frontend Â· Dash + Plotly
+Sigmalytic Quant Corporation  Decision Intelligence Platform
+Institutional-Grade Frontend  Dash + Plotly
 Includes: Behavioral Intelligence Layer v1.0
 """
 
@@ -29,28 +29,28 @@ try:
     _CAMPAIGN_TAB_AVAILABLE = True
 except Exception as _ct:
     _CAMPAIGN_TAB_AVAILABLE = False
-    print(f"CAMPAIGN_TAB: FAILED â€” {_ct}", flush=True)
+    print(f"CAMPAIGN_TAB: FAILED  {_ct}", flush=True)
 
 try:
     from portfolio_tab import build_portfolio_tab
     _PORTFOLIO_TAB_AVAILABLE = True
 except Exception as _pt:
     _PORTFOLIO_TAB_AVAILABLE = False
-    print(f"PORTFOLIO_TAB: FAILED â€” {_pt}", flush=True)
+    print(f"PORTFOLIO_TAB: FAILED  {_pt}", flush=True)
 
 try:
     from status_center import build_status_center
     _STATUS_CENTER_AVAILABLE = True
 except Exception as _sc:
     _STATUS_CENTER_AVAILABLE = False
-    print(f"STATUS_CENTER: FAILED â€” {_sc}", flush=True)
+    print(f"STATUS_CENTER: FAILED  {_sc}", flush=True)
 
 try:
     from trade_journal_tab import build_trade_journal_tab
     _JOURNAL_TAB_AVAILABLE = True
 except Exception as _jt:
     _JOURNAL_TAB_AVAILABLE = False
-    print(f"TRADE_JOURNAL_TAB: FAILED â€” {_jt}", flush=True)
+    print(f"TRADE_JOURNAL_TAB: FAILED  {_jt}", flush=True)
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
@@ -208,770 +208,8 @@ def pbar(label, value, color=None):
     c = color or (TEAL_DIM if pct>=70 else (YELLOW_DIM if pct>=45 else RED_DIM))
     return html.Div([
         html.Div([html.Span(label,style={"color":TEXT,"fontSize":"12px","fontWeight":"600"}),
-                  html.Span(f"{pct}%",style={"color":c,"fontWeight":"800","fontSize":"13px"})],
-                 style={"display":"flex","justifyContent":"space-between","marginBottom":"6px"}),
-        html.Div(html.Div(style={"width":f"{pct}%","height":"100%","borderRadius":"999px",
-                                  "background":f"linear-gradient(90deg,#ef4444,{YELLOW},{TEAL_DIM})","transition":"width .5s"}),
-                 style={"height":"8px","background":"rgba(255,255,255,.08)","borderRadius":"999px","overflow":"hidden"}),
-    ])
-
-def brow(label, value, tone):
-    color = TEAL_DIM if tone=="up" else (RED_DIM if tone=="down" else YELLOW_DIM)
-    return html.Div([
-        html.Div([html.Span(label,style={"fontSize":"13px","fontWeight":"600","color":WHITE}),
-                  html.Span(f"{value}%",style={"fontWeight":"800","color":color,"fontSize":"13px"})],
-                 style={"display":"flex","justifyContent":"space-between","marginBottom":"6px"}),
-        html.Div(html.Div(style={"width":f"{value}%","height":"100%","borderRadius":"999px",
-                                  "background":f"linear-gradient(90deg,#ef4444,{YELLOW},{TEAL_DIM})"}),
-                 style={"height":"7px","background":"rgba(255,255,255,.08)","borderRadius":"999px","overflow":"hidden"}),
-    ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
-               "padding":"12px 14px","marginBottom":"8px"})
-
-def zcard(name, level, desc, color):
-    return html.Div([
-        html.P(name, style={"fontSize":"11px","color":TEXT,"margin":"0 0 6px","fontWeight":"600",
-                             "textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Div(level, style={"fontSize":"26px","fontWeight":"900","color":color,"margin":"4px 0 8px"}),
-        html.P(desc,  style={"fontSize":"11px","color":MUTED,"margin":"0"}),
-    ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"14px",
-               "padding":"14px","textAlign":"center"})
-
-def _tf_btn_style(tf, active_tf):
-    active = tf == active_tf
-    return {"background":TEAL_GLOW if active else "transparent","color":TEAL_DIM if active else TEXT,
-            "border":f"1px solid {BORDER_T}" if active else "none","borderRadius":"10px",
-            "padding":"8px 12px","fontSize":"12px","fontWeight":"800" if active else "700","cursor":"pointer","fontFamily":"inherit"}
-
-def _input_style(width="100%"):
-    return {"background":"rgba(0,0,0,.3)","color":WHITE,"border":f"1px solid {BORDER}",
-            "borderRadius":"10px","padding":"9px 12px","width":width,"fontSize":"13px",
-            "fontWeight":"600","fontFamily":"inherit"}
-
-
-def _bias_color(value):
-    v = str(value or "").upper().strip()
-    if v == "BULLISH":
-        return TEAL_DIM
-    if v == "BEARISH":
-        return RED_DIM
-    if v == "WATCH":
-        return YELLOW_DIM
-    return WHITE
-
-def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
-    s = {"background":bg,"border":f"1px solid {border}","color":color,"borderRadius":"12px",
-         "padding":"10px 18px","fontSize":"13px","fontWeight":"800","cursor":"pointer","fontFamily":"inherit"}
-    if extra: s.update(extra)
-    return html.Button(label, id=id_, n_clicks=0, style=s)
-
-# â”€â”€ Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-def build_chart(candles, price, nodes, tf="5m"):
-    """
-    True financial OHLC candlestick chart.
-
-    Each candle uses:
-    - open/close for the rectangular body
-    - high/low for the wick/shadow
-    - green body when close >= open
-    - red body when close < open
-
-    The x-axis is categorical so Plotly gives each candle a visible body instead
-    of compressing candles into thin line-like marks.
-    """
-    kl = get_key_levels(price)
-
-    clean = []
-    for i, c in enumerate(candles or []):
-        if not isinstance(c, dict):
-            continue
-        try:
-            o = float(c.get("o", c.get("open")))
-            h = float(c.get("h", c.get("high")))
-            l = float(c.get("l", c.get("low")))
-            cl = float(c.get("c", c.get("close")))
-        except Exception:
-            continue
-
-        # Protect chart geometry if any upstream candle has bad high/low values.
-        h = max(h, o, cl)
-        l = min(l, o, cl)
-        label = str(i + 1)
-        raw_t = c.get("t") or c.get("time") or c.get("timestamp") or label
-        clean.append({"x": label, "o": o, "h": h, "l": l, "c": cl, "t": raw_t})
-
-    if not clean:
-        p = float(price or 0)
-        clean = [{"x": "1", "o": p, "h": p, "l": p, "c": p, "t": "No candle data"}]
-
-    xs = [c["x"] for c in clean]
-    opens = [c["o"] for c in clean]
-    highs = [c["h"] for c in clean]
-    lows = [c["l"] for c in clean]
-    closes = [c["c"] for c in clean]
-    hover_times = [c["t"] for c in clean]
-    hover_text = [
-        f"Candle {x}<br>Time {t}<br>Open {o:.2f}<br>High {h:.2f}<br>Low {l:.2f}<br>Close {cl:.2f}"
-        for x, t, o, h, l, cl in zip(xs, hover_times, opens, highs, lows, closes)
-    ]
-
-    y_min = min(lows + [float(price or 0)])
-    y_max = max(highs + [float(price or 0)])
-    y_span = max(y_max - y_min, max(abs(float(price or 1)) * 0.01, 0.25))
-    y_pad = y_span * 0.12
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Candlestick(
-        x=xs,
-        open=opens,
-        high=highs,
-        low=lows,
-        close=closes,
-        hovertext=hover_text,
-        hoverinfo="text",
-        name="Price",
-        increasing=dict(
-            line=dict(color=TEAL_DIM, width=1.2),
-            fillcolor=TEAL_DIM,
-        ),
-        decreasing=dict(
-            line=dict(color=RED_DIM, width=1.2),
-            fillcolor=RED_DIM,
-        ),
-        whiskerwidth=0.35,
-    ))
-
-    # Level lines remain as context. The y-axis range is based on the candle
-    # data so the candle bodies stay visually readable.
-    for level, color, dash, width in [
-        (kl.breakout,   TEAL_DIM,   "dash",    1.0),
-        (kl.prior_high, TEAL_DIM,   "dot",     1.0),
-        (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
-        (kl.confirm,    YELLOW_DIM, "solid",   1.0),
-        (kl.trigger,    YELLOW_DIM, "dash",    1.0),
-        (kl.trap,       RED_DIM,    "dot",     1.0),
-        (kl.fail,       RED_DIM,    "dash",    1.0),
-    ]:
-        fig.add_hline(y=level, line_color=color, line_dash=dash,
-                      line_width=width, opacity=0.45)
-
-    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid",
-                  line_width=1.5, opacity=0.9)
-
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=NAVY,
-        font=dict(family="DM Sans", color=WHITE, size=12),
-        xaxis=dict(
-            type="category",
-            categoryorder="array",
-            categoryarray=xs,
-            showgrid=True,
-            gridcolor="rgba(255,255,255,.06)",
-            zeroline=False,
-            rangeslider=dict(visible=False),
-            showticklabels=False,
-            title=None,
-            color=WHITE,
-            fixedrange=False,
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(255,255,255,.06)",
-            zeroline=False,
-            color=WHITE,
-            side="right",
-            tickformat=".2f",
-            tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
-            range=[y_min - y_pad, y_max + y_pad],
-            fixedrange=False,
-        ),
-        margin=dict(l=0, r=60, t=8, b=24),
-        height=480,
-        showlegend=False,
-        hovermode="x",
-        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE,
-                        bordercolor=BORDER, font_size=12),
-        dragmode="pan",
-    )
-
-    return fig
-
-def _build_clock_inline():
-    EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
-    minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
-    phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
-             else "Midday Auction" if minutes<840 else "Closing Auction")
-    pc = TEAL_DIM if in_sess else MUTED
-    return [metric_tile("Clock",now.strftime("%I:%M:%S %p")+" ET"),
-            html.Div(style={"height":"8px"}),
-            metric_tile("Session Phase",phase,pc),
-            html.Div(style={"height":"10px"}),
-            note_box("Future: economic releases, auction windows, proprietary cycle layers.")]
-
-# â”€â”€ Trade Plan Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# The INPUT components (buttons, fields) live in the permanent layout via their IDs.
-# This function only builds the card SHELL â€” the inputs are defined once in the layout.
-
-def _build_trade_plan_contents(live):
-    """Only updates the header label â€” buttons/inputs are permanent in layout."""
-    price  = live.get("price", 0)
-    symbol = live.get("symbol", "")
-    return html.Div([
-        html.H2("ðŸŽ¯ Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
-        html.Span(f"{symbol} Â· ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
-    ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
-
-
-
-# â”€â”€ Active Trade Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-def build_active_trade_panel(trade: dict, current_price: float):
-    if not trade:
-        return html.Div()
-    direction  = trade.get("direction","long")
-    entry      = trade.get("entry_price", current_price)
-    stop       = trade.get("stop_price")
-    target     = trade.get("target_price")
-    size       = trade.get("size", 0)
-    if direction == "long":
-        unreal_pnl = (current_price - entry) * size
-        unreal_pct = ((current_price - entry) / entry * 100) if entry else 0
-    else:
-        unreal_pnl = (entry - current_price) * size
-        unreal_pct = ((entry - current_price) / entry * 100) if entry else 0
-
-    pnl_color = TEAL_DIM if unreal_pnl >= 0 else RED_DIM
-    entry_time = trade.get("entry_time", "")
-
-    return card([
-        html.Div([
-            html.H2("ðŸ“ˆ Active Trade", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
-            badge(direction.upper(), "teal" if direction=="long" else "red"),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"14px"}),
-
-        html.Div([
-            metric_tile("Entry",   f"${entry:.2f}",        WHITE),
-            metric_tile("Current", f"${current_price:.2f}", BLUE_DIM),
-            metric_tile("Unreal P&L", f"${unreal_pnl:+.2f} ({unreal_pct:+.2f}%)", pnl_color),
-        ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"8px","marginBottom":"12px"}),
-
-        html.Div([
-            metric_tile("Stop",   f"${stop:.2f}"   if stop   else "â€”", RED_DIM),
-            metric_tile("Target", f"${target:.2f}" if target else "â€”", TEAL_DIM),
-            metric_tile("Size",   str(size),        TEXT),
-        ], style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"8px","marginBottom":"14px"}),
-
-        # Exit review fields
-        html.Div([
-            slabel("Exit Review"),
-            html.Div([
-                dcc.Checklist(id="exit-flags", options=[
-                    {"label": " No trade plan existed",        "value": "no_plan"},
-                    {"label": " Stop was moved wider",         "value": "stop_moved_wider"},
-                    {"label": " Target moved emotionally",     "value": "target_moved"},
-                    {"label": " Exited before invalidation",   "value": "premature_exit"},
-                    {"label": " Added size after adverse move","value": "added_size_adverse"},
-                    {"label": " Changed TF to justify trade",  "value": "timeframe_changed"},
-                ], value=[],
-                style={"color":TEXT,"fontSize":"12px","lineHeight":"2"},
-                inputStyle={"marginRight":"6px","accentColor":TEAL_DIM}),
-            ], style={"marginBottom":"10px"}),
-            dcc.Textarea(id="exit-notes", value="", placeholder="Exit notesâ€¦",
-                style={**_input_style(),"height":"50px","resize":"vertical"}),
-        ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"12px","marginBottom":"12px"}),
-
-        _btn("ðŸ Exit Trade", "btn-exit-trade",
-             color=RED_DIM, bg=RED_GLOW, border="rgba(239,68,68,.35)"),
-        html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
-
-        dcc.Store(id="s-active-trade-id", data=trade.get("trade_id")),
-    ])
-
-
-# â”€â”€ CSV Import Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-BROKER_INFO = {
-    "alpaca":       {"name": "Alpaca",                  "icon": "ðŸ“Š", "priority": "HIGH",   "color": TEAL_DIM},
-    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "ðŸ¦", "priority": "HIGH",   "color": TEAL_DIM},
-    "ibkr":         {"name": "Interactive Brokers",     "icon": "ðŸŒ", "priority": "HIGH",   "color": TEAL_DIM},
-    "robinhood":    {"name": "Robinhood",               "icon": "ðŸª¶", "priority": "HIGH",   "color": TEAL_DIM},
-    "webull":       {"name": "Webull",                  "icon": "ðŸ‚", "priority": "MEDIUM", "color": YELLOW_DIM},
-    "generic":      {"name": "Generic CSV",             "icon": "ðŸ“„", "priority": "ALWAYS", "color": BLUE_DIM},
-}
-
-EXPORT_INSTRUCTIONS = {
-    "alpaca": [
-        "Log in to Alpaca dashboard",
-        "Go to Account â†’ Activity",
-        "Select date range â†’ Export CSV",
-        "Upload the downloaded file here",
-    ],
-    "tdameritrade": [
-        "Log in to thinkorswim or TDA web",
-        "Go to My Account â†’ History & Statements",
-        "Select Trade History â†’ Export to CSV",
-        "Upload the downloaded file here",
-    ],
-    "ibkr": [
-        "Log in to Client Portal or TWS",
-        "Go to Reports â†’ Flex Query",
-        "Create a Trade Confirmation Flex Query",
-        "Export as CSV and upload here",
-    ],
-    "robinhood": [
-        "Log in to Robinhood web (not mobile)",
-        "Go to Account â†’ Statements & History",
-        "Download Account Statement CSV",
-        "Upload the downloaded file here",
-    ],
-    "webull": [
-        "Log in to Webull desktop app",
-        "Go to Orders â†’ Order History",
-        "Click Export in top right",
-        "Upload the downloaded CSV here",
-    ],
-    "generic": [
-        "Export your trade history from any broker",
-        "Ensure CSV has: Symbol, Side (buy/sell), Quantity, Price, Date",
-        "Upload and map columns if needed",
-    ],
-}
-
-def build_import_tab():
-    # Fetch latest analysis if exists
-    analysis = _get(f"/api/import/analysis/{USER_ID}")
-
-    ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
-
-    # â”€â”€ Broker cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    broker_cards = []
-    for key, info in BROKER_INFO.items():
-        priority_color = (TEAL_DIM if info["priority"]=="HIGH"
-                         else YELLOW_DIM if info["priority"]=="MEDIUM"
-                         else BLUE_DIM)
-        broker_cards.append(html.Div([
-            html.Div([
-                html.Span(info["icon"], style={"fontSize":"24px"}),
-                html.Div([
-                    html.Div(info["name"],
-                             style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
-                    html.Span(info["priority"],
-                              style={"fontSize":"10px","fontWeight":"800","color":priority_color,
-                                     "letterSpacing":".1em"}),
-                ]),
-            ], style={"display":"flex","alignItems":"center","gap":"10px","marginBottom":"10px"}),
-            *[html.P(f"â€¢ {step}",
-                     style={"fontSize":"11px","color":MUTED,"marginBottom":"4px","lineHeight":"1.5"})
-              for step in EXPORT_INSTRUCTIONS[key]],
-        ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
-                   "borderRadius":"14px","padding":"14px","flex":"1","minWidth":"200px"}))
-
-    # â”€â”€ Upload section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    upload_section = card([
-        html.H2("ðŸ“¤ Upload Brokerage History",
-                style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
-        html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
-               style={"fontSize":"12px","color":MUTED,"marginBottom":"16px"}),
-
-        # Broker cards
-        html.Div(broker_cards,
-                 style={"display":"flex","flexWrap":"wrap","gap":"12px","marginBottom":"20px"}),
-
-        # Upload widget
-        html.Div([
-            dcc.Upload(
-                id="csv-upload",
-                children=html.Div([
-                    html.Div("ðŸ“‚", style={"fontSize":"32px","marginBottom":"8px"}),
-                    html.Div("Drag & drop your CSV here, or click to browse",
-                             style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
-                    html.Div("Supports: Alpaca Â· TD Ameritrade Â· Schwab Â· IBKR Â· Robinhood Â· Webull Â· Generic CSV",
-                             style={"fontSize":"11px","color":MUTED}),
-                ], style={"textAlign":"center","padding":"20px"}),
-                style={
-                    "border":f"2px dashed {BORDER_T}",
-                    "borderRadius":"16px",
-                    "background":TEAL_GLOW,
-                    "cursor":"pointer",
-                    "marginBottom":"14px",
-                    "transition":"border-color .2s",
-                },
-                accept=".csv",
-                multiple=False,
-            ),
-            html.Div(id="csv-upload-status",
-                     style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
-        ]),
-    ])
-
-    # â”€â”€ Analysis display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if not analysis:
-        analysis_section = card([
-            note_box("No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.", "blue")
-        ])
-    else:
-        total   = analysis.get("total_trades", 0)
-        wr      = analysis.get("win_rate", 0)
-        pnl     = analysis.get("total_pnl", 0)
-        avg_win = analysis.get("avg_win", 0)
-        avg_loss= analysis.get("avg_loss", 0)
-        rr      = analysis.get("rr_ratio", 0)
-        edge    = analysis.get("edge_score", 0)
-        hold    = analysis.get("avg_hold_time", "â€”")
-        best_d  = analysis.get("best_day")
-        worst_d = analysis.get("worst_day")
-        best_s  = analysis.get("best_symbol")
-        worst_s = analysis.get("worst_symbol")
-        flags   = analysis.get("behavioral_flags", [])
-        overtrade = analysis.get("overtrade_rate", 0)
-        sym_perf  = analysis.get("symbol_performance", {})
-        day_perf  = analysis.get("day_performance", {})
-
-        wr_color  = TEAL_DIM if wr>=55 else (YELLOW_DIM if wr>=45 else RED_DIM)
-        pnl_color = TEAL_DIM if pnl>=0 else RED_DIM
-        edge_color= TEAL_DIM if edge>0 else RED_DIM
-        rr_color  = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
-
-        # Mathematical edge insight
-        if edge > 0:
-            edge_insight = f"Your system has a positive mathematical edge of ${edge:.2f} per trade."
-        else:
-            edge_insight = f"Your system has a negative edge of ${edge:.2f} per trade â€” the math works against you long-term."
-
-        # Top symbols table
-        top_syms = sorted(sym_perf.items(), key=lambda x: x[1]["total_pnl"], reverse=True)[:8]
-        sym_rows = []
-        for sym, sp in top_syms:
-            c = TEAL_DIM if sp["total_pnl"]>=0 else RED_DIM
-            sym_rows.append(html.Tr([
-                html.Td(sym, style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
-                html.Td(str(sp["trades"]), style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
-                html.Td(f"{sp['win_rate']:.0f}%", style={"color":TEAL_DIM if sp['win_rate']>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
-                html.Td(f"${sp['total_pnl']:+.2f}", style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
-            ], style={"borderBottom":f"1px solid {BORDER}"}))
-
-        analysis_section = html.Div([
-            # Score cards
-            card([
-                html.H2("ðŸ“Š Historical Behavioral Snapshot",
-                        style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
-                html.Div([
-                    metric_tile("Total Trades",    str(total),          WHITE),
-                    metric_tile("Win Rate",        f"{wr}%",            wr_color),
-                    metric_tile("Total P&L",       f"${pnl:+,.2f}",     pnl_color),
-                    metric_tile("Avg Win",         f"${avg_win:+.2f}",  TEAL_DIM),
-                    metric_tile("Avg Loss",        f"${avg_loss:+.2f}", RED_DIM),
-                    metric_tile("Risk/Reward",     f"{rr:.2f}x",        rr_color),
-                    metric_tile("Avg Hold Time",   hold,                BLUE_DIM),
-                    metric_tile("Overtrade Rate",  f"{overtrade:.0f}%", YELLOW_DIM if overtrade>20 else TEXT),
-                ], style={"display":"grid","gridTemplateColumns":"repeat(8,1fr)","gap":"10px","marginBottom":"16px"}),
-
-                # Mathematical edge
-                html.Div([
-                    html.Span("âš¡ Mathematical Edge: ",
-                              style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
-                    html.Span(edge_insight, style={"color":TEXT,"fontSize":"12px"}),
-                ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
-                           "border":f"1px solid {BORDER}","marginBottom":"12px"}),
-
-                # Best/worst
-                html.Div([
-                    html.Div([
-                        html.Span("ðŸŸ¢ Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
-                        html.Span(best_d or "â€”",      style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   ðŸ”´ Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
-                        html.Span(worst_d or "â€”",     style={"color":WHITE,"fontSize":"12px"}),
-                    ]),
-                    html.Div([
-                        html.Span("ðŸŸ¢ Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
-                        html.Span(best_s or "â€”",        style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   ðŸ”´ Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
-                        html.Span(worst_s or "â€”",       style={"color":WHITE,"fontSize":"12px"}),
-                    ], style={"marginTop":"6px"}),
-                ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
-                           "border":f"1px solid {BORDER}"}),
-            ]),
-
-            html.Div(style={"height":"16px"}),
-
-            html.Div([
-                # Behavioral flags
-                card([
-                    html.H2("ðŸš© Behavioral Flags",
-                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
-                    *([html.Div([
-                        html.Span("âœ… " if any(w in f for w in ["Strong","Above","positive","discipline"])
-                                  else "âš ï¸ ",
-                                  style={"fontSize":"14px"}),
-                        html.Span(f, style={"fontSize":"12px","color":TEXT,"lineHeight":"1.6"}),
-                    ], style={"padding":"8px 12px","borderRadius":"10px","marginBottom":"6px",
-                               "background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}"})
-                      for f in flags]
-                     if flags else [note_box("No behavioral flags detected yet.", "blue")]),
-                ], sx={"flex":"1"}),
-
-                # Symbol performance table
-                card([
-                    html.H2("ðŸ“ˆ Symbol Performance",
-                            style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
-                    html.Table([
-                        html.Thead(html.Tr([
-                            html.Th("Symbol",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"left"}),
-                            html.Th("Trades",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
-                            html.Th("Win %",   style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
-                            html.Th("Total P&L",style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"right"}),
-                        ])),
-                        html.Tbody(sym_rows if sym_rows
-                                   else [html.Tr([html.Td("No data",colSpan=4,
-                                                           style={"color":MUTED,"padding":"16px","textAlign":"center"})])]),
-                    ], style={"width":"100%","borderCollapse":"collapse"}),
-                ], sx={"flex":"1"}),
-            ], style={**ROW,"alignItems":"start"}),
-        ])
-
-    return html.Div([upload_section, html.Div(style={"height":"16px"}), analysis_section])
-
-
-# â”€â”€ Behavioral Dashboard Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-def build_behavior_tab():
-    dash_data = _get(f"/api/behavior/dashboard/{USER_ID}")
-    if not dash_data:
-        return card([note_box("No behavioral data yet. Start tracking trades to build your profile.", "blue")])
-
-    total    = dash_data.get("total_trades", 0)
-    comp     = dash_data.get("avg_decision_score", 0)
-    exec_    = dash_data.get("execution_score", 0)
-    disc     = dash_data.get("discipline_score", 0)
-    timing   = dash_data.get("timing_score", 0)
-    risk     = dash_data.get("risk_score", 0)
-    flag     = dash_data.get("common_behavior_flag", "neutral")
-    best_r   = dash_data.get("best_regime")
-    worst_r  = dash_data.get("worst_regime")
-    regimes  = dash_data.get("regime_performance", [])
-    cards_   = dash_data.get("recent_scorecards", [])
-    warnings = dash_data.get("adaptive_warnings", [])
-
-    def score_color(v): return TEAL_DIM if v>=70 else (YELLOW_DIM if v>=45 else RED_DIM)
-
-    flag_color = {
-        "plan_followed":"teal","disciplined_execution":"teal",
-        "late_chase":"yellow","premature_exit":"yellow","panic_exit":"red",
-        "plan_violated":"red","over_sized":"red","ignored_high_quality_signal":"yellow",
-        "revenge_trade":"red","neutral":"gray","under_sized":"gray",
-    }.get(flag, "gray")
-
-    ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
-
-    # Section 1 â€” Profile scores
-    section1 = card([
-        html.H2("ðŸ§  Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
-        html.Div([
-            metric_tile("Total Trades",    str(total),          WHITE),
-            metric_tile("Composite Score", f"{comp}%",          score_color(comp)),
-            metric_tile("Execution",       f"{exec_}%",         score_color(exec_)),
-            metric_tile("Discipline",      f"{disc}%",          score_color(disc)),
-            metric_tile("Timing",          f"{timing}%",        score_color(timing)),
-            metric_tile("Risk Mgmt",       f"{risk}%",          score_color(risk)),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(6,1fr)","gap":"10px","marginBottom":"16px"}),
-        html.Div([
-            pbar("Composite Decision Score", comp),
-            html.Div(style={"height":"8px"}),
-            pbar("Execution Quality",        exec_),
-            html.Div(style={"height":"8px"}),
-            pbar("Discipline",               disc),
-            html.Div(style={"height":"8px"}),
-            pbar("Timing Quality",           timing),
-            html.Div(style={"height":"8px"}),
-            pbar("Risk Management",          risk),
-        ]),
-    ])
-
-    # Section 2 â€” Adaptive warnings
-    def warn_box(w):
-        variant = "teal" if w["type"]=="strength" else "yellow"
-        icon    = "âœ…" if w["type"]=="strength" else "âš ï¸"
-        return note_box(f"{icon}  {w['message']}", variant)
-
-    section2 = card([
-        html.H2("ðŸ”” Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
-        *([warn_box(w) for w in warnings] if warnings
-          else [note_box("No active warnings. Keep trading to build your profile.", "blue")]),
-        html.Div(style={"height":"8px"}),
-        html.Div([
-            html.Span("Most Common Pattern: ", style={"fontSize":"12px","color":TEXT}),
-            badge(flag.replace("_"," "), flag_color),
-        ], style={"marginTop":"10px"}),
-        html.Div([
-            *([html.Div([html.Span("Best Regime: ", style={"fontSize":"12px","color":TEXT}),
-                         badge(best_r.replace("_"," "), "teal")],
-                        style={"marginTop":"8px"})] if best_r else []),
-            *([html.Div([html.Span("Worst Regime: ", style={"fontSize":"12px","color":TEXT}),
-                         badge(worst_r.replace("_"," "), "red")],
-                        style={"marginTop":"8px"})] if worst_r else []),
-        ]),
-    ])
-
-    # Section 3 â€” Regime table
-    regime_rows_html = []
-    for r in regimes:
-        wr_color  = TEAL_DIM if r["win_rate"]>=60 else (YELLOW_DIM if r["win_rate"]>=40 else RED_DIM)
-        dec_color = TEAL_DIM if r["avg_decision_score"]>=70 else (YELLOW_DIM if r["avg_decision_score"]>=45 else RED_DIM)
-        regime_rows_html.append(html.Tr([
-            html.Td(r["regime"].replace("_"," ").title(),
-                    style={"color":WHITE,"fontWeight":"600","padding":"10px 12px","fontSize":"12px"}),
-            html.Td(str(r["total_trades"]),
-                    style={"color":TEXT,"padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
-            html.Td(f"{r['win_rate']:.0f}%",
-                    style={"color":wr_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
-            html.Td(f"{r['avg_decision_score']:.0f}",
-                    style={"color":dec_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
-            html.Td(r.get("common_behavior_flag","â€”").replace("_"," "),
-                    style={"color":MUTED,"padding":"10px 12px","fontSize":"11px"}),
-        ], style={"borderBottom":f"1px solid {BORDER}"}))
-
-    section3 = card([
-        html.H2("ðŸ“Š Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
-        html.Table([
-            html.Thead(html.Tr([
-                html.Th("Regime",           style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
-                html.Th("Trades",           style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Win Rate",         style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Avg Score",        style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
-                html.Th("Common Pattern",   style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
-            ])),
-            html.Tbody(regime_rows_html if regime_rows_html
-                       else [html.Tr([html.Td("No regime data yet.",
-                                               colSpan=5,style={"color":MUTED,"padding":"20px","textAlign":"center"})])]),
-        ], style={"width":"100%","borderCollapse":"collapse"}),
-    ]) if True else html.Div()
-
-    # Section 4 â€” Recent scorecards
-    def scorecard_row(s):
-        c = TEAL_DIM if s["composite_decision_score"]>=70 else (YELLOW_DIM if s["composite_decision_score"]>=45 else RED_DIM)
-        pnl = s.get("pnl_percent")
-        pnl_str = f"{pnl:+.2f}%" if pnl is not None else "â€”"
-        pnl_c = TEAL_DIM if (pnl or 0)>0 else RED_DIM
-        return html.Div([
-            html.Div([
-                html.Span(s.get("symbol","â€”"), style={"fontWeight":"800","color":WHITE,"fontSize":"13px"}),
-                html.Span(s.get("direction","").upper() if s.get("direction") else "",
-                          style={"fontSize":"10px","color":MUTED,"marginLeft":"8px"}),
-                html.Span(s.get("primary_behavior_flag","").replace("_"," "),
-                          style={"fontSize":"10px","color":MUTED,"marginLeft":"8px"}),
-            ]),
-            html.Div([
-                html.Span(f"Score: {s['composite_decision_score']:.0f}",
-                          style={"color":c,"fontWeight":"800","fontSize":"13px"}),
-                html.Span(f"P&L: {pnl_str}",
-                          style={"color":pnl_c,"fontWeight":"700","fontSize":"12px","marginLeft":"12px"}),
-                html.Span(s.get("timestamp","")[:16] if s.get("timestamp") else "",
-                          style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
-            ]),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
-                   "padding":"10px 14px","borderBottom":f"1px solid {BORDER}",
-                   "borderRadius":"10px","background":"rgba(0,0,0,.15)","marginBottom":"6px"})
-
-    section4 = card([
-        html.H2("ðŸ“‹ Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
-        *([scorecard_row(s) for s in cards_] if cards_
-          else [note_box("No scorecards yet. Complete a trade to generate your first scorecard.", "blue")]),
-    ])
-
-    return html.Div([section1, html.Div(style={"height":"16px"}),
-                     html.Div([section2, section3], style={**ROW,"alignItems":"start"}),
-                     html.Div(style={"height":"16px"}), section4])
-
-# â”€â”€ Command tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-def build_command_tab(live, candles, symbol, tf):
-    price    = live["price"]; decision = live["decision"]
-    nodes    = live["confluence"]; kl = get_key_levels(price)
-    seq      = live["sequence"]; score = decision["score"]
-    try:
-        ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
-        ts = ts.astimezone(timezone(timedelta(hours=-4))); live_age = ts.strftime("%I:%M:%S %p")
-    except: live_age = "â€”"
-    sc   = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
-    size = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
-    top  = nodes[0] if nodes else {"public_label":"â€”","score":0}
-    vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
-    cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
-    pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
-    fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
-    as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
-    aa   = as_ != "Monitoring"
-    fig  = build_chart(candles, price, nodes, tf)
-    ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
-    regime = _regime_from_live(live)
-
-    # â”€â”€ Price Ladder row helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    def level_row(label, level, color, is_live=False, arrow=""):
-        bg  = "rgba(45,143,111,.15)" if is_live else "transparent"
-        bdr = f"1px solid {BORDER_T}" if is_live else f"1px solid {BORDER}"
-        return html.Div([
-            html.Div([
-                html.Span(arrow+" " if arrow else "",
-                          style={"color":color,"fontWeight":"900","fontSize":"11px","marginRight":"2px"}),
-                html.Span(label,
-                          style={"fontSize":"11px","fontWeight":"700","color":TEXT,
-                                 "textTransform":"uppercase","letterSpacing":".08em"}),
-            ], style={"flex":"1"}),
-            html.Span(f"${level:.2f}",
-                      style={"fontSize":"16px","fontWeight":"900","color":WHITE,
-                             "fontFamily":"DM Mono, monospace"}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
-                   "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
-                   "background":bg,"border":bdr})
-
-    # â”€â”€ LEFT: Price Ladder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    price_ladder = html.Div([
-        card([
-            slabel("Price Ladder"),
-            level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="â–²"),
-            level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="â–²"),
-            level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="â–²"),
-            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
-            level_row("Live Price",price,          BLUE_DIM,  is_live=True),
-            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
-            level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="â–¼"),
-            level_row("Trap Door", kl.trap,       RED_DIM,   arrow="â–¼"),
-            level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="â–¼"),
-            html.Div(style={"flex":"1"}),  # pushes Distance to bottom
-            html.Hr(style={"border":"none","borderTop":f"1px solid {BORDER}","margin":"0 0 12px"}),
-            slabel("Distance"),
-            html.Div([
-                html.Div([
-                    html.Span("â†‘ Breakout",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
-                              style={"fontSize":"14px","color":TEAL_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
-                html.Div([
-                    html.Span("â†“ Fail Gate",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
-                              style={"fontSize":"14px","color":RED_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
-                html.Div([
-                    html.Span("R/R Ratio",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "â€”",
-                              style={"fontSize":"14px","color":YELLOW_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between"}),
-            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"14px",
-                       "border":f"1px solid {BORDER}"}),
-        ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
-    ], style={"flex":"0 0 230px","minWidth":"0","display":"flex","flexDirection":"column"})
-
-    # â”€â”€ CENTER: Chart â€” fills the card tile completely â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    chart_panel = card([
-        # Header row
-        html.Div([
-            html.Div([
-                html.Span(f"ðŸ“Š {symbol}  Â·  Smart Chart",
-                          style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
-                html.Span(f"  {live_age}  Â·  {tf}  Â·  {regime.replace('_',' ').title()}",
-                          style={"fontSize":"10px","color":MUTED}),
+                  html.Span(f"{symbol} - Smart Chart", style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
+                html.Span(f"{live_age} - {tf} - {regime.replace('_',' ').title()}", style={"fontSize":"10px","color":MUTED}),
             ]),
             html.Span(f"${price:.2f}",
                       style={"fontSize":"14px","fontWeight":"900","color":WHITE,
@@ -979,7 +217,7 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "marginBottom":"6px"}),
 
-        # Chart â€” fills remaining space
+        # Chart  fills remaining space
         html.Div(
             dcc.Graph(figure=fig,
                       config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
@@ -987,10 +225,9 @@ def build_command_tab(live, candles, symbol, tf):
             style={"flex":"1","margin":"0 -20px -8px -20px","overflow":"hidden"},
         ),
 
-        # Footer â€” aligned with Distance box at bottom of price ladder
+        # Footer  aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"{tf}  Â·  {len(candles)} candles",
-                      style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
+            html.Span(f"{tf} - {len(candles)} candles", style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
             html.Span(f"Vol {live['volume']:,}",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
@@ -1010,7 +247,7 @@ def build_command_tab(live, candles, symbol, tf):
     row2 = card([
         html.Div([
 
-            # Column A â€” Decision Engine signal
+            # Column A  Decision Engine signal
             html.Div([
                 slabel("Decision Engine"),
                 html.Div(decision["status"],
@@ -1033,7 +270,7 @@ def build_command_tab(live, candles, symbol, tf):
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
-            # Column B â€” Trade Card
+            # Column B  Trade Card
             html.Div([
                 slabel("Trade Card"),
                 html.Div(style={"height":"6px"}),
@@ -1052,11 +289,11 @@ def build_command_tab(live, candles, symbol, tf):
                                               "textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
                 ], style={"marginBottom":"10px"}),
-                note_box(f"Ref: ${price:.2f}  Â·  A-grade requires live-volume expansion.","yellow"),
+                note_box(f"Ref: ${price:.2f}    A-grade requires live-volume expansion.","yellow"),
             ], style={"flex":"1","minWidth":"140px",
                        "borderRight":f"1px solid {BORDER}","padding":"0 16px"}),
 
-            # Column C â€” Probability Ladder
+            # Column C  Probability Ladder
             html.Div([
                 slabel("Probability Ladder"),
                 html.Div(style={"height":"6px"}),
@@ -1137,8 +374,8 @@ def build_command_tab(live, candles, symbol, tf):
                           style={"fontSize":"11px","color":WHITE,"marginTop":"8px","display":"block","fontWeight":"700"}),
                 html.Span(
                     "ðŸ”´ Trap Door" if score<35 else
-                    ("ðŸŸ¢ A-Grade â€” Audio Active" if score>=80 else
-                     "ðŸŸ¡ B-Grade â€” Audio Active" if score>=55 else "âšª Monitoring"),
+                    ("ðŸŸ¢ A-Grade  Audio Active" if score>=80 else
+                     "ðŸŸ¡ B-Grade  Audio Active" if score>=55 else "âšª Monitoring"),
                     style={"fontSize":"11px","fontWeight":"700","marginTop":"3px","display":"block",
                            "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
             ]),
@@ -1180,7 +417,7 @@ def build_performance_tab(live):
     price=live["price"]; decision=live["decision"]; score=decision["score"]
     sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     return card([
-        html.H2("ðŸ“ˆ Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2(" Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Div([
             metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Setup",decision["status"],sc),
@@ -1201,11 +438,11 @@ def build_stub_tab(title, description):
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# REAL TAB FUNCTIONS â€” injected from source files
+# REAL TAB FUNCTIONS  injected from source files
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def build_radar_tab(session=None):
-    """Radar Screen â€” multi-symbol signal scanner."""
+    """Radar Screen  multi-symbol signal scanner."""
     import requests as _rq
     user_id = (session or {}).get("user_id", "demo_user_001")
     
@@ -1226,9 +463,9 @@ def build_radar_tab(session=None):
             html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
                        "color":TEAL_DIM if chg>=0 else RED_DIM}),
             html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
-            html.Span(s.get("status","â€”"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(s.get("regime","â€”"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(s.get("bias","â€”"), style={ "flex":"1","fontSize":"11px","color":_bias_color(s.get("bias","â€”"))}),
+            html.Span(s.get("status",""), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
+            html.Span(s.get("regime",""), style={"flex":"1","fontSize":"11px","color":MUTED}),
+            html.Span(s.get("bias",""), style={ "flex":"1","fontSize":"11px","color":_bias_color(s.get("bias",""))}),
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
 
@@ -1246,7 +483,7 @@ def build_radar_tab(session=None):
         card([
             html.Div([
                 html.H2("ðŸ“¡ Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live multi-symbol signal scanner â€” A-grade setups across your universe.",
+                html.P("Live multi-symbol signal scanner  A-grade setups across your universe.",
                        style={"color":TEXT,"fontSize":"13px","margin":"0"}),
             ], style={"marginBottom":"16px"}),
             header_row,
@@ -1259,7 +496,7 @@ def build_radar_tab(session=None):
 
 
 def build_scoreboard_tab(session=None):
-    """Scoreboard â€” decision score leaderboard."""
+    """Scoreboard  decision score leaderboard."""
     import requests as _rq
 
     try:
@@ -1275,7 +512,7 @@ def build_scoreboard_tab(session=None):
     def _entry_row(e, rank):
         score = e.get("composite_score", e.get("score", 0))
         sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        grade = e.get("grade","â€”")
+        grade = e.get("grade","")
         gc = TEAL_DIM if grade.startswith("A") else (BLUE_DIM if grade.startswith("B") else (YELLOW_DIM if grade=="C" else RED_DIM))
         return html.Div([
             html.Span(f"#{rank}", style={"flex":"0 0 32px","fontSize":"11px","color":MUTED,"fontWeight":"700"}),
@@ -1283,8 +520,8 @@ def build_scoreboard_tab(session=None):
                        "color":WHITE,"fontFamily":"DM Mono, monospace"}),
             html.Span(f"{score:.0f}", style={"flex":"1","fontSize":"20px","fontWeight":"900","color":sc}),
             html.Span(grade, style={"flex":"0 0 40px","fontSize":"16px","fontWeight":"900","color":gc}),
-            html.Span(e.get("status","â€”"), style={"flex":"2","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(e.get("regime","â€”"), style={"flex":"1","fontSize":"11px","color":MUTED}),
+            html.Span(e.get("status",""), style={"flex":"2","fontSize":"11px","color":sc,"fontWeight":"700"}),
+            html.Span(e.get("regime",""), style={"flex":"1","fontSize":"11px","color":MUTED}),
             html.Span(f"${e.get('price',0):,.2f}", style={"flex":"1","fontSize":"12px","color":TEXT}),
             html.Span(f"{e.get('change_pct',0):+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
                        "color":TEAL_DIM if e.get('change_pct',0)>=0 else RED_DIM}),
@@ -1297,7 +534,7 @@ def build_scoreboard_tab(session=None):
         card([
             html.Div([
                 html.H2("ðŸ† Scoreboard", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live leaderboard â€” highest composite decision scores across the universe.",
+                html.P("Live leaderboard  highest composite decision scores across the universe.",
                        style={"color":TEXT,"fontSize":"13px","margin":"0"}),
             ], style={"marginBottom":"16px"}),
 
@@ -1306,12 +543,12 @@ def build_scoreboard_tab(session=None):
                 html.Div([
                     html.Div("Total Symbols", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
                               "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("total_symbols","â€”")), style={"fontSize":"20px","fontWeight":"900","color":WHITE}),
+                    html.Div(str(summary.get("total_symbols","")), style={"fontSize":"20px","fontWeight":"900","color":WHITE}),
                 ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
                 html.Div([
                     html.Div("Armed", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
                               "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("armed","â€”")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
+                    html.Div(str(summary.get("armed","")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
                 ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
                 html.Div([
                     html.Div("Avg Score", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
@@ -1321,7 +558,7 @@ def build_scoreboard_tab(session=None):
                 html.Div([
                     html.Div("A-Grade", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
                               "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("a_grade","â€”")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
+                    html.Div(str(summary.get("a_grade","")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
                 ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
             ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"20px"}),
 
@@ -1348,7 +585,7 @@ def build_scoreboard_tab(session=None):
 
 
 def build_divergence_tab(session=None):
-    """Divergence watchlist â€” symbols where price and score diverge."""
+    """Divergence watchlist  symbols where price and score diverge."""
     import requests as _rq
 
     try:
@@ -1358,10 +595,10 @@ def build_divergence_tab(session=None):
         data = {}
 
     items = data.get("items", [])
-    audit_label = data.get("last_audit", "Pending â€” runs nightly at 8:30 PM ET")
+    audit_label = data.get("last_audit", "Pending  runs nightly at 8:30 PM ET")
 
     def _div_row(d):
-        direction = d.get("direction","â€”")
+        direction = d.get("direction","")
         dir_color = TEAL_DIM if direction=="BULLISH" else (RED_DIM if direction=="BEARISH" else MUTED)
         return html.Div([
             html.Span(d.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
@@ -1372,7 +609,7 @@ def build_divergence_tab(session=None):
             html.Span(f"{d.get('delta',0):+.0f}", style={"flex":"1","fontSize":"13px","fontWeight":"700",
                        "color":TEAL_DIM if d.get('delta',0)>0 else RED_DIM}),
             html.Span(direction, style={"flex":"1","fontSize":"12px","fontWeight":"800","color":dir_color}),
-            html.Span(d.get("regime","â€”"), style={"flex":"1","fontSize":"11px","color":MUTED}),
+            html.Span(d.get("regime",""), style={"flex":"1","fontSize":"11px","color":MUTED}),
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
 
@@ -1422,7 +659,7 @@ def build_billing_tab(session=None, perms=None):
     plan_name   = billing.get("plan_name", "Free")
     plan_price  = billing.get("plan_price", "$0")
     status      = billing.get("status", "active")
-    period_end  = billing.get("current_period_end", "â€”")
+    period_end  = billing.get("current_period_end", "")
     cancel_end  = billing.get("cancel_at_period_end", False)
     features    = billing.get("features", {})
     has_customer= bool(billing.get("stripe_customer_id"))
@@ -1432,7 +669,7 @@ def build_billing_tab(session=None, perms=None):
         banner_color = RED_DIM
         banner_bg    = "rgba(239,68,68,.08)"
         banner_border= "rgba(239,68,68,.25)"
-        banner_text  = "âš ï¸ Payment past due â€” please update your payment method to restore full access."
+        banner_text  = "âš ï¸ Payment past due  please update your payment method to restore full access."
     elif cancel_end:
         banner_color = YELLOW_DIM
         banner_bg    = "rgba(245,158,11,.08)"
@@ -1447,7 +684,7 @@ def build_billing_tab(session=None, perms=None):
         banner_color = TEAL_DIM
         banner_bg    = TEAL_GLOW
         banner_border= BORDER_T
-        banner_text  = f"âœ… {plan_name} â€” Active. All features unlocked."
+        banner_text  = f"âœ… {plan_name}  Active. All features unlocked."
 
     banner = html.Div(banner_text, style={
         "background": banner_bg, "border": f"1px solid {banner_border}",
@@ -1469,7 +706,7 @@ def build_billing_tab(session=None, perms=None):
 
         html.Div([
             _metric("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
-            _metric("Renews",     period_end or "â€”",        TEXT),
+            _metric("Renews",     period_end or "",        TEXT),
             _metric("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
             _metric("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
                                   else f"{features.get('sms_limit',0)}/day"
@@ -1481,7 +718,7 @@ def build_billing_tab(session=None, perms=None):
             _feature_row("Live Market Data",        "SIP Feed",    features.get("live_data", False)),
             _feature_row("Radar Screen",            f"{features.get('radar_limit',50)} symbols", True),
             _feature_row("Status Alerts",           "Armed / Triggered", features.get("alerts", False)),
-            _feature_row("Intelligence Layer",      "GEX Â· BME Â· Hurst Â· VSA", features.get("intelligence", False)),
+            _feature_row("Intelligence Layer",      "GEX  BME  Hurst  VSA", features.get("intelligence", False)),
             _feature_row("Weis Wave + 3-Bar",       "All 1,403 symbols", True),
             _feature_row("Divergence Watchlist",    "EOD Audit",   features.get("intelligence", False)),
             _feature_row("SMS Alerts",              "Via Twilio",  features.get("sms_limit", 0) != 0),
@@ -1534,7 +771,7 @@ def build_billing_tab(session=None, perms=None):
         html.Div([
             html.Div("ðŸ›ï¸ Institutional", style={"color": WHITE, "fontSize": "16px",
                                                   "fontWeight": "800", "marginBottom": "8px"}),
-            html.Div("Custom universe Â· API access Â· Priority support Â· Dedicated onboarding",
+            html.Div("Custom universe  API access  Priority support  Dedicated onboarding",
                      style={"color": TEXT, "fontSize": "13px", "marginBottom": "16px"}),
             html.A("Contact Us â†’",
                    href=f"mailto:{CONTACT_EMAIL}?subject=Sigmalytic Institutional Inquiry",
@@ -1681,7 +918,7 @@ def build_preferences_tab(user_id="", session=None):
                 "fontSize":"12px","fontWeight":"700","padding":"8px 16px","cursor":"pointer"})]),
 
         # Alert Types
-        _card([_stitle("âš¡ Alert Types"), _label("Click to toggle â€” saves instantly:"),
+        _card([_stitle("âš¡ Alert Types"), _label("Click to toggle  saves instantly:"),
             html.Div([
                 html.Button("Structure Alerts", id="pref-btn-wyckoff",   n_clicks=0,
                             style=_on() if types.get("wyckoff")   else _off()),
@@ -1736,7 +973,7 @@ def build_preferences_tab(user_id="", session=None):
 
         # Weis Wave Sensitivity
         _card([_stitle("ã€°ï¸ Weis Wave Sensitivity"),
-            _label("Reversal threshold â€” lower = more sensitive"),
+            _label("Reversal threshold  lower = more sensitive"),
             dcc.Slider(id="prefs-weis-slider", min=0.1, max=3.0, step=0.1, value=weis,
                 marks={0.1:"0.1%", 0.5:"0.5%", 1.0:"1.0%", 2.0:"2.0%", 3.0:"3.0%"},
                 tooltip={"placement":"bottom","always_visible":True}),
@@ -1750,7 +987,7 @@ def build_preferences_tab(user_id="", session=None):
 
 def register_preferences_callbacks(app):
 
-    # â”€â”€ Delivery mode â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Delivery mode  instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children"),
         Output("prefs-status","style"),
@@ -1776,7 +1013,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"delivery_mode": mode})
         return msg,_msg_style(color),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
 
-    # â”€â”€ Alert types â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Alert types  instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -1809,7 +1046,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"alert_types": types})
         return msg,_msg_style(color),*styles,types
 
-    # â”€â”€ Market hours â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Market hours  instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -1830,7 +1067,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"market_hours_only": new})
         return msg,_msg_style(color),label,style,new
 
-    # â”€â”€ Min score â€” save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Min score  save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -1846,7 +1083,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"min_score": val})
         return msg,_msg_style(color),val
 
-    # â”€â”€ Hurst profile â€” instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Hurst profile  instant save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -1873,7 +1110,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"hurst_profile": hurst})
         return msg,_msg_style(color),*styles,hurst
 
-    # â”€â”€ Weis threshold â€” save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Weis threshold  save on button click â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -1889,7 +1126,7 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"weis_threshold": val})
         return msg,_msg_style(color),val
 
-    # â”€â”€ Watchlist â€” add symbol and save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â”€â”€ Watchlist  add symbol and save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
@@ -2161,7 +1398,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     top_scores    = data.get("top_scores", [])
     top_movers    = data.get("top_movers", [])
     anomalies     = data.get("anomalies", [])
-    narrative     = data.get("narrative","â€”")
+    narrative     = data.get("narrative","")
     daily_grades  = data.get("daily_grades", [])
     regimes       = data.get("regime_distribution", {})
     generated_at  = data.get("generated_at","")
@@ -2184,11 +1421,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                               style={"fontSize":"16px","fontWeight":"900","color":GOLD,
                                      "letterSpacing":".08em"}),
                 ], style={"display":"flex","alignItems":"center","gap":"8px","marginBottom":"4px"}),
-                html.Div("Private Â· Internal Use Only Â· Sigmalytic Quant Corporation",
+                html.Div("Private  Internal Use Only  Sigmalytic Quant Corporation",
                          style={"fontSize":"11px","color":MUTED,"letterSpacing":".06em"}),
             ]),
             html.Div([
-                html.Span(snap_health.get("status","â€”"), style={
+                html.Span(snap_health.get("status",""), style={
                     "fontSize":"10px","fontWeight":"800",
                     "color": TEAL_DIM if "Active" in snap_health.get("status","") else YELLOW_DIM,
                     "border": f"1px solid {BORDER_T}","borderRadius":"999px",
@@ -2217,7 +1454,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             _tile("HIT",   f"{hit:.0f}%",  TEAL_DIM,  "A + B rate"),
             _tile("NEUTRAL",f"{neut:.0f}%",YELLOW_DIM,"C rate"),
             _tile("MISS",  f"{miss:.0f}%", RED_DIM,   "F rate"),
-            _tile("PERF",  f"{perf_num}/{perf_den}" if perf_den else "â€”",
+            _tile("PERF",  f"{perf_num}/{perf_den}" if perf_den else "",
                   GOLD,   "A grades / total"),
             _tile("SYMBOLS",str(live.get("total_symbols",0)), BLUE_DIM, "in universe"),
             _tile("ARMED",  str(live.get("armed",0)),   TEAL_DIM, "live now"),
@@ -2232,13 +1469,13 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                       "color":WHITE,"marginBottom":"4px"}),
             html.Div([
                 html.Span("Status: ", style={"color":MUTED,"fontSize":"11px"}),
-                html.Span(snap_health.get("status","â€”"),
+                html.Span(snap_health.get("status",""),
                           style={"color": TEAL_DIM if "Active" in snap_health.get("status","") else YELLOW_DIM,
                                  "fontWeight":"700","fontSize":"11px"}),
-                html.Span("  Â·  Last write: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
-                html.Span(snap_health.get("last_write","â€”")[:19] if snap_health.get("last_write") else "â€”",
+                html.Span("    Last write: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
+                html.Span(snap_health.get("last_write","")[:19] if snap_health.get("last_write") else "",
                           style={"color":TEXT,"fontSize":"11px"}),
-                html.Span("  Â·  Writes in last 10 min: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
+                html.Span("    Writes in last 10 min: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
                 html.Span(str(snap_health.get("recent_count",0)),
                           style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"11px"}),
             ]),
@@ -2296,7 +1533,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                      style={"fontSize":"11px","color": RED_DIM if anomalies else TEAL_DIM}),
         ], style={"display":"flex","justifyContent":"space-between","marginBottom":"12px"}),
         html.Div(anomaly_rows if anomaly_rows else [
-            html.Div("âœ… No anomalies detected â€” system running clean.",
+            html.Div("âœ… No anomalies detected  system running clean.",
                      style={"color":TEAL_DIM,"fontSize":"13px","padding":"12px 0"})
         ]),
     ], sx={"marginBottom":"16px"})
@@ -2336,7 +1573,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _card([
-        html.Div("ðŸ† TOP 10 â€” COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("ðŸ† TOP 10  COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
@@ -2360,7 +1597,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     all_syms = sorted(all_syms_set)
 
     if daily_grades and all_syms:
-        # Table header row â€” dates
+        # Table header row  dates
         date_headers = [
             html.Th("Symbol", style={"padding":"6px 10px","textAlign":"left",
                                       "fontSize":"9px","color":MUTED,"fontWeight":"700",
@@ -2387,11 +1624,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             for day in daily_grades:
                 sym_data = day.get("symbols",{}).get(sym)
                 if sym_data:
-                    grade = sym_data.get("grade","â€”")
+                    grade = sym_data.get("grade","")
                     gc    = _grade_color(grade)
                     cells.append(html.Td(
                         html.Div([
-                            html.Div(grade or "â€”", style={"fontSize":"12px","fontWeight":"900",
+                            html.Div(grade or "", style={"fontSize":"12px","fontWeight":"900",
                                                            "color":gc,"lineHeight":"1"}),
                             html.Div(f"{sym_data.get('score',0):.0f}",
                                      style={"fontSize":"9px","color":MUTED,"marginTop":"2px"}),
@@ -2400,15 +1637,15 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                "borderLeft":f"1px solid rgba(255,255,255,.04)"},
                     ))
                 else:
-                    cells.append(html.Td("â€”", style={"padding":"5px 8px","textAlign":"center",
+                    cells.append(html.Td("", style={"padding":"5px 8px","textAlign":"center",
                                                        "color":MUTED,"fontSize":"11px"}))
             table_rows.append(html.Tr(cells, style={"borderBottom":f"1px solid {BORDER}"}))
 
         grade_grid = _card([
             html.Div([
-                html.Div("ðŸ“‹ CUMULATIVE SCOREBOARD â€” DAILY GRADE GRID",
+                html.Div("ðŸ“‹ CUMULATIVE SCOREBOARD  DAILY GRADE GRID",
                          style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
-                html.Div("Grade / Score Â· A=Full target Â· B=Partial Â· C=Neutral Â· F=Miss",
+                html.Div("Grade / Score  A=Full target  B=Partial  C=Neutral  F=Miss",
                          style={"fontSize":"10px","color":MUTED,"marginTop":"4px"}),
             ], style={"marginBottom":"16px"}),
             html.Div([
@@ -2451,7 +1688,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         grade_grid,
 
         # Footer
-        html.Div("SIGMALYTIC QUANT CORPORATION  Â·  PROPRIETARY & CONFIDENTIAL  Â·  INTERNAL USE ONLY",
+        html.Div("SIGMALYTIC QUANT CORPORATION    PROPRIETARY & CONFIDENTIAL    INTERNAL USE ONLY",
                  style={"textAlign":"center","fontSize":"9px","color":MUTED,
                         "letterSpacing":".2em","paddingTop":"16px","paddingBottom":"8px"}),
     ])
@@ -2470,11 +1707,11 @@ def build_setup_tab():
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
             f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
             f"Env vars:\n"
-            f"  ALPACA_API_KEY     â€” Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  â€” Alpaca secret\n"
-            f"  BACKEND_URL        â€” HTTP base URL\n"
-            f"  BACKEND_WS_URL     â€” WebSocket base URL\n"
-            f"  BEHAVIOR_DB        â€” SQLite path (default: behavior.db)",
+            f"  ALPACA_API_KEY      Alpaca key ID\n"
+            f"  ALPACA_API_SECRET   Alpaca secret\n"
+            f"  BACKEND_URL         HTTP base URL\n"
+            f"  BACKEND_WS_URL      WebSocket base URL\n"
+            f"  BEHAVIOR_DB         SQLite path (default: behavior.db)",
             style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"}),
@@ -2500,7 +1737,7 @@ LOGO = html.Div([
     ]),
 ], style={"display":"flex","alignItems":"center","gap":"10px"})
 
-app = dash.Dash(__name__, title="Sigmalytic Quant Corporation â€” Decision Intelligence",
+app = dash.Dash(__name__, title="Sigmalytic Quant Corporation  Decision Intelligence",
                 update_title=None, suppress_callback_exceptions=True,
                 meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
                            {"name":"theme-color","content":NAVY}])
@@ -2535,16 +1772,16 @@ function sigmaBeep(freq, duration, gain) {{
 }}
 function sigmaAlert(level) {{
     if (level === 'A') {{
-        // Three rising tones â€” A grade signal
+        // Three rising tones  A grade signal
         sigmaBeep(523, 0.15, 0.4);
         setTimeout(function(){{ sigmaBeep(659, 0.15, 0.4); }}, 160);
         setTimeout(function(){{ sigmaBeep(784, 0.3,  0.5); }}, 320);
     }} else if (level === 'B') {{
-        // Two tones â€” B tactical
+        // Two tones  B tactical
         sigmaBeep(440, 0.15, 0.3);
         setTimeout(function(){{ sigmaBeep(554, 0.25, 0.35); }}, 180);
     }} else if (level === 'warn') {{
-        // Single low tone â€” warning / trap door
+        // Single low tone  warning / trap door
         sigmaBeep(220, 0.4, 0.3);
     }}
 }}
@@ -2656,9 +1893,9 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
-        # â”€â”€ Trade plan + active trade â€” ALL inputs permanent, never recreated â”€â”€
+        # â”€â”€ Trade plan + active trade  ALL inputs permanent, never recreated â”€â”€
         html.Div([
-            # Trade plan card â€” header updates, inputs are static
+            # Trade plan card  header updates, inputs are static
             html.Div([
                 html.Div(id="trade-plan-panel", style={"marginBottom":"16px"}),
                 html.Div([
@@ -2702,7 +1939,7 @@ app.layout = html.Div([
                 ], style={"marginBottom":"16px"}),
                 html.Div([
                     _btn("ðŸ’¾ Save Plan",   "btn-save-plan"),
-                    _btn("ðŸš€ Enter Trade", "btn-enter-trade",
+                    _btn(" Enter Trade", "btn-enter-trade",
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
                 html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
@@ -2747,7 +1984,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
     return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
 
-# Live-only mode â€” no toggle callback needed
+# Live-only mode  no toggle callback needed
 
 @app.callback(
     Output("s-symbol","data"), Output("ticker-input","value"),
@@ -2863,7 +2100,7 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
         elapsed = (now_utc - last_ts).total_seconds()
 
         if elapsed >= interval:
-            # Enough real time has passed â€” open a fresh candle.
+            # Enough real time has passed  open a fresh candle.
             # New candle: open = prior close, high = low = open (price hasn't moved yet),
             # close = current price. No artificial offset on high/low at open.
             new_ts  = last_ts + timedelta(seconds=interval)
@@ -2877,11 +2114,11 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
             }
             new_candles = candles[-49:] + [new_c]
         else:
-            # Still within the current candle period â€” update in-place.
+            # Still within the current candle period  update in-place.
             # Open is permanently locked to candle start.
             # High only moves up, low only moves down, close is latest price.
             updated_last = {
-                "o": prior["o"],                         # LOCKED â€” never changes
+                "o": prior["o"],                         # LOCKED  never changes
                 "h": round(max(prior["h"], price), 2),   # only moves up
                 "l": round(min(prior["l"], price), 2),   # only moves down
                 "c": price,                              # always latest
@@ -2940,7 +2177,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf, session=None):
         return no_update, no_update, no_update, no_update
 
     if not live:
-        # Don't block static tabs â€” they don't need live data
+        # Don't block static tabs  they don't need live data
         if tab not in _STATIC_TABS:
             return (html.Div("Initializingâ€¦",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
                     HIDDEN, no_update, no_update)
@@ -2971,7 +2208,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf, session=None):
                     html.Div(str(_ce), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
                 ], style={"padding":"60px","textAlign":"center"})
         else:
-            main = html.Div("Campaign tab unavailable â€” check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+            main = html.Div("Campaign tab unavailable  check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
     elif tab=="portfolio":
         if _PORTFOLIO_TAB_AVAILABLE:
             try:
@@ -3055,7 +2292,7 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
         trade_id = resp.get("trade_id")
         _track("trade_entered",symbol,price=float(entry),regime=regime,decision_score=score,
                metadata={"trade_id":trade_id,"direction":direction})
-        return f"ðŸš€ Trade entered: {trade_id}"
+        return f" Trade entered: {trade_id}"
     except Exception as e:
         return f"âŒ Error: {e}"
 
@@ -3087,8 +2324,8 @@ def exit_trade(n,trade_id,flags,notes,live):
         scores = resp.get("scores",{})
         _track("trade_exited",live.get("symbol",""),price=price,regime=regime,decision_score=score,
                metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")})
-        return (f"ðŸ Exited Â· P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) Â· "
-                f"Score: {scores.get('composite',0):.0f} Â· Flag: {resp.get('behavior_flag','â€”')}")
+        return (f"ðŸ Exited  P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%)  "
+                f"Score: {scores.get('composite',0):.0f}  Flag: {resp.get('behavior_flag','')}")
     except Exception as e:
         return f"âŒ Error: {e}"
 
@@ -3162,10 +2399,10 @@ def handle_csv_upload(contents, filename):
             data = resp.json()
             a    = data.get("analysis", {})
             return html.Div([
-                html.Span(f"âœ… {data.get('broker_name','Unknown')} detected Â· ",
+                html.Span(f"âœ… {data.get('broker_name','Unknown')} detected  ",
                           style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"{data.get('trades_closed',0)} trades imported Â· "
-                          f"Win rate: {a.get('win_rate',0)}% Â· "
+                html.Span(f"{data.get('trades_closed',0)} trades imported  "
+                          f"Win rate: {a.get('win_rate',0)}%  "
                           f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
                           style={"color":TEXT}),
                 html.Br(),
