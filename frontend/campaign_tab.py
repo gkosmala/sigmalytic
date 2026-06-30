@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -72,19 +72,19 @@ def _has_real_value(value):
 
 def _fmt_pct_or_dash(value, digits=0):
     if not _has_real_value(value):
-        return "—"
+        return "â€”"
     try:
         return f"{float(value):.{digits}f}%"
     except Exception:
-        return "—"
+        return "â€”"
 
 def _fmt_num_or_dash(value, digits=0):
     if not _has_real_value(value):
-        return "—"
+        return "â€”"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "—"
+        return "â€”"
 
 
 def _missing(value):
@@ -92,27 +92,27 @@ def _missing(value):
 
 def _pct_dash(value, digits=1, signed=False):
     if _missing(value):
-        return "—"
+        return "â€”"
     try:
         v = float(value)
         sign = "+" if signed and v >= 0 else ""
         return f"{sign}{v:.{digits}f}%"
     except Exception:
-        return "—"
+        return "â€”"
 
 def _num_dash(value, digits=0):
     if _missing(value):
-        return "—"
+        return "â€”"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "—"
+        return "â€”"
 
 def _label_dash(value):
     if _missing(value):
-        return "—"
+        return "â€”"
     v = str(value).strip().upper()
-    return "—" if v in {"UNKNOWN", "NONE", "NULL", "NAN"} else v
+    return "â€”" if v in {"UNKNOWN", "NONE", "NULL", "NAN"} else v
 
 
 def _safe_float(value, default=0.0):
@@ -138,19 +138,19 @@ def _is_missing(value):
 
 def _fmt_num_or_dash(value, digits=0):
     if _is_missing(value):
-        return "—"
+        return "â€”"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "—"
+        return "â€”"
 
 def _fmt_pct_or_dash(value, digits=0):
     if _is_missing(value):
-        return "—"
+        return "â€”"
     try:
         return f"{float(value):.{digits}f}%"
     except Exception:
-        return "—"
+        return "â€”"
 
 def _campaign_days(c):
     raw = c.get("campaign_age_days")
@@ -177,7 +177,7 @@ def _campaign_days(c):
         except Exception:
             continue
 
-    return "—"
+    return "â€”"
 
 
 
@@ -192,13 +192,13 @@ _STATE_COLORS = {
 }
 
 _STATE_ICONS = {
-    "BIRTH": "🌱",
-    "CONFIRMED": "✅",
-    "SURVIVING": "🛡️",
-    "EXPANDING": "🚀",
-    "MATURING": "📈",
-    "DISTRIBUTION_RISK": "⚠️",
-    "CLOSED": "🔒",
+    "BIRTH": "ðŸŒ±",
+    "CONFIRMED": "âœ…",
+    "SURVIVING": "ðŸ›¡ï¸",
+    "EXPANDING": "ðŸš€",
+    "MATURING": "ðŸ“ˆ",
+    "DISTRIBUTION_RISK": "âš ï¸",
+    "CLOSED": "ðŸ”’",
 }
 
 _TIER_COLORS = {
@@ -226,12 +226,12 @@ _BIAS_COLORS = {
 }
 
 _BIAS_LABELS = {
-    "ADVANCE_LIKELY": "↑ ADV LIKELY",
-    "ADVANCE_EDGE": "↑ ADV EDGE",
-    "HOLDING_PATTERN": "→ HOLD",
-    "MIXED": "◇ MIXED",
-    "FAILURE_RISK": "↓ FAIL RISK",
-    "UNKNOWN": "—",
+    "ADVANCE_LIKELY": "â†‘ ADV LIKELY",
+    "ADVANCE_EDGE": "â†‘ ADV EDGE",
+    "HOLDING_PATTERN": "â†’ HOLD",
+    "MIXED": "â—‡ MIXED",
+    "FAILURE_RISK": "â†“ FAIL RISK",
+    "UNKNOWN": "â€”",
 }
 
 _QUALITY_COLORS = {
@@ -304,8 +304,8 @@ def _summary_tile(label: str, value: str, color: str = WHITE, sub: str = "") -> 
 
 def _campaign_row(c: dict) -> html.Div:
     state = c.get("current_state", "BIRTH")
-    symbol = c.get("symbol", "—")
-    tier = c.get("historical_confidence", "—")
+    symbol = c.get("symbol", "â€”")
+    tier = c.get("historical_confidence", "â€”")
     days = _campaign_days(c)
 
     current = _safe_float(c.get("current_price"), 0)
@@ -319,7 +319,7 @@ def _campaign_row(c: dict) -> html.Div:
     decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
     exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
 
-    next_state = str(c.get("transition_next_state") or "—").upper()
+    next_state = str(c.get("transition_next_state") or "â€”").upper()
     adv_raw = c.get("transition_advance_prob")
     fail_raw = c.get("transition_failure_prob")
     adv = _safe_float(adv_raw, 0)
@@ -328,8 +328,8 @@ def _campaign_row(c: dict) -> html.Div:
     fail_display = _fmt_pct_or_dash(fail_raw, 0)
     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
 
-    outcome_quality_raw = c.get("outcome_quality")
-    quality = _label_dash(quality_raw)
+    outcome_quality = c.get("outcome_quality")
+    quality = _label_dash(quality)
     outcome_score = _safe_float(c.get("outcome_quality_score"), 0)
     exp_ret = _safe_float(c.get("outcome_expected_return"), 0)
     exp_mfe_raw = c.get("outcome_expected_mfe")
@@ -356,7 +356,7 @@ def _campaign_row(c: dict) -> html.Div:
     outcome_summary = c.get("outcome_summary") or ""
 
     state_color = _STATE_COLORS.get(state, MUTED)
-    state_icon = _STATE_ICONS.get(state, "•")
+    state_icon = _STATE_ICONS.get(state, "â€¢")
     tier_color = _TIER_COLORS.get(tier, MUTED)
     decay_color = _DECAY_COLORS.get(decay_band, MUTED)
     bias_color = _BIAS_COLORS.get(bias, MUTED)
@@ -437,7 +437,7 @@ def _campaign_row(c: dict) -> html.Div:
                 "marginTop": "5px",
                 "fontFamily": "DM Mono, monospace",
             }),
-            html.Div(f"{exp_days_display}d" if exp_days_display != "—" else "—", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
+            html.Div(f"{exp_days_display}d" if exp_days_display != "â€”" else "â€”", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
         ], style={"flex": ".7"}),
 
         html.Div([
@@ -450,7 +450,7 @@ def _campaign_row(c: dict) -> html.Div:
                     "fontFamily": "DM Mono, monospace",
                 }),
             ]),
-            html.Div(f"Live {ret_pct:+.1f}% · P&F {pnf_pct:.0f}%", style={
+            html.Div(f"Live {ret_pct:+.1f}% Â· P&F {pnf_pct:.0f}%", style={
                 "fontSize": "9px",
                 "color": TEXT,
                 "marginTop": "4px",
@@ -525,8 +525,8 @@ def _campaign_row(c: dict) -> html.Div:
         ], style={"flex": ".75"}),
 
         html.Div([
-            _pill("🚨 EXIT" if exit_signal else decay_band, RED_DIM if exit_signal else decay_color),
-            html.Div((outcome_summary or "")[:78] + ("…" if len(outcome_summary) > 78 else ""), style={
+            _pill("ðŸš¨ EXIT" if exit_signal else decay_band, RED_DIM if exit_signal else decay_color),
+            html.Div((outcome_summary or "")[:78] + ("â€¦" if len(outcome_summary) > 78 else ""), style={
                 "fontSize": "9px",
                 "color": MUTED,
                 "marginTop": "4px",
@@ -598,7 +598,7 @@ def build_campaign_tab(session=None) -> html.Div:
 
     state_badges = html.Div([
         html.Span([
-            html.Span(f"{_STATE_ICONS.get(s, '•')} {s.replace('_', ' ')}",
+            html.Span(f"{_STATE_ICONS.get(s, 'â€¢')} {s.replace('_', ' ')}",
                       style={"fontSize": "11px", "fontWeight": "700", "color": _STATE_COLORS.get(s, MUTED)}),
             html.Span(f" ({n})", style={"fontSize": "11px", "color": MUTED}),
         ], style={
@@ -645,7 +645,7 @@ def build_campaign_tab(session=None) -> html.Div:
     else:
         error_msg = f"API error: {fetch_error}" if fetch_error else "No active campaigns yet."
         rows = [html.Div([
-            html.Div("🌱", style={"fontSize": "32px", "marginBottom": "12px"}),
+            html.Div("ðŸŒ±", style={"fontSize": "32px", "marginBottom": "12px"}),
             html.Div("No active campaigns yet.", style={"color": WHITE, "fontSize": "16px", "fontWeight": "700"}),
             html.Div(error_msg, style={"color": RED_DIM if fetch_error else TEXT, "fontSize": "13px", "marginTop": "8px"}),
             html.Div(f"Backend: {BACKEND_HTTP}", style={"color": MUTED, "fontSize": "11px", "marginTop": "4px"}),
@@ -654,14 +654,14 @@ def build_campaign_tab(session=None) -> html.Div:
     return html.Div([
         _card([
             html.Div([
-                html.H2("📊 Campaign Intelligence", style={
+                html.H2("ðŸ“Š Campaign Intelligence", style={
                     "color": WHITE,
                     "fontSize": "18px",
                     "fontWeight": "900",
                     "margin": "0 0 4px",
                 }),
                 html.P(
-                    "Active campaigns — lifecycle state, ODS, decay, transition probability, and Phase 15 outcome economics.",
+                    "Active campaigns â€” lifecycle state, ODS, decay, transition probability, and Phase 15 outcome economics.",
                     style={"color": TEXT, "fontSize": "13px", "margin": "0 0 20px"},
                 ),
             ]),
@@ -671,3 +671,4 @@ def build_campaign_tab(session=None) -> html.Div:
             html.Div(rows),
         ]),
     ])
+
