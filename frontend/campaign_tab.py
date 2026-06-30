@@ -86,6 +86,35 @@ def _fmt_num_or_dash(value, digits=0):
     except Exception:
         return "—"
 
+
+def _missing(value):
+    return value is None or value == "" or str(value).lower() in {"none", "null", "nan"}
+
+def _pct_dash(value, digits=1, signed=False):
+    if _missing(value):
+        return "—"
+    try:
+        v = float(value)
+        sign = "+" if signed and v >= 0 else ""
+        return f"{sign}{v:.{digits}f}%"
+    except Exception:
+        return "—"
+
+def _num_dash(value, digits=0):
+    if _missing(value):
+        return "—"
+    try:
+        return f"{float(value):.{digits}f}"
+    except Exception:
+        return "—"
+
+def _label_dash(value):
+    if _missing(value):
+        return "—"
+    v = str(value).strip().upper()
+    return "—" if v in {"UNKNOWN", "NONE", "NULL", "NAN"} else v
+
+
 def _safe_float(value, default=0.0):
     try:
         if value is None or value == "":
@@ -299,16 +328,31 @@ def _campaign_row(c: dict) -> html.Div:
     fail_display = _fmt_pct_or_dash(fail_raw, 0)
     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
 
-    outcome_quality = str(c.get("outcome_quality") or "UNKNOWN").upper()
+    outcome_quality_raw = c.get("outcome_quality")
+    quality = _label_dash(quality_raw)
     outcome_score = _safe_float(c.get("outcome_quality_score"), 0)
     exp_ret = _safe_float(c.get("outcome_expected_return"), 0)
-    exp_mfe = _safe_float(c.get("outcome_expected_mfe"), 0)
-    exp_mae = _safe_float(c.get("outcome_expected_mae"), 0)
-    exp_days = _safe_int(c.get("outcome_expected_duration_days"), 0)
-    t1 = _safe_float(c.get("outcome_target1_prob"), 0)
-    t2 = _safe_float(c.get("outcome_target2_prob"), 0)
-    fail = _safe_float(c.get("outcome_failure_prob"), 0)
-    rr = _safe_float(c.get("outcome_risk_reward"), 0)
+    exp_mfe_raw = c.get("outcome_expected_mfe")
+    exp_mfe = _safe_float(exp_mfe_raw, 0)
+    exp_mfe_display = _pct_dash(exp_mfe_raw, 1, signed=True)
+    exp_mae_raw = c.get("outcome_expected_mae")
+    exp_mae = _safe_float(exp_mae_raw, 0)
+    exp_mae_display = _pct_dash(exp_mae_raw, 1, signed=True)
+    exp_days_raw = c.get("outcome_expected_duration_days")
+    exp_days = _safe_int(exp_days_raw, 0)
+    exp_days_display = _num_dash(exp_days_raw, 0)
+    t1_raw = c.get("outcome_target1_prob")
+    t1 = _safe_float(t1_raw, 0)
+    t1_display = _pct_dash(t1_raw, 0)
+    t2_raw = c.get("outcome_target2_prob")
+    t2 = _safe_float(t2_raw, 0)
+    t2_display = _pct_dash(t2_raw, 0)
+    fail_raw = c.get("outcome_failure_prob")
+    fail = _safe_float(fail_raw, 0)
+    fail_display = _pct_dash(fail_raw, 0)
+    rr_raw = c.get("outcome_risk_reward")
+    rr = _safe_float(rr_raw, 0)
+    rr_display = _num_dash(rr_raw, 2)
     outcome_summary = c.get("outcome_summary") or ""
 
     state_color = _STATE_COLORS.get(state, MUTED)
@@ -393,7 +437,7 @@ def _campaign_row(c: dict) -> html.Div:
                 "marginTop": "5px",
                 "fontFamily": "DM Mono, monospace",
             }),
-            html.Div(f"{exp_days}d", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
+            html.Div(f"{exp_days_display}d" if exp_days_display != "—" else "—", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
         ], style={"flex": ".7"}),
 
         html.Div([
@@ -417,7 +461,7 @@ def _campaign_row(c: dict) -> html.Div:
         html.Div([
             html.Div([
                 html.Span("MFE ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{exp_mfe:+.1f}%", style={
+                html.Span(exp_mfe_display, style={
                     "fontSize": "12px",
                     "fontWeight": "900",
                     "color": PURPLE,
@@ -426,7 +470,7 @@ def _campaign_row(c: dict) -> html.Div:
             ]),
             html.Div([
                 html.Span("MAE ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{exp_mae:+.1f}%", style={
+                html.Span(exp_mae_display, style={
                     "fontSize": "12px",
                     "fontWeight": "900",
                     "color": RED_DIM,
@@ -438,7 +482,7 @@ def _campaign_row(c: dict) -> html.Div:
         html.Div([
             html.Div([
                 html.Span("T1 ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{t1:.0f}%", style={
+                html.Span(t1_display, style={
                     "fontSize": "12px",
                     "fontWeight": "900",
                     "color": TEAL_DIM if t1 >= 60 else YELLOW_DIM,
@@ -448,7 +492,7 @@ def _campaign_row(c: dict) -> html.Div:
             _bar(t1, TEAL_DIM if t1 >= 60 else YELLOW_DIM, width="70px"),
             html.Div([
                 html.Span("T2 ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{t2:.0f}%", style={
+                html.Span(t2_display, style={
                     "fontSize": "12px",
                     "fontWeight": "900",
                     "color": TEAL_DIM if t2 >= 40 else YELLOW_DIM,
@@ -461,7 +505,7 @@ def _campaign_row(c: dict) -> html.Div:
         html.Div([
             html.Div([
                 html.Span("Fail ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{fail:.0f}%", style={
+                html.Span(fail_display, style={
                     "fontSize": "13px",
                     "fontWeight": "900",
                     "color": RED_DIM if fail >= 50 else YELLOW_DIM,
@@ -471,7 +515,7 @@ def _campaign_row(c: dict) -> html.Div:
             _bar(fail, RED_DIM if fail >= 50 else YELLOW_DIM, width="70px"),
             html.Div([
                 html.Span("RR ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{rr:.2f}", style={
+                html.Span(rr_display, style={
                     "fontSize": "12px",
                     "fontWeight": "900",
                     "color": TEAL_DIM if rr >= 2.0 else YELLOW_DIM,
