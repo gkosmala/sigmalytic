@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import requests as _rq
+from datetime import datetime, timezone
 from dash import html
 
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
@@ -72,19 +73,19 @@ def _has_real_value(value):
 
 def _fmt_pct_or_dash(value, digits=0):
     if not _has_real_value(value):
-        return "â€”"
+        return "—"
     try:
         return f"{float(value):.{digits}f}%"
     except Exception:
-        return "â€”"
+        return "—"
 
 def _fmt_num_or_dash(value, digits=0):
     if not _has_real_value(value):
-        return "â€”"
+        return "—"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "â€”"
+        return "—"
 
 
 def _missing(value):
@@ -92,27 +93,27 @@ def _missing(value):
 
 def _pct_dash(value, digits=1, signed=False):
     if _missing(value):
-        return "â€”"
+        return "—"
     try:
         v = float(value)
         sign = "+" if signed and v >= 0 else ""
         return f"{sign}{v:.{digits}f}%"
     except Exception:
-        return "â€”"
+        return "—"
 
 def _num_dash(value, digits=0):
     if _missing(value):
-        return "â€”"
+        return "—"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "â€”"
+        return "—"
 
 def _label_dash(value):
     if _missing(value):
-        return "â€”"
+        return "—"
     v = str(value).strip().upper()
-    return "â€”" if v in {"UNKNOWN", "NONE", "NULL", "NAN"} else v
+    return "—" if v in {"UNKNOWN", "NONE", "NULL", "NAN"} else v
 
 
 def _safe_float(value, default=0.0):
@@ -138,19 +139,19 @@ def _is_missing(value):
 
 def _fmt_num_or_dash(value, digits=0):
     if _is_missing(value):
-        return "â€”"
+        return "—"
     try:
         return f"{float(value):.{digits}f}"
     except Exception:
-        return "â€”"
+        return "—"
 
 def _fmt_pct_or_dash(value, digits=0):
     if _is_missing(value):
-        return "â€”"
+        return "—"
     try:
         return f"{float(value):.{digits}f}%"
     except Exception:
-        return "â€”"
+        return "—"
 
 def _campaign_days(c):
     raw = c.get("campaign_age_days")
@@ -177,7 +178,7 @@ def _campaign_days(c):
         except Exception:
             continue
 
-    return "â€”"
+    return "—"
 
 
 
@@ -231,7 +232,7 @@ _BIAS_LABELS = {
     "HOLDING_PATTERN": "â†’ HOLD",
     "MIXED": "â—‡ MIXED",
     "FAILURE_RISK": "â†“ FAIL RISK",
-    "UNKNOWN": "â€”",
+    "UNKNOWN": "—",
 }
 
 _QUALITY_COLORS = {
@@ -322,8 +323,8 @@ def _campaign_row(c: dict) -> html.Div:
             quality_score_display = "—"
 
 
-    symbol = c.get("symbol", "â€”")
-    tier = c.get("historical_confidence", "â€”")
+    symbol = c.get("symbol", "—")
+    tier = c.get("historical_confidence", "—")
     days = _campaign_days(c)
 
     current = _safe_float(c.get("current_price"), 0)
@@ -337,7 +338,7 @@ def _campaign_row(c: dict) -> html.Div:
     decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
     exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
 
-    next_state = str(c.get("transition_next_state") or "â€”").upper()
+    next_state = str(c.get("transition_next_state") or "—").upper()
     adv_raw = c.get("transition_advance_prob")
     fail_raw = c.get("transition_failure_prob")
     adv = _safe_float(adv_raw, 0)
@@ -360,31 +361,49 @@ def _campaign_row(c: dict) -> html.Div:
     else:
         quality_score_display = f"{quality_score:.0f}"
 
-    outcome_quality_value = c.get("outcome_quality")
-    quality = "—" if quality_value is None or quality_value == "" or str(quality_value).upper() in {"UNKNOWN", "NONE", "NULL", "NAN"} else str(quality_value).upper()
-    outcome_score = _safe_float(c.get("outcome_quality_score"), 0)
-    exp_ret = _safe_float(c.get("outcome_expected_return"), 0)
+    # Clean outcome display fields: show dashes when backend values are missing.
+    quality_value = c.get("outcome_quality")
+    if _missing(quality_value) or str(quality_value).upper() in {"UNKNOWN", "NONE", "NULL", "NAN"}:
+        quality = "—"
+    else:
+        quality = str(quality_value).upper()
+
+    quality_score_value = c.get("outcome_quality_score")
+    quality_score = _safe_float(quality_score_value, 0)
+    quality_score_display = _num_dash(quality_score_value, 0)
+
+    exp_return_raw = c.get("outcome_expected_return")
+    exp_return = _safe_float(exp_return_raw, 0)
+    exp_return_display = _pct_dash(exp_return_raw, 1, signed=True)
+
     exp_mfe_raw = c.get("outcome_expected_mfe")
     exp_mfe = _safe_float(exp_mfe_raw, 0)
     exp_mfe_display = _pct_dash(exp_mfe_raw, 1, signed=True)
+
     exp_mae_raw = c.get("outcome_expected_mae")
     exp_mae = _safe_float(exp_mae_raw, 0)
     exp_mae_display = _pct_dash(exp_mae_raw, 1, signed=True)
+
     exp_days_raw = c.get("outcome_expected_duration_days")
     exp_days = _safe_int(exp_days_raw, 0)
     exp_days_display = _num_dash(exp_days_raw, 0)
+
     t1_raw = c.get("outcome_target1_prob")
     t1 = _safe_float(t1_raw, 0)
     t1_display = _pct_dash(t1_raw, 0)
+
     t2_raw = c.get("outcome_target2_prob")
     t2 = _safe_float(t2_raw, 0)
     t2_display = _pct_dash(t2_raw, 0)
+
     fail_raw = c.get("outcome_failure_prob")
     fail = _safe_float(fail_raw, 0)
     fail_display = _pct_dash(fail_raw, 0)
+
     rr_raw = c.get("outcome_risk_reward")
     rr = _safe_float(rr_raw, 0)
     rr_display = _num_dash(rr_raw, 2)
+
     outcome_summary = c.get("outcome_summary") or ""
 
     state_color = _STATE_COLORS.get(state, MUTED)
@@ -392,11 +411,11 @@ def _campaign_row(c: dict) -> html.Div:
     tier_color = _TIER_COLORS.get(tier, MUTED)
     decay_color = _DECAY_COLORS.get(decay_band, MUTED)
     bias_color = _BIAS_COLORS.get(bias, MUTED)
-    quality_color = _QUALITY_COLORS.get(outcome_quality, MUTED)
+    quality_color = _QUALITY_COLORS.get(quality, MUTED)
 
-    row_bg = "rgba(239,68,68,.08)" if exit_signal or outcome_quality == "AVOID" or bias == "FAILURE_RISK" else (
-        "rgba(45,143,111,.05)" if outcome_quality in {"A", "B"} or bias in {"ADVANCE_LIKELY", "ADVANCE_EDGE"} else
-        "rgba(245,158,11,.04)" if outcome_quality in {"C", "WATCH"} or decay_band in {"MONITOR", "WEAKENING"} else
+    row_bg = "rgba(239,68,68,.08)" if exit_signal or quality == "AVOID" or bias == "FAILURE_RISK" else (
+        "rgba(45,143,111,.05)" if quality in {"A", "B"} or bias in {"ADVANCE_LIKELY", "ADVANCE_EDGE"} else
+        "rgba(245,158,11,.04)" if quality in {"C", "WATCH"} or decay_band in {"MONITOR", "WEAKENING"} else
         "transparent"
     )
 
@@ -461,24 +480,24 @@ def _campaign_row(c: dict) -> html.Div:
         ], style={"flex": "1.05"}),
 
         html.Div([
-            _pill(outcome_quality, quality_color),
-            html.Div(f"Score {outcome_score:.0f}", style={
+            _pill(quality, quality_color),
+            html.Div(f"Score {quality_score_display}", style={
                 "fontSize": "10px",
                 "color": quality_color,
                 "fontWeight": "700",
                 "marginTop": "5px",
                 "fontFamily": "DM Mono, monospace",
             }),
-            html.Div(f"{exp_days_display}d" if exp_days_display != "â€”" else "â€”", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
+            html.Div(f"{exp_days_display}d" if exp_days_display != "—" else "—", style={"fontSize": "9px", "color": MUTED, "marginTop": "2px"}),
         ], style={"flex": ".7"}),
 
         html.Div([
             html.Div([
                 html.Span("ER ", style={"fontSize": "9px", "color": MUTED}),
-                html.Span(f"{exp_ret:+.1f}%", style={
+                html.Span(exp_return_display, style={
                     "fontSize": "13px",
                     "fontWeight": "900",
-                    "color": TEAL_DIM if exp_ret >= 0 else RED_DIM,
+                    "color": TEAL_DIM if exp_return >= 0 else RED_DIM,
                     "fontFamily": "DM Mono, monospace",
                 }),
             ]),
