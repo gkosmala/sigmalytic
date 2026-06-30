@@ -57,7 +57,6 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
-FAST_TAB_STRONG_FIX = True  # verifies clock-free tab rendering and reduced quote timeout
 
 TF_VOLATILITY = {"1m": 0.25, "5m": 0.60, "15m": 1.10, "1H": 2.00, "1D": 4.50, "1W": 9.00}
 TF_INTERVAL   = {"1m": 60,   "5m": 300,  "15m": 900,  "1H": 3600, "1D": 86400, "1W": 604800}
@@ -2581,7 +2580,7 @@ app.layout = html.Div([
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0, disabled=True),
-    dcc.Interval(id="i-alpaca", interval=10_000, n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
 
     html.Div([html.Div([
@@ -2787,7 +2786,7 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
 
     if trigger == "i-alpaca":
         try:
-            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=1.2)
+            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
             r.raise_for_status()
             d = r.json()
             price  = float(d["price"])
@@ -2873,207 +2872,37 @@ def update_badges(live):
             badge("Alpaca SIP","blue"),
             badge(f"Tick #{seq}","yellow"))
 
-
-# ── Fast tab rendering helpers ────────────────────────────────────────────────
-# Heavy tabs are rendered in two steps:
-# 1) tab click immediately shows a lightweight shell
-# 2) a one-shot interval then loads the heavy backend data into that shell
-#
-# This keeps the navigation/buttons responsive and prevents Campaign/Radar/
-# Scoreboard/Divergence from rebuilding on every live tick.
-
-_ASYNC_TABS = {
-    "status", "behavior", "campaigns", "portfolio", "journal", "import",
-    "radar", "scoreboard", "divergence", "billing", "preferences", "admin", "setup",
-}
-
-_TAB_CACHE = {}
-_TAB_CACHE_TTL_SECONDS = 20
-
-
-def _tab_label(tab):
-    for key, label in ALL_TABS:
-        if key == tab:
-            return label
-    return str(tab or "Tab").replace("_", " ").title()
-
-
-def _tab_cache_get(tab):
-    try:
-        item = _TAB_CACHE.get(tab)
-        if not item:
-            return None
-        ts, children = item
-        age = datetime.utcnow().timestamp() - ts
-        if age <= _TAB_CACHE_TTL_SECONDS:
-            return children
-    except Exception:
-        pass
-    return None
-
-
-def _tab_cache_set(tab, children):
-    try:
-        _TAB_CACHE[tab] = (datetime.utcnow().timestamp(), children)
-    except Exception:
-        pass
-
-
-def _build_fast_tab_shell(tab):
-    label = _tab_label(tab)
-    return html.Div([
-        card([
-            html.Div([
-                html.Div([
-                    html.H2(label, style={
-                        "fontSize": "16px",
-                        "fontWeight": "900",
-                        "color": WHITE,
-                        "margin": "0 0 4px",
-                    }),
-                    html.Div(
-                        "Loading data…",
-                        style={"fontSize": "12px", "color": MUTED},
-                    ),
-                ]),
-                badge("LOADING", "yellow"),
-            ], style={
-                "display": "flex",
-                "justifyContent": "space-between",
-                "alignItems": "center",
-                "gap": "12px",
-            }),
-            dcc.Interval(
-                id="i-load-static-tab",
-                interval=120,
-                n_intervals=0,
-                max_intervals=1,
-            ),
-            html.Div(style={"height": "14px"}),
-            dcc.Loading(
-                html.Div(id="async-tab-content"),
-                type="default",
-                color=TEAL_DIM,
-            ),
-        ], sx={"minHeight": "220px"}),
-    ])
-
-
-def _build_static_tab_content(tab):
-    if tab == "status":
-        return build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div(
-            "Status Center loading...",
-            style={"color": MUTED, "padding": "60px", "textAlign": "center"},
-        )
-
-    if tab == "behavior":
-        return build_behavior_tab()
-
-    if tab == "campaigns":
-        if _CAMPAIGN_TAB_AVAILABLE:
-            try:
-                return build_campaign_tab(session=None)
-            except Exception as _ce:
-                return html.Div([
-                    html.Div(
-                        "⚠️ Campaign tab error",
-                        style={"color": "#f87171", "fontWeight": "700", "marginBottom": "8px"},
-                    ),
-                    html.Div(
-                        str(_ce),
-                        style={"color": "#94a3b8", "fontSize": "12px", "fontFamily": "monospace"},
-                    ),
-                ], style={"padding": "60px", "textAlign": "center"})
-        return html.Div(
-            "Campaign tab unavailable — check backend logs.",
-            style={"color": MUTED, "padding": "60px", "textAlign": "center"},
-        )
-
-    if tab == "portfolio":
-        if _PORTFOLIO_TAB_AVAILABLE:
-            try:
-                return build_portfolio_tab(session=None)
-            except Exception as _pe:
-                return html.Div(str(_pe), style={"color": "#f87171", "padding": "60px", "textAlign": "center"})
-        return html.Div("Portfolio tab loading...", style={"color": MUTED, "padding": "60px", "textAlign": "center"})
-
-    if tab == "journal":
-        return build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div(
-            "Journal loading...",
-            style={"color": MUTED, "padding": "60px", "textAlign": "center"},
-        )
-
-    if tab == "import":
-        return build_import_tab()
-
-    if tab == "radar":
-        return build_radar_tab(session=None)
-
-    if tab == "scoreboard":
-        return build_scoreboard_tab(session=None)
-
-    if tab == "divergence":
-        return build_divergence_tab(session=None)
-
-    if tab == "billing":
-        return build_billing_tab(session=None, perms=None)
-
-    if tab == "preferences":
-        return build_preferences_tab(user_id="", session=None)
-
-    if tab == "admin":
-        try:
-            return build_admin_tab(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
-        except Exception as e:
-            return html.Div([
-                html.Div(
-                    "Admin tab error",
-                    style={"color": "#f87171", "fontWeight": "800", "marginBottom": "8px"},
-                ),
-                html.Div(
-                    str(e),
-                    style={"color": "#94a3b8", "fontSize": "12px", "fontFamily": "monospace"},
-                ),
-            ], style={"padding": "60px", "textAlign": "center"})
-
-    if tab == "setup":
-        return build_setup_tab()
-
-    return html.Div("Unknown tab")
-
-
 @app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"),
+    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
     State("s-symbol","data"), State("s-tf","data"),
 )
-def render_main(live,candles,tab,live_mode,symbol,tf):
+def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
+    # Static tabs: only skip rebuild when clock fires AND tab hasn't changed
+    _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
+                    "billing","preferences","admin","setup","behavior","import","radar"}
     triggered = [t["prop_id"] for t in dash.callback_context.triggered]
     tab_changed = any("s-tab" in t for t in triggered)
-
-    # Heavy/static tabs must not rebuild on live price ticks or clock ticks.
-    # They only rebuild when the user actually changes tabs.
-    if tab in _ASYNC_TABS:
-        if not tab_changed:
-            return no_update, no_update, no_update, no_update
-
-        cached = _tab_cache_get(tab)
-        if cached is not None:
-            return cached, HIDDEN, no_update, no_update
-
-        return _build_fast_tab_shell(tab), HIDDEN, no_update, no_update
+    clock_only = all("i-clock" in t for t in triggered)
+    if clock_only and tab in _STATIC_TABS and not tab_changed:
+        return no_update, no_update, no_update, no_update
 
     if not live:
-        return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
-                HIDDEN, no_update, no_update)
+        # Don't block static tabs — they don't need live data
+        if tab not in _STATIC_TABS:
+            return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
+                    HIDDEN, no_update, no_update)
 
+    if tab == "status":
+        main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+        return (main, dash.no_update, dash.no_update, dash.no_update)
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
         trade_plan  = _build_trade_plan_contents(live)
@@ -3084,35 +2913,46 @@ def render_main(live,candles,tab,live_mode,symbol,tf):
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
-    if tab=="feed":
-        main = build_feed_tab(live,live_mode)
-    elif tab=="performance":
-        main = build_performance_tab(live)
-    else:
-        main = html.Div("Unknown tab")
-
+    if tab=="feed":          main = build_feed_tab(live,live_mode)
+    elif tab=="performance": main = build_performance_tab(live)
+    elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="campaigns":
+        if _CAMPAIGN_TAB_AVAILABLE:
+            try:
+                main = build_campaign_tab(session=None)
+            except Exception as _ce:
+                main = html.Div([
+                    html.Div("⚠️ Campaign tab error", style={"color":"#f87171","fontWeight":"700","marginBottom":"8px"}),
+                    html.Div(str(_ce), style={"color":"#94a3b8","fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Campaign tab unavailable — check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="portfolio":
+        if _PORTFOLIO_TAB_AVAILABLE:
+            try:
+                main = build_portfolio_tab(session=None)
+            except Exception as _pe:
+                main = html.Div(str(_pe), style={"color":"#f87171","padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="journal":     main = build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div("Journal loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    elif tab=="import":      main = build_import_tab()
+    elif tab=="radar":       main = build_radar_tab(session=None)
+    elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
+    elif tab=="divergence":  main = build_divergence_tab(session=None)
+    elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
+    elif tab=="preferences": main = build_preferences_tab(user_id="", session=None)
+    elif tab=="admin":
+        try:
+            main = build_admin_tab(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
+        except Exception as e:
+            main = html.Div([
+                html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
+                html.Div(str(e), style={"color":"#94a3b8","fontSize":"12px","fontFamily":"monospace"}),
+            ], style={"padding":"60px","textAlign":"center"})
+    elif tab=="setup":       main = build_setup_tab()
+    else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
-
-
-@app.callback(
-    Output("async-tab-content", "children"),
-    Input("i-load-static-tab", "n_intervals"),
-    State("s-tab", "data"),
-    prevent_initial_call=True,
-)
-def render_async_tab_content(_n, tab):
-    if tab not in _ASYNC_TABS:
-        return no_update
-
-    cached = _tab_cache_get(tab)
-    if cached is not None:
-        return cached
-
-    content = _build_static_tab_content(tab)
-    _tab_cache_set(tab, content)
-    return content
-
-
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
 
