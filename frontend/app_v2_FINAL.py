@@ -1,7 +1,7 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
-Sigmalytic Quant Corporation â€” Decision Intelligence Platform
-Institutional-Grade Frontend Â· Dash + Plotly
+Sigmalytic Quant Corporation — Decision Intelligence Platform
+Institutional-Grade Frontend · Dash + Plotly
 Matches original React app layout + Sigmalytic brand upgrade
 """
 
@@ -185,10 +185,10 @@ def build_command_tab(live, candles, symbol, tf):
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
         live_age = ts.strftime("%I:%M:%S %p")
-    except: live_age = "â€”"
+    except: live_age = "—"
     sc    = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size  = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
-    top   = nodes[0] if nodes else {"public_label":"â€”","score":0}
+    top   = nodes[0] if nodes else {"public_label":"—","score":0}
     vs    = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
     cp    = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
     pp    = max(8,min(92,100-cp))
@@ -205,9 +205,9 @@ def build_command_tab(live, candles, symbol, tf):
             card([
                 html.Div([
                     html.Div([
-                        html.H2(f"ðŸ“Š {symbol}  Â·  Smart Chart + Live Levels",
+                        html.H2(f"📊 {symbol}  ·  Smart Chart + Live Levels",
                                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                        html.P(f"Last update {live_age}  Â·  Vol {live['volume']:,}  Â·  {tf}",
+                        html.P(f"Last update {live_age}  ·  Vol {live['volume']:,}  ·  {tf}",
                                style={"fontSize":"12px","color":TEXT}),
                     ]),
                     html.Div([
@@ -241,7 +241,7 @@ def build_command_tab(live, candles, symbol, tf):
                     slabel("Execution Directive"),
                     html.Div(decision["next_action"],style={"color":WHITE,"fontSize":"13px",
                                                              "fontWeight":"700","lineHeight":"1.5","marginBottom":"6px"}),
-                    html.P(f"${price:.2f}  Â·  {top.get('public_label','â€”')} {top.get('score',0)}%",
+                    html.P(f"${price:.2f}  ·  {top.get('public_label','—')} {top.get('score',0)}%",
                            style={"fontSize":"11px","color":TEXT}),
                 ],style={"borderRadius":"14px","background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
                           "padding":"14px","marginTop":"14px"}),
@@ -258,7 +258,7 @@ def build_command_tab(live, candles, symbol, tf):
         # Row 2: 4 cards
         html.Div([
             card([
-                html.H2("ðŸŽ¯ Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("🎯 Trade Card",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 metric_tile("Bias",decision["bias"],sc),
                 html.Div(style={"height":"8px"}),
                 metric_tile("Setup",decision["status"],sc),
@@ -270,28 +270,28 @@ def build_command_tab(live, candles, symbol, tf):
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("ðŸªœ Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("🪜 Probability Ladder",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
-                html.P(f"Level ${nodes[0]['level']:.2f}  Â·  Current ${price:.2f}" if nodes else "",
+                html.P(f"Level ${nodes[0]['level']:.2f}  ·  Current ${price:.2f}" if nodes else "",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
-                html.P(f"Level ${nodes[1]['level']:.2f}  Â·  Current ${price:.2f}" if len(nodes)>1 else "",
+                html.P(f"Level ${nodes[1]['level']:.2f}  ·  Current ${price:.2f}" if len(nodes)>1 else "",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Hold / Balance", score, "neutral"),
-                html.P(f"Level ${kl.confirm:.2f}  Â·  Current ${price:.2f}",
+                html.P(f"Level ${kl.confirm:.2f}  ·  Current ${price:.2f}",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","marginBottom":"8px","paddingLeft":"2px"}),
                 brow("Failure Gate", 100-score, "down"),
-                html.P(f"Level ${kl.fail:.2f}  Â·  Current ${price:.2f}",
+                html.P(f"Level ${kl.fail:.2f}  ·  Current ${price:.2f}",
                        style={"fontSize":"10px","color":MUTED,"marginTop":"-4px","paddingLeft":"2px"}),
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("â±ï¸ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("⏱️ Time Engine",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Div(id="clock-body"),
             ],sx={"flex":"1"}),
 
             card([
-                html.H2("ðŸ”” Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
+                html.H2("🔔 Visual + Audio Alerts",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Div(as_,style={
                     "borderRadius":"14px","padding":"18px","textAlign":"center","fontWeight":"900",
                     "fontSize":"14px","letterSpacing":".06em","textTransform":"uppercase",
@@ -307,8 +307,8 @@ def build_command_tab(live, candles, symbol, tf):
         card([
             html.Div([
                 html.Div([
-                    html.H2("ðŸ§± Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                    html.P("Options intelligence from Alpaca options feed, price, volume, volatility proxy, and decision score.",
+                    html.H2("🧱 Dynamic Options Matrix + Flow Map",style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                    html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
                            style={"fontSize":"12px","color":TEXT}),
                 ]),
                 badge(fb,"blue"),
@@ -320,7 +320,7 @@ def build_command_tab(live, candles, symbol, tf):
                 zcard("Gamma Pivot", "280",  f"{gp}% dealer sensitivity",    YELLOW_DIM),
                 zcard("Vol Trigger", "LIVE", f"{vs}% expansion energy",      TEAL_DIM),
             ],style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
-            note_box("Options intelligence layer - Alpaca options feed active.","blue"),
+            note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
         ],sx={"marginBottom":"16px"}),
 
         # Summary strip
@@ -339,7 +339,7 @@ def build_feed_tab(live, live_mode):
     return card([
         html.Div([
             html.Div([
-                html.H2("ðŸ”Œ Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                 html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":MUTED}),
             ]),
             badge("Connected" if live_mode else "Synthetic","teal" if live_mode else "gray"),
@@ -363,7 +363,7 @@ def build_performance_tab(live):
     score    = decision["score"]
     sc       = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     return card([
-        html.H2("ðŸ“ˆ Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("📈 Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Div([
             metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Setup",decision["status"],sc),
@@ -386,20 +386,20 @@ def build_behavior_tab(analysis=None):
     if analysis is None:
         analysis = {}
 
-    # â”€â”€ Upload section (always visible) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Upload section (always visible) ───────────────────────────────────────
     upload_section = card([
-        html.H2("ðŸ§  Behavioral Intelligence",
+        html.H2("🧠 Behavioral Intelligence",
                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
-        html.P("Upload your brokerage CSV to generate a full behavioral profile â€” win rate, edge score, symbol breakdown, and pattern flags.",
+        html.P("Upload your brokerage CSV to generate a full behavioral profile — win rate, edge score, symbol breakdown, and pattern flags.",
                style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
         html.Div([
             dcc.Upload(
                 id="csv-upload-behavior",
                 children=html.Div([
-                    html.Div("ðŸ“‚", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
                     html.Div("Drag & drop your CSV here, or click to browse",
                              style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
-                    html.Div("Generic CSV Â· date, symbol, action, qty, price columns",
+                    html.Div("Generic CSV · date, symbol, action, qty, price columns",
                              style={"fontSize":"11px","color":MUTED}),
                 ], style={"textAlign":"center","padding":"30px 20px"}),
                 style={
@@ -413,7 +413,7 @@ def build_behavior_tab(analysis=None):
         ]),
     ])
 
-    # â”€â”€ Analysis section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Analysis section ───────────────────────────────────────────────────────
     if not analysis or not analysis.get("total_trades"):
         analysis_section = card([
             note_box("No import history yet. Upload your CSV above or use the Import History tab to generate your behavioral snapshot.", "blue")
@@ -426,11 +426,11 @@ def build_behavior_tab(analysis=None):
         avg_loss = analysis.get("avg_loss", 0)
         rr       = analysis.get("rr_ratio", 0)
         edge     = analysis.get("edge_score", 0)
-        hold     = analysis.get("avg_hold_time", "â€”")
-        best_s   = analysis.get("best_symbol", "â€”")
-        worst_s  = analysis.get("worst_symbol", "â€”")
-        best_d   = analysis.get("best_day", "â€”")
-        worst_d  = analysis.get("worst_day", "â€”")
+        hold     = analysis.get("avg_hold_time", "—")
+        best_s   = analysis.get("best_symbol", "—")
+        worst_s  = analysis.get("worst_symbol", "—")
+        best_d   = analysis.get("best_day", "—")
+        worst_d  = analysis.get("worst_day", "—")
         flags    = analysis.get("behavioral_flags", [])
         overtrade= analysis.get("overtrade_rate", 0)
         sym_perf = analysis.get("symbol_performance", {})
@@ -441,7 +441,7 @@ def build_behavior_tab(analysis=None):
         rr_color   = TEAL_DIM if rr>=1.5 else (YELLOW_DIM if rr>=1.0 else RED_DIM)
 
         edge_insight = (f"Positive mathematical edge of ${edge:.2f} per trade." if edge>0
-                        else f"Negative edge of ${edge:.2f} per trade â€” math works against you long-term.")
+                        else f"Negative edge of ${edge:.2f} per trade — math works against you long-term.")
 
         # Symbol performance table
         top_syms = sorted(sym_perf.items(), key=lambda x: x[1].get("total_pnl",0), reverse=True)[:8]
@@ -458,7 +458,7 @@ def build_behavior_tab(analysis=None):
         analysis_section = html.Div([
             # Row 1: Key metrics
             card([
-                html.H2("ðŸ“Š Behavioral Snapshot",
+                html.H2("📊 Behavioral Snapshot",
                         style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
                 html.Div([
                     metric_tile("Total Trades",   str(total),           WHITE),
@@ -476,12 +476,12 @@ def build_behavior_tab(analysis=None):
             # Row 2: Flags + best/worst
             html.Div([
                 card([
-                    html.H2("ðŸš© Behavioral Flags",
+                    html.H2("🚩 Behavioral Flags",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                     html.Div([
                         html.Div([
-                            html.Span("âš ï¸ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower()
-                                      else "âœ… ",
+                            html.Span("⚠️ " if "negative" in f.lower() or "overtrading" in f.lower() or "streak" in f.lower()
+                                      else "✅ ",
                                       style={"marginRight":"6px"}),
                             html.Span(f, style={"fontSize":"12px","color":TEXT}),
                         ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}"})
@@ -490,7 +490,7 @@ def build_behavior_tab(analysis=None):
                 ], sx={"flex":"1"}),
 
                 card([
-                    html.H2("ðŸ† Best & Worst",
+                    html.H2("🏆 Best & Worst",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                     metric_tile("Best Symbol",  best_s,  TEAL_DIM),
                     html.Div(style={"height":"8px"}),
@@ -506,7 +506,7 @@ def build_behavior_tab(analysis=None):
 
             # Row 3: Symbol table
             card([
-                html.H2("ðŸ“‹ Symbol Performance",
+                html.H2("📋 Symbol Performance",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 14px"}),
                 html.Table([
                     html.Thead(html.Tr([
@@ -526,7 +526,7 @@ def build_behavior_tab(analysis=None):
 
 def build_import_tab():
     return card([
-        html.H2("ðŸ“‚ Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
+        html.H2("📂 Import Trade History",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 6px"}),
         html.P("Upload a CSV file containing your trade history. The file should include columns for symbol, side (buy/sell), quantity, price, and date/time.",
                style={"fontSize":"12px","color":TEXT,"marginBottom":"20px"}),
         html.Div([
@@ -541,10 +541,10 @@ def build_import_tab():
                 dcc.Upload(
                     id="csv-upload",
                     children=html.Div([
-                        html.Div("ðŸ“", style={"fontSize":"32px","marginBottom":"8px"}),
+                        html.Div("📁", style={"fontSize":"32px","marginBottom":"8px"}),
                         html.Div("Drag & drop your CSV here, or click to browse",
                                  style={"color":WHITE,"fontWeight":"700","fontSize":"14px","marginBottom":"4px"}),
-                        html.Div("Supports generic broker exports Â· .csv files only",
+                        html.Div("Supports generic broker exports · .csv files only",
                                  style={"color":MUTED,"fontSize":"12px"}),
                     ], style={"textAlign":"center","padding":"40px 20px"}),
                     style={
@@ -560,10 +560,10 @@ def build_import_tab():
 
             html.Div([
                 slabel("Import Tips"),
-                note_box("â€¢ Export your trades as CSV from your broker platform.\n"
-                         "â€¢ Include both BUY and SELL rows â€” trades are reconstructed as pairs.\n"
-                         "â€¢ Date formats like 2024-01-15 or 01/15/2024 are both fine.\n"
-                         "â€¢ Column names are matched flexibly (e.g. 'Action', 'Side', 'B/S' all work).",
+                note_box("• Export your trades as CSV from your broker platform.\n"
+                         "• Include both BUY and SELL rows — trades are reconstructed as pairs.\n"
+                         "• Date formats like 2024-01-15 or 01/15/2024 are both fine.\n"
+                         "• Column names are matched flexibly (e.g. 'Action', 'Side', 'B/S' all work).",
                          variant="blue"),
                 html.Div(style={"height":"12px"}),
                 note_box("After uploading, use the Reset button in the Setup tab to clear all history and start fresh.",
@@ -574,28 +574,28 @@ def build_import_tab():
 
 def build_setup_tab():
     return card([
-        html.H2("ðŸ§© Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Pre(
-            f"Frontend  : Dash (Python)  â†’  Render\n"
-            f"Backend   : FastAPI        â†’  Render\n"
+            f"Frontend  : Dash (Python)  →  Render\n"
+            f"Backend   : FastAPI        →  Render\n"
             f"Data      : Alpaca IEX (free) / SIP (paid)\n"
             f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n\n"
             f"Env vars:\n"
-            f"  ALPACA_API_KEY     â€” Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  â€” Alpaca secret\n"
-            f"  BACKEND_URL        â€” HTTP base URL\n"
-            f"  BACKEND_WS_URL     â€” WebSocket base URL",
+            f"  ALPACA_API_KEY     — Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  — Alpaca secret\n"
+            f"  BACKEND_URL        — HTTP base URL\n"
+            f"  BACKEND_WS_URL     — WebSocket base URL",
             style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
                    "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
                    "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"},
         ),
         html.Hr(style={"borderColor":"#2a2f45","margin":"24px 0"}),
-        html.H4("ðŸ§ª Lab Tools",style={"color":"#888","fontSize":"13px",
+        html.H4("🧪 Lab Tools",style={"color":"#888","fontSize":"13px",
                 "letterSpacing":"1px","marginBottom":"8px"}),
         html.P("Reset all imported trade history. Use this in the lab to start fresh.",
                style={"color":"#666","fontSize":"12px","marginBottom":"12px"}),
-        html.Button("ðŸ—‘ï¸ Reset Import History",id="reset-trades-btn",
+        html.Button("🗑️ Reset Import History",id="reset-trades-btn",
             n_clicks=0,
             style={"backgroundColor":"#8B0000","color":"white",
                    "border":"none","padding":"10px 24px",
@@ -606,7 +606,7 @@ def build_setup_tab():
 
 # Logo
 LOGO = html.Div([
-    html.Div("Î£", style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1","flexShrink":"0"}),
+    html.Div("Σ", style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1","flexShrink":"0"}),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,
                                        "letterSpacing":".08em","lineHeight":"1"}),
@@ -617,7 +617,7 @@ LOGO = html.Div([
 
 app = dash.Dash(
     __name__,
-    title="Sigmalytic Quant Corporation â€” Decision Intelligence",
+    title="Sigmalytic Quant Corporation — Decision Intelligence",
     update_title=None,
     suppress_callback_exceptions=True,
     meta_tags=[{"name":"viewport","content":"width=device-width, initial-scale=1"},
@@ -653,7 +653,7 @@ def build_login_page(error=""):
     return html.Div([
         html.Div([
             html.Div([
-                html.Div("Î£", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
                 html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
                 html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,"letterSpacing":".3em","marginTop":"2px"}),
             ], style={"textAlign":"center","marginBottom":"40px"}),
@@ -671,7 +671,7 @@ def build_login_page(error=""):
                     ], style={"marginBottom":"16px"}),
                     html.Div([
                         html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":MUTED,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="login-password", type="password", placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢",
+                        dcc.Input(id="login-password", type="password", placeholder="••••••••",
                                   style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
                                          "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
                                          "outline":"none","fontFamily":"DM Sans, sans-serif"}),
@@ -686,7 +686,7 @@ def build_login_page(error=""):
                         html.Span("or", style={"color":MUTED,"fontSize":"12px","padding":"0 12px"}),
                         html.Div(style={"flex":"1","height":"1px","background":BORDER}),
                     ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
-                    html.Button("ðŸŽ¯ Try Demo â€” No Sign Up Required", id="demo-btn", n_clicks=0,
+                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
                         style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
                                "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
                                "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
@@ -748,9 +748,9 @@ def build_main_app():
                 html.Div(style={"width":"120px"}),
             ],style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                       "width":"100%","marginBottom":"6px"}),
-            html.P("Real-time decision intelligence â€” scores, interprets, and projects market behavior via multi-layer confluence.",
+            html.P("Real-time decision intelligence — scores, interprets, and projects market behavior via multi-layer confluence.",
                    style={"fontSize":"12px","color":MUTED,"textAlign":"center","maxWidth":"640px","margin":"0 auto"}),
-            html.P("Powered by Confluence Engine Â· Expansion Node Modeling Â· Forward Projection Layer",
+            html.P("Powered by Confluence Engine · Expansion Node Modeling · Forward Projection Layer",
                    style={"fontSize":"11px","color":"#475569","textAlign":"center","letterSpacing":".06em","marginTop":"4px"}),
             html.Hr(style={"border":"none","height":"1px","background":BORDER,"width":"60%","margin":"12px auto 0"}),
             html.Div([
@@ -894,7 +894,7 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
 
     return no_update, no_update
 
-# â”€â”€ Main app callbacks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Main app callbacks ────────────────────────────────────────────────────────
 
 @app.callback(Output("s-live-mode","data"),
 Output("btn-live","children"),Output("sim-label","children"),
@@ -902,8 +902,8 @@ Output("btn-live","children"),Output("sim-label","children"),
 def toggle_live(_,current):
     new=not current
     return new,("Use Synthetic Feed" if new else "Use Live Alpaca Feed"),\
-           ("LIVE MARKET FEED Â· ALPACA IEX Â· ALPACA OPTIONS INTELLIGENCE" if new
-            else "SIMULATION MODE Â· SYNTHETIC FEED Â· CONTROLLED ENVIRONMENT")
+           ("LIVE MARKET FEED · ALPACA IEX · SYNTHETIC OPTIONS INTELLIGENCE" if new
+            else "SIMULATION MODE · SYNTHETIC FEED · CONTROLLED ENVIRONMENT")
 
 @app.callback(Output("s-symbol","data"),Output("ticker-input","value"),
               Input("btn-load","n_clicks"),State("ticker-input","value"),prevent_initial_call=True)
@@ -982,7 +982,7 @@ def update_badges(live,live_mode):
               Input("s-analysis","data"),Input("s-refresh","data"),
               State("s-symbol","data"),State("s-tf","data"))
 def render_main(live,candles,tab,live_mode,_clock,analysis,_refresh,symbol,tf):
-    if not live: return html.Div("Initializingâ€¦",style={"color":MUTED,"padding":"60px","textAlign":"center"})
+    if not live: return html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"})
     ctx = callback_context
     trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else ""
     if tab in ("behavior","import","setup","performance","feed") and trigger == "i-clock":
@@ -1030,12 +1030,12 @@ def handle_csv_upload_behavior(contents, filename, refresh):
             timeout=30,
         )
         if not resp.ok:
-            return html.Span(f"âŒ Backend error {resp.status_code}: {resp.text[:300]}",
+            return html.Span(f"❌ Backend error {resp.status_code}: {resp.text[:300]}",
                              style={"color":RED_DIM}), no_update, no_update
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
         if trades_count == 0:
-            return html.Span(f"âš ï¸ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM}), no_update, no_update
 
         # Fetch cumulative analysis from Supabase instead of using this batch only
@@ -1046,12 +1046,12 @@ def handle_csv_upload_behavior(contents, filename, refresh):
             cumulative = data.get("analysis", {})
 
         return html.Div([
-            html.Span("âœ… Import successful Â· ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades added Â· Cumulative: {cumulative.get('total_trades',0)} trades Â· Win rate: {cumulative.get('win_rate',0)}% Â· P&L: ${cumulative.get('total_pnl',0):+,.2f}",
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades added · Cumulative: {cumulative.get('total_trades',0)} trades · Win rate: {cumulative.get('win_rate',0)}% · P&L: ${cumulative.get('total_pnl',0):+,.2f}",
                       style={"color":TEXT}),
         ]), cumulative, (refresh or 0) + 1
     except Exception as e:
-        return html.Span(f"âŒ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update, no_update
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM}), no_update, no_update
 
 @app.callback(Output("csv-upload-status","children"),
               Input("csv-upload","contents"),
@@ -1072,21 +1072,21 @@ def handle_csv_upload(contents, filename):
             timeout=30,
         )
         if not resp.ok:
-            return html.Span(f"âŒ Upload failed ({resp.status_code}): {resp.text[:300]}",
+            return html.Span(f"❌ Upload failed ({resp.status_code}): {resp.text[:300]}",
                              style={"color":RED_DIM})
         data = resp.json()
         trades_count = data.get("trades_closed", 0)
         analysis = data.get("analysis", {})
         if trades_count == 0:
-            return html.Span(f"âš ï¸ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
+            return html.Span(f"⚠️ 0 trades reconstructed. Raw rows: {data.get('raw_rows',0)}. Check CSV format.",
                              style={"color":YELLOW_DIM})
         return html.Div([
-            html.Span("âœ… Import successful Â· ", style={"color":TEAL_DIM,"fontWeight":"800"}),
-            html.Span(f"{trades_count} trades Â· Win rate: {analysis.get('win_rate',0)}% Â· P&L: ${analysis.get('total_pnl',0):+,.2f} Â· Go to Behavioral Intelligence tab to see full dashboard.",
+            html.Span("✅ Import successful · ", style={"color":TEAL_DIM,"fontWeight":"800"}),
+            html.Span(f"{trades_count} trades · Win rate: {analysis.get('win_rate',0)}% · P&L: ${analysis.get('total_pnl',0):+,.2f} · Go to Behavioral Intelligence tab to see full dashboard.",
                       style={"color":TEXT}),
         ])
     except Exception as e:
-        return html.Span(f"âŒ Error: {str(e)[:300]}", style={"color":RED_DIM})
+        return html.Span(f"❌ Error: {str(e)[:300]}", style={"color":RED_DIM})
 
 @app.callback(Output("reset-trades-output","children"),
               Input("reset-trades-btn","n_clicks"),
@@ -1098,15 +1098,13 @@ def reset_trade_history(n_clicks):
     try:
         r = _req.delete(f"{BACKEND_HTTP}/api/trades/reset", timeout=10)
         if r.status_code == 200:
-            return html.Span("âœ… Trade history cleared. Refresh the page to see updated counts.",
+            return html.Span("✅ Trade history cleared. Refresh the page to see updated counts.",
                              style={"color":"#00ff88"})
         else:
-            return html.Span(f"âŒ Reset failed (status {r.status_code}). Try again.",
+            return html.Span(f"❌ Reset failed (status {r.status_code}). Try again.",
                              style={"color":"#ff4444"})
     except Exception as e:
-        return html.Span(f"âŒ Error: {str(e)}", style={"color":"#ff4444"})
+        return html.Span(f"❌ Error: {str(e)}", style={"color":"#ff4444"})
 
 if __name__=="__main__":
     app.run(debug=False,host="0.0.0.0",port=8050)
-
-
