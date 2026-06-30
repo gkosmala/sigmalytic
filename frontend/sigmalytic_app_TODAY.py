@@ -2472,8 +2472,16 @@ def build_setup_tab():
 # ── App ────────────────────────────────────────────────────────────────────────
 
 LOGO = html.Div([
-    html.Div("Σ",style={"fontSize":"28px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1",
-                         "fontFamily":"Georgia, serif","marginRight":"4px","flexShrink":"0"}),
+    html.Div(chr(931), style={
+        "fontSize":"28px",
+        "fontWeight":"900",
+        "color":"#B8860B",
+        "lineHeight":"1",
+        "fontFamily":"Georgia, serif",
+        "marginRight":"4px",
+        "flexShrink":"0",
+        "textShadow":"0 0 4px rgba(184,134,11,.45), 0 1px 0 #6E4700",
+    }),
     html.Div([
         html.Span("SIGMALYTIC",style={"fontSize":"18px","fontWeight":"900","color":WHITE,"letterSpacing":".08em","lineHeight":"1"}),
         html.Span("QUANT CORPORATION",style={"fontSize":"9px","fontWeight":"700","color":TEAL_DIM,"letterSpacing":".22em","display":"block","marginTop":"2px"}),
