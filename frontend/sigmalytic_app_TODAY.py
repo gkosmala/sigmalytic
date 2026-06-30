@@ -2877,22 +2877,19 @@ def update_badges(live):
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
-    Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
-    State("s-symbol","data"), State("s-tf","data"),
+    Input("s-tab","data"),
+    State("s-live","data"),
+    State("s-candles","data"),
+    State("s-live-mode","data"),
+    State("s-symbol","data"),
+    State("s-tf","data"),
 )
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf):
+def render_main(tab, live, candles, live_mode, symbol, tf):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
-    # Static tabs: only skip rebuild when clock fires AND tab hasn't changed
     _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
-                    "billing","preferences","admin","setup","behavior","import","radar"}
-    triggered = [t["prop_id"] for t in dash.callback_context.triggered]
-    tab_changed = any("s-tab" in t for t in triggered)
-    clock_only = all("i-clock" in t for t in triggered)
-    if clock_only and tab in _STATIC_TABS and not tab_changed:
-        return no_update, no_update, no_update, no_update
+                    "billing","preferences","admin","setup","behavior","import","radar","status"}
 
     if not live:
         # Don't block static tabs — they don't need live data
