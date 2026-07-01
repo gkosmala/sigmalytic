@@ -52,6 +52,21 @@ except Exception as _jt:
     _JOURNAL_TAB_AVAILABLE = False
     print(f"TRADE_JOURNAL_TAB: FAILED — {_jt}", flush=True)
 
+
+try:
+    from preferences_tab import build_preferences_tab
+    _PREFERENCES_TAB_AVAILABLE = True
+except Exception as _ptab:
+    _PREFERENCES_TAB_AVAILABLE = False
+    print(f"PREFERENCES_TAB: FAILED - {_ptab}", flush=True)
+
+try:
+    from admin_tab import build_admin_tab
+    _ADMIN_TAB_AVAILABLE = True
+except Exception as _atab:
+    _ADMIN_TAB_AVAILABLE = False
+    print(f"ADMIN_TAB: FAILED - {_atab}", flush=True)
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
@@ -2948,15 +2963,28 @@ def render_main(tab, live, candles, live_mode, symbol, tf):
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
     elif tab=="divergence":  main = build_divergence_tab(session=None)
     elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
-    elif tab=="preferences": main = build_preferences_tab(user_id="", session=None)
+    elif tab=="preferences":
+        if _PREFERENCES_TAB_AVAILABLE:
+            try:
+                main = build_preferences_tab(user_id=USER_ID, session=None)
+            except Exception as e:
+                main = html.Div([
+                    html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
+                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
     elif tab=="admin":
-        try:
-            main = build_admin_tab(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
-        except Exception as e:
-            main = html.Div([
-                html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                html.Div(str(e), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
-            ], style={"padding":"60px","textAlign":"center"})
+        if _ADMIN_TAB_AVAILABLE:
+            try:
+                main = build_admin_tab(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
+            except Exception as e:
+                main = html.Div([
+                    html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
+                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        else:
+            main = html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
