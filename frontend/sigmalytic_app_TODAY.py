@@ -54,14 +54,14 @@ except Exception as _jt:
 
 
 try:
-    from preferences_tab import build_preferences_tab
+    from preferences_tab import build_preferences_tab as build_preferences_tab_external
     _PREFERENCES_TAB_AVAILABLE = True
 except Exception as _ptab:
     _PREFERENCES_TAB_AVAILABLE = False
     print(f"PREFERENCES_TAB: FAILED - {_ptab}", flush=True)
 
 try:
-    from admin_tab import build_admin_tab
+    from admin_tab import build_admin_tab as build_admin_tab_external
     _ADMIN_TAB_AVAILABLE = True
 except Exception as _atab:
     _ADMIN_TAB_AVAILABLE = False
@@ -2966,7 +2966,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf):
     elif tab=="preferences":
         if _PREFERENCES_TAB_AVAILABLE:
             try:
-                main = build_preferences_tab(user_id=USER_ID, session=None)
+                main = build_preferences_tab_external(user_id=USER_ID, session=None)
             except Exception as e:
                 main = html.Div([
                     html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
@@ -2977,7 +2977,7 @@ def render_main(tab, live, candles, live_mode, symbol, tf):
     elif tab=="admin":
         if _ADMIN_TAB_AVAILABLE:
             try:
-                main = build_admin_tab(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
+                main = build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
             except Exception as e:
                 main = html.Div([
                     html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
