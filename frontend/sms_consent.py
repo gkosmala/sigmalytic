@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 import dash
 from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -9,7 +9,7 @@ def layout():
             # Header
             html.Div([
                 html.Div([
-                    html.Span("Σ", style={
+                    html.Span("Î£", style={
                         "fontSize": "24px",
                         "fontWeight": "700",
                         "color": "#00E5B4",
@@ -67,19 +67,19 @@ def layout():
                         # Feature bullets
                         html.Div([
                             html.Div([
-                                html.Div("→", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
+                                html.Div("â†’", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
                                 html.Span("Armed & Triggered setup alerts", style={"color": "#CBD5E1", "fontSize": "14px"})
                             ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
                             html.Div([
-                                html.Div("→", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
+                                html.Div("â†’", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
                                 html.Span("GEX regime change notifications", style={"color": "#CBD5E1", "fontSize": "14px"})
                             ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
                             html.Div([
-                                html.Div("→", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
+                                html.Div("â†’", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
                                 html.Span("Daily radar summary at market close", style={"color": "#CBD5E1", "fontSize": "14px"})
                             ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
                             html.Div([
-                                html.Div("→", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
+                                html.Div("â†’", style={"color": "#00E5B4", "marginRight": "12px", "fontWeight": "700"}),
                                 html.Span("Elite Trader & Trader plan subscribers", style={"color": "#CBD5E1", "fontSize": "14px"})
                             ], style={"display": "flex", "alignItems": "center"})
                         ]),
@@ -266,7 +266,7 @@ def layout():
                 # Footer compliance note
                 html.Div([
                     html.P(
-                        "Sigmalytic Quant Corporation · alerts@sigmalyticquantcorp.com · +1 (844) 643-6847",
+                        "Sigmalytic Quant Corporation Â· alerts@sigmalyticquantcorp.com Â· +1 (844) 643-6847",
                         style={"color": "#4A5568", "fontSize": "12px", "textAlign": "center", "margin": "0"}
                     ),
                     html.P(
@@ -283,4 +283,5 @@ def layout():
 
         ], style={"backgroundColor": "#0A0F1E", "minHeight": "100vh"})
     ])
+
 

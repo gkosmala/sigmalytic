@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/campaign_api.py
 ------------------------
@@ -9,10 +9,10 @@ Mount in main.py:
     app.include_router(campaign_router)
 
 Endpoints:
-    GET  /api/campaigns/active        — all active campaigns
-    GET  /api/campaigns/{id}          — single campaign detail
-    POST /api/campaigns/{id}/close    — manually close a campaign
-    GET  /api/campaigns/summary       — portfolio-level stats
+    GET  /api/campaigns/active        â€” all active campaigns
+    GET  /api/campaigns/{id}          â€” single campaign detail
+    POST /api/campaigns/{id}/close    â€” manually close a campaign
+    GET  /api/campaigns/summary       â€” portfolio-level stats
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ log = logging.getLogger("campaign_api")
 
 campaign_router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
-# ── Supabase connection ───────────────────────────────────────────────────────
+# â”€â”€ Supabase connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _sb_url() -> str:
     return os.environ.get("SUPABASE_URL", "").rstrip("/")
@@ -65,7 +65,7 @@ def _sb_get(table: str, params: dict) -> list[dict]:
     return []
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# â”€â”€ Endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @campaign_router.get("/active")
 async def get_active_campaigns() -> dict[str, Any]:
@@ -333,3 +333,4 @@ async def close_campaign_manually(campaign_id: str) -> dict[str, Any]:
     except Exception as exc:
         log.error("Manual close error for %s: %s", campaign_id, exc)
         raise HTTPException(status_code=500, detail=str(exc))
+

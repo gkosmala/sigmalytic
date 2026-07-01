@@ -1,0 +1,98 @@
+
+--- line 9 ---
+7: Phase 15 UI:
+8:   - Lifecycle state
+9:   - ODS / Decay
+10:   - Transition next-state prediction
+11:   - Outcome Quality
+
+--- line 15 ---
+13:   - Expected MFE / MAE
+14:   - Target 1 / Target 2 probabilities
+15:   - Failure probability
+16:   - Risk/Reward
+17: """
+
+--- line 232 ---
+230:     symbol = c.get("symbol", "—")
+231:     tier = c.get("historical_confidence", "—")
+232:     days = _safe_int(c.get("campaign_age_days"), 0)
+233: 
+234:     current = _safe_float(c.get("current_price"), 0)
+
+--- line 239 ---
+237: 
+238:     ods = _safe_float(c.get("operator_dominance"), 0)
+239:     decay_score = _safe_float(c.get("decay_score"), 0)
+240:     decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
+241:     exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
+
+--- line 244 ---
+242: 
+243:     next_state = str(c.get("transition_next_state") or "—").upper()
+244:     adv = _safe_float(c.get("transition_advance_prob"), 0)
+245:     fail_transition = _safe_float(c.get("transition_failure_prob"), 0)
+246:     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
+
+--- line 245 ---
+243:     next_state = str(c.get("transition_next_state") or "—").upper()
+244:     adv = _safe_float(c.get("transition_advance_prob"), 0)
+245:     fail_transition = _safe_float(c.get("transition_failure_prob"), 0)
+246:     bias = str(c.get("transition_bias") or "UNKNOWN").upper()
+247: 
+
+--- line 253 ---
+251:     exp_mfe = _safe_float(c.get("outcome_expected_mfe"), 0)
+252:     exp_mae = _safe_float(c.get("outcome_expected_mae"), 0)
+253:     exp_days = _safe_int(c.get("outcome_expected_duration_days"), 0)
+254:     t1 = _safe_float(c.get("outcome_target1_prob"), 0)
+255:     t2 = _safe_float(c.get("outcome_target2_prob"), 0)
+
+--- line 300 ---
+298:                 "color": state_color,
+299:             }),
+300:             html.Div(f"Day {days}", style={"fontSize": "10px", "color": MUTED, "marginTop": "3px"}),
+301:         ], style={"flex": "1.05"}),
+302: 
+
+--- line 310 ---
+308:             }),
+309:             _bar(ods, TEAL_DIM if ods >= 70 else (YELLOW_DIM if ods >= 40 else RED_DIM)),
+310:             html.Div(f"Decay {decay_score:.0f}", style={
+311:                 "fontSize": "10px",
+312:                 "fontWeight": "700",
+
+--- line 325 ---
+323:             }),
+324:             _pill(_BIAS_LABELS.get(bias, bias), bias_color),
+325:             html.Div(f"Adv {adv:.0f}% / Fail {fail_transition:.0f}%", style={
+326:                 "fontSize": "9px",
+327:                 "color": MUTED,
+
+--- line 409 ---
+407:         html.Div([
+408:             html.Div([
+409:                 html.Span("Fail ", style={"fontSize": "9px", "color": MUTED}),
+410:                 html.Span(f"{fail:.0f}%", style={
+411:                     "fontSize": "13px",
+
+--- line 494 ---
+492:         _summary_tile("Avg T1", f"{avg_t1:.0f}%", TEAL_DIM if avg_t1 >= 50 else YELLOW_DIM),
+493:         _summary_tile("Avg T2", f"{avg_t2:.0f}%", TEAL_DIM if avg_t2 >= 35 else YELLOW_DIM),
+494:         _summary_tile("Avg Fail", f"{avg_fail:.0f}%", RED_DIM if avg_fail >= 45 else YELLOW_DIM),
+495:         _summary_tile("Avg RR", f"{avg_rr:.2f}", TEAL_DIM if avg_rr >= 2.0 else YELLOW_DIM),
+496:         _summary_tile("B / C", f"{b_quality}/{c_quality}", TEAL_DIM),
+
+--- line 518 ---
+516:         _label("Symbol / Tier", ".9"),
+517:         _label("State / Age", "1.05"),
+518:         _label("ODS / Decay", ".7"),
+519:         _label("Next / Bias", "1.05"),
+520:         _label("Outcome", ".7"),
+
+--- line 524 ---
+522:         _label("MFE / MAE", ".75"),
+523:         _label("Target 1 / 2", ".85"),
+524:         _label("Failure / RR", ".75"),
+525:         _label("Signal / Summary", "1.15"),
+526:     ], style={

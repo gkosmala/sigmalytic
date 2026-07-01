@@ -1,8 +1,8 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/status_center.py
 --------------------------
-Status Center — the first screen after login in Sigmalytic V2.
+Status Center â€” the first screen after login in Sigmalytic V2.
 
 Per the blueprint (Part X):
   "The first screen is NOT a chart.
@@ -11,14 +11,14 @@ Per the blueprint (Part X):
    The first screen is: STATUS CENTER"
 
 Contains four intelligence sections:
-  1. Portfolio Intelligence  — active campaigns, P&L, ODS health
-  2. Radar Intelligence      — today's top signals, Pre-Spark opportunities
-  3. Opportunity Intelligence — new TIER_1 births, state changes, exits
-  4. System Alerts           — decay monitor status, conjunction exits
+  1. Portfolio Intelligence  â€” active campaigns, P&L, ODS health
+  2. Radar Intelligence      â€” today's top signals, Pre-Spark opportunities
+  3. Opportunity Intelligence â€” new TIER_1 births, state changes, exits
+  4. System Alerts           â€” decay monitor status, conjunction exits
 
 Plugs into sigmalytic_app_TODAY.py:
   1. from status_center import build_status_center
-  2. Add ("status", "⚡ Status") as FIRST entry in ALL_TABS
+  2. Add ("status", "âš¡ Status") as FIRST entry in ALL_TABS
   3. Change dcc.Store(id="s-tab", data="status") to make it the default
   4. Add elif tab=="status": main = build_status_center() to tab router
 """
@@ -32,7 +32,7 @@ from dash import html
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-# ── Brand tokens ──────────────────────────────────────────────────────────────
+# â”€â”€ Brand tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
@@ -49,12 +49,12 @@ STATE_COLORS = {
     "EXPANDING": YELLOW_DIM, "MATURING": YELLOW, "DISTRIBUTION_RISK": RED_DIM,
 }
 STATE_ICONS = {
-    "BIRTH": "🌱", "CONFIRMED": "✅", "SURVIVING": "🛡️",
-    "EXPANDING": "🚀", "MATURING": "📈", "DISTRIBUTION_RISK": "⚠️",
+    "BIRTH": "ðŸŒ±", "CONFIRMED": "âœ…", "SURVIVING": "ðŸ›¡ï¸",
+    "EXPANDING": "ðŸš€", "MATURING": "ðŸ“ˆ", "DISTRIBUTION_RISK": "âš ï¸",
 }
 
 
-# ── UI helpers ────────────────────────────────────────────────────────────────
+# â”€â”€ UI helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _card(children, sx=None):
     base = {"background": NAVY_CARD, "border": f"1px solid {BORDER}",
@@ -98,8 +98,8 @@ def _kpi(label, value, color=WHITE, sub="", icon=""):
 def _alert_banner(text, level="YELLOW"):
     colors = {"YELLOW": YELLOW_DIM, "ORANGE": "#f97316", "RED": RED_DIM}
     color  = colors.get(level, YELLOW_DIM)
-    icons  = {"YELLOW": "⚠️", "ORANGE": "🔶", "RED": "🚨"}
-    icon   = icons.get(level, "⚠️")
+    icons  = {"YELLOW": "âš ï¸", "ORANGE": "ðŸ”¶", "RED": "ðŸš¨"}
+    icon   = icons.get(level, "âš ï¸")
     return html.Div([
         html.Span(f"{icon} {level} ALERT", style={
             "fontSize": "11px", "fontWeight": "800", "color": color,
@@ -115,9 +115,9 @@ def _alert_banner(text, level="YELLOW"):
 
 def _campaign_mini(c: dict) -> html.Div:
     """Compact campaign row for Status Center."""
-    symbol  = c.get("symbol", "—")
+    symbol  = c.get("symbol", "â€”")
     state   = c.get("current_state", "BIRTH")
-    tier    = c.get("historical_confidence", "—")
+    tier    = c.get("historical_confidence", "â€”")
     ret_pct = float(c.get("return_pct", 0))
     ods     = float(c.get("operator_dominance") or 0)
     days    = int(c.get("campaign_age_days", 0))
@@ -126,7 +126,7 @@ def _campaign_mini(c: dict) -> html.Div:
     conj    = ods < 40 and state in {"MATURING", "DISTRIBUTION_RISK"}
 
     return html.Div([
-        html.Span(STATE_ICONS.get(state, "•"), style={"fontSize": "13px", "marginRight": "6px"}),
+        html.Span(STATE_ICONS.get(state, "â€¢"), style={"fontSize": "13px", "marginRight": "6px"}),
         html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
                                  "fontSize": "13px", "color": WHITE, "flex": "1"}),
         html.Span(tier, style={"fontSize": "9px", "color": MUTED, "flex": ".8"}),
@@ -134,7 +134,7 @@ def _campaign_mini(c: dict) -> html.Div:
         html.Span(f"{ret_pct:+.1f}%", style={"fontSize": "12px", "fontWeight": "800",
                                               "color": r_color, "fontFamily": "DM Mono, monospace",
                                               "flex": ".7", "textAlign": "right"}),
-        html.Span("⚡", style={"color": RED_DIM, "fontSize": "12px",
+        html.Span("âš¡", style={"color": RED_DIM, "fontSize": "12px",
                                "marginLeft": "6px"}) if conj else html.Span(),
     ], style={
         "display": "flex", "alignItems": "center", "gap": "6px",
@@ -144,9 +144,9 @@ def _campaign_mini(c: dict) -> html.Div:
 
 def _radar_mini(item: dict) -> html.Div:
     """Compact radar signal row."""
-    symbol = item.get("symbol", "—")
+    symbol = item.get("symbol", "â€”")
     score  = float(item.get("score", 0))
-    signal = item.get("signal_type", item.get("setup", "—"))
+    signal = item.get("signal_type", item.get("setup", "â€”"))
     s_color = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else MUTED)
     return html.Div([
         html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
@@ -160,7 +160,7 @@ def _radar_mini(item: dict) -> html.Div:
     })
 
 
-# ── Data fetching ─────────────────────────────────────────────────────────────
+# â”€â”€ Data fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _fetch(path: str, timeout: int = 6) -> dict | list:
     try:
@@ -170,19 +170,19 @@ def _fetch(path: str, timeout: int = 6) -> dict | list:
         return {}
 
 
-# ── Main builder ──────────────────────────────────────────────────────────────
+# â”€â”€ Main builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def build_status_center(session=None) -> html.Div:
-    """Build the Status Center — first screen after login."""
+    """Build the Status Center â€” first screen after login."""
 
-    # ── Fetch all data ────────────────────────────────────────────────────
+    # â”€â”€ Fetch all data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     campaign_data = _fetch("/api/campaigns/active")
     campaigns     = campaign_data.get("campaigns", []) if isinstance(campaign_data, dict) else []
     summary       = _fetch("/api/campaigns/summary")
     radar_data    = _fetch("/api/radar/top?limit=8")
     radar_items   = radar_data if isinstance(radar_data, list) else radar_data.get("signals", [])
 
-    # ── Derived metrics ───────────────────────────────────────────────────
+    # â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     total      = len(campaigns)
     tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
     tier2      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
@@ -197,41 +197,41 @@ def build_status_center(session=None) -> html.Div:
                  else "BUILDING" if total < OPTIMAL_MIN else "OVER CAPACITY")
     ret_color = TEAL_DIM if avg_return >= 0 else RED_DIM
 
-    # Most urgent campaigns — conjunction exits first, then distribution risk
+    # Most urgent campaigns â€” conjunction exits first, then distribution risk
     urgent = [c for c in campaigns
               if float(c.get("operator_dominance") or 100) < 40
               and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}]
 
-    # Most active — expanding campaigns
+    # Most active â€” expanding campaigns
     expanding = [c for c in campaigns if c.get("current_state") == "EXPANDING"]
 
-    # New births — less than 3 days old
+    # New births â€” less than 3 days old
     new_births = [c for c in campaigns if int(c.get("campaign_age_days", 99)) <= 3]
 
-    now_utc = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+    now_utc = datetime.now(timezone.utc).strftime("%b %d, %Y Â· %H:%M UTC")
 
     return html.Div([
 
-        # ── Header ────────────────────────────────────────────────────────
+        # â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         html.Div([
             html.Div([
-                html.H1("⚡ Status Center", style={
+                html.H1("âš¡ Status Center", style={
                     "fontSize": "22px", "fontWeight": "900", "color": WHITE, "margin": "0",
                 }),
                 html.Div(now_utc, style={"fontSize": "12px", "color": MUTED, "marginTop": "4px"}),
             ]),
             html.Div([
-                _badge(f"● LIVE", TEAL_DIM),
+                _badge(f"â— LIVE", TEAL_DIM),
                 html.Span(f" {total} campaigns", style={"fontSize": "12px", "color": TEXT,
                                                          "marginLeft": "8px"}),
             ], style={"display": "flex", "alignItems": "center"}),
         ], style={"display": "flex", "justifyContent": "space-between",
                   "alignItems": "flex-start", "marginBottom": "20px"}),
 
-        # ── System Alerts ─────────────────────────────────────────────────
+        # â”€â”€ System Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         html.Div([
             *([_alert_banner(
-                f"{exits} conjunction exit signal{'s' if exits > 1 else ''} — "
+                f"{exits} conjunction exit signal{'s' if exits > 1 else ''} â€” "
                 f"operator exiting detected. Review campaign tab immediately.",
                 "RED" if exits >= 3 else "ORANGE"
             )] if exits > 0 else []),
@@ -243,9 +243,9 @@ def build_status_center(session=None) -> html.Div:
             )] if new_births else []),
         ]) if exits > 0 or new_births else html.Div(),
 
-        # ── Row 1: Portfolio KPIs ─────────────────────────────────────────
+        # â”€â”€ Row 1: Portfolio KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         _card([
-            _section("📊 Portfolio Intelligence"),
+            _section("ðŸ“Š Portfolio Intelligence"),
             html.Div([
                 _kpi("Campaigns", str(total), cap_color, cap_label),
                 _kpi("TIER 1", str(tier1), TEAL_DIM, "highest conviction"),
@@ -259,12 +259,12 @@ def build_status_center(session=None) -> html.Div:
             ], style={"display": "flex", "gap": "10px", "flexWrap": "wrap"}),
         ]),
 
-        # ── Row 2: Three columns ──────────────────────────────────────────
+        # â”€â”€ Row 2: Three columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         html.Div([
 
-            # Column 1 — Active campaigns snapshot
+            # Column 1 â€” Active campaigns snapshot
             _card([
-                _section("🛡️ Active Campaigns"),
+                _section("ðŸ›¡ï¸ Active Campaigns"),
                 html.Div([
                     _campaign_mini(c)
                     for c in sorted(campaigns,
@@ -282,7 +282,7 @@ def build_status_center(session=None) -> html.Div:
                     html.Div(style={"height": "1px", "background": BORDER, "margin": "12px 0"}),
                     html.Div([
                         *[html.Span([
-                            html.Span(STATE_ICONS.get(s, "•") + " ", style={"fontSize": "11px"}),
+                            html.Span(STATE_ICONS.get(s, "â€¢") + " ", style={"fontSize": "11px"}),
                             html.Span(f"{state_counts.get(s, 0)}", style={
                                 "fontWeight": "800", "color": STATE_COLORS.get(s, MUTED),
                                 "fontFamily": "DM Mono, monospace", "fontSize": "12px",
@@ -296,9 +296,9 @@ def build_status_center(session=None) -> html.Div:
                 ]) if campaigns else html.Div(),
             ], sx={"flex": "1.2"}),
 
-            # Column 2 — Radar Intelligence
+            # Column 2 â€” Radar Intelligence
             _card([
-                _section("📡 Radar Intelligence"),
+                _section("ðŸ“¡ Radar Intelligence"),
                 html.Div([
                     html.Div([
                         html.Span("Symbol", style={"fontSize": "9px", "color": MUTED,
@@ -320,13 +320,13 @@ def build_status_center(session=None) -> html.Div:
                 ),
             ], sx={"flex": "1"}),
 
-            # Column 3 — Opportunity Intelligence
+            # Column 3 â€” Opportunity Intelligence
             _card([
-                _section("🎯 Opportunity Intelligence"),
+                _section("ðŸŽ¯ Opportunity Intelligence"),
 
                 # New births
                 html.Div([
-                    html.Div("🌱 New Campaigns (last 3 days)", style={
+                    html.Div("ðŸŒ± New Campaigns (last 3 days)", style={
                         "fontSize": "11px", "fontWeight": "800", "color": TEAL_DIM,
                         "marginBottom": "8px",
                     }),
@@ -339,7 +339,7 @@ def build_status_center(session=None) -> html.Div:
 
                 # Expanding
                 html.Div([
-                    html.Div("🚀 Expanding (energy live)", style={
+                    html.Div("ðŸš€ Expanding (energy live)", style={
                         "fontSize": "11px", "fontWeight": "800", "color": YELLOW_DIM,
                         "marginBottom": "8px",
                     }),
@@ -352,12 +352,12 @@ def build_status_center(session=None) -> html.Div:
 
                 # Exit watch
                 html.Div([
-                    html.Div("⚡ Exit Watch", style={
+                    html.Div("âš¡ Exit Watch", style={
                         "fontSize": "11px", "fontWeight": "800", "color": RED_DIM,
                         "marginBottom": "8px",
                     }),
                     *[_campaign_mini(c) for c in urgent[:4]],
-                    html.Div("✓ No exit signals", style={"color": TEAL_DIM, "fontSize": "11px"})
+                    html.Div("âœ“ No exit signals", style={"color": TEAL_DIM, "fontSize": "11px"})
                     if not urgent else html.Div(),
                 ]),
 
@@ -365,9 +365,9 @@ def build_status_center(session=None) -> html.Div:
 
         ], style={"display": "flex", "gap": "16px"}),
 
-        # ── Row 3: Nightly schedule status ────────────────────────────────
+        # â”€â”€ Row 3: Nightly schedule status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         _card([
-            _section("⏱ Nightly Engine Schedule"),
+            _section("â± Nightly Engine Schedule"),
             html.Div([
                 *[html.Div([
                     html.Span(time, style={"fontFamily": "DM Mono, monospace", "fontSize": "12px",
@@ -378,14 +378,15 @@ def build_status_center(session=None) -> html.Div:
                           "borderBottom": f"1px solid {BORDER}"})
                 for time, engine in [
                     ("20:00", "Geometry recalculation"),
-                    ("20:30", "Signal birth engine — TIER scoring → new campaigns"),
-                    ("21:00", "Campaign pipeline — FSM state updates"),
-                    ("21:30", "ODS engine — operator dominance scores"),
-                    ("21:45", "Analog engine — historical campaign matching"),
-                    ("22:00", "Decay monitor — performance vs Phase 12B benchmarks"),
+                    ("20:30", "Signal birth engine â€” TIER scoring â†’ new campaigns"),
+                    ("21:00", "Campaign pipeline â€” FSM state updates"),
+                    ("21:30", "ODS engine â€” operator dominance scores"),
+                    ("21:45", "Analog engine â€” historical campaign matching"),
+                    ("22:00", "Decay monitor â€” performance vs Phase 12B benchmarks"),
                     ("00:30", "EOD audit"),
                 ]],
             ]),
         ]),
 
     ])
+

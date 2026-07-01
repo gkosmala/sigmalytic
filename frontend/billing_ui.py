@@ -1,8 +1,8 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/billing_ui.py
 ----------------------
-Sigmalytic — Stripe Billing UI
+Sigmalytic â€” Stripe Billing UI
 
 Shows:
 - Current plan + feature flags for logged-in users
@@ -19,12 +19,12 @@ BACKEND_HTTP     = os.getenv("BACKEND_URL",  "https://sigmalytic-backend.onrende
 FRONTEND_URL     = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
 CONTACT_EMAIL    = "support@sigmalytic.com"
 
-# ── Stripe pricing table config ────────────────────────────────────────────────
+# â”€â”€ Stripe pricing table config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PRICING_TABLE_ID = "prctbl_1Tc35NDRUJk6Un01beNdvTak"
 PUBLISHABLE_KEY  = os.getenv("STRIPE_PUBLISHABLE_KEY",
                              "pk_test_51TO3CQDRUJk6Un01sFsuiZdCp248v1zFUBmLSbzYyQtvaGRbP3agOWAXnTX60gRCqxjOjLyDZeogZuO4dPZhwdhE00hNQoOw1V")
 
-# ── Brand tokens ───────────────────────────────────────────────────────────────
+# â”€â”€ Brand tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 NAVY_CARD = "#111f35"; TEAL = "#2d8f6f"; TEAL_DIM = "#34d399"
 TEAL_GLOW = "rgba(45,143,111,.18)"; RED_DIM = "#f87171"
 YELLOW_DIM = "#fde68a"; BLUE_DIM = "#93c5fd"; MUTED = "#64748b"
@@ -50,7 +50,7 @@ def _badge(text, color=TEAL_DIM):
 
 def _feature_row(label, value, enabled=True):
     color = TEAL_DIM if enabled else MUTED
-    icon  = "✓" if enabled else "—"
+    icon  = "âœ“" if enabled else "â€”"
     return html.Div([
         html.Span(f"{icon}  {label}", style={"color": color, "fontSize": "13px"}),
         html.Span(str(value), style={"color": TEXT, "fontSize": "12px", "marginLeft": "8px"}),
@@ -85,22 +85,22 @@ def build_billing_tab(session=None, perms=None):
     plan_name   = billing.get("plan_name", "Free")
     plan_price  = billing.get("plan_price", "$0")
     status      = billing.get("status", "active")
-    period_end  = billing.get("current_period_end", "—")
+    period_end  = billing.get("current_period_end", "â€”")
     cancel_end  = billing.get("cancel_at_period_end", False)
     features    = billing.get("features", {})
     has_customer= bool(billing.get("stripe_customer_id"))
 
-    # ── Status banner ──────────────────────────────────────────────────────────
+    # â”€â”€ Status banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if status == "past_due":
         banner_color = RED_DIM
         banner_bg    = "rgba(239,68,68,.08)"
         banner_border= "rgba(239,68,68,.25)"
-        banner_text  = "⚠️ Payment past due — please update your payment method to restore full access."
+        banner_text  = "âš ï¸ Payment past due â€” please update your payment method to restore full access."
     elif cancel_end:
         banner_color = YELLOW_DIM
         banner_bg    = "rgba(245,158,11,.08)"
         banner_border= "rgba(245,158,11,.25)"
-        banner_text  = f"⚠️ Your plan is set to cancel on {period_end}. Reactivate anytime below."
+        banner_text  = f"âš ï¸ Your plan is set to cancel on {period_end}. Reactivate anytime below."
     elif tier == "free":
         banner_color = BLUE_DIM
         banner_bg    = "rgba(59,130,246,.08)"
@@ -110,7 +110,7 @@ def build_billing_tab(session=None, perms=None):
         banner_color = TEAL_DIM
         banner_bg    = TEAL_GLOW
         banner_border= BORDER_T
-        banner_text  = f"✅ {plan_name} — Active. All features unlocked."
+        banner_text  = f"âœ… {plan_name} â€” Active. All features unlocked."
 
     banner = html.Div(banner_text, style={
         "background": banner_bg, "border": f"1px solid {banner_border}",
@@ -118,7 +118,7 @@ def build_billing_tab(session=None, perms=None):
         "fontSize": "13px", "padding": "14px 18px", "marginBottom": "16px",
     })
 
-    # ── Current plan card (only if logged in and subscribed) ──────────────────
+    # â”€â”€ Current plan card (only if logged in and subscribed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     plan_card = _card([
         html.Div([
             html.Div([
@@ -132,7 +132,7 @@ def build_billing_tab(session=None, perms=None):
 
         html.Div([
             _metric("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
-            _metric("Renews",     period_end or "—",        TEXT),
+            _metric("Renews",     period_end or "â€”",        TEXT),
             _metric("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
             _metric("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
                                   else f"{features.get('sms_limit',0)}/day"
@@ -144,7 +144,7 @@ def build_billing_tab(session=None, perms=None):
             _feature_row("Live Market Data",        "SIP Feed",    features.get("live_data", False)),
             _feature_row("Radar Screen",            f"{features.get('radar_limit',50)} symbols", True),
             _feature_row("Status Alerts",           "Armed / Triggered", features.get("alerts", False)),
-            _feature_row("Intelligence Layer",      "GEX · BME · Hurst · VSA", features.get("intelligence", False)),
+            _feature_row("Intelligence Layer",      "GEX Â· BME Â· Hurst Â· VSA", features.get("intelligence", False)),
             _feature_row("Weis Wave + 3-Bar",       "All 1,403 symbols", True),
             _feature_row("Divergence Watchlist",    "EOD Audit",   features.get("intelligence", False)),
             _feature_row("SMS Alerts",              "Via Twilio",  features.get("sms_limit", 0) != 0),
@@ -169,7 +169,7 @@ def build_billing_tab(session=None, perms=None):
         ]) if tier != "free" else html.Div(),
     ]) if user_id else html.Div()
 
-    # ── Stripe pricing table ───────────────────────────────────────────────────
+    # â”€â”€ Stripe pricing table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     pricing_section = _card([
         html.H2("Choose Your Plan", style={"color": WHITE, "fontSize": "18px",
                                             "fontWeight": "900", "marginBottom": "8px"}),
@@ -195,11 +195,11 @@ def build_billing_tab(session=None, perms=None):
 
         # Institutional contact
         html.Div([
-            html.Div("🏛️ Institutional", style={"color": WHITE, "fontSize": "16px",
+            html.Div("ðŸ›ï¸ Institutional", style={"color": WHITE, "fontSize": "16px",
                                                   "fontWeight": "800", "marginBottom": "8px"}),
-            html.Div("Custom universe · API access · Priority support · Dedicated onboarding",
+            html.Div("Custom universe Â· API access Â· Priority support Â· Dedicated onboarding",
                      style={"color": TEXT, "fontSize": "13px", "marginBottom": "16px"}),
-            html.A("Contact Us →",
+            html.A("Contact Us â†’",
                    href=f"mailto:{CONTACT_EMAIL}?subject=Sigmalytic Institutional Inquiry",
                    style={
                        "background": TEAL_GLOW, "border": f"1px solid {BORDER_T}",
@@ -217,7 +217,7 @@ def build_billing_tab(session=None, perms=None):
     return html.Div([
         # Header
         _card([
-            html.H2("💳 Billing & Plans", style={"color": WHITE, "fontSize": "18px",
+            html.H2("ðŸ’³ Billing & Plans", style={"color": WHITE, "fontSize": "18px",
                                                    "fontWeight": "900", "margin": "0 0 6px"}),
             html.P("Manage your Sigmalytic subscription.",
                    style={"color": TEXT, "fontSize": "13px", "margin": "0"}),
@@ -249,10 +249,11 @@ def register_billing_callbacks(app):
                 url = r.json().get("url", "")
                 if url:
                     # Return a clickable link
-                    return html.A("Click here to manage your plan →",
+                    return html.A("Click here to manage your plan â†’",
                                   href=url, target="_blank",
                                   style={"color": TEAL_DIM, "fontSize": "13px"})
             return html.Span(f"Error: {r.status_code}", style={"color": RED_DIM})
         except Exception as e:
             return html.Span(f"Error: {str(e)[:100]}", style={"color": RED_DIM})
+
 

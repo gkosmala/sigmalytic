@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -664,3 +664,4 @@ def build_campaign_tab(session=None) -> html.Div:
             html.Div(rows),
         ]),
     ])
+
