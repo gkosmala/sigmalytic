@@ -1097,7 +1097,7 @@ def build_command_tab(live, candles, symbol, tf):
             html.Div([
                 html.H2("🧱 Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                html.P("Options intelligence from Alpaca options feed, price, volume, volatility proxy, and decision score.",
                        style={"fontSize":"12px","color":TEXT})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
@@ -1108,7 +1108,7 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+        note_box("Options intelligence layer - Alpaca options feed active.","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
