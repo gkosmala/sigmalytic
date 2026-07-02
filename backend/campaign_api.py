@@ -720,6 +720,131 @@ def evidence_audit_export():
     }
 
 
+
+@router.get("/evidence-calibration-review")
+def evidence_calibration_review():
+    audit_payload = evidence_audit_export()
+    ranking_payload = evidence_diagnostic_rankings()
+
+    rows = list(ranking_payload.get("ranked_diagnostic_campaigns") or [])
+
+    hard_conflict_flags = {
+        "PHASE_PERMISSION_BLOCKED",
+        "DOWNSIDE_WEIS_GAMMA_DIRECTION",
+    }
+
+    refresh_flags = {
+        "GAMMA_REFRESH_NEEDED",
+    }
+
+    state_mapping_prefix = "WEIS_GAMMA_MAPS_TO_"
+
+    hard_conflict_rows = []
+    refresh_needed_rows = []
+    state_mapping_rows = []
+    state_mapping_only_rows = []
+    operator_confirmed_rows = []
+    operator_confirmed_hard_conflict_rows = []
+    operator_confirmed_refresh_needed_rows = []
+
+    for row in rows:
+        flags = set(row.get("conflict_flags") or [])
+
+        has_hard_conflict = bool(flags.intersection(hard_conflict_flags))
+        has_refresh_flag = bool(flags.intersection(refresh_flags))
+        has_state_mapping_flag = any(
+            str(flag).startswith(state_mapping_prefix)
+            for flag in flags
+        )
+
+        if row.get("operator_control_confirmed") is True:
+            operator_confirmed_rows.append(row)
+
+        if has_hard_conflict:
+            hard_conflict_rows.append(row)
+
+        if has_refresh_flag:
+            refresh_needed_rows.append(row)
+
+        if has_state_mapping_flag:
+            state_mapping_rows.append(row)
+
+        if has_state_mapping_flag and not has_hard_conflict and not has_refresh_flag:
+            state_mapping_only_rows.append(row)
+
+        if row.get("operator_control_confirmed") is True and has_hard_conflict:
+            operator_confirmed_hard_conflict_rows.append(row)
+
+        if row.get("operator_control_confirmed") is True and has_refresh_flag:
+            operator_confirmed_refresh_needed_rows.append(row)
+
+    current_conflicted_count = len(list(ranking_payload.get("conflicted_campaigns") or []))
+    hard_conflict_count = len(hard_conflict_rows)
+    state_mapping_only_count = len(state_mapping_only_rows)
+
+    calibration_warnings = []
+
+    if current_conflicted_count > hard_conflict_count:
+        calibration_warnings.append(
+            "Current conflicted_campaigns count includes soft flags such as gamma refresh or state-mapping differences."
+        )
+
+    if state_mapping_only_count > 0:
+        calibration_warnings.append(
+            "WEIS_GAMMA_MAPS_TO_* appears as a conflict flag even when no hard conflict or gamma-refresh issue is present."
+        )
+
+    if len(refresh_needed_rows) > hard_conflict_count:
+        calibration_warnings.append(
+            "Gamma refresh need is common and should remain a data freshness condition, not a hard conflict."
+        )
+
+    return {
+        "api_fields_enabled": True,
+        "calibration_review_enabled": True,
+        "diagnostic_only": True,
+        "audit_contract": {
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_enabled": 0,
+            "transition_enabled_expected": False,
+            "frontend_impact": "NONE",
+        },
+        "calibration_summary": {
+            "total_campaigns": audit_payload.get("counts", {}).get("total_campaigns"),
+            "full_depth_count": audit_payload.get("counts", {}).get("full_depth_count"),
+            "operator_control_confirmed_count": len(operator_confirmed_rows),
+            "current_conflicted_count": current_conflicted_count,
+            "hard_conflict_count": hard_conflict_count,
+            "gamma_refresh_needed_count": len(refresh_needed_rows),
+            "state_mapping_flag_count": len(state_mapping_rows),
+            "state_mapping_only_count": state_mapping_only_count,
+            "operator_confirmed_hard_conflict_count": len(operator_confirmed_hard_conflict_rows),
+            "operator_confirmed_gamma_refresh_needed_count": len(operator_confirmed_refresh_needed_rows),
+        },
+        "diagnostic_tier_counts": audit_payload.get("diagnostic_tier_counts"),
+        "hard_conflict_flags": sorted(hard_conflict_flags),
+        "refresh_flags": sorted(refresh_flags),
+        "state_mapping_flag_prefix": state_mapping_prefix,
+        "calibration_warnings": calibration_warnings,
+        "recommended_next_action": {
+            "phase": "Phase 11",
+            "name": "Diagnostic Conflict Taxonomy Split",
+            "description": (
+                "Separate conflict_flags into hard_conflict_flags, refresh_required_flags, "
+                "and state_mapping_flags so gamma refresh and state-mapping differences do not inflate hard conflict counts."
+            ),
+            "production_impact": "NONE until explicitly wired later",
+        },
+        "hard_conflict_campaigns": hard_conflict_rows,
+        "gamma_refresh_needed_campaigns": refresh_needed_rows,
+        "state_mapping_only_campaigns": state_mapping_only_rows,
+        "operator_confirmed_hard_conflict_campaigns": operator_confirmed_hard_conflict_rows,
+        "operator_confirmed_gamma_refresh_needed_campaigns": operator_confirmed_refresh_needed_rows,
+    }
+
+
 @router.get("/health")
 def health():
     return {
