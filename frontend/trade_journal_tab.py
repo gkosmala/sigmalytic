@@ -247,8 +247,8 @@ def build_trade_journal_tab(session=None) -> html.Div:
     avg_pnl       = sum(float(t.get("pnl_pct", 0)) for t in closed_trades) / total_trades if total_trades > 0 else 0
     avg_patience  = float(profile.get("avg_patience_score", 0))
     avg_fomo      = float(profile.get("avg_fomo_score", 0))
-    trend         = profile.get("behavioral_trend", "â€”")
-    trend_color   = TEAL_DIM if trend == "IMPROVING" else (YELLOW_DIM if trend == "STABLE" else RED_DIM)
+    trend         = profile.get("behavioral_trend") or "NO DATA"
+    trend_color   = TEAL_DIM if trend == "IMPROVING" else (YELLOW_DIM if trend == "STABLE" else WHITE if trend == "NO DATA" else RED_DIM)
 
     table_header = html.Div([
         *[html.Span(h, style={"fontSize": "9px", "color": MUTED, "fontWeight": "700",
@@ -262,7 +262,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
         # â”€â”€ Behavioral Profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         _card([
-            _section("ðŸ“Š Trader Behavioral Profile"),
+            _section("Trader Behavioral Profile"),
             html.Div([
                 # Stats
                 html.Div([
@@ -313,7 +313,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
         # â”€â”€ Open trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         _card([
-            _section(f"ðŸ“‚ Open Positions ({len(open_trades)})"),
+            _section(f"Open Positions ({len(open_trades)})"),
             table_header,
             *[_trade_row(t, is_open=True) for t in open_trades],
             html.Div("No open positions.", style={"color": MUTED, "fontSize": "12px",
@@ -323,7 +323,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
         # â”€â”€ Closed trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         _card([
-            _section(f"ðŸ“‹ Trade History ({len(closed_trades)})"),
+            _section(f"Trade History ({len(closed_trades)})"),
             table_header,
             *[_trade_row(t, is_open=False) for t in closed_trades],
             html.Div("No closed trades yet.", style={"color": MUTED, "fontSize": "12px",
