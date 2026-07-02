@@ -136,6 +136,106 @@ class CampaignEvidenceBuilder:
         return {}
 
     @classmethod
+    def _build_transition_readiness_evidence(
+        cls,
+        bar_depth_profile: Optional[Dict[str, Any]] = None,
+        operator_control: Optional[Dict[str, Any]] = None,
+        vsa_weis_overlay: Optional[Dict[str, Any]] = None,
+        symbol: str = "",
+        timeframe: str = "DAILY",
+    ) -> Dict[str, Any]:
+        """
+        Build diagnostic transition-readiness evidence.
+
+        This does not change the campaign state engine.
+        It only explains what the current evidence would be ready to support.
+        """
+        bar_depth_profile = bar_depth_profile or cls._bar_depth_profile(0)
+        operator_control = operator_control or {}
+        vsa_weis_overlay = vsa_weis_overlay or {}
+
+        bar_count = int(bar_depth_profile.get("bar_count", 0))
+        depth_tier = str(bar_depth_profile.get("depth_tier", "UNKNOWN"))
+        max_state_by_depth = str(bar_depth_profile.get("max_campaign_state", "NO_CAMPAIGN"))
+
+        operator_confirmed = bool(operator_control.get("operator_control_confirmed", False))
+        operator_evidence_count = int(operator_control.get("evidence_count", 0) or 0)
+        operator_verdict = str(operator_control.get("verdict", "UNKNOWN"))
+
+        vsa_alert = str(vsa_weis_overlay.get("vsa_alert", "NONE"))
+        vsa_bias = str(vsa_weis_overlay.get("vsa_bias", "NEUTRAL"))
+        vsa_evidence = vsa_weis_overlay.get("evidence") if isinstance(vsa_weis_overlay.get("evidence"), dict) else {}
+        vsa_flag_count = int(sum(1 for value in vsa_evidence.values() if bool(value)))
+
+        blocks = []
+
+        if bar_count < 10:
+            blocks.append("INSUFFICIENT_HISTORY_LT_10_BARS")
+        if bar_count < 30:
+            blocks.append("NOT_ENOUGH_DEPTH_FOR_BIRTH_OR_WATCH")
+        if bar_count < 60:
+            blocks.append("NOT_ENOUGH_DEPTH_FOR_OPERATOR_CONTROL_CONFIRMATION")
+        if bar_count < 120:
+            blocks.append("NOT_ENOUGH_DEPTH_FOR_FULL_CAMPAIGN_RANKING")
+        if not operator_confirmed:
+            blocks.append("OPERATOR_CONTROL_NOT_CONFIRMED")
+
+        micro_observation_ready = bool(bar_count >= 10 and (vsa_flag_count >= 1 or operator_evidence_count >= 1))
+        birth_watch_ready = bool(bar_count >= 30 and (vsa_flag_count >= 1 or operator_evidence_count >= 1))
+        confirmation_ready = bool(bar_count >= 60 and operator_evidence_count >= 2)
+        survival_ready = bool(bar_count >= 60 and operator_confirmed)
+        full_campaign_ready = bool(bar_count >= 120 and operator_confirmed)
+
+        if full_campaign_ready:
+            readiness_verdict = "FULL_CAMPAIGN_READY_DIAGNOSTIC"
+            evidence_supported_state = "MATURING"
+        elif survival_ready:
+            readiness_verdict = "SURVIVAL_READY_DIAGNOSTIC"
+            evidence_supported_state = "SURVIVING"
+        elif confirmation_ready:
+            readiness_verdict = "CONFIRMATION_READY_DIAGNOSTIC"
+            evidence_supported_state = "CONFIRMED"
+        elif birth_watch_ready:
+            readiness_verdict = "BIRTH_WATCH_READY_DIAGNOSTIC"
+            evidence_supported_state = "BIRTH"
+        elif micro_observation_ready:
+            readiness_verdict = "MICRO_OBSERVATION_ONLY"
+            evidence_supported_state = "NO_CAMPAIGN"
+        else:
+            readiness_verdict = "NOT_READY"
+            evidence_supported_state = "NO_CAMPAIGN"
+
+        return {
+            "wired_into_evidence_builder": True,
+            "diagnostic_only": True,
+            "state_transition_enabled": False,
+            "score_impact": "NONE",
+            "state_impact": "NONE",
+            "rank_impact": "NONE",
+            "symbol": str(symbol or "").upper(),
+            "timeframe": str(timeframe or "DAILY").upper(),
+            "bar_count": bar_count,
+            "depth_tier": depth_tier,
+            "max_campaign_state_by_depth": max_state_by_depth,
+            "operator_control_confirmed": operator_confirmed,
+            "operator_control_verdict": operator_verdict,
+            "operator_control_evidence_count": operator_evidence_count,
+            "vsa_alert": vsa_alert,
+            "vsa_bias": vsa_bias,
+            "vsa_evidence_count": vsa_flag_count,
+            "readiness_verdict": readiness_verdict,
+            "evidence_supported_state": evidence_supported_state,
+            "readiness_flags": {
+                "micro_observation_ready": micro_observation_ready,
+                "birth_watch_ready": birth_watch_ready,
+                "confirmation_ready": confirmation_ready,
+                "survival_ready": survival_ready,
+                "full_campaign_ready": full_campaign_ready,
+            },
+            "blocking_reasons": blocks,
+        }
+
+    @classmethod
     def _build_operator_control_evidence(
         cls,
         bars: pd.DataFrame,
@@ -1196,6 +1296,9 @@ class CampaignEvidenceBuilder:
             "operator_control_confirmed": bool(operator_control.get("operator_control_confirmed", False)),
             "operator_control_verdict": operator_control.get("verdict"),
             "operator_control_evidence_count": int(operator_control.get("evidence_count", 0)),
+            "transition_readiness_verdict": transition_readiness.get("readiness_verdict"),
+            "transition_evidence_supported_state": transition_readiness.get("evidence_supported_state"),
+            "transition_state_transition_enabled": bool(transition_readiness.get("state_transition_enabled", False)),
             "absorption_bar_count": int(len(absorption_bars)),
             "failing_downside_count": int(failing_downside_count),
             "prior_support": round(prior_support, 4),
@@ -1227,6 +1330,14 @@ class CampaignEvidenceBuilder:
             timeframe=timeframe,
         )
 
+        transition_readiness = cls._build_transition_readiness_evidence(
+            bar_depth_profile=bar_depth_profile,
+            operator_control=operator_control,
+            vsa_weis_overlay=vsa_weis_overlay,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
         weis_gamma_overlay = cls._build_weis_gamma_overlay(
             bars=bars,
             symbol=str(symbol or "").upper(),
@@ -1243,6 +1354,7 @@ class CampaignEvidenceBuilder:
         evidence = {
             "bar_depth": bar_depth_profile,
             "operator_control": operator_control,
+            "transition_readiness": transition_readiness,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
             "wyckoff": {
@@ -1279,6 +1391,36 @@ class CampaignEvidenceBuilder:
 
         return {
             "bar_depth": bar_depth_profile,
+            "transition_readiness": {
+                "wired_into_evidence_builder": True,
+                "diagnostic_only": True,
+                "state_transition_enabled": False,
+                "score_impact": "NONE",
+                "state_impact": "NONE",
+                "rank_impact": "NONE",
+                "bar_count": int(bar_depth_profile.get("bar_count", 0)),
+                "depth_tier": bar_depth_profile.get("depth_tier"),
+                "max_campaign_state_by_depth": bar_depth_profile.get("max_campaign_state"),
+                "operator_control_confirmed": False,
+                "operator_control_verdict": "NO_OPERATOR_CONTROL_EVIDENCE",
+                "operator_control_evidence_count": 0,
+                "transition_readiness_verdict": "NOT_READY",
+                "transition_evidence_supported_state": "NO_CAMPAIGN",
+                "transition_state_transition_enabled": False,
+                "vsa_alert": "NONE",
+                "vsa_bias": "NEUTRAL",
+                "vsa_evidence_count": 0,
+                "readiness_verdict": "NOT_READY",
+                "evidence_supported_state": "NO_CAMPAIGN",
+                "readiness_flags": {
+                    "micro_observation_ready": False,
+                    "birth_watch_ready": False,
+                    "confirmation_ready": False,
+                    "survival_ready": False,
+                    "full_campaign_ready": False,
+                },
+                "blocking_reasons": [reason],
+            },
             "operator_control": {
                 "wired_into_evidence_builder": True,
                 "method_basis": "RAW_OHLCV_TAPE_BEHAVIOR_ONLY",
