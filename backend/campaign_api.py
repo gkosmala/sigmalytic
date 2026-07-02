@@ -638,6 +638,88 @@ def single_symbol_evidence_diagnostics(symbol: str):
     }
 
 
+
+@router.get("/evidence-audit-export")
+def evidence_audit_export():
+    summary_payload = status()
+    diagnostics_payload = evidence_diagnostics()
+    ranking_payload = evidence_diagnostic_rankings()
+
+    ranked_rows = list(ranking_payload.get("ranked_diagnostic_campaigns") or [])
+    operator_rows = list(ranking_payload.get("operator_control_confirmed_ranked") or [])
+    conflicted_rows = list(ranking_payload.get("conflicted_campaigns") or [])
+
+    gamma_refresh_rows = [
+        row for row in ranked_rows
+        if row.get("gamma_refresh_needed") is True
+    ]
+
+    aligned_a_rows = [
+        row for row in ranked_rows
+        if row.get("diagnostic_priority_tier") == "A_DIAGNOSTIC"
+    ]
+
+    blocked_rows = [
+        row for row in ranked_rows
+        if row.get("diagnostic_priority_tier") == "CONFLICT_BLOCKED_DIAGNOSTIC"
+    ]
+
+    tier_counts: Dict[str, int] = {}
+    for row in ranked_rows:
+        tier = str(row.get("diagnostic_priority_tier") or "NONE")
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+
+    symbol_digest = [
+        {
+            "symbol": row.get("symbol"),
+            "campaign_state": row.get("campaign_state"),
+            "diagnostic_priority_tier": row.get("diagnostic_priority_tier"),
+            "diagnostic_priority_score": row.get("diagnostic_priority_score"),
+            "operator_control_confirmed": row.get("operator_control_confirmed"),
+            "operator_control_evidence_count": row.get("operator_control_evidence_count"),
+            "evidence_supported_state": row.get("evidence_supported_state"),
+            "gamma_refresh_needed": row.get("gamma_refresh_needed"),
+            "conflict_flags": row.get("conflict_flags"),
+        }
+        for row in ranked_rows
+    ]
+
+    return {
+        "api_fields_enabled": True,
+        "audit_export_enabled": True,
+        "diagnostic_only": True,
+        "audit_contract": {
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_enabled": 0,
+            "transition_enabled_expected": False,
+            "frontend_impact": "NONE",
+            "operator_control_basis": "RAW_OHLCV_TAPE_BEHAVIOR_ONLY",
+            "operator_control_not_derived_from_scores": True,
+        },
+        "counts": {
+            "total_campaigns": ranking_payload.get("total_campaigns"),
+            "full_depth_count": ranking_payload.get("full_depth_count"),
+            "operator_control_confirmed_count": ranking_payload.get("operator_control_confirmed_count"),
+            "aligned_a_diagnostic_count": len(aligned_a_rows),
+            "gamma_refresh_needed_count": len(gamma_refresh_rows),
+            "conflicted_count": len(conflicted_rows),
+            "conflict_blocked_count": len(blocked_rows),
+        },
+        "diagnostic_tier_counts": tier_counts,
+        "symbol_digest": symbol_digest,
+        "aligned_a_diagnostic_campaigns": aligned_a_rows,
+        "operator_control_confirmed_campaigns": operator_rows,
+        "gamma_refresh_needed_campaigns": gamma_refresh_rows,
+        "conflict_blocked_campaigns": blocked_rows,
+        "conflicted_campaigns": conflicted_rows,
+        "summary_payload": summary_payload,
+        "diagnostics_payload": diagnostics_payload,
+        "ranking_payload": ranking_payload,
+    }
+
+
 @router.get("/health")
 def health():
     return {
