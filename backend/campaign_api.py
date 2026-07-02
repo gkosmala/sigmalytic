@@ -504,6 +504,140 @@ def evidence_diagnostic_rankings():
     }
 
 
+
+@router.get("/evidence-diagnostics/{symbol}")
+def single_symbol_evidence_diagnostics(symbol: str):
+    requested_symbol = str(symbol or "").upper().strip()
+
+    ranking_payload = evidence_diagnostic_rankings()
+    rows = list(ranking_payload.get("ranked_diagnostic_campaigns") or [])
+
+    match = None
+    for row in rows:
+        if str(row.get("symbol") or "").upper() == requested_symbol:
+            match = row
+            break
+
+    available_symbols = [
+        str(row.get("symbol") or "")
+        for row in rows
+        if row.get("symbol")
+    ]
+
+    if match is None:
+        return {
+            "found": False,
+            "symbol": requested_symbol,
+            "diagnostic_only": True,
+            "message": "Symbol not found in full-depth evidence diagnostics.",
+            "available_full_depth_symbols": available_symbols,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_enabled": 0,
+            "transition_enabled_expected": False,
+        }
+
+    weis_gamma_phase = _as_dict(match.get("weis_gamma_phase"))
+    conflict_flags = list(match.get("conflict_flags") or [])
+
+    operator_confirmed = bool(match.get("operator_control_confirmed"))
+    transition_enabled = bool(match.get("state_transition_enabled"))
+    gamma_fresh = bool(weis_gamma_phase.get("gamma_data_fresh"))
+
+    operator_summary = "Operator control is evidenced from raw OHLCV tape behavior." if operator_confirmed else "Operator control is not confirmed by the current raw OHLCV evidence threshold."
+
+    if "PHASE_PERMISSION_BLOCKED" in conflict_flags:
+        campaign_explanation = "Diagnostic conflict: operator/control evidence exists or partial evidence exists, but Weis/Gamma phase permission is blocked."
+    elif "DOWNSIDE_WEIS_GAMMA_DIRECTION" in conflict_flags:
+        campaign_explanation = "Diagnostic conflict: Weis/Gamma directional evidence is downside or non-confirmatory."
+    elif operator_confirmed and gamma_fresh:
+        campaign_explanation = "Diagnostic alignment: operator control is confirmed and Gamma is fresh."
+    elif operator_confirmed and not gamma_fresh:
+        campaign_explanation = "Operator control is confirmed, but Gamma refresh is required before stronger confirmation."
+    elif match.get("transition_readiness_verdict") == "CONFIRMATION_READY_DIAGNOSTIC":
+        campaign_explanation = "Watchlist diagnostic: confirmation evidence exists, but operator control is not confirmed."
+    else:
+        campaign_explanation = "Lower-priority diagnostic: full-depth data exists, but confirmation is incomplete."
+
+    failed_or_missing_items = []
+
+    if not operator_confirmed:
+        failed_or_missing_items.append("operator_control_confirmed")
+    if not gamma_fresh:
+        failed_or_missing_items.append("gamma_data_fresh")
+    if conflict_flags:
+        failed_or_missing_items.append("conflict_flags_present")
+    if transition_enabled:
+        failed_or_missing_items.append("unexpected_transition_enabled")
+
+    return {
+        "found": True,
+        "symbol": requested_symbol,
+        "api_fields_enabled": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_enabled": 0,
+        "transition_enabled_expected": False,
+        "single_symbol_summary": {
+            "campaign_state": match.get("campaign_state"),
+            "rank_bucket": match.get("rank_bucket"),
+            "timeframe": match.get("timeframe"),
+            "bar_count": match.get("bar_count"),
+            "depth_tier": match.get("depth_tier"),
+            "max_campaign_state": match.get("max_campaign_state"),
+            "diagnostic_priority_tier": match.get("diagnostic_priority_tier"),
+            "diagnostic_priority_score": match.get("diagnostic_priority_score"),
+            "campaign_explanation": campaign_explanation,
+        },
+        "operator_control_explanation": {
+            "summary": operator_summary,
+            "confirmed": operator_confirmed,
+            "verdict": match.get("operator_control_verdict"),
+            "evidence_count": match.get("operator_control_evidence_count"),
+            "depth_requirement_met": match.get("operator_control_depth_requirement_met"),
+            "method_basis": match.get("operator_control_method_basis"),
+            "not_derived_from_scores": match.get("operator_control_not_derived_from_scores"),
+        },
+        "transition_readiness_explanation": {
+            "readiness_verdict": match.get("transition_readiness_verdict"),
+            "evidence_supported_state": match.get("evidence_supported_state"),
+            "state_transition_enabled": match.get("state_transition_enabled"),
+            "transition_diagnostic_only": match.get("transition_diagnostic_only"),
+            "explanation": "Transition readiness is diagnostic only. It does not move campaign state.",
+        },
+        "weis_gamma_explanation": {
+            "risk_state": weis_gamma_phase.get("risk_state"),
+            "weis_phase": weis_gamma_phase.get("weis_phase"),
+            "fusion_state": weis_gamma_phase.get("fusion_state"),
+            "phase_reason": weis_gamma_phase.get("phase_reason"),
+            "router_state": weis_gamma_phase.get("router_state"),
+            "phase_permission": weis_gamma_phase.get("phase_permission"),
+            "phase_direction": weis_gamma_phase.get("phase_direction"),
+            "wave_direction": weis_gamma_phase.get("wave_direction"),
+            "fusion_direction": weis_gamma_phase.get("fusion_direction"),
+            "gamma_data_fresh": gamma_fresh,
+            "gamma_refresh_needed": match.get("gamma_refresh_needed"),
+            "phase_confidence": weis_gamma_phase.get("phase_confidence"),
+            "wave_coherence_score": weis_gamma_phase.get("wave_coherence_score"),
+            "mapped_campaign_state": weis_gamma_phase.get("mapped_campaign_state"),
+            "dominant_wave_direction": weis_gamma_phase.get("dominant_wave_direction"),
+            "next_possible_phase": weis_gamma_phase.get("next_possible_phase"),
+            "transition_hint": weis_gamma_phase.get("transition_hint"),
+        },
+        "diagnostic_priority_explanation": {
+            "tier": match.get("diagnostic_priority_tier"),
+            "score": match.get("diagnostic_priority_score"),
+            "reason": match.get("diagnostic_priority_reason"),
+            "conflict_flags": conflict_flags,
+            "failed_or_missing_items": failed_or_missing_items,
+        },
+        "raw_diagnostic_row": match,
+    }
+
+
 @router.get("/health")
 def health():
     return {
