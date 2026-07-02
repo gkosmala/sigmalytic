@@ -26,7 +26,7 @@ BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL_DIM  = "#34d399"; RED_DIM   = "#f87171"; YELLOW_DIM = "#fde68a"
-BLUE_DIM  = "#93c5fd"; MUTED     = "#64748b"; TEXT = "#94a3b8"
+BLUE_DIM  = "#93c5fd"; MUTED     = "#ffffff"; TEXT = "#ffffff"
 WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; PURPLE = "#a78bfa"
 
 GRADE_COLORS = {
