@@ -1,4 +1,4 @@
-﻿"""
+"""
 backend/campaign_engine/campaign_evidence_builder.py
 
 Sigmalytic V2
