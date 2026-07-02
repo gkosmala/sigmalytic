@@ -255,6 +255,100 @@ def _evidence_presence_counts(campaigns: List[Dict[str, Any]]) -> Dict[str, int]
 
 
 
+
+@router.get("/evidence-diagnostics")
+def evidence_diagnostics():
+    campaigns = _store().get_active_campaigns()
+    campaigns = _attach_weis_gamma_summaries(campaigns)
+
+    full_depth_rows = []
+
+    for campaign in campaigns:
+        evidence = _as_dict(campaign.get("evidence"))
+        bar_depth = _as_dict(evidence.get("bar_depth"))
+
+        if not bar_depth:
+            continue
+
+        operator_control = _as_dict(evidence.get("operator_control"))
+        transition_readiness = _as_dict(evidence.get("transition_readiness"))
+        raw_metrics = _as_dict(evidence.get("raw_metrics"))
+        vsa_weis_overlay = _as_dict(evidence.get("vsa_weis_overlay"))
+        weis_gamma = _as_dict(evidence.get("weis_gamma"))
+
+        operator_confirmed = bool(operator_control.get("operator_control_confirmed"))
+        transition_enabled = bool(transition_readiness.get("state_transition_enabled"))
+
+        row = {
+            "symbol": campaign.get("symbol"),
+            "campaign_state": (
+                campaign.get("campaign_state")
+                or campaign.get("current_state")
+                or campaign.get("state_enum")
+                or campaign.get("state")
+                or raw_metrics.get("campaign_state")
+            ),
+            "rank_bucket": (
+                campaign.get("rank_bucket")
+                or campaign.get("campaign_rank_bucket")
+                or weis_gamma.get("rank_bucket")
+            ),
+            "timeframe": (
+                campaign.get("timeframe")
+                or evidence.get("timeframe")
+                or raw_metrics.get("timeframe")
+            ),
+            "bar_count": bar_depth.get("bar_count"),
+            "depth_tier": bar_depth.get("depth_tier"),
+            "max_campaign_state": bar_depth.get("max_campaign_state"),
+            "bar_depth_diagnostic_key": bar_depth.get("diagnostic_key"),
+            "operator_control_confirmed": operator_confirmed,
+            "operator_control_verdict": operator_control.get("verdict"),
+            "operator_control_evidence_count": operator_control.get("evidence_count"),
+            "operator_control_depth_requirement_met": operator_control.get("depth_requirement_met"),
+            "operator_control_method_basis": operator_control.get("method_basis"),
+            "operator_control_not_derived_from_scores": operator_control.get("not_derived_from_scores"),
+            "transition_readiness_verdict": transition_readiness.get("readiness_verdict"),
+            "evidence_supported_state": transition_readiness.get("evidence_supported_state"),
+            "state_transition_enabled": transition_enabled,
+            "transition_diagnostic_only": transition_readiness.get("diagnostic_only"),
+            "vsa_weis_phase": vsa_weis_overlay.get("phase"),
+            "vsa_weis_verdict": vsa_weis_overlay.get("verdict"),
+            "weis_gamma_phase": weis_gamma.get("phase"),
+            "weis_gamma_rank_bucket": weis_gamma.get("rank_bucket"),
+        }
+
+        full_depth_rows.append(row)
+
+    full_depth_rows.sort(
+        key=lambda row: (
+            not bool(row.get("operator_control_confirmed")),
+            -(int(row.get("operator_control_evidence_count") or 0)),
+            str(row.get("symbol") or ""),
+        )
+    )
+
+    operator_confirmed_rows = [
+        row for row in full_depth_rows
+        if row.get("operator_control_confirmed") is True
+    ]
+
+    return {
+        "api_fields_enabled": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_enabled": 0,
+        "transition_enabled_expected": False,
+        "total_campaigns": len(campaigns),
+        "full_depth_count": len(full_depth_rows),
+        "operator_control_confirmed_count": len(operator_confirmed_rows),
+        "full_depth_campaigns": full_depth_rows,
+        "operator_control_confirmed_campaigns": operator_confirmed_rows,
+    }
+
+
 @router.get("/health")
 def health():
     return {
