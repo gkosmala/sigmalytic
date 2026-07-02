@@ -135,6 +135,126 @@ class CampaignEvidenceBuilder:
                 return {}
         return {}
 
+    @staticmethod
+    def _bar_depth_profile(bar_count: int) -> Dict[str, Any]:
+        """
+        Classify historical bar depth for campaign evidence eligibility.
+
+        Informational diagnostics only:
+        - no score impact
+        - no state impact
+        - no rank impact
+        """
+        try:
+            count = int(bar_count or 0)
+        except Exception:
+            count = 0
+
+        count = max(0, count)
+
+        base = {
+            "bar_count": count,
+            "score_impact": "NONE",
+            "state_impact": "NONE",
+            "rank_impact": "NONE",
+        }
+
+        if count < 10:
+            return {
+                **base,
+                "eligible": False,
+                "depth_tier": "INSUFFICIENT_HISTORY",
+                "diagnostic_key": "bar_depth_insufficient",
+                "observation_mode": "REJECT",
+                "max_campaign_state": "NO_CAMPAIGN",
+                "ranking_eligible": False,
+                "full_campaign_eligible": False,
+                "allowed_evidence": [],
+                "reason": "Fewer than 10 clean bars; insufficient history for campaign evidence.",
+            }
+
+        if count < 30:
+            return {
+                **base,
+                "eligible": True,
+                "depth_tier": "MICRO_ONLY",
+                "diagnostic_key": "bar_depth_micro",
+                "observation_mode": "MICRO_EFFORT_RESULT_ONLY",
+                "max_campaign_state": "NO_CAMPAIGN",
+                "ranking_eligible": False,
+                "full_campaign_eligible": False,
+                "allowed_evidence": [
+                    "vsa_micro_observation",
+                    "effort_vs_result_micro",
+                ],
+                "reason": "10-29 clean bars; allow only micro VSA / Effort-vs-Result observation, not full campaign state.",
+            }
+
+        if count < 60:
+            return {
+                **base,
+                "eligible": True,
+                "depth_tier": "ABSORPTION_WATCH",
+                "diagnostic_key": "bar_depth_absorption",
+                "observation_mode": "ABSORPTION_SPRING_UPTHRUST_WATCH",
+                "max_campaign_state": "BIRTH",
+                "ranking_eligible": False,
+                "full_campaign_eligible": False,
+                "allowed_evidence": [
+                    "vsa_micro_observation",
+                    "effort_vs_result",
+                    "absorption_watch",
+                    "spring_watch",
+                    "upthrust_watch",
+                    "birth_candidate",
+                ],
+                "reason": "30-59 clean bars; enough for watch/birth evidence, not enough for full campaign ranking.",
+            }
+
+        if count < 120:
+            return {
+                **base,
+                "eligible": True,
+                "depth_tier": "SURVIVAL_OPERATOR_CONTROL",
+                "diagnostic_key": "bar_depth_survival",
+                "observation_mode": "SURVIVAL_AND_OPERATOR_CONTROL_EVIDENCE",
+                "max_campaign_state": "SURVIVING",
+                "ranking_eligible": False,
+                "full_campaign_eligible": False,
+                "allowed_evidence": [
+                    "vsa_micro_observation",
+                    "effort_vs_result",
+                    "absorption",
+                    "spring_upthrust_test",
+                    "operator_control_evidence",
+                    "campaign_survival_evidence",
+                ],
+                "reason": "60-119 clean bars; enough for survival/operator-control evidence, not enough for full campaign ranking.",
+            }
+
+        return {
+            **base,
+            "eligible": True,
+            "depth_tier": "FULL_CAMPAIGN",
+            "diagnostic_key": "bar_depth_full_campaign",
+            "observation_mode": "FULL_WYCKOFF_LIVERMORE_WEIS_CAMPAIGN",
+            "max_campaign_state": "MATURING",
+            "ranking_eligible": True,
+            "full_campaign_eligible": True,
+            "allowed_evidence": [
+                "vsa_micro_observation",
+                "effort_vs_result",
+                "wyckoff_structure",
+                "livermore_pivotal_progression",
+                "weis_wave_confirmation",
+                "operator_control_evidence",
+                "campaign_survival_evidence",
+                "cause_and_effect",
+                "full_campaign_ranking",
+            ],
+            "reason": "120+ clean bars; eligible for full Wyckoff / Livermore / Weis campaign evidence and ranking diagnostics.",
+        }
+
     @classmethod
     def _engine_build(
         cls,
@@ -682,12 +802,14 @@ class CampaignEvidenceBuilder:
         """
 
         if df is None or df.empty or len(df) < 30:
-            return cls.empty(symbol=symbol, timeframe=timeframe, reason="INSUFFICIENT_BARS")
+            return cls.empty(symbol=symbol, timeframe=timeframe, reason="INSUFFICIENT_BARS", bar_count=0)
 
         bars = cls._prepare(df)
+        bar_count = int(len(bars))
+        bar_depth_profile = cls._bar_depth_profile(bar_count)
 
         if len(bars) < 30:
-            return cls.empty(symbol=symbol, timeframe=timeframe, reason="INSUFFICIENT_CLEAN_BARS")
+            return cls.empty(symbol=symbol, timeframe=timeframe, reason="INSUFFICIENT_CLEAN_BARS", bar_count=bar_count, bar_depth_profile=bar_depth_profile)
 
         recent = bars.tail(min(lookback, len(bars))).copy()
         last20 = bars.tail(20).copy()
@@ -884,6 +1006,12 @@ class CampaignEvidenceBuilder:
         follow_through = bool(last5_return > 0.03 and close_now >= cls._safe_float(last5["close"].max()) * 0.98)
 
         raw_metrics = {
+            "bar_count": int(len(bars)),
+            "bar_depth_tier": bar_depth_profile.get("depth_tier"),
+            "bar_depth_diagnostic_key": bar_depth_profile.get("diagnostic_key"),
+            "max_campaign_state_by_depth": bar_depth_profile.get("max_campaign_state"),
+            "bar_depth_ranking_eligible": bool(bar_depth_profile.get("ranking_eligible", False)),
+            "bar_depth_full_campaign_eligible": bool(bar_depth_profile.get("full_campaign_eligible", False)),
             "absorption_bar_count": int(len(absorption_bars)),
             "failing_downside_count": int(failing_downside_count),
             "prior_support": round(prior_support, 4),
@@ -922,6 +1050,7 @@ class CampaignEvidenceBuilder:
         )
 
         evidence = {
+            "bar_depth": bar_depth_profile,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
             "wyckoff": {
@@ -952,8 +1081,12 @@ class CampaignEvidenceBuilder:
         return evidence
 
     @staticmethod
-    def empty(symbol: str = "", timeframe: str = "DAILY", reason: str = "EMPTY") -> Dict[str, Any]:
+    def empty(symbol: str = "", timeframe: str = "DAILY", reason: str = "EMPTY", bar_count: Optional[int] = None, bar_depth_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if bar_depth_profile is None:
+            bar_depth_profile = CampaignEvidenceBuilder._bar_depth_profile(0 if bar_count is None else bar_count)
+
         return {
+            "bar_depth": bar_depth_profile,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
             "wyckoff": {
@@ -1001,5 +1134,11 @@ class CampaignEvidenceBuilder:
             },
             "raw_metrics": {
                 "reason": reason,
+                "bar_count": int(bar_depth_profile.get("bar_count", 0)),
+                "bar_depth_tier": bar_depth_profile.get("depth_tier"),
+                "bar_depth_diagnostic_key": bar_depth_profile.get("diagnostic_key"),
+                "max_campaign_state_by_depth": bar_depth_profile.get("max_campaign_state"),
+                "bar_depth_ranking_eligible": bool(bar_depth_profile.get("ranking_eligible", False)),
+                "bar_depth_full_campaign_eligible": bool(bar_depth_profile.get("full_campaign_eligible", False)),
             },
         }
