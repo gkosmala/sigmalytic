@@ -135,6 +135,187 @@ class CampaignEvidenceBuilder:
                 return {}
         return {}
 
+    @classmethod
+    def _build_operator_control_evidence(
+        cls,
+        bars: pd.DataFrame,
+        bar_depth_profile: Optional[Dict[str, Any]] = None,
+        symbol: str = "",
+        timeframe: str = "DAILY",
+    ) -> Dict[str, Any]:
+        """
+        Independent operator-control evidence from raw OHLCV tape behavior only.
+
+        Diagnostics only:
+        - no score impact
+        - no state impact
+        - no rank impact
+        - not derived from MCI, birth_score, survival_score, or ranking score
+        """
+        base = {
+            "wired_into_evidence_builder": True,
+            "method_basis": "RAW_OHLCV_TAPE_BEHAVIOR_ONLY",
+            "not_derived_from_scores": True,
+            "score_impact": "NONE",
+            "state_impact": "NONE",
+            "rank_impact": "NONE",
+        }
+
+        if bar_depth_profile is None:
+            bar_depth_profile = cls._bar_depth_profile(0 if bars is None else len(bars))
+
+        bar_count = int(bar_depth_profile.get("bar_count", 0))
+
+        flags = {
+            "absorption_against_resistance": False,
+            "supply_failure": False,
+            "high_volume_controlled_spread": False,
+            "higher_lows_after_tests": False,
+            "recapture_after_breakdown": False,
+            "shortening_downside_thrust": False,
+            "demand_efficiency_dominates_supply": False,
+            "survives_adverse_tests": False,
+        }
+
+        if bars is None or bars.empty or len(bars) < 30:
+            return {
+                **base,
+                "status": "INSUFFICIENT_DEPTH" if bars is not None and not bars.empty else "EMPTY",
+                "symbol": str(symbol or "").upper(),
+                "timeframe": str(timeframe or "DAILY").upper(),
+                "bar_count": bar_count,
+                "minimum_depth_required": 60,
+                "depth_requirement_met": False,
+                "operator_control_confirmed": False,
+                "verdict": "INSUFFICIENT_OPERATOR_CONTROL_HISTORY",
+                "evidence_count": 0,
+                "evidence_flags": flags,
+            }
+
+        recent = bars.tail(min(60, len(bars))).copy()
+        last20 = bars.tail(min(20, len(bars))).copy()
+        last10 = bars.tail(min(10, len(bars))).copy()
+        last5 = bars.tail(min(5, len(bars))).copy()
+
+        close = pd.to_numeric(bars["close"], errors="coerce")
+        high = pd.to_numeric(bars["high"], errors="coerce")
+        low = pd.to_numeric(bars["low"], errors="coerce")
+        volume = pd.to_numeric(bars["volume"], errors="coerce")
+
+        recent_close = pd.to_numeric(recent["close"], errors="coerce")
+        recent_high = pd.to_numeric(recent["high"], errors="coerce")
+        recent_low = pd.to_numeric(recent["low"], errors="coerce")
+        recent_volume = pd.to_numeric(recent["volume"], errors="coerce")
+
+        spread = (high - low).replace(0, np.nan)
+        close_location = ((close - low) / spread).clip(lower=0, upper=1).fillna(0.5)
+        recent_spread = (recent_high - recent_low).replace(0, np.nan)
+        recent_close_location = ((recent_close - recent_low) / recent_spread).clip(lower=0, upper=1).fillna(0.5)
+
+        avg_volume_20 = cls._safe_float(volume.tail(20).mean(), 0.0)
+        avg_spread_20 = cls._safe_float(spread.tail(20).mean(), 0.0)
+        latest_volume = cls._safe_float(volume.iloc[-1], 0.0)
+        latest_spread = cls._safe_float(spread.iloc[-1], 0.0)
+        latest_close_location = cls._safe_float(close_location.iloc[-1], 0.5)
+
+        flags["high_volume_controlled_spread"] = bool(
+            avg_volume_20 > 0
+            and avg_spread_20 > 0
+            and latest_volume >= avg_volume_20 * 1.25
+            and latest_spread <= avg_spread_20 * 1.15
+            and latest_close_location >= 0.55
+        )
+
+        resistance_high = cls._safe_float(high.tail(min(40, len(bars))).max(), 0.0)
+        near_resistance = recent_high >= resistance_high * 0.97 if resistance_high else recent_high * 0 == 1
+        absorption_mask = (
+            (recent_volume >= cls._safe_float(recent_volume.mean(), 0.0) * 1.15)
+            & (recent_spread <= cls._safe_float(recent_spread.mean(), 0.0) * 1.15)
+            & (recent_close_location >= 0.50)
+            & near_resistance
+        )
+        flags["absorption_against_resistance"] = bool(int(absorption_mask.sum()) >= 3)
+
+        recent_body = recent_close.diff().fillna(0.0)
+        down_mask = recent_body < 0
+        up_mask = recent_body > 0
+
+        down_spread = recent_spread[down_mask]
+        down_volume = recent_volume[down_mask]
+        down_close_location = recent_close_location[down_mask]
+
+        flags["supply_failure"] = bool(
+            len(down_spread) >= 3
+            and cls._safe_float(down_volume.mean(), 0.0) >= cls._safe_float(recent_volume.mean(), 0.0) * 0.95
+            and cls._safe_float(down_close_location.mean(), 0.5) >= 0.38
+            and cls._safe_float(recent_close.iloc[-1], 0.0) >= cls._safe_float(recent_close.iloc[0], 0.0) * 0.97
+        )
+
+        recent_low_5 = cls._safe_float(pd.to_numeric(last5["low"], errors="coerce").min(), 0.0)
+        prior_low_20 = cls._safe_float(pd.to_numeric(bars.tail(25).head(20)["low"], errors="coerce").min(), 0.0) if len(bars) >= 25 else cls._safe_float(low.tail(20).min(), 0.0)
+        flags["higher_lows_after_tests"] = bool(recent_low_5 > prior_low_20 * 1.005) if prior_low_20 else False
+
+        support_40 = cls._safe_float(low.tail(min(40, len(bars))).min(), 0.0)
+        last10_low = cls._safe_float(pd.to_numeric(last10["low"], errors="coerce").min(), 0.0)
+        close_now = cls._safe_float(close.iloc[-1], 0.0)
+        flags["recapture_after_breakdown"] = bool(support_40 and last10_low <= support_40 * 1.01 and close_now >= support_40 * 1.03)
+
+        recent_down_spreads = down_spread.dropna()
+        if len(recent_down_spreads) >= 6:
+            early_down = cls._safe_float(recent_down_spreads.head(len(recent_down_spreads) // 2).mean(), 0.0)
+            late_down = cls._safe_float(recent_down_spreads.tail(len(recent_down_spreads) // 2).mean(), 0.0)
+            flags["shortening_downside_thrust"] = bool(early_down > 0 and late_down <= early_down * 0.85)
+
+        up_progress = cls._safe_float(recent_body[up_mask].sum(), 0.0)
+        down_progress = abs(cls._safe_float(recent_body[down_mask].sum(), 0.0))
+        up_volume = cls._safe_float(recent_volume[up_mask].sum(), 0.0)
+        down_volume_total = cls._safe_float(recent_volume[down_mask].sum(), 0.0)
+
+        demand_efficiency = up_progress / up_volume if up_volume else 0.0
+        supply_efficiency = down_progress / down_volume_total if down_volume_total else 0.0
+
+        flags["demand_efficiency_dominates_supply"] = bool(
+            demand_efficiency > 0
+            and supply_efficiency > 0
+            and demand_efficiency >= supply_efficiency * 1.15
+        )
+
+        last10_close_min = cls._safe_float(pd.to_numeric(last10["close"], errors="coerce").min(), 0.0)
+        last20_low_min = cls._safe_float(pd.to_numeric(last20["low"], errors="coerce").min(), 0.0)
+        flags["survives_adverse_tests"] = bool(
+            last20_low_min
+            and last10_low <= last20_low_min * 1.02
+            and close_now >= last10_close_min * 1.03
+            and latest_close_location >= 0.45
+        )
+
+        evidence_count = int(sum(1 for value in flags.values() if value))
+        depth_requirement_met = bool(bar_count >= 60)
+        operator_control_confirmed = bool(depth_requirement_met and evidence_count >= 3)
+
+        return {
+            **base,
+            "status": "OK",
+            "symbol": str(symbol or "").upper(),
+            "timeframe": str(timeframe or "DAILY").upper(),
+            "bar_count": bar_count,
+            "minimum_depth_required": 60,
+            "depth_requirement_met": depth_requirement_met,
+            "operator_control_confirmed": operator_control_confirmed,
+            "verdict": "OPERATOR_CONTROL_EVIDENCED" if operator_control_confirmed else "OPERATOR_CONTROL_NOT_CONFIRMED",
+            "evidence_count": evidence_count,
+            "evidence_flags": flags,
+            "raw_measurements": {
+                "avg_volume_20": avg_volume_20,
+                "avg_spread_20": avg_spread_20,
+                "latest_volume": latest_volume,
+                "latest_spread": latest_spread,
+                "latest_close_location": latest_close_location,
+                "demand_efficiency": demand_efficiency,
+                "supply_efficiency": supply_efficiency,
+            },
+        }
+
     @staticmethod
     def _bar_depth_profile(bar_count: int) -> Dict[str, Any]:
         """
@@ -1012,6 +1193,9 @@ class CampaignEvidenceBuilder:
             "max_campaign_state_by_depth": bar_depth_profile.get("max_campaign_state"),
             "bar_depth_ranking_eligible": bool(bar_depth_profile.get("ranking_eligible", False)),
             "bar_depth_full_campaign_eligible": bool(bar_depth_profile.get("full_campaign_eligible", False)),
+            "operator_control_confirmed": bool(operator_control.get("operator_control_confirmed", False)),
+            "operator_control_verdict": operator_control.get("verdict"),
+            "operator_control_evidence_count": int(operator_control.get("evidence_count", 0)),
             "absorption_bar_count": int(len(absorption_bars)),
             "failing_downside_count": int(failing_downside_count),
             "prior_support": round(prior_support, 4),
@@ -1029,6 +1213,13 @@ class CampaignEvidenceBuilder:
             "range_position_40": round(range_position, 6),
             "last5_return": round(last5_return, 6),
         }
+
+        operator_control = cls._build_operator_control_evidence(
+            bars=bars,
+            bar_depth_profile=bar_depth_profile,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
 
         vsa_weis_overlay = cls._build_vsa_weis_overlay(
             bars=bars,
@@ -1051,6 +1242,7 @@ class CampaignEvidenceBuilder:
 
         evidence = {
             "bar_depth": bar_depth_profile,
+            "operator_control": operator_control,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
             "wyckoff": {
@@ -1087,6 +1279,32 @@ class CampaignEvidenceBuilder:
 
         return {
             "bar_depth": bar_depth_profile,
+            "operator_control": {
+                "wired_into_evidence_builder": True,
+                "method_basis": "RAW_OHLCV_TAPE_BEHAVIOR_ONLY",
+                "not_derived_from_scores": True,
+                "score_impact": "NONE",
+                "state_impact": "NONE",
+                "rank_impact": "NONE",
+                "status": "EMPTY",
+                "reason": reason,
+                "bar_count": int(bar_depth_profile.get("bar_count", 0)),
+                "minimum_depth_required": 60,
+                "depth_requirement_met": False,
+                "operator_control_confirmed": False,
+                "verdict": "NO_OPERATOR_CONTROL_EVIDENCE",
+                "evidence_count": 0,
+                "evidence_flags": {
+                    "absorption_against_resistance": False,
+                    "supply_failure": False,
+                    "high_volume_controlled_spread": False,
+                    "higher_lows_after_tests": False,
+                    "recapture_after_breakdown": False,
+                    "shortening_downside_thrust": False,
+                    "demand_efficiency_dominates_supply": False,
+                    "survives_adverse_tests": False,
+                },
+            },
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
             "wyckoff": {
@@ -1140,5 +1358,8 @@ class CampaignEvidenceBuilder:
                 "max_campaign_state_by_depth": bar_depth_profile.get("max_campaign_state"),
                 "bar_depth_ranking_eligible": bool(bar_depth_profile.get("ranking_eligible", False)),
                 "bar_depth_full_campaign_eligible": bool(bar_depth_profile.get("full_campaign_eligible", False)),
+                "operator_control_confirmed": False,
+                "operator_control_verdict": "NO_OPERATOR_CONTROL_EVIDENCE",
+                "operator_control_evidence_count": 0,
             },
         }
