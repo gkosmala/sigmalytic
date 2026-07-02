@@ -74,6 +74,11 @@ try:
 except Exception:
     WeisGammaRankingEngine = None
 
+try:
+    from backend.research_engine.vsa_weis_overlay import evaluate_vsa_weis_overlay
+except Exception:
+    evaluate_vsa_weis_overlay = None
+
 
 class CampaignEvidenceBuilder:
     @staticmethod
@@ -273,6 +278,118 @@ class CampaignEvidenceBuilder:
                 "engine": "symbol_behavior_profile_fallback",
                 "error": str(exc),
             }
+
+    @classmethod
+    def _build_vsa_weis_overlay(
+        cls,
+        bars: pd.DataFrame,
+        symbol: str = "",
+        timeframe: str = "DAILY",
+    ) -> Dict[str, Any]:
+        """
+        Build additive VSA/Weis microstructure evidence.
+
+        Informational only:
+        - no score impact
+        - no state impact
+        - no rank impact
+        - does not replace existing Wyckoff, Livermore, Weis, or Gamma logic
+        """
+        base = {
+            "wired_into_evidence_builder": True,
+            "score_impact": "NONE",
+            "state_impact": "NONE",
+            "rank_impact": "NONE",
+        }
+
+        default_evidence = {
+            "buying_climax": False,
+            "upthrust_supply": False,
+            "no_supply_test": False,
+            "no_demand_test": False,
+            "effort_vs_result_divergence": False,
+        }
+
+        if evaluate_vsa_weis_overlay is None:
+            return {
+                **base,
+                "status": "NOT_AVAILABLE",
+                "engine": "evaluate_vsa_weis_overlay",
+                "warning": "VSA/Weis overlay import unavailable.",
+                "vsa_alert": "NONE",
+                "vsa_bias": "NEUTRAL",
+                "evidence": default_evidence,
+            }
+
+        if bars is None or bars.empty:
+            return {
+                **base,
+                "status": "EMPTY",
+                "reason": "NO_BARS",
+                "vsa_alert": "NONE",
+                "vsa_bias": "NEUTRAL",
+                "evidence": default_evidence,
+            }
+
+        call_patterns = [
+            ((bars,), {"symbol": symbol, "timeframe": timeframe}),
+            ((), {"bars": bars, "symbol": symbol, "timeframe": timeframe}),
+            ((), {"df": bars, "symbol": symbol, "timeframe": timeframe}),
+            ((bars,), {"symbol": symbol}),
+            ((bars, symbol), {}),
+            ((bars, symbol, timeframe), {}),
+            ((bars,), {}),
+        ]
+
+        last_type_error = None
+
+        for args, kwargs in call_patterns:
+            try:
+                raw = cls._as_dict(evaluate_vsa_weis_overlay(*args, **kwargs))
+                nested = raw.get("evidence") if isinstance(raw.get("evidence"), dict) else {}
+
+                return {
+                    **base,
+                    "status": raw.get("status", "OK"),
+                    "engine": "evaluate_vsa_weis_overlay",
+                    "vsa_alert": raw.get("vsa_alert", "NONE"),
+                    "vsa_bias": raw.get("vsa_bias", "NEUTRAL"),
+                    "evidence": {
+                        "buying_climax": bool(raw.get("buying_climax", nested.get("buying_climax", False))),
+                        "upthrust_supply": bool(raw.get("upthrust_supply", nested.get("upthrust_supply", False))),
+                        "no_supply_test": bool(raw.get("no_supply_test", nested.get("no_supply_test", False))),
+                        "no_demand_test": bool(raw.get("no_demand_test", nested.get("no_demand_test", False))),
+                        "effort_vs_result_divergence": bool(
+                            raw.get(
+                                "effort_vs_result_divergence",
+                                nested.get("effort_vs_result_divergence", False),
+                            )
+                        ),
+                    },
+                }
+            except TypeError as exc:
+                last_type_error = exc
+                continue
+            except Exception as exc:
+                return {
+                    **base,
+                    "status": "ERROR",
+                    "engine": "evaluate_vsa_weis_overlay",
+                    "error": str(exc),
+                    "vsa_alert": "NONE",
+                    "vsa_bias": "NEUTRAL",
+                    "evidence": default_evidence,
+                }
+
+        return {
+            **base,
+            "status": "NO_COMPATIBLE_CALL_SIGNATURE",
+            "engine": "evaluate_vsa_weis_overlay",
+            "error": str(last_type_error) if last_type_error else "",
+            "vsa_alert": "NONE",
+            "vsa_bias": "NEUTRAL",
+            "evidence": default_evidence,
+        }
 
     @classmethod
     def _build_weis_gamma_overlay(
@@ -785,6 +902,12 @@ class CampaignEvidenceBuilder:
             "last5_return": round(last5_return, 6),
         }
 
+        vsa_weis_overlay = cls._build_vsa_weis_overlay(
+            bars=bars,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
         weis_gamma_overlay = cls._build_weis_gamma_overlay(
             bars=bars,
             symbol=str(symbol or "").upper(),
@@ -821,6 +944,7 @@ class CampaignEvidenceBuilder:
                 "ease_of_movement": ease_of_movement,
                 "follow_through": bool(follow_through),
             },
+            "vsa_weis_overlay": vsa_weis_overlay,
             "weis_gamma": weis_gamma_overlay,
             "raw_metrics": raw_metrics,
         }
@@ -851,6 +975,23 @@ class CampaignEvidenceBuilder:
                 "reaction_quality": "UNKNOWN",
                 "ease_of_movement": "UNKNOWN",
                 "follow_through": False,
+            },
+            "vsa_weis_overlay": {
+                "wired_into_evidence_builder": True,
+                "score_impact": "NONE",
+                "state_impact": "NONE",
+                "rank_impact": "NONE",
+                "status": "EMPTY",
+                "reason": reason,
+                "vsa_alert": "NONE",
+                "vsa_bias": "NEUTRAL",
+                "evidence": {
+                    "buying_climax": False,
+                    "upthrust_supply": False,
+                    "no_supply_test": False,
+                    "no_demand_test": False,
+                    "effort_vs_result_divergence": False,
+                },
             },
             "weis_gamma": {
                 "status": "EMPTY",
