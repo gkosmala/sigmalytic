@@ -845,6 +845,156 @@ def evidence_calibration_review():
     }
 
 
+
+def _split_diagnostic_conflict_flags(row: Dict[str, Any]) -> Dict[str, Any]:
+    flags = [
+        str(flag)
+        for flag in list(row.get("conflict_flags") or [])
+        if str(flag)
+    ]
+
+    hard_flag_set = {
+        "PHASE_PERMISSION_BLOCKED",
+        "DOWNSIDE_WEIS_GAMMA_DIRECTION",
+    }
+
+    refresh_flag_set = {
+        "GAMMA_REFRESH_NEEDED",
+    }
+
+    hard_conflict_flags = [
+        flag for flag in flags
+        if flag in hard_flag_set
+    ]
+
+    refresh_required_flags = [
+        flag for flag in flags
+        if flag in refresh_flag_set
+    ]
+
+    state_mapping_flags = [
+        flag for flag in flags
+        if flag.startswith("WEIS_GAMMA_MAPS_TO_")
+    ]
+
+    categorized = set(hard_conflict_flags + refresh_required_flags + state_mapping_flags)
+
+    soft_conflict_flags = [
+        flag for flag in flags
+        if flag not in categorized
+    ]
+
+    has_hard_conflict = bool(hard_conflict_flags)
+    has_refresh_required = bool(refresh_required_flags)
+    has_state_mapping = bool(state_mapping_flags)
+    state_mapping_only = (
+        has_state_mapping
+        and not has_hard_conflict
+        and not has_refresh_required
+        and not soft_conflict_flags
+    )
+
+    if has_hard_conflict:
+        taxonomy_tier = "HARD_CONFLICT"
+    elif has_refresh_required and has_state_mapping:
+        taxonomy_tier = "REFRESH_AND_STATE_MAPPING"
+    elif has_refresh_required:
+        taxonomy_tier = "REFRESH_REQUIRED"
+    elif state_mapping_only:
+        taxonomy_tier = "STATE_MAPPING_ONLY"
+    elif soft_conflict_flags:
+        taxonomy_tier = "SOFT_CONFLICT"
+    else:
+        taxonomy_tier = "NO_CONFLICT"
+
+    return {
+        "hard_conflict_flags": hard_conflict_flags,
+        "refresh_required_flags": refresh_required_flags,
+        "state_mapping_flags": state_mapping_flags,
+        "soft_conflict_flags": soft_conflict_flags,
+        "has_hard_conflict": has_hard_conflict,
+        "has_refresh_required": has_refresh_required,
+        "has_state_mapping": has_state_mapping,
+        "state_mapping_only": state_mapping_only,
+        "conflict_taxonomy_tier": taxonomy_tier,
+    }
+
+
+@router.get("/evidence-conflict-taxonomy")
+def evidence_conflict_taxonomy():
+    ranking_payload = evidence_diagnostic_rankings()
+    calibration_payload = evidence_calibration_review()
+
+    rows = list(ranking_payload.get("ranked_diagnostic_campaigns") or [])
+
+    enriched_rows = []
+    taxonomy_tier_counts: Dict[str, int] = {}
+
+    hard_conflict_rows = []
+    refresh_required_rows = []
+    state_mapping_only_rows = []
+    no_conflict_rows = []
+
+    for row in rows:
+        enriched = dict(row)
+        taxonomy = _split_diagnostic_conflict_flags(row)
+        enriched.update(taxonomy)
+
+        tier = taxonomy["conflict_taxonomy_tier"]
+        taxonomy_tier_counts[tier] = taxonomy_tier_counts.get(tier, 0) + 1
+
+        if taxonomy["has_hard_conflict"]:
+            hard_conflict_rows.append(enriched)
+
+        if taxonomy["has_refresh_required"]:
+            refresh_required_rows.append(enriched)
+
+        if taxonomy["state_mapping_only"]:
+            state_mapping_only_rows.append(enriched)
+
+        if tier == "NO_CONFLICT":
+            no_conflict_rows.append(enriched)
+
+        enriched_rows.append(enriched)
+
+    return {
+        "api_fields_enabled": True,
+        "conflict_taxonomy_enabled": True,
+        "diagnostic_only": True,
+        "audit_contract": {
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_enabled": 0,
+            "transition_enabled_expected": False,
+            "frontend_impact": "NONE",
+        },
+        "taxonomy_summary": {
+            "total_full_depth_rows": len(rows),
+            "legacy_conflicted_count": len(list(ranking_payload.get("conflicted_campaigns") or [])),
+            "hard_conflict_count": len(hard_conflict_rows),
+            "refresh_required_count": len(refresh_required_rows),
+            "state_mapping_only_count": len(state_mapping_only_rows),
+            "no_conflict_count": len(no_conflict_rows),
+            "taxonomy_tier_counts": taxonomy_tier_counts,
+        },
+        "calibration_summary": calibration_payload.get("calibration_summary"),
+        "taxonomy_definitions": {
+            "HARD_CONFLICT": "Phase permission blocked and/or Weis/Gamma directional evidence is downside.",
+            "REFRESH_REQUIRED": "Gamma or related options confirmation must refresh before stronger confirmation.",
+            "STATE_MAPPING_ONLY": "Weis/Gamma maps to a different campaign state but does not create a hard block.",
+            "REFRESH_AND_STATE_MAPPING": "Both refresh requirement and state-mapping difference are present.",
+            "SOFT_CONFLICT": "Unclassified non-hard diagnostic conflict flag.",
+            "NO_CONFLICT": "No conflict flags are present.",
+        },
+        "hard_conflict_campaigns": hard_conflict_rows,
+        "refresh_required_campaigns": refresh_required_rows,
+        "state_mapping_only_campaigns": state_mapping_only_rows,
+        "no_conflict_campaigns": no_conflict_rows,
+        "taxonomy_enriched_campaigns": enriched_rows,
+    }
+
+
 @router.get("/health")
 def health():
     return {
