@@ -164,6 +164,97 @@ def _count_by_field(
     return counts
 
 
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    return {}
+
+
+def _evidence_section(campaign: Dict[str, Any], section: str) -> Dict[str, Any]:
+    evidence = _as_dict(campaign.get("evidence"))
+    return _as_dict(evidence.get(section))
+
+
+def _count_nested_evidence_field(
+    campaigns: List[Dict[str, Any]],
+    section: str,
+    field: str,
+) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+
+    for campaign in campaigns:
+        value = _evidence_section(campaign, section).get(field)
+        key = str(value) if value not in (None, "") else "NONE"
+        counts[key] = counts.get(key, 0) + 1
+
+    return counts
+
+
+def _count_raw_metric_field(
+    campaigns: List[Dict[str, Any]],
+    field: str,
+) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+
+    for campaign in campaigns:
+        evidence = _as_dict(campaign.get("evidence"))
+        raw_metrics = _as_dict(evidence.get("raw_metrics"))
+        value = raw_metrics.get(field)
+        key = str(value) if value not in (None, "") else "NONE"
+        counts[key] = counts.get(key, 0) + 1
+
+    return counts
+
+
+def _count_nested_bool(
+    campaigns: List[Dict[str, Any]],
+    section: str,
+    field: str,
+) -> Dict[str, int]:
+    counts = {"true": 0, "false": 0, "missing": 0}
+
+    for campaign in campaigns:
+        section_payload = _evidence_section(campaign, section)
+        if field not in section_payload:
+            counts["missing"] += 1
+        elif bool(section_payload.get(field)):
+            counts["true"] += 1
+        else:
+            counts["false"] += 1
+
+    return counts
+
+
+def _evidence_presence_counts(campaigns: List[Dict[str, Any]]) -> Dict[str, int]:
+    sections = [
+        "bar_depth",
+        "operator_control",
+        "transition_readiness",
+        "vsa_weis_overlay",
+        "weis_gamma",
+    ]
+
+    counts = {section: 0 for section in sections}
+
+    for campaign in campaigns:
+        evidence = _as_dict(campaign.get("evidence"))
+        for section in sections:
+            if isinstance(evidence.get(section), dict):
+                counts[section] += 1
+
+    return counts
+
+
+
 @router.get("/health")
 def health():
     return {
@@ -284,6 +375,67 @@ def status():
             "option_chain_status_counts": _count_by_field(campaigns, "weis_gamma_option_chain_status"),
             "fusion_state_counts": _count_by_field(campaigns, "weis_gamma_effective_fusion_state"),
             "raw_fusion_state_counts": _count_by_field(campaigns, "weis_gamma_fusion_state"),
+        },
+        "evidence_diagnostics_status_center": {
+            "api_fields_enabled": True,
+            "diagnostic_only": True,
+            "transition_enabled": 0,
+            "transition_enabled_expected": False,
+            "total_campaigns": len(campaigns),
+            "evidence_presence_counts": _evidence_presence_counts(campaigns),
+            "bar_depth_tier_counts": _count_nested_evidence_field(
+                campaigns,
+                "bar_depth",
+                "depth_tier",
+            ),
+            "bar_depth_max_state_counts": _count_nested_evidence_field(
+                campaigns,
+                "bar_depth",
+                "max_campaign_state",
+            ),
+            "bar_depth_diagnostic_key_counts": _count_nested_evidence_field(
+                campaigns,
+                "bar_depth",
+                "diagnostic_key",
+            ),
+            "operator_control_confirmed_counts": _count_nested_bool(
+                campaigns,
+                "operator_control",
+                "operator_control_confirmed",
+            ),
+            "operator_control_verdict_counts": _count_nested_evidence_field(
+                campaigns,
+                "operator_control",
+                "verdict",
+            ),
+            "operator_control_evidence_count_counts": _count_nested_evidence_field(
+                campaigns,
+                "operator_control",
+                "evidence_count",
+            ),
+            "transition_readiness_verdict_counts": _count_nested_evidence_field(
+                campaigns,
+                "transition_readiness",
+                "readiness_verdict",
+            ),
+            "transition_supported_state_counts": _count_nested_evidence_field(
+                campaigns,
+                "transition_readiness",
+                "evidence_supported_state",
+            ),
+            "transition_state_transition_enabled_counts": _count_nested_bool(
+                campaigns,
+                "transition_readiness",
+                "state_transition_enabled",
+            ),
+            "raw_metric_transition_readiness_verdict_counts": _count_raw_metric_field(
+                campaigns,
+                "transition_readiness_verdict",
+            ),
+            "raw_metric_operator_control_confirmed_counts": _count_raw_metric_field(
+                campaigns,
+                "operator_control_confirmed",
+            ),
         },
     }
 
