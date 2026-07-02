@@ -349,6 +349,161 @@ def evidence_diagnostics():
     }
 
 
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _diagnostic_priority_for_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    weis_gamma_phase = _as_dict(row.get("weis_gamma_phase"))
+
+    operator_confirmed = bool(row.get("operator_control_confirmed"))
+    operator_evidence_count = int(row.get("operator_control_evidence_count") or 0)
+
+    readiness = str(row.get("transition_readiness_verdict") or "NONE").upper()
+    supported_state = str(row.get("evidence_supported_state") or "NONE").upper()
+
+    gamma_fresh = bool(weis_gamma_phase.get("gamma_data_fresh"))
+    phase_permission = str(weis_gamma_phase.get("phase_permission") or "").upper()
+    phase_direction = str(weis_gamma_phase.get("phase_direction") or "").upper()
+    wave_direction = str(weis_gamma_phase.get("wave_direction") or "").upper()
+    fusion_direction = str(weis_gamma_phase.get("fusion_direction") or "").upper()
+    mapped_campaign_state = str(weis_gamma_phase.get("mapped_campaign_state") or "").upper()
+
+    phase_confidence = _safe_float(weis_gamma_phase.get("phase_confidence"))
+    wave_coherence = _safe_float(weis_gamma_phase.get("wave_coherence_score"))
+
+    score = 0.0
+    reasons = []
+    conflict_flags = []
+
+    if operator_confirmed:
+        score += 40.0
+        reasons.append("operator control confirmed from raw OHLCV tape behavior")
+    else:
+        reasons.append("operator control not confirmed")
+
+    score += min(operator_evidence_count, 5) * 5.0
+    if operator_evidence_count:
+        reasons.append(f"operator evidence count {operator_evidence_count}")
+
+    if readiness == "FULL_CAMPAIGN_READY_DIAGNOSTIC":
+        score += 25.0
+        reasons.append("full campaign readiness diagnostic")
+    elif readiness == "CONFIRMATION_READY_DIAGNOSTIC":
+        score += 15.0
+        reasons.append("confirmation readiness diagnostic")
+    elif readiness == "BIRTH_WATCH_READY_DIAGNOSTIC":
+        score += 5.0
+        reasons.append("birth/watch readiness diagnostic")
+
+    if supported_state == "MATURING":
+        score += 10.0
+        reasons.append("evidence-supported state is MATURING")
+    elif supported_state == "CONFIRMED":
+        score += 5.0
+        reasons.append("evidence-supported state is CONFIRMED")
+
+    if gamma_fresh:
+        score += 15.0
+        reasons.append("gamma data fresh")
+    else:
+        conflict_flags.append("GAMMA_REFRESH_NEEDED")
+
+    score += min(max(phase_confidence, 0.0), 1.0) * 10.0
+    score += min(max(wave_coherence, 0.0), 1.0) * 10.0
+
+    if phase_permission == "BLOCKED":
+        score -= 50.0
+        conflict_flags.append("PHASE_PERMISSION_BLOCKED")
+
+    if "DOWN" in {phase_direction, wave_direction, fusion_direction}:
+        score -= 25.0
+        conflict_flags.append("DOWNSIDE_WEIS_GAMMA_DIRECTION")
+
+    if mapped_campaign_state and mapped_campaign_state not in {"", "NONE", supported_state}:
+        conflict_flags.append(f"WEIS_GAMMA_MAPS_TO_{mapped_campaign_state}")
+
+    score = round(score, 4)
+
+    if "PHASE_PERMISSION_BLOCKED" in conflict_flags or "DOWNSIDE_WEIS_GAMMA_DIRECTION" in conflict_flags:
+        tier = "CONFLICT_BLOCKED_DIAGNOSTIC"
+    elif operator_confirmed and gamma_fresh and readiness == "FULL_CAMPAIGN_READY_DIAGNOSTIC" and score >= 85:
+        tier = "A_DIAGNOSTIC"
+    elif operator_confirmed and not gamma_fresh:
+        tier = "GAMMA_REFRESH_REQUIRED_DIAGNOSTIC"
+    elif operator_confirmed:
+        tier = "B_DIAGNOSTIC"
+    elif readiness == "CONFIRMATION_READY_DIAGNOSTIC":
+        tier = "WATCHLIST_DIAGNOSTIC"
+    else:
+        tier = "LOW_PRIORITY_DIAGNOSTIC"
+
+    return {
+        "diagnostic_priority_score": score,
+        "diagnostic_priority_tier": tier,
+        "diagnostic_priority_reason": "; ".join(reasons),
+        "conflict_flags": conflict_flags,
+        "gamma_refresh_needed": "GAMMA_REFRESH_NEEDED" in conflict_flags,
+    }
+
+
+@router.get("/evidence-diagnostic-rankings")
+def evidence_diagnostic_rankings():
+    base = evidence_diagnostics()
+    rows = list(base.get("full_depth_campaigns") or [])
+
+    ranked_rows = []
+    for row in rows:
+        enriched = dict(row)
+        enriched.update(_diagnostic_priority_for_row(row))
+        ranked_rows.append(enriched)
+
+    tier_order = {
+        "A_DIAGNOSTIC": 0,
+        "B_DIAGNOSTIC": 1,
+        "GAMMA_REFRESH_REQUIRED_DIAGNOSTIC": 2,
+        "WATCHLIST_DIAGNOSTIC": 3,
+        "LOW_PRIORITY_DIAGNOSTIC": 4,
+        "CONFLICT_BLOCKED_DIAGNOSTIC": 5,
+    }
+
+    ranked_rows.sort(
+        key=lambda row: (
+            tier_order.get(row.get("diagnostic_priority_tier"), 99),
+            -_safe_float(row.get("diagnostic_priority_score")),
+            str(row.get("symbol") or ""),
+        )
+    )
+
+    return {
+        "api_fields_enabled": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_enabled": 0,
+        "transition_enabled_expected": False,
+        "total_campaigns": base.get("total_campaigns"),
+        "full_depth_count": base.get("full_depth_count"),
+        "operator_control_confirmed_count": base.get("operator_control_confirmed_count"),
+        "ranked_diagnostic_campaigns": ranked_rows,
+        "operator_control_confirmed_ranked": [
+            row for row in ranked_rows
+            if row.get("operator_control_confirmed") is True
+        ],
+        "conflicted_campaigns": [
+            row for row in ranked_rows
+            if row.get("conflict_flags")
+        ],
+    }
+
+
 @router.get("/health")
 def health():
     return {
