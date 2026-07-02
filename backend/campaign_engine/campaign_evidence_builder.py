@@ -1286,6 +1286,27 @@ class CampaignEvidenceBuilder:
         ease_of_movement = "HIGH" if last5_return > 0.04 and last5_avg_volume >= last20_avg_volume else "UNKNOWN"
         follow_through = bool(last5_return > 0.03 and close_now >= cls._safe_float(last5["close"].max()) * 0.98)
 
+        operator_control = cls._build_operator_control_evidence(
+            bars=bars,
+            bar_depth_profile=bar_depth_profile,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+        vsa_weis_overlay = cls._build_vsa_weis_overlay(
+            bars=bars,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
+        transition_readiness = cls._build_transition_readiness_evidence(
+            bar_depth_profile=bar_depth_profile,
+            operator_control=operator_control,
+            vsa_weis_overlay=vsa_weis_overlay,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
+
         raw_metrics = {
             "bar_count": int(len(bars)),
             "bar_depth_tier": bar_depth_profile.get("depth_tier"),
@@ -1316,27 +1337,6 @@ class CampaignEvidenceBuilder:
             "range_position_40": round(range_position, 6),
             "last5_return": round(last5_return, 6),
         }
-
-        operator_control = cls._build_operator_control_evidence(
-            bars=bars,
-            bar_depth_profile=bar_depth_profile,
-            symbol=symbol,
-            timeframe=timeframe,
-        )
-
-        vsa_weis_overlay = cls._build_vsa_weis_overlay(
-            bars=bars,
-            symbol=symbol,
-            timeframe=timeframe,
-        )
-
-        transition_readiness = cls._build_transition_readiness_evidence(
-            bar_depth_profile=bar_depth_profile,
-            operator_control=operator_control,
-            vsa_weis_overlay=vsa_weis_overlay,
-            symbol=symbol,
-            timeframe=timeframe,
-        )
 
         weis_gamma_overlay = cls._build_weis_gamma_overlay(
             bars=bars,
