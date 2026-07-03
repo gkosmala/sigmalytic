@@ -1055,9 +1055,12 @@ def early_operator_footprint_review():
         symbol = _get(c, "symbol")
         campaign_id = _get(c, "campaign_id") or _get(c, "id")
         campaign_state = (
-            _get(c, "campaign_state")
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
             or _get(c, "state")
             or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
         )
         timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
 
