@@ -998,6 +998,209 @@ def evidence_conflict_taxonomy():
 
 
 
+
+@router.get("/early-operator-footprint-review")
+def early_operator_footprint_review():
+    """
+    Read-only diagnostic review of early Composite Operator footprint evidence.
+
+    This endpoint does not write to Supabase.
+    This endpoint does not mutate campaigns.
+    This endpoint does not change scores, ranks, campaign states, transitions,
+    or operator-control confirmation.
+    """
+    from collections import Counter
+
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    missing_rows = []
+    guardrail_failures = []
+
+    archetype_counter = Counter()
+    risk_counter = Counter()
+    footprint_count_counter = Counter()
+    footprint_present_counter = Counter()
+    status_counter = Counter()
+    operator_cross_counter = Counter()
+    campaign_state_counter = Counter()
+
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+
+        footprints = _as_dict(evidence.get("early_operator_footprints"))
+        operator_control = _as_dict(evidence.get("operator_control"))
+        doctrine = _as_dict(evidence.get("doctrine_classifier"))
+
+        if not footprints:
+            missing_rows.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "missing early_operator_footprints",
+            })
+            continue
+
+        status = footprints.get("status")
+        footprint_present = bool(footprints.get("footprint_present"))
+        footprint_count = footprints.get("footprint_count", 0)
+        archetypes_raw = footprints.get("footprint_archetypes") or []
+        risk_context = footprints.get("risk_context") or []
+
+        archetype_names = []
+        for item in archetypes_raw:
+            d = _as_dict(item)
+            name = d.get("archetype")
+            if name:
+                archetype_names.append(name)
+                archetype_counter[name] += 1
+
+        for risk in risk_context:
+            risk_counter[risk] += 1
+
+        footprint_present_counter[str(footprint_present)] += 1
+        footprint_count_counter[str(footprint_count)] += 1
+        status_counter[str(status)] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+
+        operator_control_confirmed = bool(operator_control.get("operator_control_confirmed"))
+        operator_control_verdict = operator_control.get("verdict")
+
+        if footprint_present and operator_control_confirmed:
+            operator_cross_context = "FOOTPRINT_PRESENT_AND_OPERATOR_CONTROL_CONFIRMED"
+        elif footprint_present and not operator_control_confirmed:
+            operator_cross_context = "FOOTPRINT_PRESENT_OPERATOR_CONTROL_NOT_CONFIRMED"
+        elif not footprint_present and operator_control_confirmed:
+            operator_cross_context = "NO_FOOTPRINT_BUT_OPERATOR_CONTROL_CONFIRMED"
+        else:
+            operator_cross_context = "NO_FOOTPRINT_AND_OPERATOR_CONTROL_NOT_CONFIRMED"
+
+        operator_cross_counter[operator_cross_context] += 1
+
+        guardrail_ok = (
+            footprints.get("diagnostic_only") is True
+            and footprints.get("score_impact") == "NONE"
+            and footprints.get("rank_impact") == "NONE"
+            and footprints.get("state_impact") == "NONE"
+            and footprints.get("transition_impact") == "NONE"
+            and footprints.get("state_transition_enabled") is False
+            and footprints.get("operator_control_confirmation_impact") == "NONE"
+            and footprints.get("operator_control_confirmed_by_this_engine") is False
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "early_operator_footprints guardrail failure",
+                "payload": footprints,
+            })
+
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+            "engine": footprints.get("engine"),
+            "version": footprints.get("version"),
+            "status": status,
+            "diagnostic_only": footprints.get("diagnostic_only"),
+            "score_impact": footprints.get("score_impact"),
+            "rank_impact": footprints.get("rank_impact"),
+            "state_impact": footprints.get("state_impact"),
+            "transition_impact": footprints.get("transition_impact"),
+            "state_transition_enabled": footprints.get("state_transition_enabled"),
+            "operator_control_confirmation_impact": footprints.get("operator_control_confirmation_impact"),
+            "operator_control_confirmed_by_this_engine": footprints.get("operator_control_confirmed_by_this_engine"),
+            "not_derived_from_gamma": footprints.get("not_derived_from_gamma"),
+            "not_a_trade_signal": footprints.get("not_a_trade_signal"),
+            "footprint_present": footprint_present,
+            "footprint_count": footprint_count,
+            "footprint_archetypes": archetype_names,
+            "risk_context": risk_context,
+            "operator_cross_context": operator_cross_context,
+            "operator_control_verdict": operator_control_verdict,
+            "operator_control_confirmed": operator_control_confirmed,
+            "doctrine_labels": doctrine.get("doctrine_labels") or [],
+            "wyckoff_inputs": footprints.get("wyckoff_inputs") or {},
+            "raw_operator_flags": footprints.get("raw_operator_flags") or {},
+            "vsa_weis_inputs": footprints.get("vsa_weis_inputs") or {},
+        })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            -int(row.get("footprint_count") or 0),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": "EARLY_OPERATOR_FOOTPRINT_REVIEW",
+        "version": "phase_d2_8_read_only_v1",
+        "endpoint": "/api/campaign/early-operator-footprint-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "operator_control_confirmation_impact": "NONE",
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(rows),
+        "missing_early_operator_footprints_count": len(missing_rows),
+        "guardrail_failure_count": len(guardrail_failures),
+        "footprint_present_distribution": _counter_to_dict(footprint_present_counter),
+        "footprint_count_distribution": _counter_to_dict(footprint_count_counter),
+        "archetype_distribution": _counter_to_dict(archetype_counter),
+        "risk_context_distribution": _counter_to_dict(risk_counter),
+        "status_distribution": _counter_to_dict(status_counter),
+        "operator_cross_context_distribution": _counter_to_dict(operator_cross_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "review_rows": rows,
+        "missing_rows": missing_rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/evidence-doctrine-review-rankings")
 def evidence_doctrine_review_rankings():
     """
