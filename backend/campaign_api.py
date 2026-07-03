@@ -1022,6 +1022,9 @@ def evidence_doctrine_review_rankings():
     review_rows = []
     missing_classifier_rows = []
     bucket_distribution = {}
+    gamma_overlay_context_distribution = {}
+    existing_rank_context_distribution = {}
+    diagnostic_cross_context_distribution = {}
     support_flag_distribution = {}
     risk_flag_distribution = {}
     label_distribution = {}
@@ -1151,6 +1154,71 @@ def evidence_doctrine_review_rankings():
 
         weis_gamma = _as_dict(evidence.get("weis_gamma"))
         ranking = _as_dict(weis_gamma.get("ranking"))
+        fusion_state = _as_dict(weis_gamma.get("fusion")).get("fusion_state")
+        gamma_status = _as_dict(weis_gamma.get("gamma_matrix")).get("status")
+        existing_rank_bucket = ranking.get("rank_bucket")
+
+        strong_doctrine = review_bucket in [
+            "OPERATOR_WITH_SPRING_SOS_SUPPORT",
+            "OPERATOR_ACCUMULATION_EVIDENCED",
+        ]
+
+        rank_high_context = existing_rank_bucket in ["A_PLUS", "A", "B"]
+        rank_low_context = existing_rank_bucket in ["AVOID", "LOW_PRIORITY"]
+
+        gamma_stale = fusion_state == "WEIS_ONLY_GAMMA_STALE"
+        gamma_aligned = fusion_state == "WEIS_EXPANSION_GAMMA_NEUTRAL"
+        gamma_unresolved = fusion_state == "WEIS_GAMMA_UNRESOLVED"
+        gamma_downside_overlay = str(fusion_state or "").startswith("WEIS_DOWNSIDE")
+
+        if conflicts_present:
+            gamma_overlay_context = "CONFLICT_REVIEW_REQUIRED"
+        elif strong_doctrine and gamma_aligned:
+            gamma_overlay_context = "DOCTRINE_STRONG_GAMMA_ALIGNED"
+        elif strong_doctrine and gamma_stale:
+            gamma_overlay_context = "DOCTRINE_STRONG_GAMMA_STALE"
+        elif strong_doctrine and gamma_unresolved:
+            gamma_overlay_context = "DOCTRINE_STRONG_GAMMA_UNRESOLVED"
+        elif strong_doctrine and gamma_downside_overlay:
+            gamma_overlay_context = "DOCTRINE_STRONG_GAMMA_DOWNSIDE_OVERLAY"
+        elif strong_doctrine:
+            gamma_overlay_context = "DOCTRINE_STRONG_GAMMA_CONTEXT_OTHER"
+        elif has_distribution_caution:
+            gamma_overlay_context = "CAUTION_OR_DISTRIBUTION_REVIEW"
+        elif gamma_stale:
+            gamma_overlay_context = "GAMMA_STALE_DOCTRINE_PRESENT"
+        else:
+            gamma_overlay_context = "STANDARD_DOCTRINE_REVIEW"
+
+        if rank_high_context:
+            existing_rank_context = "EXISTING_RANK_HIGH_CONTEXT"
+        elif rank_low_context:
+            existing_rank_context = "EXISTING_RANK_LOW_CONTEXT"
+        elif existing_rank_bucket:
+            existing_rank_context = "EXISTING_RANK_OTHER_CONTEXT"
+        else:
+            existing_rank_context = "EXISTING_RANK_MISSING_CONTEXT"
+
+        if conflicts_present:
+            diagnostic_cross_context = "CONFLICTS_OVERRIDE_CROSS_CONTEXT"
+        elif strong_doctrine and gamma_stale and rank_low_context:
+            diagnostic_cross_context = "DOCTRINE_STRONG_WITH_STALE_GAMMA_AND_LOW_EXISTING_RANK"
+        elif strong_doctrine and gamma_aligned and rank_high_context:
+            diagnostic_cross_context = "DOCTRINE_STRONG_WITH_GAMMA_OVERLAY_AND_HIGH_EXISTING_RANK"
+        elif strong_doctrine and gamma_unresolved:
+            diagnostic_cross_context = "DOCTRINE_STRONG_WITH_UNRESOLVED_GAMMA_OVERLAY"
+        elif strong_doctrine and rank_low_context:
+            diagnostic_cross_context = "DOCTRINE_STRONG_WITH_LOW_EXISTING_RANK_CONTEXT"
+        elif strong_doctrine:
+            diagnostic_cross_context = "DOCTRINE_STRONG_GENERAL_REVIEW"
+        elif has_distribution_caution:
+            diagnostic_cross_context = "CAUTIONARY_DOCTRINE_CONTEXT"
+        else:
+            diagnostic_cross_context = "STANDARD_CROSS_CONTEXT"
+
+        _inc(gamma_overlay_context_distribution, gamma_overlay_context)
+        _inc(existing_rank_context_distribution, existing_rank_context)
+        _inc(diagnostic_cross_context_distribution, diagnostic_cross_context)
 
         review_rows.append({
             **base_row,
@@ -1165,9 +1233,19 @@ def evidence_doctrine_review_rankings():
             "overall_interpretation": classifier.get("overall_interpretation"),
             "conflicts_present": conflicts_present,
             "blocking_warnings": classifier.get("blocking_warnings") or [],
-            "existing_rank_bucket": ranking.get("rank_bucket"),
-            "existing_fusion_state": _as_dict(weis_gamma.get("fusion")).get("fusion_state"),
-            "existing_gamma_status": _as_dict(weis_gamma.get("gamma_matrix")).get("status"),
+            "existing_rank_bucket": existing_rank_bucket,
+            "existing_fusion_state": fusion_state,
+            "existing_gamma_status": gamma_status,
+            "gamma_overlay_context": gamma_overlay_context,
+            "existing_rank_context": existing_rank_context,
+            "diagnostic_cross_context": diagnostic_cross_context,
+            "strong_doctrine": strong_doctrine,
+            "rank_high_context": rank_high_context,
+            "rank_low_context": rank_low_context,
+            "gamma_stale": gamma_stale,
+            "gamma_aligned": gamma_aligned,
+            "gamma_unresolved": gamma_unresolved,
+            "gamma_downside_overlay": gamma_downside_overlay,
             "diagnostic_only": True,
             "score_impact": "NONE",
             "rank_impact": "NONE",
@@ -1186,7 +1264,7 @@ def evidence_doctrine_review_rankings():
 
     return {
         "engine": "EVIDENCE_DOCTRINE_REVIEW_RANKINGS",
-        "version": "phase_d1_read_only_v1",
+        "version": "phase_d1_3_read_only_v1",
         "endpoint": "/api/campaign/evidence-doctrine-review-rankings",
         "read_only": True,
         "diagnostic_only": True,
@@ -1201,6 +1279,9 @@ def evidence_doctrine_review_rankings():
         "review_rows_count": len(review_rows),
         "missing_classifier_count": len(missing_classifier_rows),
         "bucket_distribution": dict(sorted(bucket_distribution.items())),
+        "gamma_overlay_context_distribution": dict(sorted(gamma_overlay_context_distribution.items())),
+        "existing_rank_context_distribution": dict(sorted(existing_rank_context_distribution.items())),
+        "diagnostic_cross_context_distribution": dict(sorted(diagnostic_cross_context_distribution.items())),
         "support_flag_distribution": dict(sorted(support_flag_distribution.items())),
         "risk_flag_distribution": dict(sorted(risk_flag_distribution.items())),
         "label_distribution": dict(sorted(label_distribution.items())),
