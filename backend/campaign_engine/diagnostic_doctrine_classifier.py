@@ -59,7 +59,9 @@ class DiagnosticDoctrineClassifier:
         return {
             "engine": self.ENGINE,
             "version": self.VERSION,
+            "status": "OK",
             **self.GUARDRAILS,
+            "wired_into_evidence_builder": True,
             "symbol": symbol,
             "overall_interpretation": self._overall(label_list),
             "doctrine_labels": label_list,
@@ -113,7 +115,7 @@ class DiagnosticDoctrineClassifier:
 
         if survival.get("survival_confirmed") is True:
             labels.append("WYCKOFF_SURVIVAL_PRESENT")
-        elif str(survival.get("survival_state") or "").upper() == "AT_RISK":
+        elif str(survival.get("survival_state") or "").upper() in {"AT_RISK", "FAILURE_RISK"}:
             labels.append("WYCKOFF_SURVIVAL_AT_RISK")
 
     def _weis(self, ev: Dict[str, Any], labels: List[str]) -> None:
@@ -192,6 +194,12 @@ class DiagnosticDoctrineClassifier:
 
         if "WYCKOFF_ACCUMULATION_SUPPORT" in s:
             parts.append("Wyckoff evidence supports accumulation behavior.")
+        elif "SOS_SUPPORT_PRESENT" in s:
+            parts.append("Wyckoff sign-of-strength evidence is present.")
+        elif "SPRING_SUPPORT_PRESENT" in s:
+            parts.append("Wyckoff spring evidence is present.")
+        elif "ABSORPTION_SUPPORT_PRESENT" in s:
+            parts.append("Wyckoff absorption evidence is present.")
 
         if "WYCKOFF_SURVIVAL_PRESENT" in s:
             parts.append("Wyckoff survival evidence is present.")
@@ -200,9 +208,13 @@ class DiagnosticDoctrineClassifier:
 
         if "WEIS_EXPANSION_SUPPORT" in s:
             parts.append("Weis wave evidence supports expansion.")
+        elif "WEIS_ALIGNED_UP" in s:
+            parts.append("Weis wave evidence is aligned upward.")
 
         if "VSA_NO_DEMAND_CAUTION" in s:
             parts.append("VSA no-demand caution is present.")
+        elif "VSA_NO_SUPPLY_SUPPORT" in s:
+            parts.append("VSA no-supply support is present.")
 
         if "DISTRIBUTION_RISK_PRESENT" in s:
             parts.append("Distribution-risk evidence is present.")
