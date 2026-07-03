@@ -1002,6 +1002,223 @@ def evidence_conflict_taxonomy():
 
 
 
+
+@router.get("/structural-location-input-review")
+def structural_location_input_review():
+    """
+    D3C.1 Structural Location Input Review.
+    Read-only diagnostic endpoint.
+    Purpose:
+        Audit whether active campaign evidence contains explicit structural-location
+        inputs needed to locate Wyckoff / Weis events inside the campaign structure.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT change scores, ranks, states, or transitions.
+    """
+    from collections import Counter
+    try:
+        from backend.campaign_engine.structural_location_input_review_engine import (
+            review_structural_location_inputs,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    except Exception:
+        from campaign_engine.structural_location_input_review_engine import (
+            review_structural_location_inputs,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+    campaigns = _store().get_active_campaigns()
+    rows = []
+    guardrail_failures = []
+    readiness_counter = Counter()
+    available_group_counter = Counter()
+    missing_group_counter = Counter()
+    production_sml_counter = Counter()
+    explicit_tr_counter = Counter()
+    explicit_lp_counter = Counter()
+    explicit_hvn_counter = Counter()
+    explicit_sr_counter = Counter()
+    campaign_state_counter = Counter()
+    boolean_input_counters = {
+        "current_price_available": Counter(),
+        "range_floor_available": Counter(),
+        "range_ceiling_available": Counter(),
+        "atr_available": Counter(),
+        "support_available": Counter(),
+        "resistance_available": Counter(),
+        "hvn_poc_available": Counter(),
+        "spring_shakeout_available": Counter(),
+        "last_point_of_support_available": Counter(),
+        "upthrust_utad_available": Counter(),
+        "price_series_available": Counter(),
+    }
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+        review = review_structural_location_inputs(
+            evidence=evidence,
+            symbol=symbol,
+            campaign_state=campaign_state,
+        )
+        guardrail_ok = (
+            review.get("diagnostic_only") is True
+            and review.get("read_only") is True
+            and review.get("writes_to_supabase") is False
+            and review.get("mutates_campaigns") is False
+            and review.get("production_confirmation_allowed") is False
+            and review.get("operator_control_confirmed_by_this_engine") is False
+            and review.get("operator_control_confirmation_impact") == "NONE"
+            and review.get("score_impact") == "NONE"
+            and review.get("rank_impact") == "NONE"
+            and review.get("state_impact") == "NONE"
+            and review.get("transition_impact") == "NONE"
+            and review.get("state_transition_enabled") is False
+            and review.get("not_a_trade_signal") is True
+        )
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "D3C.1 structural location input review guardrail failure",
+                "payload": review,
+            })
+        readiness = review.get("structural_location_readiness")
+        readiness_counter[str(readiness)] += 1
+        production_sml_counter[str(bool(review.get("production_sml_possible_now")))] += 1
+        explicit_tr_counter[str(bool(review.get("explicit_trading_range_ready")))] += 1
+        explicit_lp_counter[str(bool(review.get("explicit_lp_zone_ready")))] += 1
+        explicit_hvn_counter[str(bool(review.get("explicit_hvn_zone_ready")))] += 1
+        explicit_sr_counter[str(bool(review.get("explicit_support_resistance_ready")))] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+        for group in review.get("available_input_groups") or []:
+            available_group_counter[str(group)] += 1
+        for group in review.get("missing_input_groups") or []:
+            missing_group_counter[str(group)] += 1
+        for key, counter in boolean_input_counters.items():
+            counter[str(bool(review.get(key)))] += 1
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+            "structural_location_readiness": readiness,
+            "production_sml_possible_now": review.get("production_sml_possible_now"),
+            "readiness_reasons": review.get("readiness_reasons") or [],
+            "recommendation": review.get("recommendation"),
+            "explicit_trading_range_ready": review.get("explicit_trading_range_ready"),
+            "explicit_lp_zone_ready": review.get("explicit_lp_zone_ready"),
+            "explicit_hvn_zone_ready": review.get("explicit_hvn_zone_ready"),
+            "explicit_support_resistance_ready": review.get("explicit_support_resistance_ready"),
+            "current_price_available": review.get("current_price_available"),
+            "range_floor_available": review.get("range_floor_available"),
+            "range_ceiling_available": review.get("range_ceiling_available"),
+            "atr_available": review.get("atr_available"),
+            "support_available": review.get("support_available"),
+            "resistance_available": review.get("resistance_available"),
+            "hvn_poc_available": review.get("hvn_poc_available"),
+            "spring_shakeout_available": review.get("spring_shakeout_available"),
+            "last_point_of_support_available": review.get("last_point_of_support_available"),
+            "upthrust_utad_available": review.get("upthrust_utad_available"),
+            "price_series_available": review.get("price_series_available"),
+            "available_input_groups": review.get("available_input_groups") or [],
+            "missing_input_groups": review.get("missing_input_groups") or [],
+            "matched_paths": review.get("matched_paths") or {},
+            "field_match_count_by_group": review.get("field_match_count_by_group") or {},
+            "footprint_archetypes": review.get("footprint_archetypes") or [],
+            "classical_event_inference_available": review.get("classical_event_inference_available"),
+            "production_confirmation_allowed": review.get("production_confirmation_allowed"),
+            "operator_control_confirmed_by_this_engine": review.get("operator_control_confirmed_by_this_engine"),
+            "operator_control_confirmation_impact": review.get("operator_control_confirmation_impact"),
+            "score_impact": review.get("score_impact"),
+            "rank_impact": review.get("rank_impact"),
+            "state_impact": review.get("state_impact"),
+            "transition_impact": review.get("transition_impact"),
+        })
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("structural_location_readiness") == "MISSING_CORE_LOCATION_INPUTS" else
+            1 if row.get("structural_location_readiness") == "INFERRED_CLASSICAL_EVENT_ONLY" else
+            2 if row.get("structural_location_readiness") == "PARTIAL_EXPLICIT_EVENT_LOCATION_READY" else
+            3,
+            str(row.get("symbol") or ""),
+        ),
+    )
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/structural-location-input-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "production_confirmation_allowed": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_confirmation_impact": "NONE",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "not_a_trade_signal": True,
+        "purpose": (
+            "Audit explicit structural-location inputs needed to locate Wyckoff / Weis "
+            "events inside the campaign structure before production confirmation."
+        ),
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+        "structural_location_readiness_distribution": _counter_to_dict(readiness_counter),
+        "production_sml_possible_distribution": _counter_to_dict(production_sml_counter),
+        "explicit_trading_range_ready_distribution": _counter_to_dict(explicit_tr_counter),
+        "explicit_lp_zone_ready_distribution": _counter_to_dict(explicit_lp_counter),
+        "explicit_hvn_zone_ready_distribution": _counter_to_dict(explicit_hvn_counter),
+        "explicit_support_resistance_ready_distribution": _counter_to_dict(explicit_sr_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "available_input_group_distribution": _counter_to_dict(available_group_counter),
+        "missing_input_group_distribution": _counter_to_dict(missing_group_counter),
+        "boolean_input_distributions": {
+            key: _counter_to_dict(counter)
+            for key, counter in boolean_input_counters.items()
+        },
+        "review_rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
 @router.get("/wyckoff-weis-operator-confirmation-review")
 def wyckoff_weis_operator_confirmation_review():
     """
