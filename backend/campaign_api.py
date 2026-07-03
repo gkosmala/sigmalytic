@@ -999,6 +999,245 @@ def evidence_conflict_taxonomy():
 
 
 
+
+@router.get("/operator-control-reconciliation-review")
+def operator_control_reconciliation_review():
+    """
+    Read-only diagnostic reconciliation between early operator footprints
+    and confirmed tape-derived Composite Operator control.
+    """
+    from collections import Counter
+
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    def _true_flags(payload, names):
+        payload = _as_dict(payload)
+        return [name for name in names if bool(payload.get(name))]
+
+    campaigns = _store().get_active_campaigns()
+
+    hard_confirmation_flag_names = [
+        "survives_adverse_tests",
+        "recapture_after_breakdown",
+        "demand_efficiency_dominates_supply",
+        "shortening_downside_thrust",
+        "high_volume_controlled_spread",
+        "absorption_against_resistance",
+        "supply_failure",
+    ]
+
+    vsa_weis_confirmation_names = [
+        "effort_vs_result_divergence",
+        "no_supply_test",
+    ]
+
+    caution_flag_names = [
+        "no_demand_test",
+        "upthrust_supply",
+        "buying_climax",
+    ]
+
+    rows = []
+    missing_rows = []
+    guardrail_failures = []
+
+    reconciliation_counter = Counter()
+    campaign_state_counter = Counter()
+    footprint_count_counter = Counter()
+    hard_flag_counter = Counter()
+    vsa_weis_counter = Counter()
+    caution_counter = Counter()
+
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+
+        footprints = _as_dict(evidence.get("early_operator_footprints"))
+        operator_control = _as_dict(evidence.get("operator_control"))
+
+        if not footprints:
+            missing_rows.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "missing early_operator_footprints",
+            })
+            continue
+
+        raw_flags = _as_dict(footprints.get("raw_operator_flags"))
+        vsa_weis = _as_dict(footprints.get("vsa_weis_inputs"))
+        wyckoff_inputs = _as_dict(footprints.get("wyckoff_inputs"))
+
+        footprint_present = bool(footprints.get("footprint_present"))
+        footprint_count = int(footprints.get("footprint_count") or 0)
+        operator_control_confirmed = bool(operator_control.get("operator_control_confirmed"))
+        operator_control_verdict = operator_control.get("verdict")
+
+        hard_flags_present = _true_flags(raw_flags, hard_confirmation_flag_names)
+        vsa_weis_confirmation_flags_present = _true_flags(vsa_weis, vsa_weis_confirmation_names)
+        caution_flags_present = _true_flags(vsa_weis, caution_flag_names)
+
+        hard_confirmation_count = len(hard_flags_present) + len(vsa_weis_confirmation_flags_present)
+        caution_count = len(caution_flags_present)
+
+        archetype_names = []
+        for item in footprints.get("footprint_archetypes") or []:
+            d = _as_dict(item)
+            name = d.get("archetype")
+            if name:
+                archetype_names.append(name)
+
+        if operator_control_confirmed:
+            reconciliation_bucket = "CONFIRMED_CONTROL"
+        elif footprint_present and footprint_count >= 4 and hard_confirmation_count >= 1 and caution_count == 0:
+            reconciliation_bucket = "HIGH_DENSITY_UNCONFIRMED_WITH_HARD_CONFIRMATION"
+        elif footprint_present and footprint_count >= 4 and hard_confirmation_count == 0:
+            reconciliation_bucket = "HIGH_DENSITY_UNCONFIRMED_MISSING_HARD_CONFIRMATION"
+        elif footprint_present and footprint_count >= 4 and caution_count > 0:
+            reconciliation_bucket = "HIGH_DENSITY_UNCONFIRMED_WITH_CAUTION"
+        elif footprint_present:
+            reconciliation_bucket = "EARLY_FOOTPRINT_NOT_CONFIRMED"
+        else:
+            reconciliation_bucket = "NO_OPERATOR_FOOTPRINT"
+
+        guardrail_ok = (
+            footprints.get("diagnostic_only") is True
+            and footprints.get("score_impact") == "NONE"
+            and footprints.get("rank_impact") == "NONE"
+            and footprints.get("state_impact") == "NONE"
+            and footprints.get("transition_impact") == "NONE"
+            and footprints.get("state_transition_enabled") is False
+            and footprints.get("operator_control_confirmation_impact") == "NONE"
+            and footprints.get("operator_control_confirmed_by_this_engine") is False
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "early_operator_footprints guardrail failure",
+            })
+
+        reconciliation_counter[reconciliation_bucket] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+        footprint_count_counter[str(footprint_count)] += 1
+
+        for flag in hard_flags_present:
+            hard_flag_counter[flag] += 1
+        for flag in vsa_weis_confirmation_flags_present:
+            vsa_weis_counter[flag] += 1
+        for flag in caution_flags_present:
+            caution_counter[flag] += 1
+
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+            "footprint_present": footprint_present,
+            "footprint_count": footprint_count,
+            "footprint_archetypes": archetype_names,
+            "risk_context": footprints.get("risk_context") or [],
+            "operator_control_verdict": operator_control_verdict,
+            "operator_control_confirmed": operator_control_confirmed,
+            "hard_confirmation_flags_present": hard_flags_present,
+            "vsa_weis_confirmation_flags_present": vsa_weis_confirmation_flags_present,
+            "caution_flags_present": caution_flags_present,
+            "hard_confirmation_count": hard_confirmation_count,
+            "caution_count": caution_count,
+            "reconciliation_bucket": reconciliation_bucket,
+            "raw_operator_flags": raw_flags,
+            "wyckoff_inputs": wyckoff_inputs,
+            "vsa_weis_inputs": vsa_weis,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "operator_control_confirmation_impact": "NONE",
+        })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("reconciliation_bucket") == "HIGH_DENSITY_UNCONFIRMED_WITH_HARD_CONFIRMATION" else
+            1 if row.get("reconciliation_bucket") == "HIGH_DENSITY_UNCONFIRMED_MISSING_HARD_CONFIRMATION" else
+            2 if row.get("reconciliation_bucket") == "HIGH_DENSITY_UNCONFIRMED_WITH_CAUTION" else
+            3 if row.get("reconciliation_bucket") == "CONFIRMED_CONTROL" else
+            4,
+            -int(row.get("footprint_count") or 0),
+            -int(row.get("hard_confirmation_count") or 0),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": "OPERATOR_CONTROL_RECONCILIATION_REVIEW",
+        "version": "phase_d2_12_read_only_v1",
+        "endpoint": "/api/campaign/operator-control-reconciliation-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "operator_control_confirmation_impact": "NONE",
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(rows),
+        "missing_early_operator_footprints_count": len(missing_rows),
+        "guardrail_failure_count": len(guardrail_failures),
+        "reconciliation_distribution": _counter_to_dict(reconciliation_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "footprint_count_distribution": _counter_to_dict(footprint_count_counter),
+        "hard_confirmation_flag_distribution": _counter_to_dict(hard_flag_counter),
+        "vsa_weis_confirmation_distribution": _counter_to_dict(vsa_weis_counter),
+        "caution_flag_distribution": _counter_to_dict(caution_counter),
+        "hard_confirmation_flag_names": hard_confirmation_flag_names,
+        "vsa_weis_confirmation_names": vsa_weis_confirmation_names,
+        "caution_flag_names": caution_flag_names,
+        "review_rows": rows,
+        "missing_rows": missing_rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/early-operator-footprint-review")
 def early_operator_footprint_review():
     """
