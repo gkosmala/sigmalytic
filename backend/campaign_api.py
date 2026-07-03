@@ -1000,6 +1000,208 @@ def evidence_conflict_taxonomy():
 
 
 
+
+@router.get("/operator-control-confirmation-candidate-review")
+def operator_control_confirmation_candidate_review():
+    """
+    D3A read-only diagnostic endpoint.
+
+    Reviews which campaigns qualify as Composite Operator confirmation
+    candidates under the D3A doctrine.
+
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT change scores, ranks, states, transitions,
+    or existing operator-control confirmation.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.operator_control_confirmation_candidate_engine import (
+            classify_operator_control_confirmation_candidate,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    except Exception:
+        from campaign_engine.operator_control_confirmation_candidate_engine import (
+            classify_operator_control_confirmation_candidate,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    guardrail_failures = []
+
+    verdict_counter = Counter()
+    candidate_counter = Counter()
+    campaign_state_counter = Counter()
+    hard_flag_counter = Counter()
+    vsa_weis_counter = Counter()
+    caution_counter = Counter()
+    footprint_count_counter = Counter()
+
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+
+        candidate = classify_operator_control_confirmation_candidate(
+            evidence=evidence,
+            symbol=symbol,
+            campaign_state=campaign_state,
+        )
+
+        guardrail_ok = (
+            candidate.get("diagnostic_only") is True
+            and candidate.get("read_only") is True
+            and candidate.get("production_confirmation_allowed") is False
+            and candidate.get("operator_control_confirmed_by_this_engine") is False
+            and candidate.get("operator_control_confirmation_impact") == "NONE"
+            and candidate.get("score_impact") == "NONE"
+            and candidate.get("rank_impact") == "NONE"
+            and candidate.get("state_impact") == "NONE"
+            and candidate.get("transition_impact") == "NONE"
+            and candidate.get("state_transition_enabled") is False
+            and candidate.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "D3A candidate guardrail failure",
+                "payload": candidate,
+            })
+
+        candidate_verdict = candidate.get("candidate_verdict")
+        confirmation_candidate = bool(candidate.get("confirmation_candidate"))
+
+        verdict_counter[str(candidate_verdict)] += 1
+        candidate_counter[str(confirmation_candidate)] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+        footprint_count_counter[str(candidate.get("footprint_count"))] += 1
+
+        for flag in candidate.get("hard_confirmation_flags_present") or []:
+            hard_flag_counter[str(flag)] += 1
+
+        for flag in candidate.get("vsa_weis_confirmation_flags_present") or []:
+            vsa_weis_counter[str(flag)] += 1
+
+        for flag in candidate.get("caution_flags_present") or []:
+            caution_counter[str(flag)] += 1
+
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+            "confirmation_candidate": confirmation_candidate,
+            "candidate_verdict": candidate_verdict,
+            "candidate_reason": candidate.get("candidate_reason"),
+            "footprint_present": candidate.get("footprint_present"),
+            "footprint_count": candidate.get("footprint_count"),
+            "footprint_archetypes": candidate.get("footprint_archetypes") or [],
+            "operator_control_confirmed_current": candidate.get("operator_control_confirmed_current"),
+            "hard_confirmation_flags_present": candidate.get("hard_confirmation_flags_present") or [],
+            "vsa_weis_confirmation_flags_present": candidate.get("vsa_weis_confirmation_flags_present") or [],
+            "caution_flags_present": candidate.get("caution_flags_present") or [],
+            "hard_confirmation_count": candidate.get("hard_confirmation_count"),
+            "caution_count": candidate.get("caution_count"),
+            "risk_context": candidate.get("risk_context") or [],
+            "candidate_rule": candidate.get("candidate_rule"),
+            "production_confirmation_allowed": candidate.get("production_confirmation_allowed"),
+            "operator_control_confirmed_by_this_engine": candidate.get("operator_control_confirmed_by_this_engine"),
+            "score_impact": candidate.get("score_impact"),
+            "rank_impact": candidate.get("rank_impact"),
+            "state_impact": candidate.get("state_impact"),
+            "transition_impact": candidate.get("transition_impact"),
+            "operator_control_confirmation_impact": candidate.get("operator_control_confirmation_impact"),
+        })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("candidate_verdict") == "D3A_CONFIRMATION_CANDIDATE" else
+            1 if row.get("candidate_verdict") == "D3A_CANDIDATE_BLOCKED_BY_CAUTION" else
+            2 if row.get("candidate_verdict") == "D3A_DENSE_FOOTPRINT_MISSING_HARD_CONFIRMATION" else
+            3 if row.get("candidate_verdict") == "ALREADY_CONFIRMED_BY_OPERATOR_CONTROL_ENGINE" else
+            4,
+            -int(row.get("footprint_count") or 0),
+            -int(row.get("hard_confirmation_count") or 0),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_REVIEW",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/operator-control-confirmation-candidate-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "production_confirmation_allowed": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_confirmation_impact": "NONE",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(rows),
+        "confirmation_candidate_distribution": _counter_to_dict(candidate_counter),
+        "candidate_verdict_distribution": _counter_to_dict(verdict_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "footprint_count_distribution": _counter_to_dict(footprint_count_counter),
+        "hard_confirmation_flag_distribution": _counter_to_dict(hard_flag_counter),
+        "vsa_weis_confirmation_distribution": _counter_to_dict(vsa_weis_counter),
+        "caution_flag_distribution": _counter_to_dict(caution_counter),
+        "guardrail_failure_count": len(guardrail_failures),
+        "review_rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/operator-control-reconciliation-review")
 def operator_control_reconciliation_review():
     """
