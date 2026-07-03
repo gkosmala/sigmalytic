@@ -995,6 +995,157 @@ def evidence_conflict_taxonomy():
     }
 
 
+
+@router.get("/evidence-doctrine-classifier-review")
+def evidence_doctrine_classifier_review():
+    """
+    Phase C4 ? Doctrine classifier evidence review.
+
+    Read-only diagnostic endpoint.
+
+    This endpoint reviews evidence.doctrine_classifier payloads already stored
+    on active campaigns.
+
+    It does not:
+    - score campaigns,
+    - rank campaigns,
+    - change campaign state,
+    - enable transitions,
+    - write to Supabase,
+    - mutate evidence.
+    """
+
+    campaigns = _store().get_active_campaigns()
+    campaigns = _attach_weis_gamma_summaries(campaigns)
+
+    classifier_rows = []
+    missing_classifier_rows = []
+    sample_payloads = []
+    label_distribution = {}
+    status_counts = {}
+    guardrail_failures = []
+
+    expected_guardrails = {
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+    }
+
+    for campaign in campaigns:
+        evidence = _as_dict(campaign.get("evidence"))
+        classifier = _as_dict(evidence.get("doctrine_classifier"))
+
+        symbol = str(campaign.get("symbol") or "").upper()
+        campaign_state = (
+            campaign.get("campaign_state")
+            or campaign.get("current_state")
+            or campaign.get("state_enum")
+            or campaign.get("state")
+        )
+        timeframe = (
+            campaign.get("timeframe")
+            or evidence.get("timeframe")
+            or "DAILY"
+        )
+
+        base_row = {
+            "symbol": symbol,
+            "campaign_id": campaign.get("campaign_id"),
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+        }
+
+        if not classifier:
+            missing_classifier_rows.append({
+                **base_row,
+                "reason": "MISSING_DOCTRINE_CLASSIFIER",
+            })
+            continue
+
+        labels = classifier.get("doctrine_labels") or []
+        if not isinstance(labels, list):
+            labels = [str(labels)]
+
+        for label in labels:
+            key = str(label or "UNKNOWN")
+            label_distribution[key] = int(label_distribution.get(key, 0)) + 1
+
+        status = str(classifier.get("status") or "MISSING_STATUS")
+        status_counts[status] = int(status_counts.get(status, 0)) + 1
+
+        failed_guardrails = []
+        for key, expected in expected_guardrails.items():
+            if classifier.get(key) != expected:
+                failed_guardrails.append({
+                    "field": key,
+                    "expected": expected,
+                    "actual": classifier.get(key),
+                })
+
+        if failed_guardrails:
+            guardrail_failures.append({
+                **base_row,
+                "failed_guardrails": failed_guardrails,
+            })
+
+        conflict = _as_dict(classifier.get("conflict_interpretation"))
+        evidence_refs = _as_dict(classifier.get("evidence_references"))
+
+        row = {
+            **base_row,
+            "engine": classifier.get("engine"),
+            "version": classifier.get("version"),
+            "status": classifier.get("status"),
+            "wired_into_evidence_builder": classifier.get("wired_into_evidence_builder"),
+            "diagnostic_only": classifier.get("diagnostic_only"),
+            "score_impact": classifier.get("score_impact"),
+            "rank_impact": classifier.get("rank_impact"),
+            "state_impact": classifier.get("state_impact"),
+            "transition_impact": classifier.get("transition_impact"),
+            "state_transition_enabled": classifier.get("state_transition_enabled"),
+            "doctrine_labels": labels,
+            "overall_interpretation": classifier.get("overall_interpretation"),
+            "conflicts_present": conflict.get("conflicts_present"),
+            "blocking_warnings": classifier.get("blocking_warnings") or [],
+            "evidence_references": evidence_refs,
+        }
+
+        classifier_rows.append(row)
+
+        if len(sample_payloads) < 10:
+            sample_payloads.append({
+                **base_row,
+                "doctrine_classifier": classifier,
+            })
+
+    return {
+        "engine": "EVIDENCE_DOCTRINE_CLASSIFIER_REVIEW",
+        "version": "phase_c4_read_only_v1",
+        "endpoint": "/api/campaign/evidence-doctrine-classifier-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "total_campaigns": len(campaigns),
+        "with_classifier_count": len(classifier_rows),
+        "missing_classifier_count": len(missing_classifier_rows),
+        "label_distribution": dict(sorted(label_distribution.items())),
+        "status_counts": dict(sorted(status_counts.items())),
+        "guardrail_failure_count": len(guardrail_failures),
+        "guardrail_failures": guardrail_failures,
+        "classifier_rows": classifier_rows,
+        "missing_classifier_rows": missing_classifier_rows,
+        "sample_payloads": sample_payloads,
+    }
+
 @router.get("/health")
 def health():
     return {
