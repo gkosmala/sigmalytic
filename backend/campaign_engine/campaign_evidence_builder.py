@@ -1,4 +1,4 @@
-"""
+﻿"""
 backend/campaign_engine/campaign_evidence_builder.py
 
 Sigmalytic V2
@@ -90,6 +90,10 @@ except Exception:
     evaluate_vsa_weis_overlay = None
 
 
+try:
+    from backend.campaign_engine.diagnostic_doctrine_classifier import classify_diagnostic_doctrine
+except Exception:
+    classify_diagnostic_doctrine = None
 class CampaignEvidenceBuilder:
     @staticmethod
     def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -1548,6 +1552,40 @@ class CampaignEvidenceBuilder:
             "raw_metrics": raw_metrics,
         }
 
+        if classify_diagnostic_doctrine is not None:
+            try:
+                evidence["doctrine_classifier"] = classify_diagnostic_doctrine(
+                    evidence=evidence,
+                    symbol=symbol,
+                )
+            except Exception as exc:
+                evidence["doctrine_classifier"] = {
+                    "engine": "DIAGNOSTIC_DOCTRINE_CLASSIFIER",
+                    "version": "phase_c3_diagnostic_only_wiring",
+                    "status": "ERROR",
+                    "error": str(exc),
+                    "diagnostic_only": True,
+                    "score_impact": "NONE",
+                    "rank_impact": "NONE",
+                    "state_impact": "NONE",
+                    "transition_impact": "NONE",
+                    "state_transition_enabled": False,
+                    "wired_into_evidence_builder": True,
+                }
+        else:
+            evidence["doctrine_classifier"] = {
+                "engine": "DIAGNOSTIC_DOCTRINE_CLASSIFIER",
+                "version": "phase_c3_diagnostic_only_wiring",
+                "status": "UNAVAILABLE",
+                "diagnostic_only": True,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "state_transition_enabled": False,
+                "wired_into_evidence_builder": True,
+            }
+
         return evidence
 
     @staticmethod
@@ -1671,3 +1709,5 @@ class CampaignEvidenceBuilder:
                 "operator_control_evidence_count": 0,
             },
         }
+
+
