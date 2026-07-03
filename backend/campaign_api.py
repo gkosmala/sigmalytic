@@ -996,6 +996,219 @@ def evidence_conflict_taxonomy():
 
 
 
+
+
+@router.get("/evidence-doctrine-review-rankings")
+def evidence_doctrine_review_rankings():
+    """
+    Phase D1 - Doctrine review rankings.
+
+    Read-only diagnostic endpoint.
+
+    This endpoint organizes active campaigns by doctrine_classifier evidence.
+
+    It does not:
+    - score campaigns,
+    - replace campaign rankings,
+    - change campaign state,
+    - enable transitions,
+    - write to Supabase,
+    - mutate evidence.
+    """
+
+    campaigns = _store().get_active_campaigns()
+    campaigns = _attach_weis_gamma_summaries(campaigns)
+
+    review_rows = []
+    missing_classifier_rows = []
+    bucket_distribution = {}
+    support_flag_distribution = {}
+    risk_flag_distribution = {}
+    label_distribution = {}
+    status_counts = {}
+
+    def _inc(target, key):
+        key = str(key or "UNKNOWN")
+        target[key] = int(target.get(key, 0)) + 1
+
+    for campaign in campaigns:
+        evidence = _as_dict(campaign.get("evidence"))
+        classifier = _as_dict(evidence.get("doctrine_classifier"))
+
+        symbol = str(campaign.get("symbol") or "").upper()
+        campaign_state = (
+            campaign.get("campaign_state")
+            or campaign.get("current_state")
+            or campaign.get("state_enum")
+            or campaign.get("state")
+        )
+        timeframe = (
+            campaign.get("timeframe")
+            or evidence.get("timeframe")
+            or "DAILY"
+        )
+
+        base_row = {
+            "symbol": symbol,
+            "campaign_id": campaign.get("campaign_id"),
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+        }
+
+        if not classifier:
+            missing_classifier_rows.append({
+                **base_row,
+                "reason": "MISSING_DOCTRINE_CLASSIFIER",
+            })
+            continue
+
+        labels = classifier.get("doctrine_labels") or []
+        if not isinstance(labels, list):
+            labels = [str(labels)]
+        labels = [str(label) for label in labels if str(label or "").strip()]
+        label_set = set(labels)
+
+        for label in labels:
+            _inc(label_distribution, label)
+
+        status = str(classifier.get("status") or "MISSING_STATUS")
+        _inc(status_counts, status)
+
+        conflict = _as_dict(classifier.get("conflict_interpretation"))
+        conflicts_present = bool(conflict.get("conflicts_present"))
+
+        has_operator = "OPERATOR_CONTROL_CONFIRMED" in label_set
+        has_accumulation = "WYCKOFF_ACCUMULATION_SUPPORT" in label_set
+        has_absorption = "ABSORPTION_SUPPORT_PRESENT" in label_set
+        has_sos = "SOS_SUPPORT_PRESENT" in label_set
+        has_spring = "SPRING_SUPPORT_PRESENT" in label_set
+        has_no_supply = "VSA_NO_SUPPLY_SUPPORT" in label_set
+        has_survival_risk = "WYCKOFF_SURVIVAL_AT_RISK" in label_set
+
+        has_distribution_caution = any(item in label_set for item in [
+            "DISTRIBUTION_RISK_PRESENT",
+            "VSA_NO_DEMAND_CAUTION",
+            "VSA_UPTHRUST_RISK",
+        ])
+
+        support_flags = []
+        risk_flags = []
+
+        if has_operator:
+            support_flags.append("OPERATOR_CONTROL_CONFIRMED")
+        if has_accumulation:
+            support_flags.append("WYCKOFF_ACCUMULATION_SUPPORT")
+        if has_absorption:
+            support_flags.append("ABSORPTION_SUPPORT_PRESENT")
+        if has_sos:
+            support_flags.append("SOS_SUPPORT_PRESENT")
+        if has_spring:
+            support_flags.append("SPRING_SUPPORT_PRESENT")
+        if has_no_supply:
+            support_flags.append("VSA_NO_SUPPLY_SUPPORT")
+
+        if has_survival_risk:
+            risk_flags.append("WYCKOFF_SURVIVAL_AT_RISK")
+        if has_distribution_caution:
+            risk_flags.append("DISTRIBUTION_OR_VSA_CAUTION")
+        if conflicts_present:
+            risk_flags.append("CONFLICT_PRESENT")
+
+        for flag in support_flags:
+            _inc(support_flag_distribution, flag)
+        for flag in risk_flags:
+            _inc(risk_flag_distribution, flag)
+
+        if conflicts_present:
+            review_bucket = "CONFLICTED_EVIDENCE_REVIEW"
+            diagnostic_review_order = 6
+        elif has_operator and (has_accumulation or has_absorption) and (has_sos or has_spring):
+            review_bucket = "OPERATOR_WITH_SPRING_SOS_SUPPORT"
+            diagnostic_review_order = 1
+        elif has_operator and (has_accumulation or has_absorption):
+            review_bucket = "OPERATOR_ACCUMULATION_EVIDENCED"
+            diagnostic_review_order = 2
+        elif has_accumulation and has_absorption:
+            review_bucket = "ACCUMULATION_ABSORPTION_EVIDENCED"
+            diagnostic_review_order = 3
+        elif has_sos or has_spring:
+            review_bucket = "SPRING_SOS_EVIDENCED"
+            diagnostic_review_order = 4
+        elif has_survival_risk and not support_flags and not has_distribution_caution:
+            review_bucket = "SURVIVAL_AT_RISK_ONLY"
+            diagnostic_review_order = 7
+        elif has_distribution_caution and not support_flags:
+            review_bucket = "DISTRIBUTION_OR_VSA_CAUTION"
+            diagnostic_review_order = 8
+        elif labels:
+            review_bucket = "DOCTRINE_EVIDENCE_PRESENT"
+            diagnostic_review_order = 5
+        else:
+            review_bucket = "LOW_INFORMATION"
+            diagnostic_review_order = 9
+
+        _inc(bucket_distribution, review_bucket)
+
+        weis_gamma = _as_dict(evidence.get("weis_gamma"))
+        ranking = _as_dict(weis_gamma.get("ranking"))
+
+        review_rows.append({
+            **base_row,
+            "engine": classifier.get("engine"),
+            "classifier_version": classifier.get("version"),
+            "classifier_status": classifier.get("status"),
+            "diagnostic_review_bucket": review_bucket,
+            "diagnostic_review_order": diagnostic_review_order,
+            "support_flags": support_flags,
+            "risk_flags": risk_flags,
+            "doctrine_labels": labels,
+            "overall_interpretation": classifier.get("overall_interpretation"),
+            "conflicts_present": conflicts_present,
+            "blocking_warnings": classifier.get("blocking_warnings") or [],
+            "existing_rank_bucket": ranking.get("rank_bucket"),
+            "existing_fusion_state": _as_dict(weis_gamma.get("fusion")).get("fusion_state"),
+            "existing_gamma_status": _as_dict(weis_gamma.get("gamma_matrix")).get("status"),
+            "diagnostic_only": True,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "state_transition_enabled": False,
+        })
+
+    review_rows = sorted(
+        review_rows,
+        key=lambda row: (
+            int(row.get("diagnostic_review_order") or 99),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": "EVIDENCE_DOCTRINE_REVIEW_RANKINGS",
+        "version": "phase_d1_read_only_v1",
+        "endpoint": "/api/campaign/evidence-doctrine-review-rankings",
+        "read_only": True,
+        "diagnostic_only": True,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(review_rows),
+        "missing_classifier_count": len(missing_classifier_rows),
+        "bucket_distribution": dict(sorted(bucket_distribution.items())),
+        "support_flag_distribution": dict(sorted(support_flag_distribution.items())),
+        "risk_flag_distribution": dict(sorted(risk_flag_distribution.items())),
+        "label_distribution": dict(sorted(label_distribution.items())),
+        "status_counts": dict(sorted(status_counts.items())),
+        "review_rows": review_rows,
+        "missing_classifier_rows": missing_classifier_rows,
+    }
+
 @router.get("/evidence-doctrine-classifier-review")
 def evidence_doctrine_classifier_review():
     """
