@@ -45,6 +45,16 @@ except Exception:
     MultiScaleWeisEngine = None
 
 try:
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+except Exception:
+    WyckoffVerdictEngine = None
+
+try:
+    from backend.research_engine.wyckoff_survival_engine import WyckoffSurvivalEngine
+except Exception:
+    WyckoffSurvivalEngine = None
+
+try:
     from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
 except Exception:
     GammaStrikeMatrixEngine = None
@@ -681,6 +691,155 @@ class CampaignEvidenceBuilder:
             }
 
     @classmethod
+    def _build_wyckoff_doctrine_evidence(
+        cls,
+        bars: Any,
+        symbol: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Diagnostic-only Wyckoff doctrine evidence.
+
+        Purpose:
+        - Expose existing Wyckoff Verdict / Wyckoff Survival engines inside campaign evidence.
+        - Preserve original Wyckoff doctrine fields: spring, SOS, LPS, absorption, survival.
+        - Do NOT affect score, rank, state, transition, or frontend.
+        """
+        warnings = []
+
+        try:
+            bar_count = int(len(bars)) if bars is not None else 0
+        except Exception:
+            bar_count = 0
+
+        payload: Dict[str, Any] = {
+            "engine": "WYCKOFF_DOCTRINE_DIAGNOSTIC",
+            "status": "NOT_EVALUATED",
+            "symbol": symbol,
+            "bar_count": bar_count,
+            "diagnostic_only": True,
+            "wired_into_evidence_builder": True,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "state_transition_enabled": False,
+            "warnings": warnings,
+            "verdict": {},
+            "survival": {},
+            "scores": {
+                "supply_absorption_score": 0.0,
+                "spring_score": 0.0,
+                "sign_of_strength_score": 0.0,
+                "wyckoff_survival_score": 0.0,
+                "sos_persistence_score": 0.0,
+                "lps_quality_score": 0.0,
+                "absorption_continuation_score": 0.0,
+            },
+            "threshold_flags": {
+                "supply_absorption_score_ge_70": False,
+                "spring_score_ge_70": False,
+                "sign_of_strength_score_ge_70": False,
+                "sos_persistence_score_ge_70": False,
+                "lps_quality_score_ge_70": False,
+                "absorption_continuation_score_ge_70": False,
+            },
+            "doctrine_fields_exposed": [
+                "wyckoff_verdict",
+                "wyckoff_survival",
+                "supply_absorption_score",
+                "spring_score",
+                "sign_of_strength_score",
+                "wyckoff_survival_score",
+                "sos_persistence_score",
+                "lps_quality_score",
+                "absorption_continuation_score",
+            ],
+        }
+
+        if bar_count < 10:
+            payload["status"] = "INSUFFICIENT_BARS"
+            warnings.append("Insufficient bars for Wyckoff doctrine evaluation.")
+            return payload
+
+        verdict: Dict[str, Any] = {}
+        survival: Dict[str, Any] = {}
+
+        if WyckoffVerdictEngine is None:
+            warnings.append("WyckoffVerdictEngine unavailable.")
+        else:
+            try:
+                try:
+                    verdict = cls._as_dict(WyckoffVerdictEngine().evaluate_bars(bars, symbol=symbol))
+                except TypeError:
+                    verdict = cls._as_dict(WyckoffVerdictEngine().evaluate_bars(bars))
+            except Exception as exc:
+                warnings.append(f"WyckoffVerdictEngine error: {exc}")
+                verdict = {"status": "ERROR", "error": str(exc)}
+
+        if WyckoffSurvivalEngine is None:
+            warnings.append("WyckoffSurvivalEngine unavailable.")
+        else:
+            try:
+                try:
+                    survival = cls._as_dict(WyckoffSurvivalEngine().evaluate_bars(bars, symbol=symbol))
+                except TypeError:
+                    survival = cls._as_dict(WyckoffSurvivalEngine().evaluate_bars(bars))
+            except Exception as exc:
+                warnings.append(f"WyckoffSurvivalEngine error: {exc}")
+                survival = {"status": "ERROR", "error": str(exc)}
+
+        payload["verdict"] = verdict
+        payload["survival"] = survival
+
+        supply_absorption_score = cls._safe_float(verdict.get("supply_absorption_score"))
+        spring_score = cls._safe_float(verdict.get("spring_score"))
+        sign_of_strength_score = cls._safe_float(verdict.get("sign_of_strength_score"))
+
+        wyckoff_survival_score = cls._safe_float(
+            survival.get("wyckoff_survival_score")
+            if "wyckoff_survival_score" in survival
+            else survival.get("survival_score")
+        )
+        sos_persistence_score = cls._safe_float(survival.get("sos_persistence_score"))
+        lps_quality_score = cls._safe_float(survival.get("lps_quality_score"))
+        absorption_continuation_score = cls._safe_float(survival.get("absorption_continuation_score"))
+
+        payload["scores"] = {
+            "supply_absorption_score": round(supply_absorption_score, 4),
+            "spring_score": round(spring_score, 4),
+            "sign_of_strength_score": round(sign_of_strength_score, 4),
+            "wyckoff_survival_score": round(wyckoff_survival_score, 4),
+            "sos_persistence_score": round(sos_persistence_score, 4),
+            "lps_quality_score": round(lps_quality_score, 4),
+            "absorption_continuation_score": round(absorption_continuation_score, 4),
+        }
+
+        payload["threshold_flags"] = {
+            "supply_absorption_score_ge_70": bool(supply_absorption_score >= 70.0),
+            "spring_score_ge_70": bool(spring_score >= 70.0),
+            "sign_of_strength_score_ge_70": bool(sign_of_strength_score >= 70.0),
+            "sos_persistence_score_ge_70": bool(sos_persistence_score >= 70.0),
+            "lps_quality_score_ge_70": bool(lps_quality_score >= 70.0),
+            "absorption_continuation_score_ge_70": bool(absorption_continuation_score >= 70.0),
+        }
+
+        payload["phase"] = str(
+            verdict.get("phase")
+            or verdict.get("wyckoff_phase")
+            or verdict.get("verdict")
+            or survival.get("survival_state")
+            or survival.get("state")
+            or "UNKNOWN"
+        )
+
+        if verdict or survival:
+            payload["status"] = "OK_WITH_WARNINGS" if warnings else "OK"
+        else:
+            payload["status"] = "ENGINE_UNAVAILABLE"
+
+        return payload
+
+    @classmethod
     def _build_vsa_weis_overlay(
         cls,
         bars: pd.DataFrame,
@@ -1299,6 +1458,12 @@ class CampaignEvidenceBuilder:
             timeframe=timeframe,
         )
 
+
+        wyckoff_doctrine = cls._build_wyckoff_doctrine_evidence(
+            bars,
+            symbol=symbol,
+        )
+
         transition_readiness = cls._build_transition_readiness_evidence(
             bar_depth_profile=bar_depth_profile,
             operator_control=operator_control,
@@ -1354,6 +1519,7 @@ class CampaignEvidenceBuilder:
         evidence = {
             "bar_depth": bar_depth_profile,
             "operator_control": operator_control,
+            "wyckoff_doctrine": wyckoff_doctrine,
             "transition_readiness": transition_readiness,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
