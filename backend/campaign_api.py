@@ -1001,6 +1001,262 @@ def evidence_conflict_taxonomy():
 
 
 
+
+@router.get("/wyckoff-weis-operator-confirmation-review")
+def wyckoff_weis_operator_confirmation_review():
+    """
+    D3C Wyckoff / Weis shadow-production confirmation review.
+
+    This endpoint applies the doctrinal rule:
+
+    Composite Operator Control =
+        Tested Supply Exhaustion
+        AND Active Demand / Support Validation
+        AND Structurally Meaningful Location
+        AND NOT Contrary Failure
+
+    This endpoint is read-only and diagnostic-only.
+    It does NOT confirm operator control in production.
+    It does NOT write to Supabase.
+    It does NOT mutate campaigns.
+    It does NOT change scores, ranks, states, or transitions.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.wyckoff_weis_operator_confirmation_engine import (
+            classify_wyckoff_weis_operator_confirmation,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    except Exception:
+        from campaign_engine.wyckoff_weis_operator_confirmation_engine import (
+            classify_wyckoff_weis_operator_confirmation,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    guardrail_failures = []
+
+    doctrine_verdict_counter = Counter()
+    doctrine_confirmable_counter = Counter()
+    existing_control_context_counter = Counter()
+    campaign_state_counter = Counter()
+    sml_counter = Counter()
+    sml_location_counter = Counter()
+    sml_quality_counter = Counter()
+    supply_counter = Counter()
+    demand_counter = Counter()
+    contrary_counter = Counter()
+    block_reason_counter = Counter()
+
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+
+        review = classify_wyckoff_weis_operator_confirmation(
+            evidence=evidence,
+            symbol=symbol,
+            campaign_state=campaign_state,
+        )
+
+        guardrail_ok = (
+            review.get("diagnostic_only") is True
+            and review.get("read_only") is True
+            and review.get("shadow_production") is True
+            and review.get("writes_to_supabase") is False
+            and review.get("mutates_campaigns") is False
+            and review.get("production_confirmation_allowed") is False
+            and review.get("operator_control_confirmed_by_this_engine") is False
+            and review.get("operator_control_confirmation_impact") == "NONE"
+            and review.get("score_impact") == "NONE"
+            and review.get("rank_impact") == "NONE"
+            and review.get("state_impact") == "NONE"
+            and review.get("transition_impact") == "NONE"
+            and review.get("state_transition_enabled") is False
+            and review.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "D3C shadow confirmation guardrail failure",
+                "payload": review,
+            })
+
+        doctrine_verdict = review.get("doctrine_verdict")
+        doctrine_confirmable = bool(review.get("doctrine_confirmable"))
+        existing_control_context = review.get("existing_control_context")
+
+        doctrine_verdict_counter[str(doctrine_verdict)] += 1
+        doctrine_confirmable_counter[str(doctrine_confirmable)] += 1
+        existing_control_context_counter[str(existing_control_context)] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+        sml_counter[str(bool(review.get("sml_present")))] += 1
+        sml_quality_counter[str(review.get("sml_evidence_quality"))] += 1
+
+        for location in review.get("sml_locations") or []:
+            sml_location_counter[str(location)] += 1
+
+        for flag in review.get("supply_exhaustion_flags_present") or []:
+            supply_counter[str(flag)] += 1
+
+        for flag in review.get("demand_support_flags_present") or []:
+            demand_counter[str(flag)] += 1
+
+        for flag in review.get("contrary_failure_flags_present") or []:
+            contrary_counter[str(flag)] += 1
+
+        for flag in review.get("contrary_risk_context_present") or []:
+            contrary_counter[str(flag)] += 1
+
+        for reason in review.get("block_reasons") or []:
+            block_reason_counter[str(reason)] += 1
+
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+
+            "doctrine_confirmable": doctrine_confirmable,
+            "doctrine_verdict": doctrine_verdict,
+            "doctrine_reason": review.get("doctrine_reason"),
+            "existing_control_context": existing_control_context,
+
+            "footprint_present": review.get("footprint_present"),
+            "footprint_count": review.get("footprint_count"),
+            "footprint_archetypes": review.get("footprint_archetypes") or [],
+            "operator_control_confirmed_current": review.get("operator_control_confirmed_current"),
+
+            "sml_present": review.get("sml_present"),
+            "sml_locations": review.get("sml_locations") or [],
+            "sml_evidence_quality": review.get("sml_evidence_quality"),
+            "sml_reason": review.get("sml_reason") or [],
+            "explicit_geometry_available": review.get("explicit_geometry_available"),
+            "geometry_inputs": review.get("geometry_inputs") or {},
+
+            "supply_exhaustion_validated": review.get("supply_exhaustion_validated"),
+            "supply_exhaustion_flags_present": review.get("supply_exhaustion_flags_present") or [],
+
+            "demand_support_validated": review.get("demand_support_validated"),
+            "demand_support_flags_present": review.get("demand_support_flags_present") or [],
+
+            "contrary_failure_present": review.get("contrary_failure_present"),
+            "contrary_failure_flags_present": review.get("contrary_failure_flags_present") or [],
+            "contrary_risk_context_present": review.get("contrary_risk_context_present") or [],
+
+            "block_reasons": review.get("block_reasons") or [],
+            "doctrine_rule": review.get("doctrine_rule"),
+
+            "production_confirmation_allowed": review.get("production_confirmation_allowed"),
+            "operator_control_confirmed_by_this_engine": review.get("operator_control_confirmed_by_this_engine"),
+            "operator_control_confirmation_impact": review.get("operator_control_confirmation_impact"),
+            "score_impact": review.get("score_impact"),
+            "rank_impact": review.get("rank_impact"),
+            "state_impact": review.get("state_impact"),
+            "transition_impact": review.get("transition_impact"),
+        })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("existing_control_context") == "SHADOW_CONFIRMABLE_BUT_EXISTING_ENGINE_UNCONFIRMED" else
+            1 if row.get("doctrine_verdict") == "DOCTRINE_NOT_CONFIRMABLE" and row.get("footprint_count", 0) >= 4 else
+            2 if row.get("existing_control_context") == "ALREADY_CONFIRMED_BY_EXISTING_OPERATOR_CONTROL_ENGINE" else
+            3,
+            -int(row.get("footprint_count") or 0),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_REVIEW",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/wyckoff-weis-operator-confirmation-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "shadow_production": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "production_confirmation_allowed": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_confirmation_impact": "NONE",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "not_a_trade_signal": True,
+        "total_campaigns": len(campaigns),
+        "review_rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+
+        "doctrine_rule": (
+            "Composite Operator Control = Tested Supply Exhaustion "
+            "AND Active Demand/Support Validation "
+            "AND Structurally Meaningful Location "
+            "AND NOT Contrary Failure"
+        ),
+
+        "doctrine_confirmable_distribution": _counter_to_dict(doctrine_confirmable_counter),
+        "doctrine_verdict_distribution": _counter_to_dict(doctrine_verdict_counter),
+        "existing_control_context_distribution": _counter_to_dict(existing_control_context_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "sml_present_distribution": _counter_to_dict(sml_counter),
+        "sml_location_distribution": _counter_to_dict(sml_location_counter),
+        "sml_evidence_quality_distribution": _counter_to_dict(sml_quality_counter),
+        "supply_exhaustion_flag_distribution": _counter_to_dict(supply_counter),
+        "demand_support_flag_distribution": _counter_to_dict(demand_counter),
+        "contrary_failure_distribution": _counter_to_dict(contrary_counter),
+        "block_reason_distribution": _counter_to_dict(block_reason_counter),
+
+        "review_rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/operator-control-confirmation-candidate-review")
 def operator_control_confirmation_candidate_review():
     """
