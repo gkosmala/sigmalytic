@@ -1552,6 +1552,26 @@ class CampaignEvidenceBuilder:
             "raw_metrics": raw_metrics,
         }
 
+        try:
+            from backend.campaign_engine.early_operator_footprint_engine import classify_early_operator_footprints
+            evidence["early_operator_footprints"] = classify_early_operator_footprints(evidence=evidence, symbol=symbol)
+        except Exception as exc:
+            evidence["early_operator_footprints"] = {
+                "engine": "EARLY_OPERATOR_FOOTPRINTS_DIAGNOSTIC",
+                "version": "phase_d2_5_diagnostic_only_v1",
+                "symbol": symbol,
+                "status": "ERROR",
+                "diagnostic_only": True,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "state_transition_enabled": False,
+                "operator_control_confirmation_impact": "NONE",
+                "operator_control_confirmed_by_this_engine": False,
+                "error": str(exc),
+            }
+
         if classify_diagnostic_doctrine is not None:
             try:
                 evidence["doctrine_classifier"] = classify_diagnostic_doctrine(
