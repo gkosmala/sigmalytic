@@ -16,7 +16,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 ENGINE_NAME = "D3D_OPERATOR_CONTROL_PRODUCTION_MUTATION_GATE"
-ENGINE_VERSION = "phase_d3d_operator_control_production_mutation_gate_v1"
+ENGINE_VERSION = "phase_d3d_operator_control_production_mutation_gate_explicit_geometry_only_v2"
 CONFIRM_PHRASE = "D3D_OPERATOR_CONTROL_PRODUCTION_MUTATION_APPROVED"
 def _as_dict(value: Any) -> Dict[str, Any]:
     if isinstance(value, dict):
