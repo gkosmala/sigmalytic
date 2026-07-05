@@ -491,12 +491,15 @@ def evidence_diagnostic_rankings():
         "transition_enabled_expected": False,
         "total_campaigns": base.get("total_campaigns"),
         "full_depth_count": base.get("full_depth_count"),
-        "operator_control_confirmed_count": base.get("operator_control_confirmed_count"),
+        "legacy_operator_control_evidence_count": base.get("operator_control_confirmed_count"),
+        "d3d_production_confirmed_operator_control_count": 0,
+        "operator_control_confirmation_label_policy": "LEGACY_BOOLEAN_IS_EVIDENCE_NOT_D3D_PRODUCTION_CONFIRMATION",
         "ranked_diagnostic_campaigns": ranked_rows,
-        "operator_control_confirmed_ranked": [
+        "legacy_operator_control_evidence_ranked_diagnostic_only": [
             row for row in ranked_rows
             if row.get("operator_control_confirmed") is True
         ],
+        "d3d_production_confirmed_operator_control_ranked": [],
         "conflicted_campaigns": [
             row for row in ranked_rows
             if row.get("conflict_flags")
@@ -541,20 +544,25 @@ def single_symbol_evidence_diagnostics(symbol: str):
     weis_gamma_phase = _as_dict(match.get("weis_gamma_phase"))
     conflict_flags = list(match.get("conflict_flags") or [])
 
-    operator_confirmed = bool(match.get("operator_control_confirmed"))
+    legacy_operator_control_evidence_present = bool(match.get("operator_control_confirmed"))
+    d3d_production_confirmed_operator_control = False
     transition_enabled = bool(match.get("state_transition_enabled"))
     gamma_fresh = bool(weis_gamma_phase.get("gamma_data_fresh"))
 
-    operator_summary = "Operator control is evidenced from raw OHLCV tape behavior." if operator_confirmed else "Operator control is not confirmed by the current raw OHLCV evidence threshold."
+    operator_summary = (
+        "Legacy operator-control evidence is present from raw OHLCV tape behavior, but this is not D3D production-confirmed."
+        if legacy_operator_control_evidence_present
+        else "Operator control is not D3D production-confirmed by the current doctrine gate."
+    )
 
     if "PHASE_PERMISSION_BLOCKED" in conflict_flags:
         campaign_explanation = "Diagnostic conflict: operator/control evidence exists or partial evidence exists, but Weis/Gamma phase permission is blocked."
     elif "DOWNSIDE_WEIS_GAMMA_DIRECTION" in conflict_flags:
         campaign_explanation = "Diagnostic conflict: Weis/Gamma directional evidence is downside or non-confirmatory."
-    elif operator_confirmed and gamma_fresh:
-        campaign_explanation = "Diagnostic alignment: operator control is confirmed and Gamma is fresh."
-    elif operator_confirmed and not gamma_fresh:
-        campaign_explanation = "Operator control is confirmed, but Gamma refresh is required before stronger confirmation."
+    elif legacy_operator_control_evidence_present and gamma_fresh:
+        campaign_explanation = "Diagnostic note: legacy operator-control evidence is present and Gamma is fresh, but operator control is not D3D production-confirmed."
+    elif legacy_operator_control_evidence_present and not gamma_fresh:
+        campaign_explanation = "Diagnostic note: legacy operator-control evidence is present, but Gamma refresh is required and operator control is not D3D production-confirmed."
     elif match.get("transition_readiness_verdict") == "CONFIRMATION_READY_DIAGNOSTIC":
         campaign_explanation = "Watchlist diagnostic: confirmation evidence exists, but operator control is not confirmed."
     else:
@@ -562,8 +570,9 @@ def single_symbol_evidence_diagnostics(symbol: str):
 
     failed_or_missing_items = []
 
-    if not operator_confirmed:
-        failed_or_missing_items.append("operator_control_confirmed")
+    if not legacy_operator_control_evidence_present:
+        failed_or_missing_items.append("legacy_operator_control_evidence_present")
+    failed_or_missing_items.append("d3d_production_confirmation_not_established")
     if not gamma_fresh:
         failed_or_missing_items.append("gamma_data_fresh")
     if conflict_flags:
@@ -594,7 +603,11 @@ def single_symbol_evidence_diagnostics(symbol: str):
         },
         "operator_control_explanation": {
             "summary": operator_summary,
-            "confirmed": operator_confirmed,
+            "confirmed": d3d_production_confirmed_operator_control,
+            "d3d_production_confirmed": d3d_production_confirmed_operator_control,
+            "legacy_operator_control_evidence_present": legacy_operator_control_evidence_present,
+            "legacy_operator_control_boolean_source": match.get("operator_control_confirmed"),
+            "confirmation_label_policy": "LEGACY_BOOLEAN_IS_EVIDENCE_NOT_D3D_PRODUCTION_CONFIRMATION",
             "verdict": match.get("operator_control_verdict"),
             "evidence_count": match.get("operator_control_evidence_count"),
             "depth_requirement_met": match.get("operator_control_depth_requirement_met"),
@@ -646,7 +659,7 @@ def evidence_audit_export():
     ranking_payload = evidence_diagnostic_rankings()
 
     ranked_rows = list(ranking_payload.get("ranked_diagnostic_campaigns") or [])
-    operator_rows = list(ranking_payload.get("operator_control_confirmed_ranked") or [])
+    legacy_operator_rows = list(ranking_payload.get("legacy_operator_control_evidence_ranked_diagnostic_only") or [])
     conflicted_rows = list(ranking_payload.get("conflicted_campaigns") or [])
 
     gamma_refresh_rows = [
@@ -675,7 +688,9 @@ def evidence_audit_export():
             "campaign_state": row.get("campaign_state"),
             "diagnostic_priority_tier": row.get("diagnostic_priority_tier"),
             "diagnostic_priority_score": row.get("diagnostic_priority_score"),
-            "operator_control_confirmed": row.get("operator_control_confirmed"),
+            "legacy_operator_control_evidence_present": row.get("operator_control_confirmed"),
+            "d3d_production_confirmed_operator_control": False,
+            "operator_control_confirmation_label_policy": "LEGACY_BOOLEAN_IS_EVIDENCE_NOT_D3D_PRODUCTION_CONFIRMATION",
             "operator_control_evidence_count": row.get("operator_control_evidence_count"),
             "evidence_supported_state": row.get("evidence_supported_state"),
             "gamma_refresh_needed": row.get("gamma_refresh_needed"),
@@ -701,7 +716,8 @@ def evidence_audit_export():
         "counts": {
             "total_campaigns": ranking_payload.get("total_campaigns"),
             "full_depth_count": ranking_payload.get("full_depth_count"),
-            "operator_control_confirmed_count": ranking_payload.get("operator_control_confirmed_count"),
+            "legacy_operator_control_evidence_count": ranking_payload.get("legacy_operator_control_evidence_count"),
+            "d3d_production_confirmed_operator_control_count": ranking_payload.get("d3d_production_confirmed_operator_control_count"),
             "aligned_a_diagnostic_count": len(aligned_a_rows),
             "gamma_refresh_needed_count": len(gamma_refresh_rows),
             "conflicted_count": len(conflicted_rows),
@@ -710,7 +726,8 @@ def evidence_audit_export():
         "diagnostic_tier_counts": tier_counts,
         "symbol_digest": symbol_digest,
         "aligned_a_diagnostic_campaigns": aligned_a_rows,
-        "operator_control_confirmed_campaigns": operator_rows,
+        "legacy_operator_control_evidence_campaigns": legacy_operator_rows,
+        "d3d_production_confirmed_operator_control_campaigns": [],
         "gamma_refresh_needed_campaigns": gamma_refresh_rows,
         "conflict_blocked_campaigns": blocked_rows,
         "conflicted_campaigns": conflicted_rows,

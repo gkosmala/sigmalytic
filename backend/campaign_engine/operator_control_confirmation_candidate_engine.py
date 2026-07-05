@@ -94,8 +94,8 @@ def classify_operator_control_confirmation_candidate(
     confirmation_candidate = False
 
     if operator_control_confirmed:
-        verdict = "ALREADY_CONFIRMED_BY_OPERATOR_CONTROL_ENGINE"
-        reason = "Existing operator_control engine already confirms tape-derived Composite Operator control."
+        verdict = "LEGACY_OPERATOR_CONTROL_EVIDENCE_ALREADY_PRESENT"
+        reason = "Legacy operator-control evidence is already present from raw tape behavior, but this is not D3D production-confirmed operator control."
     elif not footprint_present:
         verdict = "NO_OPERATOR_FOOTPRINT"
         reason = "No early operator footprint is present."
