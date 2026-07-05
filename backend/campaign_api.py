@@ -1693,6 +1693,134 @@ def wyckoff_weis_operator_confirmation_review():
 
 
 
+
+
+@router.get("/explicit-sml-taxonomy-audit-review")
+def explicit_sml_taxonomy_audit_review():
+    """
+    D3G read-only no-drift taxonomy audit endpoint.
+
+    Separates explicit SML evidence into:
+    1. constructive lower-zone SML
+    2. risk-side upper-zone SML
+
+    This endpoint does NOT repair D3C.
+    This endpoint does NOT alter D3D.
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.explicit_sml_taxonomy_audit_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            audit_explicit_sml_taxonomy,
+        )
+    except Exception:
+        from campaign_engine.explicit_sml_taxonomy_audit_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            audit_explicit_sml_taxonomy,
+        )
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    guardrail_failures = []
+
+    taxonomy_counter = Counter()
+    no_drift_counter = Counter()
+    d3d_allowed_counter = Counter()
+    lower_zone_counter = Counter()
+    upper_zone_counter = Counter()
+    lower_flag_counter = Counter()
+    upper_flag_counter = Counter()
+
+    for campaign in campaigns:
+        row = audit_explicit_sml_taxonomy(campaign)
+        rows.append(row)
+
+        taxonomy_counter[str(row.get("taxonomy_classification"))] += 1
+        no_drift_counter[str(row.get("no_drift_status"))] += 1
+        d3d_allowed_counter[str(bool(row.get("d3d_allowed_by_taxonomy")))] += 1
+        lower_zone_counter[str(bool(row.get("constructive_lower_zone")))] += 1
+        upper_zone_counter[str(bool(row.get("risk_side_upper_zone")))] += 1
+
+        for flag in row.get("lower_zone_flags") or []:
+            lower_flag_counter[str(flag)] += 1
+
+        for flag in row.get("upper_zone_flags") or []:
+            upper_flag_counter[str(flag)] += 1
+
+        guardrail_ok = (
+            row.get("read_only") is True
+            and row.get("diagnostic_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append(row)
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("no_drift_status") == "FAIL" else 1,
+            0 if row.get("risk_side_upper_zone") is True else 1,
+            0 if row.get("constructive_lower_zone") is True else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/explicit-sml-taxonomy-audit-review",
+
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "production_confirmation_allowed": False,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "not_a_trade_signal": True,
+
+        "total_campaigns": len(campaigns),
+        "rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+
+        "taxonomy_classification_distribution": _counter_to_dict(taxonomy_counter),
+        "no_drift_status_distribution": _counter_to_dict(no_drift_counter),
+        "d3d_allowed_by_taxonomy_distribution": _counter_to_dict(d3d_allowed_counter),
+        "constructive_lower_zone_distribution": _counter_to_dict(lower_zone_counter),
+        "risk_side_upper_zone_distribution": _counter_to_dict(upper_zone_counter),
+        "lower_zone_flag_distribution": _counter_to_dict(lower_flag_counter),
+        "upper_zone_flag_distribution": _counter_to_dict(upper_flag_counter),
+
+        "rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/explicit-upper-zone-diagnostic-review")
 def explicit_upper_zone_diagnostic_review():
     """
