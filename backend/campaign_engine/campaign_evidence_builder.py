@@ -1507,6 +1507,138 @@ class CampaignEvidenceBuilder:
             "last5_return": round(last5_return, 6),
         }
 
+        atr_components = []
+        try:
+            high = pd.to_numeric(bars["high"], errors="coerce")
+            low = pd.to_numeric(bars["low"], errors="coerce")
+            close = pd.to_numeric(bars["close"], errors="coerce")
+            prev_close = close.shift(1)
+            atr_components = [
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ]
+            atr_14 = cls._safe_float(pd.concat(atr_components, axis=1).max(axis=1).tail(14).mean(), 0.0)
+        except Exception:
+            atr_14 = 0.0
+        range_floor = prior_support if prior_support > 0 else recent_support
+        if range_floor <= 0:
+            range_floor = recent_low
+        range_ceiling = recent_high
+        range_height = range_ceiling - range_floor if range_ceiling > range_floor else 0.0
+        effective_atr = atr_14 if atr_14 > 0 else (range_height * 0.05 if range_height > 0 else 0.0)
+        range_midpoint = range_floor + (range_height / 2.0) if range_height > 0 else None
+        range_position_pct_d3c2a = ((close_now - range_floor) / range_height) * 100.0 if range_height > 0 else None
+        near_range_floor = bool(range_height > 0 and close_now >= range_floor and close_now <= range_floor + (0.5 * effective_atr))
+        standard_spring_zone = bool(range_height > 0 and latest_low >= range_floor - (3.0 * effective_atr) and latest_low <= range_floor)
+        spring_recaptured = bool(range_height > 0 and latest_low < range_floor and close_now >= range_floor)
+        near_range_ceiling = bool(range_height > 0 and close_now <= range_ceiling and close_now >= range_ceiling - (0.5 * effective_atr))
+        standard_upthrust_zone = bool(range_height > 0 and latest["high"] >= range_ceiling and latest["high"] <= range_ceiling + (3.0 * effective_atr))
+        ut_failed_back_inside = bool(range_height > 0 and latest["high"] > range_ceiling and close_now <= range_ceiling)
+        breakout_above_range_ceiling = bool(range_height > 0 and close_now > range_ceiling and not ut_failed_back_inside)
+        excessive_breakout_extension = bool(range_height > 0 and close_now > range_ceiling + (3.0 * effective_atr))
+        price_series_rows = []
+        try:
+            for _, row in bars.tail(252).iterrows():
+                price_series_rows.append({
+                    "open": cls._safe_float(row.get("open")),
+                    "high": cls._safe_float(row.get("high")),
+                    "low": cls._safe_float(row.get("low")),
+                    "close": cls._safe_float(row.get("close")),
+                    "volume": cls._safe_float(row.get("volume")),
+                })
+        except Exception:
+            price_series_rows = []
+        structural_location = {
+            "engine": "D3C_2A_STRUCTURAL_LOCATION_EVIDENCE_ENRICHMENT",
+            "version": "phase_d3c_2a_primary_structural_location_enrichment_v1",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "symbol": str(symbol or "").upper(),
+            "timeframe": str(timeframe or "DAILY").upper(),
+            "current_price": close_now,
+            "bar_open": cls._safe_float(latest["open"]),
+            "bar_high": cls._safe_float(latest["high"]),
+            "bar_low": latest_low,
+            "bar_close": close_now,
+            "bar_volume": latest_volume,
+            "range_floor": range_floor,
+            "range_ceiling": range_ceiling,
+            "range_midpoint": range_midpoint,
+            "range_height": range_height,
+            "range_position_pct": range_position_pct_d3c2a,
+            "atr_14": atr_14,
+            "effective_atr": effective_atr,
+            "atr_source": "computed_true_range_14" if atr_14 > 0 else "fallback_range_height_5pct",
+            "atr_valid": bool(atr_14 > 0),
+            "support_level": range_floor,
+            "resistance_level": range_ceiling,
+            "support_source": "prior_support_from_40_bar_low",
+            "resistance_source": "recent_high_from_40_bar_context",
+            "primary_tr": {
+                "range_floor": range_floor,
+                "range_ceiling": range_ceiling,
+                "range_midpoint": range_midpoint,
+                "range_height": range_height,
+                "range_position_pct": range_position_pct_d3c2a,
+                "floor_source": "prior_support_from_40_bar_low",
+                "ceiling_source": "recent_high_from_40_bar_context",
+                "range_confidence": "D3C2A_INITIAL_STRUCTURAL_PROXY",
+                "range_type": "UNCONFIRMED_RANGE" if range_height > 0 else "NO_VALID_RANGE",
+                "primary_tr_ready": bool(range_height > 0),
+            },
+            "current_bar": {
+                "open": cls._safe_float(latest["open"]),
+                "high": cls._safe_float(latest["high"]),
+                "low": latest_low,
+                "close": close_now,
+                "volume": latest_volume,
+                "timeframe": str(timeframe or "DAILY").upper(),
+            },
+            "volatility": {
+                "atr_14": atr_14,
+                "effective_atr": effective_atr,
+                "atr_source": "computed_true_range_14" if atr_14 > 0 else "fallback_range_height_5pct",
+                "atr_valid": bool(atr_14 > 0),
+            },
+            "support_resistance": {
+                "support_level": range_floor,
+                "resistance_level": range_ceiling,
+                "support_source": "prior_support_from_40_bar_low",
+                "resistance_source": "recent_high_from_40_bar_context",
+            },
+            "flags": {
+                "near_range_floor": near_range_floor,
+                "standard_spring_zone": standard_spring_zone,
+                "spring_recaptured": spring_recaptured,
+                "near_range_ceiling": near_range_ceiling,
+                "standard_upthrust_zone": standard_upthrust_zone,
+                "ut_failed_back_inside": ut_failed_back_inside,
+                "breakout_above_range_ceiling": breakout_above_range_ceiling,
+                "excessive_breakout_extension": excessive_breakout_extension,
+                "deep_macro_shakeout_zone": False,
+                "buec_old_range_ceiling_test": False,
+                "near_hvn_poc": False,
+            },
+            "price_series": {
+                "bars": price_series_rows,
+                "bar_count": len(price_series_rows),
+                "source": "campaign_evidence_builder.build_from_bars",
+                "timeframe": str(timeframe or "DAILY").upper(),
+            },
+            "production_sml_ready": False,
+        }
         weis_gamma_overlay = cls._build_weis_gamma_overlay(
             bars=bars,
             symbol=str(symbol or "").upper(),
@@ -1527,6 +1659,7 @@ class CampaignEvidenceBuilder:
             "transition_readiness": transition_readiness,
             "symbol": str(symbol or "").upper(),
             "timeframe": str(timeframe or "DAILY").upper(),
+            "structural_location": structural_location,
             "wyckoff": {
                 "persistent_absorption": bool(persistent_absorption),
                 "failing_downside_result": bool(failing_downside_result),
