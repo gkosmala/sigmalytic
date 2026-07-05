@@ -21,7 +21,7 @@ from typing import Any, Dict, List
 
 
 ENGINE_NAME = "WYCKOFF_WEIS_OPERATOR_CONFIRMATION_SHADOW"
-ENGINE_VERSION = "phase_d3c_shadow_read_only_v1"
+ENGINE_VERSION = "phase_d3c_shadow_explicit_geometry_read_only_v2"
 
 
 SUPPLY_EXHAUSTION_FLAGS = [
@@ -157,54 +157,83 @@ def _detect_structurally_meaningful_location(
     reasons: List[str] = []
     evidence_quality = "MISSING"
 
-    # Explicit geometry path, if available in future payloads.
+    # Explicit geometry path.
+    # D3C.2A writes validated structural-location evidence under
+    # evidence.structural_location. Keep top-level aliases as backward-compatible
+    # fallbacks only.
+    structural_location = _as_dict(evidence.get("structural_location"))
+    primary_tr = _as_dict(structural_location.get("primary_tr"))
+    volatility = _as_dict(structural_location.get("volatility"))
+    sl_flags = _as_dict(structural_location.get("flags"))
     price = _number(
-        evidence.get("close")
+        structural_location.get("current_price")
+        or structural_location.get("bar_close")
+        or evidence.get("close")
         or evidence.get("price")
         or evidence.get("last_price")
         or evidence.get("current_price")
     )
-
     tr_floor = _number(
-        evidence.get("tr_floor")
+        structural_location.get("range_floor")
+        or primary_tr.get("range_floor")
+        or evidence.get("tr_floor")
         or evidence.get("trading_range_floor")
         or evidence.get("range_floor")
     )
-
     tr_ceiling = _number(
-        evidence.get("tr_ceiling")
+        structural_location.get("range_ceiling")
+        or primary_tr.get("range_ceiling")
+        or evidence.get("tr_ceiling")
         or evidence.get("trading_range_ceiling")
         or evidence.get("range_ceiling")
     )
-
-    atr = _number(evidence.get("atr") or evidence.get("atr_14") or evidence.get("ATR14"))
-
+    atr = _number(
+        structural_location.get("effective_atr")
+        or structural_location.get("atr_14")
+        or volatility.get("effective_atr")
+        or volatility.get("atr_14")
+        or evidence.get("atr")
+        or evidence.get("atr_14")
+        or evidence.get("ATR14")
+    )
     hvn = _number(
-        evidence.get("hvn")
+        structural_location.get("hvn")
+        or structural_location.get("poc")
+        or structural_location.get("volume_profile_poc")
+        or evidence.get("hvn")
         or evidence.get("high_volume_node")
         or evidence.get("volume_profile_poc")
         or evidence.get("poc")
     )
-
-    if price is not None and tr_floor is not None and tr_ceiling is not None and tr_ceiling > tr_floor:
+    explicit_structural_location_available = bool(
+        structural_location
+        and price is not None
+        and tr_floor is not None
+        and tr_ceiling is not None
+        and tr_ceiling > tr_floor
+        and atr is not None
+        and atr > 0
+    )
+    if explicit_structural_location_available:
         lower_band = tr_floor + ((tr_ceiling - tr_floor) * 0.15)
-        if price <= lower_band:
+        if price <= lower_band or bool(sl_flags.get("near_range_floor")):
             locations.append("TR_FLOOR")
-            reasons.append("Price is in the lower 15 percent of explicit trading-range geometry.")
+            reasons.append("D3C.2A explicit structural-location geometry places price at or near the trading-range floor.")
             evidence_quality = "EXPLICIT_GEOMETRY"
-
+        if bool(sl_flags.get("standard_spring_zone")) or bool(sl_flags.get("spring_recaptured")):
+            locations.append("LP_ZONE")
+            reasons.append("D3C.2A explicit structural-location flags identify spring / liquidity-pool zone behavior.")
+            evidence_quality = "EXPLICIT_GEOMETRY"
     if price is not None and hvn is not None and hvn > 0:
         if abs(price - hvn) / hvn <= 0.015:
             locations.append("HVN")
             reasons.append("Price is within 1.5 percent of explicit high-volume node / POC.")
             evidence_quality = "EXPLICIT_GEOMETRY"
-
-    if price is not None and tr_floor is not None and atr is not None and atr > 0:
+    if explicit_structural_location_available and price is not None and tr_floor is not None and atr is not None and atr > 0:
         if tr_floor - (3 * atr) <= price <= tr_floor:
             locations.append("LP_ZONE")
             reasons.append("Price is within 3 ATR below explicit range floor / liquidity-pool zone.")
             evidence_quality = "EXPLICIT_GEOMETRY"
-
     # Inferred structural path, used only when explicit geometry is absent.
     if not locations:
         if any(name in archetypes for name in LP_ZONE_ARCHETYPES):
