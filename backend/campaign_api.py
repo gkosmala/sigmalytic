@@ -1691,6 +1691,126 @@ def wyckoff_weis_operator_confirmation_review():
 
 
 
+
+
+@router.get("/explicit-upper-zone-diagnostic-review")
+def explicit_upper_zone_diagnostic_review():
+    """
+    D3F read-only diagnostic endpoint.
+
+    Separates constructive lower-zone SML from upper-zone / upthrust risk-side
+    SML so D3D does not drift by treating all explicit geometry as operator
+    control confirmation.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probabilities, expected return, edge, targets, or historical outcomes.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.explicit_upper_zone_diagnostic_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            diagnose_explicit_upper_zone,
+        )
+    except Exception:
+        from campaign_engine.explicit_upper_zone_diagnostic_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            diagnose_explicit_upper_zone,
+        )
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    guardrail_failures = []
+
+    constructive_lower_counter = Counter()
+    explicit_upper_counter = Counter()
+    upper_class_counter = Counter()
+    doctrine_handling_counter = Counter()
+    state_counter = Counter()
+    confirmed_counter = Counter()
+
+    for campaign in campaigns:
+        row = diagnose_explicit_upper_zone(campaign)
+        rows.append(row)
+
+        constructive_lower_counter[str(bool(row.get("constructive_lower_zone")))] += 1
+        explicit_upper_counter[str(bool(row.get("explicit_upper_zone")))] += 1
+        upper_class_counter[str(row.get("upper_zone_classification"))] += 1
+        doctrine_handling_counter[str(row.get("doctrine_handling"))] += 1
+        state_counter[str(row.get("campaign_state"))] += 1
+        confirmed_counter[str(bool(row.get("operator_control_confirmed_current")))] += 1
+
+        guardrail_ok = (
+            row.get("read_only") is True
+            and row.get("diagnostic_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append(row)
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("explicit_upper_zone") is True else 1,
+            0 if row.get("operator_control_confirmed_current") is False else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/explicit-upper-zone-diagnostic-review",
+
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "production_confirmation_allowed": False,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "not_a_trade_signal": True,
+
+        "total_campaigns": len(campaigns),
+        "rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+
+        "constructive_lower_zone_distribution": _counter_to_dict(constructive_lower_counter),
+        "explicit_upper_zone_distribution": _counter_to_dict(explicit_upper_counter),
+        "upper_zone_classification_distribution": _counter_to_dict(upper_class_counter),
+        "doctrine_handling_distribution": _counter_to_dict(doctrine_handling_counter),
+        "campaign_state_distribution": _counter_to_dict(state_counter),
+        "operator_control_confirmed_distribution": _counter_to_dict(confirmed_counter),
+
+        "rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.get("/explicit-geometry-sml-diagnostic-review")
 def explicit_geometry_sml_diagnostic_review():
     """
