@@ -2058,6 +2058,141 @@ def explicit_geometry_sml_diagnostic_review():
 
 
 
+
+
+@router.get("/operator-control-plausibility-status-review")
+def operator_control_plausibility_status_review():
+    """
+    D3J read-only operator-control plausibility status endpoint.
+
+    Identifies shadow-confirmable / plausible stealth operator-control campaigns
+    without confirming, unconfirming, repairing, or mutating operator control.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT unconfirm operator control.
+    This endpoint does NOT execute D3D.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.operator_control_plausibility_status_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            classify_operator_control_plausibility,
+        )
+        from backend.campaign_engine.operator_control_production_mutation_gate import (
+            evaluate_d3d_operator_control_candidate,
+        )
+    except Exception:
+        from campaign_engine.operator_control_plausibility_status_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            classify_operator_control_plausibility,
+        )
+        from campaign_engine.operator_control_production_mutation_gate import (
+            evaluate_d3d_operator_control_candidate,
+        )
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    guardrail_failures = []
+
+    status_counter = Counter()
+    no_drift_counter = Counter()
+    shadow_counter = Counter()
+    legacy_counter = Counter()
+    d3d_production_counter = Counter()
+    d3d_eligible_counter = Counter()
+    state_counter = Counter()
+
+    for campaign in campaigns:
+        d3d_candidate = evaluate_d3d_operator_control_candidate(campaign)
+        row = classify_operator_control_plausibility(campaign, d3d_candidate)
+        rows.append(row)
+
+        status_counter[str(row.get("plausibility_status"))] += 1
+        no_drift_counter[str(row.get("no_drift_status"))] += 1
+        shadow_counter[str(bool(row.get("shadow_confirmable")))] += 1
+        legacy_counter[str(bool(row.get("legacy_operator_control_confirmed")))] += 1
+        d3d_production_counter[str(bool(row.get("d3d_production_confirmed")))] += 1
+        d3d_eligible_counter[str(bool(row.get("d3d_eligible_dry_run_only")))] += 1
+        state_counter[str(row.get("campaign_state"))] += 1
+
+        guardrail_ok = (
+            row.get("read_only") is True
+            and row.get("diagnostic_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_unconfirmed_by_this_engine") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("d3d_execution_allowed") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append(row)
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("plausibility_status") == "SHADOW_CONFIRMABLE_PLAUSIBLE_STEALTH_UNCONFIRMED" else
+            1 if row.get("plausibility_status") == "LEGACY_OPERATOR_CONTROL_SHADOW_CONFIRMABLE" else
+            2 if row.get("plausibility_status") == "LEGACY_OPERATOR_CONTROL_NOT_CURRENTLY_SHADOW_CONFIRMABLE" else
+            3,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/operator-control-plausibility-status-review",
+
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_unconfirmed_by_this_engine": False,
+        "production_confirmation_allowed": False,
+        "d3d_execution_allowed": False,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "not_a_trade_signal": True,
+
+        "total_campaigns": len(campaigns),
+        "rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+
+        "plausibility_status_distribution": _counter_to_dict(status_counter),
+        "no_drift_status_distribution": _counter_to_dict(no_drift_counter),
+        "shadow_confirmable_distribution": _counter_to_dict(shadow_counter),
+        "legacy_operator_control_confirmed_distribution": _counter_to_dict(legacy_counter),
+        "d3d_production_confirmed_distribution": _counter_to_dict(d3d_production_counter),
+        "d3d_eligible_dry_run_only_distribution": _counter_to_dict(d3d_eligible_counter),
+        "campaign_state_distribution": _counter_to_dict(state_counter),
+
+        "rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.post("/operator-control-production-mutation-gate")
 def operator_control_production_mutation_gate(request: dict | None = None):
     """
