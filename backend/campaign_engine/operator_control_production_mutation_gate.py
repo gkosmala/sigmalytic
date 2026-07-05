@@ -135,6 +135,7 @@ def evaluate_d3d_operator_control_candidate(campaign: Dict[str, Any]) -> Dict[st
         and shadow.get("not_a_trade_signal") is True
     )
     shadow_confirmable = bool(shadow.get("doctrine_confirmable") is True)
+    explicit_geometry_sml = bool(shadow.get("sml_evidence_quality") == "EXPLICIT_GEOMETRY")
     block_reasons: List[str] = []
     if already_confirmed:
         block_reasons.append("Operator control is already confirmed in evidence.operator_control.")
@@ -144,11 +145,15 @@ def evaluate_d3d_operator_control_candidate(campaign: Dict[str, Any]) -> Dict[st
         block_reasons.append("D3C shadow-confirmation guardrails are not intact.")
     if not shadow_confirmable:
         block_reasons.append("D3C shadow doctrine is not confirmable.")
+
+    if not explicit_geometry_sml:
+        block_reasons.append("D3D requires explicit structural-location geometry; inferred SML is not eligible for production mutation.")
     eligible = bool(
         not already_confirmed
         and d3c3_passed
         and shadow_guardrail_ok
         and shadow_confirmable
+        and explicit_geometry_sml
     )
     return {
         "engine": ENGINE_NAME,
@@ -169,6 +174,7 @@ def evaluate_d3d_operator_control_candidate(campaign: Dict[str, Any]) -> Dict[st
         "d3c_shadow_sml_present": shadow.get("sml_present"),
         "d3c_shadow_sml_locations": shadow.get("sml_locations") or [],
         "d3c_shadow_sml_evidence_quality": shadow.get("sml_evidence_quality"),
+        "d3c_shadow_explicit_geometry_sml": explicit_geometry_sml,
         "d3c_shadow_guardrail_ok": shadow_guardrail_ok,
         "mutation_target": "evidence.operator_control.operator_control_confirmed",
         "score_impact": "NONE",
