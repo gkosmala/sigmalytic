@@ -1689,6 +1689,127 @@ def wyckoff_weis_operator_confirmation_review():
 
 
 
+
+
+@router.get("/explicit-geometry-sml-diagnostic-review")
+def explicit_geometry_sml_diagnostic_review():
+    """
+    D3E read-only diagnostic endpoint.
+
+    Explains why campaigns do or do not produce EXPLICIT_GEOMETRY SML.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probabilities, expected return, edge, targets, or historical outcomes.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.explicit_geometry_sml_diagnostic_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            diagnose_explicit_geometry_sml,
+        )
+    except Exception:
+        from campaign_engine.explicit_geometry_sml_diagnostic_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            diagnose_explicit_geometry_sml,
+        )
+
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+
+    campaigns = _store().get_active_campaigns()
+
+    rows = []
+    explicit_geometry_counter = Counter()
+    sml_quality_counter = Counter()
+    doctrine_counter = Counter()
+    d3d_counter = Counter()
+    gap_reason_counter = Counter()
+    flag_counter = Counter()
+    guardrail_failures = []
+
+    for campaign in campaigns:
+        row = diagnose_explicit_geometry_sml(campaign)
+        rows.append(row)
+
+        explicit_geometry_counter[str(bool(row.get("explicit_geometry_available")))] += 1
+        sml_quality_counter[str(row.get("d3c_shadow_sml_evidence_quality"))] += 1
+        doctrine_counter[str(row.get("d3c_shadow_doctrine_verdict"))] += 1
+        d3d_counter[str(bool(row.get("d3d_eligible_for_mutation")))] += 1
+
+        for reason in row.get("geometry_gap_reasons") or []:
+            gap_reason_counter[str(reason)] += 1
+
+        for flag in row.get("explicit_sml_flags_present") or []:
+            flag_counter[str(flag)] += 1
+
+        guardrail_ok = (
+            row.get("read_only") is True
+            and row.get("diagnostic_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append(row)
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("d3c_shadow_sml_evidence_quality") == "EXPLICIT_GEOMETRY" else 1,
+            0 if row.get("d3c_shadow_doctrine_confirmable") is True else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/explicit-geometry-sml-diagnostic-review",
+
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "production_confirmation_allowed": False,
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "not_a_trade_signal": True,
+
+        "total_campaigns": len(campaigns),
+        "rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+
+        "explicit_geometry_available_distribution": _counter_to_dict(explicit_geometry_counter),
+        "sml_evidence_quality_distribution": _counter_to_dict(sml_quality_counter),
+        "doctrine_verdict_distribution": _counter_to_dict(doctrine_counter),
+        "d3d_eligible_distribution": _counter_to_dict(d3d_counter),
+        "geometry_gap_reason_distribution": _counter_to_dict(gap_reason_counter),
+        "explicit_sml_flag_distribution": _counter_to_dict(flag_counter),
+
+        "rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
+
+
 @router.post("/operator-control-production-mutation-gate")
 def operator_control_production_mutation_gate(request: dict | None = None):
     """
