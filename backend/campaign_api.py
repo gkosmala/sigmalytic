@@ -1219,6 +1219,220 @@ def structural_location_input_review():
         "guardrail_failures": guardrail_failures,
     }
 
+
+@router.get("/structural-location-validation-review")
+def structural_location_validation_review():
+    """
+    D3C.3 Structural Location Validation Review.
+    Read-only diagnostic endpoint.
+    Purpose:
+        Validate that D3C.2 structural-location evidence is internally coherent
+        before any future D3D production mutation gate may rely on it.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT change scores, ranks, states, or transitions.
+    """
+    from collections import Counter
+    try:
+        from backend.campaign_engine.structural_location_input_review_engine import (
+            review_structural_location_inputs,
+        )
+        from backend.campaign_engine.structural_location_validation_engine import (
+            validate_structural_location,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    except Exception:
+        from campaign_engine.structural_location_input_review_engine import (
+            review_structural_location_inputs,
+        )
+        from campaign_engine.structural_location_validation_engine import (
+            validate_structural_location,
+            ENGINE_NAME,
+            ENGINE_VERSION,
+        )
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+    def _get(value, key, default=None):
+        if isinstance(value, dict):
+            return value.get(key, default)
+        return getattr(value, key, default)
+    def _counter_to_dict(counter):
+        return dict(sorted(counter.items(), key=lambda item: (-item[1], str(item[0]))))
+    campaigns = _store().get_active_campaigns()
+    rows = []
+    guardrail_failures = []
+    validation_status_counter = Counter()
+    validation_pass_counter = Counter()
+    production_sml_validation_counter = Counter()
+    campaign_state_counter = Counter()
+    warning_counter = Counter()
+    failed_check_counter = Counter()
+    boolean_counters = {
+        "range_bounds_valid": Counter(),
+        "range_height_matches_bounds": Counter(),
+        "range_midpoint_matches_bounds": Counter(),
+        "range_position_matches_bounds": Counter(),
+        "current_bar_consistent": Counter(),
+        "atr_valid": Counter(),
+        "support_resistance_consistent": Counter(),
+        "price_series_usable": Counter(),
+        "spring_upthrust_flags_valid": Counter(),
+        "hvn_poc_available": Counter(),
+    }
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        evidence = _as_dict(_get(c, "evidence", {}))
+        symbol = _get(c, "symbol")
+        campaign_id = _get(c, "campaign_id") or _get(c, "id")
+        campaign_state = (
+            _get(c, "current_state")
+            or _get(c, "state_enum")
+            or _get(c, "campaign_state")
+            or _get(c, "state")
+            or _get(c, "lifecycle_state")
+            or _get(c, "campaign_lifecycle_state")
+        )
+        timeframe = _get(c, "timeframe") or _get(evidence, "timeframe") or "DAILY"
+        d3c1_review = review_structural_location_inputs(
+            evidence=evidence,
+            symbol=symbol,
+            campaign_state=campaign_state,
+        )
+        validation = validate_structural_location(
+            evidence=evidence,
+            symbol=symbol,
+            campaign_state=campaign_state,
+            d3c1_review=d3c1_review,
+        )
+        guardrail_ok = (
+            validation.get("diagnostic_only") is True
+            and validation.get("read_only") is True
+            and validation.get("writes_to_supabase") is False
+            and validation.get("mutates_campaigns") is False
+            and validation.get("production_confirmation_allowed") is False
+            and validation.get("operator_control_confirmed_by_this_engine") is False
+            and validation.get("operator_control_confirmation_impact") == "NONE"
+            and validation.get("score_impact") == "NONE"
+            and validation.get("rank_impact") == "NONE"
+            and validation.get("state_impact") == "NONE"
+            and validation.get("transition_impact") == "NONE"
+            and validation.get("state_transition_enabled") is False
+            and validation.get("not_a_trade_signal") is True
+        )
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "campaign_state": campaign_state,
+                "reason": "D3C.3 structural location validation guardrail failure",
+                "payload": validation,
+            })
+        status = str(validation.get("validation_status"))
+        validation_status_counter[status] += 1
+        validation_pass_counter[str(bool(validation.get("structural_location_validation_passed")))] += 1
+        production_sml_validation_counter[str(bool(validation.get("production_sml_validation_passed")))] += 1
+        campaign_state_counter[str(campaign_state)] += 1
+        for warning in validation.get("warnings") or []:
+            warning_counter[str(warning)] += 1
+        for failed_check in validation.get("failed_checks") or []:
+            failed_check_counter[str(failed_check)] += 1
+        for key, counter in boolean_counters.items():
+            counter[str(bool(validation.get(key)))] += 1
+        rows.append({
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "campaign_state": campaign_state,
+            "timeframe": timeframe,
+            "validation_status": validation.get("validation_status"),
+            "structural_location_validation_passed": validation.get("structural_location_validation_passed"),
+            "production_sml_validation_passed": validation.get("production_sml_validation_passed"),
+            "d3c1_structural_location_readiness": validation.get("d3c1_structural_location_readiness"),
+            "d3c1_production_sml_possible_now": validation.get("d3c1_production_sml_possible_now"),
+            "missing_required_fields": validation.get("missing_required_fields") or [],
+            "passed_checks": validation.get("passed_checks") or [],
+            "failed_checks": validation.get("failed_checks") or [],
+            "warnings": validation.get("warnings") or [],
+            "range_bounds_valid": validation.get("range_bounds_valid"),
+            "range_height_matches_bounds": validation.get("range_height_matches_bounds"),
+            "range_midpoint_matches_bounds": validation.get("range_midpoint_matches_bounds"),
+            "range_position_matches_bounds": validation.get("range_position_matches_bounds"),
+            "current_bar_consistent": validation.get("current_bar_consistent"),
+            "atr_valid": validation.get("atr_valid"),
+            "support_resistance_consistent": validation.get("support_resistance_consistent"),
+            "price_series_usable": validation.get("price_series_usable"),
+            "price_series_bar_count": validation.get("price_series_bar_count"),
+            "price_series_usable_bar_count": validation.get("price_series_usable_bar_count"),
+            "spring_upthrust_flags_valid": validation.get("spring_upthrust_flags_valid"),
+            "hvn_poc_available": validation.get("hvn_poc_available"),
+            "structural_location_engine": validation.get("structural_location_engine"),
+            "structural_location_version": validation.get("structural_location_version"),
+            "production_confirmation_allowed": validation.get("production_confirmation_allowed"),
+            "operator_control_confirmed_by_this_engine": validation.get("operator_control_confirmed_by_this_engine"),
+            "operator_control_confirmation_impact": validation.get("operator_control_confirmation_impact"),
+            "score_impact": validation.get("score_impact"),
+            "rank_impact": validation.get("rank_impact"),
+            "state_impact": validation.get("state_impact"),
+            "transition_impact": validation.get("transition_impact"),
+        })
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("validation_status") != "STRUCTURAL_LOCATION_VALIDATED" else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/structural-location-validation-review",
+        "read_only": True,
+        "diagnostic_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "production_confirmation_allowed": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_confirmation_impact": "NONE",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "state_transition_enabled": False,
+        "not_a_trade_signal": True,
+        "purpose": (
+            "Validate D3C.2 structural-location evidence for internal coherence "
+            "before any future D3D production mutation gate."
+        ),
+        "total_campaigns": len(campaigns),
+        "validation_rows_count": len(rows),
+        "guardrail_failure_count": len(guardrail_failures),
+        "validation_status_distribution": _counter_to_dict(validation_status_counter),
+        "structural_location_validation_passed_distribution": _counter_to_dict(validation_pass_counter),
+        "production_sml_validation_passed_distribution": _counter_to_dict(production_sml_validation_counter),
+        "campaign_state_distribution": _counter_to_dict(campaign_state_counter),
+        "boolean_validation_distributions": {
+            key: _counter_to_dict(counter)
+            for key, counter in boolean_counters.items()
+        },
+        "warning_distribution": _counter_to_dict(warning_counter),
+        "failed_check_distribution": _counter_to_dict(failed_check_counter),
+        "validation_rows": rows,
+        "guardrail_failures": guardrail_failures,
+    }
+
 @router.get("/wyckoff-weis-operator-confirmation-review")
 def wyckoff_weis_operator_confirmation_review():
     """
