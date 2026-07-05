@@ -322,13 +322,11 @@ def evidence_diagnostics():
 
     full_depth_rows.sort(
         key=lambda row: (
-            not bool(row.get("operator_control_confirmed")),
-            -(int(row.get("operator_control_evidence_count") or 0)),
             str(row.get("symbol") or ""),
         )
     )
 
-    operator_confirmed_rows = [
+    legacy_operator_control_evidence_rows = [
         row for row in full_depth_rows
         if row.get("operator_control_confirmed") is True
     ]
@@ -343,9 +341,12 @@ def evidence_diagnostics():
         "transition_enabled_expected": False,
         "total_campaigns": len(campaigns),
         "full_depth_count": len(full_depth_rows),
-        "operator_control_confirmed_count": len(operator_confirmed_rows),
+        "legacy_operator_control_evidence_count": len(legacy_operator_control_evidence_rows),
+        "d3d_production_confirmed_operator_control_count": 0,
+        "operator_control_confirmation_label_policy": "LEGACY_BOOLEAN_IS_EVIDENCE_NOT_D3D_PRODUCTION_CONFIRMATION",
         "full_depth_campaigns": full_depth_rows,
-        "operator_control_confirmed_campaigns": operator_confirmed_rows,
+        "legacy_operator_control_evidence_campaigns": legacy_operator_control_evidence_rows,
+        "d3d_production_confirmed_operator_control_campaigns": [],
     }
 
 
@@ -362,8 +363,9 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 def _diagnostic_priority_for_row(row: Dict[str, Any]) -> Dict[str, Any]:
     weis_gamma_phase = _as_dict(row.get("weis_gamma_phase"))
 
-    operator_confirmed = bool(row.get("operator_control_confirmed"))
+    legacy_operator_control_evidence_present = bool(row.get("operator_control_confirmed"))
     operator_evidence_count = int(row.get("operator_control_evidence_count") or 0)
+    d3d_production_confirmed_operator_control = False
 
     readiness = str(row.get("transition_readiness_verdict") or "NONE").upper()
     supported_state = str(row.get("evidence_supported_state") or "NONE").upper()
@@ -382,15 +384,13 @@ def _diagnostic_priority_for_row(row: Dict[str, Any]) -> Dict[str, Any]:
     reasons = []
     conflict_flags = []
 
-    if operator_confirmed:
-        score += 40.0
-        reasons.append("operator control confirmed from raw OHLCV tape behavior")
+    if legacy_operator_control_evidence_present:
+        reasons.append("legacy operator-control evidence present; not D3D production-confirmed and not score/rank boosting")
     else:
-        reasons.append("operator control not confirmed")
+        reasons.append("legacy operator-control evidence absent")
 
-    score += min(operator_evidence_count, 5) * 5.0
     if operator_evidence_count:
-        reasons.append(f"operator evidence count {operator_evidence_count}")
+        reasons.append(f"operator evidence count {operator_evidence_count}; diagnostic metadata only")
 
     if readiness == "FULL_CAMPAIGN_READY_DIAGNOSTIC":
         score += 25.0
@@ -433,11 +433,11 @@ def _diagnostic_priority_for_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
     if "PHASE_PERMISSION_BLOCKED" in conflict_flags or "DOWNSIDE_WEIS_GAMMA_DIRECTION" in conflict_flags:
         tier = "CONFLICT_BLOCKED_DIAGNOSTIC"
-    elif operator_confirmed and gamma_fresh and readiness == "FULL_CAMPAIGN_READY_DIAGNOSTIC" and score >= 85:
+    elif d3d_production_confirmed_operator_control and gamma_fresh and readiness == "FULL_CAMPAIGN_READY_DIAGNOSTIC" and score >= 85:
         tier = "A_DIAGNOSTIC"
-    elif operator_confirmed and not gamma_fresh:
+    elif d3d_production_confirmed_operator_control and not gamma_fresh:
         tier = "GAMMA_REFRESH_REQUIRED_DIAGNOSTIC"
-    elif operator_confirmed:
+    elif d3d_production_confirmed_operator_control:
         tier = "B_DIAGNOSTIC"
     elif readiness == "CONFIRMATION_READY_DIAGNOSTIC":
         tier = "WATCHLIST_DIAGNOSTIC"
@@ -491,7 +491,7 @@ def evidence_diagnostic_rankings():
         "transition_enabled_expected": False,
         "total_campaigns": base.get("total_campaigns"),
         "full_depth_count": base.get("full_depth_count"),
-        "legacy_operator_control_evidence_count": base.get("operator_control_confirmed_count"),
+        "legacy_operator_control_evidence_count": base.get("legacy_operator_control_evidence_count"),
         "d3d_production_confirmed_operator_control_count": 0,
         "operator_control_confirmation_label_policy": "LEGACY_BOOLEAN_IS_EVIDENCE_NOT_D3D_PRODUCTION_CONFIRMATION",
         "ranked_diagnostic_campaigns": ranked_rows,
@@ -831,14 +831,15 @@ def evidence_calibration_review():
         "calibration_summary": {
             "total_campaigns": audit_payload.get("counts", {}).get("total_campaigns"),
             "full_depth_count": audit_payload.get("counts", {}).get("full_depth_count"),
-            "operator_control_confirmed_count": len(operator_confirmed_rows),
+            "legacy_operator_control_evidence_count": len(operator_confirmed_rows),
+            "d3d_production_confirmed_operator_control_count": 0,
             "current_conflicted_count": current_conflicted_count,
             "hard_conflict_count": hard_conflict_count,
             "gamma_refresh_needed_count": len(refresh_needed_rows),
             "state_mapping_flag_count": len(state_mapping_rows),
             "state_mapping_only_count": state_mapping_only_count,
-            "operator_confirmed_hard_conflict_count": len(operator_confirmed_hard_conflict_rows),
-            "operator_confirmed_gamma_refresh_needed_count": len(operator_confirmed_refresh_needed_rows),
+            "legacy_operator_control_evidence_hard_conflict_count": len(operator_confirmed_hard_conflict_rows),
+            "legacy_operator_control_evidence_gamma_refresh_needed_count": len(operator_confirmed_refresh_needed_rows),
         },
         "diagnostic_tier_counts": audit_payload.get("diagnostic_tier_counts"),
         "hard_conflict_flags": sorted(hard_conflict_flags),
@@ -2521,7 +2522,7 @@ def operator_control_confirmation_candidate_review():
             0 if row.get("candidate_verdict") == "D3A_CONFIRMATION_CANDIDATE" else
             1 if row.get("candidate_verdict") == "D3A_CANDIDATE_BLOCKED_BY_CAUTION" else
             2 if row.get("candidate_verdict") == "D3A_DENSE_FOOTPRINT_MISSING_HARD_CONFIRMATION" else
-            3 if row.get("candidate_verdict") == "ALREADY_CONFIRMED_BY_OPERATOR_CONTROL_ENGINE" else
+            3 if row.get("candidate_verdict") == "LEGACY_OPERATOR_CONTROL_EVIDENCE_ALREADY_PRESENT" else
             4,
             -int(row.get("footprint_count") or 0),
             -int(row.get("hard_confirmation_count") or 0),
@@ -2565,7 +2566,7 @@ def operator_control_confirmation_candidate_review():
 def operator_control_reconciliation_review():
     """
     Read-only diagnostic reconciliation between early operator footprints
-    and confirmed tape-derived Composite Operator control.
+    and legacy tape-derived operator-control evidence.
     """
     from collections import Counter
 
@@ -3589,7 +3590,7 @@ def status():
                 "bar_depth",
                 "diagnostic_key",
             ),
-            "operator_control_confirmed_counts": _count_nested_bool(
+            "legacy_operator_control_evidence_counts": _count_nested_bool(
                 campaigns,
                 "operator_control",
                 "operator_control_confirmed",
@@ -3623,7 +3624,7 @@ def status():
                 campaigns,
                 "transition_readiness_verdict",
             ),
-            "raw_metric_operator_control_confirmed_counts": _count_raw_metric_field(
+            "raw_metric_legacy_operator_control_evidence_counts": _count_raw_metric_field(
                 campaigns,
                 "operator_control_confirmed",
             ),

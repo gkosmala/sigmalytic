@@ -172,7 +172,7 @@ class DiagnosticDoctrineClassifier:
         conflicts: List[str] = []
 
         if "OPERATOR_CONTROL_CONFIRMED" in s and "VSA_NO_DEMAND_CAUTION" in s:
-            conflicts.append("Operator control is confirmed, but VSA no-demand caution is present.")
+            conflicts.append("Legacy operator-control evidence is present, but VSA no-demand caution is present.")
 
         if "WEIS_EXPANSION_SUPPORT" in s and "WYCKOFF_SURVIVAL_AT_RISK" in s:
             conflicts.append("Weis expansion support exists, but Wyckoff survival remains at risk.")
@@ -190,7 +190,7 @@ class DiagnosticDoctrineClassifier:
         parts: List[str] = []
 
         if "OPERATOR_CONTROL_CONFIRMED" in s:
-            parts.append("Operator control is confirmed.")
+            parts.append("Legacy operator-control evidence is present; D3D production confirmation is not implied.")
 
         if "WYCKOFF_ACCUMULATION_SUPPORT" in s:
             parts.append("Wyckoff evidence supports accumulation behavior.")
