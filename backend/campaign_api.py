@@ -1688,6 +1688,157 @@ def wyckoff_weis_operator_confirmation_review():
 
 
 
+
+@router.post("/operator-control-production-mutation-gate")
+def operator_control_production_mutation_gate(request: dict | None = None):
+    """
+    D3D controlled production mutation gate.
+    Default behavior is dry-run only.
+    Execution requires:
+    - request.execute == True
+    - request.confirm_phrase == D3D_OPERATOR_CONTROL_PRODUCTION_MUTATION_APPROVED
+    Mutation target:
+    - evidence.operator_control.operator_control_confirmed only
+    This endpoint must not mutate scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, target, or historical outcome fields.
+    """
+    from collections import Counter
+    try:
+        from backend.campaign_engine.operator_control_production_mutation_gate import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            CONFIRM_PHRASE,
+            evaluate_d3d_operator_control_candidate,
+            build_d3d_operator_control_mutation,
+        )
+    except Exception:
+        from campaign_engine.operator_control_production_mutation_gate import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            CONFIRM_PHRASE,
+            evaluate_d3d_operator_control_candidate,
+            build_d3d_operator_control_mutation,
+        )
+    def _as_dict(value):
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            try:
+                return value.model_dump()
+            except Exception:
+                return {}
+        if hasattr(value, "dict"):
+            try:
+                return value.dict()
+            except Exception:
+                return {}
+        return {}
+    payload = request or {}
+    execute_requested = bool(payload.get("execute") is True)
+    confirm_phrase = str(payload.get("confirm_phrase") or "")
+    execution_authorized = bool(execute_requested and confirm_phrase == CONFIRM_PHRASE)
+    max_mutations = int(payload.get("max_mutations") or 10)
+    if max_mutations < 0:
+        max_mutations = 0
+    requested_symbols = payload.get("symbols") or payload.get("symbol") or []
+    if isinstance(requested_symbols, str):
+        requested_symbols = [requested_symbols]
+    requested_symbols = {str(symbol).upper() for symbol in requested_symbols if symbol}
+    campaigns = _store().get_active_campaigns()
+    rows = []
+    eligible_rows = []
+    skipped_rows = []
+    mutation_summaries = []
+    mutation_errors = []
+    eligibility_counter = Counter()
+    verdict_counter = Counter()
+    sml_quality_counter = Counter()
+    block_reason_counter = Counter()
+    for campaign in campaigns:
+        c = _as_dict(campaign)
+        symbol = str(c.get("symbol") or "").upper()
+        if requested_symbols and symbol not in requested_symbols:
+            continue
+        candidate = evaluate_d3d_operator_control_candidate(c)
+        rows.append(candidate)
+        eligibility_counter[str(bool(candidate.get("eligible_for_d3d_mutation")))] += 1
+        verdict_counter[str(candidate.get("d3c_shadow_doctrine_verdict"))] += 1
+        sml_quality_counter[str(candidate.get("d3c_shadow_sml_evidence_quality"))] += 1
+        for reason in candidate.get("block_reasons") or []:
+            block_reason_counter[str(reason)] += 1
+        if candidate.get("eligible_for_d3d_mutation") is True:
+            eligible_rows.append(candidate)
+        else:
+            skipped_rows.append(candidate)
+    if execution_authorized:
+        mutation_limit = min(max_mutations, len(eligible_rows))
+        for candidate in eligible_rows[:mutation_limit]:
+            try:
+                source_campaign = None
+                for campaign in campaigns:
+                    c = _as_dict(campaign)
+                    if (
+                        str(c.get("symbol") or "").upper() == str(candidate.get("symbol") or "").upper()
+                        and str(c.get("timeframe") or "DAILY") == str(candidate.get("timeframe") or "DAILY")
+                    ):
+                        source_campaign = c
+                        break
+                if source_campaign is None:
+                    mutation_errors.append({
+                        "symbol": candidate.get("symbol"),
+                        "campaign_id": candidate.get("campaign_id"),
+                        "error": "SOURCE_CAMPAIGN_NOT_FOUND",
+                    })
+                    continue
+                updated_campaign, mutation_summary = build_d3d_operator_control_mutation(
+                    source_campaign,
+                    candidate,
+                )
+                _store().save_campaign(updated_campaign)
+                mutation_summaries.append(mutation_summary)
+            except Exception as exc:
+                mutation_errors.append({
+                    "symbol": candidate.get("symbol"),
+                    "campaign_id": candidate.get("campaign_id"),
+                    "error": str(exc),
+                })
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/operator-control-production-mutation-gate",
+        "dry_run": not execution_authorized,
+        "execute_requested": execute_requested,
+        "execution_authorized": execution_authorized,
+        "required_confirm_phrase": CONFIRM_PHRASE if execute_requested and not execution_authorized else None,
+        "writes_to_supabase": bool(execution_authorized and len(mutation_summaries) > 0),
+        "mutates_campaigns": bool(execution_authorized and len(mutation_summaries) > 0),
+        "production_confirmation_allowed": bool(execution_authorized),
+        "mutation_target": "evidence.operator_control.operator_control_confirmed",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "not_derived_from_scores": True,
+        "not_a_trade_signal": True,
+        "total_campaigns_seen": len(campaigns),
+        "total_campaigns_reviewed": len(rows),
+        "eligible_count": len(eligible_rows),
+        "skipped_count": len(skipped_rows),
+        "max_mutations": max_mutations,
+        "mutations_attempted": len(mutation_summaries) + len(mutation_errors),
+        "mutations_succeeded": len(mutation_summaries),
+        "mutations_failed": len(mutation_errors),
+        "eligibility_distribution": dict(sorted(eligibility_counter.items())),
+        "doctrine_verdict_distribution": dict(sorted(verdict_counter.items())),
+        "sml_evidence_quality_distribution": dict(sorted(sml_quality_counter.items())),
+        "block_reason_distribution": dict(sorted(block_reason_counter.items())),
+        "eligible_rows": eligible_rows,
+        "mutation_summaries": mutation_summaries,
+        "mutation_errors": mutation_errors,
+    }
+
+
 @router.get("/operator-control-confirmation-candidate-review")
 def operator_control_confirmation_candidate_review():
     """
