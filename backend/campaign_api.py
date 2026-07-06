@@ -5570,3 +5570,404 @@ def hvn_poc_source_enrichment_review():
     })
 
     return payload
+
+@router.get("/doctrine-leg-explanation-enrichment-review")
+def doctrine_leg_explanation_enrichment_review():
+    """
+    D3C.2S read-only doctrine-leg explanation enrichment review.
+
+    Purpose:
+    - Explain the doctrine legs behind behavioral-resolution evidence.
+    - Separate demand support, supply exhaustion, contrary failure, and SML.
+    - Preserve inferred SML as inferred evidence only.
+    - Preserve HVN_ABSORPTION_PROXY as proxy-only, not true HVN/POC.
+    - Never confirm operator control.
+    - Never execute D3D.
+    - Never mutate campaigns.
+    - Never affect score, rank, state, transition, gamma, options, edge,
+      probability, targets, or trade signals.
+    """
+    from collections import Counter
+
+    ENGINE_NAME = "D3C2S_DOCTRINE_LEG_EXPLANATION_ENRICHMENT_REVIEW"
+    ENGINE_VERSION = "phase_d3c2s_doctrine_leg_explanation_enrichment_read_only_v1"
+
+    def _base_payload():
+        return {
+            "engine": ENGINE_NAME + "_ENDPOINT",
+            "version": ENGINE_VERSION,
+            "endpoint": "/api/campaign/doctrine-leg-explanation-enrichment-review",
+            "endpoint_status": "OK",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "doctrine_leg_policy": "DOCTRINE_LEGS_ARE_EXPLANATORY_EVIDENCE_NOT_PRODUCTION_CONFIRMATION",
+            "sml_policy": "INFERRED_SML_REMAINS_INFERRED_UNTIL_EXPLICIT_GEOMETRY_EXISTS",
+            "hvn_proxy_policy": "HVN_ABSORPTION_PROXY_IS_NOT_TRUE_HVN_POC",
+            "production_confirmation_policy": "D3C2S_NEVER_CONFIRMS_OPERATOR_CONTROL_D3D_ONLY",
+        }
+
+    def _safe_counter(counter):
+        return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+    def _as_dict(value):
+        return value if isinstance(value, dict) else {}
+
+    def _list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, set):
+            return list(value)
+        return [value]
+
+    def _bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ["true", "1", "yes", "y"]
+        return bool(value)
+
+    def _rows_from_payload(payload):
+        payload = _as_dict(payload)
+        for key in [
+            "rows",
+            "review_rows",
+            "validation_rows",
+            "campaign_rows",
+            "results",
+            "items",
+            "data",
+        ]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+
+    def _has_hvn_proxy(locations):
+        return "HVN_ABSORPTION_PROXY" in [str(item) for item in _list(locations)]
+
+    def _call_first_payload(names):
+        for name in names:
+            fn = globals().get(name)
+            if callable(fn):
+                return fn(), name
+        raise RuntimeError("None of the expected payload functions are available: " + ", ".join(names))
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": str(stage),
+            "error": str(exc),
+            "total_campaigns": 0,
+            "rows_count": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "guardrail_failures": [],
+            "row_errors": [],
+        })
+        return payload
+
+    try:
+        d3c2o_payload, d3c2o_function_used = _call_first_payload([
+            "macro_anchor_high_priority_resolution_evidence_review",
+            "macro_anchor_high_priority_resolution_evidence_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2O_HIGH_PRIORITY_BEHAVIORAL_RESOLUTION", exc)
+
+    d3c2o_rows = _rows_from_payload(d3c2o_payload)
+
+    rows = []
+    guardrail_failures = []
+    row_errors = []
+
+    completeness_counter = Counter()
+    priority_counter = Counter()
+    demand_counter = Counter()
+    supply_counter = Counter()
+    contrary_counter = Counter()
+    sml_counter = Counter()
+    sml_quality_counter = Counter()
+    hvn_proxy_counter = Counter()
+    no_drift_counter = Counter()
+
+    for source_row in d3c2o_rows:
+        try:
+            source_row = _as_dict(source_row)
+            source_d3c_row = _as_dict(source_row.get("source_d3c_row"))
+
+            demand_support = _bool(source_row.get("d3c_shadow_demand_support_validated"))
+            supply_exhaustion = _bool(source_row.get("d3c_shadow_supply_exhaustion_validated"))
+            contrary_failure = _bool(source_row.get("d3c_shadow_contrary_failure_present"))
+            sml_present = _bool(source_row.get("d3c_sml_present"))
+            sml_quality = source_row.get("d3c_shadow_sml_evidence_quality")
+            sml_locations = _list(source_row.get("d3c_sml_locations"))
+            is_high_priority = _bool(source_row.get("is_high_priority_confluence_row"))
+
+            hvn_proxy_present = _has_hvn_proxy(sml_locations)
+            explicit_sml = bool(sml_present and str(sml_quality or "").upper() == "EXPLICIT_GEOMETRY")
+            inferred_sml = bool(sml_present and str(sml_quality or "").upper().startswith("INFERRED"))
+
+            complete_leg_set = bool(
+                demand_support is True
+                and supply_exhaustion is True
+                and contrary_failure is False
+                and sml_present is True
+            )
+
+            partial_leg_set = bool(
+                not complete_leg_set
+                and (
+                    demand_support is True
+                    or supply_exhaustion is True
+                    or contrary_failure is True
+                    or sml_present is True
+                )
+            )
+
+            if complete_leg_set:
+                doctrine_leg_completeness = "COMPLETE_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+                requirement = "DOCTRINE_LEGS_COMPLETE_BUT_D3D_PRODUCTION_CONFIRMATION_STILL_REQUIRED"
+            elif partial_leg_set:
+                doctrine_leg_completeness = "PARTIAL_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+                requirement = "DOCTRINE_LEGS_PARTIAL_D3D_PRODUCTION_CONFIRMATION_NOT_ALLOWED"
+            else:
+                doctrine_leg_completeness = "NO_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+                requirement = "DOCTRINE_LEG_EVIDENCE_REQUIRED_BEFORE_ANY_D3D_REVIEW"
+
+            if is_high_priority and complete_leg_set:
+                review_priority = "HIGH_PRIORITY_COMPLETE_DOCTRINE_LEG_SET_UNCONFIRMED"
+            elif is_high_priority and partial_leg_set:
+                review_priority = "HIGH_PRIORITY_PARTIAL_DOCTRINE_LEG_SET_UNCONFIRMED"
+            elif is_high_priority:
+                review_priority = "HIGH_PRIORITY_DOCTRINE_LEG_SET_MISSING"
+            else:
+                review_priority = "STANDARD_REVIEW_PRIORITY_READ_ONLY"
+
+            evidence_flags = []
+            caution_flags = []
+
+            if demand_support:
+                evidence_flags.append("DEMAND_SUPPORT_VALIDATED")
+            else:
+                caution_flags.append("DEMAND_SUPPORT_NOT_VALIDATED")
+
+            if supply_exhaustion:
+                evidence_flags.append("SUPPLY_EXHAUSTION_VALIDATED")
+            else:
+                caution_flags.append("SUPPLY_EXHAUSTION_NOT_VALIDATED")
+
+            if contrary_failure:
+                caution_flags.append("CONTRARY_FAILURE_PRESENT")
+            else:
+                evidence_flags.append("NO_CONTRARY_FAILURE_PRESENT")
+
+            if sml_present:
+                evidence_flags.append("SML_PRESENT")
+            else:
+                caution_flags.append("SML_MISSING")
+
+            if explicit_sml:
+                evidence_flags.append("EXPLICIT_GEOMETRY_SML_PRESENT")
+            elif inferred_sml:
+                caution_flags.append("SML_INFERRED_NOT_D3D_ELIGIBLE")
+            else:
+                caution_flags.append("SML_NOT_EXPLICIT")
+
+            if hvn_proxy_present:
+                caution_flags.append("HVN_ABSORPTION_PROXY_PRESENT_NOT_TRUE_HVN_POC")
+
+            caution_flags.append("D3C2S_READ_ONLY_DIAGNOSTIC_NOT_CONFIRMATION")
+            caution_flags.append("D3D_PRODUCTION_CONFIRMATION_NOT_GRANTED")
+
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+
+                "symbol": source_row.get("symbol"),
+                "campaign_id": source_row.get("campaign_id"),
+                "campaign_state": source_row.get("campaign_state"),
+
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+
+                "is_high_priority_confluence_row": bool(is_high_priority),
+                "d3c2s_review_priority": review_priority,
+                "doctrine_leg_completeness": doctrine_leg_completeness,
+                "doctrine_leg_requirement": requirement,
+
+                "demand_support_validated": bool(demand_support),
+                "demand_support_flags_present": _list(source_d3c_row.get("demand_support_flags_present")),
+                "demand_support_explanation": (
+                    "Demand/support leg is validated by D3C source evidence."
+                    if demand_support else
+                    "Demand/support leg is not validated by D3C source evidence."
+                ),
+
+                "supply_exhaustion_validated": bool(supply_exhaustion),
+                "supply_exhaustion_flags_present": _list(source_d3c_row.get("supply_exhaustion_flags_present")),
+                "supply_exhaustion_explanation": (
+                    "Supply-exhaustion leg is validated by D3C source evidence."
+                    if supply_exhaustion else
+                    "Supply-exhaustion leg is not validated by D3C source evidence."
+                ),
+
+                "contrary_failure_present": bool(contrary_failure),
+                "contrary_failure_flags_present": _list(source_d3c_row.get("contrary_failure_flags_present")),
+                "contrary_failure_explanation": (
+                    "Contrary failure is present; behavioral-resolution evidence is blocked or cautionary."
+                    if contrary_failure else
+                    "No contrary failure is present in D3C source evidence."
+                ),
+
+                "sml_present": bool(sml_present),
+                "sml_locations": sml_locations,
+                "sml_evidence_quality": sml_quality,
+                "sml_reason": _list(source_d3c_row.get("sml_reason")),
+                "explicit_geometry_sml": bool(explicit_sml),
+                "inferred_sml": bool(inferred_sml),
+                "hvn_absorption_proxy_present": bool(hvn_proxy_present),
+                "sml_explanation": (
+                    "SML is explicit geometry."
+                    if explicit_sml else
+                    "SML is inferred and remains non-production evidence."
+                    if inferred_sml else
+                    "SML is missing or not explicit."
+                ),
+
+                "footprint_present": source_d3c_row.get("footprint_present"),
+                "footprint_count": source_d3c_row.get("footprint_count"),
+                "footprint_archetypes": _list(source_d3c_row.get("footprint_archetypes")),
+                "doctrine_verdict": source_row.get("d3c_shadow_doctrine_verdict"),
+                "doctrine_reason": source_row.get("d3c_doctrine_reason"),
+                "behavioral_resolution_evidence_class": source_row.get("behavioral_resolution_evidence_class"),
+                "behavioral_resolution_requirement": source_row.get("behavioral_resolution_requirement"),
+                "decision_zone_status": source_row.get("decision_zone_status"),
+                "decision_zone_class": source_row.get("decision_zone_class"),
+
+                "evidence_flags_present": evidence_flags,
+                "caution_flags": caution_flags,
+                "d3c2s_no_drift_status": "PASS",
+
+                "source_d3c2o_row": source_row,
+                "source_d3c_row": source_d3c_row,
+            }
+
+            guardrail_ok = (
+                row.get("diagnostic_only") is True
+                and row.get("read_only") is True
+                and row.get("writes_to_supabase") is False
+                and row.get("mutates_campaigns") is False
+                and row.get("production_confirmation_allowed") is False
+                and row.get("operator_control_confirmed_by_this_engine") is False
+                and row.get("operator_control_unconfirmed_by_this_engine") is False
+                and row.get("operator_control_confirmation_impact") == "NONE"
+                and row.get("d3d_execution_allowed") is False
+                and row.get("d3d_source_used_by_this_engine") is False
+                and row.get("score_impact") == "NONE"
+                and row.get("rank_impact") == "NONE"
+                and row.get("state_impact") == "NONE"
+                and row.get("transition_impact") == "NONE"
+                and row.get("gamma_confirmation_impact") == "NONE"
+                and row.get("state_transition_enabled") is False
+                and row.get("not_a_trade_signal") is True
+                and row.get("d3c2s_no_drift_status") == "PASS"
+            )
+
+            if not guardrail_ok:
+                guardrail_failures.append({
+                    "symbol": row.get("symbol"),
+                    "campaign_id": row.get("campaign_id"),
+                    "reason": "D3C.2S guardrail failure",
+                    "row": row,
+                })
+
+            rows.append(row)
+
+            completeness_counter[str(doctrine_leg_completeness)] += 1
+            priority_counter[str(review_priority)] += 1
+            demand_counter[str(bool(demand_support))] += 1
+            supply_counter[str(bool(supply_exhaustion))] += 1
+            contrary_counter[str(bool(contrary_failure))] += 1
+            sml_counter[str(bool(sml_present))] += 1
+            sml_quality_counter[str(sml_quality)] += 1
+            hvn_proxy_counter[str(bool(hvn_proxy_present))] += 1
+            no_drift_counter[str(row.get("d3c2s_no_drift_status"))] += 1
+
+        except Exception as exc:
+            row_errors.append({
+                "symbol": _as_dict(source_row).get("symbol"),
+                "campaign_id": _as_dict(source_row).get("campaign_id"),
+                "reason": "ROW_EVALUATION_ERROR",
+                "error": str(exc),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("is_high_priority_confluence_row") else 1,
+            0 if row.get("doctrine_leg_completeness") == "COMPLETE_DOCTRINE_LEG_SET_PRESENT_READ_ONLY" else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "d3c2o_function_used": d3c2o_function_used,
+        "total_campaigns": len(d3c2o_rows),
+        "d3c2o_rows_count": len(d3c2o_rows),
+        "rows_count": len(rows),
+        "high_priority_count": len([row for row in rows if row.get("is_high_priority_confluence_row") is True]),
+        "complete_doctrine_leg_set_count": len([row for row in rows if row.get("doctrine_leg_completeness") == "COMPLETE_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"]),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "doctrine_leg_completeness_distribution": _safe_counter(completeness_counter),
+        "d3c2s_review_priority_distribution": _safe_counter(priority_counter),
+        "demand_support_validated_distribution": _safe_counter(demand_counter),
+        "supply_exhaustion_validated_distribution": _safe_counter(supply_counter),
+        "contrary_failure_present_distribution": _safe_counter(contrary_counter),
+        "sml_present_distribution": _safe_counter(sml_counter),
+        "sml_evidence_quality_distribution": _safe_counter(sml_quality_counter),
+        "hvn_absorption_proxy_distribution": _safe_counter(hvn_proxy_counter),
+        "d3c2s_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "rows": rows,
+    })
+
+    return payload
