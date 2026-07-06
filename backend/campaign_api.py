@@ -4427,3 +4427,253 @@ def macro_anchor_decision_zone_review():
         "rows": rows,
     })
     return payload
+
+@router.get("/macro-anchor-behavioral-resolution-confluence-review")
+def macro_anchor_behavioral_resolution_confluence_review():
+    """
+    D3C.2F read-only D3C.2E / D3J confluence review.
+
+    This endpoint uses D3C.2E decision-zone rows and D3J plausibility rows.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT unconfirm operator control.
+    This endpoint does NOT execute D3D.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    This endpoint is not a trade signal.
+    """
+    from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/macro-anchor-behavioral-resolution-confluence-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2F_MACRO_ANCHOR_BEHAVIORAL_RESOLUTION_CONFLUENCE_ENDPOINT",
+            "version": "phase_d3c2f_macro_anchor_behavioral_resolution_confluence_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "row_errors": [],
+            "guardrail_failures": [],
+            "behavioral_resolution_confluence_distribution": {},
+            "confluence_priority_distribution": {},
+            "behavioral_resolution_requirement_distribution": {},
+            "decision_zone_by_d3j_plausibility_distribution": {},
+            "d3j_plausibility_by_decision_zone_distribution": {},
+            "d3c2f_no_drift_status_distribution": {},
+            "confluence_flag_distribution": {},
+            "caution_flag_distribution": {},
+        })
+        return payload
+
+    def _key(row):
+        return str(row.get("campaign_id")) + "|" + str(row.get("symbol"))
+
+    try:
+        try:
+            from backend.campaign_engine.macro_anchor_behavioral_resolution_confluence_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_behavioral_resolution_confluence,
+            )
+        except Exception:
+            from campaign_engine.macro_anchor_behavioral_resolution_confluence_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_behavioral_resolution_confluence,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
+
+    try:
+        decision_payload = macro_anchor_decision_zone_review()
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2E_DECISION_ZONE_PAYLOAD", exc)
+
+    try:
+        d3j_payload = operator_control_plausibility_status_review()
+    except Exception as exc:
+        return _error_payload("LOAD_D3J_PLAUSIBILITY_PAYLOAD", exc)
+
+    decision_rows = decision_payload.get("rows") or []
+    d3j_rows = d3j_payload.get("rows") or []
+
+    d3j_by_key = {_key(row): row for row in d3j_rows}
+
+    confluence_counter = Counter()
+    priority_counter = Counter()
+    requirement_counter = Counter()
+    decision_by_plausibility_counter = Counter()
+    plausibility_by_decision_counter = Counter()
+    no_drift_counter = Counter()
+    confluence_flag_counter = Counter()
+    caution_flag_counter = Counter()
+    guardrail_failures = []
+    row_errors = []
+    rows = []
+
+    for decision_row in decision_rows:
+        try:
+            d3j_row = d3j_by_key.get(_key(decision_row), {})
+            row = classify_macro_anchor_behavioral_resolution_confluence(decision_row, d3j_row)
+        except Exception as exc:
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": decision_row.get("symbol"),
+                "campaign_id": decision_row.get("campaign_id"),
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "behavioral_resolution_confluence_status": "ROW_EVALUATION_ERROR",
+                "confluence_priority": "ROW_EVALUATION_ERROR",
+                "behavioral_resolution_requirement": "ROW_EVALUATION_ERROR",
+                "d3c2f_no_drift_status": "ROW_EVALUATION_ERROR",
+                "confluence_flags": ["ROW_EVALUATION_ERROR"],
+                "caution_flags": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            row_errors.append({
+                "symbol": decision_row.get("symbol"),
+                "campaign_id": decision_row.get("campaign_id"),
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
+        rows.append(row)
+
+        confluence_counter[str(row.get("behavioral_resolution_confluence_status"))] += 1
+        priority_counter[str(row.get("confluence_priority"))] += 1
+        requirement_counter[str(row.get("behavioral_resolution_requirement"))] += 1
+        no_drift_counter[str(row.get("d3c2f_no_drift_status"))] += 1
+
+        decision_by_plausibility_counter[
+            str(row.get("decision_zone_class")) + " | " + str(row.get("d3j_plausibility_status"))
+        ] += 1
+
+        plausibility_by_decision_counter[
+            str(row.get("d3j_plausibility_status")) + " | " + str(row.get("decision_zone_class"))
+        ] += 1
+
+        for flag in row.get("confluence_flags") or []:
+            confluence_flag_counter[str(flag)] += 1
+
+        for flag in row.get("caution_flags") or []:
+            caution_flag_counter[str(flag)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_unconfirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("d3d_execution_allowed") is False
+            and row.get("d3d_source_used_by_this_engine") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+            and row.get("d3c2f_no_drift_status") == "PASS"
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2F guardrail failure",
+                "d3c2f_no_drift_status": row.get("d3c2f_no_drift_status"),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("confluence_priority") or ""),
+            str(row.get("behavioral_resolution_confluence_status") or ""),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
+        "upstream_sources": [
+            "D3C.2E:/api/campaign/macro-anchor-decision-zone-review",
+            "D3J:/api/campaign/operator-control-plausibility-status-review",
+        ],
+        "total_campaigns": len(rows),
+        "d3c2e_rows_count": len(decision_rows),
+        "d3j_rows_count": len(d3j_rows),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "behavioral_resolution_confluence_distribution": _safe_counter(confluence_counter),
+        "confluence_priority_distribution": _safe_counter(priority_counter),
+        "behavioral_resolution_requirement_distribution": _safe_counter(requirement_counter),
+        "decision_zone_by_d3j_plausibility_distribution": _safe_counter(decision_by_plausibility_counter),
+        "d3j_plausibility_by_decision_zone_distribution": _safe_counter(plausibility_by_decision_counter),
+        "d3c2f_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "confluence_flag_distribution": _safe_counter(confluence_flag_counter),
+        "caution_flag_distribution": _safe_counter(caution_flag_counter),
+        "rows": rows,
+    })
+    return payload
