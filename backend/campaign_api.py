@@ -5120,3 +5120,451 @@ def macro_anchor_high_priority_resolution_evidence_review():
         "rows": rows,
     })
     return payload
+
+@router.get("/hvn-poc-source-enrichment-review")
+def hvn_poc_source_enrichment_review():
+    """
+    D3C.2R read-only HVN / POC source-enrichment review.
+
+    Purpose:
+    - Distinguish true HVN / POC source evidence from HVN_ABSORPTION_PROXY.
+    - Treat HVN_ABSORPTION_PROXY as inferred behavioral-location evidence only.
+    - Preserve D3D as the only production mutation gate.
+    - Never confirm operator control.
+    - Never mutate campaigns.
+    - Never affect score, rank, state, transition, gamma, options, edge, probability,
+      targets, or trade signals.
+    """
+    ENGINE_NAME = "D3C2R_HVN_POC_SOURCE_ENRICHMENT_REVIEW"
+    ENGINE_VERSION = "phase_d3c2r_hvn_poc_source_enrichment_read_only_v1"
+
+    TRUE_HVN_POC_FIELDS = [
+        "hvn",
+        "high_volume_node",
+        "volume_profile_poc",
+        "poc",
+        "vpoc",
+        "volume_node",
+        "major_volume_node",
+        "high_volume_zone",
+        "volume_profile_node",
+        "hvn_poc",
+    ]
+
+    def _base_payload():
+        return {
+            "engine": ENGINE_NAME + "_ENDPOINT",
+            "version": ENGINE_VERSION,
+            "endpoint": "/api/campaign/hvn-poc-source-enrichment-review",
+            "endpoint_status": "OK",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "true_hvn_poc_policy": "TRUE_HVN_POC_REQUIRES_EXPLICIT_HVN_POC_SOURCE_FIELD",
+            "proxy_policy": "HVN_ABSORPTION_PROXY_IS_INFERRED_BEHAVIORAL_LOCATION_NOT_TRUE_HVN_POC",
+            "production_confirmation_policy": "D3C2R_NEVER_CONFIRMS_OPERATOR_CONTROL_D3D_ONLY",
+        }
+
+    def _safe_counter(counter):
+        return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+    def _as_dict(value):
+        return value if isinstance(value, dict) else {}
+
+    def _list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, set):
+            return list(value)
+        return [value]
+
+    def _rows_from_payload(payload):
+        payload = _as_dict(payload)
+        for key in [
+            "rows",
+            "review_rows",
+            "validation_rows",
+            "structural_location_rows",
+            "structural_location_reviews",
+            "campaign_rows",
+            "results",
+            "items",
+            "data",
+        ]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+
+    def _bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ["true", "1", "yes", "y"]
+        return bool(value)
+
+    def _present(value):
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip() != ""
+        if isinstance(value, (list, tuple, set, dict)):
+            return len(value) > 0
+        return True
+
+    def _key(row):
+        row = _as_dict(row)
+        return (
+            str(row.get("symbol") or "").upper(),
+            str(row.get("campaign_id") or ""),
+        )
+
+    def _symbol_key(row):
+        row = _as_dict(row)
+        return str(row.get("symbol") or "").upper()
+
+    def _get_nested(mapping, path):
+        current = mapping
+        for part in path:
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+        return current
+
+    def _collect_true_hvn_poc_sources(row):
+        row = _as_dict(row)
+        sources = []
+
+        top_level_paths = []
+        for field in TRUE_HVN_POC_FIELDS:
+            top_level_paths.append(([field], field))
+            top_level_paths.append((["structural_location", field], "structural_location." + field))
+            top_level_paths.append((["evidence", field], "evidence." + field))
+            top_level_paths.append((["evidence", "structural_location", field], "evidence.structural_location." + field))
+
+        explicit_fields = [
+            "hvn_level",
+            "poc_level",
+            "volume_node_level",
+            "hvn_poc_source",
+            "hvn_poc_status",
+            "volume_node_type",
+        ]
+
+        for field in explicit_fields:
+            top_level_paths.append(([field], field))
+
+        for path_parts, label in top_level_paths:
+            value = _get_nested(row, path_parts)
+            if _present(value):
+                sources.append({
+                    "source_path": label,
+                    "source_value": value,
+                })
+
+        return sources
+
+    def _has_proxy(row):
+        row = _as_dict(row)
+
+        locations = []
+        locations.extend(_list(row.get("sml_locations")))
+        locations.extend(_list(row.get("d3c_sml_locations")))
+        locations.extend(_list(row.get("d3c_shadow_sml_locations")))
+
+        source_d3c_row = _as_dict(row.get("source_d3c_row"))
+        locations.extend(_list(source_d3c_row.get("sml_locations")))
+
+        return "HVN_ABSORPTION_PROXY" in [str(item) for item in locations]
+
+    def _call_first_payload(names):
+        for name in names:
+            fn = globals().get(name)
+            if callable(fn):
+                return fn(), name
+        raise RuntimeError("None of the expected payload functions are available: " + ", ".join(names))
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": str(stage),
+            "error": str(exc),
+            "total_campaigns": 0,
+            "rows_count": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "guardrail_failures": [],
+            "row_errors": [],
+        })
+        return payload
+
+    try:
+        d3c1_payload, d3c1_function_used = _call_first_payload([
+            "structural_location_input_review",
+            "structural_location_input_review_endpoint",
+            "d3c_structural_location_input_review",
+            "campaign_structural_location_input_review",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C1_STRUCTURAL_LOCATION_INPUT_REVIEW", exc)
+
+    try:
+        d3c2o_payload, d3c2o_function_used = _call_first_payload([
+            "macro_anchor_high_priority_resolution_evidence_review",
+            "macro_anchor_high_priority_resolution_evidence_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2O_HIGH_PRIORITY_BEHAVIORAL_RESOLUTION", exc)
+
+    d3c1_rows = _rows_from_payload(d3c1_payload)
+    d3c2o_rows = _rows_from_payload(d3c2o_payload)
+
+    d3c2o_by_key = {}
+    d3c2o_by_symbol = {}
+
+    for row in d3c2o_rows:
+        row = _as_dict(row)
+        d3c2o_by_key[_key(row)] = row
+        d3c2o_by_symbol[_symbol_key(row)] = row
+
+    rows = []
+    row_errors = []
+    guardrail_failures = []
+
+    truth_counter = Counter()
+    proxy_counter = Counter()
+    status_counter = Counter()
+    priority_counter = Counter()
+    no_drift_counter = Counter()
+    d3c1_hvn_available_counter = Counter()
+    d3c1_explicit_hvn_ready_counter = Counter()
+
+    for source_row in d3c1_rows:
+        try:
+            source_row = _as_dict(source_row)
+            key = _key(source_row)
+            symbol_key = _symbol_key(source_row)
+            d3c2o_row = d3c2o_by_key.get(key) or d3c2o_by_symbol.get(symbol_key) or {}
+
+            true_sources = _collect_true_hvn_poc_sources(source_row)
+
+            d3c1_hvn_available = _bool(source_row.get("hvn_poc_available"))
+            d3c1_explicit_hvn_ready = _bool(source_row.get("explicit_hvn_zone_ready"))
+            true_hvn_poc_available = bool(true_sources) or d3c1_hvn_available or d3c1_explicit_hvn_ready
+
+            proxy_present = _has_proxy(d3c2o_row)
+
+            is_high_priority = _bool(d3c2o_row.get("is_high_priority_confluence_row"))
+
+            if true_hvn_poc_available:
+                truth_status = "TRUE_HVN_POC_SOURCE_AVAILABLE_READ_ONLY"
+                enrichment_status = "TRUE_HVN_POC_ENRICHMENT_SOURCE_PRESENT_UNCONFIRMED"
+                requirement = "TRUE_HVN_POC_PRESENT_BUT_D3D_PRODUCTION_CONFIRMATION_STILL_REQUIRED"
+            elif proxy_present:
+                truth_status = "HVN_ABSORPTION_PROXY_ONLY_READ_ONLY"
+                enrichment_status = "PROXY_ONLY_TRUE_HVN_POC_SOURCE_MISSING"
+                requirement = "DO_NOT_TREAT_HVN_ABSORPTION_PROXY_AS_TRUE_HVN_POC"
+            else:
+                truth_status = "NO_TRUE_HVN_POC_SOURCE_PRESENT_READ_ONLY"
+                enrichment_status = "TRUE_HVN_POC_SOURCE_MISSING"
+                requirement = "TRUE_HVN_POC_SOURCE_FIELD_REQUIRED_FOR_ENRICHMENT"
+
+            if is_high_priority and true_hvn_poc_available:
+                review_priority = "HIGH_PRIORITY_TRUE_HVN_POC_SOURCE_PRESENT_UNCONFIRMED"
+            elif is_high_priority and proxy_present:
+                review_priority = "HIGH_PRIORITY_PROXY_ONLY_TRUE_HVN_POC_MISSING"
+            elif is_high_priority:
+                review_priority = "HIGH_PRIORITY_TRUE_HVN_POC_MISSING"
+            else:
+                review_priority = "STANDARD_REVIEW_PRIORITY_READ_ONLY"
+
+            caution_flags = []
+            evidence_flags = []
+
+            if true_hvn_poc_available:
+                evidence_flags.append("TRUE_HVN_POC_SOURCE_PRESENT")
+            else:
+                caution_flags.append("TRUE_HVN_POC_SOURCE_MISSING")
+
+            if proxy_present:
+                caution_flags.append("HVN_ABSORPTION_PROXY_PRESENT_NOT_TRUE_HVN_POC")
+
+            if d3c1_explicit_hvn_ready:
+                evidence_flags.append("D3C1_EXPLICIT_HVN_ZONE_READY")
+            else:
+                caution_flags.append("D3C1_EXPLICIT_HVN_ZONE_NOT_READY")
+
+            if d3c1_hvn_available:
+                evidence_flags.append("D3C1_HVN_POC_AVAILABLE")
+            else:
+                caution_flags.append("D3C1_HVN_POC_NOT_AVAILABLE")
+
+            caution_flags.append("D3C2R_READ_ONLY_DIAGNOSTIC_NOT_CONFIRMATION")
+            caution_flags.append("D3D_PRODUCTION_CONFIRMATION_NOT_GRANTED")
+
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+
+                "symbol": source_row.get("symbol"),
+                "campaign_id": source_row.get("campaign_id"),
+                "campaign_state": source_row.get("campaign_state"),
+                "timeframe": source_row.get("timeframe"),
+
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+
+                "d3c2r_review_priority": review_priority,
+                "hvn_poc_truth_status": truth_status,
+                "hvn_poc_enrichment_status": enrichment_status,
+                "hvn_poc_enrichment_requirement": requirement,
+
+                "true_hvn_poc_available": bool(true_hvn_poc_available),
+                "true_hvn_poc_source_count": len(true_sources),
+                "true_hvn_poc_sources": true_sources,
+
+                "hvn_absorption_proxy_present": bool(proxy_present),
+                "proxy_policy": "HVN_ABSORPTION_PROXY_IS_NOT_TRUE_HVN_POC",
+
+                "d3c1_hvn_poc_available": bool(d3c1_hvn_available),
+                "d3c1_explicit_hvn_zone_ready": bool(d3c1_explicit_hvn_ready),
+                "d3c1_structural_location_readiness": source_row.get("structural_location_readiness"),
+                "d3c1_production_sml_possible_now": source_row.get("production_sml_possible_now"),
+                "d3c1_explicit_trading_range_ready": source_row.get("explicit_trading_range_ready"),
+                "d3c1_explicit_lp_zone_ready": source_row.get("explicit_lp_zone_ready"),
+                "d3c1_explicit_support_resistance_ready": source_row.get("explicit_support_resistance_ready"),
+
+                "is_high_priority_confluence_row": bool(is_high_priority),
+                "d3c2o_behavioral_resolution_evidence_class": d3c2o_row.get("behavioral_resolution_evidence_class"),
+                "d3c2o_review_priority": d3c2o_row.get("d3c2g_review_priority"),
+                "d3c2o_decision_zone_status": d3c2o_row.get("decision_zone_status"),
+                "d3c2o_decision_zone_class": d3c2o_row.get("decision_zone_class"),
+                "d3c2o_d3c_shadow_sml_evidence_quality": d3c2o_row.get("d3c_shadow_sml_evidence_quality"),
+                "d3c2o_d3c_sml_locations": d3c2o_row.get("d3c_sml_locations") or [],
+
+                "evidence_flags_present": evidence_flags,
+                "caution_flags": caution_flags,
+                "d3c2r_no_drift_status": "PASS",
+
+                "source_d3c1_row": source_row,
+                "source_d3c2o_row": d3c2o_row,
+            }
+
+            guardrail_ok = (
+                row.get("diagnostic_only") is True
+                and row.get("read_only") is True
+                and row.get("writes_to_supabase") is False
+                and row.get("mutates_campaigns") is False
+                and row.get("production_confirmation_allowed") is False
+                and row.get("operator_control_confirmed_by_this_engine") is False
+                and row.get("operator_control_unconfirmed_by_this_engine") is False
+                and row.get("operator_control_confirmation_impact") == "NONE"
+                and row.get("d3d_execution_allowed") is False
+                and row.get("d3d_source_used_by_this_engine") is False
+                and row.get("score_impact") == "NONE"
+                and row.get("rank_impact") == "NONE"
+                and row.get("state_impact") == "NONE"
+                and row.get("transition_impact") == "NONE"
+                and row.get("gamma_confirmation_impact") == "NONE"
+                and row.get("state_transition_enabled") is False
+                and row.get("not_a_trade_signal") is True
+                and row.get("d3c2r_no_drift_status") == "PASS"
+            )
+
+            if not guardrail_ok:
+                guardrail_failures.append({
+                    "symbol": row.get("symbol"),
+                    "campaign_id": row.get("campaign_id"),
+                    "reason": "D3C.2R guardrail failure",
+                    "row": row,
+                })
+
+            rows.append(row)
+
+            truth_counter[str(bool(true_hvn_poc_available))] += 1
+            proxy_counter[str(bool(proxy_present))] += 1
+            status_counter[str(truth_status)] += 1
+            priority_counter[str(review_priority)] += 1
+            no_drift_counter[str(row.get("d3c2r_no_drift_status"))] += 1
+            d3c1_hvn_available_counter[str(bool(d3c1_hvn_available))] += 1
+            d3c1_explicit_hvn_ready_counter[str(bool(d3c1_explicit_hvn_ready))] += 1
+
+        except Exception as exc:
+            row_errors.append({
+                "symbol": _as_dict(source_row).get("symbol"),
+                "campaign_id": _as_dict(source_row).get("campaign_id"),
+                "reason": "ROW_EVALUATION_ERROR",
+                "error": str(exc),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("is_high_priority_confluence_row") else 1,
+            0 if row.get("true_hvn_poc_available") else 1,
+            0 if row.get("hvn_absorption_proxy_present") else 1,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "d3c1_function_used": d3c1_function_used,
+        "d3c2o_function_used": d3c2o_function_used,
+        "total_campaigns": len(d3c1_rows),
+        "d3c1_rows_count": len(d3c1_rows),
+        "d3c2o_rows_count": len(d3c2o_rows),
+        "rows_count": len(rows),
+        "high_priority_count": len([row for row in rows if row.get("is_high_priority_confluence_row") is True]),
+        "true_hvn_poc_available_count": len([row for row in rows if row.get("true_hvn_poc_available") is True]),
+        "hvn_absorption_proxy_count": len([row for row in rows if row.get("hvn_absorption_proxy_present") is True]),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "true_hvn_poc_available_distribution": _safe_counter(truth_counter),
+        "hvn_absorption_proxy_distribution": _safe_counter(proxy_counter),
+        "hvn_poc_truth_status_distribution": _safe_counter(status_counter),
+        "d3c2r_review_priority_distribution": _safe_counter(priority_counter),
+        "d3c2r_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "d3c1_hvn_poc_available_distribution": _safe_counter(d3c1_hvn_available_counter),
+        "d3c1_explicit_hvn_zone_ready_distribution": _safe_counter(d3c1_explicit_hvn_ready_counter),
+        "rows": rows,
+    })
+
+    return payload
