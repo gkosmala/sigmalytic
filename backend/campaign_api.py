@@ -3833,3 +3833,193 @@ def external_macro_anchor_enrichment_review():
         "rows": rows,
     })
     return payload
+@router.get("/external-macro-anchor-quality-tier-review")
+def external_macro_anchor_quality_tier_review():
+    """
+    D3C.2C read-only macro-anchor quality-tier review.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    This endpoint is not a trade signal.
+    """
+    from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/external-macro-anchor-quality-tier-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2C_EXTERNAL_MACRO_ANCHOR_QUALITY_TIER_ENDPOINT",
+            "version": "phase_d3c2c_external_macro_anchor_quality_tier_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "row_errors": [],
+            "guardrail_failures": [],
+            "quality_tier_distribution": {},
+            "current_location_relevance_distribution": {},
+            "d3c2b_status_distribution": {},
+            "caution_flag_distribution": {},
+        })
+        return payload
+
+    try:
+        try:
+            from backend.campaign_engine.external_macro_anchor_quality_tier_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_quality,
+            )
+        except Exception:
+            from campaign_engine.external_macro_anchor_quality_tier_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_quality,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
+
+    try:
+        campaigns = _store().get_active_campaigns()
+    except Exception as exc:
+        return _error_payload("LOAD_ACTIVE_CAMPAIGNS", exc)
+
+    tier_counter = Counter()
+    relevance_counter = Counter()
+    d3c2b_status_counter = Counter()
+    caution_counter = Counter()
+    guardrail_failures = []
+    row_errors = []
+    rows = []
+
+    for campaign in campaigns:
+        try:
+            row = classify_macro_anchor_quality(campaign)
+        except Exception as exc:
+            symbol = campaign.get("symbol") if isinstance(campaign, dict) else getattr(campaign, "symbol", None)
+            campaign_id = campaign.get("campaign_id") if isinstance(campaign, dict) else getattr(campaign, "campaign_id", None)
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "macro_anchor_quality_tier": "ROW_EVALUATION_ERROR",
+                "current_location_relevance": "ROW_EVALUATION_ERROR",
+                "d3c2b_macro_anchor_status": "ROW_EVALUATION_ERROR",
+                "caution_flags": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            row_errors.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
+        rows.append(row)
+
+        tier_counter[str(row.get("macro_anchor_quality_tier"))] += 1
+        relevance_counter[str(row.get("current_location_relevance"))] += 1
+        d3c2b_status_counter[str(row.get("d3c2b_macro_anchor_status"))] += 1
+
+        for flag in row.get("caution_flags") or []:
+            caution_counter[str(flag)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2C guardrail failure",
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("macro_anchor_quality_tier") or ""),
+            str(row.get("current_location_relevance") or ""),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
+        "total_campaigns": len(campaigns),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "quality_tier_distribution": _safe_counter(tier_counter),
+        "current_location_relevance_distribution": _safe_counter(relevance_counter),
+        "d3c2b_status_distribution": _safe_counter(d3c2b_status_counter),
+        "caution_flag_distribution": _safe_counter(caution_counter),
+        "rows": rows,
+    })
+    return payload
