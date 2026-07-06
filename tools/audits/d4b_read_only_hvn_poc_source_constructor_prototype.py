@@ -434,14 +434,20 @@ def main() -> int:
 
     source_gap_flags: List[str] = []
 
-    if not constructed_rows:
-        source_gap_flags.append("D4B_NO_TRUE_HVN_POC_CONSTRUCTED_FROM_RUNTIME_PAYLOAD")
-
-    if any(row.get("d4b_status") == "D4B_BLOCKED_NO_RUNTIME_OHLCV_BARS" for row in attempt_rows):
-        source_gap_flags.append("D4B_RUNTIME_OHLCV_BARS_MISSING_FROM_CANDIDATE_PAYLOAD")
-
     if len(candidate_rows) == 0:
         source_gap_flags.append("D4B_NO_D3V_PREFLIGHT_CANDIDATES_FOUND")
+
+    if len(attempt_rows) > 0 and len(constructed_rows) == 0:
+        source_gap_flags.append("D4B_NO_TRUE_HVN_POC_CONSTRUCTED_FROM_RUNTIME_PAYLOAD")
+
+    if status_counter.get("D4B_BLOCKED_NO_RUNTIME_OHLCV_BARS", 0) > 0:
+        source_gap_flags.append("D4B_RUNTIME_OHLCV_BARS_MISSING_FROM_CANDIDATE_PAYLOAD")
+
+    if block_counter.get("NO_RUNTIME_OHLCV_BARS_FOUND_IN_EXISTING_PAYLOAD", 0) > 0:
+        source_gap_flags.append("D4B_EXISTING_CANDIDATE_PAYLOAD_HAS_NO_OHLCV_BAR_SOURCE")
+
+    if status_counter.get("D4B_BLOCKED_NO_USABLE_OHLCV_VOLUME_BARS", 0) > 0:
+        source_gap_flags.append("D4B_RUNTIME_BARS_PRESENT_BUT_NOT_USABLE_FOR_VOLUME_PROFILE")
 
     result = {
         "engine": ENGINE,

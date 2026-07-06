@@ -58,3 +58,24 @@ It must not fall back to HVN_ABSORPTION_PROXY.
 ## Next Phase
 
 If D4B shows that runtime candidate payloads do not contain usable OHLCV/volume bars, D4C should identify the correct read-only market-data source path for supplying bars to the constructor.
+
+## D4B.1 Source-Gap Reporting Hotfix
+
+D4B.1 corrects the reporting logic so that `source_gap_flags` explicitly reflects the runtime constructor blocker when all D4B candidate attempts are blocked by missing OHLCV bars.
+
+This is a reporting-only hotfix.
+
+It does not persist HVN/POC fields.
+It does not write to Supabase.
+It does not mutate campaigns.
+It does not execute D3D.
+It does not authorize D3D.
+It does not confirm operator control.
+It does not alter score, rank, campaign state, transition, gamma/options, probability, edge, target, or trade signals.
+
+The expected D4B.1 result remains:
+
+- zero D4B D3D eligibility
+- zero mutation
+- D3D execution recommendation remains DO_NOT_EXECUTE_D3D
+- missing runtime OHLCV bars are explicitly reported as a source gap
