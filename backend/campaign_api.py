@@ -5971,3 +5971,385 @@ def doctrine_leg_explanation_enrichment_review():
     })
 
     return payload
+
+@router.get("/stealth-monitoring-diagnostic-review")
+def stealth_monitoring_diagnostic_review():
+    """
+    D3C.2T read-only stealth monitoring diagnostic review.
+
+    Purpose:
+    - Monitor unresolved stealth / shadow-confirmable operator-control evidence.
+    - Combine D3J plausibility context with D3C.2S doctrine-leg explanation.
+    - Preserve all evidence as diagnostic and unconfirmed.
+    - Never confirm operator control.
+    - Never execute D3D.
+    - Never mutate campaigns.
+    - Never affect score, rank, state, transition, gamma, options, edge,
+      probability, targets, or trade signals.
+    """
+    from collections import Counter
+
+    ENGINE_NAME = "D3C2T_STEALTH_MONITORING_DIAGNOSTIC_REVIEW"
+    ENGINE_VERSION = "phase_d3c2t_stealth_monitoring_diagnostic_read_only_v1"
+
+    def _base_payload():
+        return {
+            "engine": ENGINE_NAME + "_ENDPOINT",
+            "version": ENGINE_VERSION,
+            "endpoint": "/api/campaign/stealth-monitoring-diagnostic-review",
+            "endpoint_status": "OK",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "stealth_policy": "STEALTH_MONITORING_IS_DIAGNOSTIC_ONLY_NOT_CONFIRMATION",
+            "operator_control_policy": "OPERATOR_CONTROL_REMAINS_UNCONFIRMED_UNLESS_D3D_SEPARATELY_AUTHORIZED",
+            "d3d_policy": "D3C2T_NEVER_EXECUTES_D3D",
+        }
+
+    def _safe_counter(counter):
+        return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+    def _as_dict(value):
+        return value if isinstance(value, dict) else {}
+
+    def _list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, set):
+            return list(value)
+        return [value]
+
+    def _bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ["true", "1", "yes", "y"]
+        return bool(value)
+
+    def _rows_from_payload(payload):
+        payload = _as_dict(payload)
+        for key in [
+            "rows",
+            "review_rows",
+            "validation_rows",
+            "campaign_rows",
+            "results",
+            "items",
+            "data",
+        ]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+
+    def _key(row):
+        row = _as_dict(row)
+        return (
+            str(row.get("symbol") or "").upper(),
+            str(row.get("campaign_id") or ""),
+        )
+
+    def _symbol_key(row):
+        row = _as_dict(row)
+        return str(row.get("symbol") or "").upper()
+
+    def _call_first_payload(names):
+        for name in names:
+            fn = globals().get(name)
+            if callable(fn):
+                return fn(), name
+        raise RuntimeError("None of the expected payload functions are available: " + ", ".join(names))
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": str(stage),
+            "error": str(exc),
+            "total_campaigns": 0,
+            "rows_count": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "guardrail_failures": [],
+            "row_errors": [],
+        })
+        return payload
+
+    try:
+        d3j_payload, d3j_function_used = _call_first_payload([
+            "operator_control_plausibility_status_review",
+            "operator_control_plausibility_status_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3J_OPERATOR_CONTROL_PLAUSIBILITY", exc)
+
+    try:
+        d3c2s_payload, d3c2s_function_used = _call_first_payload([
+            "doctrine_leg_explanation_enrichment_review",
+            "doctrine_leg_explanation_enrichment_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2S_DOCTRINE_LEG_EXPLANATION", exc)
+
+    d3j_rows = _rows_from_payload(d3j_payload)
+    d3c2s_rows = _rows_from_payload(d3c2s_payload)
+
+    d3c2s_by_key = {}
+    d3c2s_by_symbol = {}
+
+    for row in d3c2s_rows:
+        row = _as_dict(row)
+        d3c2s_by_key[_key(row)] = row
+        d3c2s_by_symbol[_symbol_key(row)] = row
+
+    rows = []
+    guardrail_failures = []
+    row_errors = []
+
+    stealth_status_counter = Counter()
+    monitor_priority_counter = Counter()
+    plausibility_counter = Counter()
+    doctrine_completeness_counter = Counter()
+    high_priority_counter = Counter()
+    no_drift_counter = Counter()
+
+    for d3j_row in d3j_rows:
+        try:
+            d3j_row = _as_dict(d3j_row)
+            d3c2s_row = d3c2s_by_key.get(_key(d3j_row)) or d3c2s_by_symbol.get(_symbol_key(d3j_row)) or {}
+
+            plausibility_status = str(d3j_row.get("plausibility_status") or "")
+            shadow_confirmable = _bool(d3j_row.get("shadow_confirmable"))
+            legacy_operator_control_confirmed = _bool(d3j_row.get("legacy_operator_control_confirmed"))
+            d3d_production_confirmed = _bool(d3j_row.get("d3d_production_confirmed"))
+
+            doctrine_leg_completeness = str(d3c2s_row.get("doctrine_leg_completeness") or "MISSING_D3C2S_DOCTRINE_LEG_CONTEXT")
+            complete_doctrine_legs = doctrine_leg_completeness == "COMPLETE_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+            partial_doctrine_legs = doctrine_leg_completeness == "PARTIAL_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+            is_high_priority = _bool(d3c2s_row.get("is_high_priority_confluence_row"))
+            hvn_proxy_present = _bool(d3c2s_row.get("hvn_absorption_proxy_present"))
+            inferred_sml = _bool(d3c2s_row.get("inferred_sml"))
+            explicit_sml = _bool(d3c2s_row.get("explicit_geometry_sml"))
+
+            plausible_stealth = plausibility_status == "SHADOW_CONFIRMABLE_PLAUSIBLE_STEALTH_UNCONFIRMED"
+            legacy_shadow = plausibility_status == "LEGACY_OPERATOR_CONTROL_SHADOW_CONFIRMABLE"
+
+            if plausible_stealth and complete_doctrine_legs:
+                stealth_status = "PLAUSIBLE_STEALTH_COMPLETE_DOCTRINE_LEGS_UNCONFIRMED"
+                monitor_priority = "STEALTH_MONITOR_HIGH_PRIORITY_READ_ONLY"
+            elif plausible_stealth and partial_doctrine_legs:
+                stealth_status = "PLAUSIBLE_STEALTH_PARTIAL_DOCTRINE_LEGS_UNCONFIRMED"
+                monitor_priority = "STEALTH_MONITOR_ELEVATED_PRIORITY_READ_ONLY"
+            elif plausible_stealth:
+                stealth_status = "PLAUSIBLE_STEALTH_DOCTRINE_LEGS_INCOMPLETE_UNCONFIRMED"
+                monitor_priority = "STEALTH_MONITOR_ELEVATED_PRIORITY_READ_ONLY"
+            elif legacy_shadow and complete_doctrine_legs:
+                stealth_status = "LEGACY_SHADOW_COMPLETE_DOCTRINE_LEGS_UNCONFIRMED"
+                monitor_priority = "LEGACY_SHADOW_MONITOR_HIGH_PRIORITY_READ_ONLY"
+            elif legacy_shadow:
+                stealth_status = "LEGACY_SHADOW_INCOMPLETE_DOCTRINE_LEGS_UNCONFIRMED"
+                monitor_priority = "LEGACY_SHADOW_MONITOR_STANDARD_READ_ONLY"
+            elif is_high_priority and complete_doctrine_legs:
+                stealth_status = "HIGH_PRIORITY_COMPLETE_DOCTRINE_LEGS_NOT_STEALTH_CLASSIFIED_UNCONFIRMED"
+                monitor_priority = "HIGH_PRIORITY_DOCTRINE_MONITOR_READ_ONLY"
+            else:
+                stealth_status = "STANDARD_NO_STEALTH_MONITORING_ESCALATION_READ_ONLY"
+                monitor_priority = "STANDARD_REVIEW_PRIORITY_READ_ONLY"
+
+            evidence_flags = []
+            caution_flags = []
+
+            if plausible_stealth:
+                evidence_flags.append("D3J_PLAUSIBLE_STEALTH_UNCONFIRMED")
+
+            if legacy_shadow:
+                evidence_flags.append("D3J_LEGACY_OPERATOR_CONTROL_SHADOW_CONFIRMABLE")
+
+            if shadow_confirmable:
+                evidence_flags.append("D3J_SHADOW_CONFIRMABLE")
+
+            if complete_doctrine_legs:
+                evidence_flags.append("D3C2S_COMPLETE_DOCTRINE_LEG_SET")
+            elif partial_doctrine_legs:
+                caution_flags.append("D3C2S_PARTIAL_DOCTRINE_LEG_SET")
+            else:
+                caution_flags.append("D3C2S_DOCTRINE_LEG_SET_INCOMPLETE_OR_MISSING")
+
+            if is_high_priority:
+                evidence_flags.append("D3C2S_HIGH_PRIORITY_CONFLUENCE_ROW")
+
+            if hvn_proxy_present:
+                caution_flags.append("HVN_ABSORPTION_PROXY_PRESENT_NOT_TRUE_HVN_POC")
+
+            if inferred_sml:
+                caution_flags.append("SML_INFERRED_NOT_D3D_ELIGIBLE")
+
+            if explicit_sml:
+                evidence_flags.append("EXPLICIT_GEOMETRY_SML_PRESENT")
+
+            if legacy_operator_control_confirmed:
+                caution_flags.append("LEGACY_OPERATOR_CONTROL_EVIDENCE_PRESENT_NOT_D3D_PRODUCTION_CONFIRMATION")
+
+            if d3d_production_confirmed:
+                caution_flags.append("D3D_PRODUCTION_CONFIRMATION_ALREADY_PRESENT_REVIEW_REQUIRED")
+
+            caution_flags.append("D3C2T_READ_ONLY_DIAGNOSTIC_NOT_CONFIRMATION")
+            caution_flags.append("D3D_PRODUCTION_CONFIRMATION_NOT_GRANTED_BY_D3C2T")
+
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+
+                "symbol": d3j_row.get("symbol"),
+                "campaign_id": d3j_row.get("campaign_id"),
+                "campaign_state": d3j_row.get("campaign_state"),
+
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+
+                "stealth_monitor_status": stealth_status,
+                "stealth_monitor_priority": monitor_priority,
+
+                "d3j_plausibility_status": plausibility_status,
+                "d3j_shadow_confirmable": bool(shadow_confirmable),
+                "d3j_legacy_operator_control_confirmed": bool(legacy_operator_control_confirmed),
+                "d3j_d3d_production_confirmed": bool(d3d_production_confirmed),
+                "d3j_operator_control_evidence_count": d3j_row.get("operator_control_evidence_count"),
+
+                "d3c2s_source_found": bool(d3c2s_row),
+                "d3c2s_review_priority": d3c2s_row.get("d3c2s_review_priority"),
+                "doctrine_leg_completeness": doctrine_leg_completeness,
+                "demand_support_validated": d3c2s_row.get("demand_support_validated"),
+                "supply_exhaustion_validated": d3c2s_row.get("supply_exhaustion_validated"),
+                "contrary_failure_present": d3c2s_row.get("contrary_failure_present"),
+                "sml_present": d3c2s_row.get("sml_present"),
+                "sml_evidence_quality": d3c2s_row.get("sml_evidence_quality"),
+                "explicit_geometry_sml": bool(explicit_sml),
+                "inferred_sml": bool(inferred_sml),
+                "hvn_absorption_proxy_present": bool(hvn_proxy_present),
+                "is_high_priority_confluence_row": bool(is_high_priority),
+
+                "evidence_flags_present": evidence_flags,
+                "caution_flags": caution_flags,
+                "d3c2t_no_drift_status": "PASS",
+
+                "source_d3j_row": d3j_row,
+                "source_d3c2s_row": d3c2s_row,
+            }
+
+            guardrail_ok = (
+                row.get("diagnostic_only") is True
+                and row.get("read_only") is True
+                and row.get("writes_to_supabase") is False
+                and row.get("mutates_campaigns") is False
+                and row.get("production_confirmation_allowed") is False
+                and row.get("operator_control_confirmed_by_this_engine") is False
+                and row.get("operator_control_unconfirmed_by_this_engine") is False
+                and row.get("operator_control_confirmation_impact") == "NONE"
+                and row.get("d3d_execution_allowed") is False
+                and row.get("d3d_source_used_by_this_engine") is False
+                and row.get("score_impact") == "NONE"
+                and row.get("rank_impact") == "NONE"
+                and row.get("state_impact") == "NONE"
+                and row.get("transition_impact") == "NONE"
+                and row.get("gamma_confirmation_impact") == "NONE"
+                and row.get("state_transition_enabled") is False
+                and row.get("not_a_trade_signal") is True
+                and row.get("d3c2t_no_drift_status") == "PASS"
+            )
+
+            if not guardrail_ok:
+                guardrail_failures.append({
+                    "symbol": row.get("symbol"),
+                    "campaign_id": row.get("campaign_id"),
+                    "reason": "D3C.2T guardrail failure",
+                    "row": row,
+                })
+
+            rows.append(row)
+
+            stealth_status_counter[str(stealth_status)] += 1
+            monitor_priority_counter[str(monitor_priority)] += 1
+            plausibility_counter[str(plausibility_status)] += 1
+            doctrine_completeness_counter[str(doctrine_leg_completeness)] += 1
+            high_priority_counter[str(bool(is_high_priority))] += 1
+            no_drift_counter[str(row.get("d3c2t_no_drift_status"))] += 1
+
+        except Exception as exc:
+            row_errors.append({
+                "symbol": _as_dict(d3j_row).get("symbol"),
+                "campaign_id": _as_dict(d3j_row).get("campaign_id"),
+                "reason": "ROW_EVALUATION_ERROR",
+                "error": str(exc),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("stealth_monitor_priority") == "STEALTH_MONITOR_HIGH_PRIORITY_READ_ONLY" else
+            1 if row.get("stealth_monitor_priority") == "STEALTH_MONITOR_ELEVATED_PRIORITY_READ_ONLY" else
+            2 if row.get("stealth_monitor_priority") == "LEGACY_SHADOW_MONITOR_HIGH_PRIORITY_READ_ONLY" else
+            3 if row.get("stealth_monitor_priority") == "HIGH_PRIORITY_DOCTRINE_MONITOR_READ_ONLY" else 4,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "d3j_function_used": d3j_function_used,
+        "d3c2s_function_used": d3c2s_function_used,
+        "total_campaigns": len(d3j_rows),
+        "d3j_rows_count": len(d3j_rows),
+        "d3c2s_rows_count": len(d3c2s_rows),
+        "rows_count": len(rows),
+        "stealth_monitor_candidate_count": len([row for row in rows if str(row.get("stealth_monitor_priority")) != "STANDARD_REVIEW_PRIORITY_READ_ONLY"]),
+        "plausible_stealth_unconfirmed_count": len([row for row in rows if row.get("d3j_plausibility_status") == "SHADOW_CONFIRMABLE_PLAUSIBLE_STEALTH_UNCONFIRMED"]),
+        "high_priority_count": len([row for row in rows if row.get("is_high_priority_confluence_row") is True]),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "stealth_monitor_status_distribution": _safe_counter(stealth_status_counter),
+        "stealth_monitor_priority_distribution": _safe_counter(monitor_priority_counter),
+        "d3j_plausibility_status_distribution": _safe_counter(plausibility_counter),
+        "doctrine_leg_completeness_distribution": _safe_counter(doctrine_completeness_counter),
+        "high_priority_distribution": _safe_counter(high_priority_counter),
+        "d3c2t_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "rows": rows,
+    })
+
+    return payload
