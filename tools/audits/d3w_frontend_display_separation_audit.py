@@ -32,6 +32,7 @@ INCLUDE_SUFFIXES = {
     ".html",
     ".css",
     ".md",
+    ".json",
 }
 
 EXCLUDE_PARTS = {

@@ -1,0 +1,62 @@
+﻿{
+  "policy_name": "Sigmalytic V2 Operator-Control Display Separation Policy",
+  "version": "phase_d3x_frontend_display_policy_remediation_v1",
+  "status": "READ_ONLY_DISPLAY_POLICY_NO_MUTATION",
+  "doctrine": {
+    "operator_control": "Operator control is evidence, not a score.",
+    "production_confirmation": "Only D3D may create production operator-control confirmation.",
+    "d3d_status": "D3D remains dry-run and unauthorized unless separately authorized under the D3D execution protocol.",
+    "hvn_proxy": "HVN_ABSORPTION_PROXY is not true HVN/POC.",
+    "d3v_status": "D3V preflight rows are dry-run blocked/unmutated unless separately authorized in a future D3D execution protocol."
+  },
+  "required_display_labels": {
+    "LEGACY_EVIDENCE_ONLY_NOT_D3D_CONFIRMATION": {
+      "ui_label": "Legacy Evidence Only — Not D3D Confirmation",
+      "meaning": "Legacy operator-control evidence may be shown only as historical or diagnostic evidence. It is not production confirmation."
+    },
+    "D3C_SHADOW_READ_ONLY_DIAGNOSTIC": {
+      "ui_label": "D3C Shadow Diagnostic — Read Only",
+      "meaning": "D3C output is shadow evidence review only. It may support later review but cannot confirm operator control."
+    },
+    "D3C2_DIAGNOSTIC_ENRICHMENT_UNCONFIRMED": {
+      "ui_label": "D3C.2 Diagnostic Enrichment — Unconfirmed",
+      "meaning": "D3C.2O/R/S/T evidence is confluence, enrichment, source review, doctrine-leg review, and stealth monitoring only."
+    },
+    "D3D_PRODUCTION_CONFIRMATION": {
+      "ui_label": "D3D Production Confirmation",
+      "meaning": "Production confirmation can appear only from the nested production field evidence.operator_control.operator_control_confirmed after separately authorized D3D execution."
+    },
+    "D3D_DRY_RUN_UNAUTHORIZED": {
+      "ui_label": "D3D Dry Run — Unauthorized",
+      "meaning": "D3D has not been authorized to execute and has not mutated campaign evidence."
+    },
+    "HVN_ABSORPTION_PROXY_NOT_TRUE_HVN_POC": {
+      "ui_label": "HVN Absorption Proxy — Not True HVN/POC",
+      "meaning": "HVN_ABSORPTION_PROXY is inferred behavioral-location evidence only. It is not a true HVN, POC, VPOC, or volume-profile source."
+    },
+    "D3V_PREFLIGHT_BLOCKED_UNMUTATED": {
+      "ui_label": "D3V Preflight — Blocked and Unmutated",
+      "meaning": "D3V identifies dry-run candidates and block reasons only. It does not authorize or execute D3D."
+    }
+  },
+  "current_live_expected_values": {
+    "d3v_preflight_candidate_count": 30,
+    "d3v_preflight_eligible_count": 0,
+    "d3d_execution_allowed": false,
+    "writes_to_supabase": false,
+    "mutates_campaigns": false,
+    "operator_control_confirmed_by_diagnostic_layers": false
+  },
+  "guardrails": {
+    "diagnostic_only": true,
+    "read_only": true,
+    "writes_to_supabase": false,
+    "mutates_campaigns": false,
+    "executes_d3d": false,
+    "score_impact": "NONE",
+    "rank_impact": "NONE",
+    "state_impact": "NONE",
+    "transition_impact": "NONE",
+    "not_a_trade_signal": true
+  }
+}
