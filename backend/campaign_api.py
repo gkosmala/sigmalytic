@@ -4222,3 +4222,208 @@ def macro_anchor_state_alignment_review():
         "rows": rows,
     })
     return payload
+
+@router.get("/macro-anchor-decision-zone-review")
+def macro_anchor_decision_zone_review():
+    """
+    D3C.2E read-only macro-anchor decision-zone review.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    This endpoint is not a trade signal.
+    """
+    from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/macro-anchor-decision-zone-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2E_MACRO_ANCHOR_DECISION_ZONE_ENDPOINT",
+            "version": "phase_d3c2e_macro_anchor_decision_zone_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "row_errors": [],
+            "guardrail_failures": [],
+            "decision_zone_status_distribution": {},
+            "decision_zone_class_distribution": {},
+            "decision_zone_by_state_distribution": {},
+            "decision_zone_by_quality_tier_distribution": {},
+            "decision_zone_flag_distribution": {},
+            "caution_flag_distribution": {},
+        })
+        return payload
+
+    try:
+        try:
+            from backend.campaign_engine.macro_anchor_decision_zone_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_decision_zone,
+            )
+        except Exception:
+            from campaign_engine.macro_anchor_decision_zone_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_decision_zone,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
+
+    try:
+        campaigns = _store().get_active_campaigns()
+    except Exception as exc:
+        return _error_payload("LOAD_ACTIVE_CAMPAIGNS", exc)
+
+    status_counter = Counter()
+    class_counter = Counter()
+    state_counter = Counter()
+    quality_counter = Counter()
+    decision_flag_counter = Counter()
+    caution_flag_counter = Counter()
+    guardrail_failures = []
+    row_errors = []
+    rows = []
+
+    for campaign in campaigns:
+        try:
+            row = classify_macro_anchor_decision_zone(campaign)
+        except Exception as exc:
+            symbol = campaign.get("symbol") if isinstance(campaign, dict) else getattr(campaign, "symbol", None)
+            campaign_id = campaign.get("campaign_id") if isinstance(campaign, dict) else getattr(campaign, "campaign_id", None)
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "decision_zone_status": "ROW_EVALUATION_ERROR",
+                "decision_zone_class": "ROW_EVALUATION_ERROR",
+                "decision_zone_flags": ["ROW_EVALUATION_ERROR"],
+                "caution_flags": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            row_errors.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
+        rows.append(row)
+
+        campaign_state = str(row.get("campaign_state") or "UNKNOWN_STATE")
+        quality_tier = str(row.get("macro_anchor_quality_tier") or "UNKNOWN_QUALITY_TIER")
+
+        status_counter[str(row.get("decision_zone_status"))] += 1
+        class_counter[str(row.get("decision_zone_class"))] += 1
+        state_counter[str(row.get("decision_zone_class")) + " | " + campaign_state] += 1
+        quality_counter[str(row.get("decision_zone_class")) + " | " + quality_tier] += 1
+
+        for flag in row.get("decision_zone_flags") or []:
+            decision_flag_counter[str(flag)] += 1
+
+        for flag in row.get("caution_flags") or []:
+            caution_flag_counter[str(flag)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2E guardrail failure",
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("decision_zone_status") or ""),
+            str(row.get("decision_zone_class") or ""),
+            str(row.get("campaign_state") or ""),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
+        "total_campaigns": len(campaigns),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "decision_zone_status_distribution": _safe_counter(status_counter),
+        "decision_zone_class_distribution": _safe_counter(class_counter),
+        "decision_zone_by_state_distribution": _safe_counter(state_counter),
+        "decision_zone_by_quality_tier_distribution": _safe_counter(quality_counter),
+        "decision_zone_flag_distribution": _safe_counter(decision_flag_counter),
+        "caution_flag_distribution": _safe_counter(caution_flag_counter),
+        "rows": rows,
+    })
+    return payload
