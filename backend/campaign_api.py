@@ -4023,3 +4023,202 @@ def external_macro_anchor_quality_tier_review():
         "rows": rows,
     })
     return payload
+
+@router.get("/macro-anchor-state-alignment-review")
+def macro_anchor_state_alignment_review():
+    """
+    D3C.2D read-only macro-anchor state alignment review.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    This endpoint is not a trade signal.
+    """
+    from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/macro-anchor-state-alignment-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2D_MACRO_ANCHOR_STATE_ALIGNMENT_ENDPOINT",
+            "version": "phase_d3c2d_macro_anchor_state_alignment_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "row_errors": [],
+            "guardrail_failures": [],
+            "state_macro_alignment_distribution": {},
+            "quality_tier_by_state_distribution": {},
+            "location_relevance_by_state_distribution": {},
+            "alignment_flag_distribution": {},
+            "caution_flag_distribution": {},
+        })
+        return payload
+
+    try:
+        try:
+            from backend.campaign_engine.external_macro_anchor_state_alignment_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_state_alignment,
+            )
+        except Exception:
+            from campaign_engine.external_macro_anchor_state_alignment_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_macro_anchor_state_alignment,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
+
+    try:
+        campaigns = _store().get_active_campaigns()
+    except Exception as exc:
+        return _error_payload("LOAD_ACTIVE_CAMPAIGNS", exc)
+
+    alignment_counter = Counter()
+    quality_state_counter = Counter()
+    relevance_state_counter = Counter()
+    alignment_flag_counter = Counter()
+    caution_flag_counter = Counter()
+    guardrail_failures = []
+    row_errors = []
+    rows = []
+
+    for campaign in campaigns:
+        try:
+            row = classify_macro_anchor_state_alignment(campaign)
+        except Exception as exc:
+            symbol = campaign.get("symbol") if isinstance(campaign, dict) else getattr(campaign, "symbol", None)
+            campaign_id = campaign.get("campaign_id") if isinstance(campaign, dict) else getattr(campaign, "campaign_id", None)
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "state_macro_alignment_class": "ROW_EVALUATION_ERROR",
+                "macro_anchor_quality_tier": "ROW_EVALUATION_ERROR",
+                "current_location_relevance": "ROW_EVALUATION_ERROR",
+                "alignment_flags": ["ROW_EVALUATION_ERROR"],
+                "caution_flags": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            row_errors.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
+        rows.append(row)
+
+        campaign_state = str(row.get("campaign_state") or "UNKNOWN_STATE")
+        alignment_counter[str(row.get("state_macro_alignment_class"))] += 1
+        quality_state_counter[str(row.get("macro_anchor_quality_tier")) + " | " + campaign_state] += 1
+        relevance_state_counter[str(row.get("current_location_relevance")) + " | " + campaign_state] += 1
+
+        for flag in row.get("alignment_flags") or []:
+            alignment_flag_counter[str(flag)] += 1
+
+        for flag in row.get("caution_flags") or []:
+            caution_flag_counter[str(flag)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2D guardrail failure",
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            str(row.get("state_macro_alignment_class") or ""),
+            str(row.get("campaign_state") or ""),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
+        "total_campaigns": len(campaigns),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "state_macro_alignment_distribution": _safe_counter(alignment_counter),
+        "quality_tier_by_state_distribution": _safe_counter(quality_state_counter),
+        "location_relevance_by_state_distribution": _safe_counter(relevance_state_counter),
+        "alignment_flag_distribution": _safe_counter(alignment_flag_counter),
+        "caution_flag_distribution": _safe_counter(caution_flag_counter),
+        "rows": rows,
+    })
+    return payload
