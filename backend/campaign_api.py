@@ -4677,3 +4677,239 @@ def macro_anchor_behavioral_resolution_confluence_review():
         "rows": rows,
     })
     return payload
+
+@router.get("/macro-anchor-high-priority-resolution-evidence-review")
+def macro_anchor_high_priority_resolution_evidence_review():
+    """
+    D3C.2G read-only high-priority behavioral-resolution evidence review.
+
+    This endpoint consumes D3C.2F confluence rows and exposes the exact D3J
+    behavioral-resolution evidence fields for high-priority review.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT unconfirm operator control.
+    This endpoint does NOT execute D3D.
+    This endpoint does NOT use D3D as a production source.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    This endpoint is not a trade signal.
+    """
+    from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/macro-anchor-high-priority-resolution-evidence-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2G_HIGH_PRIORITY_BEHAVIORAL_RESOLUTION_EVIDENCE_ENDPOINT",
+            "version": "phase_d3c2g_high_priority_behavioral_resolution_evidence_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "d3c2f_rows_count": 0,
+            "high_priority_count": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "row_errors": [],
+            "guardrail_failures": [],
+            "behavioral_resolution_evidence_class_distribution": {},
+            "d3c2g_review_priority_distribution": {},
+            "behavioral_resolution_requirement_distribution": {},
+            "d3c2g_no_drift_status_distribution": {},
+            "evidence_flag_distribution": {},
+            "caution_flag_distribution": {},
+        })
+        return payload
+
+    try:
+        try:
+            from backend.campaign_engine.macro_anchor_high_priority_resolution_evidence_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_high_priority_resolution_evidence,
+            )
+        except Exception:
+            from campaign_engine.macro_anchor_high_priority_resolution_evidence_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                classify_high_priority_resolution_evidence,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
+
+    try:
+        confluence_payload = macro_anchor_behavioral_resolution_confluence_review()
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2F_CONFLUENCE_PAYLOAD", exc)
+
+    confluence_rows = confluence_payload.get("rows") or []
+
+    evidence_class_counter = Counter()
+    review_priority_counter = Counter()
+    requirement_counter = Counter()
+    no_drift_counter = Counter()
+    evidence_flag_counter = Counter()
+    caution_flag_counter = Counter()
+    guardrail_failures = []
+    row_errors = []
+    rows = []
+
+    for confluence_row in confluence_rows:
+        try:
+            row = classify_high_priority_resolution_evidence(confluence_row)
+        except Exception as exc:
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": confluence_row.get("symbol"),
+                "campaign_id": confluence_row.get("campaign_id"),
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "behavioral_resolution_evidence_class": "ROW_EVALUATION_ERROR",
+                "d3c2g_review_priority": "ROW_EVALUATION_ERROR",
+                "behavioral_resolution_requirement": "ROW_EVALUATION_ERROR",
+                "d3c2g_no_drift_status": "ROW_EVALUATION_ERROR",
+                "evidence_flags": ["ROW_EVALUATION_ERROR"],
+                "caution_flags": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+            row_errors.append({
+                "symbol": confluence_row.get("symbol"),
+                "campaign_id": confluence_row.get("campaign_id"),
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
+        rows.append(row)
+
+        evidence_class_counter[str(row.get("behavioral_resolution_evidence_class"))] += 1
+        review_priority_counter[str(row.get("d3c2g_review_priority"))] += 1
+        requirement_counter[str(row.get("behavioral_resolution_requirement"))] += 1
+        no_drift_counter[str(row.get("d3c2g_no_drift_status"))] += 1
+
+        for flag in row.get("evidence_flags") or []:
+            evidence_flag_counter[str(flag)] += 1
+
+        for flag in row.get("caution_flags") or []:
+            caution_flag_counter[str(flag)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_unconfirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("d3d_execution_allowed") is False
+            and row.get("d3d_source_used_by_this_engine") is False
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+            and row.get("d3c2g_no_drift_status") == "PASS"
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2G guardrail failure",
+                "d3c2g_no_drift_status": row.get("d3c2g_no_drift_status"),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("d3c2g_review_priority") == "HIGHEST_REVIEW_PRIORITY_FULL_EVIDENCE_UNCONFIRMED" else
+            1 if str(row.get("d3c2g_review_priority") or "").startswith("HIGH_REVIEW_PRIORITY") else
+            2 if str(row.get("d3c2g_review_priority") or "").startswith("BACKGROUND_D3J") else
+            3,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    high_priority_count = len([
+        row for row in rows
+        if row.get("is_high_priority_confluence_row") is True
+    ])
+
+    payload = _base_payload()
+    payload.update({
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
+        "upstream_sources": [
+            "D3C.2F:/api/campaign/macro-anchor-behavioral-resolution-confluence-review",
+            "D3J:embedded source_d3j_row from D3C.2F",
+            "D3C.2E:embedded source_d3c2e_row from D3C.2F",
+        ],
+        "total_campaigns": len(rows),
+        "d3c2f_rows_count": len(confluence_rows),
+        "high_priority_count": high_priority_count,
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "behavioral_resolution_evidence_class_distribution": _safe_counter(evidence_class_counter),
+        "d3c2g_review_priority_distribution": _safe_counter(review_priority_counter),
+        "behavioral_resolution_requirement_distribution": _safe_counter(requirement_counter),
+        "d3c2g_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "evidence_flag_distribution": _safe_counter(evidence_flag_counter),
+        "caution_flag_distribution": _safe_counter(caution_flag_counter),
+        "rows": rows,
+    })
+    return payload
