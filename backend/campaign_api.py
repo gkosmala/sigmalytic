@@ -3639,3 +3639,109 @@ def register_campaign(campaign: Dict[str, Any]):
         "status": "registered",
         "result": saved,
     }
+@router.get("/external-macro-anchor-enrichment-review")
+def external_macro_anchor_enrichment_review():
+    """
+    D3C.2B read-only external macro-anchor enrichment review.
+
+    This endpoint does NOT write to Supabase.
+    This endpoint does NOT mutate campaigns.
+    This endpoint does NOT confirm operator control.
+    This endpoint does NOT change scores, ranks, states, transitions, gamma,
+    probability, expected return, edge, targets, or historical outcomes.
+    """
+    from collections import Counter
+
+    try:
+        from backend.campaign_engine.external_macro_anchor_enrichment_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            evaluate_external_macro_anchor,
+        )
+    except Exception:
+        from campaign_engine.external_macro_anchor_enrichment_engine import (
+            ENGINE_NAME,
+            ENGINE_VERSION,
+            evaluate_external_macro_anchor,
+        )
+
+    campaigns = _store().get_active_campaigns()
+
+    status_counter = Counter()
+    validated_counter = Counter()
+    gate_counter = Counter()
+    guardrail_failures = []
+    rows = []
+
+    for campaign in campaigns:
+        row = evaluate_external_macro_anchor(campaign)
+        rows.append(row)
+
+        status_counter[str(row.get("macro_anchor_status"))] += 1
+        validated_counter[str(row.get("macro_anchor_validated_count"))] += 1
+
+        for reason in row.get("gate_reasons") or []:
+            gate_counter[str(reason)] += 1
+
+        guardrail_ok = bool(
+            row.get("diagnostic_only") is True
+            and row.get("read_only") is True
+            and row.get("writes_to_supabase") is False
+            and row.get("mutates_campaigns") is False
+            and row.get("production_confirmation_allowed") is False
+            and row.get("operator_control_confirmed_by_this_engine") is False
+            and row.get("operator_control_confirmation_impact") == "NONE"
+            and row.get("score_impact") == "NONE"
+            and row.get("rank_impact") == "NONE"
+            and row.get("state_impact") == "NONE"
+            and row.get("transition_impact") == "NONE"
+            and row.get("gamma_confirmation_impact") == "NONE"
+            and row.get("state_transition_enabled") is False
+            and row.get("not_a_trade_signal") is True
+        )
+
+        if not guardrail_ok:
+            guardrail_failures.append({
+                "symbol": row.get("symbol"),
+                "campaign_id": row.get("campaign_id"),
+                "reason": "D3C.2B guardrail failure",
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            -int(row.get("macro_anchor_validated_count") or 0),
+            str(row.get("macro_anchor_status") or ""),
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    return {
+        "engine": ENGINE_NAME + "_ENDPOINT",
+        "version": ENGINE_VERSION,
+        "endpoint": "/api/campaign/external-macro-anchor-enrichment-review",
+
+        "diagnostic_only": True,
+        "read_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "production_confirmation_allowed": False,
+        "operator_control_confirmed_by_this_engine": False,
+        "operator_control_confirmation_impact": "NONE",
+        "score_impact": "NONE",
+        "rank_impact": "NONE",
+        "state_impact": "NONE",
+        "transition_impact": "NONE",
+        "gamma_confirmation_impact": "NONE",
+        "state_transition_enabled": False,
+        "not_a_trade_signal": True,
+
+        "old_pivot_gate_policy": "OLD_PIVOTS_BLOCKED_UNLESS_TOUCH_AND_CLOSE_REJECTION_VALIDATED",
+        "total_campaigns": len(campaigns),
+        "guardrail_failure_count": len(guardrail_failures),
+        "guardrail_failures": guardrail_failures,
+        "macro_anchor_status_distribution": _counter_to_dict(status_counter),
+        "macro_anchor_validated_count_distribution": _counter_to_dict(validated_counter),
+        "gate_reason_distribution": _counter_to_dict(gate_counter),
+        "rows": rows,
+    }
