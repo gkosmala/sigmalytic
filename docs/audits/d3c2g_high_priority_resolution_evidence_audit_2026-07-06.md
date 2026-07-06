@@ -92,3 +92,29 @@ transition_impact = NONE
 gamma_confirmation_impact = NONE
 
 not_a_trade_signal = True
+
+## D3C.2G Diagnostic Repair Note
+
+D3C.2H source audit showed that D3J exposes `d3c_shadow_explicit_geometry_sml` as a Boolean field.
+
+The D3J raw sample showed:
+
+- d3c_shadow_explicit_geometry_sml = false
+- d3c_shadow_supply_exhaustion_validated = null
+- d3c_shadow_demand_support_validated = null
+- d3c_shadow_contrary_failure_present = null
+- d3c_shadow_sml_evidence_quality = INFERRED_FROM_ABSORPTION_EVENT
+
+Therefore D3C.2G must treat Boolean `false` as explicit structural-location geometry NOT present.
+
+This repair is diagnostic-only.
+
+It does not write to Supabase.
+
+It does not mutate campaigns.
+
+It does not confirm operator control.
+
+It does not execute D3D.
+
+It does not change score, rank, state, transition, gamma, probability, expected return, edge, target, or historical outcome fields.

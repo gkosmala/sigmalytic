@@ -55,7 +55,10 @@ def classify_high_priority_resolution_evidence(confluence_row: Dict[str, Any]) -
     explicit_geometry_sml = d3j.get("d3c_shadow_explicit_geometry_sml")
     sml_evidence_quality = d3j.get("d3c_shadow_sml_evidence_quality")
 
-    explicit_sml_present = _present(explicit_geometry_sml)
+    # explicit_geometry_sml is a Boolean doctrine gate.
+    # False means explicit structural-location geometry is NOT present.
+    # Do not treat Boolean false as a present value merely because it serializes to "False".
+    explicit_sml_present = _bool(explicit_geometry_sml)
     sml_quality_present = _present(sml_evidence_quality)
 
     d3j_no_drift_status = str(d3j.get("no_drift_status") or "UNKNOWN_D3J_NO_DRIFT_STATUS")
@@ -203,3 +206,4 @@ def classify_high_priority_resolution_evidence(confluence_row: Dict[str, Any]) -
         "source_d3j_row": d3j,
         "source_d3c2e_row": d3c2e,
     }
+
