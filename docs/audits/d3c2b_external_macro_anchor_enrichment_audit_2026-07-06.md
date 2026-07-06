@@ -25,3 +25,15 @@ GET /api/campaign/external-macro-anchor-enrichment-review
 ## Required Guardrail Result
 
 guardrail_failure_count = 0
+
+## D3C.2B Endpoint 500 Diagnostic Hardening
+
+The endpoint was hardened to return no-mutation diagnostic JSON instead of an opaque HTTP 500.
+
+This does not authorize writes.
+
+This does not mutate campaigns.
+
+This does not confirm operator control.
+
+This preserves score, rank, state, transition, gamma, and trade-signal guardrails.

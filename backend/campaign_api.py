@@ -3639,42 +3639,143 @@ def register_campaign(campaign: Dict[str, Any]):
         "status": "registered",
         "result": saved,
     }
+
 @router.get("/external-macro-anchor-enrichment-review")
 def external_macro_anchor_enrichment_review():
     """
     D3C.2B read-only external macro-anchor enrichment review.
 
-    This endpoint does NOT write to Supabase.
-    This endpoint does NOT mutate campaigns.
-    This endpoint does NOT confirm operator control.
-    This endpoint does NOT change scores, ranks, states, transitions, gamma,
-    probability, expected return, edge, targets, or historical outcomes.
+    Hardened endpoint:
+    - returns diagnostic JSON instead of opaque 500 errors
+    - does not write to Supabase
+    - does not mutate campaigns
+    - does not confirm operator control
+    - does not affect score, rank, state, transition, gamma, probability,
+      expected return, edge, target, or historical outcome fields
     """
     from collections import Counter
+    import traceback
+
+    def _safe_counter(counter):
+        try:
+            return _counter_to_dict(counter)
+        except Exception:
+            return dict(sorted(counter.items()))
+
+    def _base_payload():
+        return {
+            "endpoint": "/api/campaign/external-macro-anchor-enrichment-review",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "old_pivot_gate_policy": "OLD_PIVOTS_BLOCKED_UNLESS_TOUCH_AND_CLOSE_REJECTION_VALIDATED",
+        }
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "engine": "D3C2B_EXTERNAL_MACRO_ANCHOR_ENRICHMENT_ENDPOINT",
+            "version": "phase_d3c2b_external_macro_anchor_enrichment_read_only_v1",
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": stage,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "traceback_tail": traceback.format_exc().splitlines()[-10:],
+            "total_campaigns": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "guardrail_failures": [],
+            "row_errors": [],
+            "macro_anchor_status_distribution": {},
+            "macro_anchor_validated_count_distribution": {},
+            "gate_reason_distribution": {},
+            "rows": [],
+        })
+        return payload
 
     try:
-        from backend.campaign_engine.external_macro_anchor_enrichment_engine import (
-            ENGINE_NAME,
-            ENGINE_VERSION,
-            evaluate_external_macro_anchor,
-        )
-    except Exception:
-        from campaign_engine.external_macro_anchor_enrichment_engine import (
-            ENGINE_NAME,
-            ENGINE_VERSION,
-            evaluate_external_macro_anchor,
-        )
+        try:
+            from backend.campaign_engine.external_macro_anchor_enrichment_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                evaluate_external_macro_anchor,
+            )
+        except Exception:
+            from campaign_engine.external_macro_anchor_enrichment_engine import (
+                ENGINE_NAME,
+                ENGINE_VERSION,
+                evaluate_external_macro_anchor,
+            )
+    except Exception as exc:
+        return _error_payload("IMPORT_ENGINE", exc)
 
-    campaigns = _store().get_active_campaigns()
+    try:
+        campaigns = _store().get_active_campaigns()
+    except Exception as exc:
+        return _error_payload("LOAD_ACTIVE_CAMPAIGNS", exc)
 
     status_counter = Counter()
     validated_counter = Counter()
     gate_counter = Counter()
     guardrail_failures = []
+    row_errors = []
     rows = []
 
     for campaign in campaigns:
-        row = evaluate_external_macro_anchor(campaign)
+        try:
+            row = evaluate_external_macro_anchor(campaign)
+        except Exception as exc:
+            symbol = campaign.get("symbol") if isinstance(campaign, dict) else getattr(campaign, "symbol", None)
+            campaign_id = campaign.get("campaign_id") if isinstance(campaign, dict) else getattr(campaign, "campaign_id", None)
+
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+                "macro_anchor_status": "ROW_EVALUATION_ERROR",
+                "macro_anchor_validated_count": 0,
+                "old_pivot_gate_policy": "OLD_PIVOTS_BLOCKED_UNLESS_TOUCH_AND_CLOSE_REJECTION_VALIDATED",
+                "usable_bar_count": 0,
+                "macro_support": {},
+                "macro_resistance": {},
+                "gate_reasons": ["ROW_EVALUATION_ERROR"],
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            }
+
+            row_errors.append({
+                "symbol": symbol,
+                "campaign_id": campaign_id,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            })
+
         rows.append(row)
 
         status_counter[str(row.get("macro_anchor_status"))] += 1
@@ -3716,32 +3817,19 @@ def external_macro_anchor_enrichment_review():
         ),
     )
 
-    return {
+    payload = _base_payload()
+    payload.update({
         "engine": ENGINE_NAME + "_ENDPOINT",
         "version": ENGINE_VERSION,
-        "endpoint": "/api/campaign/external-macro-anchor-enrichment-review",
-
-        "diagnostic_only": True,
-        "read_only": True,
-        "writes_to_supabase": False,
-        "mutates_campaigns": False,
-        "production_confirmation_allowed": False,
-        "operator_control_confirmed_by_this_engine": False,
-        "operator_control_confirmation_impact": "NONE",
-        "score_impact": "NONE",
-        "rank_impact": "NONE",
-        "state_impact": "NONE",
-        "transition_impact": "NONE",
-        "gamma_confirmation_impact": "NONE",
-        "state_transition_enabled": False,
-        "not_a_trade_signal": True,
-
-        "old_pivot_gate_policy": "OLD_PIVOTS_BLOCKED_UNLESS_TOUCH_AND_CLOSE_REJECTION_VALIDATED",
+        "endpoint_status": "OK" if not row_errors else "ROW_ERRORS_RETURNED_NO_MUTATION",
         "total_campaigns": len(campaigns),
         "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
         "guardrail_failures": guardrail_failures,
-        "macro_anchor_status_distribution": _counter_to_dict(status_counter),
-        "macro_anchor_validated_count_distribution": _counter_to_dict(validated_counter),
-        "gate_reason_distribution": _counter_to_dict(gate_counter),
+        "row_errors": row_errors,
+        "macro_anchor_status_distribution": _safe_counter(status_counter),
+        "macro_anchor_validated_count_distribution": _safe_counter(validated_counter),
+        "gate_reason_distribution": _safe_counter(gate_counter),
         "rows": rows,
-    }
+    })
+    return payload
