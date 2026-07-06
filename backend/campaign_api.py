@@ -5135,6 +5135,8 @@ def hvn_poc_source_enrichment_review():
     - Never affect score, rank, state, transition, gamma, options, edge, probability,
       targets, or trade signals.
     """
+    from collections import Counter
+
     ENGINE_NAME = "D3C2R_HVN_POC_SOURCE_ENRICHMENT_REVIEW"
     ENGINE_VERSION = "phase_d3c2r_hvn_poc_source_enrichment_read_only_v1"
 
