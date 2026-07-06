@@ -6353,3 +6353,379 @@ def stealth_monitoring_diagnostic_review():
     })
 
     return payload
+
+@router.get("/d3d-dry-run-candidate-preflight-review")
+def d3d_dry_run_candidate_preflight_review():
+    """
+    D3V read-only D3D dry-run candidate preflight review.
+
+    Purpose:
+    - Identify which campaigns would be considered for future D3D review.
+    - Apply D3U protocol preconditions without authorizing mutation.
+    - Reject inferred SML.
+    - Reject HVN_ABSORPTION_PROXY as true HVN/POC.
+    - Require explicit geometry before any future D3D candidate can be eligible.
+    - Never execute production D3D.
+    - Never mutate campaigns.
+    - Never confirm operator control.
+    - Never affect score, rank, state, transition, gamma, options, edge,
+      probability, targets, or trade signals.
+    """
+    from collections import Counter
+
+    ENGINE_NAME = "D3V_D3D_DRY_RUN_CANDIDATE_PREFLIGHT_REVIEW"
+    ENGINE_VERSION = "phase_d3v_d3d_dry_run_candidate_preflight_read_only_v1"
+
+    def _base_payload():
+        return {
+            "engine": ENGINE_NAME + "_ENDPOINT",
+            "version": ENGINE_VERSION,
+            "endpoint": "/api/campaign/d3d-dry-run-candidate-preflight-review",
+            "endpoint_status": "OK",
+            "diagnostic_only": True,
+            "read_only": True,
+            "dry_run": True,
+            "execution_authorized": False,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "production_confirmation_allowed": False,
+            "operator_control_confirmed_by_this_engine": False,
+            "operator_control_unconfirmed_by_this_engine": False,
+            "operator_control_confirmation_impact": "NONE",
+            "d3d_execution_allowed": False,
+            "d3d_source_used_by_this_engine": False,
+            "score_impact": "NONE",
+            "rank_impact": "NONE",
+            "state_impact": "NONE",
+            "transition_impact": "NONE",
+            "gamma_confirmation_impact": "NONE",
+            "state_transition_enabled": False,
+            "not_a_trade_signal": True,
+            "d3u_protocol_policy": "D3V_APPLIES_D3U_PREFLIGHT_RULES_WITHOUT_MUTATION",
+            "mutation_target_policy": "ONLY_FUTURE_D3D_MAY_MUTATE_EVIDENCE_OPERATOR_CONTROL_OPERATOR_CONTROL_CONFIRMED",
+            "explicit_geometry_policy": "INFERRED_SML_REJECTED_FOR_D3D_PREFLIGHT_ELIGIBILITY",
+            "hvn_proxy_policy": "HVN_ABSORPTION_PROXY_REJECTED_AS_TRUE_HVN_POC",
+        }
+
+    def _safe_counter(counter):
+        return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+    def _as_dict(value):
+        return value if isinstance(value, dict) else {}
+
+    def _bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ["true", "1", "yes", "y"]
+        return bool(value)
+
+    def _rows_from_payload(payload):
+        payload = _as_dict(payload)
+        for key in [
+            "rows",
+            "review_rows",
+            "validation_rows",
+            "campaign_rows",
+            "results",
+            "items",
+            "data",
+        ]:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+        return []
+
+    def _key(row):
+        row = _as_dict(row)
+        return (
+            str(row.get("symbol") or "").upper(),
+            str(row.get("campaign_id") or ""),
+        )
+
+    def _symbol_key(row):
+        row = _as_dict(row)
+        return str(row.get("symbol") or "").upper()
+
+    def _call_first_payload(names):
+        for name in names:
+            fn = globals().get(name)
+            if callable(fn):
+                return fn(), name
+        raise RuntimeError("None of the expected payload functions are available: " + ", ".join(names))
+
+    def _error_payload(stage, exc):
+        payload = _base_payload()
+        payload.update({
+            "endpoint_status": "ERROR_RETURNED_NO_MUTATION",
+            "error_stage": str(stage),
+            "error": str(exc),
+            "total_campaigns": 0,
+            "rows_count": 0,
+            "preflight_candidate_count": 0,
+            "preflight_eligible_count": 0,
+            "guardrail_failure_count": 0,
+            "row_error_count": 0,
+            "rows": [],
+            "guardrail_failures": [],
+            "row_errors": [],
+        })
+        return payload
+
+    try:
+        d3c2t_payload, d3c2t_function_used = _call_first_payload([
+            "stealth_monitoring_diagnostic_review",
+            "stealth_monitoring_diagnostic_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2T_STEALTH_MONITORING", exc)
+
+    try:
+        d3c2r_payload, d3c2r_function_used = _call_first_payload([
+            "hvn_poc_source_enrichment_review",
+            "hvn_poc_source_enrichment_endpoint",
+        ])
+    except Exception as exc:
+        return _error_payload("LOAD_D3C2R_HVN_POC_SOURCE_REVIEW", exc)
+
+    d3c2t_rows = _rows_from_payload(d3c2t_payload)
+    d3c2r_rows = _rows_from_payload(d3c2r_payload)
+
+    d3c2r_by_key = {}
+    d3c2r_by_symbol = {}
+
+    for row in d3c2r_rows:
+        row = _as_dict(row)
+        d3c2r_by_key[_key(row)] = row
+        d3c2r_by_symbol[_symbol_key(row)] = row
+
+    rows = []
+    guardrail_failures = []
+    row_errors = []
+
+    preflight_status_counter = Counter()
+    preflight_priority_counter = Counter()
+    block_reason_counter = Counter()
+    candidate_counter = Counter()
+    eligible_counter = Counter()
+    no_drift_counter = Counter()
+
+    for source_row in d3c2t_rows:
+        try:
+            source_row = _as_dict(source_row)
+            source_r_row = d3c2r_by_key.get(_key(source_row)) or d3c2r_by_symbol.get(_symbol_key(source_row)) or {}
+
+            monitor_priority = str(source_row.get("stealth_monitor_priority") or "")
+            monitor_status = str(source_row.get("stealth_monitor_status") or "")
+            plausibility_status = str(source_row.get("d3j_plausibility_status") or "")
+
+            candidate_source = monitor_priority != "STANDARD_REVIEW_PRIORITY_READ_ONLY"
+
+            complete_doctrine_legs = source_row.get("doctrine_leg_completeness") == "COMPLETE_DOCTRINE_LEG_SET_PRESENT_READ_ONLY"
+            inferred_sml = _bool(source_row.get("inferred_sml"))
+            explicit_geometry_sml = _bool(source_row.get("explicit_geometry_sml"))
+            hvn_proxy_present = _bool(source_row.get("hvn_absorption_proxy_present"))
+            true_hvn_poc_available = _bool(source_r_row.get("true_hvn_poc_available"))
+
+            d3d_production_confirmed = _bool(source_row.get("d3j_d3d_production_confirmed"))
+            legacy_operator_control_present = _bool(source_row.get("d3j_legacy_operator_control_confirmed"))
+
+            block_reasons = []
+
+            if not candidate_source:
+                block_reasons.append("NOT_STEALTH_OR_LEGACY_SHADOW_MONITOR_CANDIDATE")
+
+            if not complete_doctrine_legs:
+                block_reasons.append("COMPLETE_DOCTRINE_LEG_SET_MISSING")
+
+            if inferred_sml:
+                block_reasons.append("INFERRED_SML_REJECTED_BY_D3U_PROTOCOL")
+
+            if not explicit_geometry_sml:
+                block_reasons.append("EXPLICIT_GEOMETRY_SML_MISSING")
+
+            if hvn_proxy_present:
+                block_reasons.append("HVN_ABSORPTION_PROXY_REJECTED_AS_TRUE_HVN_POC")
+
+            if not true_hvn_poc_available:
+                block_reasons.append("TRUE_HVN_POC_SOURCE_MISSING")
+
+            if d3d_production_confirmed:
+                block_reasons.append("ALREADY_D3D_PRODUCTION_CONFIRMED_REVIEW_REQUIRED")
+
+            d3v_preflight_eligible = bool(
+                candidate_source
+                and complete_doctrine_legs
+                and explicit_geometry_sml
+                and not inferred_sml
+                and not hvn_proxy_present
+                and true_hvn_poc_available
+                and not d3d_production_confirmed
+            )
+
+            if d3v_preflight_eligible:
+                preflight_status = "D3D_DRY_RUN_PREFLIGHT_ELIGIBLE_UNMUTATED"
+                preflight_priority = "D3D_DRY_RUN_PREFLIGHT_ELIGIBLE_REVIEW_ONLY"
+            elif candidate_source:
+                preflight_status = "D3D_DRY_RUN_PREFLIGHT_BLOCKED_UNMUTATED"
+                preflight_priority = "D3D_DRY_RUN_BLOCKED_MONITOR_CANDIDATE_REVIEW_ONLY"
+            else:
+                preflight_status = "NOT_D3D_PREFLIGHT_CANDIDATE_READ_ONLY"
+                preflight_priority = "STANDARD_REVIEW_PRIORITY_READ_ONLY"
+
+            row = {
+                "engine": ENGINE_NAME,
+                "version": ENGINE_VERSION,
+
+                "symbol": source_row.get("symbol"),
+                "campaign_id": source_row.get("campaign_id"),
+                "campaign_state": source_row.get("campaign_state"),
+
+                "diagnostic_only": True,
+                "read_only": True,
+                "dry_run": True,
+                "execution_authorized": False,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "production_confirmation_allowed": False,
+                "operator_control_confirmed_by_this_engine": False,
+                "operator_control_unconfirmed_by_this_engine": False,
+                "operator_control_confirmation_impact": "NONE",
+                "d3d_execution_allowed": False,
+                "d3d_source_used_by_this_engine": False,
+                "score_impact": "NONE",
+                "rank_impact": "NONE",
+                "state_impact": "NONE",
+                "transition_impact": "NONE",
+                "gamma_confirmation_impact": "NONE",
+                "state_transition_enabled": False,
+                "not_a_trade_signal": True,
+
+                "d3v_preflight_status": preflight_status,
+                "d3v_preflight_priority": preflight_priority,
+                "d3v_preflight_candidate": bool(candidate_source),
+                "d3v_preflight_eligible": bool(d3v_preflight_eligible),
+                "d3v_block_reasons": block_reasons,
+
+                "stealth_monitor_status": monitor_status,
+                "stealth_monitor_priority": monitor_priority,
+                "d3j_plausibility_status": plausibility_status,
+                "legacy_operator_control_evidence_present": bool(legacy_operator_control_present),
+                "d3d_production_confirmed": bool(d3d_production_confirmed),
+
+                "complete_doctrine_legs": bool(complete_doctrine_legs),
+                "doctrine_leg_completeness": source_row.get("doctrine_leg_completeness"),
+                "explicit_geometry_sml": bool(explicit_geometry_sml),
+                "inferred_sml": bool(inferred_sml),
+                "hvn_absorption_proxy_present": bool(hvn_proxy_present),
+                "true_hvn_poc_available": bool(true_hvn_poc_available),
+                "true_hvn_poc_source_count": source_r_row.get("true_hvn_poc_source_count"),
+
+                "source_payload_policy": "COMPACT_SUMMARY_ONLY",
+                "source_d3c2t_summary": {
+                    "symbol": source_row.get("symbol"),
+                    "campaign_id": source_row.get("campaign_id"),
+                    "campaign_state": source_row.get("campaign_state"),
+                    "stealth_monitor_status": source_row.get("stealth_monitor_status"),
+                    "stealth_monitor_priority": source_row.get("stealth_monitor_priority"),
+                    "d3j_plausibility_status": source_row.get("d3j_plausibility_status"),
+                    "doctrine_leg_completeness": source_row.get("doctrine_leg_completeness"),
+                    "explicit_geometry_sml": source_row.get("explicit_geometry_sml"),
+                    "inferred_sml": source_row.get("inferred_sml"),
+                    "hvn_absorption_proxy_present": source_row.get("hvn_absorption_proxy_present"),
+                },
+                "source_d3c2r_summary": {
+                    "symbol": source_r_row.get("symbol"),
+                    "campaign_id": source_r_row.get("campaign_id"),
+                    "hvn_poc_truth_status": source_r_row.get("hvn_poc_truth_status"),
+                    "true_hvn_poc_available": source_r_row.get("true_hvn_poc_available"),
+                    "true_hvn_poc_source_count": source_r_row.get("true_hvn_poc_source_count"),
+                    "hvn_absorption_proxy_present": source_r_row.get("hvn_absorption_proxy_present"),
+                },
+
+                "d3v_no_drift_status": "PASS",
+            }
+
+            guardrail_ok = (
+                row.get("diagnostic_only") is True
+                and row.get("read_only") is True
+                and row.get("dry_run") is True
+                and row.get("execution_authorized") is False
+                and row.get("writes_to_supabase") is False
+                and row.get("mutates_campaigns") is False
+                and row.get("production_confirmation_allowed") is False
+                and row.get("operator_control_confirmed_by_this_engine") is False
+                and row.get("operator_control_unconfirmed_by_this_engine") is False
+                and row.get("operator_control_confirmation_impact") == "NONE"
+                and row.get("d3d_execution_allowed") is False
+                and row.get("d3d_source_used_by_this_engine") is False
+                and row.get("score_impact") == "NONE"
+                and row.get("rank_impact") == "NONE"
+                and row.get("state_impact") == "NONE"
+                and row.get("transition_impact") == "NONE"
+                and row.get("gamma_confirmation_impact") == "NONE"
+                and row.get("state_transition_enabled") is False
+                and row.get("not_a_trade_signal") is True
+                and row.get("d3v_no_drift_status") == "PASS"
+            )
+
+            if not guardrail_ok:
+                guardrail_failures.append({
+                    "symbol": row.get("symbol"),
+                    "campaign_id": row.get("campaign_id"),
+                    "reason": "D3V guardrail failure",
+                    "row": row,
+                })
+
+            rows.append(row)
+
+            preflight_status_counter[str(preflight_status)] += 1
+            preflight_priority_counter[str(preflight_priority)] += 1
+            candidate_counter[str(bool(candidate_source))] += 1
+            eligible_counter[str(bool(d3v_preflight_eligible))] += 1
+            no_drift_counter[str(row.get("d3v_no_drift_status"))] += 1
+
+            for reason in block_reasons:
+                block_reason_counter[str(reason)] += 1
+
+        except Exception as exc:
+            row_errors.append({
+                "symbol": _as_dict(source_row).get("symbol"),
+                "campaign_id": _as_dict(source_row).get("campaign_id"),
+                "reason": "ROW_EVALUATION_ERROR",
+                "error": str(exc),
+            })
+
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            0 if row.get("d3v_preflight_eligible") else
+            1 if row.get("d3v_preflight_candidate") else 2,
+            str(row.get("symbol") or ""),
+        ),
+    )
+
+    payload = _base_payload()
+    payload.update({
+        "d3c2t_function_used": d3c2t_function_used,
+        "d3c2r_function_used": d3c2r_function_used,
+        "total_campaigns": len(d3c2t_rows),
+        "d3c2t_rows_count": len(d3c2t_rows),
+        "d3c2r_rows_count": len(d3c2r_rows),
+        "rows_count": len(rows),
+        "preflight_candidate_count": len([row for row in rows if row.get("d3v_preflight_candidate") is True]),
+        "preflight_eligible_count": len([row for row in rows if row.get("d3v_preflight_eligible") is True]),
+        "guardrail_failure_count": len(guardrail_failures),
+        "row_error_count": len(row_errors),
+        "guardrail_failures": guardrail_failures,
+        "row_errors": row_errors,
+        "d3v_preflight_status_distribution": _safe_counter(preflight_status_counter),
+        "d3v_preflight_priority_distribution": _safe_counter(preflight_priority_counter),
+        "d3v_candidate_distribution": _safe_counter(candidate_counter),
+        "d3v_eligible_distribution": _safe_counter(eligible_counter),
+        "d3v_block_reason_distribution": _safe_counter(block_reason_counter),
+        "d3v_no_drift_status_distribution": _safe_counter(no_drift_counter),
+        "rows": rows,
+    })
+
+    return payload
