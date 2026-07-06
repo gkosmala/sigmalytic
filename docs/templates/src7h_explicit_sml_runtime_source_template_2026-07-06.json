@@ -1,0 +1,48 @@
+{
+  "template_name": "SRC7H_EXPLICIT_SML_RUNTIME_SOURCE_TEMPLATE",
+  "template_version": "source_resolution_src7h_explicit_sml_runtime_source_template_v1",
+  "template_only": true,
+  "not_runtime_evidence": true,
+  "not_a_trade_signal": true,
+  "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+  "instructions": [
+    "Copy this structure into a separate runtime JSON source only after real explicit structural evidence exists.",
+    "Do not use inferred SML, HVN_ABSORPTION_PROXY, score-derived levels, rank-derived levels, edge-derived levels, probability-derived levels, trade-signal-derived levels, options-overlay-derived levels, or OHLCV-profile approximation levels.",
+    "Each record must be symbol-bound, price-bound, timestamped, explicitly sourced, and non-inferred.",
+    "Fixture or example records must never be treated as production evidence."
+  ],
+  "explicit_sml_records": [
+    {
+      "record_purpose": "EXAMPLE_ONLY_NOT_RUNTIME_EVIDENCE",
+      "symbol": "REPLACE_WITH_SYMBOL",
+      "campaign_id": "REPLACE_WITH_CAMPAIGN_ID_OR_OMIT_UNTIL_BOUND",
+      "level_type": "EXPLICIT_SUPPORT",
+      "price_low": 0.0,
+      "price_mid": 0.0,
+      "price_high": 0.0,
+      "source_method": "MANUAL_STRUCTURAL_MARKUP",
+      "source_reference": "REPLACE_WITH_AUDITABLE_SOURCE_REFERENCE",
+      "source_timestamp_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "observed_window_start_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "observed_window_end_utc": "REPLACE_WITH_UTC_TIMESTAMP",
+      "is_explicit": true,
+      "is_inferred": false,
+      "is_proxy": false,
+      "is_hvn_absorption_proxy": false,
+      "derived_from_score": false,
+      "derived_from_rank": false,
+      "derived_from_probability": false,
+      "derived_from_edge": false,
+      "derived_from_expected_return": false,
+      "derived_from_target_projection": false,
+      "derived_from_trade_signal": false,
+      "derived_from_gamma_options_overlay": false,
+      "derived_from_ohlcv_profile_approximation": false,
+      "confirms_operator_control": false,
+      "authorizes_d3d": false,
+      "mutates_campaigns": false,
+      "writes_to_supabase": false,
+      "eligible_for_immediate_d3d_mutation": false
+    }
+  ]
+}
