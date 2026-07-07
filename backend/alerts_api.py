@@ -972,3 +972,62 @@ def alert_read_only_supabase_target_table_schema_existence_audit(
         max_symbols=max_symbols,
     )
 # === SUPABASE TARGET TABLE SCHEMA EXISTENCE AUDIT ENDPOINT END ===
+# === SUPABASE APPEND-ONLY WRITE PREFLIGHT AUTHORIZATION GATE ENDPOINT START ===
+try:
+    from backend.alerts.supabase_append_only_write_preflight_authorization_gate import run_read_only_supabase_append_only_write_preflight_authorization_gate
+except Exception as _supabase_append_only_write_preflight_authorization_gate_import_error:
+    run_read_only_supabase_append_only_write_preflight_authorization_gate = None
+    SUPABASE_APPEND_ONLY_WRITE_PREFLIGHT_AUTHORIZATION_GATE_IMPORT_ERROR = str(_supabase_append_only_write_preflight_authorization_gate_import_error)
+@router.get("/read-only/supabase-append-only-write-preflight-authorization-gate")
+def alert_read_only_supabase_append_only_write_preflight_authorization_gate(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_supabase_append_only_write_preflight_authorization_gate is None:
+        return {
+            "ok": False,
+            "component": "SUPABASE_APPEND_ONLY_WRITE_PREFLIGHT_AUTHORIZATION_GATE_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "d3d_execution_authorized": False,
+            "persistence_write_authorized": False,
+            "supabase_write_authorized": False,
+            "campaign_mutation_authorized": False,
+            "persistence_activation_authorized": False,
+            "production_activation_authorized": False,
+            "write_permission_manifest_authorized": False,
+            "simulated_write_only": True,
+            "actual_write_performed": False,
+            "schema_existence_audit_authorized": False,
+            "schema_write_authorized": False,
+            "append_only_write_preflight_authorized": False,
+            "append_only_write_preflight_gate_clear": False,
+            "append_only_write_execution_allowed": False,
+            "append_only_write_preflight_authorization_gate_status": "APPEND_ONLY_WRITE_PREFLIGHT_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": SUPABASE_APPEND_ONLY_WRITE_PREFLIGHT_AUTHORIZATION_GATE_IMPORT_ERROR,
+        }
+    return run_read_only_supabase_append_only_write_preflight_authorization_gate(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === SUPABASE APPEND-ONLY WRITE PREFLIGHT AUTHORIZATION GATE ENDPOINT END ===
