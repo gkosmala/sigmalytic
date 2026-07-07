@@ -27,6 +27,7 @@ DEFAULT_TIMEFRAME = "1Day"
 DEFAULT_LOOKBACK_BARS = 252
 DEFAULT_MIN_USABLE_BARS = 30
 DEFAULT_TIMEOUT_SECONDS = 20
+MAX_RECENT_WINDOW_AGE_DAYS = 10
 
 
 def _load_env_files() -> None:
@@ -77,6 +78,38 @@ def _now_utc() -> datetime:
 
 def _iso_datetime(value: datetime) -> str:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_bar_timestamp(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _bars_are_recent_enough(
+    bars: List[Dict[str, Any]],
+    max_age_days: int = MAX_RECENT_WINDOW_AGE_DAYS,
+) -> bool:
+    if not bars:
+        return False
+
+    latest = _parse_bar_timestamp(bars[-1].get("timestamp"))
+
+    if latest is None:
+        return False
+
+    age = _now_utc() - latest
+
+    return age <= timedelta(days=max_age_days)
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -388,6 +421,7 @@ def _load_from_alpaca_rest(
             "limit": str(max(lookback_bars, DEFAULT_MIN_USABLE_BARS)),
             "adjustment": "raw",
             "feed": feed,
+            "sort": "desc",
         })
 
         url = f"https://data.alpaca.markets/v2/stocks/bars?{params}"
@@ -427,11 +461,17 @@ def _load_from_alpaca_rest(
         bars = _normalize_bars(raw_bars, lookback_bars)
 
         if bars:
+            if not _bars_are_recent_enough(bars):
+                warnings.append(
+                    f"alpaca feed {feed}: stale OHLCV window rejected; latest bar was {bars[-1].get('timestamp')}."
+                )
+                continue
+
             return _status_result(
                 symbol=symbol,
                 adapter_status="ADAPTER_OK_BARS_LOADED_READ_ONLY",
                 source_type=f"ALPACA_REST_READ_ONLY:{feed}",
-                source_quality="USABLE_OHLCV_BARS",
+                source_quality="USABLE_RECENT_OHLCV_BARS",
                 timeframe=timeframe,
                 bars=bars,
                 warnings=warnings[-3:],
