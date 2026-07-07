@@ -20,6 +20,11 @@ except Exception:
 
 
 try:
+    from backend.alerts_api import router as alerts_router
+except Exception:
+    alerts_router = None
+
+try:
     from backend.snapshot_service import snapshot_router
 except Exception:
     snapshot_router = None
@@ -954,6 +959,9 @@ app.include_router(campaign_router)
 app.include_router(research_router)
 app.include_router(intelligence_router)
 app.include_router(operator_router)
+
+if alerts_router is not None:
+    app.include_router(alerts_router)
 
 if snapshot_router is not None:
     app.include_router(snapshot_router)
