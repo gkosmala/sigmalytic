@@ -810,3 +810,55 @@ def alert_read_only_controlled_persistence_activation_readiness_audit(
         max_symbols=max_symbols,
     )
 # === CONTROLLED PERSISTENCE ACTIVATION READINESS AUDIT ENDPOINT END ===
+# === PERSISTENCE WRITE PERMISSION MANIFEST AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.persistence_write_permission_manifest_audit import run_read_only_persistence_write_permission_manifest_audit
+except Exception as _persistence_write_permission_manifest_audit_import_error:
+    run_read_only_persistence_write_permission_manifest_audit = None
+    PERSISTENCE_WRITE_PERMISSION_MANIFEST_AUDIT_IMPORT_ERROR = str(_persistence_write_permission_manifest_audit_import_error)
+@router.get("/read-only/persistence-write-permission-manifest-audit")
+def alert_read_only_persistence_write_permission_manifest_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_persistence_write_permission_manifest_audit is None:
+        return {
+            "ok": False,
+            "component": "PERSISTENCE_WRITE_PERMISSION_MANIFEST_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "d3d_execution_authorized": False,
+            "persistence_write_authorized": False,
+            "supabase_write_authorized": False,
+            "campaign_mutation_authorized": False,
+            "persistence_activation_authorized": False,
+            "production_activation_authorized": False,
+            "write_permission_manifest_authorized": False,
+            "write_permission_manifest_audit_status": "WRITE_PERMISSION_MANIFEST_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": PERSISTENCE_WRITE_PERMISSION_MANIFEST_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_persistence_write_permission_manifest_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === PERSISTENCE WRITE PERMISSION MANIFEST AUDIT ENDPOINT END ===
