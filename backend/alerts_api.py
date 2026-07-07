@@ -531,3 +531,182 @@ def alert_read_only_console_frontend_contract_audit(
         max_symbols=max_symbols,
     )
 # === ALERT CONSOLE FRONTEND CONTRACT AUDIT ENDPOINT END ===
+# === SOURCE COVERAGE COMPLETION AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.source_coverage_completion_audit import run_read_only_source_coverage_completion_audit
+except Exception as _source_coverage_completion_audit_import_error:
+    run_read_only_source_coverage_completion_audit = None
+    SOURCE_COVERAGE_COMPLETION_AUDIT_IMPORT_ERROR = str(_source_coverage_completion_audit_import_error)
+@router.get("/read-only/source-coverage-completion-audit")
+def alert_read_only_source_coverage_completion_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_source_coverage_completion_audit is None:
+        return {
+            "ok": False,
+            "component": "SOURCE_COVERAGE_COMPLETION_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "source_coverage_completion_status": "SOURCE_COVERAGE_COMPLETION_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": SOURCE_COVERAGE_COMPLETION_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_source_coverage_completion_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === SOURCE COVERAGE COMPLETION AUDIT ENDPOINT END ===
+# === EVIDENCE PAYLOAD COMPLETENESS AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.evidence_payload_completeness_audit import run_read_only_evidence_payload_completeness_audit
+except Exception as _evidence_payload_completeness_audit_import_error:
+    run_read_only_evidence_payload_completeness_audit = None
+    EVIDENCE_PAYLOAD_COMPLETENESS_AUDIT_IMPORT_ERROR = str(_evidence_payload_completeness_audit_import_error)
+@router.get("/read-only/evidence-payload-completeness-audit")
+def alert_read_only_evidence_payload_completeness_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_evidence_payload_completeness_audit is None:
+        return {
+            "ok": False,
+            "component": "EVIDENCE_PAYLOAD_COMPLETENESS_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "evidence_payload_completeness_status": "EVIDENCE_PAYLOAD_COMPLETENESS_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": EVIDENCE_PAYLOAD_COMPLETENESS_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_evidence_payload_completeness_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === EVIDENCE PAYLOAD COMPLETENESS AUDIT ENDPOINT END ===
+# === OPERATOR CONTROL EVIDENCE AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.operator_control_evidence_audit import run_read_only_operator_control_evidence_audit
+except Exception as _operator_control_evidence_audit_import_error:
+    run_read_only_operator_control_evidence_audit = None
+    OPERATOR_CONTROL_EVIDENCE_AUDIT_IMPORT_ERROR = str(_operator_control_evidence_audit_import_error)
+@router.get("/read-only/operator-control-evidence-audit")
+def alert_read_only_operator_control_evidence_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_operator_control_evidence_audit is None:
+        return {
+            "ok": False,
+            "component": "OPERATOR_CONTROL_EVIDENCE_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "operator_control_evidence_audit_status": "OPERATOR_CONTROL_EVIDENCE_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": OPERATOR_CONTROL_EVIDENCE_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_operator_control_evidence_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === OPERATOR CONTROL EVIDENCE AUDIT ENDPOINT END ===
+# === D3D DRY-RUN GATE AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.d3d_dry_run_gate_audit import run_read_only_d3d_dry_run_gate_audit
+except Exception as _d3d_dry_run_gate_audit_import_error:
+    run_read_only_d3d_dry_run_gate_audit = None
+    D3D_DRY_RUN_GATE_AUDIT_IMPORT_ERROR = str(_d3d_dry_run_gate_audit_import_error)
+@router.get("/read-only/d3d-dry-run-gate-audit")
+def alert_read_only_d3d_dry_run_gate_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_d3d_dry_run_gate_audit is None:
+        return {
+            "ok": False,
+            "component": "D3D_DRY_RUN_GATE_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "d3d_execution_authorized": False,
+            "d3d_dry_run_gate_audit_status": "D3D_DRY_RUN_GATE_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": D3D_DRY_RUN_GATE_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_d3d_dry_run_gate_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === D3D DRY-RUN GATE AUDIT ENDPOINT END ===
