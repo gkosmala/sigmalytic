@@ -1,4 +1,4 @@
-
+﻿
 /*
 SAVE AS:
 frontend/components/StatusCenter.tsx
@@ -33,7 +33,7 @@ export default function StatusCenter(
         </div>
 
         <div>
-          Birth Candidates:
+          Spark Candidates:
           {" "}
           {props.birthCandidates}
         </div>
@@ -54,3 +54,4 @@ export default function StatusCenter(
     </div>
   );
 }
+
