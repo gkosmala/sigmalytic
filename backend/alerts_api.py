@@ -1439,3 +1439,86 @@ def alert_read_only_controlled_persistence_status_center_frontend_visual_smoke_t
         max_symbols=max_symbols,
     )
 # === CONTROLLED PERSISTENCE STATUS CENTER FRONTEND VISUAL SMOKE TEST AUDIT ENDPOINT END ===
+# === CONTROLLED PERSISTENCE END-TO-END NO-DRIFT REGRESSION SWEEP ENDPOINT START ===
+try:
+    from backend.alerts.controlled_persistence_end_to_end_no_drift_regression_sweep import run_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep
+except Exception as _controlled_persistence_end_to_end_no_drift_regression_sweep_import_error:
+    run_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep = None
+    CONTROLLED_PERSISTENCE_END_TO_END_NO_DRIFT_REGRESSION_SWEEP_IMPORT_ERROR = str(_controlled_persistence_end_to_end_no_drift_regression_sweep_import_error)
+@router.get("/read-only/controlled-persistence-end-to-end-no-drift-regression-sweep")
+def alert_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep is None:
+        return {
+            "ok": False,
+            "component": "CONTROLLED_PERSISTENCE_END_TO_END_NO_DRIFT_REGRESSION_SWEEP_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "d3d_execution_authorized": False,
+            "persistence_write_authorized": False,
+            "supabase_write_authorized": False,
+            "campaign_mutation_authorized": False,
+            "persistence_activation_authorized": False,
+            "production_activation_authorized": False,
+            "write_permission_manifest_authorized": False,
+            "simulated_write_only": True,
+            "actual_write_performed": False,
+            "schema_existence_audit_authorized": False,
+            "schema_write_authorized": False,
+            "append_only_write_preflight_authorized": False,
+            "append_only_write_preflight_gate_clear": False,
+            "append_only_write_execution_allowed": False,
+            "approval_packet_authorized": False,
+            "approval_packet_write_authorized": False,
+            "decision_console_authorized": False,
+            "decision_console_execution_allowed": False,
+            "frontend_contract_authorized": False,
+            "frontend_mutation_authorized": False,
+            "frontend_execution_allowed": False,
+            "status_center_ui_mount_authorized": False,
+            "status_center_ui_mutation_authorized": False,
+            "status_center_ui_execution_allowed": False,
+            "status_center_ui_implementation_authorized": False,
+            "status_center_ui_implementation_execution_allowed": False,
+            "status_center_panel_mutation_authorized": False,
+            "status_center_panel_runtime_activation_authorized": False,
+            "visual_smoke_test_authorized": False,
+            "visual_smoke_test_execution_allowed": False,
+            "visual_smoke_test_mutation_authorized": False,
+            "regression_sweep_authorized": False,
+            "regression_sweep_execution_allowed": False,
+            "regression_sweep_mutation_authorized": False,
+            "has_write_button": False,
+            "has_execute_button": False,
+            "has_hidden_mutation_handler": False,
+            "has_status_center_write_side_effect": False,
+            "controlled_persistence_end_to_end_no_drift_regression_sweep_status": "CONTROLLED_PERSISTENCE_END_TO_END_NO_DRIFT_REGRESSION_SWEEP_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": CONTROLLED_PERSISTENCE_END_TO_END_NO_DRIFT_REGRESSION_SWEEP_IMPORT_ERROR,
+        }
+    return run_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === CONTROLLED PERSISTENCE END-TO-END NO-DRIFT REGRESSION SWEEP ENDPOINT END ===
