@@ -138,3 +138,47 @@ def read_only_alert_review(payload: Dict[str, Any] = Body(default=None)) -> Dict
             "not_a_trade_signal": True,
             "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
         }
+# === ALERT LIVE DATA ADAPTER ENDPOINT START ===
+try:
+    from backend.alerts.live_data_adapter import run_read_only_live_alert_review
+except Exception as _alert_live_import_exc:
+    run_read_only_live_alert_review = None
+    _alert_live_import_error = f"{type(_alert_live_import_exc).__name__}: {_alert_live_import_exc}"
+else:
+    _alert_live_import_error = None
+@router.get("/read-only/live-review")
+def alert_read_only_live_review(
+    symbol: str = "SPY",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+):
+    if run_read_only_live_alert_review is None:
+        return {
+            "ok": False,
+            "component": "ALERT_LIVE_DATA_ADAPTER_READ_ONLY",
+            "reason": "LIVE_DATA_ADAPTER_IMPORT_FAILED",
+            "import_error": _alert_live_import_error,
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+        }
+    return run_read_only_live_alert_review(
+        symbol=symbol,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        timeout_seconds=30,
+    )
+# === ALERT LIVE DATA ADAPTER ENDPOINT END ===
