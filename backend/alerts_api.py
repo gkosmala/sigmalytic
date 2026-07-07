@@ -1092,3 +1092,66 @@ def alert_read_only_controlled_append_only_write_approval_packet_audit(
         max_symbols=max_symbols,
     )
 # === CONTROLLED APPEND-ONLY WRITE APPROVAL PACKET AUDIT ENDPOINT END ===
+# === CONTROLLED PERSISTENCE DECISION CONSOLE AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.controlled_persistence_decision_console_audit import run_read_only_controlled_persistence_decision_console_audit
+except Exception as _controlled_persistence_decision_console_audit_import_error:
+    run_read_only_controlled_persistence_decision_console_audit = None
+    CONTROLLED_PERSISTENCE_DECISION_CONSOLE_AUDIT_IMPORT_ERROR = str(_controlled_persistence_decision_console_audit_import_error)
+@router.get("/read-only/controlled-persistence-decision-console-audit")
+def alert_read_only_controlled_persistence_decision_console_audit(
+    symbols: str = "SPY,QQQ,IWM",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+    max_symbols: int = 10,
+):
+    if run_read_only_controlled_persistence_decision_console_audit is None:
+        return {
+            "ok": False,
+            "component": "CONTROLLED_PERSISTENCE_DECISION_CONSOLE_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False,
+            "d3d_execution_authorized": False,
+            "persistence_write_authorized": False,
+            "supabase_write_authorized": False,
+            "campaign_mutation_authorized": False,
+            "persistence_activation_authorized": False,
+            "production_activation_authorized": False,
+            "write_permission_manifest_authorized": False,
+            "simulated_write_only": True,
+            "actual_write_performed": False,
+            "schema_existence_audit_authorized": False,
+            "schema_write_authorized": False,
+            "append_only_write_preflight_authorized": False,
+            "append_only_write_preflight_gate_clear": False,
+            "append_only_write_execution_allowed": False,
+            "approval_packet_authorized": False,
+            "approval_packet_write_authorized": False,
+            "decision_console_authorized": False,
+            "decision_console_execution_allowed": False,
+            "controlled_persistence_decision_console_audit_status": "CONTROLLED_PERSISTENCE_DECISION_CONSOLE_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": CONTROLLED_PERSISTENCE_DECISION_CONSOLE_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_controlled_persistence_decision_console_audit(
+        symbols=symbols,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+        max_symbols=max_symbols,
+    )
+# === CONTROLLED PERSISTENCE DECISION CONSOLE AUDIT ENDPOINT END ===
