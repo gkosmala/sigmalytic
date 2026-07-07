@@ -1,0 +1,293 @@
+﻿from __future__ import annotations
+from typing import Any, Dict, List
+COMPONENT = "CONTROLLED_PERSISTENCE_STATUS_CENTER_PANEL_READ_ONLY"
+VERSION = "controlled_persistence_status_center_panel_read_only_v1"
+DOCTRINE_STATEMENT = "Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure."
+STATUS_CENTER_MOUNT_ID = "alerts.controlledPersistenceDecisionConsole"
+STATUS_CENTER_PANEL_TITLE = "Controlled Persistence Decision Console"
+STATUS_CENTER_SOURCE_ENDPOINT = "/api/alerts/read-only/controlled-persistence-status-center-ui-mount-audit"
+STATUS_CENTER_HTTP_METHOD = "GET"
+ALLOWED_UI_ACTIONS = [
+    "VIEW_ONLY",
+    "COPY_REVIEW_PACKET",
+    "REFRESH_READ_ONLY",
+]
+PROHIBITED_UI_ACTIONS = [
+    "no_write_button",
+    "no_execute_button",
+    "no_confirm_operator_control_button",
+    "no_confirm_composite_operator_control_button",
+    "no_authorize_d3d_button",
+    "no_trade_signal_button",
+    "no_score_rank_state_probability_or_edge_change",
+    "no_supabase_insert_update_upsert_delete_rpc",
+    "no_campaign_table_mutation",
+    "no_hidden_mutation_handler",
+    "no_status_center_write_side_effect",
+]
+READ_ONLY_STATUS_BADGES = [
+    "READ_ONLY_UI_IMPLEMENTATION",
+    "NO_DATABASE_WRITE",
+    "NO_SUPABASE_INSERT",
+    "NO_CAMPAIGN_MUTATION",
+    "NO_OPERATOR_CONTROL_CONFIRMATION",
+    "NO_D3D_AUTHORIZATION",
+    "NO_TRADE_SIGNAL",
+    "HUMAN_APPROVAL_REQUIRED_BEFORE_WRITE",
+]
+DISPLAY_SECTIONS = [
+    "summary_panel",
+    "read_only_status_badges",
+    "audit_chain_cards",
+    "symbol_decision_table",
+    "blocker_list",
+    "target_table_panel",
+    "schema_probe_panel",
+    "doctrine_panel",
+    "absolute_prohibition_panel",
+    "human_approval_required_banner",
+]
+def _as_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    return []
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+def _symbol(value: Any) -> str:
+    return str(value or "").strip().upper()
+def read_only_status_center_mount_descriptor() -> Dict[str, Any]:
+    return {
+        "component": COMPONENT,
+        "version": VERSION,
+        "status_center_mount_id": STATUS_CENTER_MOUNT_ID,
+        "status_center_panel_title": STATUS_CENTER_PANEL_TITLE,
+        "status_center_source_endpoint": STATUS_CENTER_SOURCE_ENDPOINT,
+        "status_center_http_method": STATUS_CENTER_HTTP_METHOD,
+        "status_center_refresh_mode": "READ_ONLY_ENDPOINT_REFRESH_ONLY",
+        "status_center_render_mode": "READ_ONLY_REVIEW_PANEL",
+        "allowed_ui_actions": list(ALLOWED_UI_ACTIONS),
+        "prohibited_ui_actions": list(PROHIBITED_UI_ACTIONS),
+        "display_sections": list(DISPLAY_SECTIONS),
+        "read_only_status_badges": list(READ_ONLY_STATUS_BADGES),
+        "explicit_human_approval_required_before_any_write": True,
+        "diagnostic_only": True,
+        "read_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "executes_d3d": False,
+        "authorizes_d3d": False,
+        "operator_control_confirmed": False,
+        "composite_operator_control_confirmed": False,
+        "not_a_trade_signal": True,
+        "changes_scores": False,
+        "changes_ranks": False,
+        "changes_states": False,
+        "changes_probabilities": False,
+        "changes_edge": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+        "can_execute_d3d": False,
+        "d3d_execution_authorized": False,
+        "persistence_write_authorized": False,
+        "supabase_write_authorized": False,
+        "campaign_mutation_authorized": False,
+        "actual_write_performed": False,
+        "status_center_ui_mount_authorized": False,
+        "status_center_ui_mutation_authorized": False,
+        "status_center_ui_execution_allowed": False,
+        "status_center_ui_implementation_authorized": False,
+        "status_center_ui_implementation_execution_allowed": False,
+        "status_center_ui_implementation_writes": False,
+        "has_write_button": False,
+        "has_execute_button": False,
+        "has_hidden_mutation_handler": False,
+        "has_status_center_write_side_effect": False,
+        "doctrine_statement": DOCTRINE_STATEMENT,
+    }
+def build_controlled_persistence_status_center_panel_model(
+    *,
+    mount_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    decision_rows = _as_list(mount_payload.get("decision_rows"))
+    chain_cards = _as_list(mount_payload.get("chain_cards"))
+    panel_rows: List[Dict[str, Any]] = []
+    for row in decision_rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = _symbol(row.get("symbol"))
+        panel_rows.append(
+            {
+                "symbol": symbol,
+                "row_key": row.get("row_key") or f"status-center-controlled-persistence-{symbol}",
+                "render_component": "StatusCenterControlledPersistenceReadOnlyRow",
+                "card_title": row.get("card_title") or f"{symbol} Controlled Persistence Decision",
+                "status_badge": row.get("status_badge"),
+                "severity": row.get("severity"),
+                "primary_message": row.get("primary_message"),
+                "blocked": row.get("blocked") is True,
+                "hypothetically_reviewable": row.get("hypothetically_reviewable") is True,
+                "console_blockers": list(row.get("console_blockers") or []),
+                "approval_packet_status": row.get("approval_packet_status"),
+                "approval_packet_blockers": list(row.get("approval_packet_blockers") or []),
+                "append_only_write_preflight_status": row.get("append_only_write_preflight_status"),
+                "preflight_blockers": list(row.get("preflight_blockers") or []),
+                "target_table": row.get("target_table"),
+                "proposed_columns": list(row.get("proposed_columns") or []),
+                "missing_proposed_columns": list(row.get("missing_proposed_columns") or []),
+                "table_exists": row.get("table_exists") is True,
+                "all_proposed_columns_exist": row.get("all_proposed_columns_exist") is True,
+                "allowed_ui_actions": list(ALLOWED_UI_ACTIONS),
+                "prohibited_ui_actions": list(PROHIBITED_UI_ACTIONS),
+                "explicit_human_approval_required_before_any_write": True,
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "composite_operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "changes_scores": False,
+                "changes_ranks": False,
+                "changes_states": False,
+                "changes_probabilities": False,
+                "changes_edge": False,
+                "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+                "can_execute_d3d": False,
+                "d3d_execution_authorized": False,
+                "persistence_write_authorized": False,
+                "supabase_write_authorized": False,
+                "campaign_mutation_authorized": False,
+                "actual_write_performed": False,
+                "status_center_ui_mount_authorized": False,
+                "status_center_ui_mutation_authorized": False,
+                "status_center_ui_execution_allowed": False,
+                "status_center_ui_implementation_authorized": False,
+                "status_center_ui_implementation_execution_allowed": False,
+                "status_center_ui_implementation_writes": False,
+                "has_write_button": False,
+                "has_execute_button": False,
+                "has_hidden_mutation_handler": False,
+                "has_status_center_write_side_effect": False,
+                "doctrine_statement": DOCTRINE_STATEMENT,
+            }
+        )
+    panel_chain_cards: List[Dict[str, Any]] = []
+    for card in chain_cards:
+        if not isinstance(card, dict):
+            continue
+        panel_chain_cards.append(
+            {
+                "name": card.get("name"),
+                "status": card.get("status"),
+                "display_label": card.get("display_label"),
+                "render_component": "StatusCenterControlledPersistenceReadOnlyAuditCard",
+                "diagnostic_only": True,
+                "read_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "composite_operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "changes_scores": False,
+                "changes_ranks": False,
+                "changes_states": False,
+                "changes_probabilities": False,
+                "changes_edge": False,
+            }
+        )
+    summary_panel = {
+        "title": STATUS_CENTER_PANEL_TITLE,
+        "mount_id": STATUS_CENTER_MOUNT_ID,
+        "source_endpoint": STATUS_CENTER_SOURCE_ENDPOINT,
+        "status_center_http_method": STATUS_CENTER_HTTP_METHOD,
+        "controlled_persistence_status_center_ui_mount_audit_status": mount_payload.get("controlled_persistence_status_center_ui_mount_audit_status"),
+        "target_table": mount_payload.get("target_table"),
+        "table_exists": mount_payload.get("table_exists") is True,
+        "all_proposed_columns_exist": mount_payload.get("all_proposed_columns_exist") is True,
+        "schema_probe_status": mount_payload.get("schema_probe_status"),
+        "schema_probe_method": mount_payload.get("schema_probe_method"),
+        "row_count": len(panel_rows),
+        "reviewable_symbol_count": _as_int(mount_payload.get("status_center_ui_mount_reviewable_symbol_count")),
+        "blocked_symbol_count": _as_int(mount_payload.get("status_center_ui_mount_blocked_symbol_count")),
+        "reviewable_symbols": list(mount_payload.get("reviewable_symbols") or []),
+        "blocked_symbols": list(mount_payload.get("blocked_symbols") or []),
+        "read_only_status_badges": list(READ_ONLY_STATUS_BADGES),
+        "allowed_ui_actions": list(ALLOWED_UI_ACTIONS),
+        "prohibited_ui_actions": list(PROHIBITED_UI_ACTIONS),
+        "explicit_human_approval_required_before_any_write": True,
+        "diagnostic_only": True,
+        "read_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed": False,
+        "composite_operator_control_confirmed": False,
+        "d3d_execution_authorized": False,
+        "not_a_trade_signal": True,
+    }
+    panel_model = {
+        "component": COMPONENT,
+        "version": VERSION,
+        "mount_descriptor": read_only_status_center_mount_descriptor(),
+        "status_center_mount_id": STATUS_CENTER_MOUNT_ID,
+        "status_center_panel_title": STATUS_CENTER_PANEL_TITLE,
+        "status_center_source_endpoint": STATUS_CENTER_SOURCE_ENDPOINT,
+        "status_center_http_method": STATUS_CENTER_HTTP_METHOD,
+        "status_center_render_mode": "READ_ONLY_REVIEW_PANEL",
+        "status_center_refresh_mode": "READ_ONLY_ENDPOINT_REFRESH_ONLY",
+        "display_sections": list(DISPLAY_SECTIONS),
+        "summary_panel": summary_panel,
+        "chain_cards": panel_chain_cards,
+        "decision_rows": panel_rows,
+        "read_only_status_badges": list(READ_ONLY_STATUS_BADGES),
+        "allowed_ui_actions": list(ALLOWED_UI_ACTIONS),
+        "prohibited_ui_actions": list(PROHIBITED_UI_ACTIONS),
+        "explicit_human_approval_required_before_any_write": True,
+        "panel_row_count": len(panel_rows),
+        "panel_chain_card_count": len(panel_chain_cards),
+        "blocked_symbols": list(mount_payload.get("blocked_symbols") or []),
+        "reviewable_symbols": list(mount_payload.get("reviewable_symbols") or []),
+        "target_table": mount_payload.get("target_table"),
+        "schema_probe_status": mount_payload.get("schema_probe_status"),
+        "doctrine_statement": DOCTRINE_STATEMENT,
+        "diagnostic_only": True,
+        "read_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "executes_d3d": False,
+        "authorizes_d3d": False,
+        "operator_control_confirmed": False,
+        "composite_operator_control_confirmed": False,
+        "not_a_trade_signal": True,
+        "changes_scores": False,
+        "changes_ranks": False,
+        "changes_states": False,
+        "changes_probabilities": False,
+        "changes_edge": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+        "can_execute_d3d": False,
+        "d3d_execution_authorized": False,
+        "persistence_write_authorized": False,
+        "supabase_write_authorized": False,
+        "campaign_mutation_authorized": False,
+        "actual_write_performed": False,
+        "status_center_ui_mount_authorized": False,
+        "status_center_ui_mutation_authorized": False,
+        "status_center_ui_execution_allowed": False,
+        "status_center_ui_implementation_authorized": False,
+        "status_center_ui_implementation_execution_allowed": False,
+        "status_center_ui_implementation_writes": False,
+        "has_write_button": False,
+        "has_execute_button": False,
+        "has_hidden_mutation_handler": False,
+        "has_status_center_write_side_effect": False,
+        "status_center_panel_implementation_applies_no_changes": True,
+        "status_center_panel_implementation_is_read_only": True,
+        "status_center_panel_implementation_never_writes": True,
+        "status_center_panel_implementation_never_authorizes": True,
+    }
+    return panel_model
