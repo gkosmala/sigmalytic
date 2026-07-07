@@ -182,3 +182,44 @@ def alert_read_only_live_review(
         timeout_seconds=30,
     )
 # === ALERT LIVE DATA ADAPTER ENDPOINT END ===
+# === ALERT LIVE READINESS AUDIT ENDPOINT START ===
+try:
+    from backend.alerts.live_readiness_audit import run_read_only_live_readiness_audit
+except Exception as _live_readiness_audit_import_error:
+    run_read_only_live_readiness_audit = None
+    LIVE_READINESS_AUDIT_IMPORT_ERROR = str(_live_readiness_audit_import_error)
+@router.get("/read-only/live-readiness-audit")
+def alert_read_only_live_readiness_audit(
+    symbol: str = "SPY",
+    timeframe: str = "1Min",
+    lookback_bars: int = 390,
+    minimum_usable_bars: int = 20,
+):
+    if run_read_only_live_readiness_audit is None:
+        return {
+            "ok": False,
+            "component": "ALERT_LIVE_READINESS_AUDIT_READ_ONLY",
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "readiness_status": "LIVE_READINESS_AUDIT_IMPORT_BLOCKED_READ_ONLY",
+            "import_error": LIVE_READINESS_AUDIT_IMPORT_ERROR,
+        }
+    return run_read_only_live_readiness_audit(
+        symbol=symbol,
+        requested_timeframe=timeframe,
+        lookback_bars=lookback_bars,
+        minimum_usable_bars=minimum_usable_bars,
+    )
+# === ALERT LIVE READINESS AUDIT ENDPOINT END ===
