@@ -1,3 +1,14 @@
+
+def _sig_ui_state_label(value):
+    """Frontend display-only mapper. Internal engine/database value remains BIRTH."""
+    raw = str(value or "").strip()
+    upper = raw.upper()
+    if upper == "BIRTH":
+        return "SPARK"
+    if upper == "DISTRIBUTION_RISK":
+        return "DISTRIBUTION RISK"
+    return raw.replace("_", " ")
+
 ﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
@@ -132,7 +143,7 @@ _STATE_COLORS = {
 }
 
 _STATE_ICONS = {
-    "BIRTH": "BIRTH",
+    "BIRTH": "SPARK",
     "CONFIRMED": "CONFIRMED",
     "SURVIVING": "SURVIVING",
     "EXPANDING": "EXPANDING",
@@ -410,7 +421,7 @@ def _campaign_row(c: dict) -> html.Div:
         ], style={"flex": ".7"}),
 
         html.Div([
-            html.Div(next_state.replace("_", " "), style={
+            html.Div(next__sig_ui_state_label(state), style={
                 "fontSize": "11px",
                 "fontWeight": "800",
                 "color": _STATE_COLORS.get(next_state, BLUE_DIM),

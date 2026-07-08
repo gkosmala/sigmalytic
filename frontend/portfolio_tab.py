@@ -1,3 +1,14 @@
+
+def _sig_ui_state_label(value):
+    """Frontend display-only mapper. Internal engine/database value remains BIRTH."""
+    raw = str(value or "").strip()
+    upper = raw.upper()
+    if upper == "BIRTH":
+        return "SPARK"
+    if upper == "DISTRIBUTION_RISK":
+        return "DISTRIBUTION RISK"
+    return raw.replace("_", " ")
+
 ﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/portfolio_tab.py
@@ -94,7 +105,7 @@ def _state_pill(state, count):
     return html.Div([
         html.Div(f"{icon} {count}", style={"fontSize": "20px", "fontWeight": "900",
                                            "color": color, "fontFamily": "DM Mono, monospace"}),
-        html.Div(state.replace("_", " "), style={"fontSize": "9px", "color": MUTED,
+        html.Div(_sig_ui_state_label(state), style={"fontSize": "9px", "color": MUTED,
                                                   "fontWeight": "700", "marginTop": "4px",
                                                   "textTransform": "uppercase", "letterSpacing": ".06em"}),
     ], style={"background": f"{color}11", "border": f"1px solid {color}30",
@@ -113,7 +124,7 @@ def _perf_row(c):
                                  "fontSize": "13px", "color": WHITE, "flex": "1"}),
         html.Span(tier, style={"fontSize": "10px", "color": MUTED, "flex": ".8"}),
         html.Span(f"D{days}", style={"fontSize": "11px", "color": MUTED, "flex": ".5"}),
-        html.Span(state.replace("_", " "), style={"fontSize": "10px", "color": STATE_COLORS.get(state, MUTED), "flex": "1.2"}),
+        html.Span(_sig_ui_state_label(state), style={"fontSize": "10px", "color": STATE_COLORS.get(state, MUTED), "flex": "1.2"}),
         html.Span(f"{ret_pct:+.1f}%", style={"fontSize": "13px", "fontWeight": "800",
                                               "color": color, "fontFamily": "DM Mono, monospace",
                                               "flex": ".7", "textAlign": "right"}),
@@ -164,7 +175,7 @@ def build_portfolio_tab(session=None) -> html.Div:
             html.Div([
                 html.Div("ðŸ’¼", style={"fontSize": "40px", "marginBottom": "12px"}),
                 html.Div("Portfolio Building", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
-                html.Div("Signal birth engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
+                html.Div("Signal spark engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
                          style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "400px"}),
             ], style={"textAlign": "center", "padding": "48px"}),
         ])])
