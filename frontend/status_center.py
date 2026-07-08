@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/status_center.py
 --------------------------
@@ -113,6 +113,78 @@ def _alert_banner(text, level="YELLOW"):
     })
 
 
+def _safe_list(value):
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _safe_int(value, default=0) -> int:
+    try:
+        if value is None or value == "":
+            return int(default)
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+def _campaign_state(c: dict) -> str:
+    return str(
+        c.get("current_state")
+        or c.get("state")
+        or c.get("status")
+        or ""
+    ).upper()
+
+
+def _campaign_age_days(c: dict, default=99) -> int:
+    return _safe_int(
+        c.get("campaign_age_days")
+        if c.get("campaign_age_days") is not None
+        else c.get("duration_days", default),
+        default,
+    )
+
+
+def _normalize_campaign_row(c: dict) -> dict:
+    row = dict(c or {})
+
+    state = (
+        row.get("current_state")
+        or row.get("state")
+        or row.get("status")
+        or "UNKNOWN"
+    )
+
+    row["current_state"] = str(state).upper()
+    row.setdefault("state", row["current_state"])
+    row.setdefault("status", row["current_state"])
+
+    if row.get("campaign_age_days") is None:
+        row["campaign_age_days"] = row.get("duration_days", 0)
+
+    if row.get("current_price") is None:
+        row["current_price"] = row.get("price")
+
+    if row.get("historical_confidence") is None:
+        row["historical_confidence"] = row.get("grade") or row.get("rank_bucket")
+
+    if row.get("ticker") is None:
+        row["ticker"] = row.get("symbol")
+
+    return row
+
+
+def _normalize_radar_row(item: dict) -> dict:
+    row = dict(item or {})
+
+    row.setdefault("ticker", row.get("symbol"))
+    row.setdefault("signal", row.get("status") or row.get("regime"))
+    row.setdefault("score", row.get("composite_score"))
+
+    return row
+
+
 def _campaign_mini(c: dict) -> html.Div:
     """Compact campaign row for Status Center."""
     symbol  = c.get("symbol", "â€”")
@@ -120,7 +192,7 @@ def _campaign_mini(c: dict) -> html.Div:
     tier    = c.get("historical_confidence", "â€”")
     ret_pct = float(c.get("return_pct", 0))
     ods     = float(c.get("operator_dominance") or 0)
-    days    = int(c.get("campaign_age_days", 0))
+    days    = _campaign_age_days(c, default=0)
     s_color = STATE_COLORS.get(state, MUTED)
     r_color = TEAL_DIM if ret_pct >= 0 else RED_DIM
     conj    = ods < 40 and state in {"MATURING", "DISTRIBUTION_RISK"}
@@ -176,14 +248,65 @@ def build_status_center(session=None) -> html.Div:
     """Build the Status Center â€” first screen after login."""
 
     # â”€â”€ Fetch all data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    campaign_data = _fetch("/api/campaigns/active")
-    campaigns     = campaign_data.get("campaigns", []) if isinstance(campaign_data, dict) else []
-    summary       = _fetch("/api/campaigns/summary")
-    radar_data    = _fetch("/api/radar/top?limit=8")
-    radar_items   = radar_data if isinstance(radar_data, list) else radar_data.get("signals", [])
+    # Live Intelligence API consumption.
+    # UI display only: no writes, no campaign mutation, no D3D authorization,
+    # no operator-control confirmation, and no trade-signal creation.
+    intelligence_status = _fetch("/api/intelligence/status-center")
+    intelligence_opps   = _fetch("/api/intelligence/opportunities?limit=25")
+    radar_data          = _fetch("/api/radar/intelligence?limit=8")
+
+    status_payload = (
+        intelligence_status.get("status_center", {})
+        if isinstance(intelligence_status, dict)
+        else {}
+    )
+
+    status_summary = (
+        status_payload.get("summary", {})
+        if isinstance(status_payload, dict)
+        else {}
+    )
+
+    summary = (
+        intelligence_status.get("campaign_summary", {})
+        if isinstance(intelligence_status, dict)
+        else {}
+    )
+
+    sample_campaigns = _safe_list(status_payload.get("sample_campaigns"))
+    opportunities    = _safe_list(
+        intelligence_opps.get("opportunities")
+        if isinstance(intelligence_opps, dict)
+        else intelligence_opps
+    )
+
+    campaigns = sample_campaigns or opportunities
+    campaigns = [
+        _normalize_campaign_row(c)
+        for c in campaigns
+        if isinstance(c, dict)
+    ]
+
+    if isinstance(radar_data, dict):
+        radar_items = (
+            radar_data.get("symbols")
+            or radar_data.get("signals")
+            or radar_data.get("rankings")
+            or []
+        )
+    elif isinstance(radar_data, list):
+        radar_items = radar_data
+    else:
+        radar_items = []
+
+    radar_items = [
+        _normalize_radar_row(item)
+        for item in _safe_list(radar_items)
+        if isinstance(item, dict)
+    ]
 
     # â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    total      = len(campaigns)
+    total      = _safe_int(status_summary.get("total_campaigns") or summary.get("active_campaigns") or len(campaigns), len(campaigns))
     tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
     tier2      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
     avg_ods    = float(summary.get("avg_ods", 0))
@@ -203,10 +326,10 @@ def build_status_center(session=None) -> html.Div:
               and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}]
 
     # Most active â€” expanding campaigns
-    expanding = [c for c in campaigns if c.get("current_state") == "EXPANDING"]
+    expanding = [c for c in campaigns if _campaign_state(c) == "EXPANDING"]
 
     # New sparks â€” less than 3 days old
-    new_births = [c for c in campaigns if int(c.get("campaign_age_days", 99)) <= 3]
+    new_births = [c for c in campaigns if _campaign_age_days(c, default=99) <= 3]
 
     now_utc = datetime.now(timezone.utc).strftime("%b %d, %Y Â· %H:%M UTC")
 
