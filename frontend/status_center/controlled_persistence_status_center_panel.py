@@ -291,3 +291,60 @@ def build_controlled_persistence_status_center_panel_model(
         "status_center_panel_implementation_never_authorizes": True,
     }
     return panel_model
+
+# === STEP 7C READ-ONLY STATUS CENTER AUDIT DISPLAY CONTRACT START ===
+# This block is frontend display-contract metadata only.
+# It does not write to Supabase.
+# It does not mutate campaigns.
+# It does not execute or authorize D3D.
+# It does not confirm operator control.
+# It does not create a trade signal.
+
+CONTROLLED_PERSISTENCE_STATUS_CENTER_READ_ONLY_AUDIT_ENDPOINTS = [
+    {
+        "label": "Status Center UI Mount Audit",
+        "endpoint": "/read-only/controlled-persistence-status-center-ui-mount-audit",
+        "read_only": True,
+        "operator_control_confirmed": False,
+        "d3d_execution_authorized": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+    },
+    {
+        "label": "Status Center UI Implementation Wiring Audit",
+        "endpoint": "/read-only/controlled-persistence-status-center-ui-implementation-wiring-audit",
+        "read_only": True,
+        "operator_control_confirmed": False,
+        "d3d_execution_authorized": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+    },
+    {
+        "label": "Status Center Frontend Visual Smoke Test Audit",
+        "endpoint": "/read-only/controlled-persistence-status-center-frontend-visual-smoke-test-audit",
+        "read_only": True,
+        "operator_control_confirmed": False,
+        "d3d_execution_authorized": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+    },
+]
+
+def get_controlled_persistence_status_center_read_only_audit_display_contract():
+    """
+    Frontend-only read-only display contract for controlled-persistence Status Center audits.
+
+    This function returns display metadata only. It cannot persist data, mutate campaigns,
+    authorize D3D, confirm operator control, or create trade signals.
+    """
+    return {
+        "component": "CONTROLLED_PERSISTENCE_STATUS_CENTER_READ_ONLY_AUDIT_DISPLAY_CONTRACT",
+        "read_only": True,
+        "frontend_display_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed": False,
+        "d3d_execution_authorized": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+        "not_a_trade_signal": True,
+        "audit_endpoints": CONTROLLED_PERSISTENCE_STATUS_CENTER_READ_ONLY_AUDIT_ENDPOINTS,
+    }
+
+# === STEP 7C READ-ONLY STATUS CENTER AUDIT DISPLAY CONTRACT END ===
