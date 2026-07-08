@@ -1184,3 +1184,38 @@ except Exception as _d3e6_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# ============================================================
+# D3E.7A - CONTROLLED POST-WRITE READBACK ROUTE MOUNT REPAIR
+# Mode: read-only Supabase readback. No write. No D3D. No Stripe.
+# ============================================================
+try:
+    from backend.alerts.controlled_post_write_readback_verification import (
+        build_d3e7_post_write_readback_verification_payload,
+    )
+
+    @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
+    async def d3e7_controlled_post_write_readback_verification():
+        return build_d3e7_post_write_readback_verification_payload(execute_live_read=True)
+
+except Exception as _d3e7a_route_mount_error:
+    _D3E7A_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e7a_route_mount_error)[:500]
+
+    @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
+    async def d3e7a_controlled_post_write_readback_verification_mount_error():
+        return {
+            "ok": False,
+            "d3e_phase": "D3E.7A",
+            "route_status": "D3E7A_POST_WRITE_READBACK_VERIFICATION_MOUNT_ERROR",
+            "mount_error_excerpt": _D3E7A_ROUTE_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "supabase_write_authorized": False,
+            "persistence_write_authorized": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
