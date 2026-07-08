@@ -1,12 +1,13 @@
+from __future__ import annotations
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 # Sigmalytic v2.2 — true OHLC candlestick rendering
+import requests
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
 Includes: Behavioral Intelligence Layer v1.0
 """
 
-from __future__ import annotations
 import json
 import os
 import random
@@ -2589,6 +2590,166 @@ ALL_TABS = [
     ("setup",       "Setup"),
 ]
 
+
+
+# D3F.1B TODAY ENTRYPOINT CONTROLLED PERSISTENCE PANEL
+# Mode: read-only frontend display. Backend GET only. No write. No campaign mutation. No D3D. No Stripe.
+def _d3f1b_today_backend_get(endpoint):
+    base_url = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
+    url = base_url + endpoint
+
+    response = requests.get(url, timeout=15)
+    response.raise_for_status()
+    return response.json()
+
+
+def _d3f1b_today_bool_text(value):
+    if value is True:
+        return "False" if False else "True"
+    if value is False:
+        return "False"
+    return str(value)
+
+
+def _d3f1b_today_guardrail_clean(data):
+    return (
+        data.get("writes_to_supabase") is False
+        and data.get("mutates_campaigns") is False
+        and data.get("executes_d3d") is False
+        and data.get("authorizes_d3d") is False
+        and data.get("operator_control_confirmed") is False
+        and data.get("touches_stripe") is False
+    )
+
+
+def _d3f1b_today_row(label, value):
+    return html.Div(
+        [
+            html.Span(label, style={"color": "#94a3b8"}),
+            html.Span(str(value), style={"fontWeight": "800", "textAlign": "right"}),
+        ],
+        style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "14px",
+            "padding": "6px 0",
+            "borderTop": "1px solid rgba(148,163,184,0.14)",
+            "fontSize": "13px",
+        },
+    )
+
+
+def _build_d3f1b_today_controlled_persistence_lifecycle_panel():
+    endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
+
+    try:
+        data = _d3f1b_today_backend_get(endpoint)
+    except Exception as exc:
+        data = {
+            "ok": False,
+            "d3e_phase": "D3E.9",
+            "final_lifecycle_verified": False,
+            "final_lifecycle_status": "D3F1B_TODAY_FRONTEND_FETCH_ERROR",
+            "error": str(exc)[:240],
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
+
+    if not isinstance(data, dict):
+        data = {"ok": False, "final_lifecycle_verified": False}
+
+    complete = data.get("final_lifecycle_verified") is True
+    guardrail_clean = _d3f1b_today_guardrail_clean(data)
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        "Controlled Persistence Lifecycle",
+                        style={
+                            "fontSize": "16px",
+                            "fontWeight": "900",
+                            "color": "#f8fafc",
+                            "marginBottom": "4px",
+                        },
+                    ),
+                    html.Div(
+                        "D3E.9 Final Lifecycle Regression Sweep",
+                        style={
+                            "fontSize": "12px",
+                            "color": "#94a3b8",
+                            "fontWeight": "700",
+                            "marginBottom": "10px",
+                        },
+                    ),
+                    html.Div(
+                        "COMPLETE" if complete else "ATTENTION",
+                        style={
+                            "display": "inline-block",
+                            "padding": "5px 10px",
+                            "borderRadius": "999px",
+                            "fontSize": "11px",
+                            "fontWeight": "900",
+                            "color": "#022c22" if complete else "#451a03",
+                            "background": "#34d399" if complete else "#fbbf24",
+                            "marginBottom": "10px",
+                        },
+                    ),
+                    html.Div(
+                        "Guardrails: Clean" if guardrail_clean else "Guardrails: Needs review",
+                        style={
+                            "fontSize": "12px",
+                            "color": "#cbd5e1",
+                            "fontWeight": "800",
+                            "marginBottom": "10px",
+                        },
+                    ),
+                    _d3f1b_today_row("Phase", data.get("d3e_phase", "D3E.9")),
+                    _d3f1b_today_row("Final lifecycle verified", _d3f1b_today_bool_text(data.get("final_lifecycle_verified"))),
+                    _d3f1b_today_row("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
+                    _d3f1b_today_row("No write", _d3f1b_today_bool_text(data.get("writes_to_supabase") is False)),
+                    _d3f1b_today_row("No campaign mutation", _d3f1b_today_bool_text(data.get("mutates_campaigns") is False)),
+                    _d3f1b_today_row("No D3D", _d3f1b_today_bool_text(data.get("executes_d3d") is False)),
+                    _d3f1b_today_row("No operator-control confirmation", _d3f1b_today_bool_text(data.get("operator_control_confirmed") is False)),
+                    _d3f1b_today_row("No Stripe", _d3f1b_today_bool_text(data.get("touches_stripe") is False)),
+                    _d3f1b_today_row("Writes to Supabase", _d3f1b_today_bool_text(data.get("writes_to_supabase"))),
+                    _d3f1b_today_row("Campaign mutation", _d3f1b_today_bool_text(data.get("mutates_campaigns"))),
+                    _d3f1b_today_row("D3D executed", _d3f1b_today_bool_text(data.get("executes_d3d"))),
+                    _d3f1b_today_row("Operator control confirmed", _d3f1b_today_bool_text(data.get("operator_control_confirmed"))),
+                    _d3f1b_today_row("Stripe touched", _d3f1b_today_bool_text(data.get("touches_stripe"))),
+                    html.Div(
+                        "Display-only status panel. This is not a trade signal and does not authorize D3D.",
+                        style={
+                            "fontSize": "11px",
+                            "color": "#94a3b8",
+                            "fontWeight": "700",
+                            "marginTop": "10px",
+                        },
+                    ),
+                ]
+            )
+        ],
+        id="d3f1b-today-entrypoint-controlled-persistence-mount",
+        **{
+            "data-d3f1b-today-entrypoint": "controlled-persistence-final-lifecycle-regression-sweep",
+        },
+        style={
+            "border": "1px solid rgba(148,163,184,0.28)",
+            "background": "rgba(8,24,39,.72)",
+            "borderRadius": "18px",
+            "padding": "16px",
+            "margin": "0 0 16px 0",
+            "boxShadow": "0 18px 40px rgba(0,0,0,.22)",
+        },
+    )
+
 app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-candles",   data=_init_candles),
@@ -2659,6 +2820,9 @@ app.layout = html.Div([
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                    "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
+        # D3F.1B TODAY ENTRYPOINT INITIAL DASH LAYOUT MOUNT
+        # Mode: read-only display mount. GET only. No write. No D3D. No Stripe.
+        _build_d3f1b_today_controlled_persistence_lifecycle_panel(),
         html.Main(id="main-content"),
 
         # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
