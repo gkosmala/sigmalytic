@@ -37,14 +37,6 @@ except Exception:
 from backend.billing_router import billing_router
 from backend.legal_pages import legal_router
 # === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
-# === PRODUCT API RADAR ROUTER IMPORT START ===
-# Product API wiring.
-# Mounts the existing read-compatible radar router so live product endpoints
-# /api/radar/intelligence and /api/radar/probability-status are available.
-# This patch does not touch Stripe, checkout, billing, D3D, operator control,
-# Supabase writes, campaign mutation, or payment processing.
-from backend.radar_service import radar_router
-# === PRODUCT API RADAR ROUTER IMPORT END ===
 app = FastAPI(
     title="Sigmalytic V2",
     version="2.0.0",
@@ -995,15 +987,4 @@ if admin_router is not None:
 # to Supabase.
 app.include_router(billing_router)
 app.include_router(legal_router)
-# === PRODUCT API RADAR ROUTER MOUNT START ===
-# Product API wiring.
-# Restores existing radar_service routes:
-#   GET  /api/radar/intelligence
-#   GET  /api/radar/probability-status
-#   GET  /api/radar/intelligence/{symbol}
-# This mount only exposes existing GET-compatible product intelligence routes.
-# It does not execute Stripe checkout, process payment, process webhook, write to
-# Supabase, mutate campaigns, authorize D3D, or confirm operator control.
-app.include_router(radar_router)
-# === PRODUCT API RADAR ROUTER MOUNT END ===
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
