@@ -33,7 +33,7 @@ export default function StatusCenter(
         </div>
 
         <div>
-          Spark Candidates:
+          Spark:
           {" "}
           {props.birthCandidates}
         </div>
@@ -54,4 +54,5 @@ export default function StatusCenter(
     </div>
   );
 }
+
 
