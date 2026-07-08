@@ -1,20 +1,55 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.controlled_persistence_status_center_ui_mount_audit import (
     run_read_only_controlled_persistence_status_center_ui_mount_audit,
 )
-from frontend.status_center.controlled_persistence_status_center_panel import (
-    ALLOWED_UI_ACTIONS,
-    DISPLAY_SECTIONS,
-    DOCTRINE_STATEMENT,
-    PROHIBITED_UI_ACTIONS,
-    READ_ONLY_STATUS_BADGES,
-    STATUS_CENTER_MOUNT_ID,
-    STATUS_CENTER_PANEL_TITLE,
-    STATUS_CENTER_SOURCE_ENDPOINT,
-    build_controlled_persistence_status_center_panel_model,
-    read_only_status_center_mount_descriptor,
+# === STEP 8E READ-ONLY FRONTEND PANEL FILE-LOCATION IMPORT BRIDGE START ===
+# File-location import bridge only.
+# Required because frontend/status_center.py and frontend/status_center/ collide under package import.
+# This bridge loads the read-only panel model by absolute file path.
+# It does not write to Supabase.
+# It does not mutate campaigns.
+# It does not execute or authorize D3D.
+# It does not confirm operator control.
+# It does not create a trade signal.
+
+from importlib import util as _status_center_panel_importlib_util
+from pathlib import Path as _status_center_panel_Path
+
+_STATUS_CENTER_PANEL_PATH = (
+    _status_center_panel_Path(__file__).resolve().parents[2]
+    / "frontend"
+    / "status_center"
+    / "controlled_persistence_status_center_panel.py"
 )
+
+_STATUS_CENTER_PANEL_SPEC = _status_center_panel_importlib_util.spec_from_file_location(
+    "sigmalytic_controlled_persistence_status_center_panel_read_only",
+    _STATUS_CENTER_PANEL_PATH,
+)
+
+if _STATUS_CENTER_PANEL_SPEC is None or _STATUS_CENTER_PANEL_SPEC.loader is None:
+    raise ImportError(
+        f"Unable to load read-only Status Center panel from {_STATUS_CENTER_PANEL_PATH}"
+    )
+
+_STATUS_CENTER_PANEL_MODULE = _status_center_panel_importlib_util.module_from_spec(
+    _STATUS_CENTER_PANEL_SPEC
+)
+_STATUS_CENTER_PANEL_SPEC.loader.exec_module(_STATUS_CENTER_PANEL_MODULE)
+
+ALLOWED_UI_ACTIONS = getattr(_STATUS_CENTER_PANEL_MODULE, "ALLOWED_UI_ACTIONS")
+DISPLAY_SECTIONS = getattr(_STATUS_CENTER_PANEL_MODULE, "DISPLAY_SECTIONS")
+DOCTRINE_STATEMENT = getattr(_STATUS_CENTER_PANEL_MODULE, "DOCTRINE_STATEMENT")
+PROHIBITED_UI_ACTIONS = getattr(_STATUS_CENTER_PANEL_MODULE, "PROHIBITED_UI_ACTIONS")
+READ_ONLY_STATUS_BADGES = getattr(_STATUS_CENTER_PANEL_MODULE, "READ_ONLY_STATUS_BADGES")
+STATUS_CENTER_MOUNT_ID = getattr(_STATUS_CENTER_PANEL_MODULE, "STATUS_CENTER_MOUNT_ID")
+STATUS_CENTER_PANEL_TITLE = getattr(_STATUS_CENTER_PANEL_MODULE, "STATUS_CENTER_PANEL_TITLE")
+STATUS_CENTER_SOURCE_ENDPOINT = getattr(_STATUS_CENTER_PANEL_MODULE, "STATUS_CENTER_SOURCE_ENDPOINT")
+build_controlled_persistence_status_center_panel_model = getattr(_STATUS_CENTER_PANEL_MODULE, "build_controlled_persistence_status_center_panel_model")
+read_only_status_center_mount_descriptor = getattr(_STATUS_CENTER_PANEL_MODULE, "read_only_status_center_mount_descriptor")
+
+# === STEP 8E READ-ONLY FRONTEND PANEL FILE-LOCATION IMPORT BRIDGE END ===
 COMPONENT = "CONTROLLED_PERSISTENCE_STATUS_CENTER_UI_IMPLEMENTATION_WIRING_AUDIT_READ_ONLY"
 VERSION = "controlled_persistence_status_center_ui_implementation_wiring_audit_read_only_v1"
 GUARDRAILS: Dict[str, Any] = {
