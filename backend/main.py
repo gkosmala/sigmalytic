@@ -903,6 +903,108 @@ def scoreboard_compat(limit: int = 50):
         "market_error": market["market_error"],
         "entries": market["rows"],
     }
+# === LIGHTWEIGHT PRODUCT RADAR COMPAT ROUTES START ===
+# Lightweight product compatibility routes.
+# These routes intentionally reuse the already-working campaign_intelligence_compat
+# source exposed by radar_scores_compat and scoreboard_compat.
+#
+# These routes DO NOT import backend.radar_service.
+# These routes DO NOT mount radar_router.
+# These routes DO NOT touch Stripe, checkout, billing, payment processing, webhooks,
+# Supabase writes, campaign mutation, D3D execution, operator-control confirmation,
+# probability mutation, edge mutation, expected-return mutation, or trade-signal creation.
+
+def _lightweight_radar_scores_payload(limit: int = 50):
+    payload = radar_scores_compat(limit=limit)
+
+    if hasattr(payload, "dict"):
+        payload = payload.dict()
+
+    if not isinstance(payload, dict):
+        payload = {
+            "ok": False,
+            "source": "lightweight_product_compat",
+            "error": "radar_scores_compat returned non-dict payload",
+            "symbols": [],
+        }
+
+    symbols = payload.get("symbols")
+    if symbols is None:
+        symbols = payload.get("entries")
+
+    if symbols is None:
+        symbols = []
+
+    return payload, symbols
+
+
+@app.get("/api/radar/intelligence")
+def radar_intelligence_lightweight_compat(limit: int = 50):
+    payload, symbols = _lightweight_radar_scores_payload(limit=limit)
+
+    return {
+        "ok": True,
+        "source": "lightweight_product_compat",
+        "compatibility_route": "/api/radar/intelligence",
+        "derived_from": "/api/radar/scores",
+        "generated_at": payload.get("generated_at"),
+        "count": len(symbols),
+        "market_enriched_count": payload.get("market_enriched_count"),
+        "market_error": payload.get("market_error"),
+        "symbols": symbols,
+        "guardrails": {
+            "read_only": True,
+            "diagnostic_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+        },
+    }
+
+
+@app.get("/api/radar/probability-status")
+def radar_probability_status_lightweight_compat(limit: int = 50):
+    payload, symbols = _lightweight_radar_scores_payload(limit=limit)
+
+    return {
+        "ok": True,
+        "source": "lightweight_product_compat",
+        "compatibility_route": "/api/radar/probability-status",
+        "derived_from": "/api/radar/scores",
+        "generated_at": payload.get("generated_at"),
+        "campaign_feed_available": True,
+        "campaign_feed_count": len(symbols),
+        "market_enriched_count": payload.get("market_enriched_count"),
+        "probability_engine": {
+            "available": False,
+            "status": "NOT_ENABLED_IN_LIGHTWEIGHT_COMPAT",
+            "reason": "This endpoint reports product availability only. It does not generate probability, edge, expected return, trade signals, D3D authorization, or operator-control confirmation.",
+        },
+        "guardrails": {
+            "read_only": True,
+            "diagnostic_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+        },
+    }
+# === LIGHTWEIGHT PRODUCT RADAR COMPAT ROUTES END ===
 
 
 @app.get("/api/admin/divergence-watchlist")
