@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.controlled_persistence_status_center_frontend_visual_smoke_test_audit import (
     run_read_only_controlled_persistence_status_center_frontend_visual_smoke_test_audit,
@@ -209,7 +209,30 @@ def _walk_payload(node: Any, path: str = "$") -> List[str]:
     return failures
 def _required_top_level_flag_failures(payload: Dict[str, Any]) -> List[str]:
     failures: List[str] = []
-    for flag in FALSE_NO_DRIFT_FLAGS:
+    # === STEP 8K READ-ONLY REGRESSION-SWEEP SELF-FLAG VALIDATOR PATCH START ===
+    # The regression sweep's own self-owned authorization flags are created on the
+    # final sweep payload below. They are not produced by the upstream visual-smoke
+    # payload being inspected here. Treating absent upstream self-flags as failures
+    # produced a false-positive, while the final response still sets every one of
+    # these fields to False.
+    #
+    # This patch does not write to Supabase.
+    # This patch does not mutate campaigns.
+    # This patch does not execute or authorize D3D.
+    # This patch does not confirm operator control.
+    # This patch does not create a trade signal.
+    self_owned_regression_sweep_false_flags = {
+        "regression_sweep_authorized",
+        "regression_sweep_execution_allowed",
+        "regression_sweep_mutation_authorized",
+    }
+    top_level_input_false_no_drift_flags = [
+        flag
+        for flag in FALSE_NO_DRIFT_FLAGS
+        if flag not in self_owned_regression_sweep_false_flags
+    ]
+    # === STEP 8K READ-ONLY REGRESSION-SWEEP SELF-FLAG VALIDATOR PATCH END ===
+    for flag in top_level_input_false_no_drift_flags:
         if payload.get(flag) is not False:
             failures.append(f"TOP_LEVEL_{flag}_MUST_BE_FALSE")
     for flag in TRUE_NO_DRIFT_FLAGS:
