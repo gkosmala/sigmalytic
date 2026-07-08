@@ -11,6 +11,7 @@ import React from "react";
 
 import CampaignRankings from "../components/CampaignRankings";
 import StatusCenter from "../components/StatusCenter";
+import ControlledPersistenceLifecycleStatus from "../components/ControlledPersistenceLifecycleStatus";
 import OpportunityDashboard from "../components/OpportunityDashboard";
 import RenkoWeisPanel from "../components/RenkoWeisPanel";
 import OperatorDominancePanel from "../components/OperatorDominancePanel";
@@ -36,6 +37,7 @@ export default function HomePage() {
           expandingCampaigns={0}
           distributionRisk={0}
         />
+      <ControlledPersistenceLifecycleStatus />
 
         <OpportunityDashboard
           opportunities={[]}
