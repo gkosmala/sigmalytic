@@ -1139,3 +1139,48 @@ except Exception as _d3e5_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# ============================================================
+# D3E.6 - CONTROLLED ONE-ROW APPEND-ONLY AUDIT INSERT
+# Mode: build route only unless exact D3E.6 execution phrase is supplied.
+# No campaign mutation. No D3D. No operator-control confirmation. No Stripe.
+# ============================================================
+try:
+    from typing import Any, Dict, Optional
+
+    from backend.alerts.controlled_one_row_append_only_audit_insert import (
+        build_d3e6_readiness_payload,
+        execute_d3e6_controlled_one_row_insert,
+    )
+
+    @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
+    async def d3e6_controlled_one_row_append_only_audit_insert_readiness():
+        return build_d3e6_readiness_payload()
+
+    @app.post("/api/alerts/controlled/one-row-append-only-audit-insert")
+    async def d3e6_controlled_one_row_append_only_audit_insert(
+        payload: Optional[Dict[str, Any]] = None,
+    ):
+        return execute_d3e6_controlled_one_row_insert(payload or {})
+
+except Exception as _d3e6_route_mount_error:
+    _D3E6_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e6_route_mount_error)[:500]
+
+    @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
+    async def d3e6_controlled_one_row_append_only_audit_insert_mount_error():
+        return {
+            "ok": False,
+            "d3e_phase": "D3E.6",
+            "route_status": "D3E6_CONTROLLED_ONE_ROW_APPEND_ONLY_AUDIT_INSERT_MOUNT_ERROR",
+            "mount_error_excerpt": _D3E6_ROUTE_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "supabase_write_authorized": False,
+            "persistence_write_authorized": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
