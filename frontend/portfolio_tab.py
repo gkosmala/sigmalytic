@@ -164,7 +164,7 @@ def build_portfolio_tab(session=None) -> html.Div:
             html.Div([
                 html.Div("ðŸ’¼", style={"fontSize": "40px", "marginBottom": "12px"}),
                 html.Div("Portfolio Building", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
-                html.Div("Signal birth engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
+                html.Div("Signal spark engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
                          style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "400px"}),
             ], style={"textAlign": "center", "padding": "48px"}),
         ])])

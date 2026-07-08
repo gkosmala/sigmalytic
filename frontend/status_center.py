@@ -13,7 +13,7 @@ Per the blueprint (Part X):
 Contains four intelligence sections:
   1. Portfolio Intelligence  â€” active campaigns, P&L, ODS health
   2. Radar Intelligence      â€” today's top signals, Pre-Spark opportunities
-  3. Opportunity Intelligence â€” new TIER_1 births, state changes, exits
+  3. Opportunity Intelligence â€” new TIER_1 sparks, state changes, exits
   4. System Alerts           â€” decay monitor status, conjunction exits
 
 Plugs into sigmalytic_app_TODAY.py:
@@ -205,7 +205,7 @@ def build_status_center(session=None) -> html.Div:
     # Most active â€” expanding campaigns
     expanding = [c for c in campaigns if c.get("current_state") == "EXPANDING"]
 
-    # New births â€” less than 3 days old
+    # New sparks â€” less than 3 days old
     new_births = [c for c in campaigns if int(c.get("campaign_age_days", 99)) <= 3]
 
     now_utc = datetime.now(timezone.utc).strftime("%b %d, %Y Â· %H:%M UTC")
@@ -237,7 +237,7 @@ def build_status_center(session=None) -> html.Div:
             )] if exits > 0 else []),
             *([_alert_banner(
                 f"{len(new_births)} new campaign{'s' if len(new_births) > 1 else ''} "
-                f"born in the last 3 days: "
+                f"sparked in the last 3 days: "
                 f"{', '.join(c.get('symbol','') for c in new_births[:5])}",
                 "YELLOW"
             )] if new_births else []),
@@ -274,7 +274,7 @@ def build_status_center(session=None) -> html.Div:
                             -float(x.get("return_pct", 0))
                         ))[:8]
                 ]) if campaigns else html.Div(
-                    "No active campaigns yet. Signal birth runs at 20:30 UTC.",
+                    "No active campaigns yet. Signal spark runs at 20:30 UTC.",
                     style={"color": MUTED, "fontSize": "12px", "padding": "20px 0",
                            "textAlign": "center"}
                 ),
@@ -287,7 +287,7 @@ def build_status_center(session=None) -> html.Div:
                                 "fontWeight": "800", "color": STATE_COLORS.get(s, MUTED),
                                 "fontFamily": "DM Mono, monospace", "fontSize": "12px",
                             }),
-                            html.Span(f" {s.replace('_',' ')}", style={
+                            html.Span(f" {('SPARK' if s == 'BIRTH' else s.replace('_',' '))}", style={
                                 "fontSize": "10px", "color": MUTED, "marginRight": "10px",
                             }),
                         ]) for s in ["BIRTH","CONFIRMED","SURVIVING","EXPANDING","MATURING","DISTRIBUTION_RISK"]
@@ -324,7 +324,7 @@ def build_status_center(session=None) -> html.Div:
             _card([
                 _section("ðŸŽ¯ Opportunity Intelligence"),
 
-                # New births
+                # New sparks
                 html.Div([
                     html.Div("ðŸŒ± New Campaigns (last 3 days)", style={
                         "fontSize": "11px", "fontWeight": "800", "color": TEAL_DIM,
@@ -378,7 +378,7 @@ def build_status_center(session=None) -> html.Div:
                           "borderBottom": f"1px solid {BORDER}"})
                 for time, engine in [
                     ("20:00", "Geometry recalculation"),
-                    ("20:30", "Signal birth engine â€” TIER scoring â†’ new campaigns"),
+                    ("20:30", "Signal spark engine â€” TIER scoring â†’ new campaigns"),
                     ("21:00", "Campaign pipeline â€” FSM state updates"),
                     ("21:30", "ODS engine â€” operator dominance scores"),
                     ("21:45", "Analog engine â€” historical campaign matching"),
