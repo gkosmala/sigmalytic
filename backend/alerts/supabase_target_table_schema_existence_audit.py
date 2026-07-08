@@ -218,7 +218,13 @@ def _schema_row(row: Dict[str, Any], schema_probe: Dict[str, Any], upstream: Dic
         schema_blockers.append("NO_SCHEMA_BLOCKER_BUT_WRITES_STILL_NOT_AUTHORIZED_READ_ONLY")
     return {
         "symbol": symbol,
-        "supabase_target_table_schema_existence_status": schema_status,
+        "supabase_target_table_schema_existence_status": (
+            "SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_BUT_WRITES_NOT_AUTHORIZED_READ_ONLY"
+            if schema_probe.get("schema_probe_status") == "SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_READ_ONLY"
+            and schema_probe.get("all_proposed_columns_exist") is True
+            and not list(schema_probe.get("missing_proposed_columns") or [])
+            else schema_status
+        ),
         "schema_existence_hypothetically_ready": schema_hypothetically_ready,
         "schema_existence_audit_authorized": False,
         "schema_write_authorized": False,
@@ -325,7 +331,13 @@ def build_read_only_supabase_target_table_schema_existence_from_simulation(
         "actual_write_performed": False,
         "schema_existence_audit_authorized": False,
         "schema_write_authorized": False,
-        "supabase_target_table_schema_existence_audit_status": schema_audit_status,
+        "supabase_target_table_schema_existence_audit_status": (
+            "SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_BUT_WRITES_NOT_AUTHORIZED_READ_ONLY"
+            if resolved_schema_probe.get("schema_probe_status") == "SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_READ_ONLY"
+            and resolved_schema_probe.get("all_proposed_columns_exist") is True
+            and not list(resolved_schema_probe.get("missing_proposed_columns") or [])
+            else schema_audit_status
+        ),
         "persistence_payload_simulation_audit_status": simulation.get("persistence_payload_simulation_audit_status"),
         "write_permission_manifest_audit_status": simulation.get("write_permission_manifest_audit_status"),
         "controlled_persistence_activation_readiness_audit_status": simulation.get("controlled_persistence_activation_readiness_audit_status"),
