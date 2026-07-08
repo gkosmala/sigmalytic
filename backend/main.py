@@ -1219,3 +1219,38 @@ except Exception as _d3e7a_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# ============================================================
+# D3E.8 - CONTROLLED PERSISTENCE POST-WRITE CLOSURE SWEEP
+# Mode: read-only Supabase closure sweep. No write. No D3D. No Stripe.
+# ============================================================
+try:
+    from backend.alerts.controlled_persistence_post_write_closure_sweep import (
+        build_d3e8_post_persistence_closure_sweep_payload,
+    )
+
+    @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
+    async def d3e8_controlled_persistence_post_write_closure_sweep():
+        return build_d3e8_post_persistence_closure_sweep_payload(execute_live_read=True)
+
+except Exception as _d3e8_route_mount_error:
+    _D3E8_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e8_route_mount_error)[:500]
+
+    @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
+    async def d3e8_controlled_persistence_post_write_closure_sweep_mount_error():
+        return {
+            "ok": False,
+            "d3e_phase": "D3E.8",
+            "route_status": "D3E8_POST_PERSISTENCE_CLOSURE_SWEEP_MOUNT_ERROR",
+            "mount_error_excerpt": _D3E8_ROUTE_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "supabase_write_authorized": False,
+            "persistence_write_authorized": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
