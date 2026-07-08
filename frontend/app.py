@@ -239,6 +239,205 @@ def _get(path, **params):
         return {}
 
 
+# ============================================================
+# D3F.1B LIVE DASH CONTROLLED PERSISTENCE PANEL
+# Mode: read-only frontend display. GET only. No write. No D3D. No Stripe.
+# ============================================================
+def _d3f1b_bool_text(value):
+    if value is True:
+        return "True"
+    if value is False:
+        return "False"
+    return "Unknown"
+
+
+def _d3f1b_guardrail_clean(data):
+    if not isinstance(data, dict):
+        return False
+
+    return (
+        data.get("writes_to_supabase") is False
+        and data.get("supabase_write_authorized") is False
+        and data.get("persistence_write_authorized") is False
+        and data.get("mutates_campaigns") is False
+        and data.get("executes_d3d") is False
+        and data.get("authorizes_d3d") is False
+        and data.get("operator_control_confirmed") is False
+        and data.get("composite_operator_control_confirmed") is False
+        and data.get("not_a_trade_signal") is True
+        and data.get("touches_stripe") is False
+    )
+
+
+def _d3f1b_row(label, value):
+    return html.Div(
+        [
+            html.Span(label, style={"color": "#94a3b8"}),
+            html.Span(str(value), style={"fontWeight": "700", "textAlign": "right"}),
+        ],
+        style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "14px",
+            "padding": "6px 0",
+            "borderTop": "1px solid rgba(148,163,184,0.14)",
+            "fontSize": "13px",
+        },
+    )
+
+
+def _build_d3f1b_controlled_persistence_lifecycle_panel():
+    endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
+
+    try:
+        data = _get(endpoint)
+    except Exception as exc:
+        data = {
+            "ok": False,
+            "d3e_phase": "D3E.9",
+            "final_lifecycle_verified": False,
+            "final_lifecycle_status": "D3F1B_FRONTEND_FETCH_ERROR",
+            "error": str(exc)[:240],
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
+
+    if not isinstance(data, dict):
+        data = {"ok": False, "final_lifecycle_verified": False}
+
+    complete = data.get("final_lifecycle_verified") is True
+    guardrail_clean = _d3f1b_guardrail_clean(data)
+
+    status_text = "COMPLETE" if complete else "ATTENTION"
+    guardrail_text = "Clean" if guardrail_clean else "Needs review"
+
+    lifecycle_rows = [
+        ("Phase", data.get("d3e_phase", "D3E.9")),
+        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified"))),
+        ("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
+        ("Inserted audit row id", data.get("inserted_row_id", "Unknown")),
+        ("Audit symbol", data.get("lifecycle_symbol", "Unknown")),
+        ("Audit version", data.get("lifecycle_audit_version", "Unknown")),
+        ("Operator-control status", data.get("lifecycle_operator_control_evidence_audit_status", "Unknown")),
+        ("D3D status", data.get("lifecycle_d3d_dry_run_gate_audit_status", "Unknown")),
+    ]
+
+    guardrail_rows = [
+        ("Writes to Supabase", _d3f1b_bool_text(data.get("writes_to_supabase"))),
+        ("Supabase write authorized", _d3f1b_bool_text(data.get("supabase_write_authorized"))),
+        ("Persistence write authorized", _d3f1b_bool_text(data.get("persistence_write_authorized"))),
+        ("Campaign mutation", _d3f1b_bool_text(data.get("mutates_campaigns"))),
+        ("D3D executed", _d3f1b_bool_text(data.get("executes_d3d"))),
+        ("D3D authorized", _d3f1b_bool_text(data.get("authorizes_d3d"))),
+        ("Operator control confirmed", _d3f1b_bool_text(data.get("operator_control_confirmed"))),
+        ("Composite operator control confirmed", _d3f1b_bool_text(data.get("composite_operator_control_confirmed"))),
+        ("Trade signal created", "False" if data.get("not_a_trade_signal") is True else "Unknown"),
+        ("Stripe touched", _d3f1b_bool_text(data.get("touches_stripe"))),
+    ]
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                "Controlled Persistence Lifecycle",
+                                style={
+                                    "fontSize": "12px",
+                                    "letterSpacing": "0.08em",
+                                    "color": "#94a3b8",
+                                    "textTransform": "uppercase",
+                                },
+                            ),
+                            html.H2(
+                                "D3E.9 Final Lifecycle Regression Sweep",
+                                style={"margin": "6px 0 4px", "fontSize": "22px"},
+                            ),
+                            html.Div(
+                                "Read-only Status Center display. No write. No campaign mutation. No D3D. No operator-control confirmation. No Stripe.",
+                                style={"color": "#cbd5e1", "fontSize": "14px"},
+                            ),
+                        ]
+                    ),
+                    html.Div(
+                        status_text,
+                        style={
+                            "borderRadius": "999px",
+                            "padding": "8px 12px",
+                            "fontWeight": "800",
+                            "background": "rgba(22,101,52,0.35)" if complete else "rgba(127,29,29,0.35)",
+                            "border": "1px solid rgba(34,197,94,0.5)" if complete else "1px solid rgba(248,113,113,0.5)",
+                        },
+                    ),
+                ],
+                style={
+                    "display": "flex",
+                    "justifyContent": "space-between",
+                    "gap": "16px",
+                    "alignItems": "center",
+                    "marginBottom": "16px",
+                },
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [html.H3("Lifecycle Proof", style={"margin": "0 0 10px", "fontSize": "16px"})]
+                        + [_d3f1b_row(label, value) for label, value in lifecycle_rows],
+                        style={
+                            "border": "1px solid rgba(148,163,184,0.22)",
+                            "borderRadius": "12px",
+                            "padding": "14px",
+                        },
+                    ),
+                    html.Div(
+                        [html.H3("Doctrine Guardrails", style={"margin": "0 0 10px", "fontSize": "16px"})]
+                        + [_d3f1b_row(label, value) for label, value in guardrail_rows]
+                        + [
+                            html.Div(
+                                f"Guardrail status: {guardrail_text}",
+                                style={
+                                    "marginTop": "12px",
+                                    "fontWeight": "800",
+                                    "color": "#86efac" if guardrail_clean else "#fecaca",
+                                },
+                            )
+                        ],
+                        style={
+                            "border": "1px solid rgba(148,163,184,0.22)",
+                            "borderRadius": "12px",
+                            "padding": "14px",
+                        },
+                    ),
+                ],
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(260px, 1fr))",
+                    "gap": "14px",
+                },
+            ),
+        ],
+        id="d3f1b-controlled-persistence-lifecycle-panel",
+        **{
+            "data-d3f1b-endpoint": endpoint,
+            "data-d3e-phase": "D3E.9",
+            "data-read-only": "true",
+        },
+        style={
+            "border": "1px solid rgba(148,163,184,0.35)",
+            "borderRadius": "16px",
+            "padding": "18px",
+            "margin": "18px 0",
+            "background": "rgba(15,23,42,0.78)",
+            "color": "#e5e7eb",
+        },
+    )
 # Weis-Gamma Status Center display cache.
 _WEIS_GAMMA_STATUS_CACHE = {
     "as_of": None,
@@ -342,6 +541,7 @@ def build_weis_gamma_status_center_panel():
 
     if not wg:
         return html.Div([
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
             html.Div("Weis-Gamma Status Center", style={
                 "fontSize": "14px",
                 "fontWeight": "900",
