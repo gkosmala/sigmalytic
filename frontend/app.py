@@ -4171,6 +4171,13 @@ app.layout = html.Div([
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                    "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
+        # D3F.1B INITIAL DASH LAYOUT MOUNT REPAIR
+        # Mode: read-only display mount. GET only through existing helper. No write. No D3D. No Stripe.
+        html.Div(
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
+            id="d3f1b-initial-layout-controlled-persistence-mount",
+            style={"margin": "0 0 16px 0"},
+        ),
         html.Main(id="main-content"),
 
         # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
