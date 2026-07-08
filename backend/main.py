@@ -29,6 +29,14 @@ try:
 except Exception:
     snapshot_router = None
 
+# === STEP 9C COMMERCIAL ROUTE IMPORTS START ===
+# Commercial launch surface routes.
+# Billing route mount exposes read/config and Stripe checkout endpoints already
+# implemented in backend/billing_router.py. This patch does not create a charge,
+# does not execute a payment, and does not write to Supabase by itself.
+from backend.billing_router import billing_router
+from backend.legal_pages import legal_router
+# === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
 app = FastAPI(
     title="Sigmalytic V2",
     version="2.0.0",
@@ -968,3 +976,15 @@ if snapshot_router is not None:
 
 if admin_router is not None:
     app.include_router(admin_router)
+# === STEP 9C COMMERCIAL ROUTE MOUNTS START ===
+# Commercial launch surface mounts.
+# These mounts expose:
+#   GET  /api/billing/config
+#   GET  /privacy
+#   GET  /terms
+# This patch only mounts existing routers. It does not execute Stripe checkout,
+# does not process a webhook, does not create a subscription, and does not write
+# to Supabase.
+app.include_router(billing_router)
+app.include_router(legal_router)
+# === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
