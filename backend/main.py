@@ -1254,3 +1254,38 @@ except Exception as _d3e8_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# ============================================================
+# D3E.9 - FINAL CONTROLLED PERSISTENCE LIFECYCLE REGRESSION SWEEP
+# Mode: read-only final lifecycle sweep. No write. No D3D. No Stripe.
+# ============================================================
+try:
+    from backend.alerts.controlled_persistence_final_lifecycle_regression_sweep import (
+        build_d3e9_final_lifecycle_regression_sweep_payload,
+    )
+
+    @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep():
+        return build_d3e9_final_lifecycle_regression_sweep_payload(execute_live_read=True)
+
+except Exception as _d3e9_route_mount_error:
+    _D3E9_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e9_route_mount_error)[:500]
+
+    @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error():
+        return {
+            "ok": False,
+            "d3e_phase": "D3E.9",
+            "route_status": "D3E9_FINAL_LIFECYCLE_REGRESSION_SWEEP_MOUNT_ERROR",
+            "mount_error_excerpt": _D3E9_ROUTE_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "supabase_write_authorized": False,
+            "persistence_write_authorized": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
