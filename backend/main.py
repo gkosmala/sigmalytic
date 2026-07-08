@@ -1090,3 +1090,52 @@ if admin_router is not None:
 app.include_router(billing_router)
 app.include_router(legal_router)
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
+
+# ============================================================
+# D3E.5 - CONTROLLED APPEND-ONLY AUDIT WRITE ROUTE HARD BLOCK
+# Mode: route shell only. No Supabase write. No D3D. No Stripe.
+# ============================================================
+try:
+    from typing import Any, Dict, Optional
+
+    from backend.alerts.controlled_append_only_audit_write_route import (
+        build_controlled_append_only_audit_write_route_payload,
+    )
+
+    @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
+    async def d3e5_controlled_append_only_audit_write_route_readiness():
+        return build_controlled_append_only_audit_write_route_payload(
+            {
+                "request_method": "GET",
+                "dry_run": True,
+                "source": "read_only_route_readiness",
+            }
+        )
+
+    @app.post("/api/alerts/controlled/append-only-audit-write")
+    async def d3e5_controlled_append_only_audit_write_route(
+        payload: Optional[Dict[str, Any]] = None,
+    ):
+        return build_controlled_append_only_audit_write_route_payload(payload or {})
+
+except Exception as _d3e5_route_mount_error:
+    _D3E5_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e5_route_mount_error)[:500]
+
+    @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
+    async def d3e5_controlled_append_only_audit_write_route_mount_error():
+        return {
+            "ok": False,
+            "d3e_phase": "D3E.5",
+            "route_status": "CONTROLLED_APPEND_ONLY_AUDIT_WRITE_ROUTE_MOUNT_ERROR",
+            "mount_error_excerpt": _D3E5_ROUTE_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "supabase_write_authorized": False,
+            "persistence_write_authorized": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
