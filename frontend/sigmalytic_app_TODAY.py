@@ -2816,9 +2816,6 @@ app.layout = html.Div([
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
                    "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
-        # D3F.1B TODAY ENTRYPOINT INITIAL DASH LAYOUT MOUNT
-        # Mode: read-only display mount. GET only. No write. No D3D. No Stripe.
-        _build_d3f1b_today_controlled_persistence_lifecycle_panel(),
         html.Main(id="main-content"),
 
         # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
