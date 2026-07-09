@@ -162,6 +162,7 @@ def _fetch_alpaca_assets() -> tuple[str, list[dict[str, Any]]]:
     secret = (
         os.environ.get("APCA_API_SECRET_KEY")
         or os.environ.get("ALPACA_SECRET_KEY")
+        or os.environ.get("ALPACA_API_SECRET")
         or ""
     ).strip()
 
@@ -363,6 +364,7 @@ def build_controlled_universe_ingest_result(payload: dict[str, Any] | None = Non
         ) and (
             os.environ.get("APCA_API_SECRET_KEY")
             or os.environ.get("ALPACA_SECRET_KEY")
+            or os.environ.get("ALPACA_API_SECRET")
         ):
             alpaca_env_ok = True
         else:
