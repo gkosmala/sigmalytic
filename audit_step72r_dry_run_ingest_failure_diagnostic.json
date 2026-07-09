@@ -1,0 +1,43 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LOCAL_DIAGNOSTIC_ONLY_NO_SUPABASE_WRITE_NO_READINESS_ADVANCE",
+    "failures":  [
+
+                 ],
+    "warnings":  [
+
+                 ],
+    "likely_blocker":  "missing local Alpaca credentials",
+    "alpaca_env_vars_present":  [
+
+                                ],
+    "alpaca_keys_found_in_env_files":  [
+
+                                       ],
+    "run_report":  {
+                       "status":  "FAIL",
+                       "mode":  "DRY_RUN_ONLY_NO_SUPABASE_WRITE",
+                       "failures":  [
+                                        "missing Alpaca API credentials in local environment files or environment variables"
+                                    ],
+                       "symbol_count":  0,
+                       "write_attempted":  false
+                   },
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "diagnostic_only":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_readiness_advance":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "set Alpaca credentials locally, then rerun Step 72 dry-run"
+}

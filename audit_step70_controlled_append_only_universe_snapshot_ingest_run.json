@@ -1,0 +1,76 @@
+{
+  "status": "PASS",
+  "mode": "DRY_RUN_ONLY_NO_SUPABASE_WRITE",
+  "started_at": "2026-07-09T20:51:11.352979+00:00",
+  "ended_at": "2026-07-09T20:51:13.066415+00:00",
+  "failures": [],
+  "warnings": [
+    "dry run only; no Supabase write attempted"
+  ],
+  "execute_requested": false,
+  "execute_allowed": false,
+  "write_attempted": false,
+  "allowed_tables": [
+    "campaign_universe_snapshots",
+    "campaign_universe_symbols"
+  ],
+  "source": "ALPACA_ASSETS_ACTIVE_TRADABLE",
+  "supabase_url_available": false,
+  "supabase_url_source": null,
+  "service_role_key_available": false,
+  "service_role_key_source": null,
+  "snapshot_preview": {
+    "snapshot_id": "a8536bd2-f7b4-4faa-9b41-ff6cc140ef6b",
+    "source": "ALPACA_ASSETS_ACTIVE_TRADABLE",
+    "as_of_utc": "2026-07-09T20:51:13.033061+00:00",
+    "universe_count": 13243,
+    "active_count": 13243,
+    "tradable_count": 13243,
+    "symbols_hash": "285d0fadab16ee28883c3d8c1d4a615b0393f273884eff8f276c1db4b308c176",
+    "created_by": "sigmalytic_v2_step70_controlled_append_only_universe_snapshot_ingest",
+    "write_authorization_ref": "STEP70_USER_AUTHORIZATION_PENDING",
+    "is_current": true
+  },
+  "symbol_count": 13243,
+  "dry_run_symbols_preview": [
+    "A",
+    "AA",
+    "AAA",
+    "AAAA",
+    "AAAC",
+    "AAAD",
+    "AAAP",
+    "AAAU",
+    "AAC.U",
+    "AACB",
+    "AACBR",
+    "AACBU",
+    "AACG",
+    "AACI",
+    "AACIU",
+    "AACIW",
+    "AACO",
+    "AACOU",
+    "AACOW",
+    "AACP"
+  ],
+  "write_results": [],
+  "readiness": {
+    "mutated": false,
+    "campaign_pipeline_validated_can_advance_now": false,
+    "billing_remains_blocked": true
+  },
+  "doctrine": {
+    "append_only_ingest": true,
+    "write_gate_requires_exact_authorization_phrase": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_readiness_advance": true,
+    "no_nightly_run": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  }
+}

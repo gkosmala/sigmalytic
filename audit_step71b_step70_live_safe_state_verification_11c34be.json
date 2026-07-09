@@ -1,0 +1,76 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LIVE_GET_ONLY_NO_DB_WRITE_NO_INGEST_NO_READINESS_ADVANCE",
+    "failures":  [
+
+                 ],
+    "warnings":  [
+
+                 ],
+    "deployed_commit_prefix":  "11c34be",
+    "live_url":  "https://sigmalytic-backend.onrender.com/api/campaigns/read-only/pipeline-validation-snapshot",
+    "http_status":  200,
+    "branch":  "main",
+    "local_head":  "11c34be8bf233a9fac0aef0eba7649bbd19ac44a",
+    "remote_head":  "11c34be8bf233a9fac0aef0eba7649bbd19ac44a",
+    "snapshot_values":  {
+                            "validation_complete":  false,
+                            "readiness_can_advance":  false,
+                            "persisted_universe_available":  false,
+                            "full_universe_validation_complete":  false,
+                            "universe_count":  0,
+                            "bars_symbols_count":  1046,
+                            "record_min_bars":  1,
+                            "pagination_complete":  true,
+                            "schema_payload_alignment":  true,
+                            "source_tables":  {
+                                                  "universe":  "campaign_universe_symbols",
+                                                  "bars":  "daily_bars",
+                                                  "campaigns":  "campaigns"
+                                              },
+                            "source_counts":  {
+                                                  "universe_rows":  0,
+                                                  "bars_rows_total_count":  352538,
+                                                  "bars_rows_returned":  10000,
+                                                  "campaign_rows_total_count":  321,
+                                                  "campaign_rows_returned":  321,
+                                                  "campaign_symbols_count":  321
+                                              },
+                            "doctrine":  {
+                                             "get_only":  true,
+                                             "http_206_is_accepted_as_successful_read":  true,
+                                             "non_mutating_universe_contract_wired":  true,
+                                             "bars_symbol_universe_proxy_is_diagnostic_only":  true,
+                                             "no_nightly_run":  true,
+                                             "no_alpaca_call_from_this_reader":  true,
+                                             "no_supabase_write":  true,
+                                             "no_campaign_mutation":  true,
+                                             "no_d3d":  true,
+                                             "no_operator_control_confirmation":  true,
+                                             "no_trade_signal":  true,
+                                             "no_stripe":  true,
+                                             "campaign_pipeline_validated_remains_false_until_explicit_readiness_update":  true,
+                                             "campaign_pipeline_validated_remains_false":  true
+                                         }
+                        },
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "live_get_only":  true,
+                     "no_database_write":  true,
+                     "no_ingest_executed":  true,
+                     "no_supabase_write_by_this_step":  true,
+                     "no_campaign_mutation":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "run Step 70 dry-run ingest preflight locally"
+}

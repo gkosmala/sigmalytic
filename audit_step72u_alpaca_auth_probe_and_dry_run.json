@@ -1,0 +1,94 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LOCAL_ALPACA_AUTH_PROBE_AND_DRY_RUN_NO_SUPABASE_WRITE_NO_READINESS_ADVANCE",
+    "failures":  [
+
+                 ],
+    "warnings":  [
+
+                 ],
+    "selected_alpaca_base_url":  "https://api.alpaca.markets",
+    "alpaca_probe_results":  [
+                                 {
+                                     "name":  "paper",
+                                     "base_url":  "https://paper-api.alpaca.markets",
+                                     "status_code":  401,
+                                     "ok":  false,
+                                     "count":  0,
+                                     "message":  ""
+                                 },
+                                 {
+                                     "name":  "live",
+                                     "base_url":  "https://api.alpaca.markets",
+                                     "status_code":  200,
+                                     "ok":  true,
+                                     "count":  14074,
+                                     "message":  "OK"
+                                 }
+                             ],
+    "dry_run_exit_code":  0,
+    "dry_run_report":  ".\\audit_step70_controlled_append_only_universe_snapshot_ingest_run.json",
+    "dry_run_values":  {
+                           "status":  "PASS",
+                           "mode":  "DRY_RUN_ONLY_NO_SUPABASE_WRITE",
+                           "execute_requested":  false,
+                           "execute_allowed":  false,
+                           "write_attempted":  false,
+                           "symbol_count":  13243,
+                           "source":  "ALPACA_ASSETS_ACTIVE_TRADABLE",
+                           "dry_run_symbols_preview":  [
+                                                           "A",
+                                                           "AA",
+                                                           "AAA",
+                                                           "AAAA",
+                                                           "AAAC",
+                                                           "AAAD",
+                                                           "AAAP",
+                                                           "AAAU",
+                                                           "AAC.U",
+                                                           "AACB",
+                                                           "AACBR",
+                                                           "AACBU",
+                                                           "AACG",
+                                                           "AACI",
+                                                           "AACIU",
+                                                           "AACIW",
+                                                           "AACO",
+                                                           "AACOU",
+                                                           "AACOW",
+                                                           "AACP"
+                                                       ],
+                           "snapshot_preview":  {
+                                                    "snapshot_id":  "a8536bd2-f7b4-4faa-9b41-ff6cc140ef6b",
+                                                    "source":  "ALPACA_ASSETS_ACTIVE_TRADABLE",
+                                                    "as_of_utc":  "2026-07-09T20:51:13.033061+00:00",
+                                                    "universe_count":  13243,
+                                                    "active_count":  13243,
+                                                    "tradable_count":  13243,
+                                                    "symbols_hash":  "285d0fadab16ee28883c3d8c1d4a615b0393f273884eff8f276c1db4b308c176",
+                                                    "created_by":  "sigmalytic_v2_step70_controlled_append_only_universe_snapshot_ingest",
+                                                    "write_authorization_ref":  "STEP70_USER_AUTHORIZATION_PENDING",
+                                                    "is_current":  true
+                                                }
+                       },
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "alpaca_read_only":  true,
+                     "dry_run_only":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_readiness_advance":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "commit/tag dry-run proof, then explicitly authorize one append-only universe snapshot ingest"
+}

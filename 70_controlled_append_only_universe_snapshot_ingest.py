@@ -157,17 +157,44 @@ def fetch_alpaca_active_tradable_assets() -> list[dict[str, Any]]:
     if not alpaca_key or not alpaca_secret:
         raise RuntimeError("missing Alpaca API credentials in local environment files or environment variables")
 
-    url = "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity"
+    # STEP72T_ALPACA_ENDPOINT_FALLBACK_ACTIVE
+    # Try explicit override first, then paper, then live.
+    # This remains Alpaca READ ONLY and performs no Supabase write.
     headers = {
         "APCA-API-KEY-ID": alpaca_key,
         "APCA-API-SECRET-KEY": alpaca_secret,
         "Accept": "application/json",
     }
 
-    status, data = http_json("GET", url, headers=headers)
+    endpoint_candidates: list[str] = []
 
-    if status < 200 or status >= 300:
-        raise RuntimeError(f"Alpaca assets request failed with HTTP {status}: {data}")
+    explicit_base_url = os.environ.get("ALPACA_TRADING_BASE_URL") or os.environ.get("APCA_API_BASE_URL")
+    if explicit_base_url:
+        endpoint_candidates.append(explicit_base_url.rstrip("/") + "/v2/assets?status=active&asset_class=us_equity")
+
+    endpoint_candidates.extend(
+        [
+            "https://paper-api.alpaca.markets/v2/assets?status=active&asset_class=us_equity",
+            "https://api.alpaca.markets/v2/assets?status=active&asset_class=us_equity",
+        ]
+    )
+
+    last_errors: list[str] = []
+    data = None
+    selected_endpoint = None
+
+    for url in endpoint_candidates:
+        status, candidate_data = http_json("GET", url, headers=headers)
+
+        if status >= 200 and status < 300 and isinstance(candidate_data, list):
+            data = candidate_data
+            selected_endpoint = url
+            break
+
+        last_errors.append(f"{url} -> HTTP {status}: {candidate_data}")
+
+    if data is None:
+        raise RuntimeError("Alpaca assets request failed for all endpoint candidates: " + " | ".join(last_errors))
 
     if not isinstance(data, list):
         raise RuntimeError("Alpaca assets response was not a list")
@@ -437,3 +464,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

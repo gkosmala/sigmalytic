@@ -1,0 +1,47 @@
+﻿{
+    "status":  "FAIL",
+    "mode":  "LOCAL_PATCH_AND_ALPACA_READ_ONLY_DRY_RUN_NO_SUPABASE_WRITE_NO_READINESS_ADVANCE",
+    "failures":  [
+                     "Step 70 dry run exited nonzero: 1",
+                     "dry-run report status is not PASS",
+                     "dry-run symbol_count must be positive",
+                     "snapshot universe_count must equal symbol_count",
+                     "snapshot symbols_hash must be present",
+                     "dry_run_symbols_preview must contain symbols"
+                 ],
+    "dry_run_exit_code":  1,
+    "dry_run_report":  ".\\audit_step70_controlled_append_only_universe_snapshot_ingest_run.json",
+    "dry_run_values":  {
+                           "status":  "FAIL",
+                           "mode":  "DRY_RUN_ONLY_NO_SUPABASE_WRITE",
+                           "execute_requested":  false,
+                           "execute_allowed":  false,
+                           "write_attempted":  false,
+                           "symbol_count":  0,
+                           "source":  "ALPACA_ASSETS_ACTIVE_TRADABLE",
+                           "dry_run_symbols_preview":  [
+
+                                                       ],
+                           "snapshot_preview":  null
+                       },
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "dry_run_only":  true,
+                     "alpaca_read_only":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_readiness_advance":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "commit/tag endpoint fallback and dry-run preflight report, then explicitly authorize one append-only universe snapshot ingest"
+}
