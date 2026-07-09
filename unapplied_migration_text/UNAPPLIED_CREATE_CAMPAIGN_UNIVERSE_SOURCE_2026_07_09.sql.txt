@@ -1,0 +1,65 @@
+﻿-- SIGMALYTIC V2 — UNAPPLIED MIGRATION TEXT ONLY
+-- File: UNAPPLIED_CREATE_CAMPAIGN_UNIVERSE_SOURCE_2026_07_09.sql.txt
+-- Status: DESIGN TEXT ONLY. DO NOT APPLY. DO NOT RUN.
+-- Boundary: no DB call, no Supabase write, no migration apply, no campaign mutation, no D3D, no trade signal, no Stripe.
+
+-- PURPOSE
+-- Create a persisted universe source readable by the GET-only campaign pipeline coverage reader.
+-- Bars-symbol coverage remains diagnostic only and must not be promoted into a persisted universe source.
+
+-- TABLE 1: append-only universe snapshot header
+CREATE TABLE IF NOT EXISTS public.campaign_universe_snapshots (
+    snapshot_id uuid PRIMARY KEY,
+    source text NOT NULL,
+    as_of_utc timestamptz NOT NULL,
+    universe_count integer NOT NULL CHECK (universe_count > 0),
+    active_count integer NULL CHECK (active_count IS NULL OR active_count >= 0),
+    tradable_count integer NULL CHECK (tradable_count IS NULL OR tradable_count >= 0),
+    symbols_hash text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    created_by text NOT NULL DEFAULT 'sigmalytic_v2_universe_snapshot',
+    write_authorization_ref text NOT NULL,
+    is_current boolean NOT NULL DEFAULT false
+);
+
+-- TABLE 2: append-only universe constituents
+CREATE TABLE IF NOT EXISTS public.campaign_universe_symbols (
+    snapshot_id uuid NOT NULL REFERENCES public.campaign_universe_snapshots(snapshot_id),
+    symbol text NOT NULL,
+    asset_class text NULL,
+    exchange text NULL,
+    status text NULL,
+    tradable boolean NULL,
+    marginable boolean NULL,
+    shortable boolean NULL,
+    easy_to_borrow boolean NULL,
+    fractionable boolean NULL,
+    raw_source jsonb NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT campaign_universe_symbols_snapshot_symbol_unique UNIQUE (snapshot_id, symbol),
+    CONSTRAINT campaign_universe_symbols_symbol_upper CHECK (symbol = upper(symbol))
+);
+
+-- INDEX DESIGN
+CREATE INDEX IF NOT EXISTS idx_campaign_universe_snapshots_source_current
+    ON public.campaign_universe_snapshots(source, is_current);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_universe_snapshots_as_of
+    ON public.campaign_universe_snapshots(as_of_utc DESC);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_universe_symbols_snapshot
+    ON public.campaign_universe_symbols(snapshot_id);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_universe_symbols_symbol
+    ON public.campaign_universe_symbols(symbol);
+
+-- READ CONTRACT
+-- Reader must use GET/select only.
+-- Reader must not call Alpaca from the live route.
+-- Reader must not write Supabase from the live route.
+-- Reader must not run nightly from the live route.
+-- Reader must not mutate readiness from the live route.
+
+-- FUTURE AUTHORIZATION REQUIRED BEFORE APPLY
+-- This text cannot be applied until a separate explicit migration-apply authorization exists.
+-- Any future apply step must be separately audited and must not authorize D3D, operator-control confirmation, trade signals, or Stripe.
