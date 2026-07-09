@@ -1,34 +1,34 @@
 {
-  "status": "PASS",
-  "mode": "DRY_RUN_ONLY_NO_SUPABASE_WRITE",
-  "started_at": "2026-07-09T20:51:11.352979+00:00",
-  "ended_at": "2026-07-09T20:51:13.066415+00:00",
-  "failures": [],
-  "warnings": [
-    "dry run only; no Supabase write attempted"
+  "status": "FAIL",
+  "mode": "EXECUTE_APPEND_ONLY_INGEST",
+  "started_at": "2026-07-09T23:02:55.015174+00:00",
+  "ended_at": "2026-07-09T23:02:57.380622+00:00",
+  "failures": [
+    "snapshot header insert failed with HTTP 401: {'message': 'Invalid API key', 'hint': 'Double check your API key.'}"
   ],
-  "execute_requested": false,
+  "warnings": [],
+  "execute_requested": true,
   "execute_allowed": false,
-  "write_attempted": false,
+  "write_attempted": true,
   "allowed_tables": [
     "campaign_universe_snapshots",
     "campaign_universe_symbols"
   ],
   "source": "ALPACA_ASSETS_ACTIVE_TRADABLE",
-  "supabase_url_available": false,
-  "supabase_url_source": null,
-  "service_role_key_available": false,
-  "service_role_key_source": null,
+  "supabase_url_available": true,
+  "supabase_url_source": "SUPABASE_URL",
+  "service_role_key_available": true,
+  "service_role_key_source": "SUPABASE_SERVICE_ROLE_KEY",
   "snapshot_preview": {
-    "snapshot_id": "a8536bd2-f7b4-4faa-9b41-ff6cc140ef6b",
+    "snapshot_id": "0e09bddf-e740-4ef0-a524-aed4d30efeb9",
     "source": "ALPACA_ASSETS_ACTIVE_TRADABLE",
-    "as_of_utc": "2026-07-09T20:51:13.033061+00:00",
+    "as_of_utc": "2026-07-09T23:02:57.142365+00:00",
     "universe_count": 13243,
     "active_count": 13243,
     "tradable_count": 13243,
     "symbols_hash": "285d0fadab16ee28883c3d8c1d4a615b0393f273884eff8f276c1db4b308c176",
     "created_by": "sigmalytic_v2_step70_controlled_append_only_universe_snapshot_ingest",
-    "write_authorization_ref": "STEP70_USER_AUTHORIZATION_PENDING",
+    "write_authorization_ref": "STEP75U_USER_EXPLICIT_APPEND_ONLY_UNIVERSE_SNAPSHOT_INGEST_AUTHORIZATION_2026_07_09",
     "is_current": true
   },
   "symbol_count": 13243,
@@ -54,7 +54,16 @@
     "AACOW",
     "AACP"
   ],
-  "write_results": [],
+  "write_results": [
+    {
+      "table": "campaign_universe_snapshots",
+      "status": 401,
+      "response": {
+        "message": "Invalid API key",
+        "hint": "Double check your API key."
+      }
+    }
+  ],
   "readiness": {
     "mutated": false,
     "campaign_pipeline_validated_can_advance_now": false,
