@@ -1,0 +1,37 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LOCAL_AUTHORIZATION_PACKET_ONLY_NO_DB_CALL_NO_MIGRATION_APPLY_NO_WRITE",
+    "failures":  [
+
+                 ],
+    "branch":  "main",
+    "local_head":  "56bc707b20f3aef22046eb7eafd0d6effa41b46d",
+    "remote_head":  "56bc707b20f3aef22046eb7eafd0d6effa41b46d",
+    "step61_tag":  "stable-v2-unapplied-persisted-universe-migration-text-read-only-2026-07-09",
+    "tag_head":  "56bc707b20f3aef22046eb7eafd0d6effa41b46d",
+    "artifacts":  {
+                      "authorization_packet":  ".\\SIGMALYTIC_V2_CONTROLLED_MIGRATION_APPLY_AUTHORIZATION_PACKET_2026_07_09.md",
+                      "unapplied_migration_text":  ".\\unapplied_migration_text\\UNAPPLIED_CREATE_CAMPAIGN_UNIVERSE_SOURCE_2026_07_09.sql.txt"
+                  },
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "authorization_packet_only":  true,
+                     "migration_apply_authorized_by_this_packet":  false,
+                     "no_database_call":  true,
+                     "no_migration_apply":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "audit controlled migration-apply authorization packet"
+}
