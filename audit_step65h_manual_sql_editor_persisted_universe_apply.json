@@ -1,0 +1,32 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LOCAL_RECORD_OF_USER_REPORTED_MANUAL_SUPABASE_SQL_EDITOR_APPLY",
+    "failures":  [
+
+                 ],
+    "user_reported_sql_editor_result":  [
+                                            "public | campaign_universe_snapshots",
+                                            "public | campaign_universe_symbols"
+                                        ],
+    "artifacts":  {
+                      "evidence_markdown":  ".\\SIGMALYTIC_V2_STEP65H_MANUAL_SQL_EDITOR_APPLY_EVIDENCE_2026_07_09.md"
+                  },
+    "readiness":  {
+                      "mutated_locally":  false,
+                      "campaign_pipeline_validated":  false,
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "manual_schema_apply_reported_by_user":  true,
+                     "migration_scope_limited_to_persisted_universe_tables":  true,
+                     "no_campaign_mutation":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "wire live reader to recognize campaign_universe_snapshots and campaign_universe_symbols"
+}

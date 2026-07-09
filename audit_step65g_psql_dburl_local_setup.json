@@ -1,0 +1,32 @@
+﻿{
+    "status":  "FAIL",
+    "mode":  "LOCAL_TOOL_SECRET_SETUP_ONLY_NO_DB_CALL_NO_MIGRATION_APPLY_NO_WRITE",
+    "failures":  [
+                     "winget PostgreSQL install failed or was cancelled with exit code -1978335212",
+                     "SUPABASE_DB_URL must start with postgres:// or postgresql://"
+                 ],
+    "warnings":  [
+
+                 ],
+    "psql_found":  false,
+    "psql_path":  null,
+    "supabase_db_url_set":  false,
+    "readiness":  {
+                      "mutated":  false,
+                      "campaign_pipeline_validated":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "no_database_call":  true,
+                     "no_migration_apply":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 },
+    "next_step":  "re-run Step 65B controlled migration apply"
+}
