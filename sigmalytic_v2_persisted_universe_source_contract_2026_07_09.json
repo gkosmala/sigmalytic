@@ -1,0 +1,89 @@
+﻿{
+    "contract_version":  "SIGMALYTIC_V2_PERSISTED_UNIVERSE_SOURCE_CONTRACT_2026_07_09",
+    "mode":  "LOCAL_DESIGN_ONLY_NO_DB_CALL_NO_MIGRATION_APPLY_NO_WRITE",
+    "purpose":  "Create a persisted universe source readable by the GET-only campaign pipeline coverage reader without using bars-symbol coverage as a fake universe.",
+    "tables":  {
+                   "campaign_universe_snapshots":  {
+                                                       "role":  "append-only snapshot header",
+                                                       "required_columns":  {
+                                                                                "snapshot_id":  "uuid primary key",
+                                                                                "source":  "text not null",
+                                                                                "as_of_utc":  "timestamptz not null",
+                                                                                "universe_count":  "integer not null check greater than zero",
+                                                                                "active_count":  "integer null",
+                                                                                "tradable_count":  "integer null",
+                                                                                "symbols_hash":  "text not null",
+                                                                                "created_at":  "timestamptz not null default now()",
+                                                                                "created_by":  "text not null default sigmalytic_v2_universe_snapshot",
+                                                                                "write_authorization_ref":  "text not null",
+                                                                                "is_current":  "boolean not null default false"
+                                                                            },
+                                                       "constraints":  [
+                                                                           "universe_count must be positive",
+                                                                           "snapshot rows are append-only",
+                                                                           "exactly one current snapshot per authorized source after authorization"
+                                                                       ]
+                                                   },
+                   "campaign_universe_symbols":  {
+                                                     "role":  "append-only snapshot constituent rows",
+                                                     "required_columns":  {
+                                                                              "snapshot_id":  "uuid not null references campaign_universe_snapshots(snapshot_id)",
+                                                                              "symbol":  "text not null",
+                                                                              "asset_class":  "text null",
+                                                                              "exchange":  "text null",
+                                                                              "status":  "text null",
+                                                                              "tradable":  "boolean null",
+                                                                              "marginable":  "boolean null",
+                                                                              "shortable":  "boolean null",
+                                                                              "easy_to_borrow":  "boolean null",
+                                                                              "fractionable":  "boolean null",
+                                                                              "raw_source":  "jsonb null",
+                                                                              "created_at":  "timestamptz not null default now()"
+                                                                          },
+                                                     "constraints":  [
+                                                                         "unique(snapshot_id, symbol)",
+                                                                         "symbol must be uppercase-normalized before persistence",
+                                                                         "symbol rows are append-only for each snapshot_id"
+                                                                     ]
+                                                 }
+               },
+    "reader_requirements":  {
+                                "read_path":  "GET/select only",
+                                "current_snapshot_selection":  "latest is_current=true snapshot, otherwise latest authorized snapshot by as_of_utc",
+                                "must_not_do":  [
+                                                    "must not call Alpaca from the live GET route",
+                                                    "must not write Supabase from the live GET route",
+                                                    "must not run nightly from the live GET route",
+                                                    "must not treat bars symbols as live universe replacement",
+                                                    "must not advance campaign_pipeline_validated inside the reader"
+                                                ]
+                            },
+    "validation_gate_for_campaign_pipeline_validated":  {
+                                                            "required_true_conditions":  [
+                                                                                             "persisted_universe_available",
+                                                                                             "persisted_universe_count_positive",
+                                                                                             "universe_symbols_count_positive",
+                                                                                             "daily_bars_source_readable",
+                                                                                             "bars_symbols_count_positive",
+                                                                                             "record_min_bars_positive",
+                                                                                             "pagination_complete_true",
+                                                                                             "campaigns_source_readable",
+                                                                                             "schema_payload_alignment_true",
+                                                                                             "write_path_not_executed_during_validation_true"
+                                                                                         ],
+                                                            "readiness_update":  "separate explicit audit step only; never automatic inside GET reader"
+                                                        },
+    "doctrine":  {
+                     "operator_control_is_evidence_not_score":  true,
+                     "no_database_call":  true,
+                     "no_migration_apply":  true,
+                     "no_supabase_write":  true,
+                     "no_campaign_mutation":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 }
+}
