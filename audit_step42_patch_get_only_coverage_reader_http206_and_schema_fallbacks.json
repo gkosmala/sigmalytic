@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_PATCH_AND_AUDIT_NO_DEPLOY_NO_WRITE_NO_NIGHTLY_RUN",
+  "changes": [
+    "patched GET-only production coverage reader: backend\\campaign_engine\\campaign_pipeline_production_coverage_reader.py"
+  ],
+  "failures": [],
+  "readiness": {
+    "campaign_pipeline_validated_can_advance": false,
+    "reason": "Reader patched locally only. Deploy/live verification and separate decision audit required."
+  },
+  "doctrine": {
+    "local_patch_only": true,
+    "get_only_reader": true,
+    "http_206_supported": true,
+    "no_deploy": true,
+    "no_nightly_run": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  }
+}

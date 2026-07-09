@@ -1,0 +1,184 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_REPORT_AUDIT_ONLY_NO_READINESS_MUTATION_NO_DATABASE_WRITE",
+  "failures": [],
+  "warnings": [
+    "coverage decision check not satisfied: validation_complete_true",
+    "coverage decision check not satisfied: universe_count_positive",
+    "coverage decision check not satisfied: bars_symbols_count_positive",
+    "coverage decision check not satisfied: record_min_bars_positive",
+    "coverage decision check not satisfied: pagination_complete_true",
+    "coverage decision check not satisfied: schema_payload_alignment_true"
+  ],
+  "checks": [
+    "Step 39 live coverage reader report PASS",
+    "readiness operator_control_evidence_hardened=True",
+    "readiness legacy_fallbacks_quarantined=True",
+    "readiness campaign_pipeline_validated=False",
+    "readiness d3d_authorized=False",
+    "readiness operator_control_confirmed_by_score=False",
+    "readiness campaign_mutation_without_d3d_law=False",
+    "snapshot field present: coverage_reader_attempted",
+    "snapshot field present: validation_complete",
+    "snapshot field present: readiness_can_advance",
+    "snapshot field present: universe_count",
+    "snapshot field present: bars_symbols_count",
+    "snapshot field present: symbols_missing_bars",
+    "snapshot field present: record_min_bars",
+    "snapshot field present: pagination_complete",
+    "snapshot field present: schema_payload_alignment",
+    "snapshot field present: write_path_not_executed_during_validation",
+    "snapshot field present: doctrine"
+  ],
+  "coverage_decision_checks": {
+    "validation_complete_true": false,
+    "universe_count_positive": false,
+    "bars_symbols_count_positive": false,
+    "record_min_bars_positive": false,
+    "pagination_complete_true": false,
+    "schema_payload_alignment_true": false,
+    "symbols_missing_bars_empty": true,
+    "write_path_not_executed_true": true
+  },
+  "decision": "NOT_READY_FOR_READINESS_UPDATE_KEEP_CAMPAIGN_PIPELINE_VALIDATED_FALSE",
+  "can_update_campaign_pipeline_validated": false,
+  "live_coverage_values": {
+    "validation_complete": false,
+    "universe_count": null,
+    "bars_symbols_count": null,
+    "record_min_bars": null,
+    "pagination_complete": false,
+    "schema_payload_alignment": false,
+    "symbols_missing_bars_count": 0,
+    "source_tables": {
+      "universe": null,
+      "bars": null,
+      "campaigns": null
+    },
+    "source_counts": {
+      "universe_rows": null,
+      "bars_rows_returned": 0,
+      "campaign_rows": null,
+      "campaign_symbols_count": 0
+    },
+    "read_attempts": {
+      "has_supabase_url": true,
+      "has_supabase_key": true,
+      "universe": [
+        {
+          "table": "alpaca_universe",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "live_universe",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "universe",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "symbols",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        }
+      ],
+      "bars": [
+        {
+          "table": "daily_bars",
+          "ok": false,
+          "status": 206,
+          "count": 352538,
+          "reason": "HTTP 206"
+        },
+        {
+          "table": "market_bars",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "bars",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "alpaca_bars",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "price_bars",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "symbol_bars",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        }
+      ],
+      "campaigns": [
+        {
+          "table": "campaigns",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 400: Bad Request"
+        },
+        {
+          "table": "campaign_registry",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        },
+        {
+          "table": "campaign_state",
+          "ok": false,
+          "status": null,
+          "count": null,
+          "reason": "HTTP Error 404: Not Found"
+        }
+      ]
+    }
+  },
+  "readiness": {
+    "mutated": false,
+    "campaign_pipeline_validated_current": false,
+    "campaign_pipeline_validated_can_be_updated_next": false
+  },
+  "doctrine": {
+    "local_report_audit_only": true,
+    "no_readiness_mutation": true,
+    "no_database_write": true,
+    "no_campaign_mutation": true,
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  }
+}

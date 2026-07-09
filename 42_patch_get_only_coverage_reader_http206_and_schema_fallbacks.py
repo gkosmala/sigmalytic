@@ -1,4 +1,17 @@
-"""
+﻿#!/usr/bin/env python3
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+from typing import Any
+
+REPORT = Path("audit_step42_patch_get_only_coverage_reader_http206_and_schema_fallbacks.json")
+
+READER = Path("backend/campaign_engine/campaign_pipeline_production_coverage_reader.py")
+SNAPSHOT = Path("backend/campaign_engine/campaign_pipeline_read_only_validation_snapshot.py")
+
+READER_TEXT = '''"""
 Sigmalytic V2 — Campaign Pipeline Production Coverage Reader.
 
 GET-only read/select diagnostics.
@@ -417,3 +430,131 @@ __all__ = [
     "CONTRACT_VERSION",
     "build_get_only_production_coverage_snapshot",
 ]
+'''
+
+
+def read(path: Path) -> str:
+    if not path.exists():
+        raise FileNotFoundError(f"missing required file: {path}")
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
+def write(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+def syntax_check(path: Path, failures: list[str]) -> None:
+    try:
+        ast.parse(read(path), filename=str(path))
+        print("PASS: syntax clean:", path)
+    except SyntaxError as exc:
+        failures.append(f"syntax failure: {path}: {exc.msg} line {exc.lineno}")
+
+
+def verify_no_forbidden_runtime_terms(path: Path, failures: list[str]) -> None:
+    text = read(path)
+
+    forbidden_terms = [
+        ".insert(",
+        ".upsert(",
+        ".update(",
+        ".delete(",
+        ".rpc(",
+        "run_full_nightly(",
+        "execute_d3d(",
+        "authorize_d3d(",
+        "stripe.",
+    ]
+
+    for term in forbidden_terms:
+        if term in text:
+            failures.append(f"{path} contains forbidden runtime term: {term}")
+        else:
+            print("PASS: forbidden runtime term absent:", term)
+
+
+def main() -> int:
+    print("=" * 72)
+    print("SIGMALYTIC V2 — STEP 42 PATCH GET-ONLY COVERAGE READER")
+    print("MODE: LOCAL PATCH + AUDIT / NO DEPLOY / NO WRITE / NO NIGHTLY RUN")
+    print("=" * 72)
+
+    failures: list[str] = []
+    changes: list[str] = []
+
+    write(READER, READER_TEXT)
+    changes.append(f"patched GET-only production coverage reader: {READER}")
+
+    for path in [READER, SNAPSHOT]:
+        syntax_check(path, failures)
+
+    verify_no_forbidden_runtime_terms(READER, failures)
+
+    reader_text = read(READER)
+
+    required_terms = [
+        "HTTP 206",
+        "status in (200, 206)",
+        "GET_ONLY_PRODUCTION_COVERAGE_READER_HTTP206_SCHEMA_FALLBACKS",
+        "persisted_universe_available",
+        "schema_payload_alignment",
+        "write_path_not_executed_during_validation",
+        "readiness_can_advance",
+    ]
+
+    for term in required_terms:
+        if term not in reader_text:
+            failures.append(f"reader missing required term: {term}")
+        else:
+            print("PASS: reader required term present:", term)
+
+    report = {
+        "status": "PASS" if not failures else "FAIL",
+        "mode": "LOCAL_PATCH_AND_AUDIT_NO_DEPLOY_NO_WRITE_NO_NIGHTLY_RUN",
+        "changes": changes,
+        "failures": failures,
+        "readiness": {
+            "campaign_pipeline_validated_can_advance": False,
+            "reason": "Reader patched locally only. Deploy/live verification and separate decision audit required.",
+        },
+        "doctrine": {
+            "local_patch_only": True,
+            "get_only_reader": True,
+            "http_206_supported": True,
+            "no_deploy": True,
+            "no_nightly_run": True,
+            "no_supabase_write": True,
+            "no_campaign_mutation": True,
+            "no_d3d": True,
+            "no_operator_control_confirmation": True,
+            "no_trade_signal": True,
+            "no_stripe": True,
+            "billing_remains_blocked": True,
+        },
+    }
+
+    REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    for change in changes:
+        print("PASS:", change)
+
+    print("Report written:", REPORT)
+
+    if failures:
+        print("\nFAILURES")
+        for failure in failures:
+            print("FAIL:", failure)
+        print("=" * 72)
+        print("FAIL: STEP 42 PATCH GET-ONLY COVERAGE READER FAILED")
+        print("=" * 72)
+        return 1
+
+    print("=" * 72)
+    print("PASS: STEP 42 COMPLETE — GET-ONLY COVERAGE READER PATCHED LOCALLY")
+    print("PASS: HTTP 206 accepted as read success; campaigns schema fallback added; readiness remains false.")
+    print("=" * 72)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
