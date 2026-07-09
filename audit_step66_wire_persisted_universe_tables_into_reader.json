@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_SOURCE_PATCH_ONLY_NO_DB_CALL_NO_MIGRATION_APPLY_NO_WRITE",
+  "as_of": "2026-07-09T19:58:44.195115+00:00",
+  "failures": [],
+  "notes": [
+    "inserted Step 66 marker",
+    "inserted persisted universe table candidates ahead of legacy universe candidates"
+  ],
+  "target": "backend\\campaign_engine\\campaign_pipeline_production_coverage_reader.py",
+  "required_tables": [
+    "campaign_universe_symbols",
+    "campaign_universe_snapshots"
+  ],
+  "readiness": {
+    "mutated": false,
+    "campaign_pipeline_validated": false,
+    "campaign_pipeline_validated_can_advance_now": false,
+    "billing_remains_blocked": true
+  },
+  "doctrine": {
+    "get_only_reader_patch": true,
+    "no_database_call": true,
+    "no_migration_apply": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_nightly_run": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  },
+  "next_step": "local verification, commit/tag/push, deploy, then live GET verification"
+}

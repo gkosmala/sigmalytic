@@ -1,3 +1,6 @@
+# STEP66_PERSISTED_UNIVERSE_TABLES_WIRED_GET_ONLY
+# Persisted universe source tables are read by GET/select only.
+# Bars-symbol coverage remains diagnostic only and is not promoted into a universe source.
 """
 Sigmalytic V2 — Campaign Pipeline Production Coverage Reader.
 
@@ -52,6 +55,8 @@ BAR_TABLE_CANDIDATES = (
 )
 
 UNIVERSE_TABLE_CANDIDATES = (
+    "campaign_universe_symbols",
+    "campaign_universe_snapshots",
     "alpaca_universe",
     "live_universe",
     "universe",
