@@ -1,0 +1,672 @@
+{
+  "mode": "LOCAL_READ_ONLY_ROUTE_TOPOLOGY_AUDIT_NO_PATCH_NO_MUTATION",
+  "status": "PASS",
+  "failures": [],
+  "inspected_files": [
+    {
+      "path": "backend\\campaign_api.py",
+      "syntax": {
+        "exists": true,
+        "ok": true,
+        "error": null
+      },
+      "routers": [
+        {
+          "router_name": "router",
+          "line": 8,
+          "prefix": "/api/campaign",
+          "tags": [
+            "campaign"
+          ]
+        }
+      ],
+      "routes": [
+        {
+          "function": "evidence_diagnostics",
+          "line": 260,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-diagnostics",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_diagnostic_rankings",
+          "line": 457,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-diagnostic-rankings",
+          "decorator": "router.get"
+        },
+        {
+          "function": "single_symbol_evidence_diagnostics",
+          "line": 512,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-diagnostics/{symbol}",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_audit_export",
+          "line": 656,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-audit-export",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_calibration_review",
+          "line": 742,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-calibration-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_conflict_taxonomy",
+          "line": 942,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-conflict-taxonomy",
+          "decorator": "router.get"
+        },
+        {
+          "function": "structural_location_input_review",
+          "line": 1025,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/structural-location-input-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "structural_location_validation_review",
+          "line": 1242,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/structural-location-validation-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "wyckoff_weis_operator_confirmation_review",
+          "line": 1455,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/wyckoff-weis-operator-confirmation-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "explicit_sml_taxonomy_audit_review",
+          "line": 1717,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/explicit-sml-taxonomy-audit-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "explicit_upper_zone_diagnostic_review",
+          "line": 1843,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/explicit-upper-zone-diagnostic-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "explicit_geometry_sml_diagnostic_review",
+          "line": 1961,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/explicit-geometry-sml-diagnostic-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "operator_control_plausibility_status_review",
+          "line": 2082,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/operator-control-plausibility-status-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "operator_control_production_mutation_gate",
+          "line": 2215,
+          "router_name": "router",
+          "method": "POST",
+          "path": "/operator-control-production-mutation-gate",
+          "decorator": "router.post"
+        },
+        {
+          "function": "operator_control_confirmation_candidate_review",
+          "line": 2365,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/operator-control-confirmation-candidate-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "operator_control_reconciliation_review",
+          "line": 2566,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/operator-control-reconciliation-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "early_operator_footprint_review",
+          "line": 2804,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/early-operator-footprint-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_doctrine_review_rankings",
+          "line": 3009,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-doctrine-review-rankings",
+          "decorator": "router.get"
+        },
+        {
+          "function": "evidence_doctrine_classifier_review",
+          "line": 3301,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/evidence-doctrine-classifier-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "health",
+          "line": 3451,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/health",
+          "decorator": "router.get"
+        },
+        {
+          "function": "active_campaigns",
+          "line": 3459,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/active",
+          "decorator": "router.get"
+        },
+        {
+          "function": "rankings",
+          "line": 3466,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/rankings",
+          "decorator": "router.get"
+        },
+        {
+          "function": "status",
+          "line": 3485,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/status",
+          "decorator": "router.get"
+        },
+        {
+          "function": "register_campaign",
+          "line": 3636,
+          "router_name": "router",
+          "method": "POST",
+          "path": "/register",
+          "decorator": "router.post"
+        },
+        {
+          "function": "external_macro_anchor_enrichment_review",
+          "line": 3644,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/external-macro-anchor-enrichment-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "external_macro_anchor_quality_tier_review",
+          "line": 3837,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/external-macro-anchor-quality-tier-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "macro_anchor_state_alignment_review",
+          "line": 4028,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/macro-anchor-state-alignment-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "macro_anchor_decision_zone_review",
+          "line": 4227,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/macro-anchor-decision-zone-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "macro_anchor_behavioral_resolution_confluence_review",
+          "line": 4432,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/macro-anchor-behavioral-resolution-confluence-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "macro_anchor_high_priority_resolution_evidence_review",
+          "line": 4682,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/macro-anchor-high-priority-resolution-evidence-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "hvn_poc_source_enrichment_review",
+          "line": 5125,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/hvn-poc-source-enrichment-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "doctrine_leg_explanation_enrichment_review",
+          "line": 5575,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/doctrine-leg-explanation-enrichment-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "stealth_monitoring_diagnostic_review",
+          "line": 5976,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/stealth-monitoring-diagnostic-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "d3d_dry_run_candidate_preflight_review",
+          "line": 6358,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/d3d-dry-run-candidate-preflight-review",
+          "decorator": "router.get"
+        },
+        {
+          "function": "d4e_read_only_live_bar_source_probe",
+          "line": 6790,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/d4e-read-only-live-bar-source-probe",
+          "decorator": "router.get"
+        },
+        {
+          "function": "d4f_read_only_hvn_poc_construction_prototype",
+          "line": 7173,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/d4f-read-only-hvn-poc-construction-prototype",
+          "decorator": "router.get"
+        },
+        {
+          "function": "src2_read_only_intraday_source_probe",
+          "line": 7436,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/src2-read-only-intraday-source-probe",
+          "decorator": "router.get"
+        },
+        {
+          "function": "src4_read_only_intraday_profile_refinement_prototype",
+          "line": 7834,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/src4-read-only-intraday-profile-refinement-prototype",
+          "decorator": "router.get"
+        },
+        {
+          "function": "src7c_read_only_runtime_explicit_sml_source_probe",
+          "line": 8166,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/src7c-read-only-runtime-explicit-sml-source-probe",
+          "decorator": "router.get"
+        },
+        {
+          "function": "src7g_runtime_dry_run_preflight_endpoint",
+          "line": 8496,
+          "router_name": "router",
+          "method": "GET",
+          "path": "/src7g-runtime-dry-run-preflight-endpoint",
+          "decorator": "router.get"
+        }
+      ],
+      "include_router_calls": [],
+      "route_marker_present": false,
+      "snapshot_route_text_present": false
+    },
+    {
+      "path": "backend\\main.py",
+      "syntax": {
+        "exists": true,
+        "ok": true,
+        "error": null
+      },
+      "routers": [],
+      "routes": [
+        {
+          "function": "root",
+          "line": 47,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/",
+          "decorator": "app.get"
+        },
+        {
+          "function": "health",
+          "line": 56,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/health",
+          "decorator": "app.get"
+        },
+        {
+          "function": "api_health",
+          "line": 61,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/health",
+          "decorator": "app.get"
+        },
+        {
+          "function": "get_stock_quote",
+          "line": 68,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/stock/{symbol}",
+          "decorator": "app.get"
+        },
+        {
+          "function": "get_open_trade",
+          "line": 175,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/behavior/open-trade/{user_id}",
+          "decorator": "app.get"
+        },
+        {
+          "function": "engine_status",
+          "line": 186,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/admin/engine-status",
+          "decorator": "app.get"
+        },
+        {
+          "function": "run_full_nightly",
+          "line": 214,
+          "router_name": "app",
+          "method": "POST",
+          "path": "/api/admin/run-full-nightly",
+          "decorator": "app.post"
+        },
+        {
+          "function": "refresh_weis_gamma_evidence",
+          "line": 300,
+          "router_name": "app",
+          "method": "POST",
+          "path": "/api/admin/refresh-weis-gamma-evidence",
+          "decorator": "app.post"
+        },
+        {
+          "function": "run_closure_engine_admin",
+          "line": 529,
+          "router_name": "app",
+          "method": "POST",
+          "path": "/api/admin/run-closure-engine",
+          "decorator": "app.post"
+        },
+        {
+          "function": "campaigns_active_alias",
+          "line": 538,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/campaigns/active",
+          "decorator": "app.get"
+        },
+        {
+          "function": "campaigns_summary_alias",
+          "line": 545,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/campaigns/summary",
+          "decorator": "app.get"
+        },
+        {
+          "function": "radar_top_alias",
+          "line": 552,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/radar/top",
+          "decorator": "app.get"
+        },
+        {
+          "function": "radar_scores_compat",
+          "line": 867,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/radar/scores",
+          "decorator": "app.get"
+        },
+        {
+          "function": "scoreboard_compat",
+          "line": 888,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/scoreboard",
+          "decorator": "app.get"
+        },
+        {
+          "function": "radar_intelligence_lightweight_compat",
+          "line": 942,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/radar/intelligence",
+          "decorator": "app.get"
+        },
+        {
+          "function": "radar_probability_status_lightweight_compat",
+          "line": 974,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/radar/probability-status",
+          "decorator": "app.get"
+        },
+        {
+          "function": "divergence_watchlist_compat",
+          "line": 1011,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/admin/divergence-watchlist",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e5_controlled_append_only_audit_write_route_readiness",
+          "line": 1106,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-append-only-audit-write-route",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e5_controlled_append_only_audit_write_route",
+          "line": 1116,
+          "router_name": "app",
+          "method": "POST",
+          "path": "/api/alerts/controlled/append-only-audit-write",
+          "decorator": "app.post"
+        },
+        {
+          "function": "d3e6_controlled_one_row_append_only_audit_insert_readiness",
+          "line": 1157,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e6_controlled_one_row_append_only_audit_insert",
+          "line": 1161,
+          "router_name": "app",
+          "method": "POST",
+          "path": "/api/alerts/controlled/one-row-append-only-audit-insert",
+          "decorator": "app.post"
+        },
+        {
+          "function": "d3e7_controlled_post_write_readback_verification",
+          "line": 1198,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-post-write-readback-verification",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e8_controlled_persistence_post_write_closure_sweep",
+          "line": 1233,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-persistence-post-write-closure-sweep",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e9_controlled_persistence_final_lifecycle_regression_sweep",
+          "line": 1268,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e5_controlled_append_only_audit_write_route_mount_error",
+          "line": 1125,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-append-only-audit-write-route",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e6_controlled_one_row_append_only_audit_insert_mount_error",
+          "line": 1170,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e7a_controlled_post_write_readback_verification_mount_error",
+          "line": 1205,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-post-write-readback-verification",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e8_controlled_persistence_post_write_closure_sweep_mount_error",
+          "line": 1240,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-persistence-post-write-closure-sweep",
+          "decorator": "app.get"
+        },
+        {
+          "function": "d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error",
+          "line": 1275,
+          "router_name": "app",
+          "method": "GET",
+          "path": "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep",
+          "decorator": "app.get"
+        }
+      ],
+      "include_router_calls": [
+        {
+          "line": 1068,
+          "call": "app.include_router(campaign_router)",
+          "router_expr": "campaign_router",
+          "prefix": null
+        },
+        {
+          "line": 1069,
+          "call": "app.include_router(research_router)",
+          "router_expr": "research_router",
+          "prefix": null
+        },
+        {
+          "line": 1070,
+          "call": "app.include_router(intelligence_router)",
+          "router_expr": "intelligence_router",
+          "prefix": null
+        },
+        {
+          "line": 1071,
+          "call": "app.include_router(operator_router)",
+          "router_expr": "operator_router",
+          "prefix": null
+        },
+        {
+          "line": 1090,
+          "call": "app.include_router(billing_router)",
+          "router_expr": "billing_router",
+          "prefix": null
+        },
+        {
+          "line": 1091,
+          "call": "app.include_router(legal_router)",
+          "router_expr": "legal_router",
+          "prefix": null
+        },
+        {
+          "line": 1074,
+          "call": "app.include_router(alerts_router)",
+          "router_expr": "alerts_router",
+          "prefix": null
+        },
+        {
+          "line": 1077,
+          "call": "app.include_router(snapshot_router)",
+          "router_expr": "snapshot_router",
+          "prefix": null
+        },
+        {
+          "line": 1080,
+          "call": "app.include_router(admin_router)",
+          "router_expr": "admin_router",
+          "prefix": null
+        }
+      ],
+      "route_marker_present": false,
+      "snapshot_route_text_present": false
+    }
+  ],
+  "candidate_route": {
+    "router_name": "router",
+    "router_prefix": "/api/campaign",
+    "candidate_decorator": "@router.get(\"/read-only/pipeline-validation-snapshot\")",
+    "candidate_path": "/read-only/pipeline-validation-snapshot",
+    "existing_route_count": 40,
+    "candidate_path_already_exists": false,
+    "safe_to_patch": true
+  },
+  "doctrine": {
+    "read_only_audit": true,
+    "no_source_patch": true,
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

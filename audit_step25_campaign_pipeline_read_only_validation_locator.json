@@ -1,0 +1,77 @@
+{
+  "mode": "LOCAL_SOURCE_LOCATOR_AND_GET_ONLY_ENDPOINT_CHECK_NO_WRITE",
+  "status": "PASS",
+  "source_terms": {
+    "universe": true,
+    "bars": true,
+    "campaign": true,
+    "supabase": true,
+    "payload": true,
+    "schema": true
+  },
+  "missing_source_terms": [],
+  "candidate_endpoints": [
+    {
+      "endpoint": "/api/campaign/structural-location-validation-review",
+      "path": "backend\\campaign_api.py",
+      "line": 1419,
+      "unsafe": false,
+      "text": "\"endpoint\": \"/api/campaign/structural-location-validation-review\","
+    }
+  ],
+  "safe_candidate_endpoints": [
+    {
+      "endpoint": "/api/campaign/structural-location-validation-review",
+      "path": "backend\\campaign_api.py",
+      "line": 1419,
+      "unsafe": false,
+      "text": "\"endpoint\": \"/api/campaign/structural-location-validation-review\","
+    }
+  ],
+  "checked_live_endpoints": [
+    {
+      "endpoint": "/api/campaign/structural-location-validation-review",
+      "status_code": 200,
+      "error": null,
+      "snapshot_field_check": {
+        "universe_count": false,
+        "bars_symbols_count": false,
+        "symbols_missing_bars": false,
+        "record_min_bars": false,
+        "pagination_complete": false,
+        "schema_payload_alignment": false,
+        "write_path_not_executed_during_validation": false
+      },
+      "qualifies_as_snapshot_candidate": false
+    }
+  ],
+  "qualifying_snapshot_endpoints": [],
+  "required_snapshot_fields": [
+    "universe_count",
+    "bars_symbols_count",
+    "symbols_missing_bars",
+    "record_min_bars",
+    "pagination_complete",
+    "schema_payload_alignment",
+    "write_path_not_executed_during_validation"
+  ],
+  "readiness": {
+    "campaign_pipeline_validated_can_advance": false,
+    "reason": "campaign_pipeline_validated may advance only if a live GET endpoint exposes the complete read-only snapshot contract with all required fields."
+  },
+  "reviews": [
+    "No existing live GET endpoint currently exposes the complete campaign pipeline validation snapshot contract."
+  ],
+  "failures": [],
+  "doctrine": {
+    "get_only": true,
+    "no_nightly_run": true,
+    "no_alpaca_call_from_this_script": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

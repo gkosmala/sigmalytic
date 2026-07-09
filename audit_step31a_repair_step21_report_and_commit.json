@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_STEP21_REPORT_REPAIR_NO_DEPLOY_NO_DATABASE_WRITE",
+  "changes": [
+    "recreated missing compatibility report: audit_step21_update_readiness_operator_control_gate.json"
+  ],
+  "failures": [],
+  "doctrine": {
+    "no_deploy": true,
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

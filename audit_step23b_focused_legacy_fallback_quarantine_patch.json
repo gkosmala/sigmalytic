@@ -1,0 +1,28 @@
+{
+  "mode": "LOCAL_SOURCE_PATCH_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "changes": [
+    "patched: campaign_state_engine active compatibility BIRTH fallback quarantine: backend\\campaign_engine\\campaign_state_engine.py",
+    "patched: research_engine signal birth survival-score dependency quarantine: backend\\research_engine\\signal_birth_engine.py",
+    "patched: research_engine signal birth score label quarantine: backend\\research_engine\\signal_birth_engine.py",
+    "patched: root signal birth score label quarantine: backend\\signal_birth_engine.py"
+  ],
+  "failures": [],
+  "patched_files": [
+    "backend\\campaign_engine\\campaign_state_engine.py",
+    "backend\\signal_birth_engine.py",
+    "backend\\research_engine\\signal_birth_engine.py"
+  ],
+  "doctrine": {
+    "legacy_birth_fallback_quarantined": true,
+    "score_derived_birth_labeling_quarantined": true,
+    "research_duplicate_signal_birth_quarantined": true,
+    "operator_control_is_evidence_not_score": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

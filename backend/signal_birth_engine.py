@@ -292,12 +292,10 @@ class SignalBirthEngine:
         # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists.
         birth_eligible = False
 
-        if birth_score >= 85.0 and birth_eligible:
-            birth_state = "CAMPAIGN_BIRTH"
-        elif birth_score >= 70.0 and birth_eligible:
-            birth_state = "EARLY_CAMPAIGN"
-        elif birth_score >= 55.0:
-            birth_state = "POTENTIAL_BIRTH"
+        # STEP23B_SCORE_STATE_LABEL_QUARANTINE_ACTIVE
+        # Score thresholds remain diagnostic only and cannot assign lifecycle birth labels.
+        if birth_eligible:
+            birth_state = "EVIDENCE_ONLY_BIRTH_PENDING"
         else:
             birth_state = "NO_BIRTH"
 

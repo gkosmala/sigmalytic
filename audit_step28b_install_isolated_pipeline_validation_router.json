@@ -1,0 +1,71 @@
+{
+  "mode": "LOCAL_ISOLATED_ROUTER_PATCH_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "changes": [
+    "wrote isolated read-only router: backend\\campaign_pipeline_validation_api.py",
+    "added isolated router import to backend/main.py",
+    "added isolated router include to backend/main.py"
+  ],
+  "failures": [],
+  "endpoint": "/api/campaigns/read-only/pipeline-validation-snapshot",
+  "snapshot_preview": {
+    "contract_version": "SIGMALYTIC_V2_CAMPAIGN_PIPELINE_READ_ONLY_SNAPSHOT_2026_07_09",
+    "as_of": "2026-07-09T16:03:24.207419+00:00",
+    "mode": "MODULE_ONLY_READ_ONLY_DIAGNOSTIC_NO_ROUTE_NO_NIGHTLY_RUN_NO_WRITE",
+    "validation_complete": false,
+    "readiness_can_advance": false,
+    "reason": "Module-only read-only snapshot builder is installed. A live GET route is not installed in this step. Production coverage counts are not confirmed.",
+    "universe_count": null,
+    "bars_symbols_count": null,
+    "symbols_missing_bars": [],
+    "record_min_bars": null,
+    "pagination_complete": false,
+    "schema_payload_alignment": true,
+    "write_path_not_executed_during_validation": true,
+    "source_presence": {
+      "universe_binding_present": true,
+      "alpaca_or_bar_binding_present": true,
+      "campaign_evaluation_present": true,
+      "schema_payload_terms_present": true,
+      "supabase_reference_present": true
+    },
+    "required_snapshot_fields": [
+      "universe_count",
+      "bars_symbols_count",
+      "symbols_missing_bars",
+      "record_min_bars",
+      "pagination_complete",
+      "schema_payload_alignment",
+      "write_path_not_executed_during_validation"
+    ],
+    "doctrine": {
+      "module_only": true,
+      "get_only_route_not_installed_yet": true,
+      "no_nightly_run": true,
+      "no_alpaca_call_from_this_module": true,
+      "no_supabase_write": true,
+      "no_campaign_mutation": true,
+      "no_d3d": true,
+      "no_operator_control_confirmation": true,
+      "no_trade_signal": true,
+      "no_stripe": true,
+      "campaign_pipeline_validated_remains_false": true
+    }
+  },
+  "readiness": {
+    "campaign_pipeline_validated_can_advance": false,
+    "reason": "Isolated read-only route installed locally; deploy and live GET verification still required."
+  },
+  "doctrine": {
+    "get_only_route": true,
+    "no_nightly_run": true,
+    "no_alpaca_call_from_route": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "campaign_pipeline_validated_remains_false": true
+  }
+}

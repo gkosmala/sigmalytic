@@ -1,0 +1,190 @@
+{
+  "mode": "LOCAL_CONTRACT_AUDIT_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "contract_version": "SIGMALYTIC_V2_OPERATOR_CONTROL_EVIDENCE_CONTRACT_2026_07_09",
+  "failures": [],
+  "results": {
+    "valid_payload": {
+      "contract_version": "SIGMALYTIC_V2_OPERATOR_CONTROL_EVIDENCE_CONTRACT_2026_07_09",
+      "status": "EVIDENCE_SUFFICIENT_READ_ONLY_NOT_A_TRADE_SIGNAL",
+      "evidence_sufficient": true,
+      "operator_control_confirmed": false,
+      "d3d_authorized": false,
+      "trade_signal": false,
+      "failures": [],
+      "warnings": [
+        "diagnostic field ignored as confirmation source: survival_score",
+        "diagnostic field ignored as confirmation source: rank",
+        "diagnostic field ignored as confirmation source: probability",
+        "diagnostic field ignored as confirmation source: gamma"
+      ],
+      "required_evidence_keys": [
+        "tested_supply_exhaustion",
+        "active_demand_validation",
+        "support_validation",
+        "structural_location",
+        "absence_of_contrary_failure"
+      ],
+      "forbidden_confirmation_source_keys": [
+        "composite_score",
+        "campaign_score",
+        "survival_score",
+        "master_score",
+        "score",
+        "rank",
+        "tier",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "gex",
+        "historical_outcome",
+        "future_return",
+        "target_projection",
+        "trade_signal"
+      ]
+    },
+    "score_only_payload": {
+      "contract_version": "SIGMALYTIC_V2_OPERATOR_CONTROL_EVIDENCE_CONTRACT_2026_07_09",
+      "status": "EVIDENCE_INSUFFICIENT_OR_INVALID",
+      "evidence_sufficient": false,
+      "operator_control_confirmed": false,
+      "d3d_authorized": false,
+      "trade_signal": false,
+      "failures": [
+        "required evidence invalid: tested_supply_exhaustion: entry must be a dictionary",
+        "required evidence invalid: active_demand_validation: entry must be a dictionary",
+        "required evidence invalid: support_validation: entry must be a dictionary",
+        "required evidence invalid: structural_location: entry must be a dictionary",
+        "required evidence invalid: absence_of_contrary_failure: entry must be a dictionary"
+      ],
+      "warnings": [
+        "diagnostic field ignored as confirmation source: campaign_score",
+        "diagnostic field ignored as confirmation source: survival_score",
+        "diagnostic field ignored as confirmation source: rank",
+        "diagnostic field ignored as confirmation source: probability",
+        "diagnostic field ignored as confirmation source: gamma"
+      ],
+      "required_evidence_keys": [
+        "tested_supply_exhaustion",
+        "active_demand_validation",
+        "support_validation",
+        "structural_location",
+        "absence_of_contrary_failure"
+      ],
+      "forbidden_confirmation_source_keys": [
+        "composite_score",
+        "campaign_score",
+        "survival_score",
+        "master_score",
+        "score",
+        "rank",
+        "tier",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "gex",
+        "historical_outcome",
+        "future_return",
+        "target_projection",
+        "trade_signal"
+      ]
+    },
+    "forbidden_action_payload": {
+      "contract_version": "SIGMALYTIC_V2_OPERATOR_CONTROL_EVIDENCE_CONTRACT_2026_07_09",
+      "status": "EVIDENCE_INSUFFICIENT_OR_INVALID",
+      "evidence_sufficient": false,
+      "operator_control_confirmed": false,
+      "d3d_authorized": false,
+      "trade_signal": false,
+      "failures": [
+        "forbidden action flag must not be true: authorizes_d3d",
+        "forbidden action flag must not be true: operator_control_confirmed"
+      ],
+      "warnings": [
+        "diagnostic field ignored as confirmation source: survival_score",
+        "diagnostic field ignored as confirmation source: rank",
+        "diagnostic field ignored as confirmation source: probability",
+        "diagnostic field ignored as confirmation source: gamma"
+      ],
+      "required_evidence_keys": [
+        "tested_supply_exhaustion",
+        "active_demand_validation",
+        "support_validation",
+        "structural_location",
+        "absence_of_contrary_failure"
+      ],
+      "forbidden_confirmation_source_keys": [
+        "composite_score",
+        "campaign_score",
+        "survival_score",
+        "master_score",
+        "score",
+        "rank",
+        "tier",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "gex",
+        "historical_outcome",
+        "future_return",
+        "target_projection",
+        "trade_signal"
+      ]
+    },
+    "missing_required_payload": {
+      "contract_version": "SIGMALYTIC_V2_OPERATOR_CONTROL_EVIDENCE_CONTRACT_2026_07_09",
+      "status": "EVIDENCE_INSUFFICIENT_OR_INVALID",
+      "evidence_sufficient": false,
+      "operator_control_confirmed": false,
+      "d3d_authorized": false,
+      "trade_signal": false,
+      "failures": [
+        "required evidence invalid: active_demand_validation: entry must be a dictionary"
+      ],
+      "warnings": [
+        "diagnostic field ignored as confirmation source: survival_score",
+        "diagnostic field ignored as confirmation source: rank",
+        "diagnostic field ignored as confirmation source: probability",
+        "diagnostic field ignored as confirmation source: gamma"
+      ],
+      "required_evidence_keys": [
+        "tested_supply_exhaustion",
+        "active_demand_validation",
+        "support_validation",
+        "structural_location",
+        "absence_of_contrary_failure"
+      ],
+      "forbidden_confirmation_source_keys": [
+        "composite_score",
+        "campaign_score",
+        "survival_score",
+        "master_score",
+        "score",
+        "rank",
+        "tier",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "gex",
+        "historical_outcome",
+        "future_return",
+        "target_projection",
+        "trade_signal"
+      ]
+    }
+  },
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "score_rank_probability_gamma_only_rejected": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

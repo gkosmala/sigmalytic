@@ -1,0 +1,5182 @@
+{
+  "mode": "LOCAL_READ_ONLY_LEGACY_FALLBACK_LOCATOR_NO_MUTATION",
+  "status": "FAIL",
+  "summary": {
+    "files_scanned": 370,
+    "state_related_files": 126,
+    "legacy_hits": 6,
+    "score_lifecycle_hits": 21,
+    "syntax_failures": 0,
+    "blockers": 27
+  },
+  "syntax_failures": [],
+  "state_related_files": [
+    "backend\\alerts\\alert_console_frontend_contract_audit.py",
+    "backend\\alerts\\alert_console_snapshot_audit.py",
+    "backend\\alerts\\alert_console_view_model_audit.py",
+    "backend\\alerts\\controlled_append_only_audit_write_route.py",
+    "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+    "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+    "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+    "backend\\alerts\\controlled_persistence_contract_audit.py",
+    "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+    "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+    "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+    "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+    "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+    "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+    "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+    "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+    "backend\\alerts\\controlled_post_write_readback_verification.py",
+    "backend\\alerts\\d3d_dry_run_gate_audit.py",
+    "backend\\alerts\\evidence_payload_completeness_audit.py",
+    "backend\\alerts\\live_data_adapter.py",
+    "backend\\alerts\\live_readiness_audit.py",
+    "backend\\alerts\\live_readiness_batch_audit.py",
+    "backend\\alerts\\operator_control_evidence_audit.py",
+    "backend\\alerts\\persistence_payload_simulation_audit.py",
+    "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+    "backend\\alerts\\read_only_alert_fusion.py",
+    "backend\\alerts\\source_coverage_completion_audit.py",
+    "backend\\alerts\\source_gap_audit.py",
+    "backend\\alerts\\source_gap_dashboard_audit.py",
+    "backend\\alerts\\source_gap_remediation_audit.py",
+    "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+    "backend\\alerts\\supabase_target_table_schema_existence_audit.py",
+    "backend\\alerts_api.py",
+    "backend\\analog_engine\\analog_engine.py",
+    "backend\\behavioral_memory.py",
+    "backend\\behavioral_transition_engine.py",
+    "backend\\campaign_api.py",
+    "backend\\campaign_engine\\campaign_decay_engine.py",
+    "backend\\campaign_engine\\campaign_discovery_engine.py",
+    "backend\\campaign_engine\\campaign_evidence_builder.py",
+    "backend\\campaign_engine\\campaign_models.py",
+    "backend\\campaign_engine\\campaign_ranker.py",
+    "backend\\campaign_engine\\campaign_registry.py",
+    "backend\\campaign_engine\\campaign_scoring_engine.py",
+    "backend\\campaign_engine\\campaign_state_engine.py",
+    "backend\\campaign_engine\\campaign_store.py",
+    "backend\\campaign_engine\\campaign_survival_engine.py",
+    "backend\\campaign_engine\\campaign_transition_engine.py",
+    "backend\\campaign_engine\\diagnostic_doctrine_classifier.py",
+    "backend\\campaign_engine\\early_operator_footprint_engine.py",
+    "backend\\campaign_engine\\explicit_geometry_sml_diagnostic_engine.py",
+    "backend\\campaign_engine\\explicit_sml_taxonomy_audit_engine.py",
+    "backend\\campaign_engine\\explicit_upper_zone_diagnostic_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_enrichment_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_quality_tier_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_state_alignment_engine.py",
+    "backend\\campaign_engine\\macro_anchor_behavioral_resolution_confluence_engine.py",
+    "backend\\campaign_engine\\macro_anchor_decision_zone_engine.py",
+    "backend\\campaign_engine\\macro_anchor_high_priority_resolution_evidence_engine.py",
+    "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+    "backend\\campaign_engine\\operator_control_classifier.py",
+    "backend\\campaign_engine\\operator_control_confirmation_candidate_engine.py",
+    "backend\\campaign_engine\\operator_control_evidence_contract.py",
+    "backend\\campaign_engine\\operator_control_plausibility_status_engine.py",
+    "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+    "backend\\campaign_engine\\structural_location_input_review_engine.py",
+    "backend\\campaign_engine\\structural_location_validation_engine.py",
+    "backend\\campaign_engine\\weis_gamma_ranking_engine.py",
+    "backend\\campaign_engine\\weis_phase_engine.py",
+    "backend\\campaign_engine\\wyckoff_signal_bridge.py",
+    "backend\\campaign_engine\\wyckoff_weis_operator_confirmation_engine.py",
+    "backend\\campaign_registry.py",
+    "backend\\confluence_engine.py",
+    "backend\\evidence\\weis_gamma_fusion_engine.py",
+    "backend\\gamma\\zero_dte_squeeze_engine.py",
+    "backend\\gex_engine.py",
+    "backend\\intelligence\\campaign_closure_engine.py",
+    "backend\\intelligence\\campaign_outcome_engine.py",
+    "backend\\intelligence\\dashboard_payload_builder.py",
+    "backend\\intelligence\\fractal_alignment_engine.py",
+    "backend\\intelligence\\intelligence_pipeline.py",
+    "backend\\intelligence\\portfolio_intelligence_engine.py",
+    "backend\\intelligence\\position_sizing_engine.py",
+    "backend\\intelligence\\research_orchestrator.py",
+    "backend\\intelligence\\signal_decay_monitor.py",
+    "backend\\intelligence\\state_transition_engine.py",
+    "backend\\intelligence\\status_center_builder.py",
+    "backend\\intelligence\\subscriber_alerts.py",
+    "backend\\intelligence_api.py",
+    "backend\\main.py",
+    "backend\\operator_dominance\\livermore_score_engine.py",
+    "backend\\operator_dominance\\weis_score_engine.py",
+    "backend\\operator_dominance\\wyckoff_score_engine.py",
+    "backend\\qualified_long_signal_audit.py",
+    "backend\\radar_service.py",
+    "backend\\research_api.py",
+    "backend\\research_engine\\campaign_birth_engine.py",
+    "backend\\research_engine\\campaign_confirmation_engine.py",
+    "backend\\research_engine\\campaign_distribution_engine.py",
+    "backend\\research_engine\\campaign_expansion_engine.py",
+    "backend\\research_engine\\campaign_lifecycle_engine.py",
+    "backend\\research_engine\\campaign_timeline_validator.py",
+    "backend\\research_engine\\campaign_validation_runner.py",
+    "backend\\research_engine\\fractal_alignment_engine.py",
+    "backend\\research_engine\\livermore_survival_engine.py",
+    "backend\\research_engine\\livermore_verdict_engine.py",
+    "backend\\research_engine\\master_campaign_index.py",
+    "backend\\research_engine\\master_survival_index.py",
+    "backend\\research_engine\\research_orchestrator.py",
+    "backend\\research_engine\\signal_birth_engine.py",
+    "backend\\research_engine\\weis_survival_engine.py",
+    "backend\\research_engine\\weis_verdict_engine.py",
+    "backend\\research_engine\\wyckoff_survival_engine.py",
+    "backend\\research_engine\\wyckoff_verdict_engine.py",
+    "backend\\scoreboard_service.py",
+    "backend\\signal_birth_engine.py",
+    "backend\\sms_alerts.py",
+    "backend\\snapshot_service.py",
+    "backend\\structural\\multi_scale_weis_engine.py",
+    "backend\\structural_sources\\explicit_sml_contract.py",
+    "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py",
+    "backend\\structural_sources\\explicit_sml_preflight_validator.py",
+    "backend\\structural_sources\\explicit_sml_source_adapter.py",
+    "backend\\structural_sources\\explicit_sml_source_binding_review.py",
+    "backend\\trade_journal_service.py",
+    "backend\\weis_wave.py"
+  ],
+  "legacy_hits": [
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\analog_engine\\analog_engine.py",
+      "line": 78,
+      "pattern": "fallback.*campaign",
+      "text": "# Phase 12B research benchmarks \u2014 fallback when no historical campaigns exist",
+      "context": [
+        {
+          "line": 68,
+          "text": "    from campaign_engine.campaign_store import CampaignStore"
+        },
+        {
+          "line": 69,
+          "text": "    from campaign_engine.campaign_state_engine import Campaign, CampaignState"
+        },
+        {
+          "line": 70,
+          "text": "    _STORE_AVAILABLE = True"
+        },
+        {
+          "line": 71,
+          "text": "except Exception as _e:"
+        },
+        {
+          "line": 72,
+          "text": "    _STORE_AVAILABLE = False"
+        },
+        {
+          "line": 73,
+          "text": "    log.warning(f\"campaign_store import failed: {_e}\")"
+        },
+        {
+          "line": 74,
+          "text": ""
+        },
+        {
+          "line": 75,
+          "text": "_ANALOG_AVAILABLE = _STORE_AVAILABLE"
+        },
+        {
+          "line": 76,
+          "text": ""
+        },
+        {
+          "line": 77,
+          "text": "# ---------------------------------------------------------------------------"
+        },
+        {
+          "line": 78,
+          "text": "# Phase 12B research benchmarks \u2014 fallback when no historical campaigns exist"
+        },
+        {
+          "line": 79,
+          "text": "# ---------------------------------------------------------------------------"
+        },
+        {
+          "line": 80,
+          "text": ""
+        },
+        {
+          "line": 81,
+          "text": "_TIER_BENCHMARKS: dict[str, dict[str, float]] = {"
+        },
+        {
+          "line": 82,
+          "text": "    \"TIER_1\": {"
+        },
+        {
+          "line": 83,
+          "text": "        \"success_rate\":     70.62,"
+        },
+        {
+          "line": 84,
+          "text": "        \"avg_mfe90\":        70.62,"
+        },
+        {
+          "line": 85,
+          "text": "        \"median_days\":      67.0,"
+        },
+        {
+          "line": 86,
+          "text": "        \"confidence_level\": \"RESEARCH_VALIDATED\","
+        },
+        {
+          "line": 87,
+          "text": "    },"
+        },
+        {
+          "line": 88,
+          "text": "    \"TIER_2\": {"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "Legacy BIRTH fallback",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "birth score present",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "legacy.*fallback",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "fallback.*birth",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 459,
+      "pattern": "legacy.*fallback",
+      "text": "\"transition_reason\": [\"legacy_birth_score_fallback\"],",
+      "context": [
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        },
+        {
+          "line": 467,
+          "text": "                \"reason\": \"No sufficient campaign birth evidence.\","
+        },
+        {
+          "line": 468,
+          "text": "                \"transition_reason\": [],"
+        },
+        {
+          "line": 469,
+          "text": "            }"
+        }
+      ]
+    }
+  ],
+  "score_lifecycle_hits": [
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 945,
+      "pattern": "birth_score\\s*>=",
+      "text": "discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold",
+      "context": [
+        {
+          "line": 935,
+          "text": ""
+        },
+        {
+          "line": 936,
+          "text": "        birth_score = self._safe_float(birth.get(\"birth_score\"))"
+        },
+        {
+          "line": 937,
+          "text": "        mci = self._safe_float(birth.get(\"master_campaign_index\"))"
+        },
+        {
+          "line": 938,
+          "text": "        survival_score = self._safe_float(survival.get(\"master_survival_score\"))"
+        },
+        {
+          "line": 939,
+          "text": ""
+        },
+        {
+          "line": 940,
+          "text": "        try:"
+        },
+        {
+          "line": 941,
+          "text": "            current_close = round(float(df[\"close\"].iloc[-1]), 4)"
+        },
+        {
+          "line": 942,
+          "text": "        except Exception:"
+        },
+        {
+          "line": 943,
+          "text": "            current_close = None"
+        },
+        {
+          "line": 944,
+          "text": ""
+        },
+        {
+          "line": 945,
+          "text": "        discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold"
+        },
+        {
+          "line": 946,
+          "text": ""
+        },
+        {
+          "line": 947,
+          "text": "        option_chain_result = self._load_option_chain_for_evidence("
+        },
+        {
+          "line": 948,
+          "text": "            symbol=symbol,"
+        },
+        {
+          "line": 949,
+          "text": "            current_close=current_close,"
+        },
+        {
+          "line": 950,
+          "text": "            should_fetch=bool(discovered),"
+        },
+        {
+          "line": 951,
+          "text": "        )"
+        },
+        {
+          "line": 952,
+          "text": "        option_chain_data = option_chain_result.get(\"options_data\") or None"
+        },
+        {
+          "line": 953,
+          "text": ""
+        },
+        {
+          "line": 954,
+          "text": "        if CampaignEvidenceBuilder is not None:"
+        },
+        {
+          "line": 955,
+          "text": "            try:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 449,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 55:",
+      "context": [
+        {
+          "line": 439,
+          "text": "                    \"transition_reason\": ["
+        },
+        {
+          "line": 440,
+          "text": "                        \"persistent_absorption\","
+        },
+        {
+          "line": 441,
+          "text": "                        \"failing_downside_result\","
+        },
+        {
+          "line": 442,
+          "text": "                        \"shortening_of_downside_thrust\","
+        },
+        {
+          "line": 443,
+          "text": "                    ],"
+        },
+        {
+          "line": 444,
+          "text": "                }"
+        },
+        {
+          "line": 445,
+          "text": ""
+        },
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 381,
+      "pattern": "eligible.*score",
+      "text": "eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]",
+      "context": [
+        {
+          "line": 371,
+          "text": "            if not campaign_id or not symbol:"
+        },
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 382,
+      "pattern": "score.*eligible",
+      "text": "eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0",
+      "context": [
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 382,
+      "pattern": "eligible.*score",
+      "text": "eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0",
+      "context": [
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 387,
+      "pattern": "score.*eligible",
+      "text": "r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)",
+      "context": [
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        },
+        {
+          "line": 393,
+          "text": ""
+        },
+        {
+          "line": 394,
+          "text": "    try:"
+        },
+        {
+          "line": 395,
+          "text": "        _clear_rankings()"
+        },
+        {
+          "line": 396,
+          "text": "        written = _insert_rankings(rows)"
+        },
+        {
+          "line": 397,
+          "text": "    except Exception as exc:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\master_survival_index.py",
+      "line": 294,
+      "pattern": "master_score\\s*>=",
+      "text": "master_score >= 70.0",
+      "context": [
+        {
+          "line": 284,
+          "text": "            self._is_confirmed(wyckoff, \"wyckoff_survival_score\"),"
+        },
+        {
+          "line": 285,
+          "text": "            self._is_confirmed(livermore, \"livermore_survival_score\"),"
+        },
+        {
+          "line": 286,
+          "text": "            self._is_confirmed(weis, \"weis_survival_score\"),"
+        },
+        {
+          "line": 287,
+          "text": "        ]"
+        },
+        {
+          "line": 288,
+          "text": ""
+        },
+        {
+          "line": 289,
+          "text": "        confirmation_count = sum(1 for flag in confirmed_flags if flag)"
+        },
+        {
+          "line": 290,
+          "text": "        conflict_count = 3 - confirmation_count"
+        },
+        {
+          "line": 291,
+          "text": "        agreement_score = round((confirmation_count / 3.0) * 100.0, 2)"
+        },
+        {
+          "line": 292,
+          "text": ""
+        },
+        {
+          "line": 293,
+          "text": "        survival_confirmed = ("
+        },
+        {
+          "line": 294,
+          "text": "            master_score >= 70.0"
+        },
+        {
+          "line": 295,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 296,
+          "text": "        )"
+        },
+        {
+          "line": 297,
+          "text": ""
+        },
+        {
+          "line": 298,
+          "text": "        grade = self._grade(master_score)"
+        },
+        {
+          "line": 299,
+          "text": "        state = self._state(master_score)"
+        },
+        {
+          "line": 300,
+          "text": ""
+        },
+        {
+          "line": 301,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 302,
+          "text": "            f\"Master Survival {state}; score={master_score}; \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"Wyckoff={wyckoff_score} ({self._extract_state(wyckoff)}), \""
+        },
+        {
+          "line": 304,
+          "text": "            f\"Livermore={livermore_score} ({self._extract_state(livermore)}), \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 278,
+      "pattern": "\\+\\s*survival_score\\s*\\*\\s*0\\.10",
+      "text": "+ survival_score * 0.10",
+      "context": [
+        {
+          "line": 268,
+          "text": ""
+        },
+        {
+          "line": 269,
+          "text": "        master_index = self._safe_score(master.get(\"master_campaign_index\", 0.0))"
+        },
+        {
+          "line": 270,
+          "text": "        resistance_score = self._safe_score(resistance.get(\"resistance_score\", 0.0))"
+        },
+        {
+          "line": 271,
+          "text": "        resolution_score = self._safe_score(resolution.get(\"behavioral_resolution_score\", 0.0))"
+        },
+        {
+          "line": 272,
+          "text": "        survival_score = self._safe_score(survival.get(\"survival_score\", 0.0))"
+        },
+        {
+          "line": 273,
+          "text": ""
+        },
+        {
+          "line": 274,
+          "text": "        birth_score = self._safe_score("
+        },
+        {
+          "line": 275,
+          "text": "            master_index * 0.60"
+        },
+        {
+          "line": 276,
+          "text": "            + resistance_score * 0.15"
+        },
+        {
+          "line": 277,
+          "text": "            + resolution_score * 0.15"
+        },
+        {
+          "line": 278,
+          "text": "            + survival_score * 0.10"
+        },
+        {
+          "line": 279,
+          "text": "        )"
+        },
+        {
+          "line": 280,
+          "text": ""
+        },
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 287,
+      "pattern": "survival_score\\s*>=\\s*50",
+      "text": "and survival_score >= 50.0",
+      "context": [
+        {
+          "line": 277,
+          "text": "            + resolution_score * 0.15"
+        },
+        {
+          "line": 278,
+          "text": "            + survival_score * 0.10"
+        },
+        {
+          "line": 279,
+          "text": "        )"
+        },
+        {
+          "line": 280,
+          "text": ""
+        },
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 291,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 291,
+      "pattern": "score.*eligible",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 293,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 293,
+      "pattern": "score.*eligible",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 55.0:",
+      "context": [
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        },
+        {
+          "line": 304,
+          "text": "            f\"confirmations={confirmation_count}/3.\""
+        },
+        {
+          "line": 305,
+          "text": "        )"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 200,
+      "pattern": "eligible.*score",
+      "text": "birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,",
+      "context": [
+        {
+          "line": 190,
+          "text": "        max_close = recent[\"close\"].max()"
+        },
+        {
+          "line": 191,
+          "text": "        drawdown = (recent[\"close\"].iloc[-1] - max_close) / max(max_close, 1.0)"
+        },
+        {
+          "line": 192,
+          "text": "        score = min(100, higher_lows * 5) * 0.35 + min(100, close_above_mid * 4) * 0.35 + max(0, 100 + drawdown * 300) * 0.30"
+        },
+        {
+          "line": 193,
+          "text": "        return self._clamp(score)"
+        },
+        {
+          "line": 194,
+          "text": ""
+        },
+        {
+          "line": 195,
+          "text": "    def evaluate_bars(self, df: pd.DataFrame, symbol: str = \"\") -> Dict[str, Any]:"
+        },
+        {
+          "line": 196,
+          "text": "        df = self._prepare(df)"
+        },
+        {
+          "line": 197,
+          "text": "        if len(df) < self.structure_lookback + 10:"
+        },
+        {
+          "line": 198,
+          "text": "            return WyckoffVerdict("
+        },
+        {
+          "line": 199,
+          "text": "                symbol=symbol.upper(), wyckoff_score=0.0, verdict=\"INSUFFICIENT_DATA\", phase=\"UNKNOWN\","
+        },
+        {
+          "line": 200,
+          "text": "                birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,"
+        },
+        {
+          "line": 201,
+          "text": "                spring_score=0.0, sign_of_strength_score=0.0, meaningful_resistance_score=0.0,"
+        },
+        {
+          "line": 202,
+          "text": "                behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+        },
+        {
+          "line": 203,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 204,
+          "text": "                explanation=\"Insufficient bars for Wyckoff campaign evaluation.\","
+        },
+        {
+          "line": 205,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 206,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "        idx = len(df) - 1"
+        },
+        {
+          "line": 209,
+          "text": "        bounds = self._structure_bounds(df, idx)"
+        },
+        {
+          "line": 210,
+          "text": "        if bounds[\"support\"] is None or bounds[\"resistance\"] is None:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 213,
+      "pattern": "eligible.*score",
+      "text": "birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,",
+      "context": [
+        {
+          "line": 203,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 204,
+          "text": "                explanation=\"Insufficient bars for Wyckoff campaign evaluation.\","
+        },
+        {
+          "line": 205,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 206,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "        idx = len(df) - 1"
+        },
+        {
+          "line": 209,
+          "text": "        bounds = self._structure_bounds(df, idx)"
+        },
+        {
+          "line": 210,
+          "text": "        if bounds[\"support\"] is None or bounds[\"resistance\"] is None:"
+        },
+        {
+          "line": 211,
+          "text": "            return WyckoffVerdict("
+        },
+        {
+          "line": 212,
+          "text": "                symbol=symbol.upper(), wyckoff_score=0.0, verdict=\"NO_MEANINGFUL_STRUCTURE\", phase=\"UNKNOWN\","
+        },
+        {
+          "line": 213,
+          "text": "                birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,"
+        },
+        {
+          "line": 214,
+          "text": "                spring_score=0.0, sign_of_strength_score=0.0, meaningful_resistance_score=0.0,"
+        },
+        {
+          "line": 215,
+          "text": "                behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+        },
+        {
+          "line": 216,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 217,
+          "text": "                explanation=\"No sufficient swing structure to define support/resistance.\","
+        },
+        {
+          "line": 218,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 219,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 220,
+          "text": ""
+        },
+        {
+          "line": 221,
+          "text": "        support = bounds[\"support\"]"
+        },
+        {
+          "line": 222,
+          "text": "        resistance = bounds[\"resistance\"]"
+        },
+        {
+          "line": 223,
+          "text": "        current_close = float(df[\"close\"].iloc[idx])"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 285,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 286,
+          "text": ""
+        },
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "score.*eligible",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 285,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 286,
+          "text": ""
+        },
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 297,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 297,
+      "pattern": "score.*eligible",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 299,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 55.0:",
+      "context": [
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        },
+        {
+          "line": 308,
+          "text": "            \"STEP7B quarantine active: score-derived birth eligibility disabled pending evidence-only lifecycle law.\""
+        },
+        {
+          "line": 309,
+          "text": "        )"
+        }
+      ]
+    }
+  ],
+  "blockers": [
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\analog_engine\\analog_engine.py",
+      "line": 78,
+      "pattern": "fallback.*campaign",
+      "text": "# Phase 12B research benchmarks \u2014 fallback when no historical campaigns exist",
+      "context": [
+        {
+          "line": 68,
+          "text": "    from campaign_engine.campaign_store import CampaignStore"
+        },
+        {
+          "line": 69,
+          "text": "    from campaign_engine.campaign_state_engine import Campaign, CampaignState"
+        },
+        {
+          "line": 70,
+          "text": "    _STORE_AVAILABLE = True"
+        },
+        {
+          "line": 71,
+          "text": "except Exception as _e:"
+        },
+        {
+          "line": 72,
+          "text": "    _STORE_AVAILABLE = False"
+        },
+        {
+          "line": 73,
+          "text": "    log.warning(f\"campaign_store import failed: {_e}\")"
+        },
+        {
+          "line": 74,
+          "text": ""
+        },
+        {
+          "line": 75,
+          "text": "_ANALOG_AVAILABLE = _STORE_AVAILABLE"
+        },
+        {
+          "line": 76,
+          "text": ""
+        },
+        {
+          "line": 77,
+          "text": "# ---------------------------------------------------------------------------"
+        },
+        {
+          "line": 78,
+          "text": "# Phase 12B research benchmarks \u2014 fallback when no historical campaigns exist"
+        },
+        {
+          "line": 79,
+          "text": "# ---------------------------------------------------------------------------"
+        },
+        {
+          "line": 80,
+          "text": ""
+        },
+        {
+          "line": 81,
+          "text": "_TIER_BENCHMARKS: dict[str, dict[str, float]] = {"
+        },
+        {
+          "line": 82,
+          "text": "    \"TIER_1\": {"
+        },
+        {
+          "line": 83,
+          "text": "        \"success_rate\":     70.62,"
+        },
+        {
+          "line": 84,
+          "text": "        \"avg_mfe90\":        70.62,"
+        },
+        {
+          "line": 85,
+          "text": "        \"median_days\":      67.0,"
+        },
+        {
+          "line": 86,
+          "text": "        \"confidence_level\": \"RESEARCH_VALIDATED\","
+        },
+        {
+          "line": 87,
+          "text": "    },"
+        },
+        {
+          "line": 88,
+          "text": "    \"TIER_2\": {"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "Legacy BIRTH fallback",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "birth score present",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "legacy.*fallback",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "fallback.*birth",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+      "context": [
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        }
+      ]
+    },
+    {
+      "category": "LEGACY_FALLBACK_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 459,
+      "pattern": "legacy.*fallback",
+      "text": "\"transition_reason\": [\"legacy_birth_score_fallback\"],",
+      "context": [
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        },
+        {
+          "line": 460,
+          "text": "                }"
+        },
+        {
+          "line": 461,
+          "text": ""
+        },
+        {
+          "line": 462,
+          "text": "            return {"
+        },
+        {
+          "line": 463,
+          "text": "                \"state\": CampaignState.NO_CAMPAIGN,"
+        },
+        {
+          "line": 464,
+          "text": "                \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 465,
+          "text": "                \"advance_allowed\": False,"
+        },
+        {
+          "line": 466,
+          "text": "                \"failure_risk\": False,"
+        },
+        {
+          "line": 467,
+          "text": "                \"reason\": \"No sufficient campaign birth evidence.\","
+        },
+        {
+          "line": 468,
+          "text": "                \"transition_reason\": [],"
+        },
+        {
+          "line": 469,
+          "text": "            }"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 945,
+      "pattern": "birth_score\\s*>=",
+      "text": "discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold",
+      "context": [
+        {
+          "line": 935,
+          "text": ""
+        },
+        {
+          "line": 936,
+          "text": "        birth_score = self._safe_float(birth.get(\"birth_score\"))"
+        },
+        {
+          "line": 937,
+          "text": "        mci = self._safe_float(birth.get(\"master_campaign_index\"))"
+        },
+        {
+          "line": 938,
+          "text": "        survival_score = self._safe_float(survival.get(\"master_survival_score\"))"
+        },
+        {
+          "line": 939,
+          "text": ""
+        },
+        {
+          "line": 940,
+          "text": "        try:"
+        },
+        {
+          "line": 941,
+          "text": "            current_close = round(float(df[\"close\"].iloc[-1]), 4)"
+        },
+        {
+          "line": 942,
+          "text": "        except Exception:"
+        },
+        {
+          "line": 943,
+          "text": "            current_close = None"
+        },
+        {
+          "line": 944,
+          "text": ""
+        },
+        {
+          "line": 945,
+          "text": "        discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold"
+        },
+        {
+          "line": 946,
+          "text": ""
+        },
+        {
+          "line": 947,
+          "text": "        option_chain_result = self._load_option_chain_for_evidence("
+        },
+        {
+          "line": 948,
+          "text": "            symbol=symbol,"
+        },
+        {
+          "line": 949,
+          "text": "            current_close=current_close,"
+        },
+        {
+          "line": 950,
+          "text": "            should_fetch=bool(discovered),"
+        },
+        {
+          "line": 951,
+          "text": "        )"
+        },
+        {
+          "line": 952,
+          "text": "        option_chain_data = option_chain_result.get(\"options_data\") or None"
+        },
+        {
+          "line": 953,
+          "text": ""
+        },
+        {
+          "line": 954,
+          "text": "        if CampaignEvidenceBuilder is not None:"
+        },
+        {
+          "line": 955,
+          "text": "            try:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 449,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 55:",
+      "context": [
+        {
+          "line": 439,
+          "text": "                    \"transition_reason\": ["
+        },
+        {
+          "line": 440,
+          "text": "                        \"persistent_absorption\","
+        },
+        {
+          "line": 441,
+          "text": "                        \"failing_downside_result\","
+        },
+        {
+          "line": 442,
+          "text": "                        \"shortening_of_downside_thrust\","
+        },
+        {
+          "line": 443,
+          "text": "                    ],"
+        },
+        {
+          "line": 444,
+          "text": "                }"
+        },
+        {
+          "line": 445,
+          "text": ""
+        },
+        {
+          "line": 446,
+          "text": "            # Temporary compatibility fallback. This preserves the already-working"
+        },
+        {
+          "line": 447,
+          "text": "            # discovery flow until the explicit evidence payload is fully wired"
+        },
+        {
+          "line": 448,
+          "text": "            # into every campaign record. Only BIRTH may use this fallback."
+        },
+        {
+          "line": 449,
+          "text": "            if birth_score >= 55:"
+        },
+        {
+          "line": 450,
+          "text": "                return {"
+        },
+        {
+          "line": 451,
+          "text": "                    \"state\": CampaignState.BIRTH,"
+        },
+        {
+          "line": 452,
+          "text": "                    \"transition_score\": evidence_density_score,"
+        },
+        {
+          "line": 453,
+          "text": "                    \"advance_allowed\": True,"
+        },
+        {
+          "line": 454,
+          "text": "                    \"failure_risk\": False,"
+        },
+        {
+          "line": 455,
+          "text": "                    \"reason\": ("
+        },
+        {
+          "line": 456,
+          "text": "                        \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+        },
+        {
+          "line": 457,
+          "text": "                        \"is not yet available.\""
+        },
+        {
+          "line": 458,
+          "text": "                    ),"
+        },
+        {
+          "line": 459,
+          "text": "                    \"transition_reason\": [\"legacy_birth_score_fallback\"],"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 381,
+      "pattern": "eligible.*score",
+      "text": "eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]",
+      "context": [
+        {
+          "line": 371,
+          "text": "            if not campaign_id or not symbol:"
+        },
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 382,
+      "pattern": "score.*eligible",
+      "text": "eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0",
+      "context": [
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 382,
+      "pattern": "eligible.*score",
+      "text": "eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0",
+      "context": [
+        {
+          "line": 372,
+          "text": "                continue"
+        },
+        {
+          "line": 373,
+          "text": "            rows.append(_score_campaign(c))"
+        },
+        {
+          "line": 374,
+          "text": "        except Exception as exc:"
+        },
+        {
+          "line": 375,
+          "text": "            errors += 1"
+        },
+        {
+          "line": 376,
+          "text": "            log.error(\"PORTFOLIO INTELLIGENCE: scoring error symbol=%s campaign_id=%s \u2014 %s\", c.get(\"symbol\"), c.get(\"campaign_id\"), exc)"
+        },
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 387,
+      "pattern": "score.*eligible",
+      "text": "r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)",
+      "context": [
+        {
+          "line": 377,
+          "text": ""
+        },
+        {
+          "line": 378,
+          "text": "    rows.sort(key=lambda x: (x.get(\"portfolio_score\", 0), x.get(\"expected_return\", 0), -x.get(\"risk_score\", 100)), reverse=True)"
+        },
+        {
+          "line": 379,
+          "text": ""
+        },
+        {
+          "line": 380,
+          "text": "    band_counts: dict[str, int] = {}"
+        },
+        {
+          "line": 381,
+          "text": "    eligible_rows = [r for r in rows if r.get(\"priority_band\") not in (\"AVOID\",) and r.get(\"portfolio_score\", 0) >= 42]"
+        },
+        {
+          "line": 382,
+          "text": "    eligible_total = sum(max(0.0, r.get(\"portfolio_score\", 0.0)) for r in eligible_rows) or 1.0"
+        },
+        {
+          "line": 383,
+          "text": ""
+        },
+        {
+          "line": 384,
+          "text": "    for idx, r in enumerate(rows, start=1):"
+        },
+        {
+          "line": 385,
+          "text": "        r[\"portfolio_rank\"] = idx"
+        },
+        {
+          "line": 386,
+          "text": "        if r in eligible_rows:"
+        },
+        {
+          "line": 387,
+          "text": "            r[\"capital_weight\"] = round(max(0.0, r.get(\"portfolio_score\", 0.0)) / eligible_total * 100.0, 2)"
+        },
+        {
+          "line": 388,
+          "text": "        else:"
+        },
+        {
+          "line": 389,
+          "text": "            r[\"capital_weight\"] = 0.0"
+        },
+        {
+          "line": 390,
+          "text": ""
+        },
+        {
+          "line": 391,
+          "text": "        band = str(r.get(\"priority_band\") or \"UNKNOWN\")"
+        },
+        {
+          "line": 392,
+          "text": "        band_counts[band] = band_counts.get(band, 0) + 1"
+        },
+        {
+          "line": 393,
+          "text": ""
+        },
+        {
+          "line": 394,
+          "text": "    try:"
+        },
+        {
+          "line": 395,
+          "text": "        _clear_rankings()"
+        },
+        {
+          "line": 396,
+          "text": "        written = _insert_rankings(rows)"
+        },
+        {
+          "line": 397,
+          "text": "    except Exception as exc:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\master_survival_index.py",
+      "line": 294,
+      "pattern": "master_score\\s*>=",
+      "text": "master_score >= 70.0",
+      "context": [
+        {
+          "line": 284,
+          "text": "            self._is_confirmed(wyckoff, \"wyckoff_survival_score\"),"
+        },
+        {
+          "line": 285,
+          "text": "            self._is_confirmed(livermore, \"livermore_survival_score\"),"
+        },
+        {
+          "line": 286,
+          "text": "            self._is_confirmed(weis, \"weis_survival_score\"),"
+        },
+        {
+          "line": 287,
+          "text": "        ]"
+        },
+        {
+          "line": 288,
+          "text": ""
+        },
+        {
+          "line": 289,
+          "text": "        confirmation_count = sum(1 for flag in confirmed_flags if flag)"
+        },
+        {
+          "line": 290,
+          "text": "        conflict_count = 3 - confirmation_count"
+        },
+        {
+          "line": 291,
+          "text": "        agreement_score = round((confirmation_count / 3.0) * 100.0, 2)"
+        },
+        {
+          "line": 292,
+          "text": ""
+        },
+        {
+          "line": 293,
+          "text": "        survival_confirmed = ("
+        },
+        {
+          "line": 294,
+          "text": "            master_score >= 70.0"
+        },
+        {
+          "line": 295,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 296,
+          "text": "        )"
+        },
+        {
+          "line": 297,
+          "text": ""
+        },
+        {
+          "line": 298,
+          "text": "        grade = self._grade(master_score)"
+        },
+        {
+          "line": 299,
+          "text": "        state = self._state(master_score)"
+        },
+        {
+          "line": 300,
+          "text": ""
+        },
+        {
+          "line": 301,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 302,
+          "text": "            f\"Master Survival {state}; score={master_score}; \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"Wyckoff={wyckoff_score} ({self._extract_state(wyckoff)}), \""
+        },
+        {
+          "line": 304,
+          "text": "            f\"Livermore={livermore_score} ({self._extract_state(livermore)}), \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 278,
+      "pattern": "\\+\\s*survival_score\\s*\\*\\s*0\\.10",
+      "text": "+ survival_score * 0.10",
+      "context": [
+        {
+          "line": 268,
+          "text": ""
+        },
+        {
+          "line": 269,
+          "text": "        master_index = self._safe_score(master.get(\"master_campaign_index\", 0.0))"
+        },
+        {
+          "line": 270,
+          "text": "        resistance_score = self._safe_score(resistance.get(\"resistance_score\", 0.0))"
+        },
+        {
+          "line": 271,
+          "text": "        resolution_score = self._safe_score(resolution.get(\"behavioral_resolution_score\", 0.0))"
+        },
+        {
+          "line": 272,
+          "text": "        survival_score = self._safe_score(survival.get(\"survival_score\", 0.0))"
+        },
+        {
+          "line": 273,
+          "text": ""
+        },
+        {
+          "line": 274,
+          "text": "        birth_score = self._safe_score("
+        },
+        {
+          "line": 275,
+          "text": "            master_index * 0.60"
+        },
+        {
+          "line": 276,
+          "text": "            + resistance_score * 0.15"
+        },
+        {
+          "line": 277,
+          "text": "            + resolution_score * 0.15"
+        },
+        {
+          "line": 278,
+          "text": "            + survival_score * 0.10"
+        },
+        {
+          "line": 279,
+          "text": "        )"
+        },
+        {
+          "line": 280,
+          "text": ""
+        },
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 287,
+      "pattern": "survival_score\\s*>=\\s*50",
+      "text": "and survival_score >= 50.0",
+      "context": [
+        {
+          "line": 277,
+          "text": "            + resolution_score * 0.15"
+        },
+        {
+          "line": 278,
+          "text": "            + survival_score * 0.10"
+        },
+        {
+          "line": 279,
+          "text": "        )"
+        },
+        {
+          "line": 280,
+          "text": ""
+        },
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 291,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 291,
+      "pattern": "score.*eligible",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 281,
+          "text": "        confirmation_count = int(master.get(\"confirmation_count\", 0) or 0)"
+        },
+        {
+          "line": 282,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 293,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 293,
+      "pattern": "score.*eligible",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 283,
+          "text": ""
+        },
+        {
+          "line": 284,
+          "text": "        birth_eligible = ("
+        },
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 55.0:",
+      "context": [
+        {
+          "line": 285,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 286,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 287,
+          "text": "            and survival_score >= 50.0"
+        },
+        {
+          "line": 288,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 289,
+          "text": "        )"
+        },
+        {
+          "line": 290,
+          "text": ""
+        },
+        {
+          "line": 291,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 292,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 293,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 294,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 295,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        else:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 299,
+          "text": ""
+        },
+        {
+          "line": 300,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 301,
+          "text": "            f\"Signal Birth {birth_state}; birth_score={birth_score}; \""
+        },
+        {
+          "line": 302,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 303,
+          "text": "            f\"resolution={resolution_score}, survival={survival_score}, \""
+        },
+        {
+          "line": 304,
+          "text": "            f\"confirmations={confirmation_count}/3.\""
+        },
+        {
+          "line": 305,
+          "text": "        )"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 200,
+      "pattern": "eligible.*score",
+      "text": "birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,",
+      "context": [
+        {
+          "line": 190,
+          "text": "        max_close = recent[\"close\"].max()"
+        },
+        {
+          "line": 191,
+          "text": "        drawdown = (recent[\"close\"].iloc[-1] - max_close) / max(max_close, 1.0)"
+        },
+        {
+          "line": 192,
+          "text": "        score = min(100, higher_lows * 5) * 0.35 + min(100, close_above_mid * 4) * 0.35 + max(0, 100 + drawdown * 300) * 0.30"
+        },
+        {
+          "line": 193,
+          "text": "        return self._clamp(score)"
+        },
+        {
+          "line": 194,
+          "text": ""
+        },
+        {
+          "line": 195,
+          "text": "    def evaluate_bars(self, df: pd.DataFrame, symbol: str = \"\") -> Dict[str, Any]:"
+        },
+        {
+          "line": 196,
+          "text": "        df = self._prepare(df)"
+        },
+        {
+          "line": 197,
+          "text": "        if len(df) < self.structure_lookback + 10:"
+        },
+        {
+          "line": 198,
+          "text": "            return WyckoffVerdict("
+        },
+        {
+          "line": 199,
+          "text": "                symbol=symbol.upper(), wyckoff_score=0.0, verdict=\"INSUFFICIENT_DATA\", phase=\"UNKNOWN\","
+        },
+        {
+          "line": 200,
+          "text": "                birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,"
+        },
+        {
+          "line": 201,
+          "text": "                spring_score=0.0, sign_of_strength_score=0.0, meaningful_resistance_score=0.0,"
+        },
+        {
+          "line": 202,
+          "text": "                behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+        },
+        {
+          "line": 203,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 204,
+          "text": "                explanation=\"Insufficient bars for Wyckoff campaign evaluation.\","
+        },
+        {
+          "line": 205,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 206,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "        idx = len(df) - 1"
+        },
+        {
+          "line": 209,
+          "text": "        bounds = self._structure_bounds(df, idx)"
+        },
+        {
+          "line": 210,
+          "text": "        if bounds[\"support\"] is None or bounds[\"resistance\"] is None:"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 213,
+      "pattern": "eligible.*score",
+      "text": "birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,",
+      "context": [
+        {
+          "line": 203,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 204,
+          "text": "                explanation=\"Insufficient bars for Wyckoff campaign evaluation.\","
+        },
+        {
+          "line": 205,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 206,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "        idx = len(df) - 1"
+        },
+        {
+          "line": 209,
+          "text": "        bounds = self._structure_bounds(df, idx)"
+        },
+        {
+          "line": 210,
+          "text": "        if bounds[\"support\"] is None or bounds[\"resistance\"] is None:"
+        },
+        {
+          "line": 211,
+          "text": "            return WyckoffVerdict("
+        },
+        {
+          "line": 212,
+          "text": "                symbol=symbol.upper(), wyckoff_score=0.0, verdict=\"NO_MEANINGFUL_STRUCTURE\", phase=\"UNKNOWN\","
+        },
+        {
+          "line": 213,
+          "text": "                birth_eligible=False, stopping_climax_score=0.0, supply_absorption_score=0.0,"
+        },
+        {
+          "line": 214,
+          "text": "                spring_score=0.0, sign_of_strength_score=0.0, meaningful_resistance_score=0.0,"
+        },
+        {
+          "line": 215,
+          "text": "                behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+        },
+        {
+          "line": 216,
+          "text": "                support_level=None, cause_width_pct=None, progress_against_resistance=None,"
+        },
+        {
+          "line": 217,
+          "text": "                explanation=\"No sufficient swing structure to define support/resistance.\","
+        },
+        {
+          "line": 218,
+          "text": "                as_of=datetime.now(timezone.utc).isoformat(),"
+        },
+        {
+          "line": 219,
+          "text": "            ).to_dict()"
+        },
+        {
+          "line": 220,
+          "text": ""
+        },
+        {
+          "line": 221,
+          "text": "        support = bounds[\"support\"]"
+        },
+        {
+          "line": 222,
+          "text": "        resistance = bounds[\"resistance\"]"
+        },
+        {
+          "line": 223,
+          "text": "        current_close = float(df[\"close\"].iloc[idx])"
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "birth_score\\s*>=",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 285,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 286,
+          "text": ""
+        },
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 295,
+      "pattern": "score.*eligible",
+      "text": "if birth_score >= 85.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 285,
+          "text": "        agreement_score = self._safe_score(master.get(\"agreement_score\", 0.0))"
+        },
+        {
+          "line": 286,
+          "text": ""
+        },
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 297,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 297,
+      "pattern": "score.*eligible",
+      "text": "elif birth_score >= 70.0 and birth_eligible:",
+      "context": [
+        {
+          "line": 287,
+          "text": "        score_birth_conditions_diagnostic = ("
+        },
+        {
+          "line": 288,
+          "text": "            master_index >= 65.0"
+        },
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        }
+      ]
+    },
+    {
+      "category": "SCORE_DERIVED_LIFECYCLE_REFERENCE",
+      "path": "backend\\signal_birth_engine.py",
+      "line": 299,
+      "pattern": "birth_score\\s*>=",
+      "text": "elif birth_score >= 55.0:",
+      "context": [
+        {
+          "line": 289,
+          "text": "            and resolution_score >= 60.0"
+        },
+        {
+          "line": 290,
+          "text": "            and confirmation_count >= 2"
+        },
+        {
+          "line": 291,
+          "text": "        )"
+        },
+        {
+          "line": 292,
+          "text": "        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists."
+        },
+        {
+          "line": 293,
+          "text": "        birth_eligible = False"
+        },
+        {
+          "line": 294,
+          "text": ""
+        },
+        {
+          "line": 295,
+          "text": "        if birth_score >= 85.0 and birth_eligible:"
+        },
+        {
+          "line": 296,
+          "text": "            birth_state = \"CAMPAIGN_BIRTH\""
+        },
+        {
+          "line": 297,
+          "text": "        elif birth_score >= 70.0 and birth_eligible:"
+        },
+        {
+          "line": 298,
+          "text": "            birth_state = \"EARLY_CAMPAIGN\""
+        },
+        {
+          "line": 299,
+          "text": "        elif birth_score >= 55.0:"
+        },
+        {
+          "line": 300,
+          "text": "            birth_state = \"POTENTIAL_BIRTH\""
+        },
+        {
+          "line": 301,
+          "text": "        else:"
+        },
+        {
+          "line": 302,
+          "text": "            birth_state = \"NO_BIRTH\""
+        },
+        {
+          "line": 303,
+          "text": ""
+        },
+        {
+          "line": 304,
+          "text": "        explanation = ("
+        },
+        {
+          "line": 305,
+          "text": "            f\"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; \""
+        },
+        {
+          "line": 306,
+          "text": "            f\"MCI={master_index}, resistance={resistance_score}, \""
+        },
+        {
+          "line": 307,
+          "text": "            f\"resolution={resolution_score}, confirmations={confirmation_count}/3. \""
+        },
+        {
+          "line": 308,
+          "text": "            \"STEP7B quarantine active: score-derived birth eligibility disabled pending evidence-only lifecycle law.\""
+        },
+        {
+          "line": 309,
+          "text": "        )"
+        }
+      ]
+    }
+  ],
+  "readiness": {
+    "legacy_fallbacks_quarantined_can_advance": false,
+    "reason": "Any remaining legacy fallback or score-derived lifecycle reference must be quarantined before legacy_fallbacks_quarantined can become true."
+  },
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

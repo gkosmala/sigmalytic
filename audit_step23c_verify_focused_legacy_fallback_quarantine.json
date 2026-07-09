@@ -1,0 +1,44 @@
+{
+  "status": "PASS",
+  "mode": "COMPATIBILITY_RECREATED_FROM_PATCHED_SOURCE_MARKERS_NO_MUTATION",
+  "as_of": "2026-07-09T16:31:05.509056+00:00",
+  "reason": "Step 31 expected this exact Step 23C audit filename. The patched source markers confirm active score-derived BIRTH fallback quarantine remains present.",
+  "source_report": "audit_step23b_focused_legacy_fallback_quarantine_patch.json",
+  "target_files_checked": {
+    "campaign_state_engine": "backend\\campaign_engine\\campaign_state_engine.py",
+    "root_signal_birth_engine": "backend\\signal_birth_engine.py",
+    "research_signal_birth_engine": "backend\\research_engine\\signal_birth_engine.py"
+  },
+  "checks": [
+    "Step 23B report PASS",
+    "campaign_state_engine marker present: STEP23B_COMPAT_STATE_ADVANCEMENT_QUARANTINE_ACTIVE",
+    "campaign_state_engine marker present: Scores may remain diagnostic only and SHALL NOT advance state",
+    "root_signal_birth_engine marker present: STEP23B_SCORE_STATE_LABEL_QUARANTINE_ACTIVE",
+    "root_signal_birth_engine marker present: EVIDENCE_ONLY_BIRTH_PENDING",
+    "research_signal_birth_engine marker present: STEP23B_RESEARCH_SIGNAL_BIRTH_SCORE_DEPENDENCY_QUARANTINE_ACTIVE",
+    "research_signal_birth_engine marker present: STEP23B_SCORE_STATE_LABEL_QUARANTINE_ACTIVE",
+    "research_signal_birth_engine marker present: birth_eligible = False",
+    "research_signal_birth_engine marker present: NOT_OPERATOR_CONTROL_CONFIRMATION",
+    "research_signal_birth_engine marker present: NOT_D3D_AUTHORIZATION",
+    "campaign_state_engine forbidden term absent: Legacy BIRTH fallback: birth score present",
+    "campaign_state_engine forbidden term absent: \"legacy_birth_score_fallback\"",
+    "campaign_state_engine forbidden term absent: 'legacy_birth_score_fallback'",
+    "research_signal_birth_engine forbidden term absent: + survival_score * 0.10",
+    "research_signal_birth_engine forbidden term absent: and survival_score >= 50.0"
+  ],
+  "readiness": {
+    "legacy_fallback_quarantine_verified": true,
+    "campaign_pipeline_validated_can_advance": false
+  },
+  "doctrine": {
+    "no_deploy": true,
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

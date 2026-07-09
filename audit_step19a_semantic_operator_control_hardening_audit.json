@@ -1,0 +1,165 @@
+{
+  "mode": "LOCAL_AST_AUDIT_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "summary": {
+    "files_scanned": 384,
+    "blockers": 0,
+    "reviews": 19,
+    "syntax_failures": 0,
+    "missing_evidence_terms": []
+  },
+  "evidence_presence": {
+    "tested_supply_exhaustion": true,
+    "active_demand_validation": true,
+    "support_validation": true,
+    "structural_location": true,
+    "absence_of_contrary_failure": true
+  },
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "text_only_doctrine_strings_not_blockers": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  },
+  "syntax_failures": [],
+  "blockers": [],
+  "reviews": [
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 279,
+      "text": "operator_confirmed = bool(operator_control.get(\"operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "CONFIRMATION_TARGET_EXPLICITLY_FALSE_OR_EMPTY",
+      "path": "backend\\campaign_api.py",
+      "line": 368,
+      "text": "d3d_production_confirmed_operator_control = False"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_CONDITION_REFERENCES_SCORE_OR_GAMMA_DIAGNOSTIC_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 436,
+      "text": "elif d3d_production_confirmed_operator_control and gamma_fresh and readiness == \"FULL_CAMPAIGN_READY_DIAGNOSTIC\" and score >= 85:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_CONDITION_REFERENCES_SCORE_OR_GAMMA_DIAGNOSTIC_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 438,
+      "text": "elif d3d_production_confirmed_operator_control and not gamma_fresh:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "CONFIRMATION_TARGET_EXPLICITLY_FALSE_OR_EMPTY",
+      "path": "backend\\campaign_api.py",
+      "line": 548,
+      "text": "d3d_production_confirmed_operator_control = False"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_CONDITION_REFERENCES_SCORE_OR_GAMMA_DIAGNOSTIC_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 562,
+      "text": "elif legacy_operator_control_evidence_present and gamma_fresh:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_CONDITION_REFERENCES_SCORE_OR_GAMMA_DIAGNOSTIC_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 564,
+      "text": "elif legacy_operator_control_evidence_present and not gamma_fresh:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "CONFIRMATION_TARGET_EXPLICITLY_FALSE_OR_EMPTY",
+      "path": "backend\\campaign_api.py",
+      "line": 763,
+      "text": "operator_confirmed_rows = []"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "CONFIRMATION_TARGET_EXPLICITLY_FALSE_OR_EMPTY",
+      "path": "backend\\campaign_api.py",
+      "line": 764,
+      "text": "operator_confirmed_hard_conflict_rows = []"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "CONFIRMATION_TARGET_EXPLICITLY_FALSE_OR_EMPTY",
+      "path": "backend\\campaign_api.py",
+      "line": 765,
+      "text": "operator_confirmed_refresh_needed_rows = []"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 2668,
+      "text": "operator_control_confirmed = bool(operator_control.get(\"operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 2903,
+      "text": "operator_control_confirmed = bool(operator_control.get(\"operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_api.py",
+      "line": 6142,
+      "text": "legacy_operator_control_confirmed = _bool(d3j_row.get(\"legacy_operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 175,
+      "text": "operator_confirmed = bool(operator_control.get(\"operator_control_confirmed\", False))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 408,
+      "text": "operator_control_confirmed = bool(depth_requirement_met and evidence_count >= 3)"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\macro_anchor_behavioral_resolution_confluence_engine.py",
+      "line": 50,
+      "text": "legacy_operator_control_confirmed = _bool(d3j.get(\"legacy_operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\operator_control_confirmation_candidate_engine.py",
+      "line": 78,
+      "text": "operator_control_confirmed = bool(operator_control.get(\"operator_control_confirmed\"))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 226,
+      "text": "operator_control[\"operator_control_confirmed\"] = True"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "EXECUTABLE_OPERATOR_CONTROL_CONFIRMATION_TARGET_REVIEW",
+      "path": "backend\\campaign_engine\\wyckoff_weis_operator_confirmation_engine.py",
+      "line": 295,
+      "text": "operator_control_confirmed_current = bool(operator_control.get(\"operator_control_confirmed\"))"
+    }
+  ]
+}

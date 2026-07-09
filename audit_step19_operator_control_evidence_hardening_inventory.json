@@ -1,0 +1,2309 @@
+{
+  "mode": "LOCAL_READ_ONLY_NO_PRODUCTION_MUTATION",
+  "status": "FAIL",
+  "summary": {
+    "files_scanned": 516,
+    "findings_total": 1951,
+    "blockers": 17,
+    "reviews": 58,
+    "infos": 1876,
+    "syntax_failures": 0,
+    "missing_required_evidence_terms": [
+      "active_demand_validation"
+    ]
+  },
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  },
+  "syntax_failures": [],
+  "blockers": [
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 14,
+      "text": "execute or authorize D3D, confirm operator control, create trade signals, change"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 436,
+      "text": "elif d3d_production_confirmed_operator_control and gamma_fresh and readiness == \"FULL_CAMPAIGN_READY_DIAGNOSTIC\" and score >= 85:"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 438,
+      "text": "elif d3d_production_confirmed_operator_control and not gamma_fresh:"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 502,
+      "text": "\"d3d_production_confirmed_operator_control_ranked\": [],"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 563,
+      "text": "campaign_explanation = \"Diagnostic note: legacy operator-control evidence is present and Gamma is fresh, but operator control is not D3D production-confirmed.\""
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 565,
+      "text": "campaign_explanation = \"Diagnostic note: legacy operator-control evidence is present, but Gamma refresh is required and operator control is not D3D production-confirmed.\""
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 720,
+      "text": "\"d3d_production_confirmed_operator_control_count\": ranking_payload.get(\"d3d_production_confirmed_operator_control_count\"),"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 842,
+      "text": "\"legacy_operator_control_evidence_gamma_refresh_needed_count\": len(operator_confirmed_refresh_needed_rows),"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 862,
+      "text": "\"operator_confirmed_gamma_refresh_needed_campaigns\": operator_confirmed_refresh_needed_rows,"
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 2338,
+      "text": "\"mutation_target\": \"evidence.operator_control.operator_control_confirmed\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_api.py",
+      "line": 6405,
+      "text": "\"mutation_target_policy\": \"ONLY_FUTURE_D3D_MAY_MUTATE_EVIDENCE_OPERATOR_CONTROL_OPERATOR_CONTROL_CONFIRMED\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 179,
+      "text": "\"mutation_target\": \"evidence.operator_control.operator_control_confirmed\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 243,
+      "text": "\"mutation_target\": \"evidence.operator_control.operator_control_confirmed\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py",
+      "line": 25,
+      "text": "\"Read-only endpoints must never mutate, score, rank, transition, confirm/unconfirm operator control, or produce trade signals.\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\structural_sources\\explicit_sml_preflight_validator.py",
+      "line": 25,
+      "text": "\"Read-only endpoints must never mutate, score, rank, transition, confirm/unconfirm operator control, or produce trade signals.\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "backend\\structural_sources\\explicit_sml_source_binding_review.py",
+      "line": 25,
+      "text": "\"Read-only endpoints must never mutate, score, rank, transition, confirm/unconfirm operator control, or produce trade signals.\","
+    },
+    {
+      "severity": "BLOCKER",
+      "category": "POTENTIAL_SCORE_DERIVED_OPERATOR_CONTROL_PATH",
+      "path": "frontend\\status_center\\controlled_persistence_status_center_panel.py",
+      "line": 335,
+      "text": "authorize D3D, confirm operator control, or create trade signals."
+    }
+  ],
+  "reviews": [
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 23,
+      "text": "\"Operator control is evidence, not a score. \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 24,
+      "text": "\"Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 26,
+      "text": "\"or probability/edge calculations. Composite Operator Control requires tested supply \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 30,
+      "text": "\"Operator control is evidence, not a score. \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 31,
+      "text": "\"Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 33,
+      "text": "\"or probability/edge calculations. Composite Operator Control requires tested supply \""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 254,
+      "text": "if \"Operator control is evidence, not a score\" not in statement:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 255,
+      "text": "failures.append(\"DOCTRINE_MISSING_OPERATOR_CONTROL_EVIDENCE_NOT_SCORE\")"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 256,
+      "text": "if \"Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations\" not in statement:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 180,
+      "text": "if \"Operator control is evidence, not a score\" not in str(row.get(\"doctrine_statement\") or \"\"):"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 157,
+      "text": "if \"Operator control is evidence, not a score\" not in str(panel_model.get(\"doctrine_statement\") or \"\"):"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 25,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\operator_control_evidence_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\persistence_payload_simulation_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+      "line": 8,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\alerts\\supabase_target_table_schema_existence_audit.py",
+      "line": 13,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 310,
+      "text": "\"operator_control_not_derived_from_scores\": operator_control.get(\"not_derived_from_scores\"),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 498,
+      "text": "\"legacy_operator_control_evidence_ranked_diagnostic_only\": ["
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 562,
+      "text": "elif legacy_operator_control_evidence_present and gamma_fresh:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 564,
+      "text": "elif legacy_operator_control_evidence_present and not gamma_fresh:"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 615,
+      "text": "\"not_derived_from_scores\": match.get(\"operator_control_not_derived_from_scores\"),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 662,
+      "text": "legacy_operator_rows = list(ranking_payload.get(\"legacy_operator_control_evidence_ranked_diagnostic_only\") or [])"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 714,
+      "text": "\"operator_control_not_derived_from_scores\": True,"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_api.py",
+      "line": 719,
+      "text": "\"legacy_operator_control_evidence_count\": ranking_payload.get(\"legacy_operator_control_evidence_count\"),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 513,
+      "text": "\"depth_tier\": \"SURVIVAL_OPERATOR_CONTROL\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\external_macro_anchor_enrichment_engine.py",
+      "line": 7,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\external_macro_anchor_quality_tier_engine.py",
+      "line": 7,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\external_macro_anchor_state_alignment_engine.py",
+      "line": 10,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\macro_anchor_behavioral_resolution_confluence_engine.py",
+      "line": 9,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\macro_anchor_decision_zone_engine.py",
+      "line": 12,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\macro_anchor_high_priority_resolution_evidence_engine.py",
+      "line": 12,
+      "text": "- Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 92,
+      "text": "max(operator_dominance, obstacle_score, progress_score),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_plausibility_status_engine.py",
+      "line": 176,
+      "text": "\"not_derived_from_scores\": operator_control.get(\"not_derived_from_scores\"),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_plausibility_status_engine.py",
+      "line": 177,
+      "text": "\"not_derived_from_gamma\": operator_control.get(\"not_derived_from_gamma\"),"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 8,
+      "text": "Operator control is evidence, not a score."
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 233,
+      "text": "operator_control[\"not_derived_from_scores\"] = True"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 234,
+      "text": "operator_control[\"score_impact\"] = \"NONE\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 235,
+      "text": "operator_control[\"rank_impact\"] = \"NONE\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\intelligence\\dashboard_payload_builder.py",
+      "line": 6,
+      "text": "def build(self, rankings=None, status_center=None, opportunities=None, operator_dominance=None, research=None):"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 250,
+      "text": "ods_score = _clamp(_f(c.get(\"operator_dominance\"), 50.0))"
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py",
+      "line": 15,
+      "text": "\"Operator control is evidence, not a score.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py",
+      "line": 16,
+      "text": "\"Operator control SHALL NOT be derived from composite score, campaign score, survival score, rank, tier, gamma/options overlay, probability, edge, expected return, historical outcomes, target projections, future returns, or trade signals.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_preflight_validator.py",
+      "line": 15,
+      "text": "\"Operator control is evidence, not a score.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_preflight_validator.py",
+      "line": 16,
+      "text": "\"Operator control SHALL NOT be derived from composite score, campaign score, survival score, rank, tier, gamma/options overlay, probability, edge, expected return, historical outcomes, target projections, future returns, or trade signals.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_source_binding_review.py",
+      "line": 15,
+      "text": "\"Operator control is evidence, not a score.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "backend\\structural_sources\\explicit_sml_source_binding_review.py",
+      "line": 16,
+      "text": "\"Operator control SHALL NOT be derived from composite score, campaign score, survival score, rank, tier, gamma/options overlay, probability, edge, expected return, historical outcomes, target projections, future returns, or trade signals.\","
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "frontend\\status_center\\controlled_persistence_status_center_panel.py",
+      "line": 5,
+      "text": "DOCTRINE_STATEMENT = \"Operator control is evidence, not a score. Composite Operator Control cannot be inferred from scores, ranks, gamma overlays, probability outputs, downstream price results, future returns, trade signals, or probability/edge calculations. Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.\""
+    },
+    {
+      "severity": "REVIEW",
+      "category": "OPERATOR_REFERENCE_NEAR_SCORE_OR_SIGNAL_TERM",
+      "path": "frontend\\status_center.py",
+      "line": 506,
+      "text": "(\"21:30\", \"ODS engine \u00e2\u20ac\u201d operator dominance scores\"),"
+    }
+  ],
+  "infos": [
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+      "line": 15,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+      "line": 46,
+      "text": "\"operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+      "line": 81,
+      "text": "\"operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+      "line": 183,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+      "line": 15,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+      "line": 106,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_view_model_audit.py",
+      "line": 15,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_view_model_audit.py",
+      "line": 65,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_view_model_audit.py",
+      "line": 130,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_view_model_audit.py",
+      "line": 169,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\alert_console_view_model_audit.py",
+      "line": 186,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 7,
+      "text": "It does not confirm operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 37,
+      "text": "\"operator_control_evidence_audit_status\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 57,
+      "text": "\"operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 58,
+      "text": "\"composite_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 112,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 113,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 63,
+      "text": "\"no_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 64,
+      "text": "\"no_composite_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 96,
+      "text": "\"operator_control_evidence_audit_status\": upstream.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 138,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 139,
+      "text": "approval_packet_blockers.append(\"OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 140,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 141,
+      "text": "approval_packet_blockers.append(\"COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 176,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 177,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 243,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 244,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+      "line": 277,
+      "text": "\"operator_control_evidence_audit_status\": preflight.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 7,
+      "text": "It never confirms operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 42,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 43,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 59,
+      "text": "\"operator_control_evidence_audit_status\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 79,
+      "text": "\"operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 80,
+      "text": "\"composite_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 114,
+      "text": "\"operator_control_evidence_audit_status\": \"NOT_OPERATOR_CONTROL_CONFIRMATION\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 36,
+      "text": "\"operator_control_evidence_complete\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 44,
+      "text": "\"operator_control_confirmation_authorization\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 81,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 82,
+      "text": "readiness_blockers.append(\"OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 83,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 84,
+      "text": "readiness_blockers.append(\"COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 108,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 109,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 123,
+      "text": "\"operator_control_evidence_status\": row.get(\"operator_control_evidence_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 124,
+      "text": "\"operator_control_evidence_complete\": row.get(\"operator_control_evidence_complete\") is True,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 127,
+      "text": "\"operator_control_evidence_audit_status\": upstream.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 178,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 179,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+      "line": 197,
+      "text": "\"operator_control_evidence_audit_status\": contract.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 35,
+      "text": "\"operator_control_evidence_audit_status\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 43,
+      "text": "\"operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 44,
+      "text": "\"composite_operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 80,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 81,
+      "text": "contract_blockers.append(\"OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 82,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 83,
+      "text": "contract_blockers.append(\"COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 108,
+      "text": "\"operator_control_evidence_status\": row.get(\"operator_control_evidence_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 109,
+      "text": "\"operator_control_evidence_complete\": row.get(\"operator_control_evidence_complete\") is True,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 112,
+      "text": "\"operator_control_evidence_audit_status\": upstream.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 114,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 115,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 167,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 168,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+      "line": 183,
+      "text": "\"operator_control_evidence_audit_status\": d3d_gate.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 48,
+      "text": "\"operator_control_evidence\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 81,
+      "text": "\"no_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 82,
+      "text": "\"no_composite_operator_control_confirmation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 120,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 121,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 133,
+      "text": "_chain_card(name=\"operator_control_evidence\", status=packet.get(\"operator_control_evidence_audit_status\")),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 169,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 170,
+      "text": "blockers.append(\"OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 171,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 172,
+      "text": "blockers.append(\"COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 211,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 212,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 280,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 281,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+      "line": 317,
+      "text": "\"operator_control_evidence_audit_status\": approval_packet.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 71,
+      "text": "\"NO_OPERATOR_CONTROL_CONFIRMATION\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 89,
+      "text": "\"no_confirm_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 90,
+      "text": "\"no_confirm_composite_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 141,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 142,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 161,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 162,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 206,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 207,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 273,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 274,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+      "line": 314,
+      "text": "\"operator_control_evidence_audit_status\": console.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 13,
+      "text": "\"operator_control_evidence\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 62,
+      "text": "\"operator_control_evidence_audit_status\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 71,
+      "text": "\"operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 72,
+      "text": "\"composite_operator_control_confirmed\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 130,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 131,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 222,
+      "text": "# This patch does not confirm operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 258,
+      "text": "if \"Composite Operator Control equals tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure\" not in statement:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 259,
+      "text": "failures.append(\"DOCTRINE_MISSING_COMPOSITE_OPERATOR_CONTROL_DEFINITION\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 305,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 306,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 334,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 335,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+      "line": 396,
+      "text": "\"operator_control_evidence_audit_status\": visual_smoke_payload.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 35,
+      "text": "EXPECTED_OPERATOR_CONTROL_STATUS = \"NOT_OPERATOR_CONTROL_CONFIRMATION\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 45,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 46,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 84,
+      "text": "\"operator_control_status_matches\": ("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 85,
+      "text": "row.get(\"operator_control_evidence_audit_status\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 86,
+      "text": "== EXPECTED_OPERATOR_CONTROL_STATUS"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 106,
+      "text": "\"lifecycle_operator_control_evidence_audit_status\": row.get("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+      "line": 107,
+      "text": "\"operator_control_evidence_audit_status\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 10,
+      "text": "It does not confirm operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 32,
+      "text": "EXPECTED_OPERATOR_CONTROL_STATUS = \"NOT_OPERATOR_CONTROL_CONFIRMATION\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 42,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 43,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 81,
+      "text": "\"operator_control_status_matches\": ("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 82,
+      "text": "row.get(\"operator_control_evidence_audit_status\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 83,
+      "text": "== EXPECTED_OPERATOR_CONTROL_STATUS"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 103,
+      "text": "\"closure_operator_control_evidence_audit_status\": row.get("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+      "line": 104,
+      "text": "\"operator_control_evidence_audit_status\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 17,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 18,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 79,
+      "text": "\"no_confirm_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 80,
+      "text": "\"no_confirm_composite_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 94,
+      "text": "\"NO_OPERATOR_CONTROL_CONFIRMATION\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 144,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 145,
+      "text": "failures.append(\"ROW_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 146,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 147,
+      "text": "failures.append(\"ROW_COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 193,
+      "text": "if card.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 194,
+      "text": "failures.append(\"CARD_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 195,
+      "text": "if card.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 196,
+      "text": "failures.append(\"CARD_COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 210,
+      "text": "if summary.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 211,
+      "text": "failures.append(\"SUMMARY_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 212,
+      "text": "if summary.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 213,
+      "text": "failures.append(\"SUMMARY_COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 262,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 263,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 302,
+      "text": "if panel.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 303,
+      "text": "visual_failures.append(\"PANEL_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 304,
+      "text": "if panel.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 305,
+      "text": "visual_failures.append(\"PANEL_COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 373,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 374,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 394,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 395,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 429,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 430,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+      "line": 483,
+      "text": "\"operator_control_evidence_audit_status\": wiring_payload.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 13,
+      "text": "# It does not confirm operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 62,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 63,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 127,
+      "text": "if panel_model.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 128,
+      "text": "failures.append(\"PANEL_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 129,
+      "text": "if panel_model.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 130,
+      "text": "failures.append(\"PANEL_COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_DRIFT\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 196,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 197,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+      "line": 246,
+      "text": "\"operator_control_evidence_audit_status\": mount_payload.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 20,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 21,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 84,
+      "text": "\"NO_OPERATOR_CONTROL_CONFIRMATION\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 104,
+      "text": "\"no_confirm_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 105,
+      "text": "\"no_confirm_composite_operator_control_button\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 159,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 160,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 181,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 182,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 227,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 228,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 308,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 309,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+      "line": 353,
+      "text": "\"operator_control_evidence_audit_status\": frontend_contract.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 8,
+      "text": "It does not confirm operator control."
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 29,
+      "text": "EXPECTED_OPERATOR_CONTROL_STATUS = \"NOT_OPERATOR_CONTROL_CONFIRMATION\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 39,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 40,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 77,
+      "text": "\"operator_control_status_matches\": ("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 78,
+      "text": "row.get(\"operator_control_evidence_audit_status\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 79,
+      "text": "== EXPECTED_OPERATOR_CONTROL_STATUS"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 99,
+      "text": "\"readback_operator_control_evidence_audit_status\": row.get("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+      "line": 100,
+      "text": "\"operator_control_evidence_audit_status\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 3,
+      "text": "from backend.alerts.operator_control_evidence_audit import ("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 4,
+      "text": "run_read_only_operator_control_evidence_audit,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 16,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 17,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 45,
+      "text": "evidence_status = str(row.get(\"operator_control_evidence_status\") or \"\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 46,
+      "text": "evidence_complete = row.get(\"operator_control_evidence_complete\") is True"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 50,
+      "text": "if str(item) != \"NO_OPERATOR_CONTROL_EVIDENCE_BLOCKER_READ_ONLY\""
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 53,
+      "text": "blocked_reasons.append(\"OPERATOR_CONTROL_EVIDENCE_NOT_COMPLETE_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 54,
+      "text": "if row.get(\"operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 55,
+      "text": "blocked_reasons.append(\"OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_IN_DRY_RUN_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 56,
+      "text": "if row.get(\"composite_operator_control_confirmed\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 57,
+      "text": "blocked_reasons.append(\"COMPOSITE_OPERATOR_CONTROL_CONFIRMATION_NOT_ALLOWED_IN_DRY_RUN_READ_ONLY\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 73,
+      "text": "\"operator_control_evidence_status\": evidence_status,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 74,
+      "text": "\"operator_control_evidence_complete\": evidence_complete,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 75,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 76,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 92,
+      "text": "def build_read_only_d3d_dry_run_gate_from_operator_control("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 96,
+      "text": "operator_rows = _as_list(operator.get(\"operator_control_rows\"))"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 126,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 127,
+      "text": "\"composite_operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 138,
+      "text": "\"operator_control_evidence_audit_status\": operator.get(\"operator_control_evidence_audit_status\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 167,
+      "text": "operator = run_read_only_operator_control_evidence_audit("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+      "line": 174,
+      "text": "return build_read_only_d3d_dry_run_gate_from_operator_control("
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 15,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 30,
+      "text": "\"tested_supply_exhaustion\","
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 31,
+      "text": "\"active_demand_support_validation\","
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 33,
+      "text": "\"absence_of_contrary_failure\","
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 35,
+      "text": "REQUIRED_STRUCTURAL_LOCATION_INPUTS = ["
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 72,
+      "text": "def _structural_location_payload(evidence_payload: Dict[str, Any]) -> Dict[str, Any]:"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 76,
+      "text": "alt = evidence_payload.get(\"structural_location\")"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 85,
+      "text": "structural_location_payload = _structural_location_payload(evidence_payload)"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 90,
+      "text": "missing_structural_location_inputs = _missing_required_keys("
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 91,
+      "text": "structural_location_payload,"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 92,
+      "text": "REQUIRED_STRUCTURAL_LOCATION_INPUTS,"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 98,
+      "text": "elif missing_evidence_families or missing_structural_location_inputs:"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 112,
+      "text": "\"required_structural_location_inputs\": list(REQUIRED_STRUCTURAL_LOCATION_INPUTS),"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 113,
+      "text": "\"missing_structural_location_inputs\": missing_structural_location_inputs,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 121,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 172,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "REQUIRED_EVIDENCE_TERM_PRESENT",
+      "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+      "line": 197,
+      "text": "\"required_structural_location_inputs\": list(REQUIRED_STRUCTURAL_LOCATION_INPUTS),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 43,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 136,
+      "text": "\"confirms_operator_control\": bar_result.get(\"confirms_operator_control\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 158,
+      "text": "\"operator_control_confirmed_by_this_adapter\": source_result.get(\"operator_control_confirmed_by_this_adapter\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 192,
+      "text": "if bar_result.get(\"confirms_operator_control\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 196,
+      "text": "\"field\": \"confirms_operator_control\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 198,
+      "text": "\"actual\": bar_result.get(\"confirms_operator_control\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 201,
+      "text": "if source_result.get(\"operator_control_confirmed_by_this_adapter\") is not False:"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 205,
+      "text": "\"field\": \"operator_control_confirmed_by_this_adapter\","
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 207,
+      "text": "\"actual\": source_result.get(\"operator_control_confirmed_by_this_adapter\"),"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 247,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 272,
+      "text": "\"confirms_operator_control\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 308,
+      "text": "\"operator_control_confirmed_by_this_adapter\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_data_adapter.py",
+      "line": 351,
+      "text": "\"operator_control_confirmed\": False,"
+    },
+    {
+      "severity": "INFO",
+      "category": "OPERATOR_OR_EVIDENCE_REFERENCE",
+      "path": "backend\\alerts\\live_readiness_audit.py",
+      "line": 13,
+      "text": "\"operator_control_confirmed\": False,"
+    }
+  ],
+  "missing_required_evidence_terms": [
+    "active_demand_validation"
+  ]
+}

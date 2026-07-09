@@ -1,4 +1,4 @@
-﻿"""
+"""
 SAVE AS:
 backend/campaign_engine/campaign_state_engine.py
 
@@ -443,21 +443,12 @@ class CampaignStateEngine:
                     ],
                 }
 
-            # Temporary compatibility fallback. This preserves the already-working
-            # discovery flow until the explicit evidence payload is fully wired
-            # into every campaign record. Only BIRTH may use this fallback.
-            if birth_score >= 55:
-                return {
-                    "state": CampaignState.BIRTH,
-                    "transition_score": evidence_density_score,
-                    "advance_allowed": True,
-                    "failure_risk": False,
-                    "reason": (
-                        "Legacy BIRTH fallback: birth score present, but full evidence payload "
-                        "is not yet available."
-                    ),
-                    "transition_reason": ["legacy_birth_score_fallback"],
-                }
+            # STEP23B_COMPAT_STATE_ADVANCEMENT_QUARANTINE_ACTIVE
+            # Score-derived compatibility advancement is disabled.
+            # Lifecycle advancement requires evidence-only transition law.
+            # Scores may remain diagnostic only and SHALL NOT advance state.
+            score_compatibility_advancement_diagnostic = bool(float(birth_score or 0) >= 55)
+            _ = score_compatibility_advancement_diagnostic
 
             return {
                 "state": CampaignState.NO_CAMPAIGN,

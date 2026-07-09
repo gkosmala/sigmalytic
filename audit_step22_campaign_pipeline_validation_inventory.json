@@ -1,0 +1,77 @@
+{
+  "mode": "LOCAL_READ_ONLY_SOURCE_AUDIT_NO_NIGHTLY_RUN_NO_WRITE",
+  "status": "FAIL",
+  "readiness_can_advance_now": false,
+  "reason": "This is an inventory only. campaign_pipeline_validated must remain false until a production-read-only pipeline coverage snapshot confirms universe count, bar coverage, minimum bar depth, pagination completeness, schema alignment, and no write-side execution during validation.",
+  "failures": [
+    "missing source coverage term group: universe_loading requires ['universe', 'alpaca']",
+    "missing source coverage term group: persistence_boundary requires ['supabase', 'insert', 'upsert', 'write']"
+  ],
+  "warnings": [
+    "warning pattern in backend\\campaign_engine\\campaign_state_engine.py:456: \"Legacy BIRTH fallback: birth score present, but full evidence payload \"",
+    "warning pattern in backend\\campaign_engine\\campaign_state_engine.py:456: \"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+  ],
+  "syntax_results": {
+    "nightly_pipeline": {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "ok": true,
+      "error": null
+    },
+    "campaign_state_engine": {
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "ok": true,
+      "error": null
+    },
+    "campaign_store": {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "ok": true,
+      "error": null
+    },
+    "campaign_api": {
+      "path": "backend\\campaign_api.py",
+      "ok": true,
+      "error": null
+    }
+  },
+  "term_results": {
+    "universe_loading": false,
+    "bar_fetching": true,
+    "campaign_evaluation": true,
+    "persistence_boundary": false,
+    "state_handling": true
+  },
+  "blocking_findings": [],
+  "warning_findings": [
+    {
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "Legacy BIRTH fallback",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "pattern": "birth score present",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+    }
+  ],
+  "required_future_pipeline_validation_snapshot": {
+    "universe_count": "required",
+    "bars_symbols_count": "required",
+    "symbols_missing_bars": "must be empty or explained",
+    "record_min_bars": "must meet configured threshold",
+    "pagination_complete": "must be true",
+    "schema_payload_alignment": "must be true",
+    "write_path_not_executed_during_validation": "must be true"
+  },
+  "doctrine": {
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

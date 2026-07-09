@@ -1,3 +1,9 @@
+# STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_IMPORT
+try:
+    from campaign_pipeline_validation_api import campaign_pipeline_validation_router
+except Exception:
+    from backend.campaign_pipeline_validation_api import campaign_pipeline_validation_router
+
 """
 SAVE AS:
 backend/main.py
@@ -1289,3 +1295,7 @@ except Exception as _d3e9_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_INCLUDE
+if campaign_pipeline_validation_router is not None:
+    app.include_router(campaign_pipeline_validation_router)

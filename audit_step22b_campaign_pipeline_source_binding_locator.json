@@ -1,0 +1,5286 @@
+{
+  "mode": "LOCAL_READ_ONLY_SOURCE_LOCATOR_NO_NIGHTLY_RUN_NO_WRITE",
+  "status": "PASS",
+  "summary": {
+    "files_scanned": 370,
+    "pipeline_related_files": 206,
+    "syntax_failures": 0,
+    "missing_groups": [],
+    "legacy_fallback_hits": 1
+  },
+  "missing_groups": [],
+  "syntax_failures": [],
+  "pipeline_related_files": [
+    "backend\\access_control.py",
+    "backend\\alerts\\__init__.py",
+    "backend\\alerts\\alert_console_frontend_contract_audit.py",
+    "backend\\alerts\\alert_console_snapshot_audit.py",
+    "backend\\alerts\\alert_console_view_model_audit.py",
+    "backend\\alerts\\controlled_append_only_audit_write_route.py",
+    "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+    "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+    "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+    "backend\\alerts\\controlled_persistence_contract_audit.py",
+    "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+    "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+    "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+    "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+    "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+    "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+    "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+    "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+    "backend\\alerts\\controlled_post_write_readback_verification.py",
+    "backend\\alerts\\d3d_dry_run_gate_audit.py",
+    "backend\\alerts\\evidence_payload_completeness_audit.py",
+    "backend\\alerts\\live_data_adapter.py",
+    "backend\\alerts\\live_readiness_audit.py",
+    "backend\\alerts\\live_readiness_batch_audit.py",
+    "backend\\alerts\\operator_control_evidence_audit.py",
+    "backend\\alerts\\persistence_payload_simulation_audit.py",
+    "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+    "backend\\alerts\\read_only_alert_fusion.py",
+    "backend\\alerts\\source_coverage_completion_audit.py",
+    "backend\\alerts\\source_gap_audit.py",
+    "backend\\alerts\\source_gap_dashboard_audit.py",
+    "backend\\alerts\\source_gap_remediation_audit.py",
+    "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+    "backend\\alerts\\supabase_target_table_schema_existence_audit.py",
+    "backend\\alerts_api.py",
+    "backend\\analog_engine\\analog_engine.py",
+    "backend\\behavioral_memory.py",
+    "backend\\behavioral_transition_engine.py",
+    "backend\\billing_router.py",
+    "backend\\campaign_api.py",
+    "backend\\campaign_cache.py",
+    "backend\\campaign_detail_api.py",
+    "backend\\campaign_engine\\__init__.py",
+    "backend\\campaign_engine\\campaign_alert_engine.py",
+    "backend\\campaign_engine\\campaign_alignment_engine.py",
+    "backend\\campaign_engine\\campaign_audit_engine.py",
+    "backend\\campaign_engine\\campaign_backtest_engine.py",
+    "backend\\campaign_engine\\campaign_decay_engine.py",
+    "backend\\campaign_engine\\campaign_discovery_engine.py",
+    "backend\\campaign_engine\\campaign_entry_engine.py",
+    "backend\\campaign_engine\\campaign_evidence_builder.py",
+    "backend\\campaign_engine\\campaign_execution_engine.py",
+    "backend\\campaign_engine\\campaign_exit_engine.py",
+    "backend\\campaign_engine\\campaign_fractal_engine.py",
+    "backend\\campaign_engine\\campaign_lifecycle_manager.py",
+    "backend\\campaign_engine\\campaign_metrics.py",
+    "backend\\campaign_engine\\campaign_models.py",
+    "backend\\campaign_engine\\campaign_monitor.py",
+    "backend\\campaign_engine\\campaign_persistence.py",
+    "backend\\campaign_engine\\campaign_position_engine.py",
+    "backend\\campaign_engine\\campaign_projection_engine.py",
+    "backend\\campaign_engine\\campaign_quality_engine.py",
+    "backend\\campaign_engine\\campaign_ranker.py",
+    "backend\\campaign_engine\\campaign_ranking_engine.py",
+    "backend\\campaign_engine\\campaign_registry.py",
+    "backend\\campaign_engine\\campaign_renko_engine.py",
+    "backend\\campaign_engine\\campaign_reporting.py",
+    "backend\\campaign_engine\\campaign_risk_engine.py",
+    "backend\\campaign_engine\\campaign_scheduler.py",
+    "backend\\campaign_engine\\campaign_scoring_engine.py",
+    "backend\\campaign_engine\\campaign_signal_engine.py",
+    "backend\\campaign_engine\\campaign_state_engine.py",
+    "backend\\campaign_engine\\campaign_state_machine.py",
+    "backend\\campaign_engine\\campaign_store.py",
+    "backend\\campaign_engine\\campaign_survival_engine.py",
+    "backend\\campaign_engine\\campaign_transition_engine.py",
+    "backend\\campaign_engine\\campaign_ucr_engine.py",
+    "backend\\campaign_engine\\campaign_validation_engine.py",
+    "backend\\campaign_engine\\campaign_weiswave_engine.py",
+    "backend\\campaign_engine\\diagnostic_doctrine_classifier.py",
+    "backend\\campaign_engine\\early_operator_footprint_engine.py",
+    "backend\\campaign_engine\\explicit_geometry_sml_diagnostic_engine.py",
+    "backend\\campaign_engine\\explicit_sml_taxonomy_audit_engine.py",
+    "backend\\campaign_engine\\explicit_upper_zone_diagnostic_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_enrichment_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_quality_tier_engine.py",
+    "backend\\campaign_engine\\external_macro_anchor_state_alignment_engine.py",
+    "backend\\campaign_engine\\fractal_router.py",
+    "backend\\campaign_engine\\macro_anchor_behavioral_resolution_confluence_engine.py",
+    "backend\\campaign_engine\\macro_anchor_decision_zone_engine.py",
+    "backend\\campaign_engine\\macro_anchor_high_priority_resolution_evidence_engine.py",
+    "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+    "backend\\campaign_engine\\operator_control_classifier.py",
+    "backend\\campaign_engine\\operator_control_confirmation_candidate_engine.py",
+    "backend\\campaign_engine\\operator_control_evidence_contract.py",
+    "backend\\campaign_engine\\operator_control_plausibility_status_engine.py",
+    "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+    "backend\\campaign_engine\\operator_dominance_engine_full.py",
+    "backend\\campaign_engine\\operator_flow_tracker.py",
+    "backend\\campaign_engine\\structural_location_input_review_engine.py",
+    "backend\\campaign_engine\\structural_location_validation_engine.py",
+    "backend\\campaign_engine\\symbol_behavior_profile.py",
+    "backend\\campaign_engine\\weis_gamma_ranking_engine.py",
+    "backend\\campaign_engine\\weis_phase_engine.py",
+    "backend\\campaign_engine\\wyckoff_signal_bridge.py",
+    "backend\\campaign_engine\\wyckoff_weis_operator_confirmation_engine.py",
+    "backend\\campaign_event_bus.py",
+    "backend\\campaign_monitor.py",
+    "backend\\campaign_registry.py",
+    "backend\\campaign_scheduler.py",
+    "backend\\campaign_service.py",
+    "backend\\confluence_bridge.py",
+    "backend\\csv_import.py",
+    "backend\\email_service.py",
+    "backend\\evidence\\weis_gamma_fusion_engine.py",
+    "backend\\gamma\\alpaca_option_chain_adapter.py",
+    "backend\\gamma\\gamma_freshness_engine.py",
+    "backend\\gamma\\zero_dte_squeeze_engine.py",
+    "backend\\gann_engine.py",
+    "backend\\gex_engine.py",
+    "backend\\historical_attribution_backtest.py",
+    "backend\\intelligence\\campaign_closure_engine.py",
+    "backend\\intelligence\\campaign_fusion_engine.py",
+    "backend\\intelligence\\campaign_intelligence_engine.py",
+    "backend\\intelligence\\campaign_orchestrator.py",
+    "backend\\intelligence\\campaign_outcome_engine.py",
+    "backend\\intelligence\\campaign_signal_router.py",
+    "backend\\intelligence\\dashboard_payload_builder.py",
+    "backend\\intelligence\\fractal_alignment_engine.py",
+    "backend\\intelligence\\intelligence_pipeline.py",
+    "backend\\intelligence\\opportunity_builder.py",
+    "backend\\intelligence\\portfolio_intelligence_engine.py",
+    "backend\\intelligence\\position_sizing_api.py",
+    "backend\\intelligence\\position_sizing_engine.py",
+    "backend\\intelligence\\ranking_payload_builder.py",
+    "backend\\intelligence\\research_orchestrator.py",
+    "backend\\intelligence\\signal_decay_monitor.py",
+    "backend\\intelligence\\signal_state_machine.py",
+    "backend\\intelligence\\state_transition_engine.py",
+    "backend\\intelligence\\status_center_builder.py",
+    "backend\\intelligence\\subscriber_alerts.py",
+    "backend\\intelligence_api.py",
+    "backend\\intelligence_service.py",
+    "backend\\legal_pages.py",
+    "backend\\main.py",
+    "backend\\market_data\\read_only_ohlcv_adapter.py",
+    "backend\\multitimeframe_behavioral_backtest.py",
+    "backend\\operator_dominance\\campaign_control_engine.py",
+    "backend\\operator_dominance\\livermore_score_engine.py",
+    "backend\\operator_dominance\\ods_renko_engine.py",
+    "backend\\operator_dominance\\ods_weiswave_engine.py",
+    "backend\\operator_dominance\\operator_dominance_engine.py",
+    "backend\\operator_dominance\\renko_engine.py",
+    "backend\\operator_dominance\\weis_score_engine.py",
+    "backend\\operator_dominance\\wyckoff_score_engine.py",
+    "backend\\persons_pivots.py",
+    "backend\\portfolio_api.py",
+    "backend\\preferences_router.py",
+    "backend\\preferences_tab.py",
+    "backend\\qualified_long_signal_audit.py",
+    "backend\\radar_service.py",
+    "backend\\research_api.py",
+    "backend\\research_engine\\__init__.py",
+    "backend\\research_engine\\campaign_birth_engine.py",
+    "backend\\research_engine\\campaign_confirmation_engine.py",
+    "backend\\research_engine\\campaign_distribution_engine.py",
+    "backend\\research_engine\\campaign_expansion_engine.py",
+    "backend\\research_engine\\campaign_lifecycle_engine.py",
+    "backend\\research_engine\\campaign_projection_engine.py",
+    "backend\\research_engine\\campaign_timeline_validator.py",
+    "backend\\research_engine\\campaign_validation_runner.py",
+    "backend\\research_engine\\fractal_alignment_engine.py",
+    "backend\\research_engine\\livermore_survival_engine.py",
+    "backend\\research_engine\\livermore_verdict_engine.py",
+    "backend\\research_engine\\master_campaign_index.py",
+    "backend\\research_engine\\master_survival_index.py",
+    "backend\\research_engine\\mta_engine.py",
+    "backend\\research_engine\\renko_engine.py",
+    "backend\\research_engine\\research_orchestrator.py",
+    "backend\\research_engine\\research_renko_engine.py",
+    "backend\\research_engine\\research_weiswave_engine.py",
+    "backend\\research_engine\\signal_birth_engine.py",
+    "backend\\research_engine\\sot_detector.py",
+    "backend\\research_engine\\survival_engine.py",
+    "backend\\research_engine\\vsa_weis_overlay.py",
+    "backend\\research_engine\\weis_survival_engine.py",
+    "backend\\research_engine\\weis_verdict_engine.py",
+    "backend\\research_engine\\weis_wave_engine.py",
+    "backend\\research_engine\\wyckoff_survival_engine.py",
+    "backend\\research_engine\\wyckoff_verdict_engine.py",
+    "backend\\scoreboard_service.py",
+    "backend\\signal_birth_engine.py",
+    "backend\\snapshot_service.py",
+    "backend\\status_center_api.py",
+    "backend\\structural\\multi_scale_weis_engine.py",
+    "backend\\structural\\weis_wave_engine.py",
+    "backend\\structural_sources\\explicit_sml_contract.py",
+    "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py",
+    "backend\\structural_sources\\explicit_sml_preflight_validator.py",
+    "backend\\structural_sources\\explicit_sml_source_binding_review.py",
+    "backend\\supabase_bars.py",
+    "backend\\supabase_isolation.py",
+    "backend\\trade_journal_api.py",
+    "backend\\trade_journal_service.py",
+    "backend\\weis_wave.py",
+    "backend\\wyckoff_anchor.py"
+  ],
+  "imports_by_pipeline_related_file": {
+    "backend\\access_control.py": [
+      "fastapi.HTTPException",
+      "fastapi.status",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\alerts\\__init__.py": [
+      "read_only_alert_fusion.Bar",
+      "read_only_alert_fusion.ExplicitStructuralSource",
+      "read_only_alert_fusion.GUARDRAILS",
+      "read_only_alert_fusion.assert_no_drift_guardrails",
+      "read_only_alert_fusion.evaluate_alert_a_immediate_20_bar_tape",
+      "read_only_alert_fusion.evaluate_alert_b_campaign_context",
+      "read_only_alert_fusion.evaluate_alert_c_read_only_fusion",
+      "read_only_alert_fusion.run_read_only_alert_review"
+    ],
+    "backend\\alerts\\alert_console_frontend_contract_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.alert_console_view_model_audit.run_read_only_alert_console_view_model_audit"
+    ],
+    "backend\\alerts\\alert_console_snapshot_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.source_gap_dashboard_audit.run_read_only_alert_source_gap_dashboard_audit"
+    ],
+    "backend\\alerts\\alert_console_view_model_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.alert_console_snapshot_audit.run_read_only_alert_console_snapshot_audit"
+    ],
+    "backend\\alerts\\controlled_append_only_audit_write_route.py": [
+      "__future__.annotations",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Mapping",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.supabase_append_only_write_preflight_authorization_gate.run_read_only_supabase_append_only_write_preflight_authorization_gate"
+    ],
+    "backend\\alerts\\controlled_one_row_append_only_audit_insert.py": [
+      "__future__.annotations",
+      "json",
+      "os",
+      "urllib.error",
+      "urllib.request",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Mapping",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\controlled_persistence_activation_readiness_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_contract_audit.run_read_only_controlled_persistence_contract_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_contract_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.d3d_dry_run_gate_audit.run_read_only_d3d_dry_run_gate_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_decision_console_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_append_only_write_approval_packet_audit.run_read_only_controlled_append_only_write_approval_packet_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_decision_console_audit.run_read_only_controlled_persistence_decision_console_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_status_center_frontend_visual_smoke_test_audit.run_read_only_controlled_persistence_status_center_frontend_visual_smoke_test_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py": [
+      "__future__.annotations",
+      "json",
+      "os",
+      "urllib.error",
+      "urllib.parse",
+      "urllib.request",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Mapping",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py": [
+      "__future__.annotations",
+      "json",
+      "os",
+      "urllib.error",
+      "urllib.parse",
+      "urllib.request",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Mapping",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_status_center_ui_implementation_wiring_audit.run_read_only_controlled_persistence_status_center_ui_implementation_wiring_audit"
+    ],
+    "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_status_center_ui_mount_audit.run_read_only_controlled_persistence_status_center_ui_mount_audit",
+      "importlib.util",
+      "pathlib.Path"
+    ],
+    "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_decision_console_frontend_contract_audit.run_read_only_controlled_persistence_decision_console_frontend_contract_audit"
+    ],
+    "backend\\alerts\\controlled_post_write_readback_verification.py": [
+      "__future__.annotations",
+      "json",
+      "os",
+      "urllib.error",
+      "urllib.parse",
+      "urllib.request",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Mapping",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\d3d_dry_run_gate_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.operator_control_evidence_audit.run_read_only_operator_control_evidence_audit"
+    ],
+    "backend\\alerts\\evidence_payload_completeness_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.source_coverage_completion_audit.run_read_only_source_coverage_completion_audit"
+    ],
+    "backend\\alerts\\live_data_adapter.py": [
+      "__future__.annotations",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Optional",
+      "backend.alerts.read_only_alert_fusion.Bar",
+      "backend.alerts.read_only_alert_fusion.ExplicitStructuralSource",
+      "backend.alerts.read_only_alert_fusion.GUARDRAILS",
+      "backend.alerts.read_only_alert_fusion.assert_no_drift_guardrails",
+      "backend.alerts.read_only_alert_fusion.run_read_only_alert_review",
+      "backend.market_data.read_only_ohlcv_adapter.load_read_only_ohlcv_bars_for_d4b_candidate",
+      "backend.structural_sources.explicit_sml_source_adapter.load_explicit_sml_records_read_only"
+    ],
+    "backend\\alerts\\live_readiness_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "backend.alerts.live_data_adapter.run_read_only_live_alert_review"
+    ],
+    "backend\\alerts\\live_readiness_batch_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "backend.alerts.live_readiness_audit.run_read_only_live_readiness_audit"
+    ],
+    "backend\\alerts\\operator_control_evidence_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.evidence_payload_completeness_audit.run_read_only_evidence_payload_completeness_audit"
+    ],
+    "backend\\alerts\\persistence_payload_simulation_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.persistence_write_permission_manifest_audit.run_read_only_persistence_write_permission_manifest_audit"
+    ],
+    "backend\\alerts\\persistence_write_permission_manifest_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.controlled_persistence_activation_readiness_audit.run_read_only_controlled_persistence_activation_readiness_audit"
+    ],
+    "backend\\alerts\\read_only_alert_fusion.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Iterable",
+      "typing.Optional"
+    ],
+    "backend\\alerts\\source_coverage_completion_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.source_gap_dashboard_audit.run_read_only_alert_source_gap_dashboard_audit"
+    ],
+    "backend\\alerts\\source_gap_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.live_readiness_batch_audit.run_read_only_live_readiness_batch_audit"
+    ],
+    "backend\\alerts\\source_gap_dashboard_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.source_gap_remediation_audit.run_read_only_alert_source_gap_remediation_audit"
+    ],
+    "backend\\alerts\\source_gap_remediation_audit.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.source_gap_audit.run_read_only_alert_source_gap_audit"
+    ],
+    "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.alerts.supabase_target_table_schema_existence_audit.run_read_only_supabase_target_table_schema_existence_audit"
+    ],
+    "backend\\alerts\\supabase_target_table_schema_existence_audit.py": [
+      "__future__.annotations",
+      "json",
+      "os",
+      "urllib.error",
+      "urllib.parse",
+      "urllib.request",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "backend.alerts.persistence_payload_simulation_audit.run_read_only_persistence_payload_simulation_audit"
+    ],
+    "backend\\alerts_api.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "fastapi.APIRouter",
+      "fastapi.Body",
+      "backend.alerts.Bar",
+      "backend.alerts.ExplicitStructuralSource",
+      "backend.alerts.GUARDRAILS",
+      "backend.alerts.assert_no_drift_guardrails",
+      "backend.alerts.run_read_only_alert_review",
+      "backend.alerts.live_data_adapter.run_read_only_live_alert_review",
+      "backend.alerts.live_readiness_audit.run_read_only_live_readiness_audit",
+      "backend.alerts.live_readiness_batch_audit.run_read_only_live_readiness_batch_audit",
+      "backend.alerts.source_gap_audit.run_read_only_alert_source_gap_audit",
+      "backend.alerts.source_gap_remediation_audit.run_read_only_alert_source_gap_remediation_audit",
+      "backend.alerts.source_gap_dashboard_audit.run_read_only_alert_source_gap_dashboard_audit",
+      "backend.alerts.alert_console_snapshot_audit.run_read_only_alert_console_snapshot_audit",
+      "backend.alerts.alert_console_view_model_audit.run_read_only_alert_console_view_model_audit",
+      "backend.alerts.alert_console_frontend_contract_audit.run_read_only_alert_console_frontend_contract_audit",
+      "backend.alerts.source_coverage_completion_audit.run_read_only_source_coverage_completion_audit",
+      "backend.alerts.evidence_payload_completeness_audit.run_read_only_evidence_payload_completeness_audit",
+      "backend.alerts.operator_control_evidence_audit.run_read_only_operator_control_evidence_audit",
+      "backend.alerts.d3d_dry_run_gate_audit.run_read_only_d3d_dry_run_gate_audit",
+      "backend.alerts.controlled_persistence_contract_audit.run_read_only_controlled_persistence_contract_audit",
+      "backend.alerts.controlled_persistence_activation_readiness_audit.run_read_only_controlled_persistence_activation_readiness_audit",
+      "backend.alerts.persistence_write_permission_manifest_audit.run_read_only_persistence_write_permission_manifest_audit",
+      "backend.alerts.persistence_payload_simulation_audit.run_read_only_persistence_payload_simulation_audit",
+      "backend.alerts.supabase_target_table_schema_existence_audit.run_read_only_supabase_target_table_schema_existence_audit",
+      "backend.alerts.supabase_append_only_write_preflight_authorization_gate.run_read_only_supabase_append_only_write_preflight_authorization_gate",
+      "backend.alerts.controlled_append_only_write_approval_packet_audit.run_read_only_controlled_append_only_write_approval_packet_audit",
+      "backend.alerts.controlled_persistence_decision_console_audit.run_read_only_controlled_persistence_decision_console_audit",
+      "backend.alerts.controlled_persistence_decision_console_frontend_contract_audit.run_read_only_controlled_persistence_decision_console_frontend_contract_audit",
+      "backend.alerts.controlled_persistence_status_center_ui_mount_audit.run_read_only_controlled_persistence_status_center_ui_mount_audit",
+      "backend.alerts.controlled_persistence_status_center_ui_implementation_wiring_audit.run_read_only_controlled_persistence_status_center_ui_implementation_wiring_audit",
+      "backend.alerts.controlled_persistence_status_center_frontend_visual_smoke_test_audit.run_read_only_controlled_persistence_status_center_frontend_visual_smoke_test_audit",
+      "backend.alerts.controlled_persistence_end_to_end_no_drift_regression_sweep.run_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep"
+    ],
+    "backend\\analog_engine\\analog_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "math",
+      "os",
+      "dataclasses.dataclass",
+      "dataclasses.field",
+      "datetime.datetime",
+      "datetime.timezone",
+      "decimal.Decimal",
+      "typing.Any",
+      "typing.Optional",
+      "campaign_engine.campaign_store.CampaignStore",
+      "campaign_engine.campaign_state_engine.Campaign",
+      "campaign_engine.campaign_state_engine.CampaignState",
+      "requests"
+    ],
+    "backend\\behavioral_memory.py": [
+      "__future__.annotations",
+      "os",
+      "json",
+      "time",
+      "logging",
+      "threading",
+      "dataclasses.dataclass",
+      "dataclasses.field",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "typing.Tuple",
+      "numpy",
+      "sklearn.cluster.KMeans",
+      "supabase.create_client"
+    ],
+    "backend\\behavioral_transition_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\billing_router.py": [
+      "os",
+      "logging",
+      "stripe",
+      "datetime.datetime",
+      "datetime.timezone",
+      "fastapi.APIRouter",
+      "fastapi.HTTPException",
+      "fastapi.Request",
+      "fastapi.Header",
+      "fastapi.responses.JSONResponse",
+      "pydantic.BaseModel",
+      "supabase.create_client",
+      "json"
+    ],
+    "backend\\campaign_api.py": [
+      "json",
+      "math",
+      "fastapi.APIRouter",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.campaign_engine.campaign_store.CampaignStore",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "traceback",
+      "collections.Counter",
+      "traceback",
+      "collections.Counter",
+      "traceback",
+      "collections.Counter",
+      "traceback",
+      "collections.Counter",
+      "traceback",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "collections.Counter",
+      "backend.market_data.read_only_ohlcv_adapter.load_read_only_ohlcv_bars_for_d4b_candidate",
+      "backend.market_data.read_only_ohlcv_adapter.load_read_only_ohlcv_bars_for_d4b_candidate",
+      "backend.market_data.read_only_ohlcv_adapter.load_read_only_ohlcv_bars_for_d4b_candidate",
+      "backend.market_data.read_only_ohlcv_adapter.load_read_only_ohlcv_bars_for_d4b_candidate",
+      "backend.structural_sources.explicit_sml_source_adapter.load_explicit_sml_records_read_only",
+      "backend.structural_sources.explicit_sml_no_drift_eligibility_review.run_no_drift_dry_run_eligibility_review",
+      "backend.campaign_engine.structural_location_input_review_engine.review_structural_location_inputs",
+      "backend.campaign_engine.structural_location_input_review_engine.ENGINE_NAME",
+      "backend.campaign_engine.structural_location_input_review_engine.ENGINE_VERSION",
+      "backend.campaign_engine.structural_location_input_review_engine.review_structural_location_inputs",
+      "backend.campaign_engine.structural_location_validation_engine.validate_structural_location",
+      "backend.campaign_engine.structural_location_validation_engine.ENGINE_NAME",
+      "backend.campaign_engine.structural_location_validation_engine.ENGINE_VERSION",
+      "backend.campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation",
+      "backend.campaign_engine.wyckoff_weis_operator_confirmation_engine.ENGINE_NAME",
+      "backend.campaign_engine.wyckoff_weis_operator_confirmation_engine.ENGINE_VERSION",
+      "backend.campaign_engine.explicit_sml_taxonomy_audit_engine.ENGINE_NAME",
+      "backend.campaign_engine.explicit_sml_taxonomy_audit_engine.ENGINE_VERSION",
+      "backend.campaign_engine.explicit_sml_taxonomy_audit_engine.audit_explicit_sml_taxonomy",
+      "backend.campaign_engine.explicit_upper_zone_diagnostic_engine.ENGINE_NAME",
+      "backend.campaign_engine.explicit_upper_zone_diagnostic_engine.ENGINE_VERSION",
+      "backend.campaign_engine.explicit_upper_zone_diagnostic_engine.diagnose_explicit_upper_zone",
+      "backend.campaign_engine.explicit_geometry_sml_diagnostic_engine.ENGINE_NAME",
+      "backend.campaign_engine.explicit_geometry_sml_diagnostic_engine.ENGINE_VERSION",
+      "backend.campaign_engine.explicit_geometry_sml_diagnostic_engine.diagnose_explicit_geometry_sml",
+      "backend.campaign_engine.operator_control_plausibility_status_engine.ENGINE_NAME",
+      "backend.campaign_engine.operator_control_plausibility_status_engine.ENGINE_VERSION",
+      "backend.campaign_engine.operator_control_plausibility_status_engine.classify_operator_control_plausibility",
+      "backend.campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate",
+      "backend.campaign_engine.operator_control_production_mutation_gate.ENGINE_NAME",
+      "backend.campaign_engine.operator_control_production_mutation_gate.ENGINE_VERSION",
+      "backend.campaign_engine.operator_control_production_mutation_gate.CONFIRM_PHRASE",
+      "backend.campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate",
+      "backend.campaign_engine.operator_control_production_mutation_gate.build_d3d_operator_control_mutation",
+      "backend.campaign_engine.operator_control_confirmation_candidate_engine.classify_operator_control_confirmation_candidate",
+      "backend.campaign_engine.operator_control_confirmation_candidate_engine.ENGINE_NAME",
+      "backend.campaign_engine.operator_control_confirmation_candidate_engine.ENGINE_VERSION",
+      "campaign_engine.structural_location_input_review_engine.review_structural_location_inputs",
+      "campaign_engine.structural_location_input_review_engine.ENGINE_NAME",
+      "campaign_engine.structural_location_input_review_engine.ENGINE_VERSION",
+      "campaign_engine.structural_location_input_review_engine.review_structural_location_inputs",
+      "campaign_engine.structural_location_validation_engine.validate_structural_location",
+      "campaign_engine.structural_location_validation_engine.ENGINE_NAME",
+      "campaign_engine.structural_location_validation_engine.ENGINE_VERSION",
+      "campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation",
+      "campaign_engine.wyckoff_weis_operator_confirmation_engine.ENGINE_NAME",
+      "campaign_engine.wyckoff_weis_operator_confirmation_engine.ENGINE_VERSION",
+      "campaign_engine.explicit_sml_taxonomy_audit_engine.ENGINE_NAME",
+      "campaign_engine.explicit_sml_taxonomy_audit_engine.ENGINE_VERSION",
+      "campaign_engine.explicit_sml_taxonomy_audit_engine.audit_explicit_sml_taxonomy",
+      "campaign_engine.explicit_upper_zone_diagnostic_engine.ENGINE_NAME",
+      "campaign_engine.explicit_upper_zone_diagnostic_engine.ENGINE_VERSION",
+      "campaign_engine.explicit_upper_zone_diagnostic_engine.diagnose_explicit_upper_zone",
+      "campaign_engine.explicit_geometry_sml_diagnostic_engine.ENGINE_NAME",
+      "campaign_engine.explicit_geometry_sml_diagnostic_engine.ENGINE_VERSION",
+      "campaign_engine.explicit_geometry_sml_diagnostic_engine.diagnose_explicit_geometry_sml",
+      "campaign_engine.operator_control_plausibility_status_engine.ENGINE_NAME",
+      "campaign_engine.operator_control_plausibility_status_engine.ENGINE_VERSION",
+      "campaign_engine.operator_control_plausibility_status_engine.classify_operator_control_plausibility",
+      "campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate",
+      "campaign_engine.operator_control_production_mutation_gate.ENGINE_NAME",
+      "campaign_engine.operator_control_production_mutation_gate.ENGINE_VERSION",
+      "campaign_engine.operator_control_production_mutation_gate.CONFIRM_PHRASE",
+      "campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate",
+      "campaign_engine.operator_control_production_mutation_gate.build_d3d_operator_control_mutation",
+      "campaign_engine.operator_control_confirmation_candidate_engine.classify_operator_control_confirmation_candidate",
+      "campaign_engine.operator_control_confirmation_candidate_engine.ENGINE_NAME",
+      "campaign_engine.operator_control_confirmation_candidate_engine.ENGINE_VERSION",
+      "backend.campaign_engine.external_macro_anchor_enrichment_engine.ENGINE_NAME",
+      "backend.campaign_engine.external_macro_anchor_enrichment_engine.ENGINE_VERSION",
+      "backend.campaign_engine.external_macro_anchor_enrichment_engine.evaluate_external_macro_anchor",
+      "backend.campaign_engine.external_macro_anchor_quality_tier_engine.ENGINE_NAME",
+      "backend.campaign_engine.external_macro_anchor_quality_tier_engine.ENGINE_VERSION",
+      "backend.campaign_engine.external_macro_anchor_quality_tier_engine.classify_macro_anchor_quality",
+      "backend.campaign_engine.external_macro_anchor_state_alignment_engine.ENGINE_NAME",
+      "backend.campaign_engine.external_macro_anchor_state_alignment_engine.ENGINE_VERSION",
+      "backend.campaign_engine.external_macro_anchor_state_alignment_engine.classify_macro_anchor_state_alignment",
+      "backend.campaign_engine.macro_anchor_decision_zone_engine.ENGINE_NAME",
+      "backend.campaign_engine.macro_anchor_decision_zone_engine.ENGINE_VERSION",
+      "backend.campaign_engine.macro_anchor_decision_zone_engine.classify_macro_anchor_decision_zone",
+      "backend.campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.ENGINE_NAME",
+      "backend.campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.ENGINE_VERSION",
+      "backend.campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.classify_macro_anchor_behavioral_resolution_confluence",
+      "campaign_engine.external_macro_anchor_enrichment_engine.ENGINE_NAME",
+      "campaign_engine.external_macro_anchor_enrichment_engine.ENGINE_VERSION",
+      "campaign_engine.external_macro_anchor_enrichment_engine.evaluate_external_macro_anchor",
+      "campaign_engine.external_macro_anchor_quality_tier_engine.ENGINE_NAME",
+      "campaign_engine.external_macro_anchor_quality_tier_engine.ENGINE_VERSION",
+      "campaign_engine.external_macro_anchor_quality_tier_engine.classify_macro_anchor_quality",
+      "campaign_engine.external_macro_anchor_state_alignment_engine.ENGINE_NAME",
+      "campaign_engine.external_macro_anchor_state_alignment_engine.ENGINE_VERSION",
+      "campaign_engine.external_macro_anchor_state_alignment_engine.classify_macro_anchor_state_alignment",
+      "campaign_engine.macro_anchor_decision_zone_engine.ENGINE_NAME",
+      "campaign_engine.macro_anchor_decision_zone_engine.ENGINE_VERSION",
+      "campaign_engine.macro_anchor_decision_zone_engine.classify_macro_anchor_decision_zone",
+      "campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.ENGINE_NAME",
+      "campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.ENGINE_VERSION",
+      "campaign_engine.macro_anchor_behavioral_resolution_confluence_engine.classify_macro_anchor_behavioral_resolution_confluence"
+    ],
+    "backend\\campaign_cache.py": [],
+    "backend\\campaign_detail_api.py": [
+      "fastapi.APIRouter"
+    ],
+    "backend\\campaign_engine\\__init__.py": [],
+    "backend\\campaign_engine\\campaign_alert_engine.py": [],
+    "backend\\campaign_engine\\campaign_alignment_engine.py": [],
+    "backend\\campaign_engine\\campaign_audit_engine.py": [],
+    "backend\\campaign_engine\\campaign_backtest_engine.py": [],
+    "backend\\campaign_engine\\campaign_decay_engine.py": [
+      "math",
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\campaign_discovery_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.Any",
+      "typing.Callable",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Optional",
+      "os",
+      "pandas",
+      "numpy",
+      "requests",
+      "backend.research_engine.signal_birth_engine.SignalBirthEngine",
+      "backend.research_engine.master_survival_index.MasterSurvivalIndexEngine",
+      "backend.campaign_engine.campaign_evidence_builder.CampaignEvidenceBuilder",
+      "backend.gamma.alpaca_option_chain_adapter.AlpacaOptionChainAdapter",
+      "backend.campaign_engine.campaign_store.CampaignStore",
+      "backend.radar_service.load_russell1000",
+      "backend.radar_service.fetch_bars_batch"
+    ],
+    "backend\\campaign_engine\\campaign_entry_engine.py": [],
+    "backend\\campaign_engine\\campaign_evidence_builder.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "numpy",
+      "pandas",
+      "backend.campaign_engine.symbol_behavior_profile.SymbolBehaviorProfile",
+      "backend.structural.weis_wave_engine.WeisWaveEngine",
+      "backend.structural.multi_scale_weis_engine.MultiScaleWeisEngine",
+      "backend.research_engine.wyckoff_verdict_engine.WyckoffVerdictEngine",
+      "backend.research_engine.wyckoff_survival_engine.WyckoffSurvivalEngine",
+      "backend.gamma.gamma_strike_matrix_engine.GammaStrikeMatrixEngine",
+      "backend.gamma.gamma_freshness_engine.GammaFreshnessEngine",
+      "backend.gamma.zero_dte_squeeze_engine.ZeroDTESqueezeEngine",
+      "backend.evidence.weis_gamma_fusion_engine.WeisGammaFusionEngine",
+      "backend.campaign_engine.weis_phase_engine.WeisPhaseEngine",
+      "backend.campaign_engine.weis_gamma_ranking_engine.WeisGammaRankingEngine",
+      "backend.research_engine.vsa_weis_overlay.evaluate_vsa_weis_overlay",
+      "backend.campaign_engine.diagnostic_doctrine_classifier.classify_diagnostic_doctrine",
+      "backend.campaign_engine.early_operator_footprint_engine.classify_early_operator_footprints"
+    ],
+    "backend\\campaign_engine\\campaign_execution_engine.py": [],
+    "backend\\campaign_engine\\campaign_exit_engine.py": [],
+    "backend\\campaign_engine\\campaign_fractal_engine.py": [],
+    "backend\\campaign_engine\\campaign_lifecycle_manager.py": [],
+    "backend\\campaign_engine\\campaign_metrics.py": [],
+    "backend\\campaign_engine\\campaign_models.py": [
+      "__future__.annotations",
+      "dataclasses.asdict",
+      "dataclasses.dataclass",
+      "dataclasses.field",
+      "datetime.datetime",
+      "datetime.timezone",
+      "enum.Enum",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "uuid.uuid4"
+    ],
+    "backend\\campaign_engine\\campaign_monitor.py": [],
+    "backend\\campaign_engine\\campaign_persistence.py": [],
+    "backend\\campaign_engine\\campaign_position_engine.py": [],
+    "backend\\campaign_engine\\campaign_projection_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\campaign_quality_engine.py": [],
+    "backend\\campaign_engine\\campaign_ranker.py": [],
+    "backend\\campaign_engine\\campaign_ranking_engine.py": [
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\campaign_registry.py": [
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\campaign_engine\\campaign_renko_engine.py": [],
+    "backend\\campaign_engine\\campaign_reporting.py": [],
+    "backend\\campaign_engine\\campaign_risk_engine.py": [],
+    "backend\\campaign_engine\\campaign_scheduler.py": [],
+    "backend\\campaign_engine\\campaign_scoring_engine.py": [
+      "typing.Dict",
+      "typing.Any",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\campaign_signal_engine.py": [],
+    "backend\\campaign_engine\\campaign_state_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "enum.Enum",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "pandas",
+      "backend.research_engine.signal_birth_engine.SignalBirthEngine",
+      "backend.research_engine.master_survival_index.MasterSurvivalIndexEngine"
+    ],
+    "backend\\campaign_engine\\campaign_state_machine.py": [],
+    "backend\\campaign_engine\\campaign_store.py": [
+      "os",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "supabase.Client",
+      "supabase.create_client"
+    ],
+    "backend\\campaign_engine\\campaign_survival_engine.py": [
+      "math",
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\campaign_transition_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\campaign_ucr_engine.py": [],
+    "backend\\campaign_engine\\campaign_validation_engine.py": [],
+    "backend\\campaign_engine\\campaign_weiswave_engine.py": [],
+    "backend\\campaign_engine\\diagnostic_doctrine_classifier.py": [
+      "__future__.annotations",
+      "copy.deepcopy",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\campaign_engine\\early_operator_footprint_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\explicit_geometry_sml_diagnostic_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation",
+      "backend.campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate",
+      "campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation",
+      "campaign_engine.operator_control_production_mutation_gate.evaluate_d3d_operator_control_candidate"
+    ],
+    "backend\\campaign_engine\\explicit_sml_taxonomy_audit_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\explicit_upper_zone_diagnostic_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\external_macro_anchor_enrichment_engine.py": [
+      "__future__.annotations",
+      "math.isfinite",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\campaign_engine\\external_macro_anchor_quality_tier_engine.py": [
+      "__future__.annotations",
+      "math.isfinite",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "backend.campaign_engine.external_macro_anchor_enrichment_engine.evaluate_external_macro_anchor",
+      "campaign_engine.external_macro_anchor_enrichment_engine.evaluate_external_macro_anchor"
+    ],
+    "backend\\campaign_engine\\external_macro_anchor_state_alignment_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.campaign_engine.external_macro_anchor_quality_tier_engine.classify_macro_anchor_quality",
+      "campaign_engine.external_macro_anchor_quality_tier_engine.classify_macro_anchor_quality"
+    ],
+    "backend\\campaign_engine\\fractal_router.py": [
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\macro_anchor_behavioral_resolution_confluence_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\macro_anchor_decision_zone_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "backend.campaign_engine.external_macro_anchor_state_alignment_engine.classify_macro_anchor_state_alignment",
+      "campaign_engine.external_macro_anchor_state_alignment_engine.classify_macro_anchor_state_alignment"
+    ],
+    "backend\\campaign_engine\\macro_anchor_high_priority_resolution_evidence_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\nightly_campaign_pipeline.py": [
+      "os",
+      "backend.campaign_engine.campaign_state_engine.WyckoffSignals",
+      "backend.campaign_engine.campaign_state_engine.transition_campaign_state",
+      "backend.campaign_engine.campaign_discovery_engine.CampaignDiscoveryEngine"
+    ],
+    "backend\\campaign_engine\\operator_control_classifier.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\operator_control_confirmation_candidate_engine.py": [
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\operator_control_evidence_contract.py": [
+      "__future__.annotations",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\operator_control_plausibility_status_engine.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\operator_control_production_mutation_gate.py": [
+      "__future__.annotations",
+      "copy.deepcopy",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Tuple",
+      "backend.campaign_engine.structural_location_validation_engine.validate_structural_location",
+      "backend.campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation",
+      "campaign_engine.structural_location_validation_engine.validate_structural_location",
+      "campaign_engine.wyckoff_weis_operator_confirmation_engine.classify_wyckoff_weis_operator_confirmation"
+    ],
+    "backend\\campaign_engine\\operator_dominance_engine_full.py": [
+      "typing.Dict",
+      "typing.Any",
+      "pandas"
+    ],
+    "backend\\campaign_engine\\operator_flow_tracker.py": [
+      "typing.Dict",
+      "typing.Any",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\structural_location_input_review_engine.py": [
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_engine\\structural_location_validation_engine.py": [
+      "math.isfinite",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\campaign_engine\\symbol_behavior_profile.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "math",
+      "pandas"
+    ],
+    "backend\\campaign_engine\\weis_gamma_ranking_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "math"
+    ],
+    "backend\\campaign_engine\\weis_phase_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "math"
+    ],
+    "backend\\campaign_engine\\wyckoff_signal_bridge.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\campaign_engine\\wyckoff_weis_operator_confirmation_engine.py": [
+      "typing.Any",
+      "typing.Dict",
+      "typing.List"
+    ],
+    "backend\\campaign_event_bus.py": [],
+    "backend\\campaign_monitor.py": [],
+    "backend\\campaign_registry.py": [
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\campaign_scheduler.py": [],
+    "backend\\campaign_service.py": [],
+    "backend\\confluence_bridge.py": [
+      "__future__.annotations",
+      "logging",
+      "traceback",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "time",
+      "persons_pivots.calculate_from_bars",
+      "persons_pivots.get_pivot_levels_for_chart",
+      "weis_wave.score_weis_wave",
+      "weis_wave.score_weis_wave_enhanced",
+      "hurst_cycle.score_hurst_cycle",
+      "gex_engine.score_gex",
+      "behavioral_memory.evaluate",
+      "behavioral_memory.train_memory_bank",
+      "os",
+      "requests",
+      "confluence_engine.ConfluenceEngine",
+      "confluence_engine.Candle",
+      "confluence_engine.MarketData",
+      "confluence_engine.OptionsData"
+    ],
+    "backend\\csv_import.py": [
+      "__future__.annotations",
+      "argparse",
+      "csv",
+      "os",
+      "re",
+      "sys",
+      "time",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "pathlib.Path",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Tuple",
+      "requests",
+      "fastapi.APIRouter"
+    ],
+    "backend\\email_service.py": [
+      "os",
+      "logging",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Optional",
+      "httpx",
+      "fastapi.APIRouter",
+      "fastapi.BackgroundTasks",
+      "supabase.create_client",
+      "supabase.Client",
+      "time"
+    ],
+    "backend\\evidence\\weis_gamma_fusion_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "math"
+    ],
+    "backend\\gamma\\alpaca_option_chain_adapter.py": [
+      "__future__.annotations",
+      "math",
+      "os",
+      "re",
+      "datetime.date",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Optional",
+      "typing.Tuple",
+      "requests"
+    ],
+    "backend\\gamma\\gamma_freshness_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "math"
+    ],
+    "backend\\gamma\\zero_dte_squeeze_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "typing.Union",
+      "math",
+      "pandas"
+    ],
+    "backend\\gann_engine.py": [
+      "os",
+      "math",
+      "pandas",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "datetime.timezone",
+      "requests",
+      "supabase.create_client",
+      "supabase.Client",
+      "supabase.create_client"
+    ],
+    "backend\\gex_engine.py": [
+      "__future__.annotations",
+      "os",
+      "json",
+      "time",
+      "logging",
+      "dataclasses.dataclass",
+      "dataclasses.field",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "redis",
+      "numpy",
+      "scipy.stats",
+      "requests",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "alpaca.data.historical.OptionHistoricalDataClient",
+      "alpaca.data.requests.OptionChainRequest",
+      "alpaca.trading.client.TradingClient",
+      "alpaca.trading.requests.GetOptionContractsRequest"
+    ],
+    "backend\\historical_attribution_backtest.py": [
+      "__future__.annotations",
+      "argparse",
+      "csv",
+      "json",
+      "math",
+      "os",
+      "sys",
+      "time",
+      "dataclasses.dataclass",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "datetime.timezone",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Optional",
+      "requests",
+      "confluence_engine.MarketData",
+      "confluence_engine.OptionsData",
+      "confluence_engine.ConfluenceEngine"
+    ],
+    "backend\\intelligence\\campaign_closure_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\intelligence\\campaign_fusion_engine.py": [],
+    "backend\\intelligence\\campaign_intelligence_engine.py": [],
+    "backend\\intelligence\\campaign_orchestrator.py": [],
+    "backend\\intelligence\\campaign_outcome_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\intelligence\\campaign_signal_router.py": [],
+    "backend\\intelligence\\dashboard_payload_builder.py": [],
+    "backend\\intelligence\\fractal_alignment_engine.py": [
+      "typing.Dict",
+      "typing.Any",
+      "typing.List"
+    ],
+    "backend\\intelligence\\intelligence_pipeline.py": [
+      "intelligence.campaign_fusion_engine.CampaignFusionEngine",
+      "intelligence.research_fusion_engine.ResearchFusionEngine",
+      "intelligence.operator_fusion_engine.OperatorFusionEngine",
+      "intelligence.signal_fusion_engine.SignalFusionEngine",
+      "intelligence.confluence_engine.ConfluenceEngine",
+      "intelligence.master_scoring_engine.MasterScoringEngine",
+      "intelligence.master_decision_engine.MasterDecisionEngine"
+    ],
+    "backend\\intelligence\\opportunity_builder.py": [],
+    "backend\\intelligence\\portfolio_intelligence_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\intelligence\\position_sizing_api.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.date",
+      "decimal.Decimal",
+      "typing.Any",
+      "typing.Optional",
+      "requests",
+      "fastapi.APIRouter",
+      "fastapi.HTTPException",
+      "pydantic.BaseModel",
+      "intelligence.position_sizing_engine.PortfolioContext",
+      "intelligence.position_sizing_engine.compute_position_size",
+      "intelligence.position_sizing_engine.size_campaign_batch",
+      "intelligence.position_sizing_engine.sizing_result_to_dict"
+    ],
+    "backend\\intelligence\\position_sizing_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "dataclasses.dataclass",
+      "datetime.date",
+      "datetime.timedelta",
+      "decimal.Decimal",
+      "decimal.ROUND_DOWN",
+      "typing.Optional"
+    ],
+    "backend\\intelligence\\ranking_payload_builder.py": [],
+    "backend\\intelligence\\research_orchestrator.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\intelligence\\signal_decay_monitor.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\intelligence\\signal_state_machine.py": [],
+    "backend\\intelligence\\state_transition_engine.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\intelligence\\status_center_builder.py": [],
+    "backend\\intelligence\\subscriber_alerts.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "dataclasses.dataclass",
+      "datetime.date",
+      "datetime.datetime",
+      "datetime.timezone",
+      "decimal.Decimal",
+      "typing.Any",
+      "typing.Optional",
+      "requests",
+      "resend",
+      "json",
+      "json"
+    ],
+    "backend\\intelligence_api.py": [
+      "collections.Counter",
+      "datetime.datetime",
+      "fastapi.APIRouter",
+      "backend.campaign_api.active_campaigns",
+      "backend.campaign_api.status",
+      "backend.campaign_api.rankings"
+    ],
+    "backend\\intelligence_service.py": [
+      "intelligence.intelligence_pipeline.IntelligencePipeline"
+    ],
+    "backend\\legal_pages.py": [
+      "fastapi.APIRouter",
+      "fastapi.responses.HTMLResponse"
+    ],
+    "backend\\main.py": [
+      "fastapi.FastAPI",
+      "fastapi.Body",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "os",
+      "requests",
+      "backend.campaign_api.router",
+      "backend.research_api.router",
+      "backend.intelligence_api.router",
+      "backend.operator_dominance.operator_dominance_api.router",
+      "backend.billing_router.billing_router",
+      "backend.legal_pages.legal_router",
+      "backend.admin_api.router",
+      "backend.alerts_api.router",
+      "backend.snapshot_service.snapshot_router",
+      "backend.intelligence.campaign_closure_engine.run_campaign_closure_cycle",
+      "backend.campaign_api.active_campaigns",
+      "backend.campaign_api.status",
+      "backend.campaign_api.rankings",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "backend.alerts.controlled_append_only_audit_write_route.build_controlled_append_only_audit_write_route_payload",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "backend.alerts.controlled_one_row_append_only_audit_insert.build_d3e6_readiness_payload",
+      "backend.alerts.controlled_one_row_append_only_audit_insert.execute_d3e6_controlled_one_row_insert",
+      "backend.alerts.controlled_post_write_readback_verification.build_d3e7_post_write_readback_verification_payload",
+      "backend.alerts.controlled_persistence_post_write_closure_sweep.build_d3e8_post_persistence_closure_sweep_payload",
+      "backend.alerts.controlled_persistence_final_lifecycle_regression_sweep.build_d3e9_final_lifecycle_regression_sweep_payload",
+      "backend.campaign_engine.nightly_campaign_pipeline",
+      "backend.campaign_engine.campaign_store.CampaignStore",
+      "backend.campaign_engine.campaign_discovery_engine.CampaignDiscoveryEngine",
+      "backend.campaign_engine.campaign_evidence_builder.CampaignEvidenceBuilder",
+      "backend.campaign_api.active_campaigns"
+    ],
+    "backend\\market_data\\read_only_ohlcv_adapter.py": [
+      "__future__.annotations",
+      "json",
+      "math",
+      "os",
+      "urllib.parse",
+      "urllib.request",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "datetime.timezone",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional"
+    ],
+    "backend\\multitimeframe_behavioral_backtest.py": [
+      "__future__.annotations",
+      "os",
+      "csv",
+      "json",
+      "time",
+      "argparse",
+      "statistics",
+      "pathlib.Path",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "typing.Tuple",
+      "requests",
+      "behavioral_transition_engine.evaluate_behavioral_transition"
+    ],
+    "backend\\operator_dominance\\campaign_control_engine.py": [],
+    "backend\\operator_dominance\\livermore_score_engine.py": [
+      "typing.Any",
+      "typing.Dict"
+    ],
+    "backend\\operator_dominance\\ods_renko_engine.py": [],
+    "backend\\operator_dominance\\ods_weiswave_engine.py": [],
+    "backend\\operator_dominance\\operator_dominance_engine.py": [
+      "pandas"
+    ],
+    "backend\\operator_dominance\\renko_engine.py": [],
+    "backend\\operator_dominance\\weis_score_engine.py": [
+      "typing.Any",
+      "typing.Dict"
+    ],
+    "backend\\operator_dominance\\wyckoff_score_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\persons_pivots.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "typing.Optional",
+      "typing.List",
+      "pandas",
+      "datetime.datetime",
+      "datetime.timezone"
+    ],
+    "backend\\portfolio_api.py": [
+      "__future__.annotations",
+      "os",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Optional",
+      "requests",
+      "fastapi.APIRouter",
+      "fastapi.Query"
+    ],
+    "backend\\preferences_router.py": [
+      "__future__.annotations",
+      "os",
+      "logging",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "psycopg2",
+      "psycopg2.extras",
+      "fastapi.APIRouter",
+      "fastapi.HTTPException",
+      "pydantic.BaseModel",
+      "json",
+      "json",
+      "json"
+    ],
+    "backend\\preferences_tab.py": [
+      "__future__.annotations",
+      "os",
+      "requests",
+      "dash.dcc",
+      "dash.html",
+      "dash.Input",
+      "dash.Output",
+      "dash.State",
+      "dash.no_update",
+      "dash.callback_context"
+    ],
+    "backend\\qualified_long_signal_audit.py": [
+      "__future__.annotations",
+      "argparse",
+      "csv",
+      "json",
+      "math",
+      "os",
+      "statistics",
+      "sys",
+      "time",
+      "collections.defaultdict",
+      "dataclasses.dataclass",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "datetime.timezone",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Optional",
+      "typing.Tuple",
+      "requests",
+      "math",
+      "collections.defaultdict",
+      "csv_import"
+    ],
+    "backend\\radar_service.py": [
+      "__future__.annotations",
+      "os",
+      "uuid",
+      "logging",
+      "time",
+      "threading",
+      "pathlib",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "typing.Set",
+      "requests",
+      "psycopg2",
+      "psycopg2.extras",
+      "redis",
+      "fastapi.APIRouter",
+      "fastapi.HTTPException",
+      "fastapi.Request",
+      "fastapi.Depends",
+      "pydantic.BaseModel",
+      "apscheduler.schedulers.background.BackgroundScheduler",
+      "supabase_isolation.get_user_id_from_request",
+      "radar_alerts.maybe_send_alert",
+      "radar_alerts.send_daily_summary",
+      "scoreboard_service.log_signal",
+      "scoreboard_service.grade_pending_signals",
+      "sms_alerts.maybe_send_sms",
+      "behavioral_transition_engine.evaluate_behavioral_transition",
+      "probability_service.get_probability_profile",
+      "probability_service.probability_status",
+      "confluence_bridge.score_symbol_ab",
+      "confluence_bridge.ab_summary",
+      "weis_wave.score_weis_wave_radar",
+      "gex_engine.score_gex",
+      "confluence_engine.ConfluenceEngine",
+      "confluence_engine.MarketData",
+      "confluence_engine.OptionsData",
+      "confluence_engine.Candle",
+      "confluence_engine.Direction",
+      "random",
+      "csv_import",
+      "behavioral_memory.evaluate",
+      "snapshot_service.write_intraday_snapshots",
+      "snapshot_service.write_daily_close_snapshots",
+      "behavioral_memory.train_batch",
+      "supabase_bars.load_bars_from_supabase",
+      "supabase_bars.supabase_bars_available",
+      "supabase_bars.save_bars_to_supabase",
+      "confluence_bridge.update_spy_benchmark",
+      "behavioral_memory.train_batch"
+    ],
+    "backend\\research_api.py": [
+      "fastapi.APIRouter",
+      "typing.Dict",
+      "typing.Any",
+      "pandas",
+      "backend.research_engine.wyckoff_verdict_engine.WyckoffVerdictEngine",
+      "backend.research_engine.livermore_verdict_engine.LivermoreVerdictEngine",
+      "backend.research_engine.weis_verdict_engine.WeisVerdictEngine",
+      "backend.research_engine.master_campaign_index.MasterCampaignIndexEngine",
+      "backend.research_engine.signal_birth_engine.SignalBirthEngine"
+    ],
+    "backend\\research_engine\\__init__.py": [],
+    "backend\\research_engine\\campaign_birth_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_confirmation_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_distribution_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_expansion_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_lifecycle_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_projection_engine.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\campaign_timeline_validator.py": [
+      "__future__.annotations",
+      "csv",
+      "json",
+      "os",
+      "sys",
+      "time",
+      "urllib.parse",
+      "urllib.request",
+      "dataclasses.dataclass",
+      "datetime.datetime",
+      "datetime.timezone",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "numpy",
+      "pandas",
+      "backend.research_engine.signal_birth_engine.SignalBirthEngine",
+      "backend.research_engine.master_campaign_index.MasterCampaignIndexEngine"
+    ],
+    "backend\\research_engine\\campaign_validation_runner.py": [
+      "__future__.annotations",
+      "csv",
+      "json",
+      "os",
+      "sys",
+      "time",
+      "urllib.parse",
+      "urllib.request",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "pathlib.Path",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "pandas",
+      "numpy",
+      "backend.research_engine.wyckoff_verdict_engine.WyckoffVerdictEngine",
+      "backend.research_engine.livermore_verdict_engine.LivermoreVerdictEngine",
+      "backend.research_engine.weis_verdict_engine.WeisVerdictEngine",
+      "backend.research_engine.master_campaign_index.MasterCampaignIndexEngine",
+      "backend.research_engine.signal_birth_engine.SignalBirthEngine"
+    ],
+    "backend\\research_engine\\fractal_alignment_engine.py": [
+      "typing.Dict",
+      "typing.Any",
+      "typing.List"
+    ],
+    "backend\\research_engine\\livermore_survival_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "numpy",
+      "pandas"
+    ],
+    "backend\\research_engine\\livermore_verdict_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Dict",
+      "typing.Any",
+      "pandas",
+      "numpy"
+    ],
+    "backend\\research_engine\\master_campaign_index.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "pandas",
+      "backend.research_engine.wyckoff_verdict_engine.WyckoffVerdictEngine",
+      "backend.research_engine.livermore_verdict_engine.LivermoreVerdictEngine",
+      "backend.research_engine.weis_verdict_engine.WeisVerdictEngine"
+    ],
+    "backend\\research_engine\\master_survival_index.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "pandas",
+      "backend.research_engine.wyckoff_survival_engine.WyckoffSurvivalEngine",
+      "backend.research_engine.livermore_survival_engine.LivermoreSurvivalEngine",
+      "backend.research_engine.weis_survival_engine.WeisSurvivalEngine"
+    ],
+    "backend\\research_engine\\mta_engine.py": [],
+    "backend\\research_engine\\renko_engine.py": [],
+    "backend\\research_engine\\research_orchestrator.py": [
+      "typing.Dict",
+      "typing.Any"
+    ],
+    "backend\\research_engine\\research_renko_engine.py": [],
+    "backend\\research_engine\\research_weiswave_engine.py": [],
+    "backend\\research_engine\\signal_birth_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Optional",
+      "pandas",
+      "backend.research_engine.master_campaign_index.MasterCampaignIndexEngine"
+    ],
+    "backend\\research_engine\\sot_detector.py": [
+      "typing.Dict",
+      "typing.Any",
+      "typing.List"
+    ],
+    "backend\\research_engine\\survival_engine.py": [],
+    "backend\\research_engine\\vsa_weis_overlay.py": [
+      "__future__.annotations",
+      "typing.Any",
+      "typing.Dict",
+      "numpy",
+      "pandas"
+    ],
+    "backend\\research_engine\\weis_survival_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "numpy",
+      "pandas"
+    ],
+    "backend\\research_engine\\weis_verdict_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Dict",
+      "typing.Any",
+      "pandas",
+      "numpy"
+    ],
+    "backend\\research_engine\\weis_wave_engine.py": [],
+    "backend\\research_engine\\wyckoff_survival_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "numpy",
+      "pandas"
+    ],
+    "backend\\research_engine\\wyckoff_verdict_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "numpy",
+      "pandas"
+    ],
+    "backend\\scoreboard_service.py": [
+      "__future__.annotations",
+      "os",
+      "uuid",
+      "logging",
+      "time",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.Optional",
+      "psycopg2",
+      "requests",
+      "zoneinfo.ZoneInfo",
+      "radar_service.RADAR_CACHE",
+      "backports.zoneinfo.ZoneInfo"
+    ],
+    "backend\\signal_birth_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Iterable",
+      "typing.List",
+      "typing.Optional",
+      "pandas",
+      "backend.research_engine.master_campaign_index.MasterCampaignIndexEngine"
+    ],
+    "backend\\snapshot_service.py": [
+      "__future__.annotations",
+      "os",
+      "logging",
+      "time",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "typing.List",
+      "typing.Dict",
+      "typing.Optional",
+      "psycopg2",
+      "psycopg2.extras",
+      "fastapi.APIRouter",
+      "fastapi.Header",
+      "fastapi.HTTPException",
+      "sys",
+      "backend.radar_service.RADAR_CACHE",
+      "radar_service.RADAR_CACHE",
+      "backend.radar_service.RADAR_CACHE",
+      "requests",
+      "radar_service.RADAR_CACHE"
+    ],
+    "backend\\status_center_api.py": [
+      "fastapi.APIRouter",
+      "backend.campaign_api.active_campaigns",
+      "backend.campaign_api.rankings",
+      "backend.campaign_api.status"
+    ],
+    "backend\\structural\\multi_scale_weis_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.Optional",
+      "math",
+      "pandas",
+      "backend.structural.weis_wave_engine.WeisWaveEngine"
+    ],
+    "backend\\structural\\weis_wave_engine.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.asdict",
+      "typing.Any",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "math",
+      "pandas"
+    ],
+    "backend\\structural_sources\\explicit_sml_contract.py": [
+      "__future__.annotations",
+      "math",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any"
+    ],
+    "backend\\structural_sources\\explicit_sml_no_drift_eligibility_review.py": [
+      "__future__.annotations",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "backend.structural_sources.explicit_sml_source_binding_review.run_d3d_dry_run_source_binding_review"
+    ],
+    "backend\\structural_sources\\explicit_sml_preflight_validator.py": [
+      "__future__.annotations",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "backend.structural_sources.explicit_sml_source_adapter.load_explicit_sml_records_read_only"
+    ],
+    "backend\\structural_sources\\explicit_sml_source_binding_review.py": [
+      "__future__.annotations",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Any",
+      "backend.structural_sources.explicit_sml_preflight_validator.run_explicit_sml_source_evidence_preflight"
+    ],
+    "backend\\supabase_bars.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "time",
+      "datetime.datetime",
+      "datetime.timezone",
+      "typing.Dict",
+      "typing.List",
+      "typing.Optional",
+      "requests"
+    ],
+    "backend\\supabase_isolation.py": [
+      "os",
+      "logging",
+      "fastapi.Request",
+      "base64",
+      "json"
+    ],
+    "backend\\trade_journal_api.py": [
+      "__future__.annotations",
+      "logging",
+      "datetime.date",
+      "decimal.Decimal",
+      "typing.Optional",
+      "fastapi.APIRouter",
+      "fastapi.HTTPException",
+      "fastapi.Request",
+      "pydantic.BaseModel",
+      "trade_journal_service.log_trade_entry",
+      "trade_journal_service.log_trade_exit",
+      "trade_journal_service.get_journal_entries",
+      "trade_journal_service.get_trader_profile",
+      "supabase_isolation.get_user_id_from_request"
+    ],
+    "backend\\trade_journal_service.py": [
+      "__future__.annotations",
+      "logging",
+      "os",
+      "uuid",
+      "dataclasses.dataclass",
+      "datetime.date",
+      "datetime.datetime",
+      "datetime.timezone",
+      "datetime.timedelta",
+      "decimal.Decimal",
+      "typing.Any",
+      "typing.Optional",
+      "psycopg2",
+      "json"
+    ],
+    "backend\\weis_wave.py": [
+      "__future__.annotations",
+      "dataclasses.dataclass",
+      "dataclasses.field",
+      "typing.List",
+      "typing.Optional",
+      "typing.Dict",
+      "typing.Any",
+      "pandas",
+      "numpy",
+      "os",
+      "supabase.create_client"
+    ],
+    "backend\\wyckoff_anchor.py": [
+      "os",
+      "pandas",
+      "datetime.datetime",
+      "datetime.timedelta",
+      "datetime.timezone",
+      "requests",
+      "supabase.create_client",
+      "supabase.Client"
+    ]
+  },
+  "group_hits_preview": {
+    "universe_loading": [
+      {
+        "path": "backend\\access_control.py",
+        "line": 62,
+        "matched": [
+          "alpaca"
+        ],
+        "text": "# Alpaca Paper Trading (not yet built)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 198,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": view_payload.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 203,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"ready_symbols\": _as_list(view_payload.get(\"ready_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 204,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": _as_list(view_payload.get(\"blocked_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 221,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 225,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 228,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 232,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 39,
+        "matched": [
+          "symbols"
+        ],
+        "text": "def _symbols_from_cards(cards: List[Any]) -> List[str]:"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 40,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: List[str] = []"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 46,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols.append(symbol)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 47,
+        "matched": [
+          "symbols"
+        ],
+        "text": "return symbols"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 62,
+        "matched": [
+          "symbols"
+        ],
+        "text": "return \"ALERT_CONSOLE_NO_SYMBOLS_AUDITED_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 120,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": dashboard.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 126,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"ready_symbols\": _symbols_from_cards(ready_cards),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 127,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": _symbols_from_cards(blocked_cards),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 137,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 141,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 144,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 148,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 78,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"tile_id\": \"audited_symbols_read_only\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 79,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"label\": \"Audited symbols\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 86,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"tile_id\": \"ready_symbols_read_only\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 87,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"label\": \"Ready symbols\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 94,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"tile_id\": \"blocked_symbols_read_only\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 95,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"label\": \"Blocked symbols\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 200,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": snapshot.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 205,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"ready_symbols\": _as_list(snapshot.get(\"ready_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 206,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": _as_list(snapshot.get(\"blocked_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 216,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 220,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 223,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 227,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 281,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": preflight.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 287,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"approval_packet_hypothetically_complete_symbols\": [row[\"symbol\"] for row in complete_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 288,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"approval_packet_blocked_symbols\": [row[\"symbol\"] for row in blocked_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 315,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 319,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 322,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 326,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 201,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": contract.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 207,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"controlled_persistence_activation_hypothetically_ready_symbols\": [row[\"symbol\"] for row in hypothetically_ready_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 208,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"controlled_persistence_activation_blocked_symbols\": [row[\"symbol\"] for row in blocked_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 225,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 229,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 232,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 236,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 187,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": d3d_gate.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 193,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"controlled_persistence_contract_reviewable_symbols\": [row[\"symbol\"] for row in reviewable_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 194,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"controlled_persistence_contract_blocked_symbols\": [row[\"symbol\"] for row in blocked_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 208,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 212,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 215,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 219,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 325,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"requested_symbols\": approval_packet.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 331,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"decision_console_reviewable_symbols\": [row[\"symbol\"] for row in reviewable_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 332,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"decision_console_blocked_symbols\": [row[\"symbol\"] for row in blocked_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 354,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 358,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 361,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 365,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 57,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 58,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"reviewable_symbols\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 129,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"reviewable_symbols\": list(console.get(\"decision_console_reviewable_symbols\") or []),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 130,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": list(console.get(\"decision_console_blocked_symbols\") or []),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 324,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": [row[\"symbol\"] for row in blocked_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 325,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"reviewable_symbols\": [row[\"symbol\"] for row in reviewable_rows],"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 351,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 355,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 358,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 362,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 411,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"reviewable_symbols\": list(visual_smoke_payload.get(\"reviewable_symbols\") or []),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 412,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": list(visual_smoke_payload.get(\"blocked_symbols\") or []),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 432,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols: Any = \"SPY,QQQ,IWM\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 436,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols: int = 10,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 439,
+        "matched": [
+          "symbols"
+        ],
+        "text": "symbols=symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 443,
+        "matched": [
+          "symbols"
+        ],
+        "text": "max_symbols=max_symbols,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 248,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbol_count\": len(_as_list(panel.get(\"blocked_symbols\"))),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 249,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"reviewable_symbol_count\": len(_as_list(panel.get(\"reviewable_symbols\"))),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 507,
+        "matched": [
+          "symbols"
+        ],
+        "text": "\"blocked_symbols\": list(panel.get(\"blocked_symbols\") or []),"
+      }
+    ],
+    "bar_fetching": [
+      {
+        "path": "backend\\access_control.py",
+        "line": 62,
+        "matched": [
+          "alpaca"
+        ],
+        "text": "# Alpaca Paper Trading (not yet built)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 223,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 224,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 230,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 231,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 139,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 140,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 146,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 147,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 218,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 219,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 225,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 226,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 317,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 318,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 324,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 325,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 227,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 228,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 234,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_activation_readiness_audit.py",
+        "line": 235,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 210,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 211,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 217,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_contract_audit.py",
+        "line": 218,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 356,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 357,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 363,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_audit.py",
+        "line": 364,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 353,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 354,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 360,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_decision_console_frontend_contract_audit.py",
+        "line": 361,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 434,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 435,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 441,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_end_to_end_no_drift_regression_sweep.py",
+        "line": 442,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 538,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 539,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 545,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_frontend_visual_smoke_test_audit.py",
+        "line": 546,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+        "line": 291,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+        "line": 292,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+        "line": 298,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_implementation_wiring_audit.py",
+        "line": 299,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+        "line": 396,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+        "line": 397,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+        "line": 403,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_status_center_ui_mount_audit.py",
+        "line": 404,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+        "line": 163,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+        "line": 164,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+        "line": 170,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\d3d_dry_run_gate_audit.py",
+        "line": 171,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+        "line": 210,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+        "line": 211,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+        "line": 217,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=lookback_bars,"
+      },
+      {
+        "path": "backend\\alerts\\evidence_payload_completeness_audit.py",
+        "line": 218,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=minimum_usable_bars,"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 13,
+        "matched": [
+          "bars"
+        ],
+        "text": "load_read_only_ohlcv_bars_for_d4b_candidate,"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 16,
+        "matched": [
+          "bars"
+        ],
+        "text": "load_read_only_ohlcv_bars_for_d4b_candidate = None"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 37,
+        "matched": [
+          "bars"
+        ],
+        "text": "\"loads_live_bars_read_only\": True,"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 60,
+        "matched": [
+          "bars"
+        ],
+        "text": "def _convert_ohlcv_bars(raw_bars: Any) -> list[Bar]:"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 61,
+        "matched": [
+          "bars"
+        ],
+        "text": "if not isinstance(raw_bars, list):"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 64,
+        "matched": [
+          "bars"
+        ],
+        "text": "for item in raw_bars:"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 224,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars: int = 390,"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 225,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars: int = 20,"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 256,
+        "matched": [
+          "bars"
+        ],
+        "text": "if load_read_only_ohlcv_bars_for_d4b_candidate is None:"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 263,
+        "matched": [
+          "bars"
+        ],
+        "text": "\"bars\": [],"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 277,
+        "matched": [
+          "bars"
+        ],
+        "text": "bar_result = load_read_only_ohlcv_bars_for_d4b_candidate("
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 280,
+        "matched": [
+          "bars"
+        ],
+        "text": "lookback_bars=max(int(lookback_bars or 390), 20),"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 281,
+        "matched": [
+          "bars"
+        ],
+        "text": "minimum_usable_bars=max(int(minimum_usable_bars or 20), 20),"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 284,
+        "matched": [
+          "bars"
+        ],
+        "text": "\"existing_non_mutating_runtime_payload_bars\","
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 285,
+        "matched": [
+          "alpaca"
+        ],
+        "text": "\"alpaca_rest_read_only\","
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 323,
+        "matched": [
+          "bars"
+        ],
+        "text": "bars = _convert_ohlcv_bars(bar_result.get(\"bars\") or [])"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 329,
+        "matched": [
+          "bars"
+        ],
+        "text": "if len(bars) < 20:"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 335,
+        "matched": [
+          "bars"
+        ],
+        "text": "bars[-20:],"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 360,
+        "matched": [
+          "bars"
+        ],
+        "text": "\"review_ready\": bool(len(bars) >= 20),"
+      },
+      {
+        "path": "backend\\alerts\\live_data_adapter.py",
+        "line": 361,
+        "matched": [
+          "bars"
+        ],
+        "text": "\"bar_count_supplied_to_alert\": len(bars[-20:]) if len(bars) >= 20 else len(bars),"
+      },
+      {
+        "path": "backend\\alerts\\live_readiness_audit.py",
+        "line": 96,
+        "matched": [
+          "bars"
+        ],
+        "text": "recent_bars_accepted = ("
+      },
+      {
+        "path": "backend\\alerts\\live_readiness_audit.py",
+        "line": 98,
+        "matched": [
+          "bars"
+        ],
+        "text": "and bar_source_quality == \"USABLE_RECENT_OHLCV_BARS\""
+      },
+      {
+        "path": "backend\\alerts\\live_readiness_audit.py",
+        "line": 99,
+        "matched": [
+          "bars"
+        ],
+        "text": "and bar_adapter_status == \"ADAPTER_OK_BARS_LOADED_READ_ONLY\""
+      }
+    ],
+    "supabase_persistence": [
+      {
+        "path": "backend\\access_control.py",
+        "line": 99,
+        "matched": [
+          "supabase"
+        ],
+        "text": "NOTE: In production, user_id will come from your JWT / Supabase auth token,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 11,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 42,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 77,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 179,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 11,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 102,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 11,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 61,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 126,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 182,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 2,
+        "matched": [
+          "write"
+        ],
+        "text": "Sigmalytic V2 - D3E.5 controlled append-only audit write route hard-block."
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 4,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "This module intentionally does not write to Supabase."
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 20,
+        "matched": [
+          "write"
+        ],
+        "text": "FUTURE_D3E6_CONFIRMATION_PHRASE = \"CONFIRM_APPEND_ONLY_AUDIT_WRITE_D3E6\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 66,
+        "matched": [
+          "write"
+        ],
+        "text": "def build_controlled_append_only_audit_write_route_payload("
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 71,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "D3E.5 creates a controlled route surface only. It never performs a Supabase write."
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 85,
+        "matched": [
+          "write"
+        ],
+        "text": "\"CONTROLLED_APPEND_ONLY_AUDIT_WRITE_ROUTE_EXISTS_\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 91,
+        "matched": [
+          "write"
+        ],
+        "text": "\"d3e6_required_before_any_write\": True,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 95,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_BUT_WRITES_NOT_AUTHORIZED_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 105,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 106,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 107,
+        "matched": [
+          "write"
+        ],
+        "text": "\"persistence_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 3,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "from backend.alerts.supabase_append_only_write_preflight_authorization_gate import ("
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 4,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "run_read_only_supabase_append_only_write_preflight_authorization_gate,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 6,
+        "matched": [
+          "write"
+        ],
+        "text": "COMPONENT = \"CONTROLLED_APPEND_ONLY_WRITE_APPROVAL_PACKET_AUDIT_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 7,
+        "matched": [
+          "write"
+        ],
+        "text": "VERSION = \"controlled_append_only_write_approval_packet_audit_read_only_v1\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 12,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 27,
+        "matched": [
+          "write"
+        ],
+        "text": "\"persistence_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 28,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 32,
+        "matched": [
+          "write"
+        ],
+        "text": "\"write_permission_manifest_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 33,
+        "matched": [
+          "write"
+        ],
+        "text": "\"simulated_write_only\": True,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 34,
+        "matched": [
+          "write"
+        ],
+        "text": "\"actual_write_performed\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 36,
+        "matched": [
+          "write"
+        ],
+        "text": "\"schema_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 37,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 38,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_gate_clear\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 39,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_execution_allowed\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 41,
+        "matched": [
+          "write"
+        ],
+        "text": "\"approval_packet_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 53,
+        "matched": [
+          "write"
+        ],
+        "text": "\"write_limits_if_later_authorized\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 56,
+        "matched": [
+          "write"
+        ],
+        "text": "\"no_database_write_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 57,
+        "matched": [
+          "supabase",
+          "insert"
+        ],
+        "text": "\"no_supabase_insert_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 58,
+        "matched": [
+          "supabase"
+        ],
+        "text": "\"no_supabase_update_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 59,
+        "matched": [
+          "supabase",
+          "upsert"
+        ],
+        "text": "\"no_supabase_upsert_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 60,
+        "matched": [
+          "supabase"
+        ],
+        "text": "\"no_supabase_delete_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 61,
+        "matched": [
+          "supabase"
+        ],
+        "text": "\"no_supabase_rpc_in_this_packet\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 92,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_status\": row.get(\"append_only_write_preflight_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 93,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_hypothetically_clear\": row.get(\"append_only_write_preflight_hypothetically_clear\") is True,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 100,
+        "matched": [
+          "write"
+        ],
+        "text": "\"write_permission_manifest_audit_status\": upstream.get(\"write_permission_manifest_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 102,
+        "matched": [
+          "supabase"
+        ],
+        "text": "\"supabase_target_table_schema_existence_audit_status\": upstream.get(\"supabase_target_table_schema_existence_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 103,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_authorization_gate_status\": upstream.get(\"append_only_write_preflight_authorization_gate_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 114,
+        "matched": [
+          "write"
+        ],
+        "text": "preflight_hypothetically_clear = row.get(\"append_only_write_preflight_hypothetically_clear\") is True"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 115,
+        "matched": [
+          "write"
+        ],
+        "text": "explicit_human_approval_required = upstream.get(\"explicit_human_approval_required_before_any_write\") is True"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 124,
+        "matched": [
+          "write"
+        ],
+        "text": "if row.get(\"actual_write_performed\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 125,
+        "matched": [
+          "write"
+        ],
+        "text": "approval_packet_blockers.append(\"ACTUAL_WRITE_NOT_ALLOWED_READ_ONLY\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 126,
+        "matched": [
+          "write"
+        ],
+        "text": "if row.get(\"append_only_write_preflight_authorized\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 128,
+        "matched": [
+          "write"
+        ],
+        "text": "if row.get(\"append_only_write_preflight_gate_clear\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 130,
+        "matched": [
+          "write"
+        ],
+        "text": "if row.get(\"append_only_write_execution_allowed\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 131,
+        "matched": [
+          "write"
+        ],
+        "text": "approval_packet_blockers.append(\"APPEND_ONLY_WRITE_EXECUTION_NOT_ALLOWED_READ_ONLY\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 132,
+        "matched": [
+          "write"
+        ],
+        "text": "if row.get(\"persistence_write_authorized\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 133,
+        "matched": [
+          "write"
+        ],
+        "text": "approval_packet_blockers.append(\"PERSISTENCE_WRITE_AUTHORIZATION_NOT_ALLOWED_READ_ONLY\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 134,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "if row.get(\"supabase_write_authorized\") is not False:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 135,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "approval_packet_blockers.append(\"SUPABASE_WRITE_AUTHORIZATION_NOT_ALLOWED_READ_ONLY\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 151,
+        "matched": [
+          "write"
+        ],
+        "text": "\"CONTROLLED_APPEND_ONLY_WRITE_APPROVAL_PACKET_COMPLETE_BUT_NOT_AUTHORIZED_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 153,
+        "matched": [
+          "write"
+        ],
+        "text": "else \"CONTROLLED_APPEND_ONLY_WRITE_APPROVAL_PACKET_BLOCKED_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 156,
+        "matched": [
+          "write"
+        ],
+        "text": "approval_packet_blockers.append(\"NO_PACKET_BLOCKER_BUT_ACTUAL_WRITE_STILL_NOT_AUTHORIZED_READ_ONLY\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 159,
+        "matched": [
+          "write"
+        ],
+        "text": "\"controlled_append_only_write_approval_packet_status\": approval_packet_status,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 162,
+        "matched": [
+          "write"
+        ],
+        "text": "\"approval_packet_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 163,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 164,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_gate_clear\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 165,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_execution_allowed\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 167,
+        "matched": [
+          "write"
+        ],
+        "text": "\"schema_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 168,
+        "matched": [
+          "write"
+        ],
+        "text": "\"simulated_write_only\": True,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 169,
+        "matched": [
+          "write"
+        ],
+        "text": "\"actual_write_performed\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 170,
+        "matched": [
+          "write"
+        ],
+        "text": "\"write_permission_manifest_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 171,
+        "matched": [
+          "write"
+        ],
+        "text": "\"persistence_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 172,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 185,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_status\": row.get(\"append_only_write_preflight_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 186,
+        "matched": [
+          "write"
+        ],
+        "text": "\"append_only_write_preflight_hypothetically_clear\": preflight_hypothetically_clear,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 194,
+        "matched": [
+          "write"
+        ],
+        "text": "\"explicit_human_approval_required_before_any_write\": True,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 198,
+        "matched": [
+          "supabase",
+          "write"
+        ],
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 209,
+        "matched": [
+          "write"
+        ],
+        "text": "def build_read_only_controlled_append_only_write_approval_packet_from_preflight("
+      }
+    ],
+    "schema_payload_alignment": [
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 12,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 43,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 57,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload = dict(GUARDRAILS)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 58,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"component\"] = COMPONENT"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 59,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"version\"] = VERSION"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 60,
+        "matched": [
+          "payload"
+        ],
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 70,
+        "matched": [
+          "payload"
+        ],
+        "text": "def _missing_keys(payload: Any, required_keys: List[str]) -> List[str]:"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 71,
+        "matched": [
+          "payload"
+        ],
+        "text": "if not isinstance(payload, dict):"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 73,
+        "matched": [
+          "payload"
+        ],
+        "text": "return [key for key in required_keys if key not in payload]"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 78,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 129,
+        "matched": [
+          "payload"
+        ],
+        "text": "view_payload: Dict[str, Any],"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 131,
+        "matched": [
+          "payload"
+        ],
+        "text": "view_model = view_payload.get(\"view_model\") or {}"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 165,
+        "matched": [
+          "payload"
+        ],
+        "text": "_as_int(view_payload.get(\"guardrail_failure_count\"))"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 180,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 193,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"view_model_status\": view_payload.get(\"view_model_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 194,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"console_snapshot_status\": view_payload.get(\"console_snapshot_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 195,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"dashboard_status\": view_payload.get(\"dashboard_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 196,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"remediation_status\": view_payload.get(\"remediation_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 197,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"source_gap_status\": view_payload.get(\"source_gap_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 198,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"requested_symbols\": view_payload.get(\"requested_symbols\") or [],"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 199,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"requested_symbol_count\": _as_int(view_payload.get(\"requested_symbol_count\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 200,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"audited_symbol_count\": _as_int(view_payload.get(\"audited_symbol_count\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 201,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"ready_card_count\": _as_int(view_payload.get(\"ready_card_count\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 202,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"blocked_card_count\": _as_int(view_payload.get(\"blocked_card_count\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 203,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"ready_symbols\": _as_list(view_payload.get(\"ready_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 204,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"blocked_symbols\": _as_list(view_payload.get(\"blocked_symbols\")),"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 213,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"guardrail_failures\": list(view_payload.get(\"guardrail_failures\") or []) + symbol_card_guardrail_failures,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 227,
+        "matched": [
+          "payload"
+        ],
+        "text": "view_payload = run_read_only_alert_console_view_model_audit("
+      },
+      {
+        "path": "backend\\alerts\\alert_console_frontend_contract_audit.py",
+        "line": 235,
+        "matched": [
+          "payload"
+        ],
+        "text": "view_payload=view_payload,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 12,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 26,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload = dict(GUARDRAILS)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 27,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"component\"] = COMPONENT"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 28,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"version\"] = VERSION"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 29,
+        "matched": [
+          "payload"
+        ],
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_snapshot_audit.py",
+        "line": 103,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 12,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 26,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload = dict(GUARDRAILS)"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 27,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"component\"] = COMPONENT"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 28,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"version\"] = VERSION"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 29,
+        "matched": [
+          "payload"
+        ],
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 62,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 127,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\alert_console_view_model_audit.py",
+        "line": 183,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 5,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "It does not mutate campaigns."
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 36,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"evidence_payload_completeness_status\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 47,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"payload\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 66,
+        "matched": [
+          "payload"
+        ],
+        "text": "def build_controlled_append_only_audit_write_route_payload("
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 67,
+        "matched": [
+          "payload"
+        ],
+        "text": "request_payload: Optional[Mapping[str, Any]] = None,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 69,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"\"\"Return a hard-blocked D3E.5 route payload."
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 76,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload = dict(request_payload or {})"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 77,
+        "matched": [
+          "payload"
+        ],
+        "text": "supplied_confirmation_phrase = str(payload.get(\"confirmation_phrase\") or \"\")"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 94,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_required_status\": ("
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 95,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"SUPABASE_TARGET_TABLE_SCHEMA_EXISTS_BUT_WRITES_NOT_AUTHORIZED_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 109,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+        "line": 121,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"request_payload_keys_seen\": sorted(str(key) for key in payload.keys()),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 13,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 35,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_existence_audit_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 36,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 47,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"proposed_payload_shape\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 70,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload = dict(GUARDRAILS)"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 71,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"component\"] = COMPONENT"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 72,
+        "matched": [
+          "payload"
+        ],
+        "text": "payload[\"version\"] = VERSION"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 73,
+        "matched": [
+          "payload"
+        ],
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 85,
+        "matched": [
+          "payload"
+        ],
+        "text": "def _build_approval_payload_preview(row: Dict[str, Any], upstream: Dict[str, Any]) -> Dict[str, Any]:"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 91,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_probe_status\": upstream.get(\"schema_probe_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 95,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"evidence_payload_completeness_status\": upstream.get(\"evidence_payload_completeness_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 101,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"persistence_payload_simulation_audit_status\": upstream.get(\"persistence_payload_simulation_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 102,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"supabase_target_table_schema_existence_audit_status\": upstream.get(\"supabase_target_table_schema_existence_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 166,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_existence_audit_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 167,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 184,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"approval_payload_preview\": _build_approval_payload_preview(row, upstream),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 199,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 240,
+        "matched": [
+          "campaigns"
+        ],
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 262,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_existence_audit_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 263,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 271,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"supabase_target_table_schema_existence_audit_status\": preflight.get(\"supabase_target_table_schema_existence_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 272,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"persistence_payload_simulation_audit_status\": preflight.get(\"persistence_payload_simulation_audit_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 278,
+        "matched": [
+          "payload"
+        ],
+        "text": "\"evidence_payload_completeness_status\": preflight.get(\"evidence_payload_completeness_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 296,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_probe_status\": preflight.get(\"schema_probe_status\"),"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 297,
+        "matched": [
+          "schema"
+        ],
+        "text": "\"schema_probe_method\": preflight.get(\"schema_probe_method\"),"
+      }
+    ],
+    "pagination": [
+      {
+        "path": "backend\\access_control.py",
+        "line": 19,
+        "matched": [
+          "limit"
+        ],
+        "text": "free_trial    \u2014 limited access, upgrade prompts visible"
+      },
+      {
+        "path": "backend\\access_control.py",
+        "line": 28,
+        "matched": [
+          "page"
+        ],
+        "text": "3. In Dash, call GET /api/v1/permissions/{user_id} on page load and"
+      },
+      {
+        "path": "backend\\access_control.py",
+        "line": 65,
+        "matched": [
+          "page"
+        ],
+        "text": "# Billing page \u2014 all tiers can see it (it adapts based on tier)"
+      },
+      {
+        "path": "backend\\access_control.py",
+        "line": 122,
+        "matched": [
+          "page"
+        ],
+        "text": "The Dash frontend calls this once on login / page load and uses the"
+      },
+      {
+        "path": "backend\\alerts\\controlled_append_only_write_approval_packet_audit.py",
+        "line": 53,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"write_limits_if_later_authorized\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_final_lifecycle_regression_sweep.py",
+        "line": 171,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"limit\": \"1\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_persistence_post_write_closure_sweep.py",
+        "line": 165,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"limit\": \"1\","
+      },
+      {
+        "path": "backend\\alerts\\controlled_post_write_readback_verification.py",
+        "line": 151,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"limit\": \"1\","
+      },
+      {
+        "path": "backend\\alerts\\persistence_payload_simulation_audit.py",
+        "line": 184,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"write_limits_if_later_authorized\": dict(row.get(\"write_limits_if_later_authorized\") or {}),"
+      },
+      {
+        "path": "backend\\alerts\\persistence_payload_simulation_audit.py",
+        "line": 274,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"write_limits_if_later_authorized\": dict(manifest.get(\"write_limits_if_later_authorized\") or {}),"
+      },
+      {
+        "path": "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+        "line": 81,
+        "matched": [
+          "limit"
+        ],
+        "text": "WRITE_LIMITS_IF_LATER_AUTHORIZED = {"
+      },
+      {
+        "path": "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+        "line": 177,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"write_limits_if_later_authorized\": dict(WRITE_LIMITS_IF_LATER_AUTHORIZED),"
+      },
+      {
+        "path": "backend\\alerts\\persistence_write_permission_manifest_audit.py",
+        "line": 275,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"write_limits_if_later_authorized\": dict(WRITE_LIMITS_IF_LATER_AUTHORIZED),"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 103,
+        "matched": [
+          "limit"
+        ],
+        "text": "write_limits = schema_audit.get(\"write_limits_if_later_authorized\") or {}"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 108,
+        "matched": [
+          "limit"
+        ],
+        "text": "if not isinstance(write_limits, dict):"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 109,
+        "matched": [
+          "limit"
+        ],
+        "text": "write_limits = {}"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 118,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"append_only_declared\": write_limits.get(\"append_only\") is True,"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 123,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"campaign_table_mutation_allowed\": write_limits.get(\"campaign_table_mutation_allowed\") is True,"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 124,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"operator_control_confirmation_allowed\": write_limits.get(\"operator_control_confirmation_allowed\") is True,"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 125,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"d3d_execution_allowed\": write_limits.get(\"d3d_execution_allowed\") is True,"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 126,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"max_symbols_per_request\": write_limits.get(\"max_symbols_per_request\"),"
+      },
+      {
+        "path": "backend\\alerts\\supabase_append_only_write_preflight_authorization_gate.py",
+        "line": 127,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"max_rows_per_symbol_per_request\": write_limits.get(\"max_rows_per_symbol_per_request\"),"
+      },
+      {
+        "path": "backend\\alerts\\supabase_target_table_schema_existence_audit.py",
+        "line": 14,
+        "matched": [
+          "limit"
+        ],
+        "text": "SCHEMA_PROBE_METHOD = \"POSTGREST_GET_LIMIT_ZERO_READ_ONLY\""
+      },
+      {
+        "path": "backend\\alerts\\supabase_target_table_schema_existence_audit.py",
+        "line": 129,
+        "matched": [
+          "limit"
+        ],
+        "text": "probe_url = f\"{supabase_url}/rest/v1/{encoded_table}?select={encoded_select}&limit=0\""
+      },
+      {
+        "path": "backend\\analog_engine\\analog_engine.py",
+        "line": 236,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"limit\":  \"10000\","
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 61,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"radar_limit\":  50,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 62,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"sms_limit\":    0,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 68,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"radar_limit\":  1403,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 69,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"sms_limit\":    20,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 75,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"radar_limit\":  1403,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 76,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"sms_limit\":    -1,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 82,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"radar_limit\":  1403,"
+      },
+      {
+        "path": "backend\\billing_router.py",
+        "line": 83,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"sms_limit\":    -1,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2296,
+        "matched": [
+          "limit"
+        ],
+        "text": "mutation_limit = min(max_mutations, len(eligible_rows))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2297,
+        "matched": [
+          "limit"
+        ],
+        "text": "for candidate in eligible_rows[:mutation_limit]:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3467,
+        "matched": [
+          "limit"
+        ],
+        "text": "campaigns = _store().get_top_campaigns(limit=100)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7168,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"source_limitation\": \"Daily OHLCV bars do not contain true intrabar volume-at-price. D4F constructs a read-only prototype profile and must pass D4G/D4H source-quality review before any D3D consideration.\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7829,
+        "matched": [
+          "limit"
+        ],
+        "text": "\"source_limitation\": \"1-minute OHLCV bars improve profile resolution versus daily OHLCV, but volume remains distributed across bar ranges. This is not true exchange volume-at-price, not tick data, and not explicit SML.\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 107,
+        "matched": [
+          "limit"
+        ],
+        "text": "bar_limit: Optional[int] = None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 128,
+        "matched": [
+          "limit"
+        ],
+        "text": "self.bar_limit = int(bar_limit or os.getenv(\"CAMPAIGN_DISCOVERY_BAR_LIMIT\", \"252\"))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 147,
+        "matched": [
+          "limit"
+        ],
+        "text": "self.option_chain_limit = int(os.getenv(\"CAMPAIGN_DISCOVERY_OPTION_CHAIN_LIMIT\", \"1000\"))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 149,
+        "matched": [
+          "limit"
+        ],
+        "text": "self.option_chain_limit = 1000"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 152,
+        "matched": [
+          "page"
+        ],
+        "text": "self.option_chain_max_pages = int(os.getenv(\"CAMPAIGN_DISCOVERY_OPTION_CHAIN_MAX_PAGES\", \"2\"))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 154,
+        "matched": [
+          "page"
+        ],
+        "text": "self.option_chain_max_pages = 2"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 288,
+        "matched": [
+          "limit"
+        ],
+        "text": "limit=self.option_chain_limit,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 289,
+        "matched": [
+          "page"
+        ],
+        "text": "max_pages=self.option_chain_max_pages,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 476,
+        "matched": [
+          "limit"
+        ],
+        "text": "def _clean_universe(symbols: Iterable[Any], limit: int) -> List[str]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 491,
+        "matched": [
+          "limit"
+        ],
+        "text": "if limit and len(out) >= limit:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 596,
+        "matched": [
+          "limit"
+        ],
+        "text": "bars_cache = fetch_bars_batch(universe, timeframe=\"1Day\", limit=self.bar_limit)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 609,
+        "matched": [
+          "pagination"
+        ],
+        "text": "This fixes the incomplete universe coverage seen when pagination stopped"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 610,
+        "matched": [
+          "page",
+          "limit"
+        ],
+        "text": "at 20 pages with too small a per-page limit."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 613,
+        "matched": [
+          "limit"
+        ],
+        "text": "CAMPAIGN_DISCOVERY_BAR_LIMIT = bars kept per symbol, default 252"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 614,
+        "matched": [
+          "page",
+          "limit"
+        ],
+        "text": "CAMPAIGN_DISCOVERY_ALPACA_PAGE_LIMIT = rows requested per API page, default 10000"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 616,
+        "matched": [
+          "page"
+        ],
+        "text": "CAMPAIGN_DISCOVERY_MAX_BAR_PAGES = safety cap per batch, default 200"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 626,
+        "matched": [
+          "page",
+          "limit"
+        ],
+        "text": "page_limit = int(os.getenv(\"CAMPAIGN_DISCOVERY_ALPACA_PAGE_LIMIT\", \"10000\"))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 627,
+        "matched": [
+          "page"
+        ],
+        "text": "max_pages = int(os.getenv(\"CAMPAIGN_DISCOVERY_MAX_BAR_PAGES\", \"200\"))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 631,
+        "matched": [
+          "limit"
+        ],
+        "text": "str(max(390, self.bar_limit * 3)),"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 639,
+        "matched": [
+          "limit"
+        ],
+        "text": "self.diagnostics[\"alpaca_bar_limit_requested\"] = int(self.bar_limit)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 640,
+        "matched": [
+          "page",
+          "limit"
+        ],
+        "text": "self.diagnostics[\"alpaca_page_limit_requested\"] = int(page_limit)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 642,
+        "matched": [
+          "page"
+        ],
+        "text": "self.diagnostics[\"alpaca_max_pages_per_batch\"] = int(max_pages)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 647,
+        "matched": [
+          "page"
+        ],
+        "text": "total_pages_loaded = 0"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 652,
+        "matched": [
+          "page"
+        ],
+        "text": "page_token = None"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 653,
+        "matched": [
+          "page"
+        ],
+        "text": "page_count = 0"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 659,
+        "matched": [
+          "page",
+          "limit"
+        ],
+        "text": "\"limit\": page_limit,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 666,
+        "matched": [
+          "page"
+        ],
+        "text": "if page_token:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 667,
+        "matched": [
+          "page"
+        ],
+        "text": "params[\"page_token\"] = page_token"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 688,
+        "matched": [
+          "page",
+          "next_page"
+        ],
+        "text": "page_token = data.get(\"next_page_token\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 689,
+        "matched": [
+          "page"
+        ],
+        "text": "page_count += 1"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 690,
+        "matched": [
+          "page"
+        ],
+        "text": "total_pages_loaded += 1"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 692,
+        "matched": [
+          "page"
+        ],
+        "text": "if not page_token:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 695,
+        "matched": [
+          "page"
+        ],
+        "text": "if page_count >= max_pages:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 696,
+        "matched": [
+          "pagination"
+        ],
+        "text": "self.diagnostics.setdefault(\"alpaca_pagination_warnings\", []).append("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 697,
+        "matched": [
+          "pagination",
+          "page"
+        ],
+        "text": "f\"Stopped pagination after {page_count} pages for batch starting {batch[0]}\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 728,
+        "matched": [
+          "limit"
+        ],
+        "text": "final_rows = final_rows[-self.bar_limit:]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 734,
+        "matched": [
+          "page"
+        ],
+        "text": "self.diagnostics[\"alpaca_total_pages_loaded\"] = int(total_pages_loaded)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_evidence_builder.py",
+        "line": 1267,
+        "matched": [
+          "limit"
+        ],
+        "text": "# High effort, limited downside result, constructive close location."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_evidence_builder.py",
+        "line": 1279,
+        "matched": [
+          "limit"
+        ],
+        "text": "# Sellers try, but bars close off lows and downside progress is limited."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 66,
+        "matched": [
+          "limit"
+        ],
+        "text": ".limit(1)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 129,
+        "matched": [
+          "limit"
+        ],
+        "text": "def get_top_campaigns(self, limit: int = 100) -> List[Dict[str, Any]]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 131,
+        "matched": [
+          "limit"
+        ],
+        "text": "return campaigns[:limit]"
+      }
+    ],
+    "legacy_fallback": [
+      {
+        "path": "backend\\campaign_engine\\campaign_state_engine.py",
+        "line": 456,
+        "matched": [
+          "legacy birth fallback",
+          "birth score present"
+        ],
+        "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+      }
+    ]
+  },
+  "legacy_fallback_hits": [
+    {
+      "path": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "matched": [
+        "legacy birth fallback",
+        "birth score present"
+      ],
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+    }
+  ],
+  "readiness": {
+    "campaign_pipeline_validated_can_advance": false,
+    "reason": "Source bindings located only. A production-read-only coverage snapshot is still required before campaign_pipeline_validated can become true."
+  },
+  "doctrine": {
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
