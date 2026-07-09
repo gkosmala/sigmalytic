@@ -1,0 +1,25 @@
+﻿{
+    "status":  "FAIL",
+    "mode":  "AUTHORIZED_MIGRATION_APPLY_ABORTED_BEFORE_DB_CALL",
+    "failures":  [
+                     "psql is not available in PATH; cannot perform controlled single-file apply",
+                     "SUPABASE_DB_URL environment variable is not set; cannot apply migration",
+                     "controlled SQL contains forbidden term: stripe"
+                 ],
+    "authorization_phrase":  "I explicitly authorize applying the persisted universe migration.",
+    "executable_sql":  ".\\controlled_apply_tmp\\AUTHORIZED_CREATE_CAMPAIGN_UNIVERSE_SOURCE_2026_07_09.sql",
+    "readiness":  {
+                      "campaign_pipeline_validated_can_advance_now":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "doctrine":  {
+                     "migration_apply_attempted":  false,
+                     "no_database_call_after_failed_preflight":  true,
+                     "no_campaign_mutation":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 }
+}

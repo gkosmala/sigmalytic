@@ -1,0 +1,18 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "LOCAL_SETUP_CHECK_ONLY_NO_DB_CALL_NO_MIGRATION_APPLY_NO_WRITE",
+    "failures":  [
+
+                 ],
+    "warnings":  [
+                     "psql not found; install PostgreSQL client tools",
+                     "postgres database URL not found; set SUPABASE_DB_URL locally"
+                 ],
+    "psql_found":  false,
+    "db_url_found":  false,
+    "readiness":  {
+                      "campaign_pipeline_validated":  false,
+                      "billing_remains_blocked":  true
+                  },
+    "next_step":  "install psql, set SUPABASE_DB_URL locally, then re-run Step 65B"
+}
