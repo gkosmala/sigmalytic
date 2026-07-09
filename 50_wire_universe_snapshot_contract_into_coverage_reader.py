@@ -1,4 +1,22 @@
-"""
+﻿#!/usr/bin/env python3
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+from typing import Any
+
+REPORT = Path("audit_step50_wire_universe_snapshot_contract_into_coverage_reader.json")
+
+STEP49A = Path("audit_step49a_repair_non_mutating_universe_snapshot_contract.json")
+READINESS = Path("v2_readiness.json")
+
+READER = Path("backend/campaign_engine/campaign_pipeline_production_coverage_reader.py")
+CONTRACT = Path("backend/campaign_engine/campaign_pipeline_universe_snapshot_contract.py")
+SNAPSHOT = Path("backend/campaign_engine/campaign_pipeline_read_only_validation_snapshot.py")
+ROUTER = Path("backend/campaign_pipeline_validation_api.py")
+
+READER_TEXT = '''"""
 Sigmalytic V2 — Campaign Pipeline Production Coverage Reader.
 
 GET-only read/select diagnostics.
@@ -475,3 +493,228 @@ __all__ = [
     "CONTRACT_VERSION",
     "build_get_only_production_coverage_snapshot",
 ]
+'''
+
+
+def read(path: Path) -> str:
+    if not path.exists():
+        raise FileNotFoundError(f"missing required file: {path}")
+    return path.read_text(encoding="utf-8-sig", errors="replace")
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    data = json.loads(read(path))
+    if not isinstance(data, dict):
+        raise TypeError(f"JSON root must be object: {path}")
+    return data
+
+
+def write(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+def syntax_check(path: Path, failures: list[str]) -> None:
+    try:
+        ast.parse(read(path), filename=str(path))
+        print("PASS: syntax clean:", path)
+    except SyntaxError as exc:
+        failures.append(f"syntax failure: {path}: {exc.msg} line {exc.lineno}")
+
+
+def verify_absent(path: Path, terms: list[str], failures: list[str]) -> None:
+    text = read(path)
+
+    for term in terms:
+        if term in text:
+            failures.append(f"{path} contains forbidden term: {term}")
+        else:
+            print("PASS: forbidden term absent:", path, term)
+
+
+def verify_present(path: Path, terms: list[str], failures: list[str]) -> None:
+    text = read(path)
+
+    for term in terms:
+        if term not in text:
+            failures.append(f"{path} missing required term: {term}")
+        else:
+            print("PASS: required term present:", path, term)
+
+
+def main() -> int:
+    print("=" * 72)
+    print("SIGMALYTIC V2 — STEP 50 WIRE UNIVERSE SNAPSHOT CONTRACT")
+    print("MODE: LOCAL PATCH + AUDIT / NO DEPLOY / NO WRITE / NO NIGHTLY RUN")
+    print("=" * 72)
+
+    failures: list[str] = []
+
+    step49a = read_json(STEP49A)
+    readiness = read_json(READINESS)
+
+    if step49a.get("status") != "PASS":
+        failures.append("Step 49A report is not PASS")
+    else:
+        print("PASS: Step 49A report PASS")
+
+    required_readiness = {
+        "operator_control_evidence_hardened": True,
+        "legacy_fallbacks_quarantined": True,
+        "campaign_pipeline_validated": False,
+        "d3d_authorized": False,
+        "operator_control_confirmed_by_score": False,
+        "campaign_mutation_without_d3d_law": False,
+    }
+
+    for key, expected in required_readiness.items():
+        actual = readiness.get(key)
+        if actual is not expected:
+            failures.append(f"readiness {key} expected {expected}, got {actual}")
+        else:
+            print(f"PASS: readiness {key}={expected}")
+
+    write(READER, READER_TEXT)
+
+    for path in [READER, CONTRACT, SNAPSHOT, ROUTER]:
+        syntax_check(path, failures)
+
+    verify_absent(
+        READER,
+        [
+            ".insert(",
+            ".upsert(",
+            ".update(",
+            ".delete(",
+            ".rpc(",
+            "run_full_nightly(",
+            "execute_d3d(",
+            "authorize_d3d(",
+            "stripe.",
+        ],
+        failures,
+    )
+
+    verify_present(
+        READER,
+        [
+            "_build_universe_contract_snapshot",
+            "build_non_mutating_universe_snapshot",
+            "universe_contract_snapshot",
+            "full_universe_validation_complete",
+            "bars_symbol_universe_proxy_is_diagnostic_only",
+            "non_mutating_universe_contract_wired",
+            "GET_ONLY_PRODUCTION_COVERAGE_READER_WITH_NON_MUTATING_UNIVERSE_CONTRACT",
+        ],
+        failures,
+    )
+
+    namespace: dict[str, Any] = {}
+    exec(compile(read(READER), str(READER), "exec"), namespace)
+
+    builder = namespace.get("build_get_only_production_coverage_snapshot")
+    if not callable(builder):
+        failures.append("coverage reader builder is not callable")
+        snapshot = None
+    else:
+        snapshot = builder()
+
+    if isinstance(snapshot, dict):
+        for field in [
+            "contract_version",
+            "mode",
+            "validation_complete",
+            "readiness_can_advance",
+            "persisted_universe_available",
+            "full_universe_validation_complete",
+            "universe_contract_snapshot",
+            "doctrine",
+        ]:
+            if field not in snapshot:
+                failures.append(f"snapshot missing field: {field}")
+            else:
+                print("PASS: snapshot field present:", field)
+
+        if snapshot.get("readiness_can_advance") is not False:
+            failures.append("readiness_can_advance must remain false")
+        else:
+            print("PASS: readiness_can_advance=False")
+
+        if "NON_MUTATING_UNIVERSE_CONTRACT" not in str(snapshot.get("mode")):
+            failures.append("snapshot mode does not show universe contract wiring")
+        else:
+            print("PASS: snapshot mode shows universe contract wiring")
+
+        doctrine = snapshot.get("doctrine") or {}
+        if doctrine.get("non_mutating_universe_contract_wired") is not True:
+            failures.append("non_mutating_universe_contract_wired doctrine flag must be true")
+        else:
+            print("PASS: non_mutating_universe_contract_wired=True")
+
+        if doctrine.get("bars_symbol_universe_proxy_is_diagnostic_only") is not True:
+            failures.append("bars_symbol_universe_proxy_is_diagnostic_only doctrine flag must be true")
+        else:
+            print("PASS: bars_symbol_universe_proxy_is_diagnostic_only=True")
+
+        contract_snapshot = snapshot.get("universe_contract_snapshot")
+        if not isinstance(contract_snapshot, dict):
+            failures.append("universe_contract_snapshot must be object")
+        else:
+            print("PASS: universe_contract_snapshot is object")
+
+            if contract_snapshot.get("readiness_can_advance") is not False:
+                failures.append("universe_contract_snapshot readiness_can_advance must remain false")
+            else:
+                print("PASS: universe_contract_snapshot readiness_can_advance=False")
+    else:
+        failures.append("coverage reader snapshot did not return dict")
+
+    report = {
+        "status": "PASS" if not failures else "FAIL",
+        "mode": "LOCAL_PATCH_AND_AUDIT_NO_DEPLOY_NO_WRITE_NO_NIGHTLY_RUN",
+        "failures": failures,
+        "changed": [str(READER)],
+        "snapshot_preview": snapshot,
+        "readiness": {
+            "mutated": False,
+            "campaign_pipeline_validated_current": readiness.get("campaign_pipeline_validated"),
+            "campaign_pipeline_validated_can_advance_now": False,
+            "reason": "Universe contract wired locally. Live deploy/GET verification required; readiness still false.",
+        },
+        "doctrine": {
+            "local_patch_only": True,
+            "get_only_reader": True,
+            "non_mutating_universe_contract_wired": True,
+            "bars_symbol_universe_proxy_is_diagnostic_only": True,
+            "no_deploy": True,
+            "no_nightly_run": True,
+            "no_supabase_write": True,
+            "no_campaign_mutation": True,
+            "no_d3d": True,
+            "no_operator_control_confirmation": True,
+            "no_trade_signal": True,
+            "no_stripe": True,
+            "billing_remains_blocked": True,
+        },
+    }
+
+    REPORT.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print("Report written:", REPORT)
+
+    if failures:
+        print("\nFAILURES")
+        for failure in failures:
+            print("FAIL:", failure)
+        print("=" * 72)
+        print("FAIL: STEP 50 WIRE UNIVERSE SNAPSHOT CONTRACT FAILED")
+        print("=" * 72)
+        return 1
+
+    print("=" * 72)
+    print("PASS: STEP 50 COMPLETE — UNIVERSE SNAPSHOT CONTRACT WIRED INTO COVERAGE READER LOCALLY")
+    print("PASS: readiness remains false; billing remains blocked pending commit/push/live GET verification.")
+    print("=" * 72)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

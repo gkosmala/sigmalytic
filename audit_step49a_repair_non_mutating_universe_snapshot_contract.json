@@ -1,0 +1,88 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_PATCH_AND_AUDIT_NO_DB_CALL_NO_EXTERNAL_UNIVERSE_CALL_NO_WRITE",
+  "failures": [],
+  "created": [
+    "backend\\campaign_engine\\campaign_pipeline_universe_snapshot_contract.py"
+  ],
+  "step48_summary": {
+    "status": "PASS",
+    "recommendation": {
+      "status": "CANDIDATE_SAFE_SOURCE_FOUND",
+      "candidate": {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "type": "FunctionDef",
+        "name": "_load_alpaca_assets",
+        "line_start": 535,
+        "line_end": 558,
+        "universe_score": 6,
+        "safe_terms": [
+          "get",
+          "load",
+          "list"
+        ],
+        "risk_terms": [],
+        "preview": "def _load_alpaca_assets(self) -> List[str]: headers = self._headers() if not headers: self.diagnostics[\"alpaca_assets_error\"] = \"Missing Alpaca credentials.\" return []  try: response = requests.get( f\"{self._alpaca_trading_base_url()}/v2/assets\", headers=headers, params={\"status\": \"active\", \"asset_class\": \"us_equity\"}, timeout=25,"
+      },
+      "next_step": "Create an isolated read-only universe adapter around this source, but do not call it from production readiness until locally audited."
+    },
+    "ranked_candidate_count": 50,
+    "safe_candidate_count": 25
+  },
+  "snapshot_preview": {
+    "contract_version": "SIGMALYTIC_V2_NON_MUTATING_UNIVERSE_SNAPSHOT_CONTRACT_2026_07_09",
+    "as_of": "2026-07-09T17:36:11.726409+00:00",
+    "mode": "NON_MUTATING_UNIVERSE_SNAPSHOT_CONTRACT_NO_DB_CALL_NO_EXTERNAL_UNIVERSE_CALL_NO_WRITE",
+    "locator_status": "PASS",
+    "locator_recommendation_status": "CANDIDATE_SAFE_SOURCE_FOUND",
+    "persisted_universe_available": false,
+    "persisted_universe_table": null,
+    "persisted_universe_count": null,
+    "bars_symbol_universe_proxy_available": false,
+    "bars_symbol_count": null,
+    "campaign_symbol_count": null,
+    "full_universe_validation_complete": false,
+    "readiness_can_advance": false,
+    "reason": "A persisted universe table/count is required for full campaign pipeline validation. Bars-symbol coverage is useful diagnostic evidence but is not silently promoted into a live universe source.",
+    "source_status": {
+      "persisted_universe_table_required_for_full_validation": true,
+      "persisted_universe_table_confirmed": false,
+      "external_live_universe_call_allowed": false,
+      "bars_symbol_universe_proxy_allowed_as_diagnostic_only": true,
+      "bars_symbol_universe_proxy_can_replace_live_universe": false
+    },
+    "doctrine": {
+      "non_mutating_contract_only": true,
+      "no_database_call": true,
+      "no_external_universe_call": true,
+      "no_supabase_write": true,
+      "no_campaign_mutation": true,
+      "no_nightly_run": true,
+      "no_d3d": true,
+      "no_operator_control_confirmation": true,
+      "no_trade_signal": true,
+      "no_stripe": true,
+      "billing_remains_blocked": true
+    }
+  },
+  "readiness": {
+    "mutated": false,
+    "campaign_pipeline_validated_current": false,
+    "campaign_pipeline_validated_can_advance_now": false,
+    "reason": "Universe contract added locally only and cannot advance readiness without a persisted universe table/count."
+  },
+  "repair_note": "Step 49 failed because its verifier overblocked doctrine labels containing supabase/alpaca. Step 49A verifies actual runtime integration tokens instead.",
+  "doctrine": {
+    "local_patch_only": true,
+    "no_database_call": true,
+    "no_external_universe_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_nightly_run": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  }
+}
