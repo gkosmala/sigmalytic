@@ -1,17 +1,16 @@
 """
 Sigmalytic V2 — Campaign Pipeline Read-Only Validation Snapshot.
 
-Step 26E installs this as a module-only contract.
+Read-only diagnostic snapshot builder.
 
-It does not install a route.
-It does not run the nightly pipeline.
-It does not call Alpaca.
-It does not write Supabase.
-It does not mutate campaigns.
-It does not authorize D3D.
-It does not confirm operator control.
-It does not create trade signals.
-It does not touch Stripe.
+This module does not run the nightly pipeline.
+This module does not call Alpaca.
+This module does not write Supabase.
+This module does not mutate campaigns.
+This module does not authorize D3D.
+This module does not confirm operator control.
+This module does not create trade signals.
+This module does not touch Stripe.
 """
 from __future__ import annotations
 
@@ -67,7 +66,7 @@ def _source_presence() -> dict[str, bool]:
     }
 
 
-def build_campaign_pipeline_read_only_validation_snapshot() -> dict[str, Any]:
+def _source_only_snapshot() -> dict[str, Any]:
     source_presence = _source_presence()
 
     schema_payload_alignment = bool(
@@ -79,13 +78,14 @@ def build_campaign_pipeline_read_only_validation_snapshot() -> dict[str, Any]:
     return {
         "contract_version": CONTRACT_VERSION,
         "as_of": datetime.now(timezone.utc).isoformat(),
-        "mode": "MODULE_ONLY_READ_ONLY_DIAGNOSTIC_NO_ROUTE_NO_NIGHTLY_RUN_NO_WRITE",
+        "mode": "SOURCE_ONLY_READ_ONLY_DIAGNOSTIC_NO_NIGHTLY_RUN_NO_WRITE",
+        "coverage_reader_attempted": False,
         "validation_complete": False,
         "readiness_can_advance": False,
         "reason": (
-            "Module-only read-only snapshot builder is installed. "
-            "A live GET route is not installed in this step. "
-            "Production coverage counts are not confirmed."
+            "Source-only read-only snapshot returned because production coverage "
+            "reader was unavailable or failed safely. Production coverage counts "
+            "are not confirmed."
         ),
         "universe_count": None,
         "bars_symbols_count": None,
@@ -97,8 +97,8 @@ def build_campaign_pipeline_read_only_validation_snapshot() -> dict[str, Any]:
         "source_presence": source_presence,
         "required_snapshot_fields": list(REQUIRED_SNAPSHOT_FIELDS),
         "doctrine": {
-            "module_only": True,
-            "get_only_route_not_installed_yet": True,
+            "source_only_fallback": True,
+            "get_only": True,
             "no_nightly_run": True,
             "no_alpaca_call_from_this_module": True,
             "no_supabase_write": True,
@@ -110,6 +110,33 @@ def build_campaign_pipeline_read_only_validation_snapshot() -> dict[str, Any]:
             "campaign_pipeline_validated_remains_false": True,
         },
     }
+
+
+def build_campaign_pipeline_read_only_validation_snapshot() -> dict[str, Any]:
+    try:
+        from campaign_engine.campaign_pipeline_production_coverage_reader import (
+            build_get_only_production_coverage_snapshot,
+        )
+    except Exception:
+        try:
+            from backend.campaign_engine.campaign_pipeline_production_coverage_reader import (
+                build_get_only_production_coverage_snapshot,
+            )
+        except Exception:
+            return _source_only_snapshot()
+
+    try:
+        snapshot = build_get_only_production_coverage_snapshot()
+    except Exception as exc:
+        fallback = _source_only_snapshot()
+        fallback["coverage_reader_error"] = str(exc)
+        return fallback
+
+    snapshot["required_snapshot_fields"] = list(REQUIRED_SNAPSHOT_FIELDS)
+    snapshot["readiness_can_advance"] = False
+    snapshot["doctrine"]["campaign_pipeline_validated_remains_false"] = True
+
+    return snapshot
 
 
 __all__ = [

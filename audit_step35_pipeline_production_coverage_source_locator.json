@@ -1,0 +1,5778 @@
+{
+  "status": "PASS",
+  "mode": "LOCAL_SOURCE_LOCATOR_ONLY_NO_DB_CALL_NO_DEPLOY_NO_WRITE",
+  "failures": [],
+  "syntax_results": {
+    "backend\\campaign_engine\\nightly_campaign_pipeline.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\campaign_engine\\campaign_discovery_engine.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\campaign_engine\\campaign_store.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\campaign_pipeline_validation_api.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\campaign_api.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    },
+    "backend\\main.py": {
+      "exists": true,
+      "ok": true,
+      "error": null
+    }
+  },
+  "coverage_hits": {
+    "universe_count": [
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 10,
+        "term": "universe",
+        "text": "1. Loading a production universe."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 20,
+        "term": "universe",
+        "text": "3. Alpaca active asset universe fallback"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 476,
+        "term": "universe",
+        "text": "def _clean_universe(symbols: Iterable[Any], limit: int) -> List[str]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 555,
+        "term": "universe",
+        "text": "return self._clean_universe(symbols, self.max_symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 560,
+        "term": "universe",
+        "text": "def load_universe_symbols(self, symbols: Optional[Iterable[str]] = None) -> List[str]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 562,
+        "term": "universe",
+        "text": "cleaned = self._clean_universe(symbols, self.max_symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 563,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_source\"] = \"provided_symbols\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 564,
+        "term": "universe_count",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 564,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 569,
+        "term": "universe",
+        "text": "cleaned = self._clean_universe(env_symbols.split(\",\"), self.max_symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 570,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_source\"] = \"SIGMALYTIC_DISCOVERY_SYMBOLS\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 571,
+        "term": "universe_count",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 571,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 577,
+        "term": "universe",
+        "text": "cleaned = self._clean_universe(loaded, self.max_symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 579,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_source\"] = \"radar_service.load_russell1000\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 580,
+        "term": "universe_count",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 580,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 583,
+        "term": "universe",
+        "text": "self.diagnostics[\"radar_universe_error\"] = str(exc)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 586,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_source\"] = \"alpaca_assets_fallback\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 587,
+        "term": "universe_count",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 587,
+        "term": "universe",
+        "text": "self.diagnostics[\"universe_count\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 590,
+        "term": "universe",
+        "text": "def _fetch_bars_from_radar(self, universe: List[str]) -> Dict[str, Any]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 596,
+        "term": "universe",
+        "text": "bars_cache = fetch_bars_batch(universe, timeframe=\"1Day\", limit=self.bar_limit)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 605,
+        "term": "universe",
+        "text": "def _fetch_bars_from_alpaca(self, universe: List[str]) -> Dict[str, Any]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 609,
+        "term": "universe",
+        "text": "This fixes the incomplete universe coverage seen when pagination stopped"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 649,
+        "term": "universe",
+        "text": "for start_idx in range(0, len(universe), batch_size):"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 650,
+        "term": "universe",
+        "text": "batch = universe[start_idx:start_idx + batch_size]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 752,
+        "term": "universe",
+        "text": "def build_records_from_universe(self, symbols: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 754,
+        "term": "universe",
+        "text": "universe = self.load_universe_symbols(symbols=symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 755,
+        "term": "universe",
+        "text": "if not universe:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 758,
+        "term": "universe",
+        "text": "bars_cache = self._fetch_bars_from_radar(universe)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 760,
+        "term": "universe",
+        "text": "bars_cache = self._fetch_bars_from_alpaca(universe)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 764,
+        "term": "universe",
+        "text": "for symbol in universe:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1057,
+        "term": "universe",
+        "text": "records = self.build_records_from_universe(symbols=symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1064,
+        "term": "universe",
+        "text": "records = self.build_records_from_universe(symbols=symbols)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1077,
+        "term": "universe",
+        "text": "\"message\": \"No universe symbols or OHLCV bars available.\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 25,
+        "term": "universe_count",
+        "text": "\"universe_count\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 25,
+        "term": "universe",
+        "text": "\"universe_count\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 62,
+        "term": "universe",
+        "text": "\"universe_binding_present\": \"universe\" in combined,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 90,
+        "term": "universe_count",
+        "text": "\"universe_count\": None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 90,
+        "term": "universe",
+        "text": "\"universe_count\": None,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 401,
+        "term": "universe",
+        "text": "bar_records = discovery.build_records_from_universe(symbols=refresh_symbols)"
+      }
+    ],
+    "bars_symbols_count": [
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 598,
+        "term": "bars_symbols",
+        "text": "self.diagnostics[\"radar_bars_symbols\"] = len(bars_cache)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 738,
+        "term": "bars_symbols",
+        "text": "self.diagnostics[\"alpaca_bars_symbols\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 738,
+        "term": "alpaca_bars_symbols",
+        "text": "self.diagnostics[\"alpaca_bars_symbols\"] = len(cleaned)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 747,
+        "term": "bars_symbols",
+        "text": "self.diagnostics[\"alpaca_bars_symbols\"] = 0"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 747,
+        "term": "alpaca_bars_symbols",
+        "text": "self.diagnostics[\"alpaca_bars_symbols\"] = 0"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 781,
+        "term": "records_built",
+        "text": "self.diagnostics[\"records_built\"] = len(records)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 26,
+        "term": "bars_symbols",
+        "text": "\"bars_symbols_count\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 26,
+        "term": "bars_symbols_count",
+        "text": "\"bars_symbols_count\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 91,
+        "term": "bars_symbols",
+        "text": "\"bars_symbols_count\": None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 91,
+        "term": "bars_symbols_count",
+        "text": "\"bars_symbols_count\": None,"
+      }
+    ],
+    "symbols_missing_bars": [
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 27,
+        "term": "missing_bars",
+        "text": "\"symbols_missing_bars\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 27,
+        "term": "symbols_missing_bars",
+        "text": "\"symbols_missing_bars\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 92,
+        "term": "missing_bars",
+        "text": "\"symbols_missing_bars\": [],"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 92,
+        "term": "symbols_missing_bars",
+        "text": "\"symbols_missing_bars\": [],"
+      }
+    ],
+    "record_min_bars": [
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 739,
+        "term": "min_bars",
+        "text": "self.diagnostics[\"alpaca_min_bars_per_symbol\"] = int(min(lengths))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 784,
+        "term": "record_min_bars",
+        "text": "self.diagnostics[\"record_min_bars\"] = int(min(lengths))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 784,
+        "term": "min_bars",
+        "text": "self.diagnostics[\"record_min_bars\"] = int(min(lengths))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 784,
+        "term": "record_min",
+        "text": "self.diagnostics[\"record_min_bars\"] = int(min(lengths))"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 28,
+        "term": "record_min_bars",
+        "text": "\"record_min_bars\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 28,
+        "term": "min_bars",
+        "text": "\"record_min_bars\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 28,
+        "term": "record_min",
+        "text": "\"record_min_bars\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 93,
+        "term": "record_min_bars",
+        "text": "\"record_min_bars\": None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 93,
+        "term": "min_bars",
+        "text": "\"record_min_bars\": None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 93,
+        "term": "record_min",
+        "text": "\"record_min_bars\": None,"
+      }
+    ],
+    "pagination_complete": [
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 609,
+        "term": "pagination",
+        "text": "This fixes the incomplete universe coverage seen when pagination stopped"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 652,
+        "term": "page_token",
+        "text": "page_token = None"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 666,
+        "term": "page_token",
+        "text": "if page_token:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 667,
+        "term": "page_token",
+        "text": "params[\"page_token\"] = page_token"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 688,
+        "term": "next_page",
+        "text": "page_token = data.get(\"next_page_token\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 688,
+        "term": "page_token",
+        "text": "page_token = data.get(\"next_page_token\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 692,
+        "term": "page_token",
+        "text": "if not page_token:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 696,
+        "term": "pagination",
+        "text": "self.diagnostics.setdefault(\"alpaca_pagination_warnings\", []).append("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 697,
+        "term": "pagination",
+        "text": "f\"Stopped pagination after {page_count} pages for batch starting {batch[0]}\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 697,
+        "term": "stopped pagination",
+        "text": "f\"Stopped pagination after {page_count} pages for batch starting {batch[0]}\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 29,
+        "term": "pagination_complete",
+        "text": "\"pagination_complete\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 29,
+        "term": "pagination",
+        "text": "\"pagination_complete\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 94,
+        "term": "pagination_complete",
+        "text": "\"pagination_complete\": False,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 94,
+        "term": "pagination",
+        "text": "\"pagination_complete\": False,"
+      }
+    ],
+    "schema_payload_alignment": [
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 68,
+        "term": "schema",
+        "text": "Bridge database schema fields back into the evidence names expected by"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 129,
+        "term": "payload",
+        "text": "def _safe_update_payload(original_campaign, transition):"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 130,
+        "term": "payload",
+        "text": "payload = dict(original_campaign)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 132,
+        "term": "payload",
+        "text": "payload.pop(\"campaign_state\", None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 133,
+        "term": "payload",
+        "text": "payload.pop(\"last_pipeline_run\", None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 134,
+        "term": "payload",
+        "text": "payload.pop(\"transition_reason\", None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 135,
+        "term": "payload",
+        "text": "payload.pop(\"transition_confidence\", None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 137,
+        "term": "campaigns",
+        "text": "# Hydrated-only fields are not real columns in campaigns table."
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 148,
+        "term": "payload",
+        "text": "payload.pop(key, None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 150,
+        "term": "payload",
+        "text": "payload[\"current_state\"] = transition.new_state.value"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 152,
+        "term": "payload",
+        "text": "if \"state_enum\" in payload:"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 153,
+        "term": "payload",
+        "text": "payload[\"state_enum\"] = transition.new_state.value"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 155,
+        "term": "payload",
+        "text": "if \"transition_next_state\" in payload:"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 156,
+        "term": "payload",
+        "text": "payload[\"transition_next_state\"] = transition.new_state.value"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 158,
+        "term": "payload",
+        "text": "if \"transition_bias\" in payload:"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 159,
+        "term": "payload",
+        "text": "payload[\"transition_bias\"] = transition.reason"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 161,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 185,
+        "term": "campaigns",
+        "text": "\"campaigns_discovered\": 0,"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 208,
+        "term": "campaigns",
+        "text": "\"campaigns_discovered\": 0,"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 214,
+        "term": "campaigns",
+        "text": "campaigns = self.store.get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 217,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 227,
+        "term": "payload",
+        "text": "payload = _safe_update_payload("
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 232,
+        "term": "payload",
+        "text": "self.store.save_campaign(payload)"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 252,
+        "term": "campaigns",
+        "text": "\"campaigns_processed\": len(results),"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 263,
+        "term": "campaigns",
+        "text": "CampaignStore = _load_class("
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 265,
+        "term": "campaigns",
+        "text": "[\"CampaignStore\", \"CampaignRepository\"],"
+      },
+      {
+        "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+        "line": 268,
+        "term": "campaigns",
+        "text": "store = CampaignStore()"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 14,
+        "term": "campaigns",
+        "text": "5. Saving qualifying BIRTH campaigns."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 59,
+        "term": "campaigns",
+        "text": "from backend.campaign_engine.campaign_store import CampaignStore"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 61,
+        "term": "campaigns",
+        "text": "CampaignStore = None"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 87,
+        "term": "payload",
+        "text": "payload: Dict[str, Any]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 109,
+        "term": "campaigns",
+        "text": "self.store = store or (CampaignStore() if CampaignStore is not None else None)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 839,
+        "term": "payload",
+        "text": "def _build_campaign_payload("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 898,
+        "term": "payload",
+        "text": "payload={},"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 996,
+        "term": "payload",
+        "text": "payload: Dict[str, Any] = {}"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 998,
+        "term": "payload",
+        "text": "payload = self._build_campaign_payload("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1007,
+        "term": "payload",
+        "text": "self.store.save_campaign(payload)"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1025,
+        "term": "payload",
+        "text": "payload=payload,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1049,
+        "term": "campaigns",
+        "text": "\"campaigns_discovered\": len(discovered),"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+        "line": 1073,
+        "term": "campaigns",
+        "text": "\"campaigns_discovered\": 0,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 11,
+        "term": "campaigns",
+        "text": "CAMPAIGN_TABLE = \"campaigns\""
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 14,
+        "term": "campaigns",
+        "text": "class CampaignStore:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 42,
+        "term": "payload",
+        "text": "def save_campaign(self, payload: Dict[str, Any]) -> Dict[str, Any]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 50,
+        "term": "payload",
+        "text": "payload,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 72,
+        "term": "campaigns",
+        "text": "def get_active_campaigns("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 105,
+        "term": "campaigns",
+        "text": "campaigns = result.data or []"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 108,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 129,
+        "term": "campaigns",
+        "text": "def get_top_campaigns(self, limit: int = 100) -> List[Dict[str, Any]]:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 130,
+        "term": "campaigns",
+        "text": "campaigns = self.get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 131,
+        "term": "campaigns",
+        "text": "return campaigns[:limit]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 10,
+        "term": "campaigns",
+        "text": "It does not mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 30,
+        "term": "schema_payload",
+        "text": "\"schema_payload_alignment\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 30,
+        "term": "payload",
+        "text": "\"schema_payload_alignment\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 30,
+        "term": "schema",
+        "text": "\"schema_payload_alignment\","
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 65,
+        "term": "schema_payload",
+        "text": "\"schema_payload_terms_present\": \"payload\" in combined and \"schema\" in combined,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 65,
+        "term": "payload",
+        "text": "\"schema_payload_terms_present\": \"payload\" in combined and \"schema\" in combined,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 65,
+        "term": "schema",
+        "text": "\"schema_payload_terms_present\": \"payload\" in combined and \"schema\" in combined,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 73,
+        "term": "schema_payload",
+        "text": "schema_payload_alignment = bool("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 73,
+        "term": "payload",
+        "text": "schema_payload_alignment = bool("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 73,
+        "term": "schema",
+        "text": "schema_payload_alignment = bool("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 75,
+        "term": "schema_payload",
+        "text": "and source_presence[\"schema_payload_terms_present\"]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 75,
+        "term": "payload",
+        "text": "and source_presence[\"schema_payload_terms_present\"]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 75,
+        "term": "schema",
+        "text": "and source_presence[\"schema_payload_terms_present\"]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 95,
+        "term": "schema_payload",
+        "text": "\"schema_payload_alignment\": schema_payload_alignment,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 95,
+        "term": "payload",
+        "text": "\"schema_payload_alignment\": schema_payload_alignment,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 95,
+        "term": "schema",
+        "text": "\"schema_payload_alignment\": schema_payload_alignment,"
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 9,
+        "term": "campaigns",
+        "text": "This router does not mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 34,
+        "term": "campaigns",
+        "text": "prefix=\"/api/campaigns/read-only\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6,
+        "term": "campaigns",
+        "text": "from backend.campaign_engine.campaign_store import CampaignStore"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 15,
+        "term": "campaigns",
+        "text": "return CampaignStore()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 51,
+        "term": "payload",
+        "text": "or out.get(\"evidence_payload\")"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 141,
+        "term": "campaigns",
+        "text": "campaigns: List[Dict[str, Any]],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 143,
+        "term": "campaigns",
+        "text": "return [_attach_weis_gamma_summary(c) for c in campaigns]"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 147,
+        "term": "campaigns",
+        "text": "campaigns: List[Dict[str, Any]],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 152,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 188,
+        "term": "campaigns",
+        "text": "campaigns: List[Dict[str, Any]],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 194,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 203,
+        "term": "campaigns",
+        "text": "campaigns: List[Dict[str, Any]],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 208,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 219,
+        "term": "campaigns",
+        "text": "campaigns: List[Dict[str, Any]],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 225,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 226,
+        "term": "payload",
+        "text": "section_payload = _evidence_section(campaign, section)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 227,
+        "term": "payload",
+        "text": "if field not in section_payload:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 229,
+        "term": "payload",
+        "text": "elif bool(section_payload.get(field)):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 237,
+        "term": "campaigns",
+        "text": "def _evidence_presence_counts(campaigns: List[Dict[str, Any]]) -> Dict[str, int]:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 248,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 261,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 262,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 266,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 342,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 347,
+        "term": "campaigns",
+        "text": "\"full_depth_campaigns\": full_depth_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 348,
+        "term": "campaigns",
+        "text": "\"legacy_operator_control_evidence_campaigns\": legacy_operator_control_evidence_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 349,
+        "term": "campaigns",
+        "text": "\"d3d_production_confirmed_operator_control_campaigns\": [],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 459,
+        "term": "campaigns",
+        "text": "rows = list(base.get(\"full_depth_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 492,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": base.get(\"total_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 497,
+        "term": "campaigns",
+        "text": "\"ranked_diagnostic_campaigns\": ranked_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 503,
+        "term": "campaigns",
+        "text": "\"conflicted_campaigns\": ["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 515,
+        "term": "payload",
+        "text": "ranking_payload = evidence_diagnostic_rankings()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 516,
+        "term": "payload",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 516,
+        "term": "campaigns",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 657,
+        "term": "payload",
+        "text": "summary_payload = status()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 658,
+        "term": "payload",
+        "text": "diagnostics_payload = evidence_diagnostics()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 659,
+        "term": "payload",
+        "text": "ranking_payload = evidence_diagnostic_rankings()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 661,
+        "term": "payload",
+        "text": "ranked_rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 661,
+        "term": "campaigns",
+        "text": "ranked_rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 662,
+        "term": "payload",
+        "text": "legacy_operator_rows = list(ranking_payload.get(\"legacy_operator_control_evidence_ranked_diagnostic_only\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 663,
+        "term": "payload",
+        "text": "conflicted_rows = list(ranking_payload.get(\"conflicted_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 663,
+        "term": "campaigns",
+        "text": "conflicted_rows = list(ranking_payload.get(\"conflicted_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 717,
+        "term": "payload",
+        "text": "\"total_campaigns\": ranking_payload.get(\"total_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 717,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": ranking_payload.get(\"total_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 718,
+        "term": "payload",
+        "text": "\"full_depth_count\": ranking_payload.get(\"full_depth_count\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 719,
+        "term": "payload",
+        "text": "\"legacy_operator_control_evidence_count\": ranking_payload.get(\"legacy_operator_control_evidence_count\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 720,
+        "term": "payload",
+        "text": "\"d3d_production_confirmed_operator_control_count\": ranking_payload.get(\"d3d_production_confirmed_operator_control_count\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 728,
+        "term": "campaigns",
+        "text": "\"aligned_a_diagnostic_campaigns\": aligned_a_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 729,
+        "term": "campaigns",
+        "text": "\"legacy_operator_control_evidence_campaigns\": legacy_operator_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 730,
+        "term": "campaigns",
+        "text": "\"d3d_production_confirmed_operator_control_campaigns\": [],"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 731,
+        "term": "campaigns",
+        "text": "\"gamma_refresh_needed_campaigns\": gamma_refresh_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 732,
+        "term": "campaigns",
+        "text": "\"conflict_blocked_campaigns\": blocked_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 733,
+        "term": "campaigns",
+        "text": "\"conflicted_campaigns\": conflicted_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 734,
+        "term": "payload",
+        "text": "\"summary_payload\": summary_payload,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 735,
+        "term": "payload",
+        "text": "\"diagnostics_payload\": diagnostics_payload,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 736,
+        "term": "payload",
+        "text": "\"ranking_payload\": ranking_payload,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 743,
+        "term": "payload",
+        "text": "audit_payload = evidence_audit_export()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 744,
+        "term": "payload",
+        "text": "ranking_payload = evidence_diagnostic_rankings()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 746,
+        "term": "payload",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 746,
+        "term": "campaigns",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 798,
+        "term": "payload",
+        "text": "current_conflicted_count = len(list(ranking_payload.get(\"conflicted_campaigns\") or []))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 798,
+        "term": "campaigns",
+        "text": "current_conflicted_count = len(list(ranking_payload.get(\"conflicted_campaigns\") or []))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 806,
+        "term": "campaigns",
+        "text": "\"Current conflicted_campaigns count includes soft flags such as gamma refresh or state-mapping differences.\""
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 832,
+        "term": "payload",
+        "text": "\"total_campaigns\": audit_payload.get(\"counts\", {}).get(\"total_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 832,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": audit_payload.get(\"counts\", {}).get(\"total_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 833,
+        "term": "payload",
+        "text": "\"full_depth_count\": audit_payload.get(\"counts\", {}).get(\"full_depth_count\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 844,
+        "term": "payload",
+        "text": "\"diagnostic_tier_counts\": audit_payload.get(\"diagnostic_tier_counts\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 858,
+        "term": "campaigns",
+        "text": "\"hard_conflict_campaigns\": hard_conflict_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 859,
+        "term": "campaigns",
+        "text": "\"gamma_refresh_needed_campaigns\": refresh_needed_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 860,
+        "term": "campaigns",
+        "text": "\"state_mapping_only_campaigns\": state_mapping_only_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 861,
+        "term": "campaigns",
+        "text": "\"operator_confirmed_hard_conflict_campaigns\": operator_confirmed_hard_conflict_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 862,
+        "term": "campaigns",
+        "text": "\"operator_confirmed_gamma_refresh_needed_campaigns\": operator_confirmed_refresh_needed_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 943,
+        "term": "payload",
+        "text": "ranking_payload = evidence_diagnostic_rankings()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 944,
+        "term": "payload",
+        "text": "calibration_payload = evidence_calibration_review()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 946,
+        "term": "payload",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 946,
+        "term": "campaigns",
+        "text": "rows = list(ranking_payload.get(\"ranked_diagnostic_campaigns\") or [])"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 992,
+        "term": "payload",
+        "text": "\"legacy_conflicted_count\": len(list(ranking_payload.get(\"conflicted_campaigns\") or [])),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 992,
+        "term": "campaigns",
+        "text": "\"legacy_conflicted_count\": len(list(ranking_payload.get(\"conflicted_campaigns\") or [])),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 999,
+        "term": "payload",
+        "text": "\"calibration_summary\": calibration_payload.get(\"calibration_summary\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1008,
+        "term": "campaigns",
+        "text": "\"hard_conflict_campaigns\": hard_conflict_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1009,
+        "term": "campaigns",
+        "text": "\"refresh_required_campaigns\": refresh_required_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1010,
+        "term": "campaigns",
+        "text": "\"state_mapping_only_campaigns\": state_mapping_only_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1011,
+        "term": "campaigns",
+        "text": "\"no_conflict_campaigns\": no_conflict_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1012,
+        "term": "campaigns",
+        "text": "\"taxonomy_enriched_campaigns\": enriched_rows,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1034,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1070,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1095,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1118,
+        "term": "campaigns",
+        "text": "and review.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1135,
+        "term": "payload",
+        "text": "\"payload\": review,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1206,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1220,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1251,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1293,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1314,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1343,
+        "term": "campaigns",
+        "text": "and validation.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1360,
+        "term": "payload",
+        "text": "\"payload\": validation,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1423,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1437,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1470,
+        "term": "campaigns",
+        "text": "It does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1511,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1528,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1555,
+        "term": "campaigns",
+        "text": "and review.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1573,
+        "term": "payload",
+        "text": "\"payload\": review,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1670,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1680,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1728,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1749,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1762,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1782,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1814,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1824,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1852,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1875,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1887,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1902,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1933,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1943,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1965,
+        "term": "campaigns",
+        "text": "Explains why campaigns do or do not produce EXPLICIT_GEOMETRY SML."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1968,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1991,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2002,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2021,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2052,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2062,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2086,
+        "term": "campaigns",
+        "text": "Identifies shadow-confirmable / plausible stealth operator-control campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2090,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2119,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2132,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2149,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2184,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2196,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2258,
+        "term": "payload",
+        "text": "payload = request or {}"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2259,
+        "term": "payload",
+        "text": "execute_requested = bool(payload.get(\"execute\") is True)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2260,
+        "term": "payload",
+        "text": "confirm_phrase = str(payload.get(\"confirm_phrase\") or \"\")"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2262,
+        "term": "payload",
+        "text": "max_mutations = int(payload.get(\"max_mutations\") or 10)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2265,
+        "term": "payload",
+        "text": "requested_symbols = payload.get(\"symbols\") or payload.get(\"symbol\") or []"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2269,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2279,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2300,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2336,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": bool(execution_authorized and len(mutation_summaries) > 0),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2346,
+        "term": "campaigns",
+        "text": "\"total_campaigns_seen\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2347,
+        "term": "campaigns",
+        "text": "\"total_campaigns_reviewed\": len(rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2369,
+        "term": "campaigns",
+        "text": "Reviews which campaigns qualify as Composite Operator confirmation"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2374,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2416,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2429,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2471,
+        "term": "payload",
+        "text": "\"payload\": candidate,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2548,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2549,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2596,
+        "term": "payload",
+        "text": "def _true_flags(payload, names):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2597,
+        "term": "payload",
+        "text": "payload = _as_dict(payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2598,
+        "term": "payload",
+        "text": "return [name for name in names if bool(payload.get(name))]"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2600,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2634,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2782,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2783,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2809,
+        "term": "campaigns",
+        "text": "This endpoint does not mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2838,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2852,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2934,
+        "term": "payload",
+        "text": "\"payload\": footprints,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2989,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2990,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3015,
+        "term": "campaigns",
+        "text": "This endpoint organizes active campaigns by doctrine_classifier evidence."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3018,
+        "term": "campaigns",
+        "text": "- score campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3026,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3027,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3044,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3284,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3285,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3307,
+        "term": "payload",
+        "text": "This endpoint reviews evidence.doctrine_classifier payloads already stored"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3308,
+        "term": "campaigns",
+        "text": "on active campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3311,
+        "term": "campaigns",
+        "text": "- score campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3312,
+        "term": "campaigns",
+        "text": "- rank campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3319,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3320,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3324,
+        "term": "payload",
+        "text": "sample_payloads = []"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3338,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3419,
+        "term": "payload",
+        "text": "if len(sample_payloads) < 10:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3420,
+        "term": "payload",
+        "text": "sample_payloads.append({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3437,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3438,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3447,
+        "term": "payload",
+        "text": "\"sample_payloads\": sample_payloads,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3459,
+        "term": "campaigns",
+        "text": "def active_campaigns():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3460,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3461,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3462,
+        "term": "campaigns",
+        "text": "return {\"campaigns\": campaigns}"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3467,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_top_campaigns(limit=100)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3468,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3471,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3481,
+        "term": "campaigns",
+        "text": "return {\"campaigns\": ranked}"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3486,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3487,
+        "term": "campaigns",
+        "text": "campaigns = _attach_weis_gamma_summaries(campaigns)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3493,
+        "term": "campaigns",
+        "text": "1 for c in campaigns if c.get(\"weis_gamma_present\") is True"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3497,
+        "term": "campaigns",
+        "text": "1 for c in campaigns if c.get(\"weis_gamma_present\") is not True"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3501,
+        "term": "campaigns",
+        "text": "1 for c in campaigns if c.get(\"weis_gamma_transition_enabled\") is True"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3506,
+        "term": "campaigns",
+        "text": "for c in campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3512,
+        "term": "campaigns",
+        "text": "for c in campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3518,
+        "term": "campaigns",
+        "text": "for c in campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3527,
+        "term": "campaigns",
+        "text": "for c in campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3546,
+        "term": "campaigns",
+        "text": "\"active_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3547,
+        "term": "campaigns",
+        "text": "\"birth_candidates\": sum(1 for c in campaigns if state(c) == \"BIRTH\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3548,
+        "term": "campaigns",
+        "text": "\"expanding_campaigns\": sum(1 for c in campaigns if state(c) == \"EXPANDING\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3550,
+        "term": "campaigns",
+        "text": "1 for c in campaigns if state(c) == \"DISTRIBUTION_RISK\""
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3554,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3563,
+        "term": "campaigns",
+        "text": "\"phase_counts\": _count_by_field(campaigns, \"weis_gamma_phase\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3564,
+        "term": "campaigns",
+        "text": "\"rank_bucket_counts\": _count_by_field(campaigns, \"weis_gamma_rank_bucket\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3565,
+        "term": "campaigns",
+        "text": "\"gamma_status_counts\": _count_by_field(campaigns, \"weis_gamma_effective_gamma_status\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3566,
+        "term": "campaigns",
+        "text": "\"raw_gamma_status_counts\": _count_by_field(campaigns, \"weis_gamma_gamma_status\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3567,
+        "term": "campaigns",
+        "text": "\"option_chain_status_counts\": _count_by_field(campaigns, \"weis_gamma_option_chain_status\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3568,
+        "term": "campaigns",
+        "text": "\"fusion_state_counts\": _count_by_field(campaigns, \"weis_gamma_effective_fusion_state\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3569,
+        "term": "campaigns",
+        "text": "\"raw_fusion_state_counts\": _count_by_field(campaigns, \"weis_gamma_fusion_state\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3576,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3577,
+        "term": "campaigns",
+        "text": "\"evidence_presence_counts\": _evidence_presence_counts(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3579,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3584,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3589,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3594,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3599,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3604,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3609,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3614,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3619,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3624,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3628,
+        "term": "campaigns",
+        "text": "campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3651,
+        "term": "campaigns",
+        "text": "- does not mutate campaigns"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3665,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3671,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3685,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3686,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3687,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3695,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3705,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3721,
+        "term": "payload",
+        "text": "return _error_payload(\"IMPORT_ENGINE\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3724,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3726,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3726,
+        "term": "campaigns",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3735,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3750,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3791,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3820,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3821,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3825,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3835,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3842,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3857,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3863,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3876,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3877,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3878,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3886,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3897,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3913,
+        "term": "payload",
+        "text": "return _error_payload(\"IMPORT_ENGINE\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3916,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3918,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3918,
+        "term": "campaigns",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3928,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3942,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3980,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4009,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4010,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4014,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4025,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4033,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4048,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4054,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4067,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4068,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4069,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4077,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4089,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4105,
+        "term": "payload",
+        "text": "return _error_payload(\"IMPORT_ENGINE\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4108,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4110,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4110,
+        "term": "campaigns",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4121,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4135,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4178,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4207,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4208,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4212,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4224,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4232,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4247,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4253,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4266,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4267,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4268,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4276,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4289,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4305,
+        "term": "payload",
+        "text": "return _error_payload(\"IMPORT_ENGINE\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4308,
+        "term": "campaigns",
+        "text": "campaigns = _store().get_active_campaigns()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4310,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4310,
+        "term": "campaigns",
+        "text": "return _error_payload(\"LOAD_ACTIVE_CAMPAIGNS\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4322,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4336,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4381,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4411,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4412,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4416,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(campaigns),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4429,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4439,
+        "term": "campaigns",
+        "text": "This endpoint does NOT mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4456,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4462,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4478,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4479,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4480,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4488,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4503,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4522,
+        "term": "payload",
+        "text": "return _error_payload(\"IMPORT_ENGINE\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4525,
+        "term": "payload",
+        "text": "decision_payload = macro_anchor_decision_zone_review()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4527,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2E_DECISION_ZONE_PAYLOAD\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4530,
+        "term": "payload",
+        "text": "d3j_payload = operator_control_plausibility_status_review()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4532,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3J_PLAUSIBILITY_PAYLOAD\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4534,
+        "term": "payload",
+        "text": "decision_rows = decision_payload.get(\"rows\") or []"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4535,
+        "term": "payload",
+        "text": "d3j_rows = d3j_payload.get(\"rows\") or []"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4564,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4619,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4653,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4654,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4662,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4679,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4704,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4710,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4730,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4731,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4732,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4738,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4747,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4749,
+        "term": "payload",
+        "text": "def _rows_from_payload(payload):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4750,
+        "term": "payload",
+        "text": "if not isinstance(payload, dict):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4752,
+        "term": "payload",
+        "text": "rows = payload.get(\"rows\")"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4755,
+        "term": "payload",
+        "text": "review_rows = payload.get(\"review_rows\")"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4806,
+        "term": "payload",
+        "text": "confluence_payload = macro_anchor_behavioral_resolution_confluence_review()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4808,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2F_CONFLUENCE_PAYLOAD\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4811,
+        "term": "payload",
+        "text": "d3c_payload = wyckoff_weis_operator_confirmation_review()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4813,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C_WYCKOFF_WEIS_PAYLOAD\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4815,
+        "term": "payload",
+        "text": "confluence_rows = _rows_from_payload(confluence_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4816,
+        "term": "payload",
+        "text": "d3c_rows = _rows_from_payload(d3c_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4959,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5026,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5086,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5087,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5096,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5122,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5134,
+        "term": "campaigns",
+        "text": "- Never mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5156,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5165,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5201,
+        "term": "payload",
+        "text": "def _rows_from_payload(payload):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5202,
+        "term": "payload",
+        "text": "payload = _as_dict(payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5214,
+        "term": "payload",
+        "text": "value = payload.get(key)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5300,
+        "term": "payload",
+        "text": "def _call_first_payload(names):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5305,
+        "term": "payload",
+        "text": "raise RuntimeError(\"None of the expected payload functions are available: \" + \", \".join(names))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5307,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5308,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5309,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5313,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5321,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5324,
+        "term": "payload",
+        "text": "d3c1_payload, d3c1_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5331,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C1_STRUCTURAL_LOCATION_INPUT_REVIEW\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5334,
+        "term": "payload",
+        "text": "d3c2o_payload, d3c2o_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5339,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2O_HIGH_PRIORITY_BEHAVIORAL_RESOLUTION\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5341,
+        "term": "payload",
+        "text": "d3c1_rows = _rows_from_payload(d3c1_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5342,
+        "term": "payload",
+        "text": "d3c2o_rows = _rows_from_payload(d3c2o_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5439,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5494,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5547,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5548,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5551,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(d3c1_rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5572,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5586,
+        "term": "campaigns",
+        "text": "- Never mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5595,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5604,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5648,
+        "term": "payload",
+        "text": "def _rows_from_payload(payload):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5649,
+        "term": "payload",
+        "text": "payload = _as_dict(payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5659,
+        "term": "payload",
+        "text": "value = payload.get(key)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5667,
+        "term": "payload",
+        "text": "def _call_first_payload(names):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5672,
+        "term": "payload",
+        "text": "raise RuntimeError(\"None of the expected payload functions are available: \" + \", \".join(names))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5674,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5675,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5676,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5680,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5688,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5691,
+        "term": "payload",
+        "text": "d3c2o_payload, d3c2o_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5696,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2O_HIGH_PRIORITY_BEHAVIORAL_RESOLUTION\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5698,
+        "term": "payload",
+        "text": "d3c2o_rows = _rows_from_payload(d3c2o_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5814,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5895,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5949,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5950,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5952,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(d3c2o_rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5973,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5986,
+        "term": "campaigns",
+        "text": "- Never mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5995,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6004,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6047,
+        "term": "payload",
+        "text": "def _rows_from_payload(payload):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6048,
+        "term": "payload",
+        "text": "payload = _as_dict(payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6058,
+        "term": "payload",
+        "text": "value = payload.get(key)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6074,
+        "term": "payload",
+        "text": "def _call_first_payload(names):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6079,
+        "term": "payload",
+        "text": "raise RuntimeError(\"None of the expected payload functions are available: \" + \", \".join(names))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6081,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6082,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6083,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6087,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6095,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6098,
+        "term": "payload",
+        "text": "d3j_payload, d3j_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6103,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3J_OPERATOR_CONTROL_PLAUSIBILITY\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6106,
+        "term": "payload",
+        "text": "d3c2s_payload, d3c2s_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6111,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2S_DOCTRINE_LEG_EXPLANATION\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6113,
+        "term": "payload",
+        "text": "d3j_rows = _rows_from_payload(d3j_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6114,
+        "term": "payload",
+        "text": "d3c2s_rows = _rows_from_payload(d3c2s_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6229,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6278,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6331,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6332,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6335,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(d3j_rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6355,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6363,
+        "term": "campaigns",
+        "text": "- Identify which campaigns would be considered for future D3D review."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6369,
+        "term": "campaigns",
+        "text": "- Never mutate campaigns."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6379,
+        "term": "payload",
+        "text": "def _base_payload():"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6390,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6423,
+        "term": "payload",
+        "text": "def _rows_from_payload(payload):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6424,
+        "term": "payload",
+        "text": "payload = _as_dict(payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6434,
+        "term": "payload",
+        "text": "value = payload.get(key)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6450,
+        "term": "payload",
+        "text": "def _call_first_payload(names):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6455,
+        "term": "payload",
+        "text": "raise RuntimeError(\"None of the expected payload functions are available: \" + \", \".join(names))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6457,
+        "term": "payload",
+        "text": "def _error_payload(stage, exc):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6458,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6459,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6463,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": 0,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6473,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6476,
+        "term": "payload",
+        "text": "d3c2t_payload, d3c2t_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6481,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2T_STEALTH_MONITORING\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6484,
+        "term": "payload",
+        "text": "d3c2r_payload, d3c2r_function_used = _call_first_payload(["
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6489,
+        "term": "payload",
+        "text": "return _error_payload(\"LOAD_D3C2R_HVN_POC_SOURCE_REVIEW\", exc)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6491,
+        "term": "payload",
+        "text": "d3c2t_rows = _rows_from_payload(d3c2t_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6492,
+        "term": "payload",
+        "text": "d3c2r_rows = _rows_from_payload(d3c2r_payload)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6589,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6624,
+        "term": "payload",
+        "text": "\"source_payload_policy\": \"COMPACT_SUMMARY_ONLY\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6655,
+        "term": "campaigns",
+        "text": "and row.get(\"mutates_campaigns\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6708,
+        "term": "payload",
+        "text": "payload = _base_payload()"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6709,
+        "term": "payload",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6712,
+        "term": "campaigns",
+        "text": "\"total_campaigns\": len(d3c2t_rows),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6731,
+        "term": "payload",
+        "text": "return payload"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6736,
+        "term": "campaigns",
+        "text": "# credentials. It does not persist bars, write Supabase rows, mutate campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6780,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": result.get(\"mutates_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6815,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6831,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_bars\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6833,
+        "term": "payload",
+        "text": "candidate_payload={\"symbol\": symbol},"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6848,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6904,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6932,
+        "term": "campaigns",
+        "text": "\"reason\": \"D4E.2 only probes deployed read-only OHLCV source access. It does not persist bars, mutate campaigns, construct HVN/POC, authorize D3D, or confirm operator control.\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6940,
+        "term": "campaigns",
+        "text": "# campaigns, authorize D3D, or confirm operator control."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7199,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7215,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_bars\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7217,
+        "term": "payload",
+        "text": "candidate_payload={\"symbol\": symbol},"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7236,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7256,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7318,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7426,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": result.get(\"mutates_campaigns\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7463,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7479,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_bars\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7481,
+        "term": "payload",
+        "text": "candidate_payload={\"symbol\": symbol},"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7496,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7557,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7861,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7877,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_bars\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7879,
+        "term": "payload",
+        "text": "candidate_payload={\"symbol\": symbol},"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7898,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7919,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7980,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8074,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8088,
+        "term": "payload",
+        "text": "def _src7c_candidate_payload_for_fixture_mode(symbol, fixture_mode):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8113,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8203,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8213,
+        "term": "payload",
+        "text": "candidate_payload = _src7c_candidate_payload_for_fixture_mode(symbol, normalized_fixture_mode)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8217,
+        "term": "payload",
+        "text": "candidate_payload=candidate_payload,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8220,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_explicit_sml_records\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8280,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8315,
+        "term": "campaigns",
+        "text": "\"reason\": \"SRC7C probes explicit SML runtime source availability through the SRC7B read-only adapter. It does not persist records, mutate campaigns, confirm operator control, or authorize D3D.\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8380,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8394,
+        "term": "payload",
+        "text": "def _src7g_candidate_payload_for_fixture_mode(symbol, fixture_mode):"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8419,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8521,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8555,
+        "term": "payload",
+        "text": "candidate_payload = _src7g_candidate_payload_for_fixture_mode(symbol, normalized_fixture_mode)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8559,
+        "term": "payload",
+        "text": "candidate_payload=candidate_payload,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8562,
+        "term": "payload",
+        "text": "\"existing_non_mutating_runtime_payload_explicit_sml_records\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8618,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 133,
+        "term": "payload",
+        "text": "payload = r.json() or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 134,
+        "term": "payload",
+        "text": "bars = payload.get(\"bars\") or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 186,
+        "term": "campaigns",
+        "text": "This prevents repeated 404 logs without touching campaigns, SIP, Admin, Radar, or scoring."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 220,
+        "term": "payload",
+        "text": "def run_full_nightly(payload: dict = Body(default=None)):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 221,
+        "term": "payload",
+        "text": "payload = payload or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 224,
+        "term": "payload",
+        "text": "payload.get(\"symbols\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 225,
+        "term": "payload",
+        "text": "or payload.get(\"tickers\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 226,
+        "term": "payload",
+        "text": "or payload.get(\"symbol\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 242,
+        "term": "payload",
+        "text": "if payload.get(\"max_symbols\") is not None:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 243,
+        "term": "payload",
+        "text": "run_kwargs[\"max_symbols\"] = payload.get(\"max_symbols\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 245,
+        "term": "payload",
+        "text": "if payload.get(\"bar_limit\") is not None:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 246,
+        "term": "payload",
+        "text": "run_kwargs[\"bar_limit\"] = payload.get(\"bar_limit\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 248,
+        "term": "payload",
+        "text": "if payload.get(\"timeframe\") is not None:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 249,
+        "term": "payload",
+        "text": "run_kwargs[\"timeframe\"] = payload.get(\"timeframe\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 256,
+        "term": "payload",
+        "text": "\"max_symbols\": payload.get(\"max_symbols\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 257,
+        "term": "payload",
+        "text": "\"bar_limit\": payload.get(\"bar_limit\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 258,
+        "term": "payload",
+        "text": "\"timeframe\": payload.get(\"timeframe\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 306,
+        "term": "payload",
+        "text": "def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 307,
+        "term": "payload",
+        "text": "payload = payload or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 310,
+        "term": "payload",
+        "text": "payload.get(\"symbols\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 311,
+        "term": "payload",
+        "text": "or payload.get(\"tickers\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 312,
+        "term": "payload",
+        "text": "or payload.get(\"symbol\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 329,
+        "term": "payload",
+        "text": "timeframe = str(payload.get(\"timeframe\") or \"DAILY\").upper()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 330,
+        "term": "payload",
+        "text": "max_symbols = int(payload.get(\"max_symbols\") or len(requested_symbols) or 10)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 331,
+        "term": "payload",
+        "text": "bar_limit = int(payload.get(\"bar_limit\") or 252)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 348,
+        "term": "campaigns",
+        "text": "from backend.campaign_engine.campaign_store import CampaignStore"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 352,
+        "term": "campaigns",
+        "text": "store = CampaignStore()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 358,
+        "term": "campaigns",
+        "text": "\"message\": \"CampaignStore is not configured.\","
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 372,
+        "term": "campaigns",
+        "text": "active_campaigns = []"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 376,
+        "term": "campaigns",
+        "text": "active_campaigns.extend("
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 377,
+        "term": "campaigns",
+        "text": "store.get_active_campaigns(symbol=symbol, timeframe=timeframe)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 380,
+        "term": "campaigns",
+        "text": "active_campaigns = store.get_active_campaigns(timeframe=timeframe)[:max_symbols]"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 383,
+        "term": "campaigns",
+        "text": "unique_campaigns = []"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 385,
+        "term": "campaigns",
+        "text": "for campaign in active_campaigns:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 393,
+        "term": "campaigns",
+        "text": "unique_campaigns.append(campaign)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 397,
+        "term": "campaigns",
+        "text": "for campaign in unique_campaigns"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 412,
+        "term": "campaigns",
+        "text": "for campaign in unique_campaigns:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 472,
+        "term": "payload",
+        "text": "updated_payload = dict(campaign)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 473,
+        "term": "payload",
+        "text": "updated_payload[\"evidence\"] = discovery._json_safe(evidence or {})"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 474,
+        "term": "payload",
+        "text": "updated_payload[\"evidence_density\"] = discovery._safe_float("
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 477,
+        "term": "payload",
+        "text": "updated_payload[\"evidence_updated_at\"] = discovery._now()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 480,
+        "term": "payload",
+        "text": "updated_payload[\"current_price\"] = current_close"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 482,
+        "term": "payload",
+        "text": "store.save_campaign(updated_payload)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 543,
+        "term": "campaigns",
+        "text": "@app.get(\"/api/campaigns/active\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 544,
+        "term": "campaigns",
+        "text": "def campaigns_active_alias():"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 545,
+        "term": "campaigns",
+        "text": "from backend.campaign_api import active_campaigns"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 547,
+        "term": "campaigns",
+        "text": "return active_campaigns()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 550,
+        "term": "campaigns",
+        "text": "@app.get(\"/api/campaigns/summary\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 551,
+        "term": "campaigns",
+        "text": "def campaigns_summary_alias():"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 562,
+        "term": "campaigns",
+        "text": "campaigns = data.get(\"campaigns\", []) if isinstance(data, dict) else []"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 563,
+        "term": "campaigns",
+        "text": "return {\"campaigns\": campaigns[:limit]}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 571,
+        "term": "campaigns",
+        "text": "# do not change SIP, campaigns, Weis-Gamma, Admin, or lifecycle transition logic."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 601,
+        "term": "campaigns",
+        "text": "def _compat_campaigns():"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 603,
+        "term": "campaigns",
+        "text": "from backend.campaign_api import active_campaigns"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 605,
+        "term": "campaigns",
+        "text": "data = active_campaigns()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 607,
+        "term": "campaigns",
+        "text": "campaigns = data.get(\"campaigns\") or data.get(\"items\") or []"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 609,
+        "term": "campaigns",
+        "text": "campaigns = data"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 611,
+        "term": "campaigns",
+        "text": "campaigns = []"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 613,
+        "term": "campaigns",
+        "text": "return [c for c in campaigns if isinstance(c, dict)]"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 771,
+        "term": "payload",
+        "text": "payload = latest_resp.json() or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 772,
+        "term": "payload",
+        "text": "latest_by_symbol = payload.get(\"bars\") or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 796,
+        "term": "payload",
+        "text": "payload = daily_resp.json() or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 797,
+        "term": "payload",
+        "text": "daily_bars = payload.get(\"bars\") or {}"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 874,
+        "term": "campaigns",
+        "text": "campaigns = _compat_campaigns()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 875,
+        "term": "campaigns",
+        "text": "rows = [_compat_to_frontend_row(c) for c in campaigns]"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 895,
+        "term": "campaigns",
+        "text": "campaigns = _compat_campaigns()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 896,
+        "term": "campaigns",
+        "text": "entries = [_compat_to_frontend_row(c) for c in campaigns]"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 923,
+        "term": "payload",
+        "text": "def _lightweight_radar_scores_payload(limit: int = 50):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 924,
+        "term": "payload",
+        "text": "payload = radar_scores_compat(limit=limit)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 926,
+        "term": "payload",
+        "text": "if hasattr(payload, \"dict\"):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 927,
+        "term": "payload",
+        "text": "payload = payload.dict()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 929,
+        "term": "payload",
+        "text": "if not isinstance(payload, dict):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 930,
+        "term": "payload",
+        "text": "payload = {"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 933,
+        "term": "payload",
+        "text": "\"error\": \"radar_scores_compat returned non-dict payload\","
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 937,
+        "term": "payload",
+        "text": "symbols = payload.get(\"symbols\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 939,
+        "term": "payload",
+        "text": "symbols = payload.get(\"entries\")"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 944,
+        "term": "payload",
+        "text": "return payload, symbols"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 949,
+        "term": "payload",
+        "text": "payload, symbols = _lightweight_radar_scores_payload(limit=limit)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 956,
+        "term": "payload",
+        "text": "\"generated_at\": payload.get(\"generated_at\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 958,
+        "term": "payload",
+        "text": "\"market_enriched_count\": payload.get(\"market_enriched_count\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 959,
+        "term": "payload",
+        "text": "\"market_error\": payload.get(\"market_error\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 965,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 981,
+        "term": "payload",
+        "text": "payload, symbols = _lightweight_radar_scores_payload(limit=limit)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 988,
+        "term": "payload",
+        "text": "\"generated_at\": payload.get(\"generated_at\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 991,
+        "term": "payload",
+        "text": "\"market_enriched_count\": payload.get(\"market_enriched_count\"),"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1001,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1018,
+        "term": "campaigns",
+        "text": "campaigns = _compat_campaigns()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1021,
+        "term": "campaigns",
+        "text": "for campaign in campaigns:"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1108,
+        "term": "payload",
+        "text": "build_controlled_append_only_audit_write_route_payload,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1113,
+        "term": "payload",
+        "text": "return build_controlled_append_only_audit_write_route_payload("
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1123,
+        "term": "payload",
+        "text": "payload: Optional[Dict[str, Any]] = None,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1125,
+        "term": "payload",
+        "text": "return build_controlled_append_only_audit_write_route_payload(payload or {})"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1140,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1158,
+        "term": "payload",
+        "text": "build_d3e6_readiness_payload,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1164,
+        "term": "payload",
+        "text": "return build_d3e6_readiness_payload()"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1168,
+        "term": "payload",
+        "text": "payload: Optional[Dict[str, Any]] = None,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1170,
+        "term": "payload",
+        "text": "return execute_d3e6_controlled_one_row_insert(payload or {})"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1185,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1200,
+        "term": "payload",
+        "text": "build_d3e7_post_write_readback_verification_payload,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1205,
+        "term": "payload",
+        "text": "return build_d3e7_post_write_readback_verification_payload(execute_live_read=True)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1220,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1235,
+        "term": "payload",
+        "text": "build_d3e8_post_persistence_closure_sweep_payload,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1240,
+        "term": "payload",
+        "text": "return build_d3e8_post_persistence_closure_sweep_payload(execute_live_read=True)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1255,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1270,
+        "term": "payload",
+        "text": "build_d3e9_final_lifecycle_regression_sweep_payload,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1275,
+        "term": "payload",
+        "text": "return build_d3e9_final_lifecycle_regression_sweep_payload(execute_live_read=True)"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1290,
+        "term": "campaigns",
+        "text": "\"mutates_campaigns\": False,"
+      }
+    ],
+    "supabase_read_path": [
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 9,
+        "term": "supabase",
+        "text": "from supabase import Client, create_client"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 21,
+        "term": "supabase",
+        "text": "supabase_url: Optional[str] = None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 22,
+        "term": "supabase",
+        "text": "supabase_key: Optional[str] = None,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 24,
+        "term": "supabase",
+        "text": "self.supabase_url = supabase_url or os.getenv(\"SUPABASE_URL\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 25,
+        "term": "supabase",
+        "text": "self.supabase_key = ("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 26,
+        "term": "supabase",
+        "text": "supabase_key"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 27,
+        "term": "supabase",
+        "text": "or os.getenv(\"SUPABASE_SERVICE_ROLE_KEY\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 28,
+        "term": "supabase",
+        "text": "or os.getenv(\"SUPABASE_ANON_KEY\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 33,
+        "term": "supabase",
+        "text": "if self.supabase_url and self.supabase_key:"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 35,
+        "term": "supabase",
+        "text": "self.supabase_url,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 36,
+        "term": "supabase",
+        "text": "self.supabase_key,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 64,
+        "term": "select(",
+        "text": ".select(\"*\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 64,
+        "term": ".select",
+        "text": ".select(\"*\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 83,
+        "term": "select(",
+        "text": ".select(\"*\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 83,
+        "term": ".select",
+        "text": ".select(\"*\")"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 9,
+        "term": "supabase",
+        "text": "It does not write Supabase."
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 66,
+        "term": "supabase",
+        "text": "\"supabase_reference_present\": \"supabase\" in combined,"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 76,
+        "term": "supabase",
+        "text": "and source_presence[\"supabase_reference_present\"]"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 104,
+        "term": "supabase",
+        "text": "\"no_supabase_write\": True,"
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 8,
+        "term": "supabase",
+        "text": "This router does not write Supabase."
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 58,
+        "term": "supabase",
+        "text": "No Supabase write."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1033,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1117,
+        "term": "supabase",
+        "text": "and review.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1205,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1250,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1342,
+        "term": "supabase",
+        "text": "and validation.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1422,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1469,
+        "term": "supabase",
+        "text": "It does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1554,
+        "term": "supabase",
+        "text": "and review.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1669,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1727,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1781,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1813,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1851,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1901,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1932,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 1967,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2020,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2051,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2089,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2148,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2183,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2335,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": bool(execution_authorized and len(mutation_summaries) > 0),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2373,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2547,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2781,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2808,
+        "term": "supabase",
+        "text": "This endpoint does not write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 2988,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3022,
+        "term": "supabase",
+        "text": "- write to Supabase,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3283,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3315,
+        "term": "supabase",
+        "text": "- write to Supabase,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3436,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3650,
+        "term": "supabase",
+        "text": "- does not write to Supabase"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3670,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3749,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3790,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3841,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3862,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3941,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3979,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4032,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4053,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4134,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4177,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4231,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4252,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4335,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4380,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4438,
+        "term": "supabase",
+        "text": "This endpoint does NOT write to Supabase."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4461,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4563,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4618,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4697,
+        "term": "supabase",
+        "text": "does not mutate Supabase, and does not affect score/rank/state/transition/gamma/trade signal."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4709,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4958,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5025,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5164,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5438,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5493,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5603,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5813,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5894,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6003,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6228,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6277,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6389,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6588,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6654,
+        "term": "supabase",
+        "text": "and row.get(\"writes_to_supabase\") is False"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6736,
+        "term": "supabase",
+        "text": "# credentials. It does not persist bars, write Supabase rows, mutate campaigns,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6779,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": result.get(\"writes_to_supabase\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6814,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6830,
+        "term": "supabase",
+        "text": "\"supabase_rest_read_only\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6847,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6903,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6939,
+        "term": "supabase",
+        "text": "# deployed OHLCV bars. It does not persist bars, write Supabase rows, mutate"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7198,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7214,
+        "term": "supabase",
+        "text": "\"supabase_rest_read_only\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7235,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7255,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7317,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7425,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": result.get(\"writes_to_supabase\"),"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7462,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7478,
+        "term": "supabase",
+        "text": "\"supabase_rest_read_only\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7495,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7556,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7860,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7876,
+        "term": "supabase",
+        "text": "\"supabase_rest_read_only\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7897,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7918,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 7979,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8075,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8112,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8202,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8279,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8381,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8418,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\","
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8520,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 8617,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 42,
+        "term": "supabase",
+        "text": "# does not execute a payment, and does not write to Supabase by itself."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 920,
+        "term": "supabase",
+        "text": "# Supabase writes, campaign mutation, D3D execution, operator-control confirmation,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 964,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1000,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1095,
+        "term": "supabase",
+        "text": "# to Supabase."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1102,
+        "term": "supabase",
+        "text": "# Mode: route shell only. No Supabase write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1137,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1138,
+        "term": "supabase",
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1182,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1183,
+        "term": "supabase",
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1196,
+        "term": "supabase",
+        "text": "# Mode: read-only Supabase readback. No write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1217,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1218,
+        "term": "supabase",
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1231,
+        "term": "supabase",
+        "text": "# Mode: read-only Supabase closure sweep. No write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1252,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1253,
+        "term": "supabase",
+        "text": "\"supabase_write_authorized\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1287,
+        "term": "supabase",
+        "text": "\"writes_to_supabase\": False,"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1288,
+        "term": "supabase",
+        "text": "\"supabase_write_authorized\": False,"
+      }
+    ]
+  },
+  "candidate_sources": [
+    {
+      "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+      "coverage_groups_present": [
+        "bars_symbols_count",
+        "pagination_complete",
+        "record_min_bars",
+        "schema_payload_alignment",
+        "supabase_read_path",
+        "symbols_missing_bars",
+        "universe_count"
+      ],
+      "coverage_group_count": 7
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "coverage_groups_present": [
+        "bars_symbols_count",
+        "pagination_complete",
+        "record_min_bars",
+        "schema_payload_alignment",
+        "universe_count"
+      ],
+      "coverage_group_count": 5
+    },
+    {
+      "path": "backend\\main.py",
+      "coverage_groups_present": [
+        "schema_payload_alignment",
+        "supabase_read_path",
+        "universe_count"
+      ],
+      "coverage_group_count": 3
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "coverage_groups_present": [
+        "schema_payload_alignment",
+        "supabase_read_path"
+      ],
+      "coverage_group_count": 2
+    },
+    {
+      "path": "backend\\campaign_pipeline_validation_api.py",
+      "coverage_groups_present": [
+        "schema_payload_alignment",
+        "supabase_read_path"
+      ],
+      "coverage_group_count": 2
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "coverage_groups_present": [
+        "schema_payload_alignment",
+        "supabase_read_path"
+      ],
+      "coverage_group_count": 2
+    },
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "coverage_groups_present": [
+        "schema_payload_alignment"
+      ],
+      "coverage_group_count": 1
+    }
+  ],
+  "relevant_functions": [
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "name": "_hydrate_campaign_evidence",
+      "line": 66
+    },
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "name": "_build_signals_from_campaign",
+      "line": 113
+    },
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "name": "run_nightly_campaign_pipeline",
+      "line": 257
+    },
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "name": "run_campaign_pipeline",
+      "line": 280
+    },
+    {
+      "path": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "name": "run_nightly_pipeline",
+      "line": 294
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "run_campaign_discovery",
+      "line": 1082
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "_debug_dataframe_snapshot",
+      "line": 403
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "_fetch_bars_from_radar",
+      "line": 590
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "_fetch_bars_from_alpaca",
+      "line": 605
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "build_records_from_universe",
+      "line": 752
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "name": "_build_campaign_payload",
+      "line": 839
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "name": "save_campaign",
+      "line": 42
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "name": "get_campaign",
+      "line": 57
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "name": "get_active_campaigns",
+      "line": 72
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "name": "close_campaign",
+      "line": 117
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_store.py",
+      "name": "get_top_campaigns",
+      "line": 129
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+      "name": "_read_source",
+      "line": 46
+    },
+    {
+      "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+      "name": "build_campaign_pipeline_read_only_validation_snapshot",
+      "line": 70
+    },
+    {
+      "path": "backend\\campaign_pipeline_validation_api.py",
+      "name": "get_campaign_pipeline_validation_snapshot",
+      "line": 41
+    },
+    {
+      "path": "backend\\campaign_pipeline_validation_api.py",
+      "name": "campaign_pipeline_read_only_validation_snapshot",
+      "line": 52
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "_store",
+      "line": 14
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "active_campaigns",
+      "line": 3459
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "register_campaign",
+      "line": 3636
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "d4e_read_only_live_bar_source_probe",
+      "line": 6790
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "d4f_read_only_hvn_poc_construction_prototype",
+      "line": 7173
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "src2_read_only_intraday_source_probe",
+      "line": 7436
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "src4_read_only_intraday_profile_refinement_prototype",
+      "line": 7834
+    },
+    {
+      "path": "backend\\campaign_api.py",
+      "name": "src7c_read_only_runtime_explicit_sml_source_probe",
+      "line": 8166
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "campaigns_active_alias",
+      "line": 544
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "campaigns_summary_alias",
+      "line": 551
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "_compat_campaigns",
+      "line": 601
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "d3e5_controlled_append_only_audit_write_route_readiness",
+      "line": 1112
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "d3e6_controlled_one_row_append_only_audit_insert_readiness",
+      "line": 1163
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "d3e7_controlled_post_write_readback_verification",
+      "line": 1204
+    },
+    {
+      "path": "backend\\main.py",
+      "name": "d3e7a_controlled_post_write_readback_verification_mount_error",
+      "line": 1211
+    }
+  ],
+  "write_term_hits_classification": {
+    "note": "These are source inventory hits only. Step 35 does not execute any code path, does not call Supabase, and does not mutate campaigns.",
+    "hits": [
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 49,
+        "term": ".upsert(",
+        "text": ".upsert("
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_store.py",
+        "line": 124,
+        "term": ".update(",
+        "text": ".update({\"current_state\": \"CLOSED\"})"
+      },
+      {
+        "path": "backend\\campaign_engine\\campaign_pipeline_read_only_validation_snapshot.py",
+        "line": 14,
+        "term": "stripe.",
+        "text": "It does not touch Stripe."
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 13,
+        "term": "stripe.",
+        "text": "This router does not touch Stripe."
+      },
+      {
+        "path": "backend\\campaign_pipeline_validation_api.py",
+        "line": 63,
+        "term": "stripe.",
+        "text": "No Stripe."
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 464,
+        "term": ".update(",
+        "text": "enriched.update(_diagnostic_priority_for_row(row))"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 959,
+        "term": ".update(",
+        "text": "enriched.update(taxonomy)"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3687,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3821,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 3878,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4010,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4069,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4208,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4268,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4412,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4480,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4654,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 4732,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5087,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5309,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5548,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5676,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 5950,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6083,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6332,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6459,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\campaign_api.py",
+        "line": 6709,
+        "term": ".update(",
+        "text": "payload.update({"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 220,
+        "term": "run_full_nightly(",
+        "text": "def run_full_nightly(payload: dict = Body(default=None)):"
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1102,
+        "term": "stripe.",
+        "text": "# Mode: route shell only. No Supabase write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1152,
+        "term": "stripe.",
+        "text": "# No campaign mutation. No D3D. No operator-control confirmation. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1196,
+        "term": "stripe.",
+        "text": "# Mode: read-only Supabase readback. No write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1231,
+        "term": "stripe.",
+        "text": "# Mode: read-only Supabase closure sweep. No write. No D3D. No Stripe."
+      },
+      {
+        "path": "backend\\main.py",
+        "line": 1266,
+        "term": "stripe.",
+        "text": "# Mode: read-only final lifecycle sweep. No write. No D3D. No Stripe."
+      }
+    ]
+  },
+  "next_step": {
+    "recommended": "Add a GET-only coverage reader that uses only safe read/select paths and returns real live coverage counts without running nightly or writing Supabase.",
+    "campaign_pipeline_validated_can_advance_now": false
+  },
+  "doctrine": {
+    "local_source_audit_only": true,
+    "no_db_call": true,
+    "no_deploy": true,
+    "no_nightly_run": true,
+    "no_alpaca_call": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_remains_blocked": true
+  }
+}
