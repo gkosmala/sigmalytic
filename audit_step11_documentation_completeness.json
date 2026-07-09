@@ -1,0 +1,24 @@
+{
+  "mode": "LOCAL_DOC_AUDIT_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "docs_root": "docs",
+  "passed_categories": [
+    "architecture",
+    "doctrine",
+    "deployment",
+    "regression",
+    "rollback",
+    "operator_control",
+    "alerts",
+    "billing"
+  ],
+  "failures": [],
+  "doctrine": {
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

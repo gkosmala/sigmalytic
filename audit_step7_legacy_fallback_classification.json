@@ -1,0 +1,2327 @@
+{
+  "mode": "LOCAL_AUDIT_REPORT_ONLY_NO_PRODUCTION_PATCH",
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "does_not_authorize_d3d": true,
+    "does_not_mutate_campaigns": true,
+    "does_not_confirm_operator_control": true,
+    "does_not_create_trade_signal": true,
+    "does_not_touch_stripe": true
+  },
+  "summary_by_category": {
+    "UNCLASSIFIED_SCORE_REFERENCE": 166,
+    "UNCLASSIFIED_FALLBACK": 70,
+    "WYCKOFF_EVIDENCE_METRIC_OUTPUT": 4,
+    "LEGACY_SCOREBOARD_SCORE_REFERENCE": 11,
+    "LEGACY_SCOREBOARD_SIGNAL_PATH": 4,
+    "SIGNAL_BIRTH_SCORE_FIELD_REVIEW": 9,
+    "TRUE_LIFECYCLE_SCORE_DEPENDENCY": 4,
+    "ALERT_SCORE_DISPLAY_REFERENCE": 1,
+    "SNAPSHOT_SCORE_REFERENCE": 13,
+    "ADMIN_REPORT_FALLBACK": 4,
+    "DEMO_AUTH_FALLBACK": 1
+  },
+  "summary_by_severity": {
+    "REVIEW": 254,
+    "LOW": 29,
+    "BLOCKER": 4
+  },
+  "findings": [
+    {
+      "file": "backend\\alerts\\controlled_append_only_audit_write_route.py",
+      "line": 52,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"campaign_score_mutation\","
+    },
+    {
+      "file": "backend\\alerts\\controlled_one_row_append_only_audit_insert.py",
+      "line": 74,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"campaign_score_mutation\","
+    },
+    {
+      "file": "backend\\analog_engine\\analog_engine.py",
+      "line": 78,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Phase 12B research benchmarks \u2014 fallback when no historical campaigns exist"
+    },
+    {
+      "file": "backend\\analog_engine\\analog_engine.py",
+      "line": 299,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Research benchmark fallback"
+    },
+    {
+      "file": "backend\\analog_engine\\analog_engine.py",
+      "line": 367,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"Analog fallback to research benchmarks for %s (only %d matches)\","
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 124,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Fallback: use all bars if not enough high-volume ones"
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 186,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# scikit-learn not available \u2014 use simple percentile fallback"
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 187,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "return _train_simple_fallback(symbol, bars)"
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 193,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _train_simple_fallback(symbol: str, bars: List[dict]) -> bool:"
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 195,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "Fallback when scikit-learn unavailable."
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 239,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"method\"         : \"fallback\","
+    },
+    {
+      "file": "backend\\behavioral_memory.py",
+      "line": 243,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "log.debug(f\"BME fallback error {symbol}: {e}\")"
+    },
+    {
+      "file": "backend\\behavioral_transition_engine.py",
+      "line": 109,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = _f(data.get(\"composite_score\", data.get(\"score\")))"
+    },
+    {
+      "file": "backend\\behavioral_transition_engine.py",
+      "line": 249,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = _f(data.get(\"composite_score\", data.get(\"score\")))"
+    },
+    {
+      "file": "backend\\behavioral_transition_engine.py",
+      "line": 423,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = _f(data.get(\"composite_score\", data.get(\"score\")))"
+    },
+    {
+      "file": "backend\\behavioral_transition_engine.py",
+      "line": 479,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": composite,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 6,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "Campaign Discovery Engine with direct Alpaca fallback."
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 20,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "3. Alpaca active asset universe fallback"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 24,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "2. Direct Alpaca market-data bars fallback"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 82,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score: float"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 586,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "self.diagnostics[\"universe_source\"] = \"alpaca_assets_fallback\""
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 865,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"d_score\": self._safe_float(survival.get(\"master_survival_score\")),"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 874,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "f\"survival={self._safe_float(survival.get('master_survival_score'))}\""
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 893,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 930,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"master_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 938,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score = self._safe_float(survival.get(\"master_survival_score\"))"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 945,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "discovered = birth_score >= self.birth_threshold and mci >= self.mci_threshold and survival_score >= self.survival_threshold"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 991,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "f\"birth={birth_score}, mci={mci}, survival={survival_score}; \""
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_discovery_engine.py",
+      "line": 1020,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=survival_score,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 11,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "This file does NOT derive evidence from birth_score, MCI, survival_score,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 267,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "- not derived from MCI, birth_score, survival_score, or ranking score"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 624,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _build_symbol_profile_fallback("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 671,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"fallback_calculated_in_evidence_builder\": True,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 687,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"profile_quality\": \"FALLBACK\","
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 688,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"warnings\": [\"SymbolBehaviorProfile class is a result dataclass; fallback profile was calculated in evidence builder.\"],"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 693,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"engine\": \"symbol_behavior_profile_fallback\","
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 737,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 756,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\","
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 802,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score = cls._safe_float("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 803,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival.get(\"wyckoff_survival_score\")"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 804,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "if \"wyckoff_survival_score\" in survival"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 805,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "else survival.get(\"survival_score\")"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 815,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\": round(wyckoff_survival_score, 4),"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 974,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "symbol_profile = cls._build_symbol_profile_fallback("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 1583,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"atr_source\": \"computed_true_range_14\" if atr_14 > 0 else \"fallback_range_height_5pct\","
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_evidence_builder.py",
+      "line": 1612,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"atr_source\": \"computed_true_range_14\" if atr_14 > 0 else \"fallback_range_height_5pct\","
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_projection_engine.py",
+      "line": 28,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score: float,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_projection_engine.py",
+      "line": 44,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "and survival_score >= 0.50"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_projection_engine.py",
+      "line": 63,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\": round("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_projection_engine.py",
+      "line": 64,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_ranker.py",
+      "line": 41,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite_score = round("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_ranker.py",
+      "line": 51,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "record[\"composite_rank_score\"] = composite_score"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 78,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "self.survival_score = kwargs.get(\"survival_score\", 0.0)"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 206,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score: float"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 312,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"master_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 320,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"master_survival_score\": self._safe_float("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 321,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "record.get(\"master_survival_score\")"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 322,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "or record.get(\"survival_score\")"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 380,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score = self._safe_float(survival.get(\"master_survival_score\"))"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 446,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Temporary compatibility fallback. This preserves the already-working"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 448,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# into every campaign record. Only BIRTH may use this fallback."
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 456,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"Legacy BIRTH fallback: birth score present, but full evidence payload \""
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 459,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "\"transition_reason\": [\"legacy_birth_score_fallback\"],"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 924,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "f\"Survival={survival.get('master_survival_score')} ({survival.get('survival_state')}). \""
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 938,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=self._safe_float(survival.get(\"master_survival_score\")),"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 1027,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=result.get(\"master_survival_score\", 0.0),"
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_state_engine.py",
+      "line": 1051,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "fields. That caused birth_score/survival_score to read as 0."
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_survival_engine.py",
+      "line": 21,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "def survival_score("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_survival_engine.py",
+      "line": 57,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "score = self.survival_score("
+    },
+    {
+      "file": "backend\\campaign_engine\\campaign_survival_engine.py",
+      "line": 74,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\": score,"
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 82,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "hydrated[\"master_survival_score\"] = _safe_float("
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 83,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "hydrated.get(\"master_survival_score\"),"
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 86,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "hydrated[\"survival_score\"] = _safe_float("
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 87,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "hydrated.get(\"survival_score\"),"
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 107,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"DISCOVERED\" if hydrated[\"master_survival_score\"] > 0 else \"UNKNOWN\""
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 142,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"master_survival_score\","
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 143,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\","
+    },
+    {
+      "file": "backend\\campaign_engine\\nightly_campaign_pipeline.py",
+      "line": 245,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival\": hydrated_campaign.get(\"master_survival_score\"),"
+    },
+    {
+      "file": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 213,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score_used\": False,"
+    },
+    {
+      "file": "backend\\campaign_engine\\operator_control_production_mutation_gate.py",
+      "line": 214,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score_used\": False,"
+    },
+    {
+      "file": "backend\\campaign_engine\\structural_location_validation_engine.py",
+      "line": 223,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "or structural_location.get(\"atr_source\") == \"fallback_range_height_5pct\""
+    },
+    {
+      "file": "backend\\campaign_engine\\structural_location_validation_engine.py",
+      "line": 224,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "or volatility.get(\"atr_source\") == \"fallback_range_height_5pct\""
+    },
+    {
+      "file": "backend\\campaign_engine\\wyckoff_weis_operator_confirmation_engine.py",
+      "line": 163,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# fallbacks only."
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 200,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Fallback: use last historical bar close as prev_close if snapshot is missing it"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 300,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"new_composite_score\"   : result.score,"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 355,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "old_score = old_result.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 468,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "old_scores = [s.get(\"composite_score\", 0) for s in successes]"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 469,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "new_scores = [s.get(\"new_composite_score\", 0) for s in successes]"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 476,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "round(s.get(\"composite_score\", 0), 1),"
+    },
+    {
+      "file": "backend\\confluence_bridge.py",
+      "line": 477,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "round(s.get(\"new_composite_score\", 0), 1),"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 58,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "- No random numbers, no silent fallbacks"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 315,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def rolling_avg(values: List[float], fallback: float = 0.0) -> float:"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 316,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "return sum(values) / len(values) if values else fallback"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 319,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def rolling_std(values: List[float], fallback: float = 0.0) -> float:"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 321,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "return fallback"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1795,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _cluster(self, values: List[float], fallback: float) -> float:"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1797,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "return fallback"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1880,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "fallback=upside + atr * 0.75)"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1882,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "fallback=upside + atr * 1.50)"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1885,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "fallback=downside - atr * 0.75)"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1887,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "fallback=downside - atr * 1.50)"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1899,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "direction: str, fallback: float) -> float:"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 1908,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "return fallback"
+    },
+    {
+      "file": "backend\\confluence_engine.py",
+      "line": 2132,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "Returns empty dict if unavailable \u2014 fallback to dynamic proxy."
+    },
+    {
+      "file": "backend\\gamma\\gamma_strike_matrix_engine.py",
+      "line": 332,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Wall strength uses exposure first, then OI/volume as fallback."
+    },
+    {
+      "file": "backend\\historical_probability_engine.py",
+      "line": 271,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "key_parts.append(_bucket_composite(_f(r.get(\"composite_score\"))))"
+    },
+    {
+      "file": "backend\\historical_probability_engine.py",
+      "line": 475,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "It tries strict profile first, then broader fallbacks."
+    },
+    {
+      "file": "backend\\hurst_cycle.py",
+      "line": 112,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Pure numpy fallback \u2014 sliding window local minima"
+    },
+    {
+      "file": "backend\\hurst_cycle.py",
+      "line": 213,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "notes.append(f\"Sparse troughs \u2014 using fallback cycle of {dominant_cycle} bars.\")"
+    },
+    {
+      "file": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 251,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "campaign_score = _campaign_strength_score(c)"
+    },
+    {
+      "file": "backend\\intelligence\\portfolio_intelligence_engine.py",
+      "line": 276,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "+ campaign_score * 0.18"
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 145,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\","
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 150,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"campaign_score\","
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 230,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": round(score, 2),"
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 244,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "rows.sort(key=lambda row: row.get(\"composite_score\", 0), reverse=True)"
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 256,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "round(sum(_safe_float(row.get(\"composite_score\"), 0) for row in rows) / len(rows), 2)"
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 343,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "_, rows, fallback_error = _active_and_ranked_rows()"
+    },
+    {
+      "file": "backend\\intelligence_api.py",
+      "line": 344,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "ranking_error = ranking_error or fallback_error"
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 74,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "- No IEX fallback."
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 75,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "- No synthetic fallback."
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 616,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\","
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 621,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"campaign_score\","
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 697,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": round(score, 2),"
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 839,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "sum(_compat_safe_float(e.get(\"composite_score\"), 0) for e in entries) / total_symbols,"
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 871,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "rows.sort(key=lambda r: r.get(\"composite_score\", 0), reverse=True)"
+    },
+    {
+      "file": "backend\\main.py",
+      "line": 892,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "entries.sort(key=lambda e: e.get(\"composite_score\", 0), reverse=True)"
+    },
+    {
+      "file": "backend\\multitimeframe_behavioral_backtest.py",
+      "line": 437,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": composite,"
+    },
+    {
+      "file": "backend\\multitimeframe_behavioral_backtest.py",
+      "line": 672,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "if _f(snap.get(\"readiness_score\")) < args.min_readiness and _f(snap.get(\"composite_score\")) < args.min_score:"
+    },
+    {
+      "file": "backend\\persons_pivots.py",
+      "line": 92,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "p_avg3 = p  # fallback \u2014 neutral condition"
+    },
+    {
+      "file": "backend\\probability_service.py",
+      "line": 248,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = _f(row.get(\"composite_score\", row.get(\"score\")))"
+    },
+    {
+      "file": "backend\\probability_service.py",
+      "line": 297,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = _f(row.get(\"composite_score\", row.get(\"score\")))"
+    },
+    {
+      "file": "backend\\probability_service.py",
+      "line": 442,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Controlled fallback matches are useful context, but they are"
+    },
+    {
+      "file": "backend\\probability_service.py",
+      "line": 455,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Cap broad fallback outputs so they cannot look like an"
+    },
+    {
+      "file": "backend\\radar_alerts.py",
+      "line": 111,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "score  = int(symbol_data.get(\"composite_score\", 0))"
+    },
+    {
+      "file": "backend\\radar_alerts.py",
+      "line": 163,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "score  = s.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 172,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# Fallback source: active Alpaca assets expanded to the requested target."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 293,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "log.warning(f\"Using active Alpaca universe fallback with {len(symbols)} symbols; target={target}\")"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 372,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _fallback_universe() -> List[str]:"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 563,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# The old fallback used ma20=price, ma50=price, rel_vol=1.0, atr=1.0."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 616,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "rel_strength = _fallback_relative_strength("
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 637,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "vol_pressure = _fallback_volume_pressure("
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 709,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\":   composite,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 763,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _fallback_relative_strength(price: float, vwap: float, day_open: float,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 812,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "def _fallback_volume_pressure(rel_vol: float, change_pct: float,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1076,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "def _gex_to_composite_score(gex: dict, price: float) -> float:"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1079,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "Used to blend into composite_score with 10% weight."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1156,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "gex_sub      = _gex_to_composite_score(gex, price_now)"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1167,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "old_composite = cached_radar.get(\"composite_score\", 50) or 50"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1171,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "RADAR_CACHE[symbol][\"composite_score\"] = new_composite"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1240,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "if result and result.get(\"composite_score\", 0) > 0:"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1274,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "Scores all symbols with full ConfluenceEngine, computes delta vs composite_score."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1292,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite = cached.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1297,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "new_score = result.get(\"new_composite_score\") or result.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1304,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": composite,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1351,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "(symbol, composite_score, deep_score, delta, direction,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1355,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite_score = EXCLUDED.composite_score,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1365,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "d[\"symbol\"], d[\"composite_score\"], d[\"deep_score\"],"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1382,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "Fallback path: Supabase REST using SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1384,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "This fallback is important on Render because the in-memory"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1405,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "# 2) Fallback to Supabase REST if Postgres returned nothing."
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1421,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "log.info(f\"Loaded {len(rows)} divergence rows from Supabase REST fallback\")"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1526,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\": RADAR_CACHE.get(symbol, {}).get(\"composite_score\"),"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1629,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "score  = s[\"composite_score\"]"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1640,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\":score,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1660,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\":score,"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1678,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "composite_score, price, trigger_level, invalidation, notes)"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1682,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "ev[\"old_status\"], ev[\"new_status\"], ev[\"composite_score\"],"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1702,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"composite_score\":        round(score, 1),"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1892,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "if \"composite_score\" not in enriched and \"score\" in enriched:"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1893,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "enriched[\"composite_score\"] = enriched.get(\"score\")"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 1898,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "elif \"score\" in enriched and \"composite_score\" in enriched:"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2033,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "source = \"database_fallback\" if DIVERGENCE_WATCHLIST else \"empty\""
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2035,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "source = \"fallback_error\""
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2036,
+      "category": "UNCLASSIFIED_FALLBACK",
+      "severity": "REVIEW",
+      "disposition": "Fallback requires manual classification: diagnostic-only, quarantined, replaced, or removed.",
+      "text": "log.warning(f\"Divergence endpoint fallback load failed: {e}\")"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2064,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"delta_definition\": \"delta = deep_score - composite_score\","
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2181,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "results = [r for r in results if float(r.get(\"composite_score\", 0) or 0) >= min_score]"
+    },
+    {
+      "file": "backend\\radar_service.py",
+      "line": 2200,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "_safe_float(x, \"composite_score\"),"
+    },
+    {
+      "file": "backend\\research_engine\\campaign_projection_engine.py",
+      "line": 28,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score: float,"
+    },
+    {
+      "file": "backend\\research_engine\\campaign_projection_engine.py",
+      "line": 44,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "and survival_score >= 0.50"
+    },
+    {
+      "file": "backend\\research_engine\\campaign_projection_engine.py",
+      "line": 63,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\": round("
+    },
+    {
+      "file": "backend\\research_engine\\campaign_projection_engine.py",
+      "line": 64,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score,"
+    },
+    {
+      "file": "backend\\research_engine\\livermore_survival_engine.py",
+      "line": 37,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\livermore_survival_engine.py",
+      "line": 241,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"livermore_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\livermore_survival_engine.py",
+      "line": 269,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_survival_score=score,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 18,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "- master_survival_score"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 59,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 64,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 66,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 68,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 178,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 187,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 201,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"livermore_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 214,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"livermore_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 223,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"weis_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 232,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"weis_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 249,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 253,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 255,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 257,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 273,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_score = self._safe_score(wyckoff.get(\"wyckoff_survival_score\", 0.0))"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 274,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_score = self._safe_score(livermore.get(\"livermore_survival_score\", 0.0))"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 275,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_score = self._safe_score(weis.get(\"weis_survival_score\", 0.0))"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 284,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "self._is_confirmed(wyckoff, \"wyckoff_survival_score\"),"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 285,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "self._is_confirmed(livermore, \"livermore_survival_score\"),"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 286,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "self._is_confirmed(weis, \"weis_survival_score\"),"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 311,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "master_survival_score=master_score,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 315,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=wyckoff_score,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 317,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "livermore_survival_score=livermore_score,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 319,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_survival_score=weis_score,"
+    },
+    {
+      "file": "backend\\research_engine\\master_survival_index.py",
+      "line": 347,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"master_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 15,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "It does not use edge_score, campaign_score, ODS, or any existing composite"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 45,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 160,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "def compute_survival_score(self, df: pd.DataFrame, window: int = 30) -> Dict[str, Any]:"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 169,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 189,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score = ("
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 196,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"survival_score\": self._safe_score(survival_score),"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 254,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 267,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival = self.compute_survival_score(df)"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 272,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score = self._safe_score(survival.get(\"survival_score\", 0.0))"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 278,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "+ survival_score * 0.10"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 287,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "and survival_score >= 50.0"
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 303,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "f\"resolution={resolution_score}, survival={survival_score}, \""
+    },
+    {
+      "file": "backend\\research_engine\\signal_birth_engine.py",
+      "line": 317,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score=survival_score,"
+    },
+    {
+      "file": "backend\\research_engine\\weis_survival_engine.py",
+      "line": 34,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\weis_survival_engine.py",
+      "line": 305,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "weis_survival_score=score,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 31,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 254,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 274,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 296,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 316,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "survival_score = self._safe_score("
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 323,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "grade = self._grade(survival_score)"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 324,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "state = self._state(survival_score)"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 325,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "confirmed = survival_score >= 70.0"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 328,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "f\"Wyckoff Survival {state}; score={survival_score}; \""
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 334,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "wyckoff_survival_score=survival_score,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_survival_engine.py",
+      "line": 356,
+      "category": "UNCLASSIFIED_SCORE_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Score reference requires manual classification to ensure it cannot confirm operator control or authorize D3D.",
+      "text": "\"wyckoff_survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 32,
+      "category": "WYCKOFF_EVIDENCE_METRIC_OUTPUT",
+      "severity": "REVIEW",
+      "disposition": "Likely method evidence metric output; must be labeled non-confirming and not used as operator-control confirmation.",
+      "text": "survival_score: float"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 202,
+      "category": "WYCKOFF_EVIDENCE_METRIC_OUTPUT",
+      "severity": "REVIEW",
+      "disposition": "Likely method evidence metric output; must be labeled non-confirming and not used as operator-control confirmation.",
+      "text": "behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 215,
+      "category": "WYCKOFF_EVIDENCE_METRIC_OUTPUT",
+      "severity": "REVIEW",
+      "disposition": "Likely method evidence metric output; must be labeled non-confirming and not used as operator-control confirmation.",
+      "text": "behavioral_resolution_score=0.0, survival_score=0.0, resistance_level=None,"
+    },
+    {
+      "file": "backend\\research_engine\\wyckoff_verdict_engine.py",
+      "line": 274,
+      "category": "WYCKOFF_EVIDENCE_METRIC_OUTPUT",
+      "severity": "REVIEW",
+      "disposition": "Likely method evidence metric output; must be labeled non-confirming and not used as operator-control confirmation.",
+      "text": "survival_score=survival,"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 232,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "composite_score = surface radar score"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 234,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "delta           = deep_score - composite_score"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 240,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "sym.get(\"composite_score\", sym.get(\"score\", 0)),"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 299,
+      "category": "LEGACY_SCOREBOARD_SIGNAL_PATH",
+      "severity": "REVIEW",
+      "disposition": "Outside operator-control lifecycle, but must remain non-D3D, non-operator-control, and non-campaign-mutation.",
+      "text": "score = float(sym.get(\"composite_score\", 0) or 0)"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 327,
+      "category": "LEGACY_SCOREBOARD_SIGNAL_PATH",
+      "severity": "REVIEW",
+      "disposition": "Outside operator-control lifecycle, but must remain non-D3D, non-operator-control, and non-campaign-mutation.",
+      "text": "composite_score, setup_type, regime,"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 490,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "# Fallback: use final outcome only when intraday path is unavailable."
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 640,
+      "category": "LEGACY_SCOREBOARD_SIGNAL_PATH",
+      "severity": "REVIEW",
+      "disposition": "Outside operator-control lifecycle, but must remain non-D3D, non-operator-control, and non-campaign-mutation.",
+      "text": "SELECT signal_id, composite_score, signal_type,"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 658,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "\"composite_score\": float(score or 0),"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 747,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "# composite_score and behavioral score as the deep intelligence proxy."
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 752,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "SELECT signal_id, composite_score, behavioral"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 768,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "sig_id, composite_score, behavioral = row"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 770,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "\"composite_score\": float(composite_score or 0),"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 771,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "\"behavioral\": float(behavioral or composite_score or 0),"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 873,
+      "category": "LEGACY_SCOREBOARD_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Scoreboard analytics/reference path; label as not operator-control evidence if touched later.",
+      "text": "agreement_score = 100 - abs(deep_score - composite_score)"
+    },
+    {
+      "file": "backend\\scoreboard_service.py",
+      "line": 1228,
+      "category": "LEGACY_SCOREBOARD_SIGNAL_PATH",
+      "severity": "REVIEW",
+      "disposition": "Outside operator-control lifecycle, but must remain non-D3D, non-operator-control, and non-campaign-mutation.",
+      "text": "composite_score, setup_type, regime, grade,"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 15,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "It does not use edge_score, campaign_score, ODS, or any existing composite"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 45,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "survival_score: float"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 160,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "def compute_survival_score(self, df: pd.DataFrame, window: int = 30) -> Dict[str, Any]:"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 169,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "\"survival_score\": 0.0,"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 189,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "survival_score = ("
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 196,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "\"survival_score\": self._safe_score(survival_score),"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 254,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "survival_score=0.0,"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 267,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "survival = self.compute_survival_score(df)"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 272,
+      "category": "TRUE_LIFECYCLE_SCORE_DEPENDENCY",
+      "severity": "BLOCKER",
+      "disposition": "Quarantine/replace before V2 completion: lifecycle birth eligibility still depends on score arithmetic.",
+      "text": "survival_score = self._safe_score(survival.get(\"survival_score\", 0.0))"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 278,
+      "category": "TRUE_LIFECYCLE_SCORE_DEPENDENCY",
+      "severity": "BLOCKER",
+      "disposition": "Quarantine/replace before V2 completion: lifecycle birth eligibility still depends on score arithmetic.",
+      "text": "+ survival_score * 0.10"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 287,
+      "category": "TRUE_LIFECYCLE_SCORE_DEPENDENCY",
+      "severity": "BLOCKER",
+      "disposition": "Quarantine/replace before V2 completion: lifecycle birth eligibility still depends on score arithmetic.",
+      "text": "and survival_score >= 50.0"
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 303,
+      "category": "TRUE_LIFECYCLE_SCORE_DEPENDENCY",
+      "severity": "BLOCKER",
+      "disposition": "Quarantine/replace before V2 completion: lifecycle birth eligibility still depends on score arithmetic.",
+      "text": "f\"resolution={resolution_score}, survival={survival_score}, \""
+    },
+    {
+      "file": "backend\\signal_birth_engine.py",
+      "line": 317,
+      "category": "SIGNAL_BIRTH_SCORE_FIELD_REVIEW",
+      "severity": "REVIEW",
+      "disposition": "Classify as transitional diagnostic evidence only unless removed from lifecycle decision logic.",
+      "text": "survival_score=survival_score,"
+    },
+    {
+      "file": "backend\\sms_alerts.py",
+      "line": 50,
+      "category": "ALERT_SCORE_DISPLAY_REFERENCE",
+      "severity": "REVIEW",
+      "disposition": "Alert display must remain diagnostic/read-only and non-confirming.",
+      "text": "score     = sym.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 19,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "composite_score NUMERIC(5,1),"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 95,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "s.get(\"composite_score\"),"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 116,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "(symbol, snapshot_time, composite_score, confluence,"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 153,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "s.get(\"composite_score\"),"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 174,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "(symbol, snapshot_time, composite_score, confluence,"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 193,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "score   = s.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 235,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "avg_score= round(sum(s.get(\"composite_score\",0) for s in symbols) / total, 1) if total else 0"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 241,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "top_scores = sorted(symbols, key=lambda x: x.get(\"composite_score\",0), reverse=True)[:10]"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 265,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "symbol, composite_score, confluence, expansion_node,"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 284,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "\"score\":           float(row[\"composite_score\"] or 0),"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 373,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "\"composite_score\":  s.get(\"composite_score\"),"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 398,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "score = s.get(\"composite_score\", 0)"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 452,
+      "category": "SNAPSHOT_SCORE_REFERENCE",
+      "severity": "LOW",
+      "disposition": "Snapshot/reporting score reference; not operator-control evidence unless used by lifecycle transition.",
+      "text": "symbols_with_data = [s for s in symbols if s.get(\"composite_score\",0) > 0]"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 515,
+      "category": "ADMIN_REPORT_FALLBACK",
+      "severity": "LOW",
+      "disposition": "Frontend/admin safety fallback, not campaign lifecycle; label diagnostic-only if edited.",
+      "text": "def _safe_admin_report_fallback(error: str = \"\") -> dict:"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 542,
+      "category": "ADMIN_REPORT_FALLBACK",
+      "severity": "LOW",
+      "disposition": "Frontend/admin safety fallback, not campaign lifecycle; label diagnostic-only if edited.",
+      "text": "\"status\": \"Fallback Report Active\","
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 609,
+      "category": "ADMIN_REPORT_FALLBACK",
+      "severity": "LOW",
+      "disposition": "Frontend/admin safety fallback, not campaign lifecycle; label diagnostic-only if edited.",
+      "text": "return _safe_admin_report_fallback(str(exc))"
+    },
+    {
+      "file": "backend\\snapshot_service.py",
+      "line": 627,
+      "category": "ADMIN_REPORT_FALLBACK",
+      "severity": "LOW",
+      "disposition": "Frontend/admin safety fallback, not campaign lifecycle; label diagnostic-only if edited.",
+      "text": "return _safe_admin_report_fallback(str(exc))"
+    },
+    {
+      "file": "backend\\supabase_isolation.py",
+      "line": 43,
+      "category": "DEMO_AUTH_FALLBACK",
+      "severity": "LOW",
+      "disposition": "Demo user fallback; not campaign lifecycle. Separate security/product review, not operator-control evidence.",
+      "text": "- If header is missing or invalid: returns \"demo_user_001\" (demo fallback)"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "mode": "READ_ONLY_SEMANTIC_SOURCE_SCAN_NO_PATCH",
+  "files_scanned": 47,
+  "parse_failures": [],
+  "status": "PASS",
+  "blocker_count": 0,
+  "review_count": 0,
+  "summary": {},
+  "doctrine": {
+    "alerts_are_read_only_diagnostic": true,
+    "does_not_mutate_campaigns": true,
+    "does_not_authorize_d3d": true,
+    "does_not_confirm_operator_control": true,
+    "does_not_create_trade_signal": true,
+    "does_not_touch_stripe": true
+  },
+  "findings": []
+}

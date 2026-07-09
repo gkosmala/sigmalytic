@@ -1,0 +1,203 @@
+﻿{
+  "version": "sigmalytic-v2-step8-lifecycle-transition-law-v1",
+  "mode": "evidence-law-only-no-production-mutation",
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "composite_operator_control_requires": [
+      "tested_supply_exhaustion",
+      "active_demand_or_support_validation",
+      "structurally_meaningful_location",
+      "absence_of_contrary_failure"
+    ],
+    "mutates_campaign": false,
+    "authorizes_d3d": false,
+    "confirms_operator_control": false,
+    "creates_trade_signal": false,
+    "touches_stripe": false
+  },
+  "transitions": {
+    "NO_CAMPAIGN->BIRTH": {
+      "transition_purpose": "Recognize early campaign birth only from evidence, not score arithmetic.",
+      "required_evidence": [
+        "early_structural_location_evidence",
+        "initial_absorption_or_accumulation_evidence",
+        "preliminary_supply_exhaustion_evidence",
+        "no_active_contrary_failure_evidence"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "BIRTH->CONFIRMED": {
+      "transition_purpose": "Confirm campaign existence only when evidence confirms continuation beyond initial birth.",
+      "required_evidence": [
+        "tested_supply_exhaustion_evidence",
+        "active_demand_validation_evidence",
+        "support_validation_evidence",
+        "structurally_meaningful_location_evidence",
+        "absence_of_contrary_failure_evidence"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "CONFIRMED->SURVIVING": {
+      "transition_purpose": "Recognize survival only when campaign evidence survives obstacle or supply test.",
+      "required_evidence": [
+        "meaningful_obstacle_or_supply_test_evidence",
+        "successful_absorption_or_test_response_evidence",
+        "active_support_validation_after_test",
+        "no_failed_demand_or_contrary_supply_return"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "SURVIVING->EXPANDING": {
+      "transition_purpose": "Recognize expansion only when demand continuation and structural progress are evidenced.",
+      "required_evidence": [
+        "continued_demand_validation_evidence",
+        "progress_from_structural_location_evidence",
+        "absence_of_supply_reassertion_evidence",
+        "method_specific_wyckoff_livermore_weis_evidence_preserved"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "EXPANDING->MATURING": {
+      "transition_purpose": "Recognize maturation only when extended campaign behavior and risk evolution are evidenced.",
+      "required_evidence": [
+        "extended_campaign_duration_evidence",
+        "matured_structural_progress_evidence",
+        "risk_evolution_evidence",
+        "no_unresolved_contrary_failure_evidence"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "MATURING->DISTRIBUTION_RISK": {
+      "transition_purpose": "Recognize distribution risk only from evidence of failure, supply return, or loss of demand.",
+      "required_evidence": [
+        "supply_return_evidence",
+        "failed_demand_response_evidence",
+        "loss_of_support_validation_evidence",
+        "structural_failure_or_distribution_warning_evidence"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    },
+    "ANY->CLOSED": {
+      "transition_purpose": "Close only when invalidation or completed lifecycle condition is evidenced.",
+      "required_evidence": [
+        "explicit_invalidation_evidence",
+        "completed_lifecycle_condition_evidence",
+        "audit_reason_for_closure",
+        "non_score_based_closure_basis"
+      ],
+      "audit_explanation_required": true,
+      "explicitly_non_confirming": true,
+      "forbidden_non_confirming_sources": [
+        "score",
+        "rank",
+        "probability",
+        "edge",
+        "expected_return",
+        "gamma",
+        "future_return",
+        "historical_return",
+        "target_hit",
+        "trade_signal"
+      ],
+      "may_mutate_campaign": false,
+      "may_authorize_d3d": false,
+      "may_create_trade_signal": false
+    }
+  }
+}

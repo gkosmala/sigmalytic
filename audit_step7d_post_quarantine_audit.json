@@ -1,0 +1,35 @@
+{
+  "mode": "READ_ONLY_LOCAL_AUDIT_NO_PATCH",
+  "target": "backend\\signal_birth_engine.py",
+  "status": "PASS",
+  "failures": [],
+  "warnings": [
+    "diagnostic/compatibility pattern remains: survival_score = self._safe_score at lines [272]",
+    "diagnostic/compatibility pattern remains: survival_score=survival_score at lines [321]",
+    "diagnostic/compatibility pattern remains: diagnostic_birth_score at lines [305]",
+    "diagnostic/compatibility pattern remains: score_birth_conditions_diagnostic at lines [287]",
+    "CAMPAIGN_BIRTH branch remains in source but is disabled by birth_eligible=False quarantine."
+  ],
+  "info": [
+    "Python AST parses clean.",
+    "required quarantine marker present: STEP7B_SCORE_DEPENDENCY_QUARANTINE_ACTIVE at lines [274]",
+    "required quarantine marker present: birth_eligible = False at lines [293]",
+    "required quarantine marker present: score_birth_conditions_diagnostic at lines [287]",
+    "required quarantine marker present: NOT_OPERATOR_CONTROL_CONFIRMATION at lines [276]",
+    "required quarantine marker present: NOT_D3D_AUTHORIZATION at lines [276]",
+    "required quarantine marker present: score-derived birth eligibility disabled pending evidence-only lifecycle law at lines [308]",
+    "forbidden active pattern absent: + survival_score * 0.10",
+    "forbidden active pattern absent: and survival_score >= 50.0",
+    "forbidden active pattern absent: f\"resolution={resolution_score}, survival={survival_score}, \"",
+    "forbidden active pattern absent: Legacy BIRTH fallback: birth score present",
+    "forbidden active pattern absent: full evidence payload is not yet available"
+  ],
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "d3d_remains_blocked": true,
+    "no_campaign_mutation": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

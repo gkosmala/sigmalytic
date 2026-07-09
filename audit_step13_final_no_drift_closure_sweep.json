@@ -1,0 +1,347 @@
+{
+  "mode": "LOCAL_AND_GET_ONLY_NO_PRODUCTION_MUTATION",
+  "status": "PASS",
+  "failures": [],
+  "git_status_short": " M backend/__pycache__/signal_birth_engine.cpython-311.pyc\n M backend/signal_birth_engine.py\n?? 01_ui_smoke_playwright.py\n?? 02_d3f2_callback_safe_locator.py\n?? 03_no_drift_regression_sweep.py\n?? 04_operator_control_evidence_validator.py\n?? 05_pipeline_coverage_audit.py\n?? 06_wlw_evidence_reconciliation.py\n?? 07_legacy_fallback_quarantine_audit.py\n?? 07a_legacy_fallback_classification.py\n?? 07b_quarantine_signal_birth_score_dependency.py\n?? 07c_verify_signal_birth_quarantine.py\n?? 07d_post_quarantine_audit.py\n?? 08_lifecycle_transition_law_audit.py\n?? 09_alert_readiness_guardrail_audit.py\n?? 09a_semantic_alert_guardrail_audit.py\n?? 10_observability_deploy_check.py\n?? 11_documentation_completeness_audit.py\n?? 12_billing_last_gate.py\n?? 13_final_no_drift_closure_sweep.py\n?? __pycache__/\n?? audit_step10_observability_deploy_check.json\n?? audit_step11_documentation_completeness.json\n?? audit_step7_legacy_fallback_classification.json\n?? audit_step7d_post_quarantine_audit.json\n?? audit_step9_alert_readiness_guardrail.json\n?? audit_step9a_semantic_alert_guardrail.json\n?? backend/signal_birth_engine.py.step7b.bak\n?? docs/sigmalytic_v2_no_drift_operating_manual.md\n?? lifecycle_transition_law.json\n?? sample_operator_evidence_conflicted.json\n?? sample_operator_evidence_valid.json\n?? sample_pipeline_snapshot_complete.json\n?? sample_pipeline_snapshot_incomplete.json\n?? sample_wlw_evidence_collapsed.json\n?? sample_wlw_evidence_separated.json\n?? v2_readiness.json\n",
+  "doctrine": {
+    "operator_control_is_evidence_not_score": true,
+    "d3d_remains_blocked": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "billing_correctly_blocked": true
+  },
+  "results": [
+    {
+      "name": "compile 01_ui_smoke_playwright.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "01_ui_smoke_playwright.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 02_d3f2_callback_safe_locator.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "02_d3f2_callback_safe_locator.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 03_no_drift_regression_sweep.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "03_no_drift_regression_sweep.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 04_operator_control_evidence_validator.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "04_operator_control_evidence_validator.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 05_pipeline_coverage_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "05_pipeline_coverage_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 06_wlw_evidence_reconciliation.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "06_wlw_evidence_reconciliation.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 07_legacy_fallback_quarantine_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "07_legacy_fallback_quarantine_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 07a_legacy_fallback_classification.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "07a_legacy_fallback_classification.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 07b_quarantine_signal_birth_score_dependency.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "07b_quarantine_signal_birth_score_dependency.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 07c_verify_signal_birth_quarantine.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "07c_verify_signal_birth_quarantine.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 07d_post_quarantine_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "07d_post_quarantine_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 08_lifecycle_transition_law_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "08_lifecycle_transition_law_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 09_alert_readiness_guardrail_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "09_alert_readiness_guardrail_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 09a_semantic_alert_guardrail_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "09a_semantic_alert_guardrail_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 10_observability_deploy_check.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "10_observability_deploy_check.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 11_documentation_completeness_audit.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "11_documentation_completeness_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 12_billing_last_gate.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "12_billing_last_gate.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile 13_final_no_drift_closure_sweep.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "13_final_no_drift_closure_sweep.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "compile backend/signal_birth_engine.py",
+      "cmd": [
+        "py",
+        "-m",
+        "py_compile",
+        "backend/signal_birth_engine.py"
+      ],
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "Step 1 UI smoke test",
+      "cmd": [
+        "py",
+        "-B",
+        "01_ui_smoke_playwright.py",
+        "--url",
+        "https://sigmalytic-frontend.onrender.com",
+        "--headless"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 UI SMOKE TEST V1.1\nMODE: BROWSER READ-ONLY / NO MUTATION\n========================================================================\nURL: https://sigmalytic-frontend.onrender.com\nPASS: main-content exists.\nPASS: forbidden global marker absent: D3F1B_TODAY_FRONTEND_FETCH_ERROR\nPASS: forbidden global marker absent: Controlled Persistence Lifecycle\nPASS: forbidden global marker absent: ATTENTION\nTEST CLICK: Command Center\nPASS: clicked Command Center using #tab-command / normal click\nTEST CLICK: Live Feed\nPASS: clicked Live Feed using #tab-feed / DOM click fallback\nTEST CLICK: Radar Screen\nPASS: clicked Radar Screen using #tab-radar / normal click\nTEST CLICK: Scoreboard\nPASS: clicked Scoreboard using #tab-scoreboard / normal click\nTEST CLICK: Preferences\nPASS: clicked Preferences using #tab-preferences / normal click\nTEST CLICK: Setup\nPASS: clicked Setup using #tab-setup / normal click\nTEST CLICK: Load Symbol\nPASS: clicked Load Symbol using button:has-text('Load Symbol') / normal click\nPASS: no browser console errors observed during smoke path.\n========================================================================\nPASS: UI buttons/tiles are interactive.\nPASS: global D3F/D3E panel is not blocking the app shell.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 3 no-drift regression sweep",
+      "cmd": [
+        "py",
+        "-B",
+        "03_no_drift_regression_sweep.py"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 3 NO-DRIFT REGRESSION SWEEP\nMODE: GET ONLY / READ-ONLY / NO MUTATION\n========================================================================\n\nBACKEND D3E.9 CHECK\nPASS: D3E phase is D3E.9\nPASS: final lifecycle verified is True\nPASS: writes_to_supabase is False\nPASS: mutates_campaigns is False\nPASS: executes_d3d is False\nPASS: authorizes_d3d is False\nPASS: operator_control_confirmed is False\nPASS: touches_stripe is False\n\nFRONTEND DASH SHELL CHECK\nPASS: live shell marker present: main-content\nPASS: live shell marker present: Decision Command Center\nPASS: live shell marker present: Command Center\nPASS: live shell marker present: Live Feed\nPASS: live shell marker present: Radar Screen\nPASS: live shell marker present: Scoreboard\nPASS: live shell marker present: Preferences\nPASS: live shell marker present: Setup\nPASS: forbidden global marker absent: d3f1b-today-entrypoint-controlled-persistence-mount\nPASS: forbidden global marker absent: Controlled Persistence Lifecycle\nPASS: forbidden global marker absent: D3F1B_TODAY_FRONTEND_FETCH_ERROR\nPASS: forbidden global marker absent: ATTENTION\n\nFINAL VERDICT\n========================================================================\nPASS: Step 3 no-drift regression sweep complete.\nPASS: Backend D3E.9 remains clean.\nPASS: Live Dash shell remains present.\nPASS: Global D3F/D3E panel remains absent from live layout/dependencies.\nPASS: No write, mutation, D3D, operator-control confirmation, trade signal, or Stripe action occurred.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 7D post-quarantine audit",
+      "cmd": [
+        "py",
+        "-B",
+        "07d_post_quarantine_audit.py"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 7D POST-QUARANTINE AUDIT\nMODE: READ-ONLY LOCAL AUDIT\n========================================================================\nReport written: audit_step7d_post_quarantine_audit.json\n\nINFO\nPASS: Python AST parses clean.\nPASS: required quarantine marker present: STEP7B_SCORE_DEPENDENCY_QUARANTINE_ACTIVE at lines [274]\nPASS: required quarantine marker present: birth_eligible = False at lines [293]\nPASS: required quarantine marker present: score_birth_conditions_diagnostic at lines [287]\nPASS: required quarantine marker present: NOT_OPERATOR_CONTROL_CONFIRMATION at lines [276]\nPASS: required quarantine marker present: NOT_D3D_AUTHORIZATION at lines [276]\nPASS: required quarantine marker present: score-derived birth eligibility disabled pending evidence-only lifecycle law at lines [308]\nPASS: forbidden active pattern absent: + survival_score * 0.10\nPASS: forbidden active pattern absent: and survival_score >= 50.0\nPASS: forbidden active pattern absent: f\"resolution={resolution_score}, survival={survival_score}, \"\nPASS: forbidden active pattern absent: Legacy BIRTH fallback: birth score present\nPASS: forbidden active pattern absent: full evidence payload is not yet available\n\nWARNINGS\nWARN: diagnostic/compatibility pattern remains: survival_score = self._safe_score at lines [272]\nWARN: diagnostic/compatibility pattern remains: survival_score=survival_score at lines [321]\nWARN: diagnostic/compatibility pattern remains: diagnostic_birth_score at lines [305]\nWARN: diagnostic/compatibility pattern remains: score_birth_conditions_diagnostic at lines [287]\nWARN: CAMPAIGN_BIRTH branch remains in source but is disabled by birth_eligible=False quarantine.\n========================================================================\nPASS: STEP 7D COMPLETE \u2014 FORMER SCORE-DERIVED BIRTH PATH IS QUARANTINED\nPASS: D3D remains blocked.\nPASS: no operator-control confirmation occurred.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 8 lifecycle transition law audit",
+      "cmd": [
+        "py",
+        "-B",
+        "08_lifecycle_transition_law_audit.py",
+        "--law",
+        "lifecycle_transition_law.json"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 8 LIFECYCLE TRANSITION LAW AUDIT\nMODE: LOCAL JSON AUDIT / READ-ONLY\n========================================================================\nLaw file: lifecycle_transition_law.json\nCHECKED: NO_CAMPAIGN->BIRTH\nCHECKED: BIRTH->CONFIRMED\nCHECKED: CONFIRMED->SURVIVING\nCHECKED: SURVIVING->EXPANDING\nCHECKED: EXPANDING->MATURING\nCHECKED: MATURING->DISTRIBUTION_RISK\nCHECKED: ANY->CLOSED\n========================================================================\nPASS: lifecycle transition law is explicit and evidence-based.\nPASS: no transition may mutate campaigns or authorize D3D.\nPASS: no transition may confirm operator control from score/rank/probability/gamma/edge.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 9A semantic alert guardrail audit",
+      "cmd": [
+        "py",
+        "-B",
+        "09a_semantic_alert_guardrail_audit.py",
+        "--root",
+        "backend"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 9A SEMANTIC ALERT GUARDRAIL AUDIT\nMODE: READ-ONLY SOURCE SCAN\n========================================================================\nROOT: backend\nFiles scanned: 47\nParse failures: 0\nBlockers: 0\nReviews: 0\nReport written: audit_step9a_semantic_alert_guardrail.json\n========================================================================\nPASS: STEP 9A COMPLETE \u2014 NO EXECUTABLE ALERT GUARDRAIL BLOCKERS FOUND\nPASS: negative guardrail text was not treated as executable D3D/Stripe action.\nPASS: alerts remain diagnostic/read-only under semantic audit.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 10 observability deploy check",
+      "cmd": [
+        "py",
+        "-B",
+        "10_observability_deploy_check.py"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 10 OBSERVABILITY DEPLOY CHECK\nMODE: GET ONLY / READ-ONLY\n========================================================================\nLOCAL HEAD: f431a61\nWARN: working tree has local changes.\nM backend/__pycache__/signal_birth_engine.cpython-311.pyc\n M backend/signal_birth_engine.py\n?? 01_ui_smoke_playwright.py\n?? 02_d3f2_callback_safe_locator.py\n?? 03_no_drift_regression_sweep.py\n?? 04_operator_control_evidence_validator.py\n?? 05_pipeline_coverage_audit.py\n?? 06_wlw_evidence_reconciliation.py\n?? 07_legacy_fallback_quarantine_audit.py\n?? 07a_legacy_fallback_classification.py\n?? 07b_quarantine_signal_birth_score_dependency.py\n?? 07c_verify_signal_birth_quarantine.py\n?? 07d_post_quarantine_audit.py\n?? 08_lifecycle_transition_law_audit.py\n?? 09_alert_readiness_guardrail_audit.py\n?? 09a_semantic_alert_guardrail_audit.py\n?? 10_observability_deploy_check.py\n?? 11_documentation_completeness_audit.py\n?? 12_billing_last_gate.py\n?? 13_final_no_drift_closure_sweep.py\n?? __pycache__/\n?? audit_step10_observability_deploy_check.json\n?? audit_step11_documentation_completeness.json\n?? audit_step7_legacy_fallback_classification.json\n?? audit_step7d_post_quarantine_audit.json\n?? audit_step9_alert_readiness_guardrail.json\n?? audit_step9a_semantic_alert_guardrail.json\n?? backend/signal_birth_engine.py.step7b.bak\n?? docs/sigmalytic_v2_no_drift_operating_manual.md\n?? lifecycle_transition_law.json\n?? sample_operator_evidence_conflicted.json\n?? sample_operator_evidence_valid.json\n?? sample_pipeline_snapshot_complete.json\n?? sample_pipeline_snapshot_incomplete.json\n?? sample_wlw_evidence_collapsed.json\n?? sample_wlw_evidence_separated.json\n?? v2_readiness.json\nPASS: https://sigmalytic-frontend.onrender.com/ returned HTTP 200\nPASS: https://sigmalytic-frontend.onrender.com/_dash-layout returned HTTP 200\nPASS: https://sigmalytic-frontend.onrender.com/_dash-dependencies returned HTTP 200\nPASS: https://sigmalytic-backend.onrender.com/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep returned HTTP 200\nPASS: backend D3E phase is D3E.9\nPASS: backend final lifecycle verified is True\nPASS: backend writes_to_supabase is False\nPASS: backend mutates_campaigns is False\nPASS: backend executes_d3d is False\nPASS: backend authorizes_d3d is False\nPASS: backend operator_control_confirmed is False\nPASS: backend touches_stripe is False\nReport written: audit_step10_observability_deploy_check.json\n\nWARNINGS\nWARN: working tree has local changes; acceptable for current local audit path before commit.\n========================================================================\nPASS: STEP 10 COMPLETE \u2014 PRODUCTION OBSERVABILITY CHECK PASSED\nPASS: live frontend/backend endpoints are reachable.\nPASS: D3E.9 remains clean.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 11 documentation completeness audit",
+      "cmd": [
+        "py",
+        "-B",
+        "11_documentation_completeness_audit.py",
+        "--docs",
+        "docs",
+        "--report",
+        "audit_step11_documentation_completeness.json"
+      ],
+      "returncode": 0,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 11 DOCUMENTATION COMPLETENESS AUDIT\nMODE: LOCAL DOC AUDIT / READ-ONLY\n========================================================================\nPASS: documentation category covered: architecture\nPASS: documentation category covered: doctrine\nPASS: documentation category covered: deployment\nPASS: documentation category covered: regression\nPASS: documentation category covered: rollback\nPASS: documentation category covered: operator_control\nPASS: documentation category covered: alerts\nPASS: documentation category covered: billing\nReport written: audit_step11_documentation_completeness.json\n========================================================================\nPASS: STEP 11 COMPLETE \u2014 DOCUMENTATION COMPLETENESS AUDIT PASSED\nPASS: architecture, doctrine, deployment, regression, rollback, alerts, and billing-last rules are documented.\n========================================================================\n",
+      "stderr": ""
+    },
+    {
+      "name": "Step 12 billing last gate",
+      "cmd": [
+        "py",
+        "-B",
+        "12_billing_last_gate.py",
+        "--readiness",
+        "v2_readiness.json"
+      ],
+      "returncode": 1,
+      "stdout": "========================================================================\nSIGMALYTIC V2 \u2014 STEP 12 BILLING / STRIPE LAST GATE\nMODE: LOCAL JSON GATE / READ-ONLY / NO STRIPE\n========================================================================\nPASS: live_ui_preserved=True\nPASS: manual_smoke_test_passed=True\nPASS: automated_ui_regression_passed=True\nPASS: d3e9_complete=True\nPASS: d3f2_callback_safe_if_present=True\nPASS: lifecycle_transition_law_complete=True\nPASS: alerts_read_only_guarded=True\nPASS: deployment_observability_complete=True\nPASS: documentation_complete=True\nPASS: d3d_authorized=False\nPASS: operator_control_confirmed_by_score=False\nPASS: campaign_mutation_without_d3d_law=False\n========================================================================\nFAIL: Stripe/billing must remain last. Unmet prerequisites:\n  required true field not satisfied: operator_control_evidence_hardened\n  required true field not satisfied: campaign_pipeline_validated\n  required true field not satisfied: legacy_fallbacks_quarantined\n========================================================================\n",
+      "stderr": ""
+    }
+  ]
+}

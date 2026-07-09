@@ -1,0 +1,24 @@
+{
+  "mode": "GET_ONLY_READ_ONLY_NO_MUTATION",
+  "status": "PASS",
+  "local_head": "f431a61",
+  "working_tree_dirty": true,
+  "warnings": [
+    "working tree has local changes; acceptable for current local audit path before commit."
+  ],
+  "failures": [],
+  "endpoint_results": {
+    "https://sigmalytic-frontend.onrender.com/": 200,
+    "https://sigmalytic-frontend.onrender.com/_dash-layout": 200,
+    "https://sigmalytic-frontend.onrender.com/_dash-dependencies": 200,
+    "https://sigmalytic-backend.onrender.com/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep": 200
+  },
+  "doctrine": {
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

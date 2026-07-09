@@ -271,22 +271,26 @@ class SignalBirthEngine:
         resolution_score = self._safe_score(resolution.get("behavioral_resolution_score", 0.0))
         survival_score = self._safe_score(survival.get("survival_score", 0.0))
 
+        # STEP7B_SCORE_DEPENDENCY_QUARANTINE_ACTIVE
+        # Scores below are retained as backward-compatible diagnostics only.
+        # They are NOT_OPERATOR_CONTROL_CONFIRMATION and NOT_D3D_AUTHORIZATION.
+        # They SHALL NOT advance lifecycle state pending evidence-only transition law.
         birth_score = self._safe_score(
             master_index * 0.60
-            + resistance_score * 0.15
-            + resolution_score * 0.15
-            + survival_score * 0.10
+            + resistance_score * 0.20
+            + resolution_score * 0.20
         )
 
         confirmation_count = int(master.get("confirmation_count", 0) or 0)
         agreement_score = self._safe_score(master.get("agreement_score", 0.0))
 
-        birth_eligible = (
+        score_birth_conditions_diagnostic = (
             master_index >= 65.0
             and resolution_score >= 60.0
-            and survival_score >= 50.0
             and confirmation_count >= 2
         )
+        # STEP7B: lifecycle birth advancement is disabled until evidence-only law exists.
+        birth_eligible = False
 
         if birth_score >= 85.0 and birth_eligible:
             birth_state = "CAMPAIGN_BIRTH"
@@ -298,10 +302,10 @@ class SignalBirthEngine:
             birth_state = "NO_BIRTH"
 
         explanation = (
-            f"Signal Birth {birth_state}; birth_score={birth_score}; "
+            f"Signal Birth {birth_state}; diagnostic_birth_score={birth_score}; "
             f"MCI={master_index}, resistance={resistance_score}, "
-            f"resolution={resolution_score}, survival={survival_score}, "
-            f"confirmations={confirmation_count}/3."
+            f"resolution={resolution_score}, confirmations={confirmation_count}/3. "
+            "STEP7B quarantine active: score-derived birth eligibility disabled pending evidence-only lifecycle law."
         )
 
         return SignalBirthVerdict(
