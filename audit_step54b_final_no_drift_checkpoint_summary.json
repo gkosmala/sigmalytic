@@ -1,0 +1,47 @@
+﻿{
+    "status":  "PASS",
+    "failures":  [
+
+                 ],
+    "branch":  "main",
+    "local_head":  "ebc8935f5b1479cf48c9c5dc228b24cdc2e01c4d",
+    "remote_head":  "ebc8935f5b1479cf48c9c5dc228b24cdc2e01c4d",
+    "tag":  "stable-v2-universe-snapshot-contract-live-verified-read-only-2026-07-09",
+    "tag_head":  "ebc8935f5b1479cf48c9c5dc228b24cdc2e01c4d",
+    "live_values":  {
+                        "validation_complete":  false,
+                        "readiness_can_advance":  false,
+                        "persisted_universe_available":  false,
+                        "full_universe_validation_complete":  false,
+                        "universe_count":  null,
+                        "bars_symbols_count":  1046,
+                        "record_min_bars":  1,
+                        "pagination_complete":  true,
+                        "schema_payload_alignment":  true,
+                        "source_tables":  {
+                                              "universe":  null,
+                                              "bars":  "daily_bars",
+                                              "campaigns":  "campaigns"
+                                          },
+                        "source_counts":  {
+                                              "universe_rows":  null,
+                                              "bars_rows_total_count":  352538,
+                                              "bars_rows_returned":  10000,
+                                              "campaign_rows_total_count":  321,
+                                              "campaign_rows_returned":  321,
+                                              "campaign_symbols_count":  321
+                                          }
+                    },
+    "summary_markdown":  ".\\SIGMALYTIC_V2_FINAL_NO_DRIFT_CHECKPOINT_2026_07_09.md",
+    "doctrine":  {
+                     "no_stripe":  true,
+                     "no_nightly_run":  true,
+                     "no_d3d":  true,
+                     "billing_remains_blocked":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_readiness_advance":  true,
+                     "no_trade_signal":  true,
+                     "no_database_write":  true,
+                     "no_campaign_mutation":  true
+                 }
+}
