@@ -1,3 +1,12 @@
+# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_IMPORT
+try:
+    from controlled_universe_ingest_api import controlled_universe_ingest_router
+except Exception:
+    try:
+        from backend.controlled_universe_ingest_api import controlled_universe_ingest_router
+    except Exception:
+        controlled_universe_ingest_router = None
+
 # STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_IMPORT
 try:
     from campaign_pipeline_validation_api import campaign_pipeline_validation_router
@@ -1295,6 +1304,10 @@ except Exception as _d3e9_route_mount_error:
             "not_a_trade_signal": True,
             "touches_stripe": False,
         }
+
+# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_INCLUDE
+if controlled_universe_ingest_router is not None:
+    app.include_router(controlled_universe_ingest_router)
 
 # STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_INCLUDE
 if campaign_pipeline_validation_router is not None:
