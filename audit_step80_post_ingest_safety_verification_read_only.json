@@ -1,0 +1,37 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "STEP80_POST_INGEST_SAFETY_VERIFICATION_READ_ONLY",
+    "live_snapshot":  {
+                          "universe_rows":  13241,
+                          "universe_count":  10000,
+                          "persisted_universe_available":  true,
+                          "campaign_pipeline_validated":  true,
+                          "readiness_can_advance":  false
+                      },
+    "dry_route_after_ingest":  {
+                                   "status":  "PASS",
+                                   "mode":  "DRY_RUN_ONLY_NO_WRITE",
+                                   "execute_requested":  false,
+                                   "execute_allowed":  false,
+                                   "write_attempted":  false,
+                                   "env_execute_enabled":  false,
+                                   "symbol_count":  13241,
+                                   "failures":  [
+
+                                                ],
+                                   "warnings":  [
+                                                    "persisted universe is not empty or precheck failed"
+                                                ]
+                               },
+    "doctrine":  {
+                     "no_second_ingest":  true,
+                     "no_campaign_mutation":  true,
+                     "no_daily_bars_mutation":  true,
+                     "no_readiness_file_mutation":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "readiness_can_advance_remains_false":  false
+                 }
+}
