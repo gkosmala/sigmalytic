@@ -2,6 +2,259 @@ from __future__ import annotations
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 # Sigmalytic v2.2 — true OHLC candlestick rendering
 import requests
+
+
+# SIGMALYTIC_STEP85H_IMPORT_HISTORY_PERSISTENCE_HELPERS_START
+# Import-history persistence helpers.
+# These read the restored backend import-history file and render the same
+# upload result across tab changes. The file remains until Reset Import History
+# is explicitly pressed.
+def _sigmalytic_step85h_fetch_import_history():
+    try:
+        import requests as _requests
+
+        backend_url = globals().get("BACKEND_HTTP", "https://sigmalytic-backend.onrender.com")
+        resp = _requests.get(f"{backend_url}/api/trades/history", timeout=20)
+
+        if not resp.ok:
+            return None
+
+        data = resp.json()
+
+        if data.get("has_history") is False:
+            return None
+
+        trades = (
+            data.get("total_trades")
+            or data.get("trades_imported")
+            or data.get("parsed_rows")
+            or ((data.get("analysis") or {}).get("total_trades"))
+            or 0
+        )
+
+        try:
+            trades = int(float(trades))
+        except Exception:
+            trades = 0
+
+        if trades <= 0:
+            return None
+
+        return data
+
+    except Exception:
+        return None
+
+
+def _sigmalytic_step85h_num(value, default=0.0):
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _sigmalytic_step85h_int(value, default=0):
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _sigmalytic_step85h_upload_status_from_payload(data):
+    if not data:
+        return html.Div(
+            "No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.",
+            style={
+                "color": "#93c5fd",
+                "fontWeight": "700",
+                "padding": "10px 12px",
+                "border": "1px solid rgba(59,130,246,0.35)",
+                "borderRadius": "10px",
+                "background": "rgba(30,64,175,0.20)",
+            },
+        )
+
+    analysis = (
+        data.get("analysis")
+        or data.get("behavioral_analysis")
+        or data.get("behavioral_snapshot")
+        or data.get("profile")
+        or {}
+    )
+
+    broker = (
+        data.get("broker")
+        or data.get("broker_detected")
+        or data.get("detected_broker")
+        or "Generic CSV"
+    )
+
+    if not broker or str(broker).strip().lower() == "unknown":
+        broker = "Generic CSV"
+
+    trades = _sigmalytic_step85h_int(
+        data.get("total_trades")
+        or data.get("trades_imported")
+        or data.get("parsed_rows")
+        or analysis.get("total_trades")
+        or analysis.get("trades_imported")
+        or 0
+    )
+
+    win_rate = _sigmalytic_step85h_num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
+    win_rate_display = win_rate * 100 if win_rate <= 1 else win_rate
+
+    total_pnl = _sigmalytic_step85h_num(
+        data.get("total_pnl")
+        or data.get("pnl")
+        or analysis.get("total_pnl")
+        or 0.0
+    )
+
+    flags = (
+        data.get("behavioral_flags")
+        or data.get("flags")
+        or analysis.get("behavioral_flags")
+        or []
+    )
+
+    flag_text = ", ".join([str(x) for x in flags[:4]]) if flags else "Behavioral snapshot generated."
+
+    return html.Div([
+        html.Div(
+            f"✅ {broker} detected · {trades} trades imported · Win rate: {win_rate_display:.0f}% · Total P&L: ${total_pnl:,.2f}",
+            style={"color": "#34d399", "fontWeight": "900"},
+        ),
+        html.Div(
+            f"Behavioral flags: {flag_text}",
+            style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
+        ),
+        html.Div(
+            "Switch to the Behavioral Intelligence tab to see your full profile.",
+            style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
+        ),
+    ])
+
+
+def _sigmalytic_step85h_import_status_from_history():
+    return _sigmalytic_step85h_upload_status_from_payload(
+        _sigmalytic_step85h_fetch_import_history()
+    )
+
+
+def _sigmalytic_step85h_behavioral_tab_from_history():
+    data = _sigmalytic_step85h_fetch_import_history()
+
+    if not data:
+        return html.Div(
+            "No behavioral data yet. Start tracking trades to build your profile.",
+            style={
+                "color": "#cbd5e1",
+                "fontWeight": "700",
+                "padding": "14px 16px",
+                "border": "1px solid rgba(59,130,246,0.35)",
+                "borderRadius": "10px",
+                "background": "rgba(30,64,175,0.20)",
+            },
+        )
+
+    analysis = (
+        data.get("analysis")
+        or data.get("behavioral_analysis")
+        or data.get("behavioral_snapshot")
+        or data.get("profile")
+        or {}
+    )
+
+    broker = (
+        data.get("broker")
+        or data.get("broker_detected")
+        or data.get("detected_broker")
+        or "Generic CSV"
+    )
+
+    if not broker or str(broker).strip().lower() == "unknown":
+        broker = "Generic CSV"
+
+    trades = _sigmalytic_step85h_int(
+        data.get("total_trades")
+        or data.get("trades_imported")
+        or data.get("parsed_rows")
+        or analysis.get("total_trades")
+        or 0
+    )
+
+    unique_symbols = _sigmalytic_step85h_int(analysis.get("unique_symbols") or 0)
+    total_notional = _sigmalytic_step85h_num(analysis.get("total_notional") or 0.0)
+    avg_notional = _sigmalytic_step85h_num(analysis.get("average_trade_notional") or 0.0)
+    largest_symbol = analysis.get("largest_symbol") or "-"
+    profile = analysis.get("behavioral_profile") or "Behavioral snapshot generated from imported brokerage history."
+    flags = analysis.get("behavioral_flags") or []
+
+    metric_style = {
+        "background": "rgba(15,23,42,0.65)",
+        "border": "1px solid rgba(148,163,184,0.18)",
+        "borderRadius": "12px",
+        "padding": "14px",
+        "minWidth": "160px",
+    }
+
+    return html.Div([
+        html.H3(
+            "Brokerage Behavioral Intelligence",
+            style={"color": "#e5e7eb", "marginBottom": "8px"},
+        ),
+        html.Div(
+            f"{broker} · {trades} imported trades",
+            style={"color": "#34d399", "fontWeight": "900", "marginBottom": "12px"},
+        ),
+        html.Div([
+            html.Div([html.Div("Trades", style={"color": "#94a3b8"}), html.Div(str(trades), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
+            html.Div([html.Div("Symbols", style={"color": "#94a3b8"}), html.Div(str(unique_symbols), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
+            html.Div([html.Div("Largest Symbol", style={"color": "#94a3b8"}), html.Div(str(largest_symbol), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
+            html.Div([html.Div("Total Notional", style={"color": "#94a3b8"}), html.Div(f"${total_notional:,.0f}", style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
+            html.Div([html.Div("Avg Trade", style={"color": "#94a3b8"}), html.Div(f"${avg_notional:,.0f}", style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
+        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "14px"}),
+        html.Div(
+            profile,
+            style={
+                "color": "#cbd5e1",
+                "padding": "12px 14px",
+                "border": "1px solid rgba(52,211,153,0.28)",
+                "borderRadius": "10px",
+                "background": "rgba(6,95,70,0.16)",
+                "marginBottom": "12px",
+            },
+        ),
+        html.Div([
+            html.Span(
+                str(flag),
+                style={
+                    "display": "inline-block",
+                    "margin": "4px 6px 4px 0",
+                    "padding": "6px 10px",
+                    "borderRadius": "999px",
+                    "background": "rgba(251,191,36,0.15)",
+                    "border": "1px solid rgba(251,191,36,0.35)",
+                    "color": "#fbbf24",
+                    "fontWeight": "800",
+                    "fontSize": "12px",
+                },
+            )
+            for flag in flags
+        ] if flags else [
+            html.Span(
+                "No behavioral flags detected.",
+                style={"color": "#93c5fd", "fontWeight": "700"},
+            )
+        ]),
+    ])
+# SIGMALYTIC_STEP85H_IMPORT_HISTORY_PERSISTENCE_HELPERS_END
+
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly

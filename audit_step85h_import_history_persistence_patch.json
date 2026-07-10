@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "mode": "STEP85H_FINAL_IMPORT_HISTORY_PERSISTENCE_ACROSS_TABS",
+  "frontend_changed": true,
+  "checks": {
+    "helper_marker_present": true,
+    "import_status_uses_history": true,
+    "behavioral_tab_uses_history": true,
+    "reset_button_still_present": true,
+    "reset_route_still_present": true,
+    "upload_route_still_generic": true,
+    "combined_callback_still_present": true
+  },
+  "doctrine": {
+    "no_database_write_from_patch": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "scoped_import_history_persistence_only": true
+  }
+}
