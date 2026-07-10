@@ -1,0 +1,79 @@
+{
+  "status": "PASS",
+  "mode": "STEP85E_LIVE_IMPORT_RESET_SMOKE_TEST",
+  "checks": {
+    "upload_http_ok": true,
+    "upload_parsed_rows_2": true,
+    "upload_analysis_present": true,
+    "history_after_upload_http_ok": true,
+    "reset_http_ok": true,
+    "reset_success_true": true,
+    "history_after_reset_http_ok": true
+  },
+  "upload": {
+    "status_code": 200,
+    "ok": true,
+    "parsed_rows": 2,
+    "trades_imported": 2,
+    "behavioral_flags": [
+      "CONCENTRATED_SYMBOL_ACTIVITY",
+      "SMALL_SAMPLE_SIZE"
+    ],
+    "summary": {
+      "trades_imported": 2,
+      "symbols_detected": 1,
+      "largest_symbol": "AAPL",
+      "behavioral_flag_count": 2
+    },
+    "raw_if_error": ""
+  },
+  "history_after_upload": {
+    "status_code": 200,
+    "ok": true
+  },
+  "reset": {
+    "status_code": 200,
+    "ok": true,
+    "body": {
+      "ok": true,
+      "success": true,
+      "reset": true,
+      "removed_files": [
+        "last_import.json"
+      ],
+      "message": "Import history reset. Upload a new brokerage CSV to rebuild behavioral intelligence.",
+      "doctrine": {
+        "scoped_import_reset_only": true,
+        "no_campaign_delete": true,
+        "no_universe_delete": true,
+        "no_supabase_write": true,
+        "no_billing": true,
+        "no_d3d": true,
+        "no_operator_control_confirmation": true
+      }
+    },
+    "raw_if_error": ""
+  },
+  "history_after_reset": {
+    "status_code": 200,
+    "ok": true,
+    "body": {
+      "ok": true,
+      "success": true,
+      "has_history": false,
+      "message": "No import history found.",
+      "analysis": null,
+      "behavioral_analysis": null
+    }
+  },
+  "doctrine": {
+    "sample_import_reset_only": true,
+    "no_supabase_write": true,
+    "no_campaign_mutation": true,
+    "no_universe_ingest": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
