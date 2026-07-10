@@ -3314,62 +3314,6 @@ def select_direction(_l, _s, _n):
 
 # ── CSV upload callback ──────────────────────────────────────────────────────
 @app.callback(
-    Output("csv-upload-status", "children"),
-    Input("csv-upload", "contents"),
-    State("csv-upload", "filename"),
-    prevent_initial_call=True,
-)
-def handle_csv_upload(contents, filename):
-    if not contents:
-        return no_update
-    import base64, io as _io
-    try:
-        # Decode base64 data URI
-        content_type, content_string = contents.split(",")
-        decoded = base64.b64decode(content_string)
-        # POST to backend
-        resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload-generic",
-            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
-            timeout=30,
-        )
-        if resp.ok:
-            data = resp.json()
-            a    = data.get("analysis", {})
-            return html.Div([
-                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
-                          style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"{data.get('trades_closed',0)} trades imported · "
-                          f"Win rate: {a.get('win_rate',0)}% · "
-                          f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
-                          style={"color":TEXT}),
-                html.Br(),
-                html.Span("Switch to the Behavioral Intelligence tab to see your full profile.",
-                          style={"color":MUTED,"fontSize":"11px"}),
-            ])
-        else:
-            return f"❌ Upload failed: {resp.text[:200]}"
-    except Exception as e:
-        return f"❌ Error: {str(e)[:200]}"
-
-
-# ── Audio alert clientside callback ──────────────────────────────────────────
-app.clientside_callback(
-    """
-    function(score, prev_score, alerts_on) {
-        if (window.dash_clientside && window.dash_clientside.sigmalytic) {
-            return window.dash_clientside.sigmalytic.fireAlert(score, prev_score, alerts_on);
-        }
-        return score;
-    }
-    """,
-    Output("s-alert-score", "data"),
-    Input("s-live", "data"),
-    State("s-alert-score", "data"),
-    State("s-alerts-on", "data"),
-)
-
-@app.callback(
     Output("s-alerts-on", "data"),
     Output("btn-alerts-toggle", "children"),
     Output("btn-alerts-toggle", "style"),
@@ -3393,26 +3337,193 @@ if __name__ == "__main__":
 # SIGMALYTIC_STEP85D_SCOPED_IMPORT_RESET_CALLBACK_START
 # Scoped reset for brokerage import-history UI only.
 # This does not reset campaigns, universe snapshots, D3D, operator-control evidence, or billing.
+
+# SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_START
+# Single browser-facing callback for Import History.
+# Upload and reset share the same visible output so reset clears stale upload messages.
 @app.callback(
+    Output("csv-upload-status", "children"),
     Output("reset-status", "children"),
+    Input("csv-upload", "contents"),
     Input("btn-reset-imports", "n_clicks"),
+    State("csv-upload", "filename"),
     prevent_initial_call=True,
 )
-def sigmalytic_step85d_reset_import_history(n_clicks):
-    if not n_clicks:
-        return ""
+def handle_csv_upload(contents, reset_clicks, filename):
+    try:
+        from dash import callback_context as _sig_ctx
+        triggered = _sig_ctx.triggered[0]["prop_id"].split(".")[0] if _sig_ctx.triggered else ""
+    except Exception:
+        triggered = ""
+
+    backend_url = globals().get("BACKEND_HTTP", "https://sigmalytic-backend.onrender.com")
+
+    def _num(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    def _int(value, default=0):
+        try:
+            if value is None or value == "":
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    if triggered == "btn-reset-imports":
+        try:
+            import requests as _requests
+            resp = _requests.post(f"{backend_url}/api/trades/reset", timeout=30)
+
+            if not resp.ok:
+                return (
+                    html.Div(f"Reset failed: {resp.text[:200]}", style={"color": "#f87171", "fontWeight": "800"}),
+                    html.Span("Reset failed.", style={"color": "#f87171", "fontWeight": "800"}),
+                )
+
+            return (
+                html.Div(
+                    "No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.",
+                    style={
+                        "color": "#93c5fd",
+                        "fontWeight": "700",
+                        "padding": "10px 12px",
+                        "border": "1px solid rgba(59,130,246,0.35)",
+                        "borderRadius": "10px",
+                        "background": "rgba(30,64,175,0.20)",
+                    },
+                ),
+                html.Span(
+                    "Import history reset.",
+                    style={"color": "#fbbf24", "fontWeight": "800"},
+                ),
+            )
+        except Exception as exc:
+            return (
+                html.Div(f"Reset failed: {exc}", style={"color": "#f87171", "fontWeight": "800"}),
+                html.Span("Reset failed.", style={"color": "#f87171", "fontWeight": "800"}),
+            )
+
+    if triggered != "csv-upload":
+        return "", ""
+
+    if not contents:
+        return "", ""
 
     try:
-        resp = requests.post(f"{BACKEND_HTTP}/api/trades/reset", timeout=30)
+        import base64 as _base64
+        import io as _io
+        import requests as _requests
+
+        if "," not in contents:
+            return (
+                html.Div("Upload failed: invalid browser file payload.", style={"color": "#f87171", "fontWeight": "800"}),
+                "",
+            )
+
+        _, encoded = contents.split(",", 1)
+        decoded = _base64.b64decode(encoded)
+
+        upload_name = filename or "brokerage_history.csv"
+
+        resp = _requests.post(
+            f"{backend_url}/api/import/upload-generic",
+            files={"file": (upload_name, _io.BytesIO(decoded), "text/csv")},
+            timeout=90,
+        )
+
         if not resp.ok:
-            return f"Reset failed: {resp.text[:200]}"
+            return (
+                html.Div(f"Upload failed: {resp.text[:300]}", style={"color": "#f87171", "fontWeight": "800"}),
+                "",
+            )
 
         data = resp.json()
-        return data.get(
-            "message",
-            "Import history reset. Upload a new brokerage CSV to rebuild behavioral intelligence."
+        analysis = (
+            data.get("analysis")
+            or data.get("behavioral_analysis")
+            or data.get("behavioral_snapshot")
+            or data.get("profile")
+            or {}
         )
+
+        broker = (
+            data.get("broker")
+            or data.get("broker_detected")
+            or data.get("detected_broker")
+            or "Generic CSV"
+        )
+
+        if not broker or str(broker).strip().lower() == "unknown":
+            broker = "Generic CSV"
+
+        trades = _int(
+            data.get("total_trades")
+            or data.get("trades_imported")
+            or data.get("parsed_rows")
+            or analysis.get("total_trades")
+            or analysis.get("trades_imported")
+            or 0
+        )
+
+        win_rate = _num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
+        if win_rate <= 1:
+            win_rate_display = win_rate * 100
+        else:
+            win_rate_display = win_rate
+
+        total_pnl = _num(data.get("total_pnl") or data.get("pnl") or analysis.get("total_pnl") or 0.0)
+
+        flags = (
+            data.get("behavioral_flags")
+            or data.get("flags")
+            or analysis.get("behavioral_flags")
+            or []
+        )
+
+        if trades <= 0:
+            return (
+                html.Div([
+                    html.Div(
+                        "CSV uploaded, but no valid trade rows were parsed.",
+                        style={"color": "#fbbf24", "fontWeight": "900"},
+                    ),
+                    html.Div(
+                        "Required columns: Date, Symbol, Side, Quantity, Price. Try Generic CSV format if your broker export uses unusual headers.",
+                        style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
+                    ),
+                ]),
+                "",
+            )
+
+        flag_text = ", ".join([str(x) for x in flags[:4]]) if flags else "Behavioral snapshot generated."
+
+        return (
+            html.Div([
+                html.Div(
+                    f"✅ {broker} detected · {trades} trades imported · Win rate: {win_rate_display:.0f}% · Total P&L: ${total_pnl:,.2f}",
+                    style={"color": "#34d399", "fontWeight": "900"},
+                ),
+                html.Div(
+                    f"Behavioral flags: {flag_text}",
+                    style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
+                ),
+                html.Div(
+                    "Switch to the Behavioral Intelligence tab to see your full profile.",
+                    style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
+                ),
+            ]),
+            "",
+        )
+
     except Exception as exc:
-        return f"Reset failed: {exc}"
-# SIGMALYTIC_STEP85D_SCOPED_IMPORT_RESET_CALLBACK_END
+        return (
+            html.Div(f"Upload failed: {exc}", style={"color": "#f87171", "fontWeight": "800"}),
+            "",
+        )
+# SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
 
