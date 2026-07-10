@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "mode": "STEP85J_BEHAVIORAL_TAB_CONNECTED_TO_PERSISTED_IMPORT_HISTORY",
+  "frontend_changed": true,
+  "old_build_behavior_tab_excerpt": "def build_behavior_tab():\n    dash_data = _get(f\"/api/behavior/dashboard/{USER_ID}\")\n    if not dash_data:\n        return card([note_box(\"No behavioral data yet. Start tracking trades to build your profile.\", \"blue\")])\n\n    total    = dash_data.get(\"total_trades\", 0)\n    comp     = dash_data.get(\"avg_decision_score\", 0)\n    exec_    = dash_data.get(\"execution_score\", 0)\n    disc     = dash_data.get(\"discipline_score\", 0)\n    timing   = dash_data.get(\"timing_score\", 0)\n    risk     = dash_data.get(\"risk_score\", 0)\n    flag     = dash_data.get(\"common_behavior_flag\", \"neutral\")\n    best_r   = dash_data.get(\"best_regime\")\n    worst_r  = dash_data.get(\"worst_regime\")\n    regimes  = dash_data.get(\"regime_performance\", [])\n    cards_   = dash_data.get(\"recent_scorecards\", [])\n    warnings = dash_data.get(\"adaptive_warnings\", [])\n\n    def score_color(v): return TEAL_DIM if v>=70 else (YELLOW_DIM if v>=45 else RED_DIM)\n\n    flag_color = {\n        \"plan_followed\":\"teal\",\"disciplined_execution\":\"teal\",\n        \"late_chase\":\"yellow\",\"premature_exit\":\"yellow\",\"panic_exit\":\"red\",\n        \"plan_violated\":\"red\",\"over_sized\":\"red\",\"ignored_high_quality_signal\":\"yellow\",\n        \"revenge_trade\":\"re",
+  "new_build_behavior_tab_excerpt": "def build_behavior_tab():\n    \"\"\"\n    Behavioral Intelligence now reads the persisted brokerage import-history\n    payload from /api/trades/history. It must not remain a static placeholder\n    after a successful Import History upload.\n    \"\"\"\n    return html.Div([\n        _sigmalytic_step85h_behavioral_tab_from_history()\n    ])\n\n\n",
+  "checks": {
+    "build_behavior_tab_present": true,
+    "build_behavior_tab_uses_history_helper": true,
+    "build_behavior_tab_no_static_placeholder": true,
+    "import_history_status_uses_history_helper": true,
+    "upload_route_still_generic": true,
+    "reset_route_still_present": true,
+    "reset_button_still_present": true,
+    "combined_callback_still_present": true
+  },
+  "doctrine": {
+    "frontend_only_patch": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "scoped_import_history_to_behavioral_tab_only": true
+  }
+}
