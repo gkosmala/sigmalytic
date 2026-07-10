@@ -3301,7 +3301,7 @@ def handle_csv_upload(contents, filename):
         decoded = base64.b64decode(content_string)
         # POST to backend
         resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload",
+            f"{BACKEND_HTTP}/api/import/upload-generic",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             timeout=30,
         )
@@ -3361,3 +3361,30 @@ def toggle_alerts(n, currently_on):
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
+
+# SIGMALYTIC_STEP85D_SCOPED_IMPORT_RESET_CALLBACK_START
+# Scoped reset for brokerage import-history UI only.
+# This does not reset campaigns, universe snapshots, D3D, operator-control evidence, or billing.
+@app.callback(
+    Output("reset-status", "children"),
+    Input("btn-reset-imports", "n_clicks"),
+    prevent_initial_call=True,
+)
+def sigmalytic_step85d_reset_import_history(n_clicks):
+    if not n_clicks:
+        return ""
+
+    try:
+        resp = requests.post(f"{BACKEND_HTTP}/api/trades/reset", timeout=30)
+        if not resp.ok:
+            return f"Reset failed: {resp.text[:200]}"
+
+        data = resp.json()
+        return data.get(
+            "message",
+            "Import history reset. Upload a new brokerage CSV to rebuild behavioral intelligence."
+        )
+    except Exception as exc:
+        return f"Reset failed: {exc}"
+# SIGMALYTIC_STEP85D_SCOPED_IMPORT_RESET_CALLBACK_END
+

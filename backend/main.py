@@ -1312,3 +1312,16 @@ if controlled_universe_ingest_router is not None:
 # STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_INCLUDE
 if campaign_pipeline_validation_router is not None:
     app.include_router(campaign_pipeline_validation_router)
+
+# SIGMALYTIC_STEP85D_IMPORT_HISTORY_RESTORE_ROUTER_START
+# Isolated brokerage import-history restoration lane.
+# This router is intentionally scoped away from campaign mutation, universe ingest,
+# D3D authorization, operator-control confirmation, trade signals, and billing.
+try:
+    from backend.import_history_restore_api import router as import_history_restore_router
+except Exception:
+    from import_history_restore_api import router as import_history_restore_router
+
+app.include_router(import_history_restore_router)
+# SIGMALYTIC_STEP85D_IMPORT_HISTORY_RESTORE_ROUTER_END
+

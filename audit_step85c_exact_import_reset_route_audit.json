@@ -1,0 +1,540 @@
+{
+  "status": "PASS",
+  "mode": "STEP85C_EXACT_IMPORT_RESET_ROUTE_AUDIT_READ_ONLY",
+  "files": {
+    "backend/main.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "backend_include_router": [
+          {
+            "line": 1083,
+            "text": "app.include_router(campaign_router)"
+          },
+          {
+            "line": 1084,
+            "text": "app.include_router(research_router)"
+          },
+          {
+            "line": 1085,
+            "text": "app.include_router(intelligence_router)"
+          },
+          {
+            "line": 1086,
+            "text": "app.include_router(operator_router)"
+          },
+          {
+            "line": 1089,
+            "text": "app.include_router(alerts_router)"
+          },
+          {
+            "line": 1092,
+            "text": "app.include_router(snapshot_router)"
+          },
+          {
+            "line": 1095,
+            "text": "app.include_router(admin_router)"
+          },
+          {
+            "line": 1105,
+            "text": "app.include_router(billing_router)"
+          },
+          {
+            "line": 1106,
+            "text": "app.include_router(legal_router)"
+          },
+          {
+            "line": 1310,
+            "text": "app.include_router(controlled_universe_ingest_router)"
+          },
+          {
+            "line": 1314,
+            "text": "app.include_router(campaign_pipeline_validation_router)"
+          }
+        ]
+      }
+    },
+    "backend/trade_journal_api.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "backend_router": [
+          {
+            "line": 26,
+            "text": "from fastapi import APIRouter, HTTPException, Request"
+          },
+          {
+            "line": 39,
+            "text": "journal_router = APIRouter(prefix=\"/api/journal\", tags=[\"journal\"])"
+          }
+        ],
+        "backend_include_router": [
+          {
+            "line": 9,
+            "text": "app.include_router(journal_router)"
+          }
+        ]
+      }
+    },
+    "backend/trade_journal_service.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {}
+    },
+    "backend/csv_import.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "backend_router": [
+          {
+            "line": 210,
+            "text": "from fastapi import APIRouter"
+          },
+          {
+            "line": 212,
+            "text": "csv_router = APIRouter("
+          }
+        ]
+      }
+    },
+    "frontend/sigmalytic_app_TODAY.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "frontend_upload_widget": [
+          {
+            "line": 599,
+            "text": "dcc.Upload("
+          }
+        ],
+        "frontend_csv_upload_id": [
+          {
+            "line": 600,
+            "text": "id=\"csv-upload\","
+          }
+        ],
+        "frontend_upload_old_endpoint": [
+          {
+            "line": 3304,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload\","
+          }
+        ],
+        "backend_upload_endpoint": [
+          {
+            "line": 536,
+            "text": "\"Export as CSV and upload here\","
+          },
+          {
+            "line": 587,
+            "text": "upload_section = card(["
+          },
+          {
+            "line": 600,
+            "text": "id=\"csv-upload\","
+          },
+          {
+            "line": 619,
+            "text": "html.Div(id=\"csv-upload-status\","
+          },
+          {
+            "line": 749,
+            "text": "return html.Div([upload_section, html.Div(style={\"height\":\"16px\"}), analysis_section])"
+          },
+          {
+            "line": 3287,
+            "text": "# \u2500\u2500 CSV upload callback \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+          },
+          {
+            "line": 3289,
+            "text": "Output(\"csv-upload-status\", \"children\"),"
+          },
+          {
+            "line": 3290,
+            "text": "Input(\"csv-upload\", \"contents\"),"
+          },
+          {
+            "line": 3291,
+            "text": "State(\"csv-upload\", \"filename\"),"
+          },
+          {
+            "line": 3294,
+            "text": "def handle_csv_upload(contents, filename):"
+          },
+          {
+            "line": 3304,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload\","
+          }
+        ]
+      }
+    },
+    "frontend/sigmalytic_app_LATEST.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "frontend_upload_widget": [
+          {
+            "line": 397,
+            "text": "dcc.Upload("
+          },
+          {
+            "line": 542,
+            "text": "dcc.Upload("
+          }
+        ],
+        "frontend_csv_upload_id": [
+          {
+            "line": 543,
+            "text": "id=\"csv-upload\","
+          }
+        ],
+        "frontend_behavior_upload_id": [
+          {
+            "line": 398,
+            "text": "id=\"csv-upload-behavior\","
+          }
+        ],
+        "frontend_reset_button_restored": [
+          {
+            "line": 599,
+            "text": "html.Button(\"\ud83d\uddd1\ufe0f Reset Import History\",id=\"reset-trades-btn\","
+          },
+          {
+            "line": 1094,
+            "text": "Input(\"reset-trades-btn\",\"n_clicks\"),"
+          }
+        ],
+        "frontend_upload_old_endpoint": [
+          {
+            "line": 1026,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1070,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "frontend_upload_generic_endpoint": [
+          {
+            "line": 1026,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1070,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "frontend_reset_endpoint": [
+          {
+            "line": 1101,
+            "text": "r = _req.delete(f\"{BACKEND_HTTP}/api/trades/reset\", timeout=10)"
+          }
+        ],
+        "backend_upload_generic_endpoint": [
+          {
+            "line": 1026,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1070,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "backend_upload_endpoint": [
+          {
+            "line": 391,
+            "text": "upload_section = card(["
+          },
+          {
+            "line": 398,
+            "text": "id=\"csv-upload-behavior\","
+          },
+          {
+            "line": 412,
+            "text": "html.Div(id=\"csv-upload-behavior-status\","
+          },
+          {
+            "line": 525,
+            "text": "return html.Div([upload_section, analysis_section])"
+          },
+          {
+            "line": 543,
+            "text": "id=\"csv-upload\","
+          },
+          {
+            "line": 559,
+            "text": "html.Div(id=\"csv-upload-status\", style={\"marginTop\":\"16px\",\"fontSize\":\"13px\"}),"
+          },
+          {
+            "line": 570,
+            "text": "note_box(\"After uploading, use the Reset button in the Setup tab to clear all history and start fresh.\","
+          },
+          {
+            "line": 1015,
+            "text": "@app.callback(Output(\"csv-upload-behavior-status\",\"children\"),Output(\"s-analysis\",\"data\"),Output(\"s-refresh\",\"data\"),"
+          },
+          {
+            "line": 1016,
+            "text": "Input(\"csv-upload-behavior\",\"contents\"),"
+          },
+          {
+            "line": 1017,
+            "text": "State(\"csv-upload-behavior\",\"filename\"),State(\"s-refresh\",\"data\"),"
+          },
+          {
+            "line": 1019,
+            "text": "def handle_csv_upload_behavior(contents, filename, refresh):"
+          },
+          {
+            "line": 1026,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1058,
+            "text": "@app.callback(Output(\"csv-upload-status\",\"children\"),"
+          },
+          {
+            "line": 1059,
+            "text": "Input(\"csv-upload\",\"contents\"),"
+          },
+          {
+            "line": 1060,
+            "text": "State(\"csv-upload\",\"filename\"),"
+          },
+          {
+            "line": 1062,
+            "text": "def handle_csv_upload(contents, filename):"
+          },
+          {
+            "line": 1070,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "backend_reset_endpoint": [
+          {
+            "line": 599,
+            "text": "html.Button(\"\ud83d\uddd1\ufe0f Reset Import History\",id=\"reset-trades-btn\","
+          },
+          {
+            "line": 605,
+            "text": "html.Div(id=\"reset-trades-output\",style={\"marginTop\":\"10px\",\"fontSize\":\"13px\"}),"
+          },
+          {
+            "line": 1093,
+            "text": "@app.callback(Output(\"reset-trades-output\",\"children\"),"
+          },
+          {
+            "line": 1094,
+            "text": "Input(\"reset-trades-btn\",\"n_clicks\"),"
+          },
+          {
+            "line": 1096,
+            "text": "def reset_trade_history(n_clicks):"
+          },
+          {
+            "line": 1101,
+            "text": "r = _req.delete(f\"{BACKEND_HTTP}/api/trades/reset\", timeout=10)"
+          }
+        ]
+      }
+    },
+    "frontend/app_v2_FINAL.py": {
+      "exists": true,
+      "syntax_ok": true,
+      "pattern_hits": {
+        "frontend_upload_widget": [
+          {
+            "line": 396,
+            "text": "dcc.Upload("
+          },
+          {
+            "line": 541,
+            "text": "dcc.Upload("
+          }
+        ],
+        "frontend_csv_upload_id": [
+          {
+            "line": 542,
+            "text": "id=\"csv-upload\","
+          }
+        ],
+        "frontend_behavior_upload_id": [
+          {
+            "line": 397,
+            "text": "id=\"csv-upload-behavior\","
+          }
+        ],
+        "frontend_reset_button_restored": [
+          {
+            "line": 598,
+            "text": "html.Button(\"\ud83d\uddd1\ufe0f Reset Import History\",id=\"reset-trades-btn\","
+          },
+          {
+            "line": 1092,
+            "text": "Input(\"reset-trades-btn\",\"n_clicks\"),"
+          }
+        ],
+        "frontend_upload_old_endpoint": [
+          {
+            "line": 1024,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1068,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "frontend_upload_generic_endpoint": [
+          {
+            "line": 1024,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1068,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "frontend_reset_endpoint": [
+          {
+            "line": 1099,
+            "text": "r = _req.delete(f\"{BACKEND_HTTP}/api/trades/reset\", timeout=10)"
+          }
+        ],
+        "backend_upload_generic_endpoint": [
+          {
+            "line": 1024,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1068,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "backend_upload_endpoint": [
+          {
+            "line": 390,
+            "text": "upload_section = card(["
+          },
+          {
+            "line": 397,
+            "text": "id=\"csv-upload-behavior\","
+          },
+          {
+            "line": 411,
+            "text": "html.Div(id=\"csv-upload-behavior-status\","
+          },
+          {
+            "line": 524,
+            "text": "return html.Div([upload_section, analysis_section])"
+          },
+          {
+            "line": 542,
+            "text": "id=\"csv-upload\","
+          },
+          {
+            "line": 558,
+            "text": "html.Div(id=\"csv-upload-status\", style={\"marginTop\":\"16px\",\"fontSize\":\"13px\"}),"
+          },
+          {
+            "line": 569,
+            "text": "note_box(\"After uploading, use the Reset button in the Setup tab to clear all history and start fresh.\","
+          },
+          {
+            "line": 1013,
+            "text": "@app.callback(Output(\"csv-upload-behavior-status\",\"children\"),Output(\"s-analysis\",\"data\"),Output(\"s-refresh\",\"data\"),"
+          },
+          {
+            "line": 1014,
+            "text": "Input(\"csv-upload-behavior\",\"contents\"),"
+          },
+          {
+            "line": 1015,
+            "text": "State(\"csv-upload-behavior\",\"filename\"),State(\"s-refresh\",\"data\"),"
+          },
+          {
+            "line": 1017,
+            "text": "def handle_csv_upload_behavior(contents, filename, refresh):"
+          },
+          {
+            "line": 1024,
+            "text": "url = f\"{BACKEND_HTTP}/api/import/upload-generic\""
+          },
+          {
+            "line": 1056,
+            "text": "@app.callback(Output(\"csv-upload-status\",\"children\"),"
+          },
+          {
+            "line": 1057,
+            "text": "Input(\"csv-upload\",\"contents\"),"
+          },
+          {
+            "line": 1058,
+            "text": "State(\"csv-upload\",\"filename\"),"
+          },
+          {
+            "line": 1060,
+            "text": "def handle_csv_upload(contents, filename):"
+          },
+          {
+            "line": 1068,
+            "text": "f\"{BACKEND_HTTP}/api/import/upload-generic\","
+          }
+        ],
+        "backend_reset_endpoint": [
+          {
+            "line": 598,
+            "text": "html.Button(\"\ud83d\uddd1\ufe0f Reset Import History\",id=\"reset-trades-btn\","
+          },
+          {
+            "line": 604,
+            "text": "html.Div(id=\"reset-trades-output\",style={\"marginTop\":\"10px\",\"fontSize\":\"13px\"}),"
+          },
+          {
+            "line": 1091,
+            "text": "@app.callback(Output(\"reset-trades-output\",\"children\"),"
+          },
+          {
+            "line": 1092,
+            "text": "Input(\"reset-trades-btn\",\"n_clicks\"),"
+          },
+          {
+            "line": 1094,
+            "text": "def reset_trade_history(n_clicks):"
+          },
+          {
+            "line": 1099,
+            "text": "r = _req.delete(f\"{BACKEND_HTTP}/api/trades/reset\", timeout=10)"
+          }
+        ]
+      }
+    }
+  },
+  "diagnosis": [
+    "LIVE_TODAY_UPLOAD_UI_PRESENT",
+    "LIVE_TODAY_UPLOAD_USES_OLD_ENDPOINT_API_IMPORT_UPLOAD",
+    "LIVE_TODAY_UPLOAD_GENERIC_ENDPOINT_MISSING",
+    "LIVE_TODAY_RESET_FLOW_MISSING",
+    "RESTORED_REFERENCE_UPLOAD_GENERIC_EXISTS_IN_LATEST_OR_APPV2",
+    "RESTORED_REFERENCE_RESET_EXISTS_IN_LATEST_OR_APPV2",
+    "BACKEND_UPLOAD_GENERIC_ROUTE_NOT_CONFIRMED_BY_TEXT_SCAN",
+    "BACKEND_TRADES_RESET_ROUTE_NOT_CONFIRMED_BY_TEXT_SCAN"
+  ],
+  "required_patch": [
+    "add or restore backend /api/import/upload-generic route",
+    "add or restore backend /api/trades/reset route",
+    "add scoped Reset Import History button/callback to live TODAY file",
+    "change live upload callback to /api/import/upload-generic or add backend compatibility alias",
+    "restore /api/import/upload-generic use in live TODAY file"
+  ],
+  "doctrine": {
+    "read_only_audit": true,
+    "no_code_change": true,
+    "no_database_write": true,
+    "no_campaign_mutation": true,
+    "no_universe_ingest": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  },
+  "next_step": "Step 85D patch live TODAY import/reset lane only after reviewing this audit."
+}
