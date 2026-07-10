@@ -8,13 +8,13 @@
     "env_execute_enabled":  false,
     "authorization_ref":  "STEP76_BACKEND_CONTROLLED_APPEND_ONLY_UNIVERSE_SNAPSHOT_INGEST_ROUTE_2026_07_09",
     "source":  "ALPACA_ASSETS_ACTIVE_TRADABLE",
-    "selected_alpaca_endpoint":  null,
-    "symbol_count":  0,
+    "selected_alpaca_endpoint":  "https://api.alpaca.markets/v2/assets?status=active\u0026asset_class=us_equity",
+    "symbol_count":  13243,
     "snapshot_preview":  {
-                             "snapshot_id":  null,
-                             "universe_count":  null,
-                             "symbols_hash":  null,
-                             "is_current":  null
+                             "snapshot_id":  "3712dd62-0bee-4cfa-8087-ad526219334f",
+                             "universe_count":  13243,
+                             "symbols_hash":  "285d0fadab16ee28883c3d8c1d4a615b0393f273884eff8f276c1db4b308c176",
+                             "is_current":  true
                          },
     "precheck":  {
                      "current_snapshot_status":  200,
@@ -33,7 +33,7 @@
 
                  ],
     "warnings":  [
-                     "Alpaca backend credentials missing"
+
                  ],
     "write_results":  [
 
