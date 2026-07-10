@@ -1,0 +1,55 @@
+﻿{
+    "status":  "PASS",
+    "mode":  "DRY_RUN_ONLY_NO_WRITE",
+    "execute_requested":  false,
+    "execute_allowed":  false,
+    "write_attempted":  false,
+    "authorization_ok":  false,
+    "env_execute_enabled":  true,
+    "authorization_ref":  "STEP76_BACKEND_CONTROLLED_APPEND_ONLY_UNIVERSE_SNAPSHOT_INGEST_ROUTE_2026_07_09",
+    "source":  "ALPACA_ASSETS_ACTIVE_TRADABLE",
+    "selected_alpaca_endpoint":  "https://api.alpaca.markets/v2/assets?status=active\u0026asset_class=us_equity",
+    "symbol_count":  13241,
+    "snapshot_preview":  {
+                             "snapshot_id":  "76b53075-634d-4f3a-b353-c18f40d58990",
+                             "universe_count":  13241,
+                             "symbols_hash":  "493f41c8ef780565d06e60ad55136e1e57818d52f4df993051eacde11f0bee59",
+                             "is_current":  true
+                         },
+    "precheck":  {
+                     "current_snapshot_status":  200,
+                     "current_snapshot_exists":  false,
+                     "current_snapshot_body":  [
+
+                                               ],
+                     "symbol_probe_status":  200,
+                     "symbol_rows_exist":  false,
+                     "symbol_probe_body":  [
+
+                                           ],
+                     "empty_for_first_ingest":  true
+                 },
+    "failures":  [
+
+                 ],
+    "warnings":  [
+
+                 ],
+    "write_results":  [
+
+                      ],
+    "doctrine":  {
+                     "allowed_write_tables_only":  [
+                                                       "campaign_universe_snapshots",
+                                                       "campaign_universe_symbols"
+                                                   ],
+                     "no_campaign_mutation":  true,
+                     "no_daily_bars_mutation":  true,
+                     "no_readiness_advance":  true,
+                     "no_d3d":  true,
+                     "no_operator_control_confirmation":  true,
+                     "no_trade_signal":  true,
+                     "no_stripe":  true,
+                     "billing_remains_blocked":  true
+                 }
+}
