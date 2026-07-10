@@ -616,6 +616,34 @@ def build_import_tab():
                 accept=".csv",
                 multiple=False,
             ),
+            # SIGMALYTIC_STEP85F_VISIBLE_RESET_BUTTON_START
+            html.Div([
+                html.Button(
+                    "Reset Import History",
+                    id="btn-reset-imports",
+                    n_clicks=0,
+                    style={
+                        "background": "#7f1d1d",
+                        "color": "white",
+                        "border": "1px solid #ef4444",
+                        "borderRadius": "10px",
+                        "padding": "10px 14px",
+                        "fontWeight": "800",
+                        "cursor": "pointer",
+                        "marginTop": "12px",
+                        "marginRight": "12px",
+                    },
+                ),
+                html.Span(
+                    id="reset-status",
+                    style={
+                        "color": "#fbbf24",
+                        "fontWeight": "700",
+                    },
+                ),
+            ], style={"marginTop": "10px", "display": "flex", "alignItems": "center"}),
+            # SIGMALYTIC_STEP85F_VISIBLE_RESET_BUTTON_END
+
             html.Div(id="csv-upload-status",
                      style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
         ]),

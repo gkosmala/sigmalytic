@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "mode": "STEP85F_FINAL_UI_IMPORT_RESET_BROWSER_FIX",
+  "backend_changed": true,
+  "frontend_changed": true,
+  "sample_result": {
+    "parsed_rows": 2,
+    "total_trades": 2,
+    "broker": "Generic CSV",
+    "detected_broker": "Generic CSV",
+    "behavioral_flags": [
+      "CONCENTRATED_SYMBOL_ACTIVITY",
+      "SMALL_SAMPLE_SIZE"
+    ]
+  },
+  "patched": {
+    "backend_wrapper_marker": true,
+    "backend_sample_parsed_rows_2": true,
+    "backend_sample_total_trades_2": true,
+    "backend_sample_broker_generic": true,
+    "backend_sample_not_unknown": true,
+    "frontend_upload_generic_endpoint": true,
+    "frontend_visible_reset_button_marker": true,
+    "frontend_reset_button_id": true,
+    "frontend_reset_status_id": true,
+    "frontend_reset_callback": true,
+    "frontend_reset_route": true
+  },
+  "doctrine": {
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "scoped_import_reset_only": true
+  }
+}

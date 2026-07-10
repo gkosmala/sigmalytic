@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import csv
 import io
@@ -279,3 +279,56 @@ async def reset_trade_import_history() -> Dict[str, Any]:
             "no_operator_control_confirmation": True,
         },
     }
+
+# SIGMALYTIC_STEP85F_UI_COMPAT_WRAPPER_START
+# Compatibility wrapper for the existing Dash Import History UI.
+# This exposes the legacy top-level response keys expected by the browser:
+# broker, total_trades, win_rate, total_pnl, and behavioral profile fields.
+# It does not mutate campaigns, universe snapshots, D3D, operator-control evidence, or billing.
+def _sigmalytic_step85f_legacy_compat(payload: Dict[str, Any]) -> Dict[str, Any]:
+    analysis = payload.get("analysis") or payload.get("behavioral_analysis") or {}
+    trades_imported = int(payload.get("trades_imported") or payload.get("parsed_rows") or 0)
+
+    filename = str(payload.get("filename") or "").lower()
+    broker = "Generic CSV"
+
+    if "alpaca" in filename:
+        broker = "Alpaca"
+    elif "schwab" in filename or "td" in filename or "ameritrade" in filename:
+        broker = "TD Ameritrade / Schwab"
+    elif "ibkr" in filename or "interactive" in filename:
+        broker = "Interactive Brokers"
+    elif "robinhood" in filename:
+        broker = "Robinhood"
+    elif "webull" in filename:
+        broker = "Webull"
+
+    total_pnl = float(analysis.get("total_pnl") or analysis.get("realized_pnl") or 0.0)
+    win_rate = float(analysis.get("win_rate") or 0.0)
+
+    return {
+        "broker": broker,
+        "broker_detected": broker,
+        "detected_broker": broker,
+        "total_trades": trades_imported,
+        "trades": trades_imported,
+        "win_rate": win_rate,
+        "total_pnl": total_pnl,
+        "pnl": total_pnl,
+        "total_pnl_display": f"${total_pnl:,.2f}",
+        "behavioral_snapshot": analysis,
+        "behavioral_profile": analysis.get("behavioral_profile"),
+        "profile": analysis,
+        "flags": analysis.get("behavioral_flags", []),
+    }
+
+
+_sigmalytic_step85f_original_parse_csv_bytes = _parse_csv_bytes
+
+
+def _parse_csv_bytes(filename: str, raw: bytes) -> Dict[str, Any]:
+    payload = _sigmalytic_step85f_original_parse_csv_bytes(filename, raw)
+    payload.update(_sigmalytic_step85f_legacy_compat(payload))
+    return payload
+# SIGMALYTIC_STEP85F_UI_COMPAT_WRAPPER_END
+
