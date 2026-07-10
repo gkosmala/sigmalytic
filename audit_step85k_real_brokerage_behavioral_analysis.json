@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "mode": "STEP85K_REAL_BROKERAGE_BEHAVIORAL_ANALYSIS_RESTORED",
+  "backend_changed": true,
+  "frontend_changed": true,
+  "sample_analysis": {
+    "round_trip_trades": 2,
+    "realized_pnl": 0.0,
+    "win_rate": 0.5,
+    "profit_factor": 1.0,
+    "behavioral_flags": [
+      "SYMBOL_SPECIFIC_DAMAGE_CONCENTRATION"
+    ]
+  },
+  "checks": {
+    "backend_round_trip_analysis_present": true,
+    "backend_sample_round_trips_2": true,
+    "backend_sample_realized_pnl_zero": true,
+    "backend_sample_win_rate_half": true,
+    "backend_sample_profit_factor_one": true,
+    "backend_top_level_total_trades_round_trips": true,
+    "frontend_round_trip_metric_present": true,
+    "frontend_profit_factor_metric_present": true,
+    "frontend_realized_pnl_metric_present": true,
+    "frontend_behavioral_flags_present": true,
+    "frontend_pressure_points_present": true,
+    "frontend_upload_generic_still_present": true,
+    "frontend_reset_route_still_present": true
+  },
+  "doctrine": {
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true,
+    "scoped_brokerage_behavioral_analysis_only": true
+  }
+}

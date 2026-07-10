@@ -180,28 +180,80 @@ def _sigmalytic_step85h_behavioral_tab_from_history():
     if not broker or str(broker).strip().lower() == "unknown":
         broker = "Generic CSV"
 
-    trades = _sigmalytic_step85h_int(
-        data.get("total_trades")
-        or data.get("trades_imported")
+    executions = _sigmalytic_step85h_int(
+        data.get("executions_imported")
+        or analysis.get("executions_analyzed")
+        or analysis.get("execution_count")
         or data.get("parsed_rows")
-        or analysis.get("total_trades")
         or 0
     )
 
-    unique_symbols = _sigmalytic_step85h_int(analysis.get("unique_symbols") or 0)
-    total_notional = _sigmalytic_step85h_num(analysis.get("total_notional") or 0.0)
-    avg_notional = _sigmalytic_step85h_num(analysis.get("average_trade_notional") or 0.0)
-    largest_symbol = analysis.get("largest_symbol") or "-"
-    profile = analysis.get("behavioral_profile") or "Behavioral snapshot generated from imported brokerage history."
-    flags = analysis.get("behavioral_flags") or []
+    round_trips = _sigmalytic_step85h_int(
+        data.get("round_trip_trades")
+        or analysis.get("round_trip_trades")
+        or analysis.get("total_trades")
+        or data.get("total_trades")
+        or 0
+    )
 
-    metric_style = {
-        "background": "rgba(15,23,42,0.65)",
-        "border": "1px solid rgba(148,163,184,0.18)",
-        "borderRadius": "12px",
-        "padding": "14px",
-        "minWidth": "160px",
-    }
+    win_rate = _sigmalytic_step85h_num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
+    win_rate_display = win_rate * 100 if win_rate <= 1 else win_rate
+
+    realized_pnl = _sigmalytic_step85h_num(
+        data.get("realized_pnl")
+        or data.get("total_pnl")
+        or analysis.get("realized_pnl")
+        or analysis.get("total_pnl")
+        or 0.0
+    )
+
+    profit_factor = _sigmalytic_step85h_num(analysis.get("profit_factor") or data.get("profit_factor") or 0.0)
+    avg_win = _sigmalytic_step85h_num(analysis.get("average_win") or 0.0)
+    avg_loss = _sigmalytic_step85h_num(analysis.get("average_loss") or 0.0)
+    expectancy = _sigmalytic_step85h_num(analysis.get("expectancy_per_trade") or 0.0)
+    max_loss_streak = _sigmalytic_step85h_int(analysis.get("max_losing_streak") or 0)
+    losing_days = _sigmalytic_step85h_int(analysis.get("losing_days") or 0)
+    trading_days = _sigmalytic_step85h_int(analysis.get("trading_days") or 0)
+    avg_hold = _sigmalytic_step85h_num(analysis.get("average_hold_minutes") or 0.0)
+    quick_reentries = _sigmalytic_step85h_int(analysis.get("quick_reentry_after_loss_count") or 0)
+    size_after_loss = _sigmalytic_step85h_int(analysis.get("size_after_loss_count") or 0)
+
+    flags = analysis.get("behavioral_flags") or data.get("behavioral_flags") or []
+    profile = analysis.get("behavioral_profile") or "Behavioral snapshot generated from imported brokerage history."
+    worst_symbols = analysis.get("worst_symbols") or []
+    best_symbols = analysis.get("best_symbols") or []
+    worst_hours = analysis.get("worst_hours") or []
+
+    def metric(label, value, tone="#ffffff"):
+        return html.Div([
+            html.Div(label, style={"color": "#94a3b8", "fontSize": "12px", "fontWeight": "700"}),
+            html.Div(value, style={"color": tone, "fontWeight": "900", "fontSize": "20px", "marginTop": "6px"}),
+        ], style={
+            "background": "rgba(15,23,42,0.65)",
+            "border": "1px solid rgba(148,163,184,0.18)",
+            "borderRadius": "12px",
+            "padding": "14px",
+            "minWidth": "155px",
+        })
+
+    def symbol_rows(rows):
+        if not rows:
+            return html.Div("No symbol breakdown available.", style={"color": "#93c5fd", "fontWeight": "700"})
+
+        return html.Div([
+            html.Div(
+                f"{row.get('symbol')} · P&L ${_sigmalytic_step85h_num(row.get('pnl')):,.0f} · {row.get('trades', 0)} trades",
+                style={
+                    "color": "#e5e7eb",
+                    "fontSize": "13px",
+                    "padding": "6px 0",
+                    "borderBottom": "1px solid rgba(148,163,184,0.10)",
+                },
+            )
+            for row in rows[:6]
+        ])
+
+    pnl_tone = "#34d399" if realized_pnl >= 0 else "#f87171"
 
     return html.Div([
         html.H3(
@@ -209,16 +261,23 @@ def _sigmalytic_step85h_behavioral_tab_from_history():
             style={"color": "#e5e7eb", "marginBottom": "8px"},
         ),
         html.Div(
-            f"{broker} · {trades} imported trades",
+            f"{broker} · {executions} executions analyzed · {round_trips} round-trip trades",
             style={"color": "#34d399", "fontWeight": "900", "marginBottom": "12px"},
         ),
+
         html.Div([
-            html.Div([html.Div("Trades", style={"color": "#94a3b8"}), html.Div(str(trades), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
-            html.Div([html.Div("Symbols", style={"color": "#94a3b8"}), html.Div(str(unique_symbols), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
-            html.Div([html.Div("Largest Symbol", style={"color": "#94a3b8"}), html.Div(str(largest_symbol), style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
-            html.Div([html.Div("Total Notional", style={"color": "#94a3b8"}), html.Div(f"${total_notional:,.0f}", style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
-            html.Div([html.Div("Avg Trade", style={"color": "#94a3b8"}), html.Div(f"${avg_notional:,.0f}", style={"color": "white", "fontWeight": "900", "fontSize": "20px"})], style=metric_style),
-        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "14px"}),
+            metric("Round-Trip Trades", str(round_trips)),
+            metric("Win Rate", f"{win_rate_display:.0f}%", "#fbbf24" if win_rate_display < 40 else "#34d399"),
+            metric("Realized P&L", f"${realized_pnl:,.0f}", pnl_tone),
+            metric("Profit Factor", f"{profit_factor:.2f}", "#f87171" if profit_factor < 1 else "#34d399"),
+            metric("Avg Win", f"${avg_win:,.0f}", "#34d399"),
+            metric("Avg Loss", f"${avg_loss:,.0f}", "#f87171"),
+            metric("Expectancy", f"${expectancy:,.0f}", "#f87171" if expectancy < 0 else "#34d399"),
+            metric("Max Loss Streak", str(max_loss_streak), "#f87171" if max_loss_streak >= 5 else "#ffffff"),
+            metric("Losing Days", f"{losing_days}/{trading_days}", "#f87171" if losing_days > trading_days / 2 else "#ffffff"),
+            metric("Avg Hold", f"{avg_hold:.0f} min"),
+        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "16px"}),
+
         html.Div(
             profile,
             style={
@@ -230,29 +289,55 @@ def _sigmalytic_step85h_behavioral_tab_from_history():
                 "marginBottom": "12px",
             },
         ),
+
         html.Div([
-            html.Span(
-                str(flag),
-                style={
-                    "display": "inline-block",
-                    "margin": "4px 6px 4px 0",
-                    "padding": "6px 10px",
-                    "borderRadius": "999px",
-                    "background": "rgba(251,191,36,0.15)",
-                    "border": "1px solid rgba(251,191,36,0.35)",
-                    "color": "#fbbf24",
-                    "fontWeight": "800",
-                    "fontSize": "12px",
-                },
-            )
-            for flag in flags
-        ] if flags else [
-            html.Span(
-                "No behavioral flags detected.",
-                style={"color": "#93c5fd", "fontWeight": "700"},
-            )
-        ]),
+            html.H4("Behavioral Flags", style={"color": "#e5e7eb", "marginBottom": "8px"}),
+            html.Div([
+                html.Span(
+                    str(flag),
+                    style={
+                        "display": "inline-block",
+                        "margin": "4px 6px 4px 0",
+                        "padding": "6px 10px",
+                        "borderRadius": "999px",
+                        "background": "rgba(251,191,36,0.15)",
+                        "border": "1px solid rgba(251,191,36,0.35)",
+                        "color": "#fbbf24",
+                        "fontWeight": "800",
+                        "fontSize": "12px",
+                    },
+                )
+                for flag in flags
+            ]),
+        ], style={"marginBottom": "16px"}),
+
+        html.Div([
+            html.Div([
+                html.H4("Worst Symbols", style={"color": "#e5e7eb", "marginBottom": "8px"}),
+                symbol_rows(worst_symbols),
+            ], style={"flex": "1", "minWidth": "280px"}),
+            html.Div([
+                html.H4("Best Symbols", style={"color": "#e5e7eb", "marginBottom": "8px"}),
+                symbol_rows(best_symbols),
+            ], style={"flex": "1", "minWidth": "280px"}),
+        ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap", "marginBottom": "16px"}),
+
+        html.Div([
+            html.H4("Behavioral Pressure Points", style={"color": "#e5e7eb", "marginBottom": "8px"}),
+            html.Div(f"Quick re-entry after loss events: {quick_reentries}", style={"color": "#cbd5e1", "marginBottom": "4px"}),
+            html.Div(f"Size increase after loss events: {size_after_loss}", style={"color": "#cbd5e1", "marginBottom": "4px"}),
+            html.Div(
+                "Worst time windows: " + (", ".join([f"{x.get('hour')} (${_sigmalytic_step85h_num(x.get('pnl')):,.0f})" for x in worst_hours]) if worst_hours else "No hourly damage cluster available."),
+                style={"color": "#cbd5e1"},
+            ),
+        ], style={
+            "padding": "12px 14px",
+            "border": "1px solid rgba(148,163,184,0.16)",
+            "borderRadius": "10px",
+            "background": "rgba(15,23,42,0.50)",
+        }),
     ])
+
 # SIGMALYTIC_STEP85H_IMPORT_HISTORY_PERSISTENCE_HELPERS_END
 
 """
