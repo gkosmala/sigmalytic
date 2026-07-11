@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "mode": "STEP85M_FORCE_DASH_SHELL_NAV_FRAMING_ACTIVE_BUTTONS",
+  "checks": {
+    "frontend_changed": true,
+    "step85m_marker_present": true,
+    "dash_index_string_present": true,
+    "standard_dash_tokens_present": true,
+    "command_center_label_present": true,
+    "nav_strip_class_present": true,
+    "active_control_class_present": true,
+    "timeframe_labels_present": true,
+    "mutation_observer_present": true,
+    "session_storage_present": true,
+    "duplicate_guard_present": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

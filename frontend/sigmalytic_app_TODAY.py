@@ -3530,6 +3530,408 @@ def toggle_alerts(n, currently_on):
     return new_on, label, style
 
 
+# SIGMALYTIC_STEP85M_FORCE_DASH_SHELL_UI_FIX_START
+app.index_string = r"""<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>Sigmalytic Quant Corporation</title>
+        {%favicon%}
+        {%css%}
+        <style id="sigmalytic-step85m-shell-style">
+            html, body {
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
+            }
+
+            #react-entry-point,
+            #_dash-app-content {
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
+            }
+
+            .sig-step85m-nav-strip {
+                width: calc(100vw - 70px) !important;
+                max-width: calc(100vw - 70px) !important;
+                margin-left: 0 !important;
+                margin-right: 0 !important;
+                left: 0 !important;
+                right: auto !important;
+                transform: none !important;
+                display: flex !important;
+                flex-wrap: wrap !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 8px 14px !important;
+                overflow-x: visible !important;
+                overflow-y: visible !important;
+                white-space: normal !important;
+                box-sizing: border-box !important;
+                padding-left: 16px !important;
+                padding-right: 16px !important;
+            }
+
+            .sig-step85m-nav-strip * {
+                box-sizing: border-box !important;
+                transform: none !important;
+            }
+
+            .sig-step85m-tab-control,
+            .sig-step85m-timeframe-control {
+                transition:
+                    background 160ms ease,
+                    border-color 160ms ease,
+                    color 160ms ease,
+                    box-shadow 160ms ease,
+                    transform 120ms ease !important;
+                cursor: pointer !important;
+            }
+
+            .sig-step85m-tab-control {
+                flex: 0 0 auto !important;
+                white-space: nowrap !important;
+                border-radius: 10px !important;
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+
+            .sig-step85m-active-control {
+                background: linear-gradient(
+                    180deg,
+                    rgba(16, 185, 129, 0.44),
+                    rgba(6, 95, 70, 0.50)
+                ) !important;
+                border-color: rgba(52, 211, 153, 0.95) !important;
+                color: #ecfdf5 !important;
+                box-shadow:
+                    0 0 0 1px rgba(52, 211, 153, 0.45),
+                    0 0 18px rgba(16, 185, 129, 0.38),
+                    inset 0 0 14px rgba(16, 185, 129, 0.18) !important;
+                transform: translateY(-1px) !important;
+            }
+
+            .sig-step85m-active-control,
+            .sig-step85m-active-control * {
+                color: #ecfdf5 !important;
+                font-weight: 900 !important;
+            }
+
+            .sig-step85m-tab-control.sig-step85m-active-control {
+                border-bottom: 4px solid rgba(52, 211, 153, 1) !important;
+            }
+
+            .sig-step85m-timeframe-control.sig-step85m-active-control {
+                border-radius: 12px !important;
+            }
+
+            @media (max-width: 1350px) {
+                .sig-step85m-nav-strip {
+                    width: calc(100vw - 40px) !important;
+                    max-width: calc(100vw - 40px) !important;
+                    padding-left: 14px !important;
+                    padding-right: 14px !important;
+                    gap: 6px 10px !important;
+                }
+
+                .sig-step85m-tab-control {
+                    font-size: 13px !important;
+                    padding-left: 8px !important;
+                    padding-right: 8px !important;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+            <script id="sigmalytic-step85m-shell-script">
+                (function () {
+                    if (window.__SIGMALYTIC_STEP85M_FORCE_DASH_SHELL_UI_FIX__) {
+                        return;
+                    }
+
+                    window.__SIGMALYTIC_STEP85M_FORCE_DASH_SHELL_UI_FIX__ = true;
+
+                    const TAB_LABELS = [
+                        "Command Center",
+                        "Performance",
+                        "Behavioral Intelligence",
+                        "Campaigns",
+                        "Portfolio",
+                        "Journal",
+                        "Import History",
+                        "Radar Screen",
+                        "Scoreboard",
+                        "Divergence",
+                        "Billing",
+                        "Preferences",
+                        "Admin",
+                        "Setup"
+                    ];
+
+                    const TIMEFRAME_LABELS = ["1m", "5m", "15m", "1H", "1D", "1W"];
+                    const TAB_KEY = "sigmalytic.step85m.activeTab";
+                    const TF_KEY = "sigmalytic.step85m.activeTimeframe";
+
+                    function cleanText(value) {
+                        return String(value || "")
+                            .replace(/[^\w\s\/.-]/g, " ")
+                            .replace(/\s+/g, " ")
+                            .trim();
+                    }
+
+                    function isVisible(el) {
+                        if (!el || !el.getBoundingClientRect) return false;
+                        const rect = el.getBoundingClientRect();
+                        const style = window.getComputedStyle(el);
+                        return rect.width > 0 && rect.height > 0 &&
+                               style.display !== "none" &&
+                               style.visibility !== "hidden";
+                    }
+
+                    function labelOf(el, labels) {
+                        const text = cleanText(el ? (el.innerText || el.textContent || "") : "");
+                        if (!text || text.length > 40) return "";
+                        for (const label of labels) {
+                            if (cleanText(label) === text) return label;
+                        }
+                        return "";
+                    }
+
+                    function allElements() {
+                        return Array.from(document.querySelectorAll("button, a, div, span, [role='button'], [role='tab']"));
+                    }
+
+                    function promoteControl(el, label) {
+                        let node = el;
+                        let best = el;
+
+                        for (let i = 0; node && i < 5; i += 1) {
+                            const txt = cleanText(node.innerText || node.textContent || "");
+                            if (txt === cleanText(label) && txt.length <= 40) {
+                                best = node;
+                            }
+                            node = node.parentElement;
+                        }
+
+                        return best;
+                    }
+
+                    function controlsFor(labels) {
+                        const found = [];
+                        const seen = new Set();
+
+                        for (const el of allElements()) {
+                            const label = labelOf(el, labels);
+                            if (!label) continue;
+
+                            const control = promoteControl(el, label);
+                            if (!control || seen.has(control)) continue;
+
+                            seen.add(control);
+                            found.push({ element: control, label: label });
+                        }
+
+                        return found;
+                    }
+
+                    function classControls() {
+                        controlsFor(TAB_LABELS).forEach(function (item) {
+                            item.element.classList.add("sig-step85m-tab-control");
+                        });
+
+                        controlsFor(TIMEFRAME_LABELS).forEach(function (item) {
+                            item.element.classList.add("sig-step85m-timeframe-control");
+                        });
+                    }
+
+                    function findNavStrip() {
+                        const command = controlsFor(["Command Center"])[0];
+                        if (!command) return null;
+
+                        let node = command.element;
+
+                        for (let i = 0; node && i < 8; i += 1) {
+                            const txt = cleanText(node.innerText || node.textContent || "");
+                            const hits = TAB_LABELS.filter(function (label) {
+                                return txt.includes(label);
+                            }).length;
+
+                            if (hits >= 5 && node !== document.body && node !== document.documentElement) {
+                                return node;
+                            }
+
+                            node = node.parentElement;
+                        }
+
+                        return command.element.parentElement;
+                    }
+
+                    function fixNavFrame() {
+                        const nav = findNavStrip();
+
+                        if (nav) {
+                            nav.classList.add("sig-step85m-nav-strip");
+                            nav.scrollLeft = 0;
+                            nav.style.marginLeft = "0px";
+                            nav.style.left = "0px";
+                            nav.style.transform = "none";
+                            nav.style.overflowX = "visible";
+                            nav.style.flexWrap = "wrap";
+                            nav.style.justifyContent = "flex-start";
+                        }
+
+                        const command = controlsFor(["Command Center"])[0];
+                        if (command && command.element) {
+                            command.element.scrollIntoView({
+                                block: "nearest",
+                                inline: "start",
+                                behavior: "instant"
+                            });
+                        }
+                    }
+
+                    function clearActive(labels) {
+                        controlsFor(labels).forEach(function (item) {
+                            item.element.classList.remove("sig-step85m-active-control");
+                            item.element.setAttribute("aria-pressed", "false");
+                            item.element.setAttribute("aria-selected", "false");
+                        });
+                    }
+
+                    function setActive(labels, key, label) {
+                        if (!label) return;
+
+                        clearActive(labels);
+
+                        controlsFor(labels).forEach(function (item) {
+                            if (item.label === label) {
+                                item.element.classList.add("sig-step85m-active-control");
+                                item.element.setAttribute("aria-pressed", "true");
+                                item.element.setAttribute("aria-selected", "true");
+                            }
+                        });
+
+                        try {
+                            window.sessionStorage.setItem(key, label);
+                        } catch (err) {
+                            /* no-op */
+                        }
+                    }
+
+                    function getStored(key) {
+                        try {
+                            return window.sessionStorage.getItem(key) || "";
+                        } catch (err) {
+                            return "";
+                        }
+                    }
+
+                    function applyStored() {
+                        classControls();
+
+                        const tab = getStored(TAB_KEY);
+                        const tf = getStored(TF_KEY);
+
+                        if (tab) setActive(TAB_LABELS, TAB_KEY, tab);
+                        if (tf) setActive(TIMEFRAME_LABELS, TF_KEY, tf);
+                    }
+
+                    function inferInitialTimeframe() {
+                        if (getStored(TF_KEY)) return;
+
+                        const controls = controlsFor(TIMEFRAME_LABELS);
+                        for (const item of controls) {
+                            const style = window.getComputedStyle(item.element);
+                            const bg = style.backgroundColor || "";
+                            const border = style.borderColor || "";
+                            const text = style.color || "";
+
+                            if (
+                                bg.includes("185") ||
+                                bg.includes("129") ||
+                                border.includes("211") ||
+                                text.includes("211")
+                            ) {
+                                setActive(TIMEFRAME_LABELS, TF_KEY, item.label);
+                                return;
+                            }
+                        }
+
+                        setActive(TIMEFRAME_LABELS, TF_KEY, "5m");
+                    }
+
+                    function clickHandler(event) {
+                        const path = event.composedPath ? event.composedPath() : [];
+                        const candidates = path.length ? path : [event.target];
+
+                        for (const node of candidates) {
+                            if (!node || !node.innerText && !node.textContent) continue;
+
+                            const tabLabel = labelOf(node, TAB_LABELS);
+                            if (tabLabel) {
+                                setActive(TAB_LABELS, TAB_KEY, tabLabel);
+                                window.setTimeout(fixNavFrame, 25);
+                                window.setTimeout(applyStored, 125);
+                                return;
+                            }
+
+                            const tfLabel = labelOf(node, TIMEFRAME_LABELS);
+                            if (tfLabel) {
+                                setActive(TIMEFRAME_LABELS, TF_KEY, tfLabel);
+                                window.setTimeout(applyStored, 75);
+                                return;
+                            }
+                        }
+                    }
+
+                    function boot() {
+                        classControls();
+                        fixNavFrame();
+                        inferInitialTimeframe();
+                        applyStored();
+                    }
+
+                    document.addEventListener("click", clickHandler, true);
+
+                    const observer = new MutationObserver(function () {
+                        window.clearTimeout(window.__SIGMALYTIC_STEP85M_MUTATION_TIMER__);
+                        window.__SIGMALYTIC_STEP85M_MUTATION_TIMER__ = window.setTimeout(boot, 80);
+                    });
+
+                    function start() {
+                        boot();
+
+                        if (document.body) {
+                            observer.observe(document.body, {
+                                childList: true,
+                                subtree: true,
+                                attributes: true,
+                                attributeFilter: ["style", "class", "aria-selected", "aria-pressed"]
+                            });
+                        }
+
+                        window.setTimeout(boot, 300);
+                        window.setTimeout(boot, 900);
+                        window.setTimeout(boot, 1800);
+                    }
+
+                    if (document.readyState === "loading") {
+                        document.addEventListener("DOMContentLoaded", start);
+                    } else {
+                        start();
+                    }
+                })();
+            </script>
+        </footer>
+    </body>
+</html>"""
+# SIGMALYTIC_STEP85M_FORCE_DASH_SHELL_UI_FIX_END
+
+
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
 
