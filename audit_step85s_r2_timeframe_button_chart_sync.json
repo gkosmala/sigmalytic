@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "mode": "STEP85S_R2_RESTORE_AND_SYNC_TIMEFRAME_BUTTON_CHART_STATE",
+  "checks": {
+    "frontend_changed": true,
+    "syntax_parse_passed": true,
+    "step85s_r2_block_present": true,
+    "select_tf_returns_only_three_outputs": true,
+    "select_tf_no_tf_style_outputs": true,
+    "dedicated_sync_callback_present": true,
+    "sync_callback_uses_s_tf": true,
+    "sync_outputs_all_timeframe_styles": true,
+    "sync_default_5m": true,
+    "step85q_scrollbar_preserved": true,
+    "scrollbar_36_preserved": true,
+    "step85r_transition_preserved": true,
+    "tick_hidden_preserved": true,
+    "render_main_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

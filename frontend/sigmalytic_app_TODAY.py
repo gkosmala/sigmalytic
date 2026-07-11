@@ -3600,32 +3600,57 @@ app.layout = html.Div([
 
 # ── Callbacks ──────────────────────────────────────────────────────────────────
 
+# SIGMALYTIC_STEP85S_TIMEFRAME_SYNC_START
 @app.callback(
-    Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
+    Output("s-tf","data"),
+    Output("s-candles","data",allow_duplicate=True),
     Output("s-seq","data",allow_duplicate=True),
-    Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
-    Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
     Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
-    State("s-live","data"), prevent_initial_call=True,
+    State("s-live","data"),
+    prevent_initial_call=True,
 )
 def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     ctx = callback_context
+
     if not ctx.triggered:
-        return (no_update,)*9
+        return no_update, no_update, no_update
+
     btn_id = ctx.triggered[0]["prop_id"].split(".")[0]
     new_tf = btn_id.replace("tf-","")
-    price  = live["price"] if live else 280.15
-    fresh  = _scaled_candles(price, new_tf)
-    # Track event
+
+    if new_tf not in {"1m","5m","15m","1H","1D","1W"}:
+        return no_update, no_update, no_update
+
+    price = live["price"] if live else 280.15
+    fresh = _scaled_candles(price, new_tf)
+
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
                regime=_regime_from_live(live),
                decision_score=live.get("decision",{}).get("score"),
                decision_status=live.get("decision",{}).get("status"))
-    s0=_tf_btn_style("1m",new_tf); s1=_tf_btn_style("5m",new_tf); s2=_tf_btn_style("15m",new_tf)
-    s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
-    return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
+
+    return new_tf, fresh, 0
+
+
+@app.callback(
+    Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
+    Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
+    Input("s-tf","data"),
+)
+def sync_timeframe_button_styles(tf):
+    active_tf = tf if tf in {"1m","5m","15m","1H","1D","1W"} else "5m"
+
+    return (
+        _tf_btn_style("1m", active_tf),
+        _tf_btn_style("5m", active_tf),
+        _tf_btn_style("15m", active_tf),
+        _tf_btn_style("1H", active_tf),
+        _tf_btn_style("1D", active_tf),
+        _tf_btn_style("1W", active_tf),
+    )
+# SIGMALYTIC_STEP85S_TIMEFRAME_SYNC_END
 
 # Live-only mode — no toggle callback needed
 
