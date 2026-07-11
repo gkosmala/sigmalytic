@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "mode": "STEP85Q_IMMEDIATE_ACTIVE_NAV_2X_SCROLLBAR",
+  "checks": {
+    "frontend_changed": true,
+    "step85p_clientside_removed": true,
+    "step85p_scrollbar_removed": true,
+    "step85q_block_present": true,
+    "simple_clientside_store_update_present": true,
+    "pointerdown_immediate_active_present": true,
+    "important_inline_override_present": true,
+    "active_tab_class_present": true,
+    "inactive_tab_class_present": true,
+    "scrollbar_width_36": true,
+    "scrollbar_height_36": true,
+    "scrollbar_more_visible_color": true,
+    "render_main_fast_inputs_preserved": true,
+    "tick_still_hidden": true,
+    "dash_tokens_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

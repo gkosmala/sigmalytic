@@ -3018,7 +3018,40 @@ def _sig85o_tab_styles(active_tab):
 # SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_END
 
 
-# SIGMALYTIC_STEP85P_SCROLLBAR_INDEX_STYLE_START
+# SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV_SCROLLBAR_START
+app.clientside_callback(
+    """
+    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
+             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
+             n_billing, n_preferences, n_admin, n_setup) {
+
+        const ctx = dash_clientside.callback_context;
+
+        if (!ctx.triggered || ctx.triggered.length === 0) {
+            return dash_clientside.no_update;
+        }
+
+        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
+
+        if (!tab) {
+            tab = "command";
+        }
+
+        return tab;
+    }
+    """,
+    Output("s-tab","data"),
+    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
+    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
+    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
+    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
+    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
+    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
+    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
+    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    prevent_initial_call=True,
+)
+
 app.index_string = r"""<!DOCTYPE html>
 <html>
     <head>
@@ -3026,42 +3059,69 @@ app.index_string = r"""<!DOCTYPE html>
         <title>Sigmalytic Quant Corporation</title>
         {%favicon%}
         {%css%}
-        <style id="sigmalytic-step85p-scrollbar-style">
+        <style id="sigmalytic-step85q-style">
             html, body {
                 scrollbar-width: auto;
-                scrollbar-color: #34d399 #071524;
+                scrollbar-color: #6ee7b7 #071524;
             }
 
             * {
                 scrollbar-width: auto;
-                scrollbar-color: #34d399 #071524;
+                scrollbar-color: #6ee7b7 #071524;
             }
 
             ::-webkit-scrollbar {
-                width: 18px;
-                height: 18px;
+                width: 36px;
+                height: 36px;
             }
 
             ::-webkit-scrollbar-track {
                 background: #071524;
-                border-left: 1px solid rgba(148, 163, 184, 0.28);
+                border-left: 2px solid rgba(148, 163, 184, 0.42);
                 border-radius: 999px;
+                box-shadow: inset 0 0 10px rgba(148, 163, 184, 0.22);
             }
 
             ::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #34d399, #0f766e);
+                background: linear-gradient(180deg, #6ee7b7, #10b981, #0f766e);
                 border-radius: 999px;
-                border: 4px solid #071524;
-                box-shadow: 0 0 12px rgba(52, 211, 153, 0.45);
+                border: 7px solid #071524;
+                box-shadow:
+                    0 0 0 1px rgba(110, 231, 183, 0.65),
+                    0 0 18px rgba(52, 211, 153, 0.60),
+                    inset 0 0 12px rgba(236, 253, 245, 0.25);
             }
 
             ::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(180deg, #6ee7b7, #10b981);
-                box-shadow: 0 0 16px rgba(110, 231, 183, 0.60);
+                background: linear-gradient(180deg, #a7f3d0, #34d399, #10b981);
+                box-shadow:
+                    0 0 0 1px rgba(167, 243, 208, 0.85),
+                    0 0 24px rgba(110, 231, 183, 0.75);
             }
 
             ::-webkit-scrollbar-corner {
                 background: #071524;
+            }
+
+            .sig-step85q-active-tab {
+                background: linear-gradient(180deg, rgba(16,185,129,0.58), rgba(6,95,70,0.64)) !important;
+                color: #ecfdf5 !important;
+                border: 1px solid rgba(110,231,183,1) !important;
+                box-shadow:
+                    0 0 0 1px rgba(110,231,183,0.54),
+                    0 0 22px rgba(16,185,129,0.46),
+                    inset 0 0 14px rgba(16,185,129,0.24) !important;
+                transform: translateY(-1px) !important;
+                font-weight: 900 !important;
+            }
+
+            .sig-step85q-inactive-tab {
+                background: rgba(15,23,42,0.56) !important;
+                color: #a7b3c7 !important;
+                border: 1px solid rgba(148,163,184,0.16) !important;
+                box-shadow: none !important;
+                transform: none !important;
+                font-weight: 800 !important;
             }
         </style>
     </head>
@@ -3071,10 +3131,216 @@ app.index_string = r"""<!DOCTYPE html>
             {%config%}
             {%scripts%}
             {%renderer%}
+            <script id="sigmalytic-step85q-script">
+                (function () {
+                    if (window.__SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV__) {
+                        return;
+                    }
+
+                    window.__SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV__ = true;
+
+                    const labels = [
+                        "Command Center",
+                        "Live Feed",
+                        "Performance",
+                        "Behavioral Intelligence",
+                        "Campaigns",
+                        "Portfolio",
+                        "Journal",
+                        "Import History",
+                        "Radar Screen",
+                        "Scoreboard",
+                        "Divergence",
+                        "Billing",
+                        "Preferences",
+                        "Admin",
+                        "Setup"
+                    ];
+
+                    const keyByLabel = {
+                        "Command Center": "command",
+                        "Live Feed": "feed",
+                        "Performance": "performance",
+                        "Behavioral Intelligence": "behavior",
+                        "Campaigns": "campaigns",
+                        "Portfolio": "portfolio",
+                        "Journal": "journal",
+                        "Import History": "import",
+                        "Radar Screen": "radar",
+                        "Scoreboard": "scoreboard",
+                        "Divergence": "divergence",
+                        "Billing": "billing",
+                        "Preferences": "preferences",
+                        "Admin": "admin",
+                        "Setup": "setup"
+                    };
+
+                    const storageKey = "sigmalytic.step85q.activeTabLabel";
+
+                    function clean(value) {
+                        return String(value || "").replace(/\s+/g, " ").trim();
+                    }
+
+                    function findNavRoot() {
+                        const all = Array.from(document.querySelectorAll("div, nav, section, header"));
+                        for (const el of all) {
+                            const txt = clean(el.innerText || el.textContent || "");
+                            if (
+                                txt.includes("Command Center") &&
+                                txt.includes("Behavioral Intelligence") &&
+                                txt.includes("Radar Screen") &&
+                                txt.includes("Scoreboard")
+                            ) {
+                                return el;
+                            }
+                        }
+                        return document.body;
+                    }
+
+                    function exactText(el) {
+                        return clean(el.innerText || el.textContent || "");
+                    }
+
+                    function tabControls() {
+                        const root = findNavRoot();
+                        const nodes = Array.from(root.querySelectorAll("button, div, span, a, [role='button'], [role='tab']"));
+                        const result = [];
+                        const seen = new Set();
+
+                        for (const node of nodes) {
+                            const txt = exactText(node);
+                            if (!labels.includes(txt)) {
+                                continue;
+                            }
+
+                            let control = node;
+
+                            for (let i = 0; control && i < 3; i += 1) {
+                                const cText = exactText(control);
+                                if (labels.includes(cText)) {
+                                    break;
+                                }
+                                control = control.parentElement;
+                            }
+
+                            if (!control || seen.has(control)) {
+                                continue;
+                            }
+
+                            seen.add(control);
+                            result.push({ label: txt, element: control });
+                        }
+
+                        return result;
+                    }
+
+                    function applyStyle(el, active) {
+                        if (!el) return;
+
+                        el.classList.remove("sig-step85q-active-tab", "sig-step85q-inactive-tab");
+                        el.classList.add(active ? "sig-step85q-active-tab" : "sig-step85q-inactive-tab");
+
+                        if (active) {
+                            el.style.setProperty("background", "linear-gradient(180deg, rgba(16,185,129,0.58), rgba(6,95,70,0.64))", "important");
+                            el.style.setProperty("color", "#ecfdf5", "important");
+                            el.style.setProperty("border", "1px solid rgba(110,231,183,1)", "important");
+                            el.style.setProperty("box-shadow", "0 0 0 1px rgba(110,231,183,0.54), 0 0 22px rgba(16,185,129,0.46), inset 0 0 14px rgba(16,185,129,0.24)", "important");
+                            el.style.setProperty("transform", "translateY(-1px)", "important");
+                            el.style.setProperty("font-weight", "900", "important");
+                        } else {
+                            el.style.setProperty("background", "rgba(15,23,42,0.56)", "important");
+                            el.style.setProperty("color", "#a7b3c7", "important");
+                            el.style.setProperty("border", "1px solid rgba(148,163,184,0.16)", "important");
+                            el.style.setProperty("box-shadow", "none", "important");
+                            el.style.setProperty("transform", "none", "important");
+                            el.style.setProperty("font-weight", "800", "important");
+                        }
+                    }
+
+                    function setActive(label) {
+                        if (!labels.includes(label)) {
+                            label = "Command Center";
+                        }
+
+                        try {
+                            window.sessionStorage.setItem(storageKey, label);
+                        } catch (err) {
+                            /* no-op */
+                        }
+
+                        for (const item of tabControls()) {
+                            applyStyle(item.element, item.label === label);
+                        }
+                    }
+
+                    function getStored() {
+                        try {
+                            return window.sessionStorage.getItem(storageKey) || "Command Center";
+                        } catch (err) {
+                            return "Command Center";
+                        }
+                    }
+
+                    function labelFromEvent(event) {
+                        const path = event.composedPath ? event.composedPath() : [event.target];
+
+                        for (const node of path) {
+                            if (!node || !(node.innerText || node.textContent)) {
+                                continue;
+                            }
+
+                            const txt = clean(node.innerText || node.textContent || "");
+                            if (labels.includes(txt)) {
+                                return txt;
+                            }
+                        }
+
+                        return "";
+                    }
+
+                    function onActivate(event) {
+                        const label = labelFromEvent(event);
+                        if (!label) return;
+
+                        setActive(label);
+                    }
+
+                    document.addEventListener("pointerdown", onActivate, true);
+                    document.addEventListener("click", onActivate, true);
+
+                    function boot() {
+                        setActive(getStored());
+                    }
+
+                    const observer = new MutationObserver(function () {
+                        window.clearTimeout(window.__SIGMALYTIC_STEP85Q_TIMER__);
+                        window.__SIGMALYTIC_STEP85Q_TIMER__ = window.setTimeout(boot, 60);
+                    });
+
+                    function start() {
+                        boot();
+                        if (document.body) {
+                            observer.observe(document.body, {
+                                childList: true,
+                                subtree: true
+                            });
+                        }
+                        window.setTimeout(boot, 250);
+                        window.setTimeout(boot, 900);
+                        window.setTimeout(boot, 1800);
+                    }
+
+                    if (document.readyState === "loading") {
+                        document.addEventListener("DOMContentLoaded", start);
+                    } else {
+                        start();
+                    }
+                })();
+            </script>
         </footer>
     </body>
 </html>"""
-# SIGMALYTIC_STEP85P_SCROLLBAR_INDEX_STYLE_END
+# SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV_SCROLLBAR_END
 
 
 app.layout = html.Div([
@@ -3254,92 +3520,6 @@ def load_symbol(_, ticker, live):
            decision_score=live.get("decision",{}).get("score") if live else None)
     return clean, clean
 
-# SIGMALYTIC_STEP85P_CLIENTSIDE_ACTIVE_TABS_START
-app.clientside_callback(
-    """
-    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
-             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
-             n_billing, n_preferences, n_admin, n_setup) {
-
-        const ctx = dash_clientside.callback_context;
-        const order = [
-            "status", "command", "feed", "performance", "behavior", "campaigns",
-            "portfolio", "journal", "import", "radar", "scoreboard", "divergence",
-            "billing", "preferences", "admin", "setup"
-        ];
-
-        function inactiveStyle(key) {
-            if (key === "status") {
-                return {display: "none"};
-            }
-
-            return {
-                background: "rgba(15,23,42,0.56)",
-                color: "#a7b3c7",
-                border: "1px solid rgba(148,163,184,0.16)",
-                borderRadius: "12px",
-                padding: "10px 14px",
-                fontSize: "13px",
-                fontWeight: "800",
-                whiteSpace: "nowrap",
-                cursor: "pointer",
-                transition: "background 80ms ease, border-color 80ms ease, color 80ms ease, box-shadow 80ms ease, transform 80ms ease",
-                flex: "0 0 auto"
-            };
-        }
-
-        function activeStyle(key) {
-            const s = inactiveStyle(key);
-
-            if (key === "status") {
-                return s;
-            }
-
-            s.background = "linear-gradient(180deg, rgba(16,185,129,0.50), rgba(6,95,70,0.58))";
-            s.color = "#ecfdf5";
-            s.border = "1px solid rgba(52,211,153,1)";
-            s.boxShadow = "0 0 0 1px rgba(52,211,153,0.46), 0 0 20px rgba(16,185,129,0.42), inset 0 0 12px rgba(16,185,129,0.20)";
-            s.transform = "translateY(-1px)";
-            return s;
-        }
-
-        if (!ctx.triggered || ctx.triggered.length === 0) {
-            const no = dash_clientside.no_update;
-            return [no,no,no,no,no,no,no,no,no,no,no,no,no,no,no,no,no];
-        }
-
-        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
-        if (!order.includes(tab)) {
-            tab = "command";
-        }
-
-        const styles = order.map(function(key) {
-            return key === tab ? activeStyle(key) : inactiveStyle(key);
-        });
-
-        return [tab].concat(styles);
-    }
-    """,
-    Output("s-tab","data"),
-    Output("tab-status","style"),       Output("tab-command","style"),
-    Output("tab-feed","style"),         Output("tab-performance","style"),
-    Output("tab-behavior","style"),     Output("tab-campaigns","style"),
-    Output("tab-portfolio","style"),    Output("tab-journal","style"),
-    Output("tab-import","style"),       Output("tab-radar","style"),
-    Output("tab-scoreboard","style"),   Output("tab-divergence","style"),
-    Output("tab-billing","style"),      Output("tab-preferences","style"),
-    Output("tab-admin","style"),        Output("tab-setup","style"),
-    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
-    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
-    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
-    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
-    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
-    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
-    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
-    prevent_initial_call=True,
-)
-# SIGMALYTIC_STEP85P_CLIENTSIDE_ACTIVE_TABS_END
 
 @app.callback(
     Output("s-live","data"),
