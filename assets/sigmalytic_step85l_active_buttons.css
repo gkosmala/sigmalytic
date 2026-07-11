@@ -1,0 +1,81 @@
+﻿/* SIGMALYTIC STEP 85L
+   Command Center tab framing + active button visual state.
+   Frontend-only visual asset. No backend, no database, no campaign logic.
+*/
+
+html,
+body {
+  max-width: 100vw !important;
+  overflow-x: auto !important;
+}
+
+.sig-step85l-nav-container {
+  max-width: 100vw !important;
+  width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  margin-left: 0 !important;
+  padding-left: 20px !important;
+  padding-right: 20px !important;
+  left: 0 !important;
+  right: auto !important;
+  transform: none !important;
+  justify-content: flex-start !important;
+  scroll-padding-left: 20px !important;
+  box-sizing: border-box !important;
+}
+
+.sig-step85l-nav-container > * {
+  flex-shrink: 0 !important;
+}
+
+.sig-step85l-control-candidate {
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease !important;
+}
+
+.sig-step85l-control-candidate.sig-active-control,
+.sig-step85l-control-candidate[aria-pressed="true"],
+.sig-step85l-control-candidate[aria-selected="true"] {
+  background: linear-gradient(
+    180deg,
+    rgba(16, 185, 129, 0.38),
+    rgba(6, 95, 70, 0.44)
+  ) !important;
+  border-color: rgba(52, 211, 153, 0.92) !important;
+  color: #ecfdf5 !important;
+  box-shadow:
+    0 0 0 1px rgba(52, 211, 153, 0.44),
+    0 0 18px rgba(16, 185, 129, 0.34),
+    inset 0 0 12px rgba(16, 185, 129, 0.16) !important;
+  transform: translateY(-1px) !important;
+}
+
+.sig-step85l-control-candidate.sig-active-control *,
+.sig-step85l-control-candidate[aria-pressed="true"] *,
+.sig-step85l-control-candidate[aria-selected="true"] * {
+  color: #ecfdf5 !important;
+}
+
+.sig-step85l-control-candidate:active {
+  transform: translateY(0) scale(0.99) !important;
+}
+
+.sig-step85l-tabs-candidate.sig-active-control {
+  border-bottom-color: rgba(52, 211, 153, 1) !important;
+}
+
+.sig-step85l-timeframe-candidate.sig-active-control {
+  font-weight: 900 !important;
+}
+
+@media (max-width: 1280px) {
+  .sig-step85l-nav-container {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+}

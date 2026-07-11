@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "mode": "STEP85L_COMMAND_CENTER_FRAMING_ACTIVE_BUTTONS_FRONTEND_ASSET_PATCH",
+  "checks": {
+    "assets\\sigmalytic_step85l_active_buttons.css_exists": true,
+    "assets\\sigmalytic_step85l_active_buttons.css_has_step85l_marker": true,
+    "assets\\sigmalytic_step85l_active_buttons.css_has_no_backend_terms": true,
+    "assets\\sigmalytic_step85l_active_buttons.js_exists": true,
+    "assets\\sigmalytic_step85l_active_buttons.js_has_step85l_marker": true,
+    "assets\\sigmalytic_step85l_active_buttons.js_has_no_backend_terms": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.css_exists": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.css_has_step85l_marker": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.css_has_no_backend_terms": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.js_exists": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.js_has_step85l_marker": true,
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.js_has_no_backend_terms": true,
+    "css_active_class_present": true,
+    "css_nav_container_present": true,
+    "js_command_center_label_present": true,
+    "js_timeframe_labels_present": true,
+    "js_mutual_exclusion_present": true,
+    "js_session_storage_present": true,
+    "js_mutation_observer_present": true,
+    "js_duplicate_guard_present": true
+  },
+  "doctrine": {
+    "frontend_visual_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
