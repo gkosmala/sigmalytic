@@ -3343,6 +3343,128 @@ app.index_string = r"""<!DOCTYPE html>
 # SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV_SCROLLBAR_END
 
 
+# SIGMALYTIC_STEP85R_INSTANT_TAB_TRANSITION_START
+app.clientside_callback(
+    """
+    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
+             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
+             n_billing, n_preferences, n_admin, n_setup) {
+
+        const ctx = dash_clientside.callback_context;
+
+        if (!ctx.triggered || ctx.triggered.length === 0) {
+            const no = dash_clientside.no_update;
+            return [no, no, no, no];
+        }
+
+        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
+
+        const labels = {
+            status: "Status Center",
+            command: "Command Center",
+            feed: "Live Feed",
+            performance: "Performance",
+            behavior: "Behavioral Intelligence",
+            campaigns: "Campaigns",
+            portfolio: "Portfolio",
+            journal: "Journal",
+            import: "Import History",
+            radar: "Radar Screen",
+            scoreboard: "Scoreboard",
+            divergence: "Divergence",
+            billing: "Billing",
+            preferences: "Preferences",
+            admin: "Admin",
+            setup: "Setup"
+        };
+
+        const title = labels[tab] || "Loading";
+
+        const shell = {
+            type: "Div",
+            namespace: "dash_html_components",
+            props: {
+                children: [
+                    {
+                        type: "Div",
+                        namespace: "dash_html_components",
+                        props: {
+                            children: title,
+                            style: {
+                                color: "#ecfdf5",
+                                fontSize: "22px",
+                                fontWeight: "900",
+                                marginBottom: "10px"
+                            }
+                        }
+                    },
+                    {
+                        type: "Div",
+                        namespace: "dash_html_components",
+                        props: {
+                            children: "Loading " + title + "…",
+                            style: {
+                                color: "#6ee7b7",
+                                fontSize: "14px",
+                                fontWeight: "800",
+                                letterSpacing: "0.02em"
+                            }
+                        }
+                    },
+                    {
+                        type: "Div",
+                        namespace: "dash_html_components",
+                        props: {
+                            children: "",
+                            style: {
+                                marginTop: "18px",
+                                width: "220px",
+                                height: "8px",
+                                borderRadius: "999px",
+                                background: "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(14,165,233,0.65), rgba(52,211,153,0.95))",
+                                boxShadow: "0 0 20px rgba(52,211,153,0.42)"
+                            }
+                        }
+                    }
+                ],
+                style: {
+                    minHeight: "420px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    textAlign: "center",
+                    background: "rgba(15,23,42,0.46)",
+                    border: "1px solid rgba(52,211,153,0.22)",
+                    borderRadius: "18px",
+                    boxShadow: "0 0 30px rgba(15,23,42,0.35)",
+                    padding: "60px 24px"
+                }
+            }
+        };
+
+        const hidden = {display: "none"};
+
+        return [shell, hidden, "", ""];
+    }
+    """,
+    Output("main-content", "children", allow_duplicate=True),
+    Output("trade-panels-row", "style", allow_duplicate=True),
+    Output("trade-plan-panel", "children", allow_duplicate=True),
+    Output("active-trade-panel", "children", allow_duplicate=True),
+    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
+    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
+    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
+    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
+    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
+    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
+    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
+    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    prevent_initial_call=True,
+)
+# SIGMALYTIC_STEP85R_INSTANT_TAB_TRANSITION_END
+
+
 app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-candles",   data=_init_candles),

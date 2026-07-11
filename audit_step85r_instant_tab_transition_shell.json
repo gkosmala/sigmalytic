@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "mode": "STEP85R_INSTANT_TAB_TRANSITION_SHELL",
+  "checks": {
+    "frontend_changed": true,
+    "step85r_block_present": true,
+    "clientside_callback_present": true,
+    "duplicate_main_content_output_present": true,
+    "duplicate_trade_panels_output_present": true,
+    "prevent_initial_call_present": true,
+    "loading_shell_present": true,
+    "server_render_main_preserved": true,
+    "fast_direct_render_inputs_preserved": true,
+    "step85q_scrollbar_preserved": true,
+    "scrollbar_36_preserved": true,
+    "tick_hidden_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
