@@ -3018,7 +3018,7 @@ def _sig85o_tab_styles(active_tab):
 # SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_END
 
 
-# SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV_SCROLLBAR_START
+# SIGMALYTIC_STEP85U_EXACT_ID_NAV_SCROLLBAR_START
 app.clientside_callback(
     """
     function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
@@ -3059,7 +3059,7 @@ app.index_string = r"""<!DOCTYPE html>
         <title>Sigmalytic Quant Corporation</title>
         {%favicon%}
         {%css%}
-        <style id="sigmalytic-step85q-style">
+        <style id="sigmalytic-step85u-style">
             html, body {
                 scrollbar-width: auto;
                 scrollbar-color: #6ee7b7 #071524;
@@ -3102,27 +3102,6 @@ app.index_string = r"""<!DOCTYPE html>
             ::-webkit-scrollbar-corner {
                 background: #071524;
             }
-
-            .sig-step85q-active-tab {
-                background: linear-gradient(180deg, rgba(16,185,129,0.58), rgba(6,95,70,0.64)) !important;
-                color: #ecfdf5 !important;
-                border: 1px solid rgba(110,231,183,1) !important;
-                box-shadow:
-                    0 0 0 1px rgba(110,231,183,0.54),
-                    0 0 22px rgba(16,185,129,0.46),
-                    inset 0 0 14px rgba(16,185,129,0.24) !important;
-                transform: translateY(-1px) !important;
-                font-weight: 900 !important;
-            }
-
-            .sig-step85q-inactive-tab {
-                background: rgba(15,23,42,0.56) !important;
-                color: #a7b3c7 !important;
-                border: 1px solid rgba(148,163,184,0.16) !important;
-                box-shadow: none !important;
-                transform: none !important;
-                font-weight: 800 !important;
-            }
         </style>
     </head>
     <body>
@@ -3131,338 +3110,137 @@ app.index_string = r"""<!DOCTYPE html>
             {%config%}
             {%scripts%}
             {%renderer%}
-            <script id="sigmalytic-step85q-script">
+            <script id="sigmalytic-step85u-script">
                 (function () {
-                    if (window.__SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV__) {
+                    if (window.__SIGMALYTIC_STEP85U_EXACT_ID_NAV__) {
                         return;
                     }
 
-                    window.__SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV__ = true;
+                    window.__SIGMALYTIC_STEP85U_EXACT_ID_NAV__ = true;
 
-                    const labels = [
-                        "Command Center",
-                        "Live Feed",
-                        "Performance",
-                        "Behavioral Intelligence",
-                        "Campaigns",
-                        "Portfolio",
-                        "Journal",
-                        "Import History",
-                        "Radar Screen",
-                        "Scoreboard",
-                        "Divergence",
-                        "Billing",
-                        "Preferences",
-                        "Admin",
-                        "Setup"
+                    const ids = [
+                        "tab-command",
+                        "tab-feed",
+                        "tab-performance",
+                        "tab-behavior",
+                        "tab-campaigns",
+                        "tab-portfolio",
+                        "tab-journal",
+                        "tab-import",
+                        "tab-radar",
+                        "tab-scoreboard",
+                        "tab-divergence",
+                        "tab-billing",
+                        "tab-preferences",
+                        "tab-admin",
+                        "tab-setup"
                     ];
 
-                    const keyByLabel = {
-                        "Command Center": "command",
-                        "Live Feed": "feed",
-                        "Performance": "performance",
-                        "Behavioral Intelligence": "behavior",
-                        "Campaigns": "campaigns",
-                        "Portfolio": "portfolio",
-                        "Journal": "journal",
-                        "Import History": "import",
-                        "Radar Screen": "radar",
-                        "Scoreboard": "scoreboard",
-                        "Divergence": "divergence",
-                        "Billing": "billing",
-                        "Preferences": "preferences",
-                        "Admin": "admin",
-                        "Setup": "setup"
+                    const tabById = {
+                        "tab-command": "command",
+                        "tab-feed": "feed",
+                        "tab-performance": "performance",
+                        "tab-behavior": "behavior",
+                        "tab-campaigns": "campaigns",
+                        "tab-portfolio": "portfolio",
+                        "tab-journal": "journal",
+                        "tab-import": "import",
+                        "tab-radar": "radar",
+                        "tab-scoreboard": "scoreboard",
+                        "tab-divergence": "divergence",
+                        "tab-billing": "billing",
+                        "tab-preferences": "preferences",
+                        "tab-admin": "admin",
+                        "tab-setup": "setup"
                     };
 
-                    const storageKey = "sigmalytic.step85q.activeTabLabel";
+                    const storageKey = "sigmalytic.step85u.activeTabId";
 
-                    function clean(value) {
-                        return String(value || "").replace(/\s+/g, " ").trim();
-                    }
-
-                    function findNavRoot() {
-                        const all = Array.from(document.querySelectorAll("div, nav, section, header"));
-                        for (const el of all) {
-                            const txt = clean(el.innerText || el.textContent || "");
-                            if (
-                                txt.includes("Command Center") &&
-                                txt.includes("Behavioral Intelligence") &&
-                                txt.includes("Radar Screen") &&
-                                txt.includes("Scoreboard")
-                            ) {
-                                return el;
-                            }
-                        }
-                        return document.body;
-                    }
-
-                    function exactText(el) {
-                        return clean(el.innerText || el.textContent || "");
-                    }
-
-                    function tabControls() {
-                        const root = findNavRoot();
-                        const nodes = Array.from(root.querySelectorAll("button, div, span, a, [role='button'], [role='tab']"));
-                        const result = [];
-                        const seen = new Set();
-
-                        for (const node of nodes) {
-                            const txt = exactText(node);
-                            if (!labels.includes(txt)) {
-                                continue;
-                            }
-
-                            let control = node;
-
-                            for (let i = 0; control && i < 3; i += 1) {
-                                const cText = exactText(control);
-                                if (labels.includes(cText)) {
-                                    break;
-                                }
-                                control = control.parentElement;
-                            }
-
-                            if (!control || seen.has(control)) {
-                                continue;
-                            }
-
-                            seen.add(control);
-                            result.push({ label: txt, element: control });
-                        }
-
-                        return result;
-                    }
-
-                    function applyStyle(el, active) {
+                    function inactive(el) {
                         if (!el) return;
 
-                        el.classList.remove("sig-step85q-active-tab", "sig-step85q-inactive-tab");
-                        el.classList.add(active ? "sig-step85q-active-tab" : "sig-step85q-inactive-tab");
-
-                        if (active) {
-                            el.style.setProperty("background", "linear-gradient(180deg, rgba(16,185,129,0.58), rgba(6,95,70,0.64))", "important");
-                            el.style.setProperty("color", "#ecfdf5", "important");
-                            el.style.setProperty("border", "1px solid rgba(110,231,183,1)", "important");
-                            el.style.setProperty("box-shadow", "0 0 0 1px rgba(110,231,183,0.54), 0 0 22px rgba(16,185,129,0.46), inset 0 0 14px rgba(16,185,129,0.24)", "important");
-                            el.style.setProperty("transform", "translateY(-1px)", "important");
-                            el.style.setProperty("font-weight", "900", "important");
-                        } else {
-                            el.style.setProperty("background", "rgba(15,23,42,0.56)", "important");
-                            el.style.setProperty("color", "#a7b3c7", "important");
-                            el.style.setProperty("border", "1px solid rgba(148,163,184,0.16)", "important");
-                            el.style.setProperty("box-shadow", "none", "important");
-                            el.style.setProperty("transform", "none", "important");
-                            el.style.setProperty("font-weight", "800", "important");
-                        }
+                        el.style.setProperty("background", "rgba(15,23,42,0.56)", "important");
+                        el.style.setProperty("color", "#a7b3c7", "important");
+                        el.style.setProperty("border", "1px solid rgba(148,163,184,0.16)", "important");
+                        el.style.setProperty("box-shadow", "none", "important");
+                        el.style.setProperty("transform", "none", "important");
+                        el.style.setProperty("font-weight", "800", "important");
                     }
 
-                    function setActive(label) {
-                        if (!labels.includes(label)) {
-                            label = "Command Center";
+                    function active(el) {
+                        if (!el) return;
+
+                        el.style.setProperty("background", "linear-gradient(180deg, rgba(30,64,175,0.78), rgba(15,23,42,0.92))", "important");
+                        el.style.setProperty("color", "#eff6ff", "important");
+                        el.style.setProperty("border", "1px solid rgba(96,165,250,0.95)", "important");
+                        el.style.setProperty("box-shadow", "0 0 0 1px rgba(96,165,250,0.36), 0 0 16px rgba(59,130,246,0.35)", "important");
+                        el.style.setProperty("transform", "translateY(-1px)", "important");
+                        el.style.setProperty("font-weight", "900", "important");
+                    }
+
+                    function setActiveId(id) {
+                        if (!ids.includes(id)) {
+                            id = "tab-command";
                         }
 
+                        for (const oneId of ids) {
+                            inactive(document.getElementById(oneId));
+                        }
+
+                        active(document.getElementById(id));
+
                         try {
-                            window.sessionStorage.setItem(storageKey, label);
+                            window.sessionStorage.setItem(storageKey, id);
                         } catch (err) {
                             /* no-op */
                         }
-
-                        for (const item of tabControls()) {
-                            applyStyle(item.element, item.label === label);
-                        }
                     }
 
-                    function getStored() {
+                    function storedId() {
                         try {
-                            return window.sessionStorage.getItem(storageKey) || "Command Center";
+                            return window.sessionStorage.getItem(storageKey) || "tab-command";
                         } catch (err) {
-                            return "Command Center";
+                            return "tab-command";
                         }
                     }
 
-                    function labelFromEvent(event) {
-                        const path = event.composedPath ? event.composedPath() : [event.target];
+                    function onPointerDown(event) {
+                        const target = event.target && event.target.closest ? event.target.closest("[id^='tab-']") : null;
 
-                        for (const node of path) {
-                            if (!node || !(node.innerText || node.textContent)) {
-                                continue;
-                            }
-
-                            const txt = clean(node.innerText || node.textContent || "");
-                            if (labels.includes(txt)) {
-                                return txt;
-                            }
+                        if (!target || !ids.includes(target.id)) {
+                            return;
                         }
 
-                        return "";
+                        setActiveId(target.id);
                     }
-
-                    function onActivate(event) {
-                        const label = labelFromEvent(event);
-                        if (!label) return;
-
-                        setActive(label);
-                    }
-
-                    document.addEventListener("pointerdown", onActivate, true);
-                    document.addEventListener("click", onActivate, true);
 
                     function boot() {
-                        setActive(getStored());
-                    }
+                        const current = storedId();
+                        setActiveId(current);
 
-                    const observer = new MutationObserver(function () {
-                        window.clearTimeout(window.__SIGMALYTIC_STEP85Q_TIMER__);
-                        window.__SIGMALYTIC_STEP85Q_TIMER__ = window.setTimeout(boot, 60);
-                    });
-
-                    function start() {
-                        boot();
-                        if (document.body) {
-                            observer.observe(document.body, {
-                                childList: true,
-                                subtree: true
-                            });
+                        const status = document.getElementById("tab-status");
+                        if (status) {
+                            status.style.setProperty("display", "none", "important");
                         }
-                        window.setTimeout(boot, 250);
-                        window.setTimeout(boot, 900);
-                        window.setTimeout(boot, 1800);
                     }
+
+                    document.addEventListener("pointerdown", onPointerDown, true);
+                    document.addEventListener("click", onPointerDown, true);
 
                     if (document.readyState === "loading") {
-                        document.addEventListener("DOMContentLoaded", start);
+                        document.addEventListener("DOMContentLoaded", boot);
                     } else {
-                        start();
+                        boot();
                     }
+
+                    window.setTimeout(boot, 250);
+                    window.setTimeout(boot, 900);
                 })();
             </script>
         </footer>
     </body>
 </html>"""
-# SIGMALYTIC_STEP85Q_IMMEDIATE_ACTIVE_NAV_SCROLLBAR_END
-
-
-# SIGMALYTIC_STEP85R_INSTANT_TAB_TRANSITION_START
-app.clientside_callback(
-    """
-    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
-             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
-             n_billing, n_preferences, n_admin, n_setup) {
-
-        const ctx = dash_clientside.callback_context;
-
-        if (!ctx.triggered || ctx.triggered.length === 0) {
-            const no = dash_clientside.no_update;
-            return [no, no, no, no];
-        }
-
-        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
-
-        const labels = {
-            status: "Status Center",
-            command: "Command Center",
-            feed: "Live Feed",
-            performance: "Performance",
-            behavior: "Behavioral Intelligence",
-            campaigns: "Campaigns",
-            portfolio: "Portfolio",
-            journal: "Journal",
-            import: "Import History",
-            radar: "Radar Screen",
-            scoreboard: "Scoreboard",
-            divergence: "Divergence",
-            billing: "Billing",
-            preferences: "Preferences",
-            admin: "Admin",
-            setup: "Setup"
-        };
-
-        const title = labels[tab] || "Loading";
-
-        const shell = {
-            type: "Div",
-            namespace: "dash_html_components",
-            props: {
-                children: [
-                    {
-                        type: "Div",
-                        namespace: "dash_html_components",
-                        props: {
-                            children: title,
-                            style: {
-                                color: "#ecfdf5",
-                                fontSize: "22px",
-                                fontWeight: "900",
-                                marginBottom: "10px"
-                            }
-                        }
-                    },
-                    {
-                        type: "Div",
-                        namespace: "dash_html_components",
-                        props: {
-                            children: "Loading " + title + "…",
-                            style: {
-                                color: "#6ee7b7",
-                                fontSize: "14px",
-                                fontWeight: "800",
-                                letterSpacing: "0.02em"
-                            }
-                        }
-                    },
-                    {
-                        type: "Div",
-                        namespace: "dash_html_components",
-                        props: {
-                            children: "",
-                            style: {
-                                marginTop: "18px",
-                                width: "220px",
-                                height: "8px",
-                                borderRadius: "999px",
-                                background: "linear-gradient(90deg, rgba(52,211,153,0.95), rgba(14,165,233,0.65), rgba(52,211,153,0.95))",
-                                boxShadow: "0 0 20px rgba(52,211,153,0.42)"
-                            }
-                        }
-                    }
-                ],
-                style: {
-                    minHeight: "420px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    textAlign: "center",
-                    background: "rgba(15,23,42,0.46)",
-                    border: "1px solid rgba(52,211,153,0.22)",
-                    borderRadius: "18px",
-                    boxShadow: "0 0 30px rgba(15,23,42,0.35)",
-                    padding: "60px 24px"
-                }
-            }
-        };
-
-        const hidden = {display: "none"};
-
-        return [shell, hidden, "", ""];
-    }
-    """,
-    Output("main-content", "children", allow_duplicate=True),
-    Output("trade-panels-row", "style", allow_duplicate=True),
-    Output("trade-plan-panel", "children", allow_duplicate=True),
-    Output("active-trade-panel", "children", allow_duplicate=True),
-    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
-    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
-    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
-    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
-    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
-    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
-    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
-    prevent_initial_call=True,
-)
-# SIGMALYTIC_STEP85R_INSTANT_TAB_TRANSITION_END
+# SIGMALYTIC_STEP85U_EXACT_ID_NAV_SCROLLBAR_END
 
 
 app.layout = html.Div([

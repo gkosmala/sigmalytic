@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "mode": "STEP85U_EXACT_ID_NAV_NO_GREEN_BLEED_FASTER_TABS",
+  "removed_blocks": {
+    "step85q_broad_nav_scrollbar": 1,
+    "step85r_transition_shell": 1,
+    "step85p_clientside_styles": 0,
+    "step85p_scrollbar": 0,
+    "step85m_shell": 0
+  },
+  "checks": {
+    "frontend_changed": true,
+    "syntax_parse_passed": true,
+    "step85q_removed": true,
+    "step85r_removed": true,
+    "step85p_removed": true,
+    "step85u_present": true,
+    "exact_id_js_present": true,
+    "no_text_scan_nav_present": true,
+    "no_mutation_observer_present": true,
+    "no_green_panel_class_present": true,
+    "scrollbar_36_preserved": true,
+    "blue_active_nav_not_green": true,
+    "simple_s_tab_clientside_present": true,
+    "render_main_preserved": true,
+    "tick_hidden_preserved": true,
+    "dash_tokens_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
