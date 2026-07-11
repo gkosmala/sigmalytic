@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "mode": "STEP85O_DIRECT_NAV_ACTIVE_HIDE_TICK_FAST_SWITCH",
+  "removed_85m_shell_blocks": 1,
+  "removed_assets": [
+    "assets\\sigmalytic_step85l_active_buttons.css",
+    "assets\\sigmalytic_step85l_active_buttons.js",
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.css",
+    "frontend\\assets\\sigmalytic_step85l_active_buttons.js"
+  ],
+  "checks": {
+    "frontend_changed": true,
+    "step85m_shell_removed": true,
+    "step85o_helpers_present": true,
+    "status_tab_hidden_in_helper": true,
+    "tab_button_uses_helper": true,
+    "nav_flex_start_present": true,
+    "nav_wrap_present": true,
+    "set_tab_outputs_styles": true,
+    "set_tab_returns_tab_styles": true,
+    "tick_badge_hidden": true,
+    "raw_tick_badge_removed": true,
+    "render_main_direct_tab_inputs": true,
+    "render_main_uses_triggered_tab": true,
+    "removed_step85l_assets_count": 4
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
