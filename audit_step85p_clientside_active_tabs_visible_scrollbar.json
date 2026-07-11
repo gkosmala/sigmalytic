@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "mode": "STEP85P_CLIENTSIDE_ACTIVE_TABS_VISIBLE_SCROLLBAR",
+  "checks": {
+    "frontend_changed": true,
+    "clientside_callback_present": true,
+    "server_set_tab_removed": true,
+    "active_styles_clientside": true,
+    "status_hidden_clientside": true,
+    "render_main_direct_inputs_preserved": true,
+    "tick_still_hidden": true,
+    "scrollbar_index_present": true,
+    "scrollbar_width_18": true,
+    "scrollbar_thumb_visible": true,
+    "dash_tokens_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}

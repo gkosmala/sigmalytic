@@ -3018,6 +3018,65 @@ def _sig85o_tab_styles(active_tab):
 # SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_END
 
 
+# SIGMALYTIC_STEP85P_SCROLLBAR_INDEX_STYLE_START
+app.index_string = r"""<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>Sigmalytic Quant Corporation</title>
+        {%favicon%}
+        {%css%}
+        <style id="sigmalytic-step85p-scrollbar-style">
+            html, body {
+                scrollbar-width: auto;
+                scrollbar-color: #34d399 #071524;
+            }
+
+            * {
+                scrollbar-width: auto;
+                scrollbar-color: #34d399 #071524;
+            }
+
+            ::-webkit-scrollbar {
+                width: 18px;
+                height: 18px;
+            }
+
+            ::-webkit-scrollbar-track {
+                background: #071524;
+                border-left: 1px solid rgba(148, 163, 184, 0.28);
+                border-radius: 999px;
+            }
+
+            ::-webkit-scrollbar-thumb {
+                background: linear-gradient(180deg, #34d399, #0f766e);
+                border-radius: 999px;
+                border: 4px solid #071524;
+                box-shadow: 0 0 12px rgba(52, 211, 153, 0.45);
+            }
+
+            ::-webkit-scrollbar-thumb:hover {
+                background: linear-gradient(180deg, #6ee7b7, #10b981);
+                box-shadow: 0 0 16px rgba(110, 231, 183, 0.60);
+            }
+
+            ::-webkit-scrollbar-corner {
+                background: #071524;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>"""
+# SIGMALYTIC_STEP85P_SCROLLBAR_INDEX_STYLE_END
+
+
 app.layout = html.Div([
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-candles",   data=_init_candles),
@@ -3195,7 +3254,72 @@ def load_symbol(_, ticker, live):
            decision_score=live.get("decision",{}).get("score") if live else None)
     return clean, clean
 
-@app.callback(
+# SIGMALYTIC_STEP85P_CLIENTSIDE_ACTIVE_TABS_START
+app.clientside_callback(
+    """
+    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
+             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
+             n_billing, n_preferences, n_admin, n_setup) {
+
+        const ctx = dash_clientside.callback_context;
+        const order = [
+            "status", "command", "feed", "performance", "behavior", "campaigns",
+            "portfolio", "journal", "import", "radar", "scoreboard", "divergence",
+            "billing", "preferences", "admin", "setup"
+        ];
+
+        function inactiveStyle(key) {
+            if (key === "status") {
+                return {display: "none"};
+            }
+
+            return {
+                background: "rgba(15,23,42,0.56)",
+                color: "#a7b3c7",
+                border: "1px solid rgba(148,163,184,0.16)",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                fontSize: "13px",
+                fontWeight: "800",
+                whiteSpace: "nowrap",
+                cursor: "pointer",
+                transition: "background 80ms ease, border-color 80ms ease, color 80ms ease, box-shadow 80ms ease, transform 80ms ease",
+                flex: "0 0 auto"
+            };
+        }
+
+        function activeStyle(key) {
+            const s = inactiveStyle(key);
+
+            if (key === "status") {
+                return s;
+            }
+
+            s.background = "linear-gradient(180deg, rgba(16,185,129,0.50), rgba(6,95,70,0.58))";
+            s.color = "#ecfdf5";
+            s.border = "1px solid rgba(52,211,153,1)";
+            s.boxShadow = "0 0 0 1px rgba(52,211,153,0.46), 0 0 20px rgba(16,185,129,0.42), inset 0 0 12px rgba(16,185,129,0.20)";
+            s.transform = "translateY(-1px)";
+            return s;
+        }
+
+        if (!ctx.triggered || ctx.triggered.length === 0) {
+            const no = dash_clientside.no_update;
+            return [no,no,no,no,no,no,no,no,no,no,no,no,no,no,no,no,no];
+        }
+
+        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
+        if (!order.includes(tab)) {
+            tab = "command";
+        }
+
+        const styles = order.map(function(key) {
+            return key === tab ? activeStyle(key) : inactiveStyle(key);
+        });
+
+        return [tab].concat(styles);
+    }
+    """,
     Output("s-tab","data"),
     Output("tab-status","style"),       Output("tab-command","style"),
     Output("tab-feed","style"),         Output("tab-performance","style"),
@@ -3215,13 +3339,7 @@ def load_symbol(_, ticker, live):
     Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
     prevent_initial_call=True,
 )
-def set_tab(*_):
-    ctx = callback_context
-    if not ctx.triggered:
-        return (no_update,) + (no_update,) * len(_SIG85O_TAB_ORDER)
-
-    tab = ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
-    return (tab, *_sig85o_tab_styles(tab))
+# SIGMALYTIC_STEP85P_CLIENTSIDE_ACTIVE_TABS_END
 
 @app.callback(
     Output("s-live","data"),
