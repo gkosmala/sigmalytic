@@ -3471,7 +3471,7 @@ app.layout = html.Div([
     dcc.Store(id="s-seq",       data=0),
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
-    dcc.Store(id="s-tf",        data="5m"),
+    dcc.Store(id="s-tf",data="5m"),
     dcc.Store(id="s-tab",       data="status"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
@@ -3514,12 +3514,12 @@ app.layout = html.Div([
                                    "borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
                 html.Div(id="price-ctrl"),
                 html.Div([
-                    html.Button("1m",  id="tf-1m",  n_clicks=0, style=_tf_btn_style("1m",  "5m")),
-                    html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m",  "5m")),
-                    html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m", "5m")),
-                    html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H",  "5m")),
-                    html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D",  "5m")),
-                    html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
+                    html.Button("1m",  id="tf-1m",  n_clicks=0, style=_tf_btn_style("1m","5m")),
+                    html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m","5m")),
+                    html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m","5m")),
+                    html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H","5m")),
+                    html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D","5m")),
+                    html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W","5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center",
@@ -3600,27 +3600,27 @@ app.layout = html.Div([
 
 # ── Callbacks ──────────────────────────────────────────────────────────────────
 
-# SIGMALYTIC_STEP85S_TIMEFRAME_SYNC_START
+# SIGMALYTIC_STEP85T_R2_FORCE_5M_TIMEFRAME_SYNC_START
 @app.callback(
-    Output("s-tf","data"),
-    Output("s-candles","data",allow_duplicate=True),
+    Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
     Output("s-seq","data",allow_duplicate=True),
+    Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
+    Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
     Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
-    State("s-live","data"),
-    prevent_initial_call=True,
+    State("s-live","data"), prevent_initial_call=True,
 )
 def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     ctx = callback_context
 
     if not ctx.triggered:
-        return no_update, no_update, no_update
+        return (no_update,)*9
 
     btn_id = ctx.triggered[0]["prop_id"].split(".")[0]
     new_tf = btn_id.replace("tf-","")
 
     if new_tf not in {"1m","5m","15m","1H","1D","1W"}:
-        return no_update, no_update, no_update
+        return (no_update,)*9
 
     price = live["price"] if live else 280.15
     fresh = _scaled_candles(price, new_tf)
@@ -3631,26 +3631,19 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
                decision_score=live.get("decision",{}).get("score"),
                decision_status=live.get("decision",{}).get("status"))
 
-    return new_tf, fresh, 0
-
-
-@app.callback(
-    Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
-    Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
-    Input("s-tf","data"),
-)
-def sync_timeframe_button_styles(tf):
-    active_tf = tf if tf in {"1m","5m","15m","1H","1D","1W"} else "5m"
-
     return (
-        _tf_btn_style("1m", active_tf),
-        _tf_btn_style("5m", active_tf),
-        _tf_btn_style("15m", active_tf),
-        _tf_btn_style("1H", active_tf),
-        _tf_btn_style("1D", active_tf),
-        _tf_btn_style("1W", active_tf),
+        new_tf,
+        fresh,
+        0,
+        _tf_btn_style("1m", new_tf),
+        _tf_btn_style("5m", new_tf),
+        _tf_btn_style("15m", new_tf),
+        _tf_btn_style("1H", new_tf),
+        _tf_btn_style("1D", new_tf),
+        _tf_btn_style("1W", new_tf),
     )
-# SIGMALYTIC_STEP85S_TIMEFRAME_SYNC_END
+# SIGMALYTIC_STEP85T_R2_FORCE_5M_TIMEFRAME_SYNC_END
+
 
 # Live-only mode — no toggle callback needed
 
@@ -3792,18 +3785,18 @@ def update_badges(live):
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    Input("s-tf","data"),
     State("s-tab","data"),
     State("s-live","data"),
     State("s-candles","data"),
     State("s-live-mode","data"),
     State("s-symbol","data"),
-    State("s-tf","data"),
 )
 def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clicks,
                 _behavior_clicks, _campaigns_clicks, _portfolio_clicks, _journal_clicks,
                 _import_clicks, _radar_clicks, _scoreboard_clicks, _divergence_clicks,
                 _billing_clicks, _preferences_clicks, _admin_clicks, _setup_clicks,
-                tab, live, candles, live_mode, symbol, tf):
+                tf, tab, live, candles, live_mode, symbol):
     ctx = callback_context
     if ctx.triggered:
         prop_id = ctx.triggered[0].get("prop_id", "")

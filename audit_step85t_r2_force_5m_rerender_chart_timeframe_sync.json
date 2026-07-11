@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "mode": "STEP85T_R2_FORCE_5M_RERENDER_CHART_TIMEFRAME_SYNC",
+  "store_count": 1,
+  "constant_style_count": 6,
+  "checks": {
+    "frontend_changed": true,
+    "syntax_parse_passed": true,
+    "s_tf_default_5m": true,
+    "atomic_select_block_present": true,
+    "old_step85s_removed": true,
+    "select_returns_all_tf_styles": true,
+    "render_main_has_s_tf_input": true,
+    "render_main_signature_correct": true,
+    "render_main_old_signature_removed": true,
+    "step85q_scrollbar_preserved": true,
+    "scrollbar_36_preserved": true,
+    "step85r_transition_preserved": true,
+    "tick_hidden_preserved": true
+  },
+  "doctrine": {
+    "frontend_source_only": true,
+    "no_backend_change": true,
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
