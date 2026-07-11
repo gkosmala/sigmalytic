@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "mode": "STEP85V_R2_CURRENT_V2_STATE_LOCK",
+  "created_utc": "2026-07-11T21:08:37.551451+00:00",
+  "head": "c6d8f99",
+  "tags_on_head": [
+    "stable-v2-step85u-exact-id-nav-no-green-bleed-faster-tabs-no-v2-degradation-2026-07-11"
+  ],
+  "validated": {
+    "frontend_ast_syntax_clean": true,
+    "backend_import_history_ast_syntax_clean": true,
+    "pycache_cleaned": true,
+    "live_v2_safety_unchanged": true,
+    "universe_rows_expected": 13241,
+    "persisted_universe_available": true,
+    "campaign_pipeline_validated": true,
+    "readiness_can_advance": false
+  },
+  "locked_scope": {
+    "ui_state": true,
+    "subscriber_navigation_visuals": true,
+    "scrollbar_visibility": true,
+    "import_history_and_behavioral_analysis": true,
+    "campaign_pipeline_validated": true
+  },
+  "excluded": {
+    "backtests_directory": true,
+    "pycache": true,
+    "temp_step_scripts": true
+  },
+  "doctrine": {
+    "no_database_write": true,
+    "no_supabase_write": true,
+    "no_universe_ingest": true,
+    "no_campaign_mutation": true,
+    "no_daily_bars_mutation": true,
+    "no_d3d": true,
+    "no_operator_control_confirmation": true,
+    "no_trade_signal": true,
+    "no_stripe": true
+  }
+}
