@@ -1325,3 +1325,11 @@ except Exception:
 app.include_router(import_history_restore_router)
 # SIGMALYTIC_STEP85D_IMPORT_HISTORY_RESTORE_ROUTER_END
 
+
+# === SIGMALYTIC CONTROLLED EMAIL ALERT TEST ROUTER START ===
+try:
+    from backend.email_alert_controlled_test_api import router as email_alert_controlled_test_router
+    app.include_router(email_alert_controlled_test_router)
+except Exception as _sig_email_alert_test_router_exc:
+    print(f"[sigmalytic] controlled email alert test router not mounted: {_sig_email_alert_test_router_exc}")
+# === SIGMALYTIC CONTROLLED EMAIL ALERT TEST ROUTER END ===
