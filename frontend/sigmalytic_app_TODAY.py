@@ -2977,6 +2977,7 @@ def _build_d3f1b_today_controlled_persistence_lifecycle_panel():
 # SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_START
 _SIG85O_TAB_ORDER = [
     "command",
+    "performance",
     "feed",
     "radar",
     "campaigns",
@@ -2991,7 +2992,6 @@ _SIG85O_TAB_ORDER = [
     "admin",
     "setup",
     "status",
-    "performance",
 ]
 
 def _sig85o_tab_style(key, active=False):
