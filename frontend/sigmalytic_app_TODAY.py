@@ -2799,22 +2799,22 @@ _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = _scaled_candles(280.15, "5m")
 
 ALL_TABS = [
-    ("status",      "Status"),
-    ("feed",        "Live Feed"),
-    ("command",     "Command Center"),
+    ("command", "Command Center"),
     ("performance", "Performance"),
-    ("behavior",    "Behavioural Intelligence"),
-    ("campaigns",   "Campaigns"),
-    ("portfolio",   "Portfolio"),
-    ("journal",     "Journal"),
-    ("import",      "Import History"),
-    ("radar",       "Radar Screen"),
-    ("scoreboard",  "Scoreboard"),
-    ("divergence",  "Divergence"),
-    ("billing",     "Billing"),
+    ("feed", "Live Feed"),
+    ("radar", "Radar Screen"),
+    ("campaigns", "Campaigns"),
+    ("divergence", "Divergence"),
+    ("scoreboard", "Scoreboard"),
+    ("import", "Import History"),
+    ("behavior", "Behavioural Intelligence"),
+    ("portfolio", "Portfolio"),
+    ("journal", "Journal"),
     ("preferences", "Preferences"),
-    ("admin",       "Admin"),
-    ("setup",       "Setup"),
+    ("billing", "Billing"),
+    ("admin", "Admin"),
+    ("setup", "Setup"),
+    ("status", "Status"),
 ]
 
 
