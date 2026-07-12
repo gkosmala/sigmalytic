@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -74,7 +72,7 @@ def controlled_one_email_test_status() -> Dict[str, Any]:
 
 
 @router.post("/controlled-one-email-test")
-def controlled_one_email_test(payload: Optional[Dict[str, Any]] = Body(default=None)) -> Dict[str, Any]:
+async def controlled_one_email_test(payload: Optional[Dict[str, Any]] = Body(default=None)) -> Dict[str, Any]:
     payload = payload or {}
 
     enabled = os.environ.get("SIGMALYTIC_EMAIL_ALERT_TEST_ENABLED", "").strip().lower() == "true"
@@ -131,57 +129,66 @@ def controlled_one_email_test(payload: Optional[Dict[str, Any]] = Body(default=N
     </div>
     """
 
-    body = json.dumps({
-        "from": from_email,
-        "to": [to_email],
-        "subject": subject,
-        "html": html_body,
-    }).encode("utf-8")
-
-    request = urllib.request.Request(
-        RESEND_URL,
-        data=body,
-        headers={
-            "Authorization": "Bearer " + resend_api_key,
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    try:
+        import httpx
+    except Exception as exc:
+        return {
+            "status": "FAIL",
+            "reason": "httpx is not available in the backend runtime.",
+            "created_utc": _now(),
+            "email_sent": False,
+            "error": repr(exc),
+            "safety": _safety(),
+        }
 
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            raw = response.read().decode("utf-8", errors="replace")
-            status_code = getattr(response, "status", None)
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(
+                RESEND_URL,
+                headers={
+                    "Authorization": "Bearer " + resend_api_key,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": "Sigmalytic-Backend-Controlled-Email-Test/1.0",
+                },
+                json={
+                    "from": from_email,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body,
+                },
+            )
 
-            try:
-                resend_response: Any = json.loads(raw)
-            except Exception:
-                resend_response = raw
+        raw_text = response.text
 
+        try:
+            resend_response: Any = response.json()
+        except Exception:
+            resend_response = raw_text
+
+        if response.status_code >= 400:
             return {
-                "status": "PASS",
-                "mode": "CONTROLLED_ONE_EMAIL_RESEND_TEST",
+                "status": "FAIL",
+                "reason": "Resend returned an HTTP error.",
                 "created_utc": _now(),
-                "email_sent": True,
-                "to_email": to_email,
+                "email_sent": False,
+                "resend_status_code": response.status_code,
+                "resend_error_body": raw_text,
                 "from_email": from_email,
-                "subject": subject,
-                "resend_status_code": status_code,
-                "resend_response": resend_response,
+                "to_email": to_email,
                 "safety": _safety(),
             }
 
-    except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
         return {
-            "status": "FAIL",
-            "reason": "Resend returned an HTTP error.",
+            "status": "PASS",
+            "mode": "CONTROLLED_ONE_EMAIL_RESEND_TEST",
             "created_utc": _now(),
-            "email_sent": False,
-            "resend_status_code": exc.code,
-            "resend_error_body": error_body,
-            "from_email": from_email,
+            "email_sent": True,
             "to_email": to_email,
+            "from_email": from_email,
+            "subject": subject,
+            "resend_status_code": response.status_code,
+            "resend_response": resend_response,
             "safety": _safety(),
         }
 
