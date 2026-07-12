@@ -134,7 +134,7 @@ def _sigmalytic_step85h_upload_status_from_payload(data):
             style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
         ),
         html.Div(
-            "Switch to the Behavioral Intelligence tab to see your full profile.",
+            "Switch to the Behavioural Intelligence tab to see your full profile.",
             style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
         ),
     ])
@@ -257,7 +257,7 @@ def _sigmalytic_step85h_behavioral_tab_from_history():
 
     return html.Div([
         html.H3(
-            "Brokerage Behavioral Intelligence",
+            "Brokerage Behavioural Intelligence",
             style={"color": "#e5e7eb", "marginBottom": "8px"},
         ),
         html.Div(
@@ -343,7 +343,7 @@ def _sigmalytic_step85h_behavioral_tab_from_history():
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
-Includes: Behavioral Intelligence Layer v1.0
+Includes: Behavioural Intelligence Layer v1.0
 """
 
 import json
@@ -1119,7 +1119,7 @@ def build_import_tab():
 
 def build_behavior_tab():
     """
-    Behavioral Intelligence now reads the persisted brokerage import-history
+    Behavioural Intelligence now reads the persisted brokerage import-history
     payload from /api/trades/history. It must not remain a static placeholder
     after a successful Import History upload.
     """
@@ -2803,7 +2803,7 @@ ALL_TABS = [
     ("feed",        "Live Feed"),
     ("command",     "Command Center"),
     ("performance", "Performance"),
-    ("behavior",    "Behavioral Intelligence"),
+    ("behavior",    "Behavioural Intelligence"),
     ("campaigns",   "Campaigns"),
     ("portfolio",   "Portfolio"),
     ("journal",     "Journal"),
@@ -2976,9 +2976,22 @@ def _build_d3f1b_today_controlled_persistence_lifecycle_panel():
 
 # SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_START
 _SIG85O_TAB_ORDER = [
-    "status", "command", "feed", "performance", "behavior", "campaigns",
-    "portfolio", "journal", "import", "radar", "scoreboard", "divergence",
-    "billing", "preferences", "admin", "setup",
+    "command",
+    "feed",
+    "radar",
+    "campaigns",
+    "divergence",
+    "scoreboard",
+    "import",
+    "behavior",
+    "portfolio",
+    "journal",
+    "preferences",
+    "billing",
+    "admin",
+    "setup",
+    "status",
+    "performance",
 ]
 
 def _sig85o_tab_style(key, active=False):
@@ -4003,7 +4016,7 @@ def handle_csv_upload(contents, reset_clicks, filename):
                     style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
                 ),
                 html.Div(
-                    "Switch to the Behavioral Intelligence tab to see your full profile.",
+                    "Switch to the Behavioural Intelligence tab to see your full profile.",
                     style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
                 ),
             ]),
