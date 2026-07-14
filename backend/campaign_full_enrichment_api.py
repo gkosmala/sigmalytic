@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/campaign_full_enrichment_api.py
 ---------------------------------------
@@ -504,30 +504,392 @@ def _targets_and_failure(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dic
     }
 
 
-def _outcome(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+# SIGMALYTIC_STEP90E_LIFECYCLE_COHORT_MATURITY_FROM_7YR_HISTORY
+def _parse_bar_day(bar: Dict[str, Any]) -> Optional[str]:
+    raw = str(bar.get("t") or "").strip()
+    if not raw:
+        return None
+    return raw[:10]
+
+
+def _parse_row_anchor_day(row: Dict[str, Any]) -> Optional[str]:
+    for key in (
+        "campaign_anchor_date",
+        "anchor_date",
+        "birth_date",
+        "campaign_birth_date",
+        "campaign_start_date",
+        "started_at",
+        "start_date",
+        "created_at",
+        "detected_at",
+        "first_seen_at",
+    ):
+        raw = row.get(key)
+        if raw in (None, ""):
+            continue
+        day = str(raw).strip()[:10]
+        if len(day) == 10 and day[4] == "-" and day[7] == "-":
+            return day
+    return None
+
+
+def _close_at(bars: List[Dict[str, Any]], index: int) -> Optional[float]:
+    if index < 0 or index >= len(bars):
+        return None
+    return _safe_float(bars[index].get("c"))
+
+
+def _find_bar_index_on_or_after_day(bars: List[Dict[str, Any]], day: str) -> Optional[int]:
+    for i, bar in enumerate(bars):
+        bar_day = _parse_bar_day(bar)
+        if bar_day and bar_day >= day:
+            return i
+    return None
+
+
+def _infer_campaign_anchor(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not bars:
         return {
-            "outcome_status": "PENDING_NO_BARS",
-            "outcome_score": None,
-            "outcome_window_days": None,
+            "campaign_anchor_status": "NO_BARS",
+            "campaign_anchor_source": "none",
+            "campaign_anchor_index": None,
+            "campaign_anchor_date": None,
+            "campaign_age_bars": None,
+            "campaign_age_days_inferred": None,
+            "campaign_anchor_price": None,
+            "campaign_anchor_reason": "No daily bars available.",
         }
 
-    age = _safe_float(row.get("campaign_age_days") or row.get("duration_days"))
-    if age is None:
-        age = 0
+    explicit_day = _parse_row_anchor_day(row)
+    if explicit_day:
+        explicit_index = _find_bar_index_on_or_after_day(bars, explicit_day)
+        if explicit_index is not None:
+            return {
+                "campaign_anchor_status": "EXPLICIT_ANCHOR",
+                "campaign_anchor_source": "row_date_field",
+                "campaign_anchor_index": explicit_index,
+                "campaign_anchor_date": _parse_bar_day(bars[explicit_index]),
+                "campaign_age_bars": max(0, len(bars) - 1 - explicit_index),
+                "campaign_age_days_inferred": max(0, len(bars) - 1 - explicit_index),
+                "campaign_anchor_price": _round(_close_at(bars, explicit_index), 4),
+                "campaign_anchor_reason": "Campaign anchor date was present in the campaign row.",
+            }
 
-    if age < 3:
+    n = len(bars)
+    if n < 20:
+        idx = 0
         return {
-            "outcome_status": "IMMATURE_TRACKING",
-            "outcome_score": _round(_score(row), 2),
-            "outcome_window_days": int(age),
+            "campaign_anchor_status": "PROVISIONAL_SHORT_HISTORY",
+            "campaign_anchor_source": "short_history_first_bar",
+            "campaign_anchor_index": idx,
+            "campaign_anchor_date": _parse_bar_day(bars[idx]),
+            "campaign_age_bars": max(0, n - 1 - idx),
+            "campaign_age_days_inferred": max(0, n - 1 - idx),
+            "campaign_anchor_price": _round(_close_at(bars, idx), 4),
+            "campaign_anchor_reason": "Too few bars for structural anchor inference; first available bar used provisionally.",
         }
+
+    current_close = _close_at(bars, n - 1)
+    search_start = max(5, n - min(252, n))
+    search_end = max(search_start, n - 5)
+
+    pivot_candidates: List[int] = []
+    for i in range(search_start, search_end):
+        c = _close_at(bars, i)
+        if c is None or c <= 0:
+            continue
+
+        window_start = max(0, i - 5)
+        window_end = min(n, i + 6)
+        window_values = [_close_at(bars, j) for j in range(window_start, window_end)]
+        window_values = [x for x in window_values if x is not None]
+
+        if not window_values:
+            continue
+
+        is_local_low = c <= min(window_values)
+        current_advanced = current_close is not None and current_close >= c * 1.03
+
+        if is_local_low and current_advanced:
+            pivot_candidates.append(i)
+
+    if pivot_candidates:
+        idx = pivot_candidates[-1]
+        source = "recent_confirmed_pivot_low"
+        status = "INFERRED_STRUCTURAL_ANCHOR"
+        reason = "Most recent local pivot low with at least 3 percent advance into current structure."
+    else:
+        lookback = min(126, n)
+        candidate_indexes = list(range(n - lookback, n))
+        candidate_indexes = [i for i in candidate_indexes if _close_at(bars, i) is not None]
+        if candidate_indexes:
+            idx = min(candidate_indexes, key=lambda i: _close_at(bars, i) or float("inf"))
+            source = "recent_low_fallback"
+            status = "PROVISIONAL_INFERRED_ANCHOR"
+            reason = "No confirmed local-pivot campaign anchor; recent 126-bar low used provisionally."
+        else:
+            idx = max(0, n - 20)
+            source = "fallback_recent_window"
+            status = "UNKNOWN_ANCHOR_PROVISIONAL"
+            reason = "Could not identify a reliable structural anchor; fallback recent window used."
 
     return {
-        "outcome_status": "ACTIVE_TRACKING",
-        "outcome_score": _round(_score(row), 2),
-        "outcome_window_days": int(age),
+        "campaign_anchor_status": status,
+        "campaign_anchor_source": source,
+        "campaign_anchor_index": idx,
+        "campaign_anchor_date": _parse_bar_day(bars[idx]),
+        "campaign_age_bars": max(0, n - 1 - idx),
+        "campaign_age_days_inferred": max(0, n - 1 - idx),
+        "campaign_anchor_price": _round(_close_at(bars, idx), 4),
+        "campaign_anchor_reason": reason,
     }
+
+
+def _lifecycle_status_from_anchor(anchor: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    age_bars = anchor.get("campaign_age_bars")
+
+    if age_bars is None:
+        return {
+            "outcome_status": "UNKNOWN_ANCHOR",
+            "lifecycle_stage": "UNKNOWN",
+            "lifecycle_maturity": "UNKNOWN",
+            "outcome_window_days": None,
+            "outcome_score": None,
+            "lifecycle_reason": "Campaign anchor could not be established.",
+        }
+
+    age = int(age_bars)
+    score_value = None
+
+    if age < 10:
+        status = "IMMATURE_TRACKING"
+        stage = "EARLY_CAMPAIGN"
+        maturity = "IMMATURE"
+        reason = "Fewer than 10 post-anchor daily bars."
+    elif age < 30:
+        status = "ACTIVE_TRACKING"
+        stage = "ACTIVE_EARLY_CAMPAIGN"
+        maturity = "DEVELOPING"
+        reason = "At least 10 but fewer than 30 post-anchor daily bars."
+    elif age < 90:
+        status = "MATURE_TRACKING"
+        stage = "MATURE_CAMPAIGN"
+        maturity = "MATURE"
+        reason = "At least 30 post-anchor daily bars."
+    else:
+        status = "LONG_MATURE_TRACKING"
+        stage = "LONG_DURATION_CAMPAIGN"
+        maturity = "LONG_MATURE"
+        reason = "At least 90 post-anchor daily bars."
+
+    return {
+        "outcome_status": status,
+        "lifecycle_stage": stage,
+        "lifecycle_maturity": maturity,
+        "outcome_window_days": age,
+        "outcome_score": score_value,
+        "lifecycle_reason": reason,
+    }
+
+
+def _window_close_values(bars: List[Dict[str, Any]], start: int, end: int) -> List[float]:
+    values: List[float] = []
+    for i in range(max(0, start), min(len(bars), end)):
+        c = _close_at(bars, i)
+        if c is not None:
+            values.append(c)
+    return values
+
+
+def _metric_snapshot(bars: List[Dict[str, Any]], index: int) -> Optional[Dict[str, float]]:
+    if index < 80 or index >= len(bars):
+        return None
+
+    c = _close_at(bars, index)
+    c20 = _close_at(bars, index - 20)
+    c60 = _close_at(bars, index - 60)
+
+    if c is None or c20 is None or c60 is None or c20 == 0 or c60 == 0:
+        return None
+
+    recent20 = _window_close_values(bars, index - 19, index + 1)
+    recent50 = _window_close_values(bars, index - 49, index + 1)
+
+    if len(recent20) < 15 or len(recent50) < 35:
+        return None
+
+    low20 = min(recent20)
+    high20 = max(recent20)
+    span20 = high20 - low20
+    pos20 = ((c - low20) / span20) if span20 > 0 else 0.5
+
+    sma20 = statistics.mean(recent20)
+    sma50 = statistics.mean(recent50)
+
+    ranges: List[float] = []
+    for i in range(max(0, index - 19), index + 1):
+        h = _safe_float(bars[i].get("h"))
+        l = _safe_float(bars[i].get("l"))
+        if h is not None and l is not None and c != 0:
+            ranges.append(((h - l) / c) * 100.0)
+
+    range20_pct = statistics.mean(ranges) if ranges else 0.0
+
+    return {
+        "momentum_20_pct": ((c - c20) / c20) * 100.0,
+        "momentum_60_pct": ((c - c60) / c60) * 100.0,
+        "position_20": pos20,
+        "sma20_sma50_spread_pct": ((sma20 - sma50) / sma50) * 100.0 if sma50 else 0.0,
+        "range20_pct": range20_pct,
+    }
+
+
+def _forward_return(bars: List[Dict[str, Any]], index: int, forward: int) -> Optional[float]:
+    c0 = _close_at(bars, index)
+    c1 = _close_at(bars, index + forward)
+    if c0 is None or c1 is None or c0 == 0:
+        return None
+    return round(((c1 - c0) / c0) * 100.0, 4)
+
+
+def _median(values: List[float]) -> Optional[float]:
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    return round(statistics.median(clean), 4)
+
+
+def _win_rate(values: List[float]) -> Optional[float]:
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    return round((len([v for v in clean if v > 0]) / len(clean)) * 100.0, 2)
+
+
+def _cohort_readiness(row: Dict[str, Any], bars: List[Dict[str, Any]], outcome: Dict[str, Any]) -> Dict[str, Any]:
+    if len(bars) < 160:
+        return {
+            "expected_return_status": "COHORT_INSUFFICIENT_HISTORY",
+            "expected_return_pct": None,
+            "cohort_status": "COHORT_INSUFFICIENT_HISTORY",
+            "cohort_match_count": 0,
+            "cohort_method": "seven_year_daily_structural_analogs",
+            "cohort_reason": "Fewer than 160 daily bars available for historical analog matching.",
+        }
+
+    current_index = len(bars) - 1
+    current = _metric_snapshot(bars, current_index)
+
+    if current is None:
+        return {
+            "expected_return_status": "COHORT_CURRENT_METRICS_UNAVAILABLE",
+            "expected_return_pct": None,
+            "cohort_status": "COHORT_CURRENT_METRICS_UNAVAILABLE",
+            "cohort_match_count": 0,
+            "cohort_method": "seven_year_daily_structural_analogs",
+            "cohort_reason": "Current structural metrics could not be computed.",
+        }
+
+    matches: List[Dict[str, Any]] = []
+
+    # Leave 60 bars forward so analogs have real post-signal outcomes.
+    for i in range(80, len(bars) - 61):
+        snap = _metric_snapshot(bars, i)
+        if snap is None:
+            continue
+
+        same_trend = (
+            (current["sma20_sma50_spread_pct"] >= 0 and snap["sma20_sma50_spread_pct"] >= 0)
+            or (current["sma20_sma50_spread_pct"] < 0 and snap["sma20_sma50_spread_pct"] < 0)
+        )
+
+        if not same_trend:
+            continue
+
+        if abs(current["momentum_20_pct"] - snap["momentum_20_pct"]) > 6.0:
+            continue
+        if abs(current["momentum_60_pct"] - snap["momentum_60_pct"]) > 12.0:
+            continue
+        if abs(current["position_20"] - snap["position_20"]) > 0.30:
+            continue
+        if abs(current["range20_pct"] - snap["range20_pct"]) > 3.0:
+            continue
+
+        r20 = _forward_return(bars, i, 20)
+        r40 = _forward_return(bars, i, 40)
+        r60 = _forward_return(bars, i, 60)
+
+        if r20 is None or r40 is None or r60 is None:
+            continue
+
+        matches.append({
+            "index": i,
+            "date": _parse_bar_day(bars[i]),
+            "forward_20d_pct": r20,
+            "forward_40d_pct": r40,
+            "forward_60d_pct": r60,
+        })
+
+    returns20 = [m["forward_20d_pct"] for m in matches]
+    returns40 = [m["forward_40d_pct"] for m in matches]
+    returns60 = [m["forward_60d_pct"] for m in matches]
+
+    match_count = len(matches)
+
+    if match_count >= 15:
+        cohort_status = "COHORT_READY"
+        expected_status = "COHORT_READY"
+        reason = "At least 15 historical daily analogs found in the 7-year record."
+    elif match_count >= 5:
+        cohort_status = "COHORT_LIMITED"
+        expected_status = "COHORT_LIMITED_SAMPLE"
+        reason = "Historical analogs found, but sample size is limited."
+    elif match_count > 0:
+        cohort_status = "COHORT_INSUFFICIENT_MATCHES"
+        expected_status = "COHORT_INSUFFICIENT_MATCHES"
+        reason = "Too few historical analogs for a reliable cohort expectation."
+    else:
+        cohort_status = "COHORT_NO_MATCHES"
+        expected_status = "COHORT_NO_MATCHES"
+        reason = "No sufficiently similar historical analogs were found."
+
+    median20 = _median(returns20)
+    median40 = _median(returns40)
+    median60 = _median(returns60)
+
+    return {
+        "expected_return_status": expected_status,
+        "expected_return_pct": median20,
+        "cohort_status": cohort_status,
+        "cohort_match_count": match_count,
+        "cohort_method": "seven_year_daily_structural_analogs",
+        "cohort_reason": reason,
+        "cohort_forward_window_days": 20,
+        "cohort_expected_return_20d_pct": median20,
+        "cohort_expected_return_40d_pct": median40,
+        "cohort_expected_return_60d_pct": median60,
+        "cohort_win_rate_20d_pct": _win_rate(returns20),
+        "cohort_win_rate_40d_pct": _win_rate(returns40),
+        "cohort_win_rate_60d_pct": _win_rate(returns60),
+        "cohort_current_momentum_20_pct": round(current["momentum_20_pct"], 4),
+        "cohort_current_momentum_60_pct": round(current["momentum_60_pct"], 4),
+        "cohort_current_position_20": round(current["position_20"], 4),
+        "cohort_current_sma20_sma50_spread_pct": round(current["sma20_sma50_spread_pct"], 4),
+        "cohort_current_range20_pct": round(current["range20_pct"], 4),
+    }
+
+
+def _outcome(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    anchor = _infer_campaign_anchor(row, bars)
+    lifecycle = _lifecycle_status_from_anchor(anchor, bars)
+    score_value = _round(_score(row), 2)
+
+    lifecycle["outcome_score"] = score_value
+    lifecycle.update(anchor)
+
+    return lifecycle
 
 
 def _decay(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -581,6 +943,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     targets = _targets_and_failure(c, bars)
     ods = _formal_ods(c)
     outcome = _outcome(c, bars)
+    cohort = _cohort_readiness(c, bars, outcome)
     decay = _decay(c)
     pnf = _pnf(c, targets)
 
@@ -601,12 +964,10 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(ods)
     c.update(decay)
     c.update(outcome)
+    c.update(cohort)
     c.update(path)
     c.update(targets)
     c.update(pnf)
-
-    c["expected_return_status"] = "PENDING_COHORT_ENGINE"
-    c["expected_return_pct"] = c.get("expected_return_pct")
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
