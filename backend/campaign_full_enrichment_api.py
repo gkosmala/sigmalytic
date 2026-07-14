@@ -1526,7 +1526,8 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     cohort = _cohort_readiness(c, bars, outcome)
     ods = _ods_from_7yr_history(c, bars, outcome, direct_ods)
     decay = _decay(c)
-    pnf = _pnf(c, targets)
+    # SIGMALYTIC_STEP92H_PNF_BAR_HISTORY_WIRING_FIX
+    pnf = _pnf(c, targets, bars)
 
     c.update({
         "symbol": symbol,
