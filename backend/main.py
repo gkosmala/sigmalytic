@@ -1333,3 +1333,13 @@ try:
 except Exception as _sig_email_alert_test_router_exc:
     print(f"[sigmalytic] controlled email alert test router not mounted: {_sig_email_alert_test_router_exc}")
 # === SIGMALYTIC CONTROLLED EMAIL ALERT TEST ROUTER END ===
+
+# SIGMALYTIC_STEP87B_R2_READ_ONLY_ENRICHED_CAMPAIGN_TABLE_INCLUDE
+try:
+    from campaign_enriched_table_api import router as sig87b_r2_enriched_campaign_table_router
+except ImportError:
+    from backend.campaign_enriched_table_api import router as sig87b_r2_enriched_campaign_table_router
+
+app.include_router(sig87b_r2_enriched_campaign_table_router)
+# END_SIGMALYTIC_STEP87B_R2_READ_ONLY_ENRICHED_CAMPAIGN_TABLE_INCLUDE
+
