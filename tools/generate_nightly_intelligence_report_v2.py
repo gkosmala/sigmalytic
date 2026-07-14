@@ -21,6 +21,7 @@ REPORT_SUBTITLE = "V2 Campaign Intelligence - 100-row, 7-year formal ODS subscri
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 MARKER = "SIGMALYTIC_STEP91B_FULL_UNIVERSE_NIGHTLY_REPORT_GENERATOR"
+STEP92B_MARKER = "SIGMALYTIC_STEP92B_REPORT_TARGET_FAILURE_SPARK_NORMALIZATION"
 MARKDOWN_QUALITY_MARKER = "SIGMALYTIC_STEP91D_MARKDOWN_QUALITY_REPAIR"
 
 
@@ -38,6 +39,50 @@ def safe_float(value: Any) -> Optional[float]:
         return x
     except Exception:
         return None
+
+
+
+
+def subscriber_state(value):
+    raw = str(value or "").strip().upper()
+    if raw == "BIRTH":
+        return "SPARK"
+    return raw or "?"
+
+
+def first_present(row, names):
+    for name in names:
+        if isinstance(row, dict) and name in row:
+            value = row.get(name)
+            if value is not None and str(value).strip() not in ("", "?", "None", "nan"):
+                return value
+    return None
+
+
+def price_value(row, names):
+    value = first_present(row, names)
+    if value is None:
+        return "?"
+    try:
+        return f"{float(value):.2f}"
+    except Exception:
+        return str(value)
+
+
+def target_1_value(row):
+    return price_value(row, ["target_1_price", "target1_price", "target_1", "target_price", "pnf_target"])
+
+
+def target_2_value(row):
+    return price_value(row, ["target_2_price", "target2_price", "target_2", "secondary_target_price"])
+
+
+def failure_value(row):
+    return price_value(row, ["failure_price", "failure_level", "failure", "invalidation_price", "stop_price"])
+
+
+def risk_reward_1_value(row):
+    return price_value(row, ["risk_reward_1", "rr_1", "risk_reward"])
 
 
 def fmt(value: Any, digits: int = 2) -> str:
@@ -123,7 +168,7 @@ def table_html(rows: List[Dict[str, Any]], title: str, note: str = "", limit: in
         body.append(f"""
         <tr>
           <td><strong>{esc(row_symbol(row))}</strong></td>
-          <td>{esc(row.get("state") or row.get("status"))}</td>
+          <td>{esc(subscriber_state(row.get("state")) or row.get("status"))}</td>
           <td>{esc(row.get("bias") or row.get("watch_bias"))}</td>
           <td>{esc(row.get("ods_status"))}</td>
           <td>{esc(row.get("ods_label"))}</td>
@@ -183,7 +228,7 @@ def card_grid(rows: List[Dict[str, Any]], title: str, note: str = "", limit: int
         cards.append(f"""
         <div class="card">
           <div class="card-title">{esc(symbol)} <span>{esc(row.get("bias") or "WATCH")}</span></div>
-          <div class="card-line">State: <strong>{esc(row.get("state") or row.get("status"))}</strong></div>
+          <div class="card-line">State: <strong>{esc(subscriber_state(row.get("state")) or row.get("status"))}</strong></div>
           <div class="card-line">ODS: <strong>{esc(row.get("ods_status"))}</strong> | Score: <strong>{fmt(row.get("ods_score"), 0)}</strong></div>
           <div class="card-line">Lifecycle: <strong>{esc(row.get("lifecycle_maturity"))}</strong> | Cohort: <strong>{esc(row.get("cohort_status"))}</strong></div>
           <p>{esc(symbol)} is included because the full-universe 7-year campaign review surfaced it within the current ranked campaign universe. Missing ODS evidence: {esc(missing) if missing else "none recorded"}.</p>
@@ -211,7 +256,7 @@ def markdown_table(rows: List[Dict[str, Any]], title: str, limit: int = 25) -> s
     lines.append("|---|---|---|---|---:|---|---|---:|---|")
     for row in rows[:limit]:
         lines.append(
-            f"| {row_symbol(row)} | {row.get('state') or row.get('status') or ''} | {row.get('bias') or row.get('watch_bias') or ''} | "
+            f"| {row_symbol(row)} | {subscriber_state(row.get('state')) or row.get('status') or ''} | {row.get('bias') or row.get('watch_bias') or ''} | "
             f"{row.get('ods_status') or ''} | {fmt(row.get('ods_score'), 0)} | {row.get('lifecycle_maturity') or ''} | "
             f"{row.get('cohort_status') or ''} | {fmt(row.get('expected_return_pct'), 2)} | {', '.join(missing_components(row))} |"
         )
