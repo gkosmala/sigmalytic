@@ -916,19 +916,210 @@ def _decay(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _pnf(row: Dict[str, Any], targets: Dict[str, Any]) -> Dict[str, Any]:
-    # Until a dedicated P&F engine is wired, provide explicit status instead of blank/no info.
-    if targets.get("target_1_price") is not None:
+
+# SIGMALYTIC_STEP92E_REAL_PNF_ENGINE_COMPLETE
+def _pnf(row: Dict[str, Any], targets: Dict[str, Any], bars: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """
+    Real read-only Point-and-Figure overlay.
+
+    This is an evidence overlay only. It does not create a trade signal, does not
+    confirm operator control, and does not mutate campaigns. The calculation uses
+    daily close movement to build X/O columns with a 3-box reversal rule.
+    """
+    raw_bars = bars or []
+    closes: List[float] = []
+
+    for bar in raw_bars:
+        if not isinstance(bar, dict):
+            continue
+        close = _safe_float(bar.get("c") or bar.get("close"))
+        if close is not None and close > 0:
+            closes.append(float(close))
+
+    if len(closes) < 20:
         return {
-            "pnf_status": "PROXY_TARGET_AVAILABLE",
-            "pnf_target": targets.get("target_1_price"),
-            "pnf_reason": "P&F engine not directly wired; using computed campaign target as display proxy.",
+            "pnf_status": "PNF_INSUFFICIENT_HISTORY",
+            "pnf_target": None,
+            "pnf_objective_price": None,
+            "pnf_failure_price": None,
+            "pnf_box_size": None,
+            "pnf_reversal_boxes": 3,
+            "pnf_column_count": 0,
+            "pnf_current_column": None,
+            "pnf_last_column_boxes": None,
+            "pnf_breakout_status": "INSUFFICIENT_HISTORY",
+            "pnf_reason": "Insufficient close history for dedicated Point-and-Figure column construction.",
+            "pnf_evidence": {
+                "history_closes": len(closes),
+                "method": "close_based_point_and_figure",
+                "reversal_boxes": 3,
+                "read_only": True,
+            },
         }
+
+    latest_close = closes[-1]
+    recent = closes[-252:] if len(closes) >= 252 else closes[:]
+
+    recent_ranges: List[float] = []
+    for i in range(1, len(recent)):
+        prev = recent[i - 1]
+        cur = recent[i]
+        if prev > 0 and cur > 0:
+            recent_ranges.append(abs(cur - prev))
+
+    avg_abs_move = sum(recent_ranges[-20:]) / len(recent_ranges[-20:]) if recent_ranges else latest_close * 0.01
+    percent_box = latest_close * 0.01
+    raw_box_size = max(percent_box, avg_abs_move * 0.50, 0.01)
+
+    if latest_close >= 100:
+        rounding_unit = 0.25
+    elif latest_close >= 25:
+        rounding_unit = 0.10
+    elif latest_close >= 5:
+        rounding_unit = 0.05
+    else:
+        rounding_unit = 0.01
+
+    box_size = max(round(raw_box_size / rounding_unit) * rounding_unit, rounding_unit)
+    reversal_boxes = 3
+    reversal_amount = box_size * reversal_boxes
+
+    columns: List[Dict[str, Any]] = []
+    base = closes[0]
+    current_type: Optional[str] = None
+    col_high = base
+    col_low = base
+
+    for price in closes[1:]:
+        if current_type is None:
+            if price >= base + box_size:
+                current_type = "X"
+                col_low = base
+                col_high = price
+            elif price <= base - box_size:
+                current_type = "O"
+                col_high = base
+                col_low = price
+            continue
+
+        if current_type == "X":
+            if price >= col_high + box_size:
+                col_high = price
+            elif price <= col_high - reversal_amount:
+                boxes = max(1, int(round((col_high - col_low) / box_size)))
+                columns.append({
+                    "type": "X",
+                    "high": col_high,
+                    "low": col_low,
+                    "boxes": boxes,
+                })
+                current_type = "O"
+                col_high = col_high - box_size
+                col_low = price
+        else:
+            if price <= col_low - box_size:
+                col_low = price
+            elif price >= col_low + reversal_amount:
+                boxes = max(1, int(round((col_high - col_low) / box_size)))
+                columns.append({
+                    "type": "O",
+                    "high": col_high,
+                    "low": col_low,
+                    "boxes": boxes,
+                })
+                current_type = "X"
+                col_low = col_low + box_size
+                col_high = price
+
+    if current_type is None:
+        return {
+            "pnf_status": "PNF_RANGE_UNFORMED",
+            "pnf_target": None,
+            "pnf_objective_price": None,
+            "pnf_failure_price": None,
+            "pnf_box_size": round(box_size, 4),
+            "pnf_reversal_boxes": reversal_boxes,
+            "pnf_column_count": 0,
+            "pnf_current_column": None,
+            "pnf_last_column_boxes": None,
+            "pnf_breakout_status": "NO_ONE_BOX_DIRECTIONAL_MOVE",
+            "pnf_reason": "Price history did not form a directional Point-and-Figure column.",
+            "pnf_evidence": {
+                "history_closes": len(closes),
+                "latest_close": round(latest_close, 4),
+                "box_size": round(box_size, 4),
+                "reversal_amount": round(reversal_amount, 4),
+                "method": "close_based_point_and_figure",
+                "read_only": True,
+            },
+        }
+
+    boxes = max(1, int(round((col_high - col_low) / box_size)))
+    columns.append({
+        "type": current_type,
+        "high": col_high,
+        "low": col_low,
+        "boxes": boxes,
+    })
+
+    last = columns[-1]
+    prior = columns[:-1]
+    last_type = str(last["type"])
+    last_high = float(last["high"])
+    last_low = float(last["low"])
+    last_boxes = int(last["boxes"])
+
+    prior_x_highs = [float(c["high"]) for c in prior if c.get("type") == "X"]
+    prior_o_lows = [float(c["low"]) for c in prior if c.get("type") == "O"]
+
+    if last_type == "X":
+        breakout = bool(prior_x_highs and last_high > max(prior_x_highs))
+        breakout_status = "BULLISH_PNF_BREAKOUT" if breakout else "BULLISH_PNF_COLUMN"
+        objective = last_high + max(last_boxes, reversal_boxes) * box_size
+        failure = last_high - reversal_amount
+        status = "PNF_BULLISH_OBJECTIVE_COMPUTED"
+    else:
+        breakout = bool(prior_o_lows and last_low < min(prior_o_lows))
+        breakout_status = "BEARISH_PNF_BREAKDOWN" if breakout else "BEARISH_PNF_COLUMN"
+        objective = last_low - max(last_boxes, reversal_boxes) * box_size
+        failure = last_low + reversal_amount
+        status = "PNF_BEARISH_OBJECTIVE_COMPUTED"
+
+    objective = max(objective, 0.01)
+    failure = max(failure, 0.01)
+
     return {
-        "pnf_status": "PENDING_PNF_ENGINE",
-        "pnf_target": None,
-        "pnf_reason": "Dedicated Point & Figure structure not available for this row.",
+        "pnf_status": status,
+        "pnf_target": round(objective, 4),
+        "pnf_objective_price": round(objective, 4),
+        "pnf_failure_price": round(failure, 4),
+        "pnf_box_size": round(box_size, 4),
+        "pnf_reversal_boxes": reversal_boxes,
+        "pnf_column_count": len(columns),
+        "pnf_current_column": last_type,
+        "pnf_last_column_boxes": last_boxes,
+        "pnf_last_column_high": round(last_high, 4),
+        "pnf_last_column_low": round(last_low, 4),
+        "pnf_breakout_status": breakout_status,
+        "pnf_reason": "Dedicated close-based Point-and-Figure overlay computed from historical daily closes.",
+        "pnf_evidence": {
+            "history_closes": len(closes),
+            "latest_close": round(latest_close, 4),
+            "box_size": round(box_size, 4),
+            "reversal_boxes": reversal_boxes,
+            "reversal_amount": round(reversal_amount, 4),
+            "column_count": len(columns),
+            "current_column": last_type,
+            "last_column_boxes": last_boxes,
+            "breakout": breakout,
+            "breakout_status": breakout_status,
+            "objective_price": round(objective, 4),
+            "failure_price": round(failure, 4),
+            "method": "close_based_point_and_figure",
+            "read_only": True,
+        },
     }
+
 
 
 
