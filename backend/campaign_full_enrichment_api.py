@@ -27,6 +27,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, Query
 
+
+# SIGMALYTIC_STEP93E_READ_ONLY_GAMMA_OVERLAY
+try:
+    from backend.gex_engine import score_gex as _sigmalytic_score_gex
+except Exception:
+    _sigmalytic_score_gex = None
+
 router = APIRouter()
 
 STEP90B_MARKER = "SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE"
@@ -1123,6 +1130,114 @@ def _pnf(row: Dict[str, Any], targets: Dict[str, Any], bars: Optional[List[Dict[
 
 
 
+
+# SIGMALYTIC_STEP93E_READ_ONLY_GAMMA_OVERLAY
+def _gamma_overlay(symbol: str, price: Optional[float], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Read-only Gamma / GEX movement-risk overlay.
+
+    This uses the existing GEX engine when available. It is an overlay only:
+    it does not create a trade signal, does not confirm operator control, and
+    does not mutate campaigns.
+    """
+    base = {
+        "gamma_status": "GAMMA_UNAVAILABLE",
+        "gamma_source": "backend.gex_engine.score_gex",
+        "gamma_reason": None,
+        "gamma_available": False,
+        "gamma_score": None,
+        "gamma_regime": "UNKNOWN",
+        "gamma_wall": None,
+        "gamma_invalidation": None,
+        "gamma_iv_rank": None,
+        "gamma_net_market_gex": None,
+        "gamma_strategy": None,
+        "gamma_sot": None,
+        "gamma_sweep_bias": None,
+        "gamma_system_tier": None,
+        "gamma_macro_aligned": None,
+        "gamma_notes": None,
+        "gamma_movement_risk_overlay": "UNAVAILABLE",
+        "gamma_operator_control_source": False,
+        "gamma_trade_signal": False,
+        "gamma_read_only": True,
+    }
+
+    clean_symbol = str(symbol or "").upper().strip()
+    if not clean_symbol:
+        base["gamma_reason"] = "Missing symbol; Gamma overlay cannot be evaluated."
+        return base
+
+    if price is None or price <= 0:
+        base["gamma_reason"] = "Missing current price; Gamma overlay cannot be evaluated."
+        return base
+
+    if _sigmalytic_score_gex is None:
+        base["gamma_reason"] = "GEX engine import unavailable in this runtime."
+        return base
+
+    try:
+        result = _sigmalytic_score_gex(
+            clean_symbol,
+            float(price),
+            bars or [],
+            is_intelligence_layer=True,
+        )
+    except Exception as exc:
+        base["gamma_reason"] = f"GEX engine unavailable or provider call failed: {type(exc).__name__}: {exc}"
+        return base
+
+    if not isinstance(result, dict):
+        base["gamma_reason"] = f"GEX engine returned non-dict result: {type(result).__name__}"
+        return base
+
+    gex_available = bool(result.get("gex_available") or result.get("available"))
+    gex_score = _safe_float(result.get("gex_score") or result.get("score"))
+    gex_regime = str(result.get("gex_regime") or result.get("regime") or "UNKNOWN").upper()
+    gex_wall = result.get("gex_wall") or result.get("nearest_wall") or result.get("wall")
+    gex_invalidation = result.get("gex_invalidation") or result.get("invalidation")
+    gex_iv_rank = _safe_float(result.get("gex_iv_rank") or result.get("iv_rank"))
+    net_market_gex = _safe_float(result.get("net_market_gex") or result.get("net_gex") or result.get("net_gamma"))
+    gex_strategy = result.get("gex_strategy") or result.get("strategy")
+    gex_sot = result.get("gex_sot") or result.get("sot")
+    gex_sweep_bias = result.get("gex_sweep_bias") or result.get("sweep_bias")
+    gex_system_tier = result.get("gex_system_tier") or result.get("system_tier")
+    gex_macro_aligned = result.get("gex_macro_aligned") or result.get("macro_aligned")
+    gex_notes = result.get("gex_notes") or result.get("notes")
+
+    if gex_available:
+        movement_risk = "GAMMA_STABILIZING" if "POSITIVE" in gex_regime else "GAMMA_DESTABILIZING" if "NEGATIVE" in gex_regime else "GAMMA_CONTEXT_AVAILABLE"
+        gamma_status = "GAMMA_OVERLAY_COMPUTED"
+        reason = "Live read-only GEX/Gamma overlay computed from existing GEX engine."
+    else:
+        movement_risk = "GAMMA_SOURCE_RETURNED_UNAVAILABLE"
+        gamma_status = "GAMMA_SOURCE_UNAVAILABLE"
+        reason = str(result.get("gex_notes") or result.get("reason") or "GEX engine returned unavailable status.")
+
+    base.update({
+        "gamma_status": gamma_status,
+        "gamma_reason": reason,
+        "gamma_available": gex_available,
+        "gamma_score": _round(gex_score, 4),
+        "gamma_regime": gex_regime,
+        "gamma_wall": gex_wall,
+        "gamma_invalidation": gex_invalidation,
+        "gamma_iv_rank": _round(gex_iv_rank, 4),
+        "gamma_net_market_gex": _round(net_market_gex, 4),
+        "gamma_strategy": gex_strategy,
+        "gamma_sot": gex_sot,
+        "gamma_sweep_bias": gex_sweep_bias,
+        "gamma_system_tier": gex_system_tier,
+        "gamma_macro_aligned": gex_macro_aligned,
+        "gamma_notes": gex_notes,
+        "gamma_movement_risk_overlay": movement_risk,
+        "gamma_raw_keys": sorted([str(k) for k in result.keys()])[:80],
+    })
+    return base
+
+
+
+
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
 # SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
@@ -1528,6 +1643,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     decay = _decay(c)
     # SIGMALYTIC_STEP92H_PNF_BAR_HISTORY_WIRING_FIX
     pnf = _pnf(c, targets, bars)
+    gamma = _gamma_overlay(symbol, price, bars)
 
     c.update({
         "symbol": symbol,
@@ -1550,6 +1666,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(path)
     c.update(targets)
     c.update(pnf)
+    c.update(gamma)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
