@@ -933,6 +933,7 @@ def _pnf(row: Dict[str, Any], targets: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
+# SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
     return _safe_float(bar.get("l") or bar.get("low"))
 
@@ -998,6 +999,7 @@ def _ods_from_7yr_history(
             "demand_support_confirmed": False,
             "structural_location_confirmed": False,
             "contrary_failure_absent": None,
+            "ods_missing_components": ['market_history_unavailable'],
         }
 
     if len(bars) < 160:
@@ -1013,6 +1015,7 @@ def _ods_from_7yr_history(
             "demand_support_confirmed": False,
             "structural_location_confirmed": False,
             "contrary_failure_absent": None,
+            "ods_missing_components": ['insufficient_market_history'],
         }
 
     lows = [_bar_low(b) for b in bars]
@@ -1034,6 +1037,7 @@ def _ods_from_7yr_history(
             "demand_support_confirmed": False,
             "structural_location_confirmed": False,
             "contrary_failure_absent": None,
+            "ods_missing_components": ['latest_close_unavailable'],
         }
 
     n = len(bars)
@@ -1069,6 +1073,7 @@ def _ods_from_7yr_history(
             "demand_support_confirmed": False,
             "structural_location_confirmed": False,
             "contrary_failure_absent": None,
+            "ods_missing_components": ['support_level_unavailable'],
         }
 
     post_start = anchor_index
@@ -1090,6 +1095,7 @@ def _ods_from_7yr_history(
             "structural_location_confirmed": False,
             "contrary_failure_absent": None,
             "ods_post_anchor_bars": post_anchor_bars,
+            "ods_missing_components": ['insufficient_post_anchor_evidence'],
         }
 
     recent60_start = max(post_start, n - 60)
@@ -1143,12 +1149,22 @@ def _ods_from_7yr_history(
     recent_down_avg = _avg(recent_down_volumes)
     prior_down_avg = _avg(prior_down_volumes)
 
+    volume_ratio = None
     if recent_down_avg is not None and prior_down_avg is not None and prior_down_avg > 0:
-        selling_pressure_not_expanding = recent_down_avg <= prior_down_avg * 1.25
-        volume_evidence_status = "VOLUME_EVIDENCE_AVAILABLE"
+        volume_ratio = recent_down_avg / prior_down_avg
+        selling_pressure_not_expanding = volume_ratio <= 1.25
+        if selling_pressure_not_expanding:
+            volume_evidence_status = "VOLUME_EVIDENCE_AVAILABLE_NOT_EXPANDING"
+        else:
+            volume_evidence_status = "VOLUME_EVIDENCE_AVAILABLE_EXPANDING_SELL_PRESSURE"
+    elif recent_down_avg is not None and (prior_down_avg is None or prior_down_avg <= 0):
+        # No valid prior comparison exists. This is neutral/inconclusive, not contrary evidence.
+        selling_pressure_not_expanding = None
+        volume_evidence_status = "VOLUME_EVIDENCE_UNCOMPARABLE_NO_PRIOR_DOWNTICKS"
     else:
-        selling_pressure_not_expanding = False
-        volume_evidence_status = "VOLUME_EVIDENCE_INSUFFICIENT"
+        # Insufficient volume comparison is neutral/inconclusive, not a hard ODS failure.
+        selling_pressure_not_expanding = None
+        volume_evidence_status = "VOLUME_EVIDENCE_INSUFFICIENT_NEUTRAL"
 
     recent20 = [c for c in closes[max(0, n - 20):] if c is not None]
     recent50 = [c for c in closes[max(0, n - 50):] if c is not None]
@@ -1184,11 +1200,16 @@ def _ods_from_7yr_history(
     tested_support = support_touch_count >= 2
     recovered_from_support = latest_recovery_pct >= 5.0
 
+    volume_does_not_contradict_supply = (
+        selling_pressure_not_expanding is True
+        or selling_pressure_not_expanding is None
+    )
+
     supply_exhaustion_confirmed = bool(
         tested_support
         and support_defended
         and recovered_from_support
-        and selling_pressure_not_expanding
+        and volume_does_not_contradict_supply
     )
 
     demand_support_confirmed = bool(
@@ -1226,7 +1247,9 @@ def _ods_from_7yr_history(
         "volume_evidence_status": volume_evidence_status,
         "recent_down_volume_avg": _round(recent_down_avg, 4),
         "prior_down_volume_avg": _round(prior_down_avg, 4),
+        "volume_ratio_recent_to_prior_down": _round(volume_ratio, 4),
         "selling_pressure_not_expanding": selling_pressure_not_expanding,
+        "volume_does_not_contradict_supply": volume_does_not_contradict_supply,
         "demand_above_sma20": demand_above_sma20,
         "demand_above_sma50": demand_above_sma50,
         "support_position_252": _round(support_position_252, 4),
