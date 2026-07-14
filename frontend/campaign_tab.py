@@ -333,9 +333,13 @@ def _campaign_row(c: dict) -> html.Div:
 
     exp_mfe_raw = c.get("outcome_expected_mfe")
     exp_mfe_display = _pct_or_dash(exp_mfe_raw, 1, signed=True)
+    if _is_missing(exp_mfe_raw):
+        exp_mfe_display = str(c.get("mfe_status") or c.get("market_data_status") or "PENDING").replace("_", " ")[:18]
 
     exp_mae_raw = c.get("outcome_expected_mae")
     exp_mae_display = _pct_or_dash(exp_mae_raw, 1, signed=True)
+    if _is_missing(exp_mae_raw):
+        exp_mae_display = str(c.get("mae_status") or c.get("market_data_status") or "PENDING").replace("_", " ")[:18]
 
     exp_days_raw = c.get("outcome_expected_duration_days")
     exp_days_display = _num_or_dash(exp_days_raw, 0)
@@ -343,18 +347,26 @@ def _campaign_row(c: dict) -> html.Div:
     t1_raw = c.get("outcome_target1_prob")
     t1 = _safe_float(t1_raw, 0)
     t1_display = _pct_or_dash(t1_raw, 0)
+    if _is_missing(t1_raw):
+        t1_display = str(c.get("target_status") or "PENDING").replace("_", " ")[:18]
 
     t2_raw = c.get("outcome_target2_prob")
     t2 = _safe_float(t2_raw, 0)
     t2_display = _pct_or_dash(t2_raw, 0)
+    if _is_missing(t2_raw):
+        t2_display = str(c.get("target_status") or "PENDING").replace("_", " ")[:18]
 
     fail_raw = c.get("outcome_failure_prob")
     fail = _safe_float(fail_raw, 0)
     fail_display = _pct_or_dash(fail_raw, 0)
+    if _is_missing(fail_raw):
+        fail_display = str(c.get("failure_status") or "PENDING").replace("_", " ")[:18]
 
     rr_raw = c.get("outcome_risk_reward")
     rr = _safe_float(rr_raw, 0)
     rr_display = _num_or_dash(rr_raw, 2)
+    if _is_missing(rr_raw):
+        rr_display = str(c.get("failure_status") or "PENDING").replace("_", " ")[:18]
 
     state_color = _STATE_COLORS.get(state, MUTED)
     state_label = _STATE_ICONS.get(state, state)
@@ -727,22 +739,186 @@ def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
 
 # END_SIGMALYTIC_STEP87C_B_ENRICHED_CAMPAIGN_TABLE_FRONTEND
 
+
+# SIGMALYTIC_STEP88A_R3_SHOW_ALL_CAMPAIGNS_ENRICH_SAFE_BATCH
+# Display all ranked/active campaigns while enriching only the first live-safe batch.
+# Rows outside the enrichment batch remain visible with honest PENDING / NOT ENRICHED status.
+# UI display only: no database write, no campaign mutation, no D3D authorization,
+# no operator-control confirmation, no trade-signal creation, no Stripe.
+_STEP88A_BASE_LIMIT = 100
+_STEP88A_SAFE_ENRICH_LIMIT = 5
+
+
+def _step88a_rows_from_payload(data):
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)]
+
+    if not isinstance(data, dict):
+        return []
+
+    for key in ("rankings", "campaigns", "rows", "opportunities", "items", "data"):
+        rows = data.get(key)
+        if isinstance(rows, list):
+            return [x for x in rows if isinstance(x, dict)]
+
+    return []
+
+
+def _step88a_fetch_json(path: str, timeout: int = 45):
+    try:
+        r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+        if not r.ok:
+            return None, f"{path} backend {r.status_code}"
+        return r.json(), ""
+    except Exception as exc:
+        return None, f"{path} error {exc}"
+
+
+def _step88a_campaign_keys(row: dict):
+    keys = []
+
+    campaign_id = row.get("campaign_id") or row.get("id")
+    if campaign_id not in (None, ""):
+        keys.append(("id", str(campaign_id)))
+
+    symbol = str(row.get("symbol") or "").upper().strip()
+    timeframe = str(row.get("timeframe") or "DAILY").upper().strip()
+    if symbol:
+        keys.append(("symbol_timeframe", symbol, timeframe))
+        keys.append(("symbol", symbol))
+
+    return keys
+
+
+def _step88a_fetch_base_campaigns():
+    errors = []
+    endpoints = [
+        f"/api/intelligence/rankings?limit={_STEP88A_BASE_LIMIT}",
+        "/api/intelligence/rankings",
+        f"/api/campaigns/active?limit={_STEP88A_BASE_LIMIT}",
+        "/api/campaigns/active",
+    ]
+
+    for endpoint in endpoints:
+        data, err = _step88a_fetch_json(endpoint, timeout=45)
+        if err:
+            errors.append(err)
+            continue
+
+        rows = _step88a_rows_from_payload(data)
+        if rows:
+            return rows, "", endpoint
+
+        errors.append(f"{endpoint} returned no rows")
+
+    return [], " | ".join(errors), ""
+
+
+def _step88a_fetch_enriched_batch():
+    endpoint = f"/api/campaigns/read-only/enriched-campaign-table?limit={_STEP88A_SAFE_ENRICH_LIMIT}"
+    data, err = _step88a_fetch_json(endpoint, timeout=75)
+    if err:
+        return [], err
+
+    rows = _step88a_rows_from_payload(data)
+    return rows, ""
+
+
+def _step88a_pending_not_enriched(row: dict) -> dict:
+    c = dict(row)
+
+    c.setdefault("ods_label", "NOT_ENRICHED")
+    c.setdefault("ods_score", None)
+
+    c.setdefault("decay_label", "PENDING_NOT_ENRICHED")
+    c.setdefault("decay_score", None)
+    c.setdefault("decay_reason", "outside live-safe enriched batch")
+
+    c.setdefault("outcome_status", "PENDING_NOT_ENRICHED")
+    c.setdefault("outcome_score", None)
+    c.setdefault("outcome_window_days", None)
+
+    c.setdefault("expected_return_status", "PENDING_NOT_ENRICHED")
+    c.setdefault("expected_return_pct", None)
+
+    c.setdefault("mfe_status", "NOT_ENRICHED")
+    c.setdefault("mae_status", "NOT_ENRICHED")
+    c.setdefault("mfe_pct", None)
+    c.setdefault("mae_pct", None)
+
+    c.setdefault("target_status", "NOT_ENRICHED")
+    c.setdefault("target_1_price", None)
+    c.setdefault("target_1_pct", None)
+    c.setdefault("target_2_price", None)
+    c.setdefault("target_2_pct", None)
+
+    c.setdefault("failure_status", "NOT_ENRICHED")
+    c.setdefault("failure_price", None)
+    c.setdefault("failure_pct", None)
+    c.setdefault("risk_reward_1", None)
+    c.setdefault("risk_reward_2", None)
+
+    c.setdefault("market_data_status", "NOT_ENRICHED_BATCH_LIMIT")
+    c.setdefault("enrichment_status", "PENDING_NOT_ENRICHED_BATCH_LIMIT")
+    c.setdefault("summary", f"{c.get('symbol') or 'Campaign'} visible; pending enriched batch")
+
+    return c
+
+
+def _step88a_merge_base_with_enriched(base_rows, enriched_rows):
+    enriched_index = {}
+
+    for enriched in enriched_rows:
+        for key in _step88a_campaign_keys(enriched):
+            enriched_index[key] = enriched
+
+    merged_rows = []
+
+    for base in base_rows:
+        matched = None
+        for key in _step88a_campaign_keys(base):
+            matched = enriched_index.get(key)
+            if matched:
+                break
+
+        if matched:
+            combined = dict(base)
+            combined.update(matched)
+            combined.setdefault("enrichment_status", "ENRICHED_LIVE_SAFE_BATCH")
+            combined.setdefault("market_data_status", "OK")
+        else:
+            combined = _step88a_pending_not_enriched(base)
+
+        merged_rows.append(_step87c_b_enriched_campaign_alias(combined))
+
+    return merged_rows
+
+
+def _step88a_build_campaign_rows_all_with_safe_enrichment():
+    base_rows, base_error, base_endpoint = _step88a_fetch_base_campaigns()
+    enriched_rows, enriched_error = _step88a_fetch_enriched_batch()
+
+    if not base_rows and enriched_rows:
+        rows = [_step87c_b_enriched_campaign_alias(x) for x in enriched_rows]
+        return rows, f"Base list unavailable; displaying enriched batch only. {base_error}".strip()
+
+    if not base_rows:
+        return [], base_error or "No campaign rows returned"
+
+    rows = _step88a_merge_base_with_enriched(base_rows, enriched_rows)
+    return rows, None
+
+
+# END_SIGMALYTIC_STEP88A_R3_SHOW_ALL_CAMPAIGNS_ENRICH_SAFE_BATCH
+
+
+
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/read-only/enriched-campaign-table?limit=5", timeout=60)
-        if r.ok:
-            data = r.json()
-            campaigns = (
-                data.get("rows")
-                or data.get("campaigns")
-                or []
-            ) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-            campaigns = [_step87c_b_enriched_campaign_alias(c) for c in campaigns if isinstance(c, dict)]
-        else:
-            campaigns = []
-            fetch_error = f"Backend {r.status_code}"
+        campaigns, fetch_error = _step88a_build_campaign_rows_all_with_safe_enrichment()
     except Exception as exc:
+        campaigns = []
         fetch_error = str(exc)
         campaigns = []
 
