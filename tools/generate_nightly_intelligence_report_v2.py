@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import html
 import json
@@ -21,6 +21,7 @@ REPORT_SUBTITLE = "V2 Campaign Intelligence - 100-row, 7-year formal ODS subscri
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 MARKER = "SIGMALYTIC_STEP91B_FULL_UNIVERSE_NIGHTLY_REPORT_GENERATOR"
+MARKDOWN_QUALITY_MARKER = "SIGMALYTIC_STEP91D_MARKDOWN_QUALITY_REPAIR"
 
 
 def utc_now() -> datetime:
@@ -486,6 +487,12 @@ def main() -> int:
         f"Prepared UTC: {now.isoformat()}",
         f"Live source: `{ENDPOINT}`",
         "",
+        "## Executive Market Review",
+        "",
+        "Tonight's V2 review uses the live full-universe Campaign Engine source: 100 ranked campaign rows, seven years of daily historical bars, formal ODS evidence evaluation, lifecycle maturity, cohort readiness, target/failure levels, and risk/reward context.",
+        "",
+        "ODS pending does not mean missing data. It means the seven-year record was evaluated but one or more required operator-control evidence components was absent.",
+        "",
         "## Coverage Summary",
         "",
         f"- Campaign rows reviewed: {len(rows)}",
@@ -499,7 +506,7 @@ def main() -> int:
         f"- Cohort ready: {len(cohort_ready)}",
         f"- Mature or long-mature: {len(mature)}",
         "",
-        "## Missing ODS Evidence Components",
+        "## ODS Pending by Missing Evidence Component",
         "",
     ]
 
@@ -518,7 +525,21 @@ def main() -> int:
     md.append(markdown_table(top_rows(risk_watch, 25), "Deterioration / Risk Watch", 25))
     md.append(markdown_table(top_rows(rows, 20), "Tomorrow Focus List", 20))
     md.append("")
-    md.append("This report is stock-intelligence review and decision support only; it is not personalized investment advice.")
+    md.append("## Gamma Intelligence")
+    md.append("")
+    md.append("Gamma-specific source was not used as a standalone reason for action in this report. Campaign context remains primary.")
+    md.append("")
+    md.append("## Divergence Intelligence")
+    md.append("")
+    md.append("Divergence-specific source was not used as a standalone reason for action in this report. Campaign context remains primary.")
+    md.append("")
+    md.append("## Closing Market View")
+    md.append("")
+    md.append("Tomorrow's focus should be on whether cohort-ready and mature campaigns continue to defend support, whether ODS-pending names complete their missing evidence components, and whether any formally confirmed ODS rows expand without contrary failure.")
+    md.append("")
+    md.append("## Important Subscriber Notes")
+    md.append("")
+    md.append("This report is a nightly stock-intelligence review generated from Sigmalytic V2 campaign, formal ODS, lifecycle, cohort, and market-structure evidence. The long, short, neutral, pending, and confirmed classifications are watchlist categories, not personalized investment advice.")
     md.append("")
     md.append(COPYRIGHT)
 
