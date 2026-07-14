@@ -931,6 +931,372 @@ def _pnf(row: Dict[str, Any], targets: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+
+# SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
+def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
+    return _safe_float(bar.get("l") or bar.get("low"))
+
+
+def _bar_high(bar: Dict[str, Any]) -> Optional[float]:
+    return _safe_float(bar.get("h") or bar.get("high"))
+
+
+def _bar_close(bar: Dict[str, Any]) -> Optional[float]:
+    return _safe_float(bar.get("c") or bar.get("close"))
+
+
+def _bar_volume(bar: Dict[str, Any]) -> Optional[float]:
+    return _safe_float(bar.get("v") or bar.get("volume"))
+
+
+def _avg(values: List[float]) -> Optional[float]:
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return None
+    return statistics.mean(clean)
+
+
+def _ods_from_7yr_history(
+    row: Dict[str, Any],
+    bars: List[Dict[str, Any]],
+    outcome: Dict[str, Any],
+    direct_ods: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Formal ODS evidence builder from 7-year price/volume history.
+
+    This confirms ODS only when the historical record supplies all required evidence components:
+    tested supply exhaustion, active demand/support validation, structurally meaningful location,
+    and absence of contrary failure. It does not use rank, score, cohort expected return, future
+    return, or probability as operator-control confirmation.
+    """
+
+    direct_status = str(direct_ods.get("ods_status") or "").upper()
+    direct_label = str(direct_ods.get("ods_label") or "").upper()
+
+    if direct_status == "CONFIRMED":
+        direct_ods["ods_evidence_source"] = "direct_row_operator_control_field"
+        direct_ods["ods_history_evaluated"] = False
+        direct_ods["ods_reason"] = direct_ods.get("ods_reason") or "Direct row-level operator-control evidence already confirmed ODS."
+        return direct_ods
+
+    if direct_status == "NOT_CONFIRMED" and "CONTRARY" in direct_label:
+        direct_ods["ods_evidence_source"] = "direct_row_contrary_evidence_field"
+        direct_ods["ods_history_evaluated"] = False
+        return direct_ods
+
+    if not bars:
+        return {
+            "ods_label": "PENDING_NO_MARKET_HISTORY",
+            "ods_score": None,
+            "ods_status": "PENDING",
+            "ods_reason": "No 7-year daily price/volume history was available for this row.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": False,
+            "demand_support_confirmed": False,
+            "structural_location_confirmed": False,
+            "contrary_failure_absent": None,
+        }
+
+    if len(bars) < 160:
+        return {
+            "ods_label": "PENDING_INSUFFICIENT_HISTORY",
+            "ods_score": None,
+            "ods_status": "PENDING",
+            "ods_reason": "Fewer than 160 daily bars were available; ODS cannot be formally confirmed.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": False,
+            "demand_support_confirmed": False,
+            "structural_location_confirmed": False,
+            "contrary_failure_absent": None,
+        }
+
+    lows = [_bar_low(b) for b in bars]
+    highs = [_bar_high(b) for b in bars]
+    closes = [_bar_close(b) for b in bars]
+    volumes = [_bar_volume(b) for b in bars]
+
+    latest_close = closes[-1]
+    if latest_close is None or latest_close <= 0:
+        return {
+            "ods_label": "PENDING_NO_LATEST_CLOSE",
+            "ods_score": None,
+            "ods_status": "PENDING",
+            "ods_reason": "Latest close is unavailable; ODS cannot be evaluated.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": False,
+            "demand_support_confirmed": False,
+            "structural_location_confirmed": False,
+            "contrary_failure_absent": None,
+        }
+
+    n = len(bars)
+    anchor_index = outcome.get("campaign_anchor_index")
+    try:
+        anchor_index = int(anchor_index)
+    except Exception:
+        anchor_index = None
+
+    if anchor_index is None or anchor_index < 0 or anchor_index >= n:
+        recent_start = max(0, n - 252)
+        candidates = [
+            i for i in range(recent_start, n)
+            if lows[i] is not None
+        ]
+        anchor_index = min(candidates, key=lambda i: lows[i]) if candidates else max(0, n - 60)
+
+    support_window_start = max(0, anchor_index - 5)
+    support_window_end = min(n, anchor_index + 6)
+    support_lows = [l for l in lows[support_window_start:support_window_end] if l is not None]
+    support_level = min(support_lows) if support_lows else lows[anchor_index]
+
+    if support_level is None or support_level <= 0:
+        return {
+            "ods_label": "PENDING_NO_SUPPORT_LEVEL",
+            "ods_score": None,
+            "ods_status": "PENDING",
+            "ods_reason": "Could not compute a support level from the 7-year record.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": False,
+            "demand_support_confirmed": False,
+            "structural_location_confirmed": False,
+            "contrary_failure_absent": None,
+        }
+
+    post_start = anchor_index
+    post_bars = bars[post_start:]
+    post_closes = [c for c in closes[post_start:] if c is not None]
+
+    post_anchor_bars = max(0, n - 1 - anchor_index)
+    if post_anchor_bars < 20:
+        return {
+            "ods_label": "PENDING_INSUFFICIENT_POST_ANCHOR_EVIDENCE",
+            "ods_score": None,
+            "ods_status": "PENDING",
+            "ods_reason": "Fewer than 20 post-anchor daily bars; ODS cannot be formally confirmed yet.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": False,
+            "demand_support_confirmed": False,
+            "structural_location_confirmed": False,
+            "contrary_failure_absent": None,
+            "ods_post_anchor_bars": post_anchor_bars,
+        }
+
+    recent60_start = max(post_start, n - 60)
+    recent20_start = max(post_start, n - 20)
+    prior60_start = max(post_start, n - 120)
+    prior60_end = max(post_start, n - 60)
+
+    recent_closes_60 = [c for c in closes[recent60_start:] if c is not None]
+    recent_closes_20 = [c for c in closes[recent20_start:] if c is not None]
+
+    support_touch_count = 0
+    support_rebound_count = 0
+    for i in range(post_start, n):
+        low_i = lows[i]
+        close_i = closes[i]
+        if low_i is None or close_i is None:
+            continue
+
+        touched = low_i <= support_level * 1.06
+        rebounded = close_i >= support_level * 1.03
+
+        if touched:
+            support_touch_count += 1
+            if rebounded:
+                support_rebound_count += 1
+
+    recent_support_breaks = [
+        c for c in recent_closes_60
+        if c < support_level * 0.97
+    ]
+
+    latest_recovery_pct = ((latest_close - support_level) / support_level) * 100.0
+
+    recent_down_volumes: List[float] = []
+    prior_down_volumes: List[float] = []
+
+    for i in range(max(1, recent20_start), n):
+        c0 = closes[i - 1]
+        c1 = closes[i]
+        v = volumes[i]
+        if c0 is not None and c1 is not None and c1 < c0 and v is not None:
+            recent_down_volumes.append(v)
+
+    for i in range(max(1, prior60_start), prior60_end):
+        c0 = closes[i - 1]
+        c1 = closes[i]
+        v = volumes[i]
+        if c0 is not None and c1 is not None and c1 < c0 and v is not None:
+            prior_down_volumes.append(v)
+
+    recent_down_avg = _avg(recent_down_volumes)
+    prior_down_avg = _avg(prior_down_volumes)
+
+    if recent_down_avg is not None and prior_down_avg is not None and prior_down_avg > 0:
+        selling_pressure_not_expanding = recent_down_avg <= prior_down_avg * 1.25
+        volume_evidence_status = "VOLUME_EVIDENCE_AVAILABLE"
+    else:
+        selling_pressure_not_expanding = False
+        volume_evidence_status = "VOLUME_EVIDENCE_INSUFFICIENT"
+
+    recent20 = [c for c in closes[max(0, n - 20):] if c is not None]
+    recent50 = [c for c in closes[max(0, n - 50):] if c is not None]
+    sma20 = _avg(recent20)
+    sma50 = _avg(recent50)
+
+    demand_above_sma20 = bool(sma20 is not None and latest_close >= sma20)
+    demand_above_sma50 = bool(sma50 is not None and latest_close >= sma50)
+
+    lookback252_start = max(0, n - 252)
+    lows252 = [l for l in lows[lookback252_start:] if l is not None]
+    highs252 = [h for h in highs[lookback252_start:] if h is not None]
+
+    if lows252 and highs252 and max(highs252) > min(lows252):
+        low252 = min(lows252)
+        high252 = max(highs252)
+        support_position_252 = (support_level - low252) / (high252 - low252)
+        current_position_252 = (latest_close - low252) / (high252 - low252)
+    else:
+        low252 = None
+        high252 = None
+        support_position_252 = None
+        current_position_252 = None
+
+    structurally_meaningful_location = bool(
+        support_position_252 is not None
+        and support_position_252 <= 0.50
+        and current_position_252 is not None
+        and current_position_252 <= 1.15
+    )
+
+    support_defended = len(recent_support_breaks) == 0
+    tested_support = support_touch_count >= 2
+    recovered_from_support = latest_recovery_pct >= 5.0
+
+    supply_exhaustion_confirmed = bool(
+        tested_support
+        and support_defended
+        and recovered_from_support
+        and selling_pressure_not_expanding
+    )
+
+    demand_support_confirmed = bool(
+        support_rebound_count >= 2
+        and support_defended
+        and recovered_from_support
+        and (demand_above_sma20 or demand_above_sma50)
+    )
+
+    contrary_failure_absent = bool(
+        support_defended
+        and latest_close >= support_level * 0.97
+    )
+
+    component_count = len([
+        x for x in (
+            supply_exhaustion_confirmed,
+            demand_support_confirmed,
+            structurally_meaningful_location,
+            contrary_failure_absent,
+        )
+        if x
+    ])
+
+    ods_score = component_count * 25
+
+    evidence_payload = {
+        "support_level": _round(support_level, 4),
+        "latest_close": _round(latest_close, 4),
+        "latest_recovery_pct": round(latest_recovery_pct, 4),
+        "support_touch_count": support_touch_count,
+        "support_rebound_count": support_rebound_count,
+        "recent_support_break_count": len(recent_support_breaks),
+        "post_anchor_bars": post_anchor_bars,
+        "volume_evidence_status": volume_evidence_status,
+        "recent_down_volume_avg": _round(recent_down_avg, 4),
+        "prior_down_volume_avg": _round(prior_down_avg, 4),
+        "selling_pressure_not_expanding": selling_pressure_not_expanding,
+        "demand_above_sma20": demand_above_sma20,
+        "demand_above_sma50": demand_above_sma50,
+        "support_position_252": _round(support_position_252, 4),
+        "current_position_252": _round(current_position_252, 4),
+    }
+
+    if not contrary_failure_absent:
+        return {
+            "ods_label": "NOT_CONFIRMED_CONTRARY_HISTORY",
+            "ods_score": ods_score,
+            "ods_status": "NOT_CONFIRMED",
+            "ods_reason": "Contrary historical evidence exists: support/failure level was violated.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": False,
+            "supply_exhaustion_confirmed": supply_exhaustion_confirmed,
+            "demand_support_confirmed": demand_support_confirmed,
+            "structural_location_confirmed": structurally_meaningful_location,
+            "contrary_failure_absent": contrary_failure_absent,
+            "ods_evidence_payload": evidence_payload,
+        }
+
+    if (
+        supply_exhaustion_confirmed
+        and demand_support_confirmed
+        and structurally_meaningful_location
+        and contrary_failure_absent
+    ):
+        return {
+            "ods_label": "FORMALLY_CONFIRMED_FROM_7YR_HISTORY",
+            "ods_score": 100,
+            "ods_status": "CONFIRMED",
+            "ods_reason": "7-year daily price/volume evidence confirms tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.",
+            "ods_evidence_source": "seven_year_daily_price_volume_history",
+            "ods_history_evaluated": True,
+            "operator_control_confirmed": True,
+            "supply_exhaustion_confirmed": True,
+            "demand_support_confirmed": True,
+            "structural_location_confirmed": True,
+            "contrary_failure_absent": True,
+            "ods_evidence_payload": evidence_payload,
+        }
+
+    missing = []
+    if not supply_exhaustion_confirmed:
+        missing.append("supply_exhaustion")
+    if not demand_support_confirmed:
+        missing.append("demand_support_validation")
+    if not structurally_meaningful_location:
+        missing.append("structurally_meaningful_location")
+    if not contrary_failure_absent:
+        missing.append("absence_of_contrary_failure")
+
+    return {
+        "ods_label": "PENDING_INCOMPLETE_7YR_EVIDENCE",
+        "ods_score": ods_score,
+        "ods_status": "PENDING",
+        "ods_reason": "7-year history was evaluated, but formal ODS is missing: " + ", ".join(missing),
+        "ods_evidence_source": "seven_year_daily_price_volume_history",
+        "ods_history_evaluated": True,
+        "operator_control_confirmed": False,
+        "supply_exhaustion_confirmed": supply_exhaustion_confirmed,
+        "demand_support_confirmed": demand_support_confirmed,
+        "structural_location_confirmed": structurally_meaningful_location,
+        "contrary_failure_absent": contrary_failure_absent,
+        "ods_missing_components": missing,
+        "ods_evidence_payload": evidence_payload,
+    }
+
+
 def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
     c = dict(row)
     symbol = _symbol(c)
@@ -941,9 +1307,10 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
 
     path = _path_metrics(c, bars)
     targets = _targets_and_failure(c, bars)
-    ods = _formal_ods(c)
+    direct_ods = _formal_ods(c)
     outcome = _outcome(c, bars)
     cohort = _cohort_readiness(c, bars, outcome)
+    ods = _ods_from_7yr_history(c, bars, outcome, direct_ods)
     decay = _decay(c)
     pnf = _pnf(c, targets)
 
