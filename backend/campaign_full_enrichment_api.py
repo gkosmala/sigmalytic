@@ -587,4 +587,3 @@ def full_universe_enriched_campaign_table(
         },
     }
 
-
