@@ -542,6 +542,9 @@ def _campaign_row(c: dict) -> html.Div:
 
 
 
+# SIGMALYTIC_STEP87E_FRONTEND_ENRICHED_CAMPAIGN_TABLE_LIMIT_5
+# Uses the live-verified safe row limit from Step87D-R2.
+# UI display only: no writes, no campaign mutation, no D3D, no operator-control confirmation, no trade signal, no Stripe.
 # SIGMALYTIC_STEP87C_B_ENRICHED_CAMPAIGN_TABLE_FRONTEND
 # Maps the read-only enriched backend route into the legacy visible Campaigns table field names.
 # UI display only: no writes, no campaign mutation, no D3D authorization,
@@ -727,7 +730,7 @@ def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/read-only/enriched-campaign-table?limit=25", timeout=60)
+        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/read-only/enriched-campaign-table?limit=5", timeout=60)
         if r.ok:
             data = r.json()
             campaigns = (
