@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -556,11 +556,11 @@ def _campaign_row(c: dict) -> html.Div:
 
 # SIGMALYTIC_STEP87E_FRONTEND_ENRICHED_CAMPAIGN_TABLE_LIMIT_5
 # Uses the live-verified safe row limit from Step87D-R2.
-# UI display only: no writes, no campaign mutation, no D3D, no operator-control confirmation, no trade signal, no Stripe.
+# UI display only: no writes, no campaign mutation, no D3D, no operator-control confirmation, no trade signal, no Stripe billing
 # SIGMALYTIC_STEP87C_B_ENRICHED_CAMPAIGN_TABLE_FRONTEND
 # Maps the read-only enriched backend route into the legacy visible Campaigns table field names.
 # UI display only: no writes, no campaign mutation, no D3D authorization,
-# no operator-control confirmation, no trade-signal creation, no Stripe.
+# no operator-control confirmation, no trade-signal creation, no Stripe billing
 def _step87c_b_pick(row: dict, *keys, default=None):
     for key in keys:
         try:
@@ -744,9 +744,9 @@ def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
 # Display all ranked/active campaigns while enriching only the first live-safe batch.
 # Rows outside the enrichment batch remain visible with honest PENDING / NOT ENRICHED status.
 # UI display only: no database write, no campaign mutation, no D3D authorization,
-# no operator-control confirmation, no trade-signal creation, no Stripe.
+# no operator-control confirmation, no trade-signal creation, no Stripe billing
 _STEP88A_BASE_LIMIT = 100
-_STEP88A_SAFE_ENRICH_LIMIT = 5
+_STEP88A_SAFE_ENRICH_LIMIT = 100
 
 
 def _step88a_rows_from_payload(data):
@@ -815,7 +815,7 @@ def _step88a_fetch_base_campaigns():
 
 
 def _step88a_fetch_enriched_batch():
-    endpoint = f"/api/campaigns/read-only/enriched-campaign-table?limit={_STEP88A_SAFE_ENRICH_LIMIT}"
+    endpoint = f"/api/campaigns/read-only/full-universe-enriched-campaign-table?limit={_STEP88A_SAFE_ENRICH_LIMIT}"
     data, err = _step88a_fetch_json(endpoint, timeout=75)
     if err:
         return [], err
@@ -894,6 +894,8 @@ def _step88a_merge_base_with_enriched(base_rows, enriched_rows):
     return merged_rows
 
 
+# SIGMALYTIC_STEP90B_FRONTEND_FULL_UNIVERSE_ENRICHMENT
+# Campaign table now requests full-universe enriched rows up to 100 instead of enriching only the first 5.
 # SIGMALYTIC_STEP88B_R2_RESILIENT_ENRICHED_FALLBACK
 # Fetch enriched safe batch first so the Campaigns page never goes empty when base list endpoints 502.
 def _step88a_build_campaign_rows_all_with_safe_enrichment():
@@ -1042,4 +1044,6 @@ def build_campaign_tab(session=None) -> html.Div:
             html.Div(rows),
         ]),
     ])
+
+
 

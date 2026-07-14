@@ -1343,3 +1343,12 @@ except ImportError:
 app.include_router(sig87b_r2_enriched_campaign_table_router)
 # END_SIGMALYTIC_STEP87B_R2_READ_ONLY_ENRICHED_CAMPAIGN_TABLE_INCLUDE
 
+
+# SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE_INCLUDE
+try:
+    from backend.campaign_full_enrichment_api import router as campaign_full_enrichment_router
+    app.include_router(campaign_full_enrichment_router)
+except Exception as _sig_step90b_full_enrichment_include_error:
+    print("STEP90B full campaign universe enrichment include failed:", _sig_step90b_full_enrichment_include_error)
+# END_SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE_INCLUDE
+
