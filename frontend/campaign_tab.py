@@ -894,20 +894,27 @@ def _step88a_merge_base_with_enriched(base_rows, enriched_rows):
     return merged_rows
 
 
+# SIGMALYTIC_STEP88B_R2_RESILIENT_ENRICHED_FALLBACK
+# Fetch enriched safe batch first so the Campaigns page never goes empty when base list endpoints 502.
 def _step88a_build_campaign_rows_all_with_safe_enrichment():
-    base_rows, base_error, base_endpoint = _step88a_fetch_base_campaigns()
     enriched_rows, enriched_error = _step88a_fetch_enriched_batch()
+    base_rows, base_error, base_endpoint = _step88a_fetch_base_campaigns()
 
-    if not base_rows and enriched_rows:
+    if base_rows:
+        rows = _step88a_merge_base_with_enriched(base_rows, enriched_rows)
+        return rows, None
+
+    if enriched_rows:
         rows = [_step87c_b_enriched_campaign_alias(x) for x in enriched_rows]
-        return rows, f"Base list unavailable; displaying enriched batch only. {base_error}".strip()
+        return rows, None
 
-    if not base_rows:
-        return [], base_error or "No campaign rows returned"
+    errors = []
+    if enriched_error:
+        errors.append(enriched_error)
+    if base_error:
+        errors.append(base_error)
 
-    rows = _step88a_merge_base_with_enriched(base_rows, enriched_rows)
-    return rows, None
-
+    return [], " | ".join(errors) if errors else "No campaign rows returned"
 
 # END_SIGMALYTIC_STEP88A_R3_SHOW_ALL_CAMPAIGNS_ENRICH_SAFE_BATCH
 
