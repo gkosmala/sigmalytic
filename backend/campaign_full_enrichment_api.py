@@ -22,7 +22,7 @@ import os
 import statistics
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, Query
@@ -33,6 +33,13 @@ STEP90B_MARKER = "SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE"
 
 BACKEND_BASE = os.getenv("BACKEND_BASE_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2/stocks/bars"
+
+# SIGMALYTIC_STEP90C_SEVEN_YEAR_ALPACA_CAMPAIGN_HISTORY
+CAMPAIGN_HISTORY_YEARS = 7
+CAMPAIGN_HISTORY_DAYS = 365 * CAMPAIGN_HISTORY_YEARS + 3
+ALPACA_PAGE_LIMIT = 10000
+ALPACA_BATCH_SIZE = 25
+ALPACA_MAX_PAGES_PER_BATCH = 40
 
 
 def _now() -> str:
@@ -181,15 +188,31 @@ def _fetch_alpaca_bars(symbols: List[str]) -> Tuple[Dict[str, List[Dict[str, Any
     key = os.getenv("ALPACA_API_KEY") or os.getenv("ALPACA_KEY_ID") or os.getenv("APCA_API_KEY_ID")
     secret = os.getenv("ALPACA_API_SECRET") or os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY")
 
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(days=CAMPAIGN_HISTORY_DAYS)
+    start_date = start_dt.date().isoformat()
+    end_date = end_dt.date().isoformat()
+
     status: Dict[str, Any] = {
         "provider": "alpaca",
+        "history_years": CAMPAIGN_HISTORY_YEARS,
+        "history_days_requested": CAMPAIGN_HISTORY_DAYS,
+        "start": start_date,
+        "end": end_date,
+        "timeframe": "1Day",
+        "page_limit": ALPACA_PAGE_LIMIT,
+        "batch_size": ALPACA_BATCH_SIZE,
+        "max_pages_per_batch": ALPACA_MAX_PAGES_PER_BATCH,
         "has_key": bool(key),
         "has_secret": bool(secret),
         "attempted": False,
         "ok": False,
         "symbols_requested": len(symbols),
         "symbols_with_bars": 0,
+        "total_bars": 0,
+        "pages_fetched": 0,
         "feed_used": "sip",
+        "pagination_used": True,
         "errors": [],
     }
 
@@ -200,44 +223,94 @@ def _fetch_alpaca_bars(symbols: List[str]) -> Tuple[Dict[str, List[Dict[str, Any
     bars_by_symbol: Dict[str, List[Dict[str, Any]]] = {}
     status["attempted"] = True
 
-    # Batch symbols to avoid the previous per-row timeout behavior.
-    batch_size = 50
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i + batch_size]
-        params = urllib.parse.urlencode({
-            "symbols": ",".join(batch),
-            "timeframe": "1Day",
-            "limit": "260",
-            "adjustment": "raw",
-            "feed": "sip",
-        })
-        url = f"{ALPACA_DATA_BASE}?{params}"
+    unique_symbols = []
+    seen = set()
+    for sym in symbols:
+        clean = str(sym or "").upper().strip()
+        if clean and clean not in seen:
+            seen.add(clean)
+            unique_symbols.append(clean)
 
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/json",
-                    "APCA-API-KEY-ID": key,
-                    "APCA-API-SECRET-KEY": secret,
-                    "User-Agent": "Sigmalytic-Step90B-Alpaca-Batch",
-                },
-                method="GET",
-            )
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    for i in range(0, len(unique_symbols), ALPACA_BATCH_SIZE):
+        batch = unique_symbols[i:i + ALPACA_BATCH_SIZE]
+        page_token: Optional[str] = None
+        pages_for_batch = 0
 
-            raw_bars = data.get("bars") if isinstance(data, dict) else {}
-            if isinstance(raw_bars, dict):
-                for sym, bars in raw_bars.items():
-                    if isinstance(bars, list) and bars:
-                        bars_by_symbol[str(sym).upper()] = bars
+        while True:
+            pages_for_batch += 1
 
-        except Exception as exc:
-            status["errors"].append(f"batch_{i // batch_size + 1}: {exc}")
+            params_dict = {
+                "symbols": ",".join(batch),
+                "timeframe": "1Day",
+                "start": start_date,
+                "end": end_date,
+                "limit": str(ALPACA_PAGE_LIMIT),
+                "adjustment": "raw",
+                "feed": "sip",
+                "sort": "asc",
+            }
 
-    status["symbols_with_bars"] = len(bars_by_symbol)
-    status["ok"] = len(bars_by_symbol) > 0
+            if page_token:
+                params_dict["page_token"] = page_token
+
+            params = urllib.parse.urlencode(params_dict)
+            url = f"{ALPACA_DATA_BASE}?{params}"
+
+            try:
+                req = urllib.request.Request(
+                    url,
+                    headers={
+                        "Accept": "application/json",
+                        "APCA-API-KEY-ID": key,
+                        "APCA-API-SECRET-KEY": secret,
+                        "User-Agent": "Sigmalytic-Step90C-Seven-Year-Alpaca-Paginated",
+                    },
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
+
+                status["pages_fetched"] += 1
+
+                raw_bars = data.get("bars") if isinstance(data, dict) else {}
+                if isinstance(raw_bars, dict):
+                    for sym, bars in raw_bars.items():
+                        clean_sym = str(sym).upper()
+                        if isinstance(bars, list) and bars:
+                            existing = bars_by_symbol.setdefault(clean_sym, [])
+                            existing.extend(bars)
+
+                next_token = data.get("next_page_token") if isinstance(data, dict) else None
+                if not next_token:
+                    break
+
+                page_token = str(next_token)
+
+                if pages_for_batch >= ALPACA_MAX_PAGES_PER_BATCH:
+                    status["errors"].append(
+                        f"pagination_capped_batch_{i // ALPACA_BATCH_SIZE + 1}_after_{ALPACA_MAX_PAGES_PER_BATCH}_pages"
+                    )
+                    break
+
+            except Exception as exc:
+                status["errors"].append(f"batch_{i // ALPACA_BATCH_SIZE + 1}_page_{pages_for_batch}: {exc}")
+                break
+
+    # Deduplicate by timestamp and sort each symbol.
+    for sym, bars in list(bars_by_symbol.items()):
+        dedup: Dict[str, Dict[str, Any]] = {}
+        for bar in bars:
+            if not isinstance(bar, dict):
+                continue
+            t = str(bar.get("t") or "")
+            if t:
+                dedup[t] = bar
+        sorted_bars = sorted(dedup.values(), key=lambda b: str(b.get("t") or ""))
+        bars_by_symbol[sym] = sorted_bars
+
+    status["symbols_with_bars"] = len([sym for sym, bars in bars_by_symbol.items() if bars])
+    status["total_bars"] = sum(len(bars) for bars in bars_by_symbol.values())
+    status["ok"] = status["symbols_with_bars"] > 0
     return bars_by_symbol, status
 
 
@@ -586,4 +659,5 @@ def full_universe_enriched_campaign_table(
             "broker_execution": False,
         },
     }
+
 
