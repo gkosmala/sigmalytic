@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -297,11 +297,13 @@ def _campaign_row(c: dict) -> html.Div:
     ods_raw = c.get("operator_dominance")
     ods = _safe_float(ods_raw, 0)
     ods_display = _num_or_dash(ods_raw, 0)
+    if _is_missing(ods_raw):
+        ods_display = str(c.get("ods_label") or "PENDING").replace("_", " ")[:18]
 
     decay_raw = c.get("decay_score")
     decay_score = _safe_float(decay_raw, 0)
     decay_display = _num_or_dash(decay_raw, 0)
-    decay_band = str(c.get("decay_band") or "UNKNOWN").upper()
+    decay_band = str(c.get("decay_band") or c.get("decay_label") or "PENDING").upper()
     exit_signal = bool(c.get("exit_signal")) or bool(c.get("conjunction_exit"))
 
     next_state = str(c.get("transition_next_state") or DASH).upper()
@@ -326,6 +328,8 @@ def _campaign_row(c: dict) -> html.Div:
     exp_return_raw = c.get("outcome_expected_return")
     exp_return = _safe_float(exp_return_raw, 0)
     exp_return_display = _pct_or_dash(exp_return_raw, 1, signed=True)
+    if _is_missing(exp_return_raw):
+        exp_return_display = str(c.get("expected_return_status") or "PENDING").replace("_", " ")[:18]
 
     exp_mfe_raw = c.get("outcome_expected_mfe")
     exp_mfe_display = _pct_or_dash(exp_mfe_raw, 1, signed=True)
@@ -537,13 +541,201 @@ def _campaign_row(c: dict) -> html.Div:
     })
 
 
+
+# SIGMALYTIC_STEP87C_B_ENRICHED_CAMPAIGN_TABLE_FRONTEND
+# Maps the read-only enriched backend route into the legacy visible Campaigns table field names.
+# UI display only: no writes, no campaign mutation, no D3D authorization,
+# no operator-control confirmation, no trade-signal creation, no Stripe.
+def _step87c_b_pick(row: dict, *keys, default=None):
+    for key in keys:
+        try:
+            value = row.get(key)
+        except Exception:
+            value = None
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
+    c = dict(row)
+
+    c["current_state"] = _step87c_b_pick(
+        c,
+        "current_state",
+        "state",
+        "status",
+        "campaign_state",
+        default="SPARK",
+    )
+
+    c["historical_confidence"] = _step87c_b_pick(
+        c,
+        "historical_confidence",
+        "grade",
+        default=DASH,
+    )
+
+    c["operator_dominance"] = _step87c_b_pick(
+        c,
+        "operator_dominance",
+        "ods_score",
+        default=None,
+    )
+
+    c["decay_score"] = _step87c_b_pick(
+        c,
+        "decay_score",
+        default=None,
+    )
+
+    c["decay_band"] = _step87c_b_pick(
+        c,
+        "decay_band",
+        "decay_label",
+        default="PENDING",
+    )
+
+    c["decay_reason"] = _step87c_b_pick(
+        c,
+        "decay_reason",
+        default="read-only enrichment route",
+    )
+
+    c["transition_next_state"] = _step87c_b_pick(
+        c,
+        "transition_next_state",
+        "next_state",
+        "state",
+        "status",
+        default="REVIEW",
+    )
+
+    c["transition_bias"] = _step87c_b_pick(
+        c,
+        "transition_bias",
+        "bias",
+        default="UNKNOWN",
+    )
+
+    c["outcome_quality_score"] = _step87c_b_pick(
+        c,
+        "outcome_quality_score",
+        "outcome_score",
+        default=None,
+    )
+
+    c["outcome_quality"] = _step87c_b_pick(
+        c,
+        "outcome_quality",
+        "outcome_status",
+        default="PENDING",
+    )
+
+    c["outcome_expected_return"] = _step87c_b_pick(
+        c,
+        "outcome_expected_return",
+        "expected_return_pct",
+        default=None,
+    )
+
+    c["outcome_expected_mfe"] = _step87c_b_pick(
+        c,
+        "outcome_expected_mfe",
+        "mfe_pct",
+        default=None,
+    )
+
+    c["outcome_expected_mae"] = _step87c_b_pick(
+        c,
+        "outcome_expected_mae",
+        "mae_pct",
+        default=None,
+    )
+
+    c["outcome_expected_duration_days"] = _step87c_b_pick(
+        c,
+        "outcome_expected_duration_days",
+        "outcome_window_days",
+        default=None,
+    )
+
+    c["outcome_target1_prob"] = _step87c_b_pick(
+        c,
+        "outcome_target1_prob",
+        "target_1_pct",
+        default=None,
+    )
+
+    c["outcome_target2_prob"] = _step87c_b_pick(
+        c,
+        "outcome_target2_prob",
+        "target_2_pct",
+        default=None,
+    )
+
+    c["outcome_failure_prob"] = _step87c_b_pick(
+        c,
+        "outcome_failure_prob",
+        "failure_pct",
+        default=None,
+    )
+
+    c["outcome_risk_reward"] = _step87c_b_pick(
+        c,
+        "outcome_risk_reward",
+        "risk_reward_1",
+        default=None,
+    )
+
+    c["outcome_summary"] = _step87c_b_pick(
+        c,
+        "outcome_summary",
+        "summary",
+        "expected_return_status",
+        "enrichment_status",
+        default="read-only enriched campaign table",
+    )
+
+    c["current_price"] = _step87c_b_pick(
+        c,
+        "current_price",
+        "latest_close",
+        "price",
+        default=None,
+    )
+
+    c["pnf_target"] = _step87c_b_pick(
+        c,
+        "pnf_target",
+        "target_1_price",
+        default=None,
+    )
+
+    c["stop_price"] = _step87c_b_pick(
+        c,
+        "stop_price",
+        "failure_price",
+        default=None,
+    )
+
+    return c
+
+
+# END_SIGMALYTIC_STEP87C_B_ENRICHED_CAMPAIGN_TABLE_FRONTEND
+
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
+        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/read-only/enriched-campaign-table?limit=25", timeout=60)
         if r.ok:
             data = r.json()
-            campaigns = data.get("campaigns", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            campaigns = (
+                data.get("rows")
+                or data.get("campaigns")
+                or []
+            ) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            campaigns = [_step87c_b_enriched_campaign_alias(c) for c in campaigns if isinstance(c, dict)]
         else:
             campaigns = []
             fetch_error = f"Backend {r.status_code}"
