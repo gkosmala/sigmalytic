@@ -154,6 +154,8 @@ def _evidence_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "coverage_blockers": coverage_blockers,
         "evidence_payload_status": evidence_payload_status,
         "evidence_payload_present": bool(evidence_payload),
+        "evidence_payload": evidence_payload,
+        "evidence_payload_forward_marker": "SIGMALYTIC_STEP100H_D_CARRY_EVIDENCE_PAYLOAD_FORWARD",
         "evidence_payload_complete": evidence_payload_complete,
         "required_evidence_families": list(REQUIRED_EVIDENCE_FAMILIES),
         "missing_evidence_families": missing_evidence_families,
