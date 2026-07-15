@@ -1732,7 +1732,7 @@ def _short_watchlist_overlay(
 
     base.update({
         "short_watchlist_candidate": bool(candidate),
-        "short_watchlist_tier": tier,
+        "short_watchlist_tier": tier or "NONE",
         "short_watchlist_bias": watch_bias,
         "short_watchlist_score": int(score),
         "short_watchlist_type": setup_type,
@@ -2093,7 +2093,7 @@ def _deterioration_risk_watch_overlay(
 
     base.update({
         "deterioration_watch_candidate": bool(candidate),
-        "deterioration_tier": tier,
+        "deterioration_tier": tier or "NONE",
         "deterioration_bias": dbias,
         "deterioration_score": int(score),
         "deterioration_type": dtype,
@@ -2128,6 +2128,8 @@ def _deterioration_risk_watch_overlay(
 
 
 
+
+# SIGMALYTIC_STEP99B_READ_ONLY_COVERAGE_DEFAULTS
 # SIGMALYTIC_STEP98C_R2_READ_ONLY_RENKO_OVERLAY
 def _renko_read_only_overlay(
     symbol: str,
@@ -2783,7 +2785,7 @@ def _overlay_integration_packet(
         "overlay_integration_type": overlay_type,
         "overlay_integration_reason": reason,
         "overlay_integration_evidence_groups": all_groups,
-        "overlay_integration_primary_risk": primary_risk,
+        "overlay_integration_primary_risk": primary_risk or "NO_PRIMARY_RISK",
         "overlay_wyckoff_context": wyckoff_context,
         "overlay_weis_context": weis_context,
         "overlay_livermore_context": livermore_context,
