@@ -1238,6 +1238,269 @@ def _gamma_overlay(symbol: str, price: Optional[float], bars: List[Dict[str, Any
 
 
 
+
+# SIGMALYTIC_STEP94C_READ_ONLY_DIVERGENCE_OVERLAY
+def _divergence_overlay(symbol: str, price: Optional[float], bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Read-only Divergence Intelligence overlay.
+
+    This is computed from price, volume, and momentum behavior in the existing
+    daily bar history. It is diagnostic only. It does not create a trade signal,
+    does not confirm operator control, and does not mutate campaigns.
+    """
+    base = {
+        "divergence_status": "DIVERGENCE_UNAVAILABLE",
+        "divergence_source": "seven_year_daily_price_volume_history",
+        "divergence_reason": None,
+        "divergence_available": False,
+        "divergence_detected": False,
+        "divergence_bias": "NEUTRAL",
+        "divergence_type": "NO_MATERIAL_DIVERGENCE",
+        "divergence_strength": 0,
+        "divergence_window": "20D_60D",
+        "divergence_price_change_20_pct": None,
+        "divergence_price_change_60_pct": None,
+        "divergence_prior_20_pct": None,
+        "divergence_volume_ratio": None,
+        "divergence_effort_result": "UNKNOWN",
+        "divergence_price_structure": "UNKNOWN",
+        "divergence_momentum_structure": "UNKNOWN",
+        "divergence_volume_structure": "UNKNOWN",
+        "divergence_movement_risk_overlay": "NO_DIVERGENCE_EVIDENCE",
+        "divergence_operator_control_source": False,
+        "divergence_trade_signal": False,
+        "divergence_read_only": True,
+        "divergence_evidence": {},
+    }
+
+    clean_symbol = str(symbol or "").upper().strip()
+    raw_bars = bars or []
+
+    closes: List[float] = []
+    highs: List[float] = []
+    lows: List[float] = []
+    volumes: List[float] = []
+
+    for bar in raw_bars:
+        if not isinstance(bar, dict):
+            continue
+        c = _safe_float(bar.get("c") or bar.get("close"))
+        h = _safe_float(bar.get("h") or bar.get("high"))
+        l = _safe_float(bar.get("l") or bar.get("low"))
+        v = _safe_float(bar.get("v") or bar.get("volume"))
+        if c is not None and c > 0:
+            closes.append(float(c))
+        if h is not None and h > 0:
+            highs.append(float(h))
+        if l is not None and l > 0:
+            lows.append(float(l))
+        if v is not None and v >= 0:
+            volumes.append(float(v))
+
+    if not clean_symbol:
+        base["divergence_reason"] = "Missing symbol; divergence overlay cannot be evaluated."
+        return base
+
+    if len(closes) < 80 or len(highs) < 80 or len(lows) < 80:
+        base.update({
+            "divergence_status": "DIVERGENCE_INSUFFICIENT_HISTORY",
+            "divergence_reason": "Fewer than 80 daily bars available for divergence analysis.",
+            "divergence_evidence": {
+                "close_count": len(closes),
+                "high_count": len(highs),
+                "low_count": len(lows),
+                "volume_count": len(volumes),
+                "read_only": True,
+            },
+        })
+        return base
+
+    def pct_change(a: Optional[float], b: Optional[float]) -> Optional[float]:
+        if a is None or b is None or a <= 0:
+            return None
+        return ((b - a) / a) * 100.0
+
+    def avg(values: List[float]) -> Optional[float]:
+        clean = [x for x in values if x is not None]
+        if not clean:
+            return None
+        return sum(clean) / len(clean)
+
+    latest = closes[-1]
+    price_20 = pct_change(closes[-21], closes[-1]) if len(closes) >= 21 else None
+    price_60 = pct_change(closes[-61], closes[-1]) if len(closes) >= 61 else None
+    prior_20 = pct_change(closes[-41], closes[-21]) if len(closes) >= 41 else None
+
+    recent_high = max(highs[-20:])
+    prior_high = max(highs[-60:-20])
+    recent_low = min(lows[-20:])
+    prior_low = min(lows[-60:-20])
+
+    recent_volume = avg(volumes[-20:]) if len(volumes) >= 20 else None
+    prior_volume = avg(volumes[-80:-20]) if len(volumes) >= 80 else None
+    volume_ratio = None
+    if recent_volume is not None and prior_volume is not None and prior_volume > 0:
+        volume_ratio = recent_volume / prior_volume
+
+    lower_low = recent_low < prior_low * 0.995
+    higher_low = recent_low > prior_low * 1.005
+    higher_high = recent_high > prior_high * 1.005
+    lower_high = recent_high < prior_high * 0.995
+
+    momentum_improving = (
+        price_20 is not None
+        and prior_20 is not None
+        and price_20 > prior_20 + 2.0
+    )
+    momentum_deteriorating = (
+        price_20 is not None
+        and prior_20 is not None
+        and price_20 < prior_20 - 2.0
+    )
+
+    volume_not_confirming = (
+        volume_ratio is not None
+        and volume_ratio < 0.90
+    )
+    high_effort = (
+        volume_ratio is not None
+        and volume_ratio >= 1.35
+    )
+    low_result = (
+        price_20 is not None
+        and abs(price_20) <= 2.5
+    )
+    high_effort_low_result = high_effort and low_result
+
+    evidence_flags = []
+    bias = "NEUTRAL"
+    div_type = "NO_MATERIAL_DIVERGENCE"
+    movement_risk = "NO_DIVERGENCE_EVIDENCE"
+    strength = 0
+
+    if lower_low and momentum_improving:
+        evidence_flags.append("LOWER_LOW_WITH_IMPROVING_MOMENTUM")
+        bias = "BULLISH"
+        div_type = "BULLISH_MOMENTUM_DIVERGENCE"
+        movement_risk = "BULLISH_REVERSAL_RISK"
+        strength += 40
+
+    if lower_low and volume_not_confirming:
+        evidence_flags.append("LOWER_LOW_WITH_WEAKER_VOLUME_CONFIRMATION")
+        if bias == "NEUTRAL":
+            bias = "BULLISH"
+            div_type = "BULLISH_VOLUME_DIVERGENCE"
+            movement_risk = "BULLISH_REVERSAL_RISK"
+        strength += 25
+
+    if higher_high and momentum_deteriorating:
+        evidence_flags.append("HIGHER_HIGH_WITH_DETERIORATING_MOMENTUM")
+        bias = "BEARISH"
+        div_type = "BEARISH_MOMENTUM_DIVERGENCE"
+        movement_risk = "BEARISH_REVERSAL_RISK"
+        strength += 40
+
+    if higher_high and volume_not_confirming:
+        evidence_flags.append("HIGHER_HIGH_WITH_WEAKER_VOLUME_CONFIRMATION")
+        if bias == "NEUTRAL":
+            bias = "BEARISH"
+            div_type = "BEARISH_VOLUME_DIVERGENCE"
+            movement_risk = "BEARISH_REVERSAL_RISK"
+        strength += 25
+
+    if high_effort_low_result:
+        evidence_flags.append("HIGH_EFFORT_LOW_RESULT")
+        if price_20 is not None and price_20 < 0:
+            if bias == "NEUTRAL":
+                bias = "BULLISH"
+                div_type = "DOWNSIDE_EFFORT_RESULT_DIVERGENCE"
+                movement_risk = "SELLING_PRESSURE_INEFFICIENT"
+            strength += 20
+        elif price_20 is not None and price_20 >= 0:
+            if bias == "NEUTRAL":
+                bias = "BEARISH"
+                div_type = "UPSIDE_EFFORT_RESULT_DIVERGENCE"
+                movement_risk = "BUYING_EFFORT_INEFFICIENT"
+            strength += 20
+
+    if higher_low and price_20 is not None and price_20 > 0:
+        evidence_flags.append("HIGHER_LOW_WITH_POSITIVE_20D_MOMENTUM")
+        if bias == "NEUTRAL":
+            div_type = "NO_BEARISH_DIVERGENCE_SUPPORTIVE_STRUCTURE"
+            movement_risk = "STRUCTURE_SUPPORTIVE_NO_DIVERGENCE"
+        strength += 5
+
+    strength = int(max(0, min(100, strength)))
+
+    price_structure = (
+        "LOWER_LOW" if lower_low else
+        "HIGHER_HIGH" if higher_high else
+        "HIGHER_LOW" if higher_low else
+        "LOWER_HIGH" if lower_high else
+        "RANGE_OR_MIXED"
+    )
+
+    momentum_structure = (
+        "IMPROVING" if momentum_improving else
+        "DETERIORATING" if momentum_deteriorating else
+        "STABLE_OR_MIXED"
+    )
+
+    volume_structure = (
+        "WEAKER_CONFIRMATION" if volume_not_confirming else
+        "HIGH_EFFORT" if high_effort else
+        "NORMAL_OR_MIXED"
+    )
+
+    effort_result = (
+        "HIGH_EFFORT_LOW_RESULT" if high_effort_low_result else
+        "HIGH_EFFORT_DIRECTIONAL_RESULT" if high_effort else
+        "NORMAL_EFFORT_RESULT"
+    )
+
+    detected = div_type not in {
+        "NO_MATERIAL_DIVERGENCE",
+        "NO_BEARISH_DIVERGENCE_SUPPORTIVE_STRUCTURE",
+    }
+
+    base.update({
+        "divergence_status": "DIVERGENCE_OVERLAY_COMPUTED",
+        "divergence_reason": "Read-only divergence overlay computed from price, volume, and momentum behavior.",
+        "divergence_available": True,
+        "divergence_detected": detected,
+        "divergence_bias": bias,
+        "divergence_type": div_type,
+        "divergence_strength": strength,
+        "divergence_price_change_20_pct": _round(price_20, 4),
+        "divergence_price_change_60_pct": _round(price_60, 4),
+        "divergence_prior_20_pct": _round(prior_20, 4),
+        "divergence_volume_ratio": _round(volume_ratio, 4),
+        "divergence_effort_result": effort_result,
+        "divergence_price_structure": price_structure,
+        "divergence_momentum_structure": momentum_structure,
+        "divergence_volume_structure": volume_structure,
+        "divergence_movement_risk_overlay": movement_risk,
+        "divergence_evidence": {
+            "symbol": clean_symbol,
+            "latest_close": _round(latest, 4),
+            "recent_high_20": _round(recent_high, 4),
+            "prior_high_60_to_20": _round(prior_high, 4),
+            "recent_low_20": _round(recent_low, 4),
+            "prior_low_60_to_20": _round(prior_low, 4),
+            "recent_volume_20_avg": _round(recent_volume, 4),
+            "prior_volume_80_to_20_avg": _round(prior_volume, 4),
+            "evidence_flags": evidence_flags,
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+    })
+
+    return base
+
+
+
+
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
 # SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
@@ -1644,6 +1907,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     # SIGMALYTIC_STEP92H_PNF_BAR_HISTORY_WIRING_FIX
     pnf = _pnf(c, targets, bars)
     gamma = _gamma_overlay(symbol, price, bars)
+    divergence = _divergence_overlay(symbol, price, bars)
 
     c.update({
         "symbol": symbol,
@@ -1667,6 +1931,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(targets)
     c.update(pnf)
     c.update(gamma)
+    c.update(divergence)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
