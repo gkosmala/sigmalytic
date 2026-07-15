@@ -1784,6 +1784,348 @@ def _short_watchlist_overlay(
 
 
 
+
+# SIGMALYTIC_STEP96C_READ_ONLY_DETERIORATION_RISK_WATCH_OVERLAY
+def _deterioration_risk_watch_overlay(
+    symbol: str,
+    price: Optional[float],
+    row: Dict[str, Any],
+    pnf: Dict[str, Any],
+    gamma: Dict[str, Any],
+    divergence: Dict[str, Any],
+    ods: Dict[str, Any],
+    targets: Dict[str, Any],
+    short_watchlist: Dict[str, Any],
+    decay: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Read-only Deterioration / Risk Watch overlay.
+
+    Doctrine boundary:
+    - Wyckoff: loss of demand, supply return, upthrust/SOW/UTAD risk.
+    - Weis: effort no longer producing reward, shortening of thrust, effort/result failure.
+    - Livermore: line of least resistance deterioration, pivotal failure risk.
+
+    This classifies deterioration/risk-watch candidates only. It does not persist,
+    mutate, confirm operator control, or create a trade signal.
+    """
+    base = {
+        "deterioration_status": "DETERIORATION_RISK_WATCH_EVALUATED",
+        "deterioration_source": "wyckoff_weis_livermore_read_only_overlay",
+        "deterioration_watch_candidate": False,
+        "deterioration_tier": "NONE",
+        "deterioration_bias": "STABLE_OR_NEUTRAL",
+        "deterioration_score": 0,
+        "deterioration_type": "NO_MATERIAL_DETERIORATION",
+        "deterioration_reason": "No sufficient Wyckoff/Weis/Livermore deterioration evidence cluster.",
+        "deterioration_evidence_groups": [],
+        "deterioration_primary_risk": "NONE",
+        "deterioration_wyckoff_context": "NO_DEMAND_FAILURE_OR_SUPPLY_RETURN_CONFIRMED",
+        "deterioration_weis_context": "NO_EFFORT_RESULT_DETERIORATION_CONFIRMED",
+        "deterioration_livermore_context": "LINE_OF_LEAST_RESISTANCE_NOT_MATERIALLY_IMPAIRED",
+        "deterioration_failure_price": None,
+        "deterioration_failure_distance_pct": None,
+        "deterioration_failure_breach": False,
+        "deterioration_near_failure": False,
+        "deterioration_short_watchlist_risk": False,
+        "deterioration_divergence_risk": False,
+        "deterioration_pnf_risk": False,
+        "deterioration_gamma_risk": False,
+        "deterioration_ods_risk": False,
+        "deterioration_decay_risk": False,
+        "deterioration_operator_control_source": False,
+        "deterioration_trade_signal": False,
+        "deterioration_read_only": True,
+        "deterioration_evidence": {},
+        "risk_watch_status": "DETERIORATION_RISK_WATCH_EVALUATED",
+        "risk_watch_candidate": False,
+        "risk_watch_tier": "NONE",
+        "risk_watch_score": 0,
+        "risk_watch_type": "NO_MATERIAL_DETERIORATION",
+        "risk_watch_reason": "No sufficient Wyckoff/Weis/Livermore deterioration evidence cluster.",
+        "risk_watch_read_only": True,
+    }
+
+    clean_symbol = str(symbol or "").upper().strip()
+
+    def sfloat(value: Any) -> Optional[float]:
+        try:
+            return _safe_float(value)
+        except Exception:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+    def truthy(value: Any) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+    score = 0
+    evidence_groups: List[str] = []
+    reasons: List[str] = []
+
+    def add(points: int, group: str, reason: str) -> None:
+        nonlocal score
+        score += int(points)
+        if group not in evidence_groups:
+            evidence_groups.append(group)
+        reasons.append(reason)
+
+    current_price = sfloat(price)
+    failure_price = sfloat(targets.get("failure_price") or row.get("failure_price") or pnf.get("pnf_failure_price") or short_watchlist.get("short_watchlist_failure_price"))
+
+    failure_distance_pct = None
+    if current_price is not None and current_price > 0 and failure_price is not None:
+        failure_distance_pct = ((current_price - failure_price) / current_price) * 100.0
+
+    failure_breach = failure_distance_pct is not None and failure_distance_pct <= 0
+    near_failure = failure_distance_pct is not None and 0 < failure_distance_pct <= 2.5
+
+    if failure_breach:
+        add(28, "LIVERMORE_PIVOTAL_FAILURE_BREACHED", f"Price is at/below failure reference: distance={failure_distance_pct:.2f}%.")
+    elif near_failure:
+        add(16, "LIVERMORE_NEAR_PIVOTAL_FAILURE", f"Price is within 2.5% of failure reference: distance={failure_distance_pct:.2f}%.")
+
+    state = str(row.get("state") or row.get("status") or "").upper()
+    bias = str(row.get("bias") or "").upper()
+
+    supply_exhausted = ods.get("supply_exhaustion_confirmed")
+    demand_support = ods.get("demand_support_confirmed")
+    contrary_absent = ods.get("contrary_failure_absent")
+    ods_status = str(ods.get("ods_status") or "").upper()
+    ods_missing = ods.get("ods_missing_components") or []
+
+    distribution_state = "DISTRIBUTION" in state or "DISTRIBUTION" in bias
+    upthrust = truthy(row.get("upthrust_supply") or row.get("upthrust_detected") or row.get("utad_detected"))
+    no_demand = truthy(row.get("no_demand_test") or row.get("no_demand"))
+
+    wyckoff_points = 0
+    wyckoff_reasons: List[str] = []
+
+    if distribution_state:
+        wyckoff_points += 25
+        wyckoff_reasons.append("Campaign state/bias reflects distribution risk.")
+    if upthrust:
+        wyckoff_points += 25
+        wyckoff_reasons.append("Upthrust / UTAD-type supply return evidence present.")
+    if no_demand:
+        wyckoff_points += 20
+        wyckoff_reasons.append("No-demand evidence present.")
+    if contrary_absent is False:
+        wyckoff_points += 20
+        wyckoff_reasons.append("Contrary failure is present.")
+    if demand_support is False:
+        wyckoff_points += 18
+        wyckoff_reasons.append("Demand/support is not confirmed.")
+    if supply_exhausted is False:
+        wyckoff_points += 15
+        wyckoff_reasons.append("Supply exhaustion is not confirmed.")
+    if "PENDING" in ods_status and isinstance(ods_missing, list):
+        short_relevant_missing = [str(x) for x in ods_missing if str(x) in {"supply_exhaustion", "demand_support_validation", "contrary_failure"}]
+        if short_relevant_missing:
+            wyckoff_points += 8
+            wyckoff_reasons.append(f"ODS pending with deterioration-relevant missing components: {short_relevant_missing}.")
+
+    if wyckoff_points > 0:
+        add(min(45, wyckoff_points), "WYCKOFF_DEMAND_FAILURE_OR_SUPPLY_RETURN", " ".join(wyckoff_reasons))
+
+    div_bias = str(divergence.get("divergence_bias") or "NEUTRAL").upper()
+    div_type = str(divergence.get("divergence_type") or "").upper()
+    div_detected = truthy(divergence.get("divergence_detected"))
+    div_strength = sfloat(divergence.get("divergence_strength")) or 0.0
+    div_effort_result = str(divergence.get("divergence_effort_result") or "").upper()
+    div_momentum = str(divergence.get("divergence_momentum_structure") or "").upper()
+    div_volume = str(divergence.get("divergence_volume_structure") or "").upper()
+
+    bearish_divergence = div_detected and div_bias == "BEARISH"
+    effort_result_deterioration = (
+        "EFFORT" in div_effort_result
+        or "EFFORT" in div_type
+        or "DETERIORATING" in div_momentum
+        or "WEAKER_CONFIRMATION" in div_volume
+        or "HIGH_EFFORT" in div_volume
+    )
+
+    if bearish_divergence:
+        add(20 + min(25, int(div_strength // 2)), "WEIS_BEARISH_DIVERGENCE_OR_EFFORT_FAILURE", f"Weis deterioration: bearish divergence {div_type}, strength={div_strength}.")
+    elif effort_result_deterioration:
+        add(15, "WEIS_EFFORT_RESULT_DETERIORATION_WARNING", f"Weis effort/result deterioration warning: effort_result={div_effort_result}, momentum={div_momentum}, volume={div_volume}.")
+
+    pnf_status = str(pnf.get("pnf_status") or "").upper()
+    pnf_breakout = str(pnf.get("pnf_breakout_status") or "").upper()
+    pnf_column = str(pnf.get("pnf_current_column") or "").upper()
+
+    bearish_pnf = (
+        "BEARISH" in pnf_status
+        or "BREAKDOWN" in pnf_breakout
+        or "BEARISH" in pnf_breakout
+        or pnf_column == "O"
+    )
+
+    if bearish_pnf:
+        add(22, "LIVERMORE_PNF_PATH_DETERIORATION", f"P&F path deterioration: status={pnf_status}, breakout={pnf_breakout}, column={pnf_column}.")
+
+    short_candidate = truthy(short_watchlist.get("short_watchlist_candidate"))
+    short_tier = str(short_watchlist.get("short_watchlist_tier") or "NONE").upper()
+    short_score = sfloat(short_watchlist.get("short_watchlist_score")) or 0.0
+
+    if short_candidate and short_tier == "HIGH_PRIORITY_SHORT_WATCH":
+        add(25, "SHORT_WATCHLIST_HIGH_PRIORITY_CONFIRMING_RISK", f"High-priority Short Watchlist risk already present; score={short_score}.")
+    elif short_candidate:
+        add(15, "SHORT_WATCHLIST_CONFIRMING_RISK", f"Short Watchlist candidate present; score={short_score}.")
+    elif short_tier == "BEARISH_MONITOR":
+        add(8, "SHORT_WATCHLIST_MONITORING_RISK", f"Short Watchlist monitor risk present; score={short_score}.")
+
+    gamma_risk = str(gamma.get("gamma_movement_risk_overlay") or "").upper()
+    gamma_regime = str(gamma.get("gamma_regime") or "").upper()
+    destabilizing_gamma = gamma_risk == "GAMMA_DESTABILIZING" or "NEGATIVE" in gamma_regime
+
+    if destabilizing_gamma:
+        add(12, "GAMMA_DESTABILIZING_MOVEMENT_RISK", f"Gamma movement risk is destabilizing: risk={gamma_risk}, regime={gamma_regime}.")
+
+    decay_label = str(decay.get("decay_label") or decay.get("decay_band") or "").upper()
+    decay_score = sfloat(decay.get("decay_score"))
+
+    decay_risk = False
+    if decay_label in {"WEAKENING", "EXIT_CANDIDATE", "STALE", "DECAYING"}:
+        decay_risk = True
+        add(12, "DECAY_OR_FRESHNESS_DETERIORATION", f"Decay label indicates deterioration risk: {decay_label}.")
+    elif decay_score is not None and decay_score < 80:
+        decay_risk = True
+        add(8, "DECAY_SCORE_DETERIORATION", f"Decay score below 80: {decay_score}.")
+
+    score = max(0, min(100, score))
+
+    candidate = score >= 60 and len(evidence_groups) >= 2
+    monitor = score >= 35 and len(evidence_groups) >= 1
+
+    if candidate and score >= 80:
+        tier = "HIGH_PRIORITY_RISK_WATCH"
+        dtype = "HIGH_PRIORITY_DETERIORATION_RISK"
+        dbias = "DETERIORATING"
+        primary_risk = "MULTI_DOCTRINE_DETERIORATION_CLUSTER"
+    elif candidate:
+        tier = "RISK_WATCH"
+        dtype = "DETERIORATION_RISK_WATCH"
+        dbias = "DETERIORATING"
+        primary_risk = "DOCTRINE_DETERIORATION_CLUSTER"
+    elif monitor:
+        tier = "DETERIORATION_MONITOR"
+        dtype = "DETERIORATION_MONITOR"
+        dbias = "RISK_MONITOR"
+        primary_risk = "EARLY_DETERIORATION_EVIDENCE"
+    else:
+        tier = "NONE"
+        dtype = "NO_MATERIAL_DETERIORATION"
+        dbias = "STABLE_OR_NEUTRAL"
+        primary_risk = "NONE"
+
+    if wyckoff_points >= 30:
+        wyckoff_context = "WYCKOFF_DEMAND_FAILURE_OR_SUPPLY_RETURN_PRESENT"
+    elif wyckoff_points > 0:
+        wyckoff_context = "WYCKOFF_EARLY_DETERIORATION_WARNING_PRESENT"
+    else:
+        wyckoff_context = "NO_DEMAND_FAILURE_OR_SUPPLY_RETURN_CONFIRMED"
+
+    if bearish_divergence:
+        weis_context = "WEIS_BEARISH_EFFORT_RESULT_DETERIORATION_PRESENT"
+    elif effort_result_deterioration:
+        weis_context = "WEIS_EFFORT_RESULT_DETERIORATION_WARNING_PRESENT"
+    else:
+        weis_context = "NO_EFFORT_RESULT_DETERIORATION_CONFIRMED"
+
+    if bearish_pnf or failure_breach:
+        livermore_context = "LIVERMORE_LINE_OF_LEAST_RESISTANCE_BROKEN_OR_PIVOTAL_FAILURE"
+    elif near_failure:
+        livermore_context = "LIVERMORE_LINE_OF_LEAST_RESISTANCE_NEAR_PIVOTAL_FAILURE"
+    else:
+        livermore_context = "LINE_OF_LEAST_RESISTANCE_NOT_MATERIALLY_IMPAIRED"
+
+    if candidate or monitor:
+        reason = "; ".join(reasons[:8])
+    else:
+        reason = "No sufficient Wyckoff/Weis/Livermore deterioration evidence cluster."
+
+    evidence = {
+        "symbol": clean_symbol,
+        "doctrine_basis": "WYCKOFF_WEIS_LIVERMORE_DETERIORATION_RISK_WATCH",
+        "score_components": evidence_groups,
+        "wyckoff_points": wyckoff_points,
+        "wyckoff_reasons": wyckoff_reasons,
+        "weis_bearish_divergence": bool(bearish_divergence),
+        "weis_effort_result_deterioration": bool(effort_result_deterioration),
+        "livermore_bearish_pnf": bool(bearish_pnf),
+        "livermore_failure_breach": bool(failure_breach),
+        "livermore_near_failure": bool(near_failure),
+        "short_watchlist_candidate": bool(short_candidate),
+        "short_watchlist_tier": short_tier,
+        "short_watchlist_score": _round(short_score, 4),
+        "gamma_movement_risk_overlay": gamma_risk,
+        "gamma_regime": gamma_regime,
+        "divergence_bias": div_bias,
+        "divergence_type": div_type,
+        "divergence_strength": _round(div_strength, 4),
+        "divergence_effort_result": div_effort_result,
+        "divergence_momentum_structure": div_momentum,
+        "divergence_volume_structure": div_volume,
+        "pnf_status": pnf_status,
+        "pnf_breakout_status": pnf_breakout,
+        "pnf_current_column": pnf_column,
+        "ods_status": ods_status,
+        "ods_missing_components": ods_missing,
+        "supply_exhaustion_confirmed": supply_exhausted,
+        "demand_support_confirmed": demand_support,
+        "contrary_failure_absent": contrary_absent,
+        "failure_price": _round(failure_price, 4),
+        "failure_distance_pct": _round(failure_distance_pct, 4),
+        "decay_label": decay_label,
+        "decay_score": _round(decay_score, 4),
+        "read_only": True,
+        "operator_control_source": False,
+        "trade_signal": False,
+    }
+
+    base.update({
+        "deterioration_watch_candidate": bool(candidate),
+        "deterioration_tier": tier,
+        "deterioration_bias": dbias,
+        "deterioration_score": int(score),
+        "deterioration_type": dtype,
+        "deterioration_reason": reason,
+        "deterioration_evidence_groups": evidence_groups,
+        "deterioration_primary_risk": primary_risk,
+        "deterioration_wyckoff_context": wyckoff_context,
+        "deterioration_weis_context": weis_context,
+        "deterioration_livermore_context": livermore_context,
+        "deterioration_failure_price": _round(failure_price, 4),
+        "deterioration_failure_distance_pct": _round(failure_distance_pct, 4),
+        "deterioration_failure_breach": bool(failure_breach),
+        "deterioration_near_failure": bool(near_failure),
+        "deterioration_short_watchlist_risk": bool(short_candidate or short_tier == "BEARISH_MONITOR"),
+        "deterioration_divergence_risk": bool(bearish_divergence or effort_result_deterioration),
+        "deterioration_pnf_risk": bool(bearish_pnf),
+        "deterioration_gamma_risk": bool(destabilizing_gamma),
+        "deterioration_ods_risk": bool(supply_exhausted is False or demand_support is False or contrary_absent is False),
+        "deterioration_decay_risk": bool(decay_risk),
+        "deterioration_evidence": evidence,
+        "risk_watch_candidate": bool(candidate),
+        "risk_watch_tier": tier,
+        "risk_watch_score": int(score),
+        "risk_watch_type": dtype,
+        "risk_watch_reason": reason,
+    })
+
+    return base
+
+
+
+
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
 # SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
@@ -2192,6 +2534,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     gamma = _gamma_overlay(symbol, price, bars)
     divergence = _divergence_overlay(symbol, price, bars)
     short_watchlist = _short_watchlist_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets)
+    deterioration_risk_watch = _deterioration_risk_watch_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, decay)
 
     c.update({
         "symbol": symbol,
@@ -2217,6 +2560,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(gamma)
     c.update(divergence)
     c.update(short_watchlist)
+    c.update(deterioration_risk_watch)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
