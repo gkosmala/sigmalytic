@@ -1501,6 +1501,289 @@ def _divergence_overlay(symbol: str, price: Optional[float], bars: List[Dict[str
 
 
 
+
+# SIGMALYTIC_STEP95B_R2_READ_ONLY_SHORT_WATCHLIST_DOCTRINE_OVERLAY
+def _short_watchlist_overlay(
+    symbol: str,
+    price: Optional[float],
+    row: Dict[str, Any],
+    pnf: Dict[str, Any],
+    gamma: Dict[str, Any],
+    divergence: Dict[str, Any],
+    ods: Dict[str, Any],
+    targets: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Read-only Short Watchlist overlay.
+
+    Doctrine boundary:
+    - Wyckoff: distribution / supply return / demand failure.
+    - Weis: effort-vs-result failure / shortening of thrust.
+    - Livermore: line-of-least-resistance deterioration / pivotal failure.
+
+    This classifies review candidates only. It does not persist, mutate,
+    confirm operator control, or create a trade signal.
+    """
+    base = {
+        "short_watchlist_status": "SHORT_WATCHLIST_EVALUATED",
+        "short_watchlist_source": "wyckoff_weis_livermore_read_only_overlay",
+        "short_watchlist_candidate": False,
+        "short_watchlist_tier": "NONE",
+        "short_watchlist_bias": "NEUTRAL",
+        "short_watchlist_score": 0,
+        "short_watchlist_type": "NO_SHORT_WATCHLIST_SETUP",
+        "short_watchlist_reason": "No sufficient Wyckoff/Weis/Livermore short-side evidence cluster.",
+        "short_watchlist_evidence_groups": [],
+        "short_watchlist_failure_price": None,
+        "short_watchlist_failure_distance_pct": None,
+        "short_watchlist_primary_risk": "NONE",
+        "short_watchlist_wyckoff_context": "NO_DISTRIBUTION_CONTEXT_CONFIRMED",
+        "short_watchlist_weis_context": "NO_EFFORT_RESULT_FAILURE_CONFIRMED",
+        "short_watchlist_livermore_context": "LINE_OF_LEAST_RESISTANCE_NOT_BROKEN",
+        "short_watchlist_distribution_risk": False,
+        "short_watchlist_breakdown_risk": False,
+        "short_watchlist_gamma_risk": False,
+        "short_watchlist_divergence_risk": False,
+        "short_watchlist_ods_risk": False,
+        "short_watchlist_operator_control_source": False,
+        "short_watchlist_trade_signal": False,
+        "short_watchlist_read_only": True,
+        "short_watchlist_evidence": {},
+    }
+
+    clean_symbol = str(symbol or "").upper().strip()
+
+    def sfloat(value: Any) -> Optional[float]:
+        try:
+            return _safe_float(value)
+        except Exception:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+    def truthy(value: Any) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+    score = 0
+    evidence_groups: List[str] = []
+    reasons: List[str] = []
+
+    def add(points: int, group: str, reason: str) -> None:
+        nonlocal score
+        score += int(points)
+        if group not in evidence_groups:
+            evidence_groups.append(group)
+        reasons.append(reason)
+
+    current_price = sfloat(price)
+    failure_price = sfloat(targets.get("failure_price") or row.get("failure_price") or pnf.get("pnf_failure_price"))
+
+    failure_distance_pct = None
+    if current_price is not None and current_price > 0 and failure_price is not None:
+        failure_distance_pct = ((current_price - failure_price) / current_price) * 100.0
+
+    state = str(row.get("state") or row.get("status") or "").upper()
+    bias = str(row.get("bias") or "").upper()
+
+    # Wyckoff-side evidence: distribution, supply return, demand failure, loss of ODS components.
+    contrary_absent = ods.get("contrary_failure_absent")
+    supply_exhausted = ods.get("supply_exhaustion_confirmed")
+    demand_support = ods.get("demand_support_confirmed")
+    ods_status = str(ods.get("ods_status") or "").upper()
+    ods_missing = ods.get("ods_missing_components") or []
+
+    upthrust = truthy(row.get("upthrust_supply") or row.get("upthrust_detected") or row.get("utad_detected"))
+    no_demand = truthy(row.get("no_demand_test") or row.get("no_demand"))
+    distribution_state = "DISTRIBUTION" in state or "DISTRIBUTION" in bias
+
+    wyckoff_points = 0
+    wyckoff_reasons: List[str] = []
+
+    if distribution_state:
+        wyckoff_points += 25
+        wyckoff_reasons.append("Campaign state/bias contains distribution risk.")
+    if upthrust:
+        wyckoff_points += 25
+        wyckoff_reasons.append("Upthrust / UTAD-type supply evidence present.")
+    if no_demand:
+        wyckoff_points += 20
+        wyckoff_reasons.append("No-demand evidence present.")
+    if contrary_absent is False:
+        wyckoff_points += 20
+        wyckoff_reasons.append("Contrary failure is present; bullish campaign evidence is impaired.")
+    if demand_support is False:
+        wyckoff_points += 15
+        wyckoff_reasons.append("Demand/support is not confirmed.")
+    if supply_exhausted is False:
+        wyckoff_points += 10
+        wyckoff_reasons.append("Supply exhaustion is not confirmed.")
+    if "PENDING" in ods_status and isinstance(ods_missing, list) and any(str(x) in {"supply_exhaustion", "demand_support", "contrary_failure"} for x in ods_missing):
+        wyckoff_points += 5
+        wyckoff_reasons.append(f"ODS pending with short-relevant missing components: {ods_missing}.")
+
+    if wyckoff_points > 0:
+        add(min(40, wyckoff_points), "WYCKOFF_DISTRIBUTION_OR_DEMAND_FAILURE", " ".join(wyckoff_reasons))
+
+    # Weis-side evidence: effort failing to produce upside result, bearish divergence, shortening / inefficient thrust.
+    div_bias = str(divergence.get("divergence_bias") or "NEUTRAL").upper()
+    div_type = str(divergence.get("divergence_type") or "").upper()
+    div_detected = truthy(divergence.get("divergence_detected"))
+    div_strength = sfloat(divergence.get("divergence_strength")) or 0.0
+    div_effort_result = str(divergence.get("divergence_effort_result") or "").upper()
+    div_momentum = str(divergence.get("divergence_momentum_structure") or "").upper()
+    div_volume = str(divergence.get("divergence_volume_structure") or "").upper()
+
+    bearish_divergence = div_detected and div_bias == "BEARISH"
+    effort_failure = (
+        "EFFORT" in div_effort_result
+        or "EFFORT" in div_type
+        or "DETERIORATING" in div_momentum
+        or "WEAKER_CONFIRMATION" in div_volume
+    )
+
+    if bearish_divergence:
+        add(20 + min(25, int(div_strength // 2)), "WEIS_BEARISH_DIVERGENCE", f"Weis-style bearish effort/result divergence: {div_type}, strength={div_strength}.")
+    elif effort_failure:
+        add(15, "WEIS_EFFORT_RESULT_WARNING", f"Weis effort/result warning: effort_result={div_effort_result}, momentum={div_momentum}, volume={div_volume}.")
+
+    # Livermore-side evidence: path failure, pivot/failure level, bearish P&F, line of least resistance downward/blocked.
+    pnf_status = str(pnf.get("pnf_status") or "").upper()
+    pnf_breakout = str(pnf.get("pnf_breakout_status") or "").upper()
+    pnf_column = str(pnf.get("pnf_current_column") or "").upper()
+
+    bearish_pnf = (
+        "BEARISH" in pnf_status
+        or "BEARISH" in pnf_breakout
+        or "BREAKDOWN" in pnf_breakout
+        or pnf_column == "O"
+    )
+
+    if bearish_pnf:
+        add(25, "LIVERMORE_PATH_BEARISH_PNF", f"P&F path evidence is bearish/blocked: status={pnf_status}, breakout={pnf_breakout}, column={pnf_column}.")
+
+    if failure_distance_pct is not None:
+        if failure_distance_pct <= 0:
+            add(25, "LIVERMORE_PIVOTAL_FAILURE_BREACHED", f"Price is at/below failure reference: distance={failure_distance_pct:.2f}%.")
+        elif failure_distance_pct <= 2.5:
+            add(12, "LIVERMORE_NEAR_PIVOTAL_FAILURE", f"Price is within 2.5% of failure reference: distance={failure_distance_pct:.2f}%.")
+
+    # Gamma is a movement-risk overlay only, not the short thesis itself.
+    gamma_risk = str(gamma.get("gamma_movement_risk_overlay") or "").upper()
+    gamma_regime = str(gamma.get("gamma_regime") or "").upper()
+    destabilizing_gamma = gamma_risk == "GAMMA_DESTABILIZING" or "NEGATIVE" in gamma_regime
+    if destabilizing_gamma:
+        add(15, "GAMMA_DESTABILIZING_OVERLAY", f"Gamma movement-risk overlay is destabilizing: risk={gamma_risk}, regime={gamma_regime}.")
+
+    score = max(0, min(100, score))
+
+    candidate = score >= 55 and len(evidence_groups) >= 2
+    monitor = score >= 35 and len(evidence_groups) >= 1
+
+    if candidate and score >= 75:
+        tier = "HIGH_PRIORITY_SHORT_WATCH"
+    elif candidate:
+        tier = "SHORT_WATCH"
+    elif monitor:
+        tier = "BEARISH_MONITOR"
+    else:
+        tier = "NONE"
+
+    if wyckoff_points >= 30:
+        wyckoff_context = "WYCKOFF_DISTRIBUTION_OR_DEMAND_FAILURE_PRESENT"
+    elif wyckoff_points > 0:
+        wyckoff_context = "WYCKOFF_SHORT_SIDE_WARNING_PRESENT"
+    else:
+        wyckoff_context = "NO_DISTRIBUTION_CONTEXT_CONFIRMED"
+
+    if bearish_divergence:
+        weis_context = "WEIS_EFFORT_RESULT_BEARISH_DIVERGENCE_PRESENT"
+    elif effort_failure:
+        weis_context = "WEIS_EFFORT_RESULT_WARNING_PRESENT"
+    else:
+        weis_context = "NO_EFFORT_RESULT_FAILURE_CONFIRMED"
+
+    if bearish_pnf or (failure_distance_pct is not None and failure_distance_pct <= 2.5):
+        livermore_context = "LIVERMORE_LINE_OF_LEAST_RESISTANCE_DOWN_OR_PIVOTAL_FAILURE_RISK"
+    else:
+        livermore_context = "LINE_OF_LEAST_RESISTANCE_NOT_BROKEN"
+
+    if candidate:
+        watch_bias = "BEARISH"
+        setup_type = "SHORT_WATCHLIST_CANDIDATE"
+        primary_risk = "WYCKOFF_WEIS_LIVERMORE_SHORT_SIDE_EVIDENCE_CLUSTER"
+        reason = "; ".join(reasons[:7])
+    elif monitor:
+        watch_bias = "BEARISH_MONITOR"
+        setup_type = "SHORT_WATCHLIST_MONITOR"
+        primary_risk = "EARLY_SHORT_SIDE_EVIDENCE"
+        reason = "; ".join(reasons[:5])
+    else:
+        watch_bias = "NEUTRAL"
+        setup_type = "NO_SHORT_WATCHLIST_SETUP"
+        primary_risk = "NONE"
+        reason = "No sufficient Wyckoff/Weis/Livermore short-side evidence cluster."
+
+    base.update({
+        "short_watchlist_candidate": bool(candidate),
+        "short_watchlist_tier": tier,
+        "short_watchlist_bias": watch_bias,
+        "short_watchlist_score": int(score),
+        "short_watchlist_type": setup_type,
+        "short_watchlist_reason": reason,
+        "short_watchlist_evidence_groups": evidence_groups,
+        "short_watchlist_failure_price": _round(failure_price, 4),
+        "short_watchlist_failure_distance_pct": _round(failure_distance_pct, 4),
+        "short_watchlist_primary_risk": primary_risk,
+        "short_watchlist_wyckoff_context": wyckoff_context,
+        "short_watchlist_weis_context": weis_context,
+        "short_watchlist_livermore_context": livermore_context,
+        "short_watchlist_distribution_risk": bool(wyckoff_points > 0),
+        "short_watchlist_breakdown_risk": bool(bearish_pnf or (failure_distance_pct is not None and failure_distance_pct <= 2.5)),
+        "short_watchlist_gamma_risk": bool(destabilizing_gamma),
+        "short_watchlist_divergence_risk": bool(bearish_divergence),
+        "short_watchlist_ods_risk": bool(supply_exhausted is False or demand_support is False or contrary_absent is False),
+        "short_watchlist_evidence": {
+            "symbol": clean_symbol,
+            "doctrine_basis": "WYCKOFF_WEIS_LIVERMORE",
+            "score_components": evidence_groups,
+            "wyckoff_points": wyckoff_points,
+            "wyckoff_reasons": wyckoff_reasons,
+            "pnf_status": pnf_status,
+            "pnf_breakout_status": pnf_breakout,
+            "pnf_current_column": pnf_column,
+            "gamma_movement_risk_overlay": gamma_risk,
+            "gamma_regime": gamma_regime,
+            "divergence_bias": div_bias,
+            "divergence_type": div_type,
+            "divergence_strength": _round(div_strength, 4),
+            "divergence_effort_result": div_effort_result,
+            "divergence_momentum_structure": div_momentum,
+            "divergence_volume_structure": div_volume,
+            "ods_status": ods_status,
+            "ods_missing_components": ods_missing,
+            "supply_exhaustion_confirmed": supply_exhausted,
+            "demand_support_confirmed": demand_support,
+            "contrary_failure_absent": contrary_absent,
+            "failure_price": _round(failure_price, 4),
+            "failure_distance_pct": _round(failure_distance_pct, 4),
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+    })
+
+    return base
+
+
+
+
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
 # SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
@@ -1908,6 +2191,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     pnf = _pnf(c, targets, bars)
     gamma = _gamma_overlay(symbol, price, bars)
     divergence = _divergence_overlay(symbol, price, bars)
+    short_watchlist = _short_watchlist_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets)
 
     c.update({
         "symbol": symbol,
@@ -1932,6 +2216,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(pnf)
     c.update(gamma)
     c.update(divergence)
+    c.update(short_watchlist)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
