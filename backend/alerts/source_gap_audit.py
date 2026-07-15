@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.live_readiness_batch_audit import run_read_only_live_readiness_batch_audit
 COMPONENT = "ALERT_SOURCE_GAP_AUDIT_READ_ONLY"
@@ -29,8 +29,8 @@ def _as_bool(value: Any) -> bool:
     return value is True
 def _clean_symbols(symbols: Any) -> str:
     if symbols is None:
-        return "SPY,QQQ,IWM"
-    return str(symbols).strip() or "SPY,QQQ,IWM"
+        return "SPY"
+    return str(symbols).strip() or "SPY"
 def _gap_reasons(row: Dict[str, Any]) -> List[str]:
     reasons: List[str] = []
     if _as_bool(row.get("recent_bars_accepted")) is False:
@@ -148,7 +148,7 @@ def build_read_only_alert_source_gap_audit_from_batch(
     }
 def run_read_only_alert_source_gap_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

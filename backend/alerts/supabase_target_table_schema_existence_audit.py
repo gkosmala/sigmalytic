@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import json
 import os
 import urllib.error
@@ -382,7 +382,7 @@ def build_read_only_supabase_target_table_schema_existence_from_simulation(
     }
 def run_read_only_supabase_target_table_schema_existence_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

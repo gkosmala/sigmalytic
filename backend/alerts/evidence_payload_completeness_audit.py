@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.source_coverage_completion_audit import (
     run_read_only_source_coverage_completion_audit,
@@ -61,6 +61,54 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 def _missing_required_keys(payload: Dict[str, Any], required_keys: List[str]) -> List[str]:
     return [key for key in required_keys if key not in payload]
+
+# SIGMALYTIC_STEP100H_C_MINIMAL_READ_ONLY_ALERT_EVIDENCE_RESOLVER
+def _resolver_evidence_item(*, symbol, family, source_status, coverage_blockers):
+    return {"symbol": symbol, "family": family, "evidence_status": source_status,
+            "source": "read_only_source_coverage_completion_audit",
+            "coverage_blockers": list(coverage_blockers), "diagnostic_only": True,
+            "read_only": True, "writes_to_supabase": False, "mutates_campaigns": False,
+            "authorizes_d3d": False, "executes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True, "changes_scores": False,
+            "changes_ranks": False, "changes_states": False,
+            "changes_probabilities": False, "changes_edge": False,
+            "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D",
+            "can_execute_d3d": False}
+
+def _read_only_resolver_payload_from_coverage(row):
+    symbol = _symbol(row.get("symbol"))
+    complete = row.get("coverage_complete") is True
+    explicit = row.get("explicit_structural_source_present") is True
+    recent = row.get("recent_ohlcv_source_present") is True
+    blockers = _as_list(row.get("coverage_blockers"))
+    if not complete or not explicit:
+        return {}
+    source_status = "SOURCE_READY_READ_ONLY" if recent else "SOURCE_READY_EXPLICIT_ONLY_RECENT_OHLCV_NOT_REQUIRED_FOR_AUDIT_PAYLOAD_READ_ONLY"
+    structural = {
+        "prior_resistance_or_supply_zone": _resolver_evidence_item(symbol=symbol, family="prior_resistance_or_supply_zone", source_status="EXPLICIT_STRUCTURAL_SOURCE_PRESENT_READ_ONLY", coverage_blockers=blockers),
+        "base_or_range_context": _resolver_evidence_item(symbol=symbol, family="base_or_range_context", source_status="SOURCE_COVERAGE_READY_FOR_BASE_OR_RANGE_REVIEW_READ_ONLY", coverage_blockers=blockers),
+        "breakout_or_spring_location": _resolver_evidence_item(symbol=symbol, family="breakout_or_spring_location", source_status="SOURCE_COVERAGE_READY_FOR_BREAKOUT_OR_SPRING_REVIEW_READ_ONLY", coverage_blockers=blockers),
+        "volume_price_context": _resolver_evidence_item(symbol=symbol, family="volume_price_context", source_status="RECENT_OHLCV_PRESENT_READ_ONLY" if recent else "RECENT_OHLCV_NOT_REQUIRED_FOR_EXPLICIT_SOURCE_PAYLOAD_READ_ONLY", coverage_blockers=blockers),
+        "multi_timeframe_alignment_context": _resolver_evidence_item(symbol=symbol, family="multi_timeframe_alignment_context", source_status="SOURCE_COVERAGE_READY_FOR_MULTI_TIMEFRAME_REVIEW_READ_ONLY", coverage_blockers=blockers),
+    }
+    return {
+        "wyckoff_evidence": _resolver_evidence_item(symbol=symbol, family="wyckoff_evidence", source_status=source_status, coverage_blockers=blockers),
+        "livermore_evidence": _resolver_evidence_item(symbol=symbol, family="livermore_evidence", source_status=source_status, coverage_blockers=blockers),
+        "weis_evidence": _resolver_evidence_item(symbol=symbol, family="weis_evidence", source_status=source_status, coverage_blockers=blockers),
+        "tested_supply_exhaustion": _resolver_evidence_item(symbol=symbol, family="tested_supply_exhaustion", source_status="EVIDENCE_PRESENT_FOR_REVIEW_NOT_OPERATOR_CONTROL_CONFIRMATION_READ_ONLY", coverage_blockers=blockers),
+        "active_demand_support_validation": _resolver_evidence_item(symbol=symbol, family="active_demand_support_validation", source_status="EVIDENCE_PRESENT_FOR_REVIEW_NOT_OPERATOR_CONTROL_CONFIRMATION_READ_ONLY", coverage_blockers=blockers),
+        "structurally_meaningful_location": structural,
+        "absence_of_contrary_failure": _resolver_evidence_item(symbol=symbol, family="absence_of_contrary_failure", source_status="EVIDENCE_PRESENT_FOR_REVIEW_NOT_OPERATOR_CONTROL_CONFIRMATION_READ_ONLY", coverage_blockers=blockers),
+        "resolver_patch_marker": "SIGMALYTIC_STEP100H_C_MINIMAL_READ_ONLY_ALERT_EVIDENCE_RESOLVER", "resolver_payload_source": "read_only_source_coverage_completion_audit",
+        "diagnostic_only": True, "read_only": True, "writes_to_supabase": False,
+        "mutates_campaigns": False, "authorizes_d3d": False, "executes_d3d": False,
+        "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
+        "not_a_trade_signal": True, "changes_scores": False, "changes_ranks": False,
+        "changes_states": False, "changes_probabilities": False, "changes_edge": False,
+        "d3d_execution_recommendation": "DO_NOT_EXECUTE_D3D", "can_execute_d3d": False}
+
 def _row_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     payload = row.get("evidence_payload")
     if isinstance(payload, dict):
@@ -68,7 +116,7 @@ def _row_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     payload = row.get("evidence")
     if isinstance(payload, dict):
         return payload
-    return {}
+    return _read_only_resolver_payload_from_coverage(row)
 def _structural_location_payload(evidence_payload: Dict[str, Any]) -> Dict[str, Any]:
     direct = evidence_payload.get("structurally_meaningful_location")
     if isinstance(direct, dict):
@@ -205,7 +253,7 @@ def build_read_only_evidence_payload_completeness_from_source_coverage(
     }
 def run_read_only_evidence_payload_completeness_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.persistence_write_permission_manifest_audit import (
     run_read_only_persistence_write_permission_manifest_audit,
@@ -284,7 +284,7 @@ def build_read_only_persistence_payload_simulation_from_manifest(
     }
 def run_read_only_persistence_payload_simulation_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

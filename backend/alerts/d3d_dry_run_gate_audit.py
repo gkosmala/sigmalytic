@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.operator_control_evidence_audit import (
     run_read_only_operator_control_evidence_audit,
@@ -158,7 +158,7 @@ def build_read_only_d3d_dry_run_gate_from_operator_control(
     }
 def run_read_only_d3d_dry_run_gate_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

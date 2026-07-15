@@ -231,7 +231,7 @@ except Exception as _live_readiness_batch_audit_import_error:
     LIVE_READINESS_BATCH_AUDIT_IMPORT_ERROR = str(_live_readiness_batch_audit_import_error)
 @router.get("/read-only/live-readiness-batch-audit")
 def alert_read_only_live_readiness_batch_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -275,7 +275,7 @@ except Exception as _alert_source_gap_audit_import_error:
     ALERT_SOURCE_GAP_AUDIT_IMPORT_ERROR = str(_alert_source_gap_audit_import_error)
 @router.get("/read-only/source-gap-audit")
 def alert_read_only_source_gap_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -319,7 +319,7 @@ except Exception as _alert_source_gap_remediation_audit_import_error:
     ALERT_SOURCE_GAP_REMEDIATION_AUDIT_IMPORT_ERROR = str(_alert_source_gap_remediation_audit_import_error)
 @router.get("/read-only/source-gap-remediation-audit")
 def alert_read_only_source_gap_remediation_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -363,7 +363,7 @@ except Exception as _alert_source_gap_dashboard_audit_import_error:
     ALERT_SOURCE_GAP_DASHBOARD_AUDIT_IMPORT_ERROR = str(_alert_source_gap_dashboard_audit_import_error)
 @router.get("/read-only/source-gap-dashboard-audit")
 def alert_read_only_source_gap_dashboard_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -407,7 +407,7 @@ except Exception as _alert_console_snapshot_audit_import_error:
     ALERT_CONSOLE_SNAPSHOT_AUDIT_IMPORT_ERROR = str(_alert_console_snapshot_audit_import_error)
 @router.get("/read-only/console-snapshot-audit")
 def alert_read_only_console_snapshot_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -451,7 +451,7 @@ except Exception as _alert_console_view_model_audit_import_error:
     ALERT_CONSOLE_VIEW_MODEL_AUDIT_IMPORT_ERROR = str(_alert_console_view_model_audit_import_error)
 @router.get("/read-only/console-view-model-audit")
 def alert_read_only_console_view_model_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -495,7 +495,7 @@ except Exception as _alert_console_frontend_contract_audit_import_error:
     ALERT_CONSOLE_FRONTEND_CONTRACT_AUDIT_IMPORT_ERROR = str(_alert_console_frontend_contract_audit_import_error)
 @router.get("/read-only/console-frontend-contract-audit")
 def alert_read_only_console_frontend_contract_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -539,7 +539,7 @@ except Exception as _source_coverage_completion_audit_import_error:
     SOURCE_COVERAGE_COMPLETION_AUDIT_IMPORT_ERROR = str(_source_coverage_completion_audit_import_error)
 @router.get("/read-only/source-coverage-completion-audit")
 def alert_read_only_source_coverage_completion_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -583,7 +583,7 @@ except Exception as _evidence_payload_completeness_audit_import_error:
     EVIDENCE_PAYLOAD_COMPLETENESS_AUDIT_IMPORT_ERROR = str(_evidence_payload_completeness_audit_import_error)
 @router.get("/read-only/evidence-payload-completeness-audit")
 def alert_read_only_evidence_payload_completeness_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -627,7 +627,7 @@ except Exception as _operator_control_evidence_audit_import_error:
     OPERATOR_CONTROL_EVIDENCE_AUDIT_IMPORT_ERROR = str(_operator_control_evidence_audit_import_error)
 @router.get("/read-only/operator-control-evidence-audit")
 def alert_read_only_operator_control_evidence_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -672,7 +672,7 @@ except Exception as _d3d_dry_run_gate_audit_import_error:
     D3D_DRY_RUN_GATE_AUDIT_IMPORT_ERROR = str(_d3d_dry_run_gate_audit_import_error)
 @router.get("/read-only/d3d-dry-run-gate-audit")
 def alert_read_only_d3d_dry_run_gate_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -718,7 +718,7 @@ except Exception as _controlled_persistence_contract_audit_import_error:
     CONTROLLED_PERSISTENCE_CONTRACT_AUDIT_IMPORT_ERROR = str(_controlled_persistence_contract_audit_import_error)
 @router.get("/read-only/controlled-persistence-contract-audit")
 def alert_read_only_controlled_persistence_contract_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -767,7 +767,7 @@ except Exception as _controlled_persistence_activation_readiness_audit_import_er
     CONTROLLED_PERSISTENCE_ACTIVATION_READINESS_AUDIT_IMPORT_ERROR = str(_controlled_persistence_activation_readiness_audit_import_error)
 @router.get("/read-only/controlled-persistence-activation-readiness-audit")
 def alert_read_only_controlled_persistence_activation_readiness_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -818,7 +818,7 @@ except Exception as _persistence_write_permission_manifest_audit_import_error:
     PERSISTENCE_WRITE_PERMISSION_MANIFEST_AUDIT_IMPORT_ERROR = str(_persistence_write_permission_manifest_audit_import_error)
 @router.get("/read-only/persistence-write-permission-manifest-audit")
 def alert_read_only_persistence_write_permission_manifest_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -870,7 +870,7 @@ except Exception as _persistence_payload_simulation_audit_import_error:
     PERSISTENCE_PAYLOAD_SIMULATION_AUDIT_IMPORT_ERROR = str(_persistence_payload_simulation_audit_import_error)
 @router.get("/read-only/persistence-payload-simulation-audit")
 def alert_read_only_persistence_payload_simulation_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -924,7 +924,7 @@ except Exception as _supabase_target_table_schema_existence_audit_import_error:
     SUPABASE_TARGET_TABLE_SCHEMA_EXISTENCE_AUDIT_IMPORT_ERROR = str(_supabase_target_table_schema_existence_audit_import_error)
 @router.get("/read-only/supabase-target-table-schema-existence-audit")
 def alert_read_only_supabase_target_table_schema_existence_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -980,7 +980,7 @@ except Exception as _supabase_append_only_write_preflight_authorization_gate_imp
     SUPABASE_APPEND_ONLY_WRITE_PREFLIGHT_AUTHORIZATION_GATE_IMPORT_ERROR = str(_supabase_append_only_write_preflight_authorization_gate_import_error)
 @router.get("/read-only/supabase-append-only-write-preflight-authorization-gate")
 def alert_read_only_supabase_append_only_write_preflight_authorization_gate(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1039,7 +1039,7 @@ except Exception as _controlled_append_only_write_approval_packet_audit_import_e
     CONTROLLED_APPEND_ONLY_WRITE_APPROVAL_PACKET_AUDIT_IMPORT_ERROR = str(_controlled_append_only_write_approval_packet_audit_import_error)
 @router.get("/read-only/controlled-append-only-write-approval-packet-audit")
 def alert_read_only_controlled_append_only_write_approval_packet_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1100,7 +1100,7 @@ except Exception as _controlled_persistence_decision_console_audit_import_error:
     CONTROLLED_PERSISTENCE_DECISION_CONSOLE_AUDIT_IMPORT_ERROR = str(_controlled_persistence_decision_console_audit_import_error)
 @router.get("/read-only/controlled-persistence-decision-console-audit")
 def alert_read_only_controlled_persistence_decision_console_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1163,7 +1163,7 @@ except Exception as _controlled_persistence_decision_console_frontend_contract_a
     CONTROLLED_PERSISTENCE_DECISION_CONSOLE_FRONTEND_CONTRACT_AUDIT_IMPORT_ERROR = str(_controlled_persistence_decision_console_frontend_contract_audit_import_error)
 @router.get("/read-only/controlled-persistence-decision-console-frontend-contract-audit")
 def alert_read_only_controlled_persistence_decision_console_frontend_contract_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1229,7 +1229,7 @@ except Exception as _controlled_persistence_status_center_ui_mount_audit_import_
     CONTROLLED_PERSISTENCE_STATUS_CENTER_UI_MOUNT_AUDIT_IMPORT_ERROR = str(_controlled_persistence_status_center_ui_mount_audit_import_error)
 @router.get("/read-only/controlled-persistence-status-center-ui-mount-audit")
 def alert_read_only_controlled_persistence_status_center_ui_mount_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1298,7 +1298,7 @@ except Exception as _controlled_persistence_status_center_ui_implementation_wiri
     CONTROLLED_PERSISTENCE_STATUS_CENTER_UI_IMPLEMENTATION_WIRING_AUDIT_IMPORT_ERROR = str(_controlled_persistence_status_center_ui_implementation_wiring_audit_import_error)
 @router.get("/read-only/controlled-persistence-status-center-ui-implementation-wiring-audit")
 def alert_read_only_controlled_persistence_status_center_ui_implementation_wiring_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1371,7 +1371,7 @@ except Exception as _controlled_persistence_status_center_frontend_visual_smoke_
     CONTROLLED_PERSISTENCE_STATUS_CENTER_FRONTEND_VISUAL_SMOKE_TEST_AUDIT_IMPORT_ERROR = str(_controlled_persistence_status_center_frontend_visual_smoke_test_audit_import_error)
 @router.get("/read-only/controlled-persistence-status-center-frontend-visual-smoke-test-audit")
 def alert_read_only_controlled_persistence_status_center_frontend_visual_smoke_test_audit(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
@@ -1447,7 +1447,7 @@ except Exception as _controlled_persistence_end_to_end_no_drift_regression_sweep
     CONTROLLED_PERSISTENCE_END_TO_END_NO_DRIFT_REGRESSION_SWEEP_IMPORT_ERROR = str(_controlled_persistence_end_to_end_no_drift_regression_sweep_import_error)
 @router.get("/read-only/controlled-persistence-end-to-end-no-drift-regression-sweep")
 def alert_read_only_controlled_persistence_end_to_end_no_drift_regression_sweep(
-    symbols: str = "SPY,QQQ,IWM",
+    symbols: str = "SPY",
     timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

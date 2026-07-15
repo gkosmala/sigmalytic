@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.source_gap_dashboard_audit import (
     run_read_only_alert_source_gap_dashboard_audit,
@@ -171,7 +171,7 @@ def build_read_only_source_coverage_completion_from_dashboard(
     }
 def run_read_only_source_coverage_completion_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,

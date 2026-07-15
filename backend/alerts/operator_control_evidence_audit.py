@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from typing import Any, Dict, List
 from backend.alerts.evidence_payload_completeness_audit import (
     run_read_only_evidence_payload_completeness_audit,
@@ -209,7 +209,7 @@ def build_read_only_operator_control_evidence_from_evidence_payload(
     }
 def run_read_only_operator_control_evidence_audit(
     *,
-    symbols: Any = "SPY,QQQ,IWM",
+    symbols: Any = "SPY",
     requested_timeframe: str = "1Min",
     lookback_bars: int = 390,
     minimum_usable_bars: int = 20,
