@@ -2127,6 +2127,259 @@ def _deterioration_risk_watch_overlay(
 
 
 
+
+# SIGMALYTIC_STEP98C_R2_READ_ONLY_RENKO_OVERLAY
+def _renko_read_only_overlay(
+    symbol: str,
+    price: Optional[float],
+    bars: List[Dict[str, Any]],
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    clean_symbol = str(symbol or "").upper().strip()
+
+    def emit_unavailable(reason: str) -> Dict[str, Any]:
+        return {
+            "renko_status": "RENKO_INSUFFICIENT_HISTORY",
+            "renko_source": "self_contained_read_only_bar_overlay",
+            "renko_available": False,
+            "renko_context": "RENKO_INSUFFICIENT_HISTORY",
+            "renko_trend": "UNKNOWN",
+            "renko_direction": "UNKNOWN",
+            "renko_brick_size": 0.0,
+            "renko_brick_count": 0,
+            "renko_last_brick_direction": "UNKNOWN",
+            "renko_last_streak": 0,
+            "renko_reversal": False,
+            "renko_continuation": False,
+            "renko_strength": 0,
+            "renko_price_progress_pct": 0.0,
+            "renko_reason": reason,
+            "renko_read_only": True,
+            "renko_trade_signal": False,
+            "renko_operator_control_source": False,
+            "renko_evidence": {
+                "symbol": clean_symbol,
+                "reason": reason,
+                "read_only": True,
+                "trade_signal": False,
+                "operator_control_source": False,
+            },
+        }
+
+    cleaned: List[Dict[str, float]] = []
+
+    for bar in bars or []:
+        if not isinstance(bar, dict):
+            continue
+
+        close = _safe_float(bar.get("c") or bar.get("close"))
+        high = _safe_float(bar.get("h") or bar.get("high"))
+        low = _safe_float(bar.get("l") or bar.get("low"))
+        open_ = _safe_float(bar.get("o") or bar.get("open"))
+        volume = _safe_float(bar.get("v") or bar.get("volume"), 0.0)
+
+        if close is None:
+            continue
+
+        if high is None:
+            high = close
+        if low is None:
+            low = close
+        if open_ is None:
+            open_ = close
+
+        cleaned.append({
+            "open": float(open_),
+            "high": float(high),
+            "low": float(low),
+            "close": float(close),
+            "volume": float(volume or 0.0),
+        })
+
+    if len(cleaned) < 5:
+        return emit_unavailable("Fewer than five usable bars available for Renko computation.")
+
+    closes = [b["close"] for b in cleaned]
+    current_price = _safe_float(price) or closes[-1]
+
+    if current_price is None or current_price <= 0:
+        return emit_unavailable("Current price unavailable for Renko computation.")
+
+    true_ranges: List[float] = []
+    prev_close = closes[0]
+
+    for bar in cleaned[-30:]:
+        high = bar["high"]
+        low = bar["low"]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        if tr > 0:
+            true_ranges.append(tr)
+        prev_close = bar["close"]
+
+    atr = sum(true_ranges[-14:]) / len(true_ranges[-14:]) if true_ranges else current_price * 0.01
+    atr_brick = atr * 0.50
+    pct_brick = current_price * 0.005
+    brick_size = max(atr_brick, pct_brick, 0.0001)
+
+    bricks: List[Dict[str, Any]] = []
+    last = closes[0]
+
+    for close in closes[1:]:
+        guard = 0
+        while abs(close - last) >= brick_size and guard < 60:
+            previous = last
+
+            if close > last:
+                last += brick_size
+                direction = "UP"
+            else:
+                last -= brick_size
+                direction = "DN"
+
+            bricks.append({
+                "direction": direction,
+                "open": previous,
+                "close": last,
+            })
+
+            guard += 1
+
+            if len(bricks) >= 500:
+                break
+
+        if len(bricks) >= 500:
+            break
+
+    if not bricks:
+        return {
+            "renko_status": "RENKO_NO_MATERIAL_BRICKS",
+            "renko_source": "self_contained_read_only_bar_overlay",
+            "renko_available": True,
+            "renko_context": "RENKO_NO_MATERIAL_BRICKS",
+            "renko_trend": "FLAT_OR_COMPRESSED",
+            "renko_direction": "FLAT",
+            "renko_brick_size": _round(brick_size, 6),
+            "renko_brick_count": 0,
+            "renko_last_brick_direction": "NONE",
+            "renko_last_streak": 0,
+            "renko_reversal": False,
+            "renko_continuation": False,
+            "renko_strength": 0,
+            "renko_price_progress_pct": 0.0,
+            "renko_reason": "No Renko brick was formed from the available bar history.",
+            "renko_read_only": True,
+            "renko_trade_signal": False,
+            "renko_operator_control_source": False,
+            "renko_evidence": {
+                "symbol": clean_symbol,
+                "bar_count": len(cleaned),
+                "brick_size": _round(brick_size, 6),
+                "brick_count": 0,
+                "read_only": True,
+                "trade_signal": False,
+                "operator_control_source": False,
+            },
+        }
+
+    last_direction = str(bricks[-1]["direction"])
+    last_streak = 0
+
+    for brick in reversed(bricks):
+        if brick["direction"] == last_direction:
+            last_streak += 1
+        else:
+            break
+
+    previous_direction = str(bricks[-2]["direction"]) if len(bricks) >= 2 else last_direction
+    reversal = len(bricks) >= 2 and last_direction != previous_direction
+    continuation = last_streak >= 3
+
+    last_10 = bricks[-10:]
+    up_count = sum(1 for b in last_10 if b["direction"] == "UP")
+    down_count = sum(1 for b in last_10 if b["direction"] == "DN")
+
+    if up_count > down_count:
+        trend = "UPTREND"
+    elif down_count > up_count:
+        trend = "DOWNTREND"
+    else:
+        trend = "MIXED"
+
+    first_open = _safe_float(bricks[0].get("open")) or closes[0]
+    last_close = _safe_float(bricks[-1].get("close")) or closes[-1]
+    progress_pct = ((last_close - first_open) / current_price) * 100.0 if current_price else 0.0
+
+    if reversal and last_direction == "UP":
+        context = "RENKO_BULLISH_REVERSAL"
+    elif reversal and last_direction == "DN":
+        context = "RENKO_BEARISH_REVERSAL"
+    elif continuation and last_direction == "UP":
+        context = "RENKO_BULLISH_CONTINUATION"
+    elif continuation and last_direction == "DN":
+        context = "RENKO_BEARISH_CONTINUATION"
+    elif trend == "UPTREND":
+        context = "RENKO_UPTREND_DEVELOPING"
+    elif trend == "DOWNTREND":
+        context = "RENKO_DOWNTREND_DEVELOPING"
+    else:
+        context = "RENKO_MIXED_OR_DEVELOPING"
+
+    strength = min(100, int((len(bricks) * 3) + (last_streak * 9)))
+
+    if last_direction == "UP":
+        status = "RENKO_UP_STRUCTURE_COMPUTED"
+        direction_out = "UP"
+    elif last_direction == "DN":
+        status = "RENKO_DOWN_STRUCTURE_COMPUTED"
+        direction_out = "DOWN"
+    else:
+        status = "RENKO_STRUCTURE_COMPUTED"
+        direction_out = "UNKNOWN"
+
+    reason = (
+        f"Renko computed from {len(cleaned)} bars using brick_size={brick_size:.6f}; "
+        f"bricks={len(bricks)}, last_direction={last_direction}, streak={last_streak}, "
+        f"trend={trend}, context={context}."
+    )
+
+    return {
+        "renko_status": status,
+        "renko_source": "self_contained_read_only_bar_overlay",
+        "renko_available": True,
+        "renko_context": context,
+        "renko_trend": trend,
+        "renko_direction": direction_out,
+        "renko_brick_size": _round(brick_size, 6),
+        "renko_brick_count": int(len(bricks)),
+        "renko_last_brick_direction": last_direction,
+        "renko_last_streak": int(last_streak),
+        "renko_reversal": bool(reversal),
+        "renko_continuation": bool(continuation),
+        "renko_strength": int(strength),
+        "renko_price_progress_pct": _round(progress_pct, 4),
+        "renko_reason": reason,
+        "renko_read_only": True,
+        "renko_trade_signal": False,
+        "renko_operator_control_source": False,
+        "renko_evidence": {
+            "symbol": clean_symbol,
+            "bar_count": len(cleaned),
+            "brick_size": _round(brick_size, 6),
+            "brick_count": int(len(bricks)),
+            "last_direction": last_direction,
+            "last_streak": int(last_streak),
+            "trend": trend,
+            "context": context,
+            "progress_pct": _round(progress_pct, 4),
+            "read_only": True,
+            "trade_signal": False,
+            "operator_control_source": False,
+        },
+    }
+
+
+
+
 # SIGMALYTIC_STEP97B_READ_ONLY_OVERLAY_INTEGRATION_PACKET
 def _overlay_integration_packet(
     symbol: str,
@@ -2140,6 +2393,7 @@ def _overlay_integration_packet(
     short_watchlist: Dict[str, Any],
     deterioration_risk_watch: Dict[str, Any],
     decay: Dict[str, Any],
+    renko: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
     Read-only overlay integration packet.
@@ -2278,7 +2532,34 @@ def _overlay_integration_packet(
         "LIVERMORE_CONTEXT_NOT_COMPUTED",
     )
 
-    renko_context = "RENKO_NOT_LIVE_EXPOSED_IN_FULL_UNIVERSE_SOURCE"
+    renko_context = stext(
+        renko.get("renko_context")
+        or renko.get("renko_status"),
+        "RENKO_NOT_COMPUTED",
+    )
+    renko_status = stext(renko.get("renko_status"))
+    renko_trend = stext(renko.get("renko_trend"))
+    renko_direction = stext(renko.get("renko_direction"))
+    renko_strength = sfloat(renko.get("renko_strength")) or 0.0
+    renko_available = truthy(renko.get("renko_available"))
+
+    renko_bullish = (
+        "BULLISH" in renko_context
+        or "UPTREND" in renko_trend
+        or renko_direction == "UP"
+    )
+    renko_bearish = (
+        "BEARISH" in renko_context
+        or "DOWNTREND" in renko_trend
+        or renko_direction == "DOWN"
+    )
+
+    if renko_bullish:
+        add_support(10 + min(10, int(renko_strength // 10)), "RENKO_BULLISH_STRUCTURE", f"Renko structure is constructive: {renko_context}, trend={renko_trend}.")
+    elif renko_bearish:
+        add_risk(10 + min(10, int(renko_strength // 10)), "RENKO_BEARISH_STRUCTURE", f"Renko structure is adverse: {renko_context}, trend={renko_trend}.")
+    elif not renko_available:
+        add_risk(2, "RENKO_UNAVAILABLE", "Renko context unavailable or insufficient.")
 
     if ods_confirmed:
         add_support(25, "ODS_CONFIRMED", "Formal ODS is confirmed.")
@@ -2466,6 +2747,24 @@ def _overlay_integration_packet(
             "weis": weis_context,
             "livermore": livermore_context,
             "renko": renko_context,
+        },
+        "renko": {
+            "status": renko_status,
+            "available": bool(renko_available),
+            "context": renko_context,
+            "trend": renko_trend,
+            "direction": renko_direction,
+            "brick_size": _round(sfloat(renko.get("renko_brick_size")), 6),
+            "brick_count": int(sfloat(renko.get("renko_brick_count")) or 0),
+            "last_brick_direction": stext(renko.get("renko_last_brick_direction")),
+            "last_streak": int(sfloat(renko.get("renko_last_streak")) or 0),
+            "reversal": truthy(renko.get("renko_reversal")),
+            "continuation": truthy(renko.get("renko_continuation")),
+            "strength": _round(renko_strength, 4),
+            "price_progress_pct": _round(sfloat(renko.get("renko_price_progress_pct")), 4),
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
         },
         "notes": reasons[:10],
     }
@@ -2916,7 +3215,8 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     divergence = _divergence_overlay(symbol, price, bars)
     short_watchlist = _short_watchlist_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets)
     deterioration_risk_watch = _deterioration_risk_watch_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, decay)
-    overlay_integration = _overlay_integration_packet(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, deterioration_risk_watch, decay)
+    renko = _renko_read_only_overlay(symbol, price, bars, c)
+    overlay_integration = _overlay_integration_packet(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, deterioration_risk_watch, decay, renko)
 
     c.update({
         "symbol": symbol,
@@ -2943,6 +3243,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(divergence)
     c.update(short_watchlist)
     c.update(deterioration_risk_watch)
+    c.update(renko)
     c.update(overlay_integration)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
