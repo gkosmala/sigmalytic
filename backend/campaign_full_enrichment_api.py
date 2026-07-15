@@ -2126,6 +2126,387 @@ def _deterioration_risk_watch_overlay(
 
 
 
+
+# SIGMALYTIC_STEP97B_READ_ONLY_OVERLAY_INTEGRATION_PACKET
+def _overlay_integration_packet(
+    symbol: str,
+    price: Optional[float],
+    row: Dict[str, Any],
+    pnf: Dict[str, Any],
+    gamma: Dict[str, Any],
+    divergence: Dict[str, Any],
+    ods: Dict[str, Any],
+    targets: Dict[str, Any],
+    short_watchlist: Dict[str, Any],
+    deterioration_risk_watch: Dict[str, Any],
+    decay: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Read-only overlay integration packet.
+
+    This is the unifying evidence layer only. It does not persist, mutate,
+    confirm operator control, approve, alert, or create a trade signal.
+    """
+    clean_symbol = str(symbol or "").upper().strip()
+
+    def sfloat(value: Any) -> Optional[float]:
+        try:
+            return _safe_float(value)
+        except Exception:
+            try:
+                if value is None:
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+    def truthy(value: Any) -> bool:
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+    def stext(value: Any, default: str = "UNKNOWN") -> str:
+        if value is None:
+            return default
+        text_value = str(value).strip()
+        return text_value if text_value else default
+
+    support_score = 0
+    risk_score = 0
+    support_groups: List[str] = []
+    risk_groups: List[str] = []
+    reasons: List[str] = []
+
+    def add_support(points: int, group: str, reason: str) -> None:
+        nonlocal support_score
+        support_score += int(points)
+        if group not in support_groups:
+            support_groups.append(group)
+        reasons.append(reason)
+
+    def add_risk(points: int, group: str, reason: str) -> None:
+        nonlocal risk_score
+        risk_score += int(points)
+        if group not in risk_groups:
+            risk_groups.append(group)
+        reasons.append(reason)
+
+    current_price = sfloat(price)
+
+    target_1 = sfloat(
+        targets.get("target_1")
+        or targets.get("target_1_price")
+        or targets.get("target_price_1")
+        or row.get("target_1")
+        or row.get("target_1_price")
+        or pnf.get("pnf_objective_price")
+    )
+    target_2 = sfloat(
+        targets.get("target_2")
+        or targets.get("target_2_price")
+        or targets.get("target_price_2")
+        or row.get("target_2")
+        or row.get("target_2_price")
+    )
+    failure_price = sfloat(
+        targets.get("failure_price")
+        or row.get("failure_price")
+        or pnf.get("pnf_failure_price")
+        or short_watchlist.get("short_watchlist_failure_price")
+        or deterioration_risk_watch.get("deterioration_failure_price")
+    )
+
+    failure_distance_pct = None
+    if current_price is not None and current_price > 0 and failure_price is not None:
+        failure_distance_pct = ((current_price - failure_price) / current_price) * 100.0
+
+    pnf_status = stext(pnf.get("pnf_status"))
+    pnf_breakout = stext(pnf.get("pnf_breakout_status"))
+    pnf_column = stext(pnf.get("pnf_current_column"))
+    pnf_bullish = "BULLISH" in pnf_status or "BULLISH" in pnf_breakout or pnf_column == "X"
+    pnf_bearish = "BEARISH" in pnf_status or "BREAKDOWN" in pnf_breakout or pnf_column == "O"
+
+    gamma_status = stext(gamma.get("gamma_status"))
+    gamma_risk = stext(gamma.get("gamma_movement_risk_overlay"))
+    gamma_regime = stext(gamma.get("gamma_regime"))
+    gamma_available = truthy(gamma.get("gamma_available"))
+    gamma_stabilizing = gamma_risk == "GAMMA_STABILIZING" or "POSITIVE" in gamma_regime
+    gamma_destabilizing = gamma_risk == "GAMMA_DESTABILIZING" or "NEGATIVE" in gamma_regime
+
+    divergence_status = stext(divergence.get("divergence_status"))
+    divergence_bias = stext(divergence.get("divergence_bias"), "NEUTRAL")
+    divergence_type = stext(divergence.get("divergence_type"))
+    divergence_strength = sfloat(divergence.get("divergence_strength")) or 0.0
+    bearish_divergence = divergence_bias == "BEARISH"
+
+    short_status = stext(short_watchlist.get("short_watchlist_status"))
+    short_tier = stext(short_watchlist.get("short_watchlist_tier"), "NONE")
+    short_score = sfloat(short_watchlist.get("short_watchlist_score")) or 0.0
+    short_candidate = truthy(short_watchlist.get("short_watchlist_candidate"))
+
+    deterioration_status = stext(deterioration_risk_watch.get("deterioration_status"))
+    deterioration_tier = stext(deterioration_risk_watch.get("deterioration_tier"), "NONE")
+    deterioration_score = sfloat(deterioration_risk_watch.get("deterioration_score")) or 0.0
+    deterioration_candidate = truthy(deterioration_risk_watch.get("deterioration_watch_candidate"))
+
+    ods_status = stext(ods.get("ods_status"))
+    supply_exhaustion_confirmed = ods.get("supply_exhaustion_confirmed")
+    demand_support_confirmed = ods.get("demand_support_confirmed")
+    structural_location_confirmed = ods.get("structurally_meaningful_location_confirmed")
+    contrary_failure_absent = ods.get("contrary_failure_absent")
+    ods_confirmed = ods_status == "CONFIRMED"
+
+    state = stext(row.get("state") or row.get("campaign_state") or row.get("lifecycle_state"))
+    lifecycle_maturity = stext(row.get("lifecycle_maturity"))
+    cohort_status = stext(row.get("cohort_status"))
+
+    wyckoff_context = stext(
+        deterioration_risk_watch.get("deterioration_wyckoff_context")
+        or short_watchlist.get("short_watchlist_wyckoff_context"),
+        "WYCKOFF_CONTEXT_NOT_COMPUTED",
+    )
+    weis_context = stext(
+        deterioration_risk_watch.get("deterioration_weis_context")
+        or short_watchlist.get("short_watchlist_weis_context"),
+        "WEIS_CONTEXT_NOT_COMPUTED",
+    )
+    livermore_context = stext(
+        deterioration_risk_watch.get("deterioration_livermore_context")
+        or short_watchlist.get("short_watchlist_livermore_context"),
+        "LIVERMORE_CONTEXT_NOT_COMPUTED",
+    )
+
+    renko_context = "RENKO_NOT_LIVE_EXPOSED_IN_FULL_UNIVERSE_SOURCE"
+
+    if ods_confirmed:
+        add_support(25, "ODS_CONFIRMED", "Formal ODS is confirmed.")
+    elif ods_status == "PENDING":
+        add_risk(10, "ODS_PENDING", "ODS remains pending; confirmation components are incomplete.")
+
+    if supply_exhaustion_confirmed is True:
+        add_support(8, "SUPPLY_EXHAUSTION_CONFIRMED", "Supply exhaustion is confirmed.")
+    elif supply_exhaustion_confirmed is False:
+        add_risk(10, "SUPPLY_EXHAUSTION_NOT_CONFIRMED", "Supply exhaustion is not confirmed.")
+
+    if demand_support_confirmed is True:
+        add_support(8, "DEMAND_SUPPORT_CONFIRMED", "Demand/support is confirmed.")
+    elif demand_support_confirmed is False:
+        add_risk(10, "DEMAND_SUPPORT_NOT_CONFIRMED", "Demand/support is not confirmed.")
+
+    if contrary_failure_absent is True:
+        add_support(8, "CONTRARY_FAILURE_ABSENT", "Contrary failure is absent.")
+    elif contrary_failure_absent is False:
+        add_risk(15, "CONTRARY_FAILURE_PRESENT", "Contrary failure is present.")
+
+    if pnf_bullish:
+        add_support(15, "PNF_BULLISH_OBJECTIVE", f"P&F is constructive: {pnf_status}, {pnf_breakout}, column={pnf_column}.")
+    if pnf_bearish:
+        add_risk(18, "PNF_BEARISH_OBJECTIVE_OR_BREAKDOWN", f"P&F is bearish or broken: {pnf_status}, {pnf_breakout}, column={pnf_column}.")
+
+    if gamma_stabilizing:
+        add_support(8, "GAMMA_STABILIZING", f"Gamma overlay is stabilizing: {gamma_risk}, regime={gamma_regime}.")
+    if gamma_destabilizing:
+        add_risk(12, "GAMMA_DESTABILIZING", f"Gamma overlay is destabilizing: {gamma_risk}, regime={gamma_regime}.")
+    if not gamma_available:
+        add_risk(3, "GAMMA_SOURCE_UNAVAILABLE", "Gamma source is unavailable; movement-risk confirmation is incomplete.")
+
+    if bearish_divergence:
+        add_risk(20 + min(15, int(divergence_strength // 5)), "BEARISH_DIVERGENCE", f"Divergence is bearish: {divergence_type}, strength={divergence_strength}.")
+    elif divergence_bias == "BULLISH":
+        add_support(10, "BULLISH_DIVERGENCE", f"Divergence is bullish: {divergence_type}.")
+    else:
+        add_support(4, "NO_MATERIAL_DIVERGENCE", "No material bearish divergence dominates the row.")
+
+    if short_candidate and short_tier == "HIGH_PRIORITY_SHORT_WATCH":
+        add_risk(25, "HIGH_PRIORITY_SHORT_WATCH", f"Short Watchlist high-priority risk exists; score={short_score}.")
+    elif short_candidate:
+        add_risk(15, "SHORT_WATCHLIST_CANDIDATE", f"Short Watchlist candidate exists; score={short_score}.")
+    elif short_tier == "BEARISH_MONITOR":
+        add_risk(8, "SHORT_WATCHLIST_MONITOR", f"Short Watchlist monitor risk exists; score={short_score}.")
+
+    if deterioration_candidate and deterioration_tier == "HIGH_PRIORITY_RISK_WATCH":
+        add_risk(30, "HIGH_PRIORITY_DETERIORATION_RISK", f"Deterioration high-priority risk exists; score={deterioration_score}.")
+    elif deterioration_candidate:
+        add_risk(18, "DETERIORATION_RISK_WATCH", f"Deterioration risk watch exists; score={deterioration_score}.")
+    elif deterioration_tier == "DETERIORATION_MONITOR":
+        add_risk(8, "DETERIORATION_MONITOR", f"Deterioration monitor exists; score={deterioration_score}.")
+
+    if failure_distance_pct is not None:
+        if failure_distance_pct <= 0:
+            add_risk(25, "FAILURE_LEVEL_BREACHED", f"Failure level breached or reached: distance={failure_distance_pct:.2f}%.")
+        elif failure_distance_pct <= 2.5:
+            add_risk(14, "NEAR_FAILURE_LEVEL", f"Near failure level: distance={failure_distance_pct:.2f}%.")
+        else:
+            add_support(5, "FAILURE_LEVEL_NOT_IMMEDIATE", f"Failure level not immediate: distance={failure_distance_pct:.2f}%.")
+
+    if state in {"SURVIVING", "EXPANDING", "CONFIRMED"}:
+        add_support(8, "CONSTRUCTIVE_LIFECYCLE_STATE", f"Lifecycle state is constructive: {state}.")
+    elif state in {"DISTRIBUTION_RISK", "CLOSED"}:
+        add_risk(20, "ADVERSE_LIFECYCLE_STATE", f"Lifecycle state is adverse: {state}.")
+    elif state == "BIRTH":
+        add_support(3, "SPARK_OR_BIRTH_STATE", "Lifecycle is early Spark/Birth; evidence is developing.")
+
+    support_score = max(0, min(100, support_score))
+    risk_score = max(0, min(100, risk_score))
+    conflict_score = min(100, abs(support_score - risk_score))
+    overlay_score = max(support_score, risk_score)
+
+    if risk_score >= 70 and support_score >= 50:
+        overlay_bias = "MIXED_CAMPAIGN_WITH_HIGH_DISTRIBUTION_RISK"
+        overlay_type = "CONFLICTED_OVERLAY_PACKET"
+        primary_risk = "HIGH_RISK_DESPITE_CONSTRUCTIVE_CAMPAIGN_EVIDENCE"
+    elif risk_score >= 70:
+        overlay_bias = "BEARISH_RISK_DOMINANT"
+        overlay_type = "RISK_DOMINANT_OVERLAY_PACKET"
+        primary_risk = "RISK_OVERLAY_DOMINANT"
+    elif support_score >= 60 and risk_score < 45:
+        overlay_bias = "BULLISH_CAMPAIGN_SUPPORTED"
+        overlay_type = "SUPPORTIVE_OVERLAY_PACKET"
+        primary_risk = "NONE"
+    elif risk_score >= 45:
+        overlay_bias = "MIXED_WITH_RISK_MONITOR"
+        overlay_type = "RISK_MONITOR_OVERLAY_PACKET"
+        primary_risk = "MODERATE_RISK_OVERLAY"
+    else:
+        overlay_bias = "NEUTRAL_OR_DEVELOPING"
+        overlay_type = "DEVELOPING_OVERLAY_PACKET"
+        primary_risk = "LOW_OR_UNCONFIRMED_RISK"
+
+    if risk_score >= 70 and support_score >= 50:
+        conflict_level = "HIGH"
+    elif risk_score >= 45 and support_score >= 45:
+        conflict_level = "MODERATE"
+    elif risk_score >= 70 or support_score >= 70:
+        conflict_level = "LOW_DIRECTIONAL_DOMINANCE"
+    else:
+        conflict_level = "LOW_OR_DEVELOPING"
+
+    all_groups = support_groups + [g for g in risk_groups if g not in support_groups]
+
+    packet = {
+        "symbol": clean_symbol,
+        "doctrine_basis": "WYCKOFF_WEIS_LIVERMORE_OVERLAY_INTEGRATION",
+        "read_only": True,
+        "operator_control_source": False,
+        "trade_signal": False,
+        "support_score": support_score,
+        "risk_score": risk_score,
+        "conflict_score": conflict_score,
+        "conflict_level": conflict_level,
+        "support_groups": support_groups,
+        "risk_groups": risk_groups,
+        "all_evidence_groups": all_groups,
+        "primary_risk": primary_risk,
+        "pnf": {
+            "status": pnf_status,
+            "breakout_status": pnf_breakout,
+            "current_column": pnf_column,
+            "objective_price": _round(sfloat(pnf.get("pnf_objective_price")), 4),
+            "failure_price": _round(sfloat(pnf.get("pnf_failure_price")), 4),
+        },
+        "gamma": {
+            "status": gamma_status,
+            "available": bool(gamma_available),
+            "regime": gamma_regime,
+            "movement_risk_overlay": gamma_risk,
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+        "divergence": {
+            "status": divergence_status,
+            "bias": divergence_bias,
+            "type": divergence_type,
+            "strength": _round(divergence_strength, 4),
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+        "short_watchlist": {
+            "status": short_status,
+            "candidate": bool(short_candidate),
+            "tier": short_tier,
+            "score": _round(short_score, 4),
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+        "deterioration": {
+            "status": deterioration_status,
+            "candidate": bool(deterioration_candidate),
+            "tier": deterioration_tier,
+            "score": _round(deterioration_score, 4),
+            "read_only": True,
+            "operator_control_source": False,
+            "trade_signal": False,
+        },
+        "ods": {
+            "status": ods_status,
+            "supply_exhaustion_confirmed": supply_exhaustion_confirmed,
+            "demand_support_confirmed": demand_support_confirmed,
+            "structurally_meaningful_location_confirmed": structural_location_confirmed,
+            "contrary_failure_absent": contrary_failure_absent,
+            "missing_components": ods.get("ods_missing_components") or [],
+        },
+        "targets_failure": {
+            "target_1": _round(target_1, 4),
+            "target_2": _round(target_2, 4),
+            "failure_price": _round(failure_price, 4),
+            "failure_distance_pct": _round(failure_distance_pct, 4),
+        },
+        "lifecycle": {
+            "state": state,
+            "maturity": lifecycle_maturity,
+            "cohort_status": cohort_status,
+        },
+        "doctrine_contexts": {
+            "wyckoff": wyckoff_context,
+            "weis": weis_context,
+            "livermore": livermore_context,
+            "renko": renko_context,
+        },
+        "notes": reasons[:10],
+    }
+
+    reason = "; ".join(reasons[:6]) if reasons else "Overlay packet evaluated; no dominant evidence groups."
+
+    return {
+        "overlay_integration_status": "OVERLAY_INTEGRATION_EVALUATED",
+        "overlay_integration_source": "wyckoff_weis_livermore_read_only_overlay_packet",
+        "overlay_integration_score": int(overlay_score),
+        "overlay_integration_support_score": int(support_score),
+        "overlay_integration_risk_score": int(risk_score),
+        "overlay_integration_conflict_score": int(conflict_score),
+        "overlay_integration_conflict_level": conflict_level,
+        "overlay_integration_bias": overlay_bias,
+        "overlay_integration_type": overlay_type,
+        "overlay_integration_reason": reason,
+        "overlay_integration_evidence_groups": all_groups,
+        "overlay_integration_primary_risk": primary_risk,
+        "overlay_wyckoff_context": wyckoff_context,
+        "overlay_weis_context": weis_context,
+        "overlay_livermore_context": livermore_context,
+        "overlay_renko_context": renko_context,
+        "overlay_target_1": _round(target_1, 4),
+        "overlay_target_2": _round(target_2, 4),
+        "overlay_failure_price": _round(failure_price, 4),
+        "overlay_failure_distance_pct": _round(failure_distance_pct, 4),
+        "overlay_read_only": True,
+        "overlay_trade_signal": False,
+        "overlay_operator_control_source": False,
+        "overlay_integration_evidence": packet,
+        "campaign_overlay_status": "CAMPAIGN_OVERLAY_PACKET_EVALUATED",
+        "campaign_overlay_packet": packet,
+        "doctrine_overlay_status": "WYCKOFF_WEIS_LIVERMORE_PACKET_EVALUATED",
+        "integrated_evidence_packet": packet,
+        "unified_overlay_read_only": True,
+    }
+
+
+
+
 # SIGMALYTIC_STEP90G_FORMAL_ODS_FROM_7YR_PRICE_VOLUME_EVIDENCE
 # SIGMALYTIC_STEP91F_ODS_VOLUME_GATE_AND_MISSING_COMPONENT_REPAIR
 def _bar_low(bar: Dict[str, Any]) -> Optional[float]:
@@ -2535,6 +2916,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     divergence = _divergence_overlay(symbol, price, bars)
     short_watchlist = _short_watchlist_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets)
     deterioration_risk_watch = _deterioration_risk_watch_overlay(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, decay)
+    overlay_integration = _overlay_integration_packet(symbol, price, c, pnf, gamma, divergence, ods, targets, short_watchlist, deterioration_risk_watch, decay)
 
     c.update({
         "symbol": symbol,
@@ -2561,6 +2943,7 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     c.update(divergence)
     c.update(short_watchlist)
     c.update(deterioration_risk_watch)
+    c.update(overlay_integration)
     c["summary"] = f"{symbol} {c.get('timeframe', 'DAILY')} campaign; {state}; {bias}; {c.get('enrichment_status')}"
 
     return c
