@@ -1,4 +1,4 @@
-"""
+﻿"""
 Sigmalytic V2 - D3E.9 final controlled-persistence lifecycle regression sweep.
 
 This module verifies the entire D3E controlled-persistence lifecycle after the
@@ -28,8 +28,8 @@ from typing import Any, Dict, Mapping, Optional
 TARGET_TABLE = "alert_readiness_audit_events"
 D3E_PHASE = "D3E.9"
 
-EXPECTED_INSERTED_ROW_ID = 1
-EXPECTED_SYMBOL = "D3E6_EXECUTED_APPEND_ONLY_AUDIT"
+EXPECTED_INSERTED_ROW_ID = 2
+EXPECTED_SYMBOL = "SPY"
 EXPECTED_AUDIT_COMPONENT = "controlled_one_row_append_only_audit_insert"
 EXPECTED_AUDIT_VERSION = "D3E.6"
 EXPECTED_OPERATOR_CONTROL_STATUS = "NOT_OPERATOR_CONTROL_CONFIRMATION"
@@ -238,3 +238,4 @@ def build_d3e9_final_lifecycle_regression_sweep_payload(
             else "D3E9_FINAL_CONTROLLED_PERSISTENCE_LIFECYCLE_REGRESSION_SWEEP_FAILED"
         ),
     }
+

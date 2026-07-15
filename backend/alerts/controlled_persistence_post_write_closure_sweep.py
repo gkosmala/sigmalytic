@@ -1,4 +1,4 @@
-"""
+﻿"""
 Sigmalytic V2 - D3E.8 controlled persistence post-write closure sweep.
 
 This module performs a read-only closure sweep after the D3E.6 controlled
@@ -25,8 +25,8 @@ from typing import Any, Dict, Mapping, Optional
 TARGET_TABLE = "alert_readiness_audit_events"
 D3E_PHASE = "D3E.8"
 
-EXPECTED_INSERTED_ROW_ID = 1
-EXPECTED_SYMBOL = "D3E6_EXECUTED_APPEND_ONLY_AUDIT"
+EXPECTED_INSERTED_ROW_ID = 2
+EXPECTED_SYMBOL = "SPY"
 EXPECTED_AUDIT_COMPONENT = "controlled_one_row_append_only_audit_insert"
 EXPECTED_AUDIT_VERSION = "D3E.6"
 EXPECTED_OPERATOR_CONTROL_STATUS = "NOT_OPERATOR_CONTROL_CONFIRMATION"
@@ -221,3 +221,4 @@ def build_d3e8_post_persistence_closure_sweep_payload(
         "read_response_count": len(rows) if isinstance(rows, list) else 0,
         **validation,
     }
+

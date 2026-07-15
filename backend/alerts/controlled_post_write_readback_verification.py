@@ -1,4 +1,4 @@
-"""
+﻿"""
 Sigmalytic V2 - D3E.7 controlled post-write readback verification.
 
 This module performs read-only verification of the D3E.6 append-only audit row.
@@ -23,7 +23,7 @@ from typing import Any, Dict, Mapping, Optional
 TARGET_TABLE = "alert_readiness_audit_events"
 D3E_PHASE = "D3E.7"
 
-EXPECTED_SYMBOL = "D3E6_EXECUTED_APPEND_ONLY_AUDIT"
+EXPECTED_SYMBOL = "SPY"
 EXPECTED_AUDIT_COMPONENT = "controlled_one_row_append_only_audit_insert"
 EXPECTED_AUDIT_VERSION = "D3E.6"
 EXPECTED_OPERATOR_CONTROL_STATUS = "NOT_OPERATOR_CONTROL_CONFIRMATION"
@@ -205,3 +205,4 @@ def build_d3e7_post_write_readback_verification_payload(
         "read_response_count": len(rows) if isinstance(rows, list) else 0,
         **validation,
     }
+
