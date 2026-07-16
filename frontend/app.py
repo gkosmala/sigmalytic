@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_ACTIVE_ROUTER_WIRING
 # SIGMALYTIC_STEP100R_I_LINE_BASED_TAB_FREEZE_REPAIR
 # SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
@@ -18,6 +19,12 @@ import dash
 from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 import requests as req
+
+# SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_IMPORT
+try:
+    from campaign_tab import build_campaign_tab as build_campaign_tab
+except Exception:
+    build_campaign_tab = None
 
 import sys, pathlib
 
@@ -4079,6 +4086,7 @@ _init_candles = fetch_real_candles("AAPL", "5m")
 
 ALL_TABS = [
     ("command",     "Command Center"),
+    ("campaign",    "Campaign Intelligence"),
     ("feed",        "Live Feed"),
     ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
@@ -4105,7 +4113,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="radar"),
+    dcc.Store(id="s-tab",       data="campaign"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -4301,7 +4309,8 @@ def load_symbol(_, ticker, live, tf):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-command","n_clicks"),      Input("tab-feed","n_clicks"),
+    Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-feed","n_clicks"),
     Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
@@ -4431,7 +4440,29 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
-    if tab=="feed":          main = build_feed_tab(live,live_mode)
+    if tab=="campaign":
+        if build_campaign_tab is None:
+            main = card([
+                html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Campaign module is present but did not import. Check frontend/campaign_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_campaign_tab(session=session)
+            except TypeError:
+                try:
+                    main = build_campaign_tab()
+                except Exception as e:
+                    main = card([
+                        html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                        note_box("Campaign module loading error: " + str(e), "blue"),
+                    ])
+            except Exception as e:
+                main = card([
+                    html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Campaign module loading error: " + str(e), "blue"),
+                ])
+    elif tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="import":      main = build_import_tab()
