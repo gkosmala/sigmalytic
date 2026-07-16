@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/campaign_tab.py
 -------------------------
@@ -922,6 +922,9 @@ def _step88a_build_campaign_rows_all_with_safe_enrichment():
 
 
 
+# SIGMALYTIC_STEP100R_S6_CAP_CAMPAIGN_INITIAL_PAYLOAD
+# UI payload cap only. Backend campaign universe remains unchanged.
+_STEP100R_S6_INITIAL_CAMPAIGN_ROWS = 40
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
@@ -1015,7 +1018,23 @@ def build_campaign_tab(session=None) -> html.Div:
                 -_safe_float(c.get("outcome_expected_return"), 0),
             )
 
-        rows = [_campaign_row(c) for c in sorted(campaigns, key=_sort_key)]
+        _step100r_s6_all_campaigns = list(sorted(campaigns, key=_sort_key))
+        _step100r_s6_total_campaigns = len(_step100r_s6_all_campaigns)
+        _step100r_s6_visible_campaigns = _step100r_s6_all_campaigns[:_STEP100R_S6_INITIAL_CAMPAIGN_ROWS]
+        rows = [_campaign_row(c) for c in _step100r_s6_visible_campaigns]
+        if _step100r_s6_total_campaigns > _STEP100R_S6_INITIAL_CAMPAIGN_ROWS:
+            rows.append(html.Div(
+                "Showing top " + str(_STEP100R_S6_INITIAL_CAMPAIGN_ROWS) + " of " + str(_step100r_s6_total_campaigns) + " campaigns. Initial UI payload is capped for fast rendering; backend universe is unchanged.",
+                style={
+                    "color": "#94a3b8",
+                    "fontSize": "12px",
+                    "fontWeight": "700",
+                    "padding": "14px 16px",
+                    "border": "1px solid rgba(148,163,184,.22)",
+                    "borderRadius": "12px",
+                    "background": "rgba(15,23,42,.55)",
+                },
+            ))
     else:
         error_msg = f"API error: {fetch_error}" if fetch_error else "No active campaigns yet."
         rows = [html.Div([
