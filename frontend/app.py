@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_L3_FAST_FIRST_LOAD_TAB_STATE_SYNC
 # SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_ACTIVE_ROUTER_WIRING
 # SIGMALYTIC_STEP100R_I_LINE_BASED_TAB_FREEZE_REPAIR
 # SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
@@ -4085,6 +4086,7 @@ _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
 _init_candles = fetch_real_candles("AAPL", "5m")
 
 ALL_TABS = [
+    ("home",        "Home"),
     ("command",     "Command Center"),
     ("campaign",    "Campaign Intelligence"),
     ("feed",        "Live Feed"),
@@ -4113,7 +4115,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="campaign"),
+    dcc.Store(id="s-tab",       data="home"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -4309,7 +4311,7 @@ def load_symbol(_, ticker, live, tf):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
     Input("tab-feed","n_clicks"),
     Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
@@ -4323,6 +4325,44 @@ def set_tab(*_):
     if not ctx.triggered: return no_update
     tab = ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
     return tab
+
+
+# SIGMALYTIC_STEP100R_L3_ACTIVE_TAB_STYLE_SYNC
+@app.callback(
+    [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
+    Input("s-tab", "data"),
+)
+def sync_active_tab_styles(active_tab):
+    active_tab = active_tab or "home"
+
+    base = {
+        "borderRadius": "999px",
+        "padding": "8px 13px",
+        "fontSize": "12px",
+        "fontWeight": "800",
+        "cursor": "pointer",
+        "fontFamily": "DM Sans, sans-serif",
+        "transition": "background .12s ease, border-color .12s ease, color .12s ease",
+        "whiteSpace": "nowrap",
+    }
+
+    active_style = dict(base)
+    active_style.update({
+        "background": "rgba(20,184,166,.22)",
+        "border": f"1px solid {BORDER_T}",
+        "color": TEAL_DIM,
+        "boxShadow": "0 0 0 1px rgba(20,184,166,.10)",
+    })
+
+    inactive_style = dict(base)
+    inactive_style.update({
+        "background": "rgba(15,23,42,.62)",
+        "border": f"1px solid {BORDER}",
+        "color": WHITE,
+        "boxShadow": "none",
+    })
+
+    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
 
 @app.callback(
     Output("s-live","data"),
@@ -4429,6 +4469,42 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
 
     if not candles:
         candles = _init_candles
+
+    if tab == "home":
+        main = card([
+            html.Div("Sigmalytic V2", style={
+                "color": TEAL_DIM,
+                "fontSize": "13px",
+                "fontWeight": "900",
+                "letterSpacing": ".18em",
+                "textTransform": "uppercase",
+                "marginBottom": "8px",
+            }),
+            html.H2("Decision Intelligence Ready", style={
+                "color": WHITE,
+                "fontSize": "22px",
+                "fontWeight": "900",
+                "margin": "0 0 10px 0",
+            }),
+            html.Div(
+                "Select Campaign Intelligence, Radar, Scoreboard, Divergence, Billing, Preferences, or Admin from the tabs above.",
+                style={
+                    "color": WHITE,
+                    "fontSize": "13px",
+                    "lineHeight": "1.6",
+                    "opacity": ".9",
+                },
+            ),
+            html.Div("Fast-load shell only. No campaign fetch, no backend write, no Supabase mutation, no D3D, no Stripe.", style={
+                "color": TEAL_DIM,
+                "fontSize": "11px",
+                "fontWeight": "800",
+                "marginTop": "14px",
+                "textTransform": "uppercase",
+                "letterSpacing": ".08em",
+            }),
+        ])
+        return main, HIDDEN, no_update, no_update
 
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
