@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_I_LINE_BASED_TAB_FREEZE_REPAIR
 # SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
 # Sigmalytic v2.2 — integer x-axis for proper candle rendering
@@ -4402,18 +4403,23 @@ def update_badges(live):
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
-    Input("s-live","data"), Input("s-candles","data"), Input("s-tab","data"),
-    Input("s-live-mode","data"), Input("i-clock","n_intervals"),
-    State("s-symbol","data"), State("s-tf","data"),
+    Input("s-tab","data"),
+    State("s-live","data"),
+    State("s-candles","data"),
+    State("s-live-mode","data"),
+    State("s-symbol","data"),
+    State("s-tf","data"),
     State("s-session","data"),
 )
-def render_main(live,candles,tab,live_mode,_clock,symbol,tf,session=None):
+def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
     if not live:
-        return (html.Div("Initializing…",style={"color":WHITE,"padding":"60px","textAlign":"center"}),
-                HIDDEN, no_update, no_update)
+        live = _init_live
+
+    if not candles:
+        candles = _init_candles
 
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
