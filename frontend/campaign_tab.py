@@ -925,10 +925,34 @@ def _step88a_build_campaign_rows_all_with_safe_enrichment():
 # SIGMALYTIC_STEP100R_S6_CAP_CAMPAIGN_INITIAL_PAYLOAD
 # UI payload cap only. Backend campaign universe remains unchanged.
 _STEP100R_S6_INITIAL_CAMPAIGN_ROWS = 40
+# SIGMALYTIC_STEP100R_T_FAST_INITIAL_CAMPAIGN_LOAD
+# Initial UI render must not call the full-universe enriched campaign endpoint.
+# Backend campaign universe remains unchanged. This only changes the first Campaign tab payload path.
+_STEP100R_T_FAST_INITIAL_CAMPAIGN_LIMIT = 40
+
+def _step100r_t_build_campaign_rows_fast_initial():
+    try:
+        base_rows, base_error, base_endpoint = _step88a_fetch_base_campaigns()
+
+        if base_rows:
+            fast_rows = []
+            for row in list(base_rows)[:_STEP100R_T_FAST_INITIAL_CAMPAIGN_LIMIT]:
+                try:
+                    fast_rows.append(_step87c_b_enriched_campaign_alias(row))
+                except Exception:
+                    fast_rows.append(dict(row) if isinstance(row, dict) else {"symbol": str(row)})
+            return fast_rows, None
+
+        if base_error:
+            return [], base_error
+
+        return [], "No base campaigns returned."
+    except Exception as exc:
+        return [], f"Fast initial Campaign load failed: {exc}"
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        campaigns, fetch_error = _step88a_build_campaign_rows_all_with_safe_enrichment()
+        campaigns, fetch_error = _step100r_t_build_campaign_rows_fast_initial()
     except Exception as exc:
         campaigns = []
         fetch_error = str(exc)
