@@ -3565,6 +3565,99 @@ def update_badges(live):
             badge("Alpaca SIP","blue"),
             html.Span("", style={"display":"none"}))
 
+
+# SIGMALYTIC_STEP100R_U1_STATIC_TAB_CACHE_PREWARM
+# Real component cache only. No lazy shell. No placeholder. No backend mutation.
+import time as _step100r_u1_time
+import threading as _step100r_u1_threading
+
+_STEP100R_U1_STATIC_TAB_CACHE = {}
+_STEP100R_U1_STATIC_TAB_LOCK = _step100r_u1_threading.RLock()
+_STEP100R_U1_STATIC_TAB_TTL_SECONDS = 180
+_STEP100R_U1_STATIC_TABS = (
+    "behavior", "campaigns", "portfolio", "journal", "import",
+    "radar", "scoreboard", "divergence", "billing",
+    "preferences", "admin", "setup",
+)
+
+def _step100r_u1_cache_get(tab):
+    now = _step100r_u1_time.time()
+    with _STEP100R_U1_STATIC_TAB_LOCK:
+        entry = _STEP100R_U1_STATIC_TAB_CACHE.get(tab)
+        if not entry:
+            return None
+        ts, value = entry
+        if now - ts > _STEP100R_U1_STATIC_TAB_TTL_SECONDS:
+            _STEP100R_U1_STATIC_TAB_CACHE.pop(tab, None)
+            return None
+        return value
+
+def _step100r_u1_cache_put(tab, value):
+    with _STEP100R_U1_STATIC_TAB_LOCK:
+        _STEP100R_U1_STATIC_TAB_CACHE[tab] = (_step100r_u1_time.time(), value)
+    return value
+
+def _step100r_u1_error_panel(tab, exc):
+    return html.Div([
+        html.Div(f"{tab.title()} tab error", style={"fontWeight":"900","color":"#fca5a5","marginBottom":"8px"}),
+        html.Div(str(exc), style={"color":"#94a3b8","fontSize":"12px","whiteSpace":"pre-wrap"}),
+    ], style={"padding":"16px","border":"1px solid rgba(248,113,113,.35)","borderRadius":"12px","background":"rgba(127,29,29,.18)"})
+
+def _step100r_u1_build_static_tab(tab):
+    if tab == "behavior":
+        return build_behavior_tab()
+    if tab == "campaigns":
+        if _CAMPAIGN_TAB_AVAILABLE:
+            return build_campaign_tab(session=None)
+        return html.Div("Campaign tab unavailable", style={"color":"#94a3b8"})
+    if tab == "portfolio":
+        if _PORTFOLIO_TAB_AVAILABLE:
+            return build_portfolio_tab(session=None)
+        return html.Div("Portfolio tab unavailable", style={"color":"#94a3b8"})
+    if tab == "journal":
+        if _JOURNAL_TAB_AVAILABLE:
+            return build_trade_journal_tab(session=None)
+        return html.Div("Journal unavailable", style={"color":"#94a3b8"})
+    if tab == "import":
+        return build_import_tab()
+    if tab == "radar":
+        return build_radar_tab(session=None)
+    if tab == "scoreboard":
+        return build_scoreboard_tab(session=None)
+    if tab == "divergence":
+        return build_divergence_tab(session=None)
+    if tab == "billing":
+        return build_billing_tab(session=None, perms=None)
+    if tab == "preferences":
+        return build_preferences_tab()
+    if tab == "admin":
+        return build_admin_tab()
+    if tab == "setup":
+        return build_setup_tab()
+    return html.Div("Unknown tab", style={"color":"#94a3b8"})
+
+def _step100r_u1_get_static_tab(tab):
+    cached = _step100r_u1_cache_get(tab)
+    if cached is not None:
+        return cached
+    try:
+        built = _step100r_u1_build_static_tab(tab)
+    except Exception as exc:
+        return _step100r_u1_error_panel(tab, exc)
+    return _step100r_u1_cache_put(tab, built)
+
+def _step100r_u1_prewarm_static_tabs():
+    for _tab in _STEP100R_U1_STATIC_TABS:
+        try:
+            _step100r_u1_get_static_tab(_tab)
+        except Exception:
+            pass
+
+try:
+    _step100r_u1_threading.Thread(target=_step100r_u1_prewarm_static_tabs, daemon=True).start()
+except Exception:
+    pass
+
 @app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
@@ -3625,55 +3718,18 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
 
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
-    elif tab=="behavior":    main = build_behavior_tab()
-    elif tab=="campaigns":
-        if _CAMPAIGN_TAB_AVAILABLE:
-            try:
-                main = build_campaign_tab(session=None)
-            except Exception as _ce:
-                main = html.Div([
-                    html.Div("⚠️ Campaign tab error", style={"color":"#f87171","fontWeight":"700","marginBottom":"8px"}),
-                    html.Div(str(_ce), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Campaign tab unavailable — check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="portfolio":
-        if _PORTFOLIO_TAB_AVAILABLE:
-            try:
-                main = build_portfolio_tab(session=None)
-            except Exception as _pe:
-                main = html.Div(str(_pe), style={"color":"#f87171","padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="journal":     main = build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div("Journal loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="import":      main = build_import_tab()
-    elif tab=="radar":       main = build_radar_tab(session=None)
-    elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
-    elif tab=="divergence":  main = build_divergence_tab(session=None)
-    elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
-    elif tab=="preferences":
-        if _PREFERENCES_TAB_AVAILABLE:
-            try:
-                main = build_preferences_tab_external(user_id=USER_ID, session=None)
-            except Exception as e:
-                main = html.Div([
-                    html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
-    elif tab=="admin":
-        if _ADMIN_TAB_AVAILABLE:
-            try:
-                main = build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
-            except Exception as e:
-                main = html.Div([
-                    html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
-    elif tab=="setup":       main = build_setup_tab()
+    elif tab=="behavior":       main = _step100r_u1_get_static_tab("behavior")
+    elif tab=="campaigns":       main = _step100r_u1_get_static_tab("campaigns")
+    elif tab=="portfolio":       main = _step100r_u1_get_static_tab("portfolio")
+    elif tab=="journal":       main = _step100r_u1_get_static_tab("journal")
+    elif tab=="import":       main = _step100r_u1_get_static_tab("import")
+    elif tab=="radar":       main = _step100r_u1_get_static_tab("radar")
+    elif tab=="scoreboard":       main = _step100r_u1_get_static_tab("scoreboard")
+    elif tab=="divergence":       main = _step100r_u1_get_static_tab("divergence")
+    elif tab=="billing":       main = _step100r_u1_get_static_tab("billing")
+    elif tab=="preferences":       main = _step100r_u1_get_static_tab("preferences")
+    elif tab=="admin":       main = _step100r_u1_get_static_tab("admin")
+    elif tab=="setup":       main = _step100r_u1_get_static_tab("setup")
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
 
