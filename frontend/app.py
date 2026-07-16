@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
 # Sigmalytic v2.2 — integer x-axis for proper candle rendering
 """
@@ -4103,7 +4104,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="campaigns"),
+    dcc.Store(id="s-tab",       data="radar"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),

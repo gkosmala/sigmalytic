@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
@@ -806,7 +807,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=False),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-tab",       data="radar"),
     dcc.Store(id="s-price-text",data="280.15"),
     dcc.Store(id="s-analysis",  data={}),
     dcc.Store(id="s-refresh",   data=0),
