@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
 # Sigmalytic v2.2 — integer x-axis for proper candle rendering
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
@@ -4102,7 +4103,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-tab",       data="campaigns"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -4110,8 +4111,8 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
+    dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
 
     html.Div([html.Div([
         html.Header([

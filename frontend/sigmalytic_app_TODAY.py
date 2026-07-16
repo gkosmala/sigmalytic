@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
 from __future__ import annotations
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 # Sigmalytic v2.2 — true OHLC candlestick rendering
@@ -3272,8 +3273,8 @@ app.layout = html.Div([
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0, disabled=True),
-    dcc.Interval(id="i-alpaca", interval=5_000, n_intervals=0),
-    dcc.Interval(id="i-clock",  interval=1_000, n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
+    dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
 
     html.Div([html.Div([
         html.Header([
