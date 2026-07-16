@@ -1448,14 +1448,19 @@ def build_stub_tab(title, description):
 # REAL TAB FUNCTIONS — injected from source files
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# SIGMALYTIC_STEP100R_V1_FAST_RADAR_UI_TIMEOUT
+# UI read timeout only. Backend radar endpoint remains unchanged.
+_STEP100R_V1_RADAR_TIMEOUT = (0.75, 1.50)
+_STEP100R_V1_RADAR_MAX_ROWS = 30
 def build_radar_tab(session=None):
     """Radar Screen — multi-symbol signal scanner."""
     import requests as _rq
     user_id = (session or {}).get("user_id", "demo_user_001")
     
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=_STEP100R_V1_RADAR_TIMEOUT)
         signals = r.json().get("symbols", []) if r.ok else []
+        signals = list(signals or [])[:_STEP100R_V1_RADAR_MAX_ROWS]
     except Exception:
         signals = []
 
