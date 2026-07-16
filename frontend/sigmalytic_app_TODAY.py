@@ -1,3 +1,4 @@
+# SIGMALYTIC_STEP100R_N2_MINIMAL_ACTIVE_TODAY_FIRST_LOAD_REPAIR
 # SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
 from __future__ import annotations
@@ -3265,7 +3266,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",data="5m"),
-    dcc.Store(id="s-tab",       data="radar"),
+    dcc.Store(id="s-tab",       data="command"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -3614,14 +3615,41 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
         main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
         return (main, dash.no_update, dash.no_update, dash.no_update)
     if tab == "command":
-        open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
-        trade_plan  = _build_trade_plan_contents(live)
-        active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
-        return (html.Div([
-                    build_weis_gamma_status_center_panel(),
-                    build_command_tab(live, candles or _init_candles, symbol, tf),
-                ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
-                SHOWN, trade_plan, active_pane)
+        main = html.Div([
+            html.Div("Decision Command Center", style={
+                "color": WHITE,
+                "fontSize": "22px",
+                "fontWeight": "900",
+                "marginBottom": "8px",
+            }),
+            html.Div(
+                "Ready. Select Campaigns, Radar Screen, Divergence, Scoreboard, Portfolio, Billing, Preferences, or Admin from the tabs above.",
+                style={
+                    "color": WHITE,
+                    "fontSize": "13px",
+                    "lineHeight": "1.6",
+                    "opacity": ".9",
+                },
+            ),
+            html.Div(
+                "Fast first-load shell. No Status Center fetch. No campaign fetch. No backend write. No Supabase mutation. No D3D. No Stripe.",
+                style={
+                    "color": TEAL_DIM,
+                    "fontSize": "11px",
+                    "fontWeight": "800",
+                    "marginTop": "14px",
+                    "letterSpacing": ".08em",
+                    "textTransform": "uppercase",
+                },
+            ),
+        ], style={
+            "background": "rgba(15,23,42,.78)",
+            "border": f"1px solid {BORDER}",
+            "borderRadius": "18px",
+            "padding": "22px",
+            "marginTop": "14px",
+        })
+        return main, HIDDEN, no_update, no_update
 
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
