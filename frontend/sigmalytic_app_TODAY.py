@@ -3573,7 +3573,8 @@ import threading as _step100r_u1_threading
 
 _STEP100R_U1_STATIC_TAB_CACHE = {}
 _STEP100R_U1_STATIC_TAB_LOCK = _step100r_u1_threading.RLock()
-_STEP100R_U1_STATIC_TAB_TTL_SECONDS = 180
+# SIGMALYTIC_STEP100R_U4B_EXTEND_STATIC_CACHE_REFRESH
+_STEP100R_U1_STATIC_TAB_TTL_SECONDS = 1800
 _STEP100R_U1_STATIC_TABS = (
     "behavior", "campaigns", "portfolio", "journal", "import",
     "radar", "scoreboard", "divergence", "billing",
@@ -3672,6 +3673,25 @@ def _step100r_u1_prewarm_static_tabs():
 
 try:
     _step100r_u1_threading.Thread(target=_step100r_u1_prewarm_static_tabs, daemon=True).start()
+except Exception:
+    pass
+
+_STEP100R_U4B_STATIC_TAB_REFRESH_SECONDS = 600
+
+def _step100r_u4b_refresh_static_tabs_loop():
+    while True:
+        try:
+            _step100r_u1_time.sleep(_STEP100R_U4B_STATIC_TAB_REFRESH_SECONDS)
+            for _tab in _STEP100R_U1_STATIC_TABS:
+                try:
+                    _step100r_u1_cache_put(_tab, _step100r_u1_build_static_tab(_tab))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+try:
+    _step100r_u1_threading.Thread(target=_step100r_u4b_refresh_static_tabs_loop, daemon=True).start()
 except Exception:
     pass
 
