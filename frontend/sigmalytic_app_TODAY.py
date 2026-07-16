@@ -3628,10 +3628,27 @@ def _step100r_u1_build_static_tab(tab):
         return build_divergence_tab(session=None)
     if tab == "billing":
         return build_billing_tab(session=None, perms=None)
+    # SIGMALYTIC_STEP100R_U2_PRESERVE_PREFS_ADMIN_BUILDERS
     if tab == "preferences":
-        return build_preferences_tab()
+        if _PREFERENCES_TAB_AVAILABLE:
+            try:
+                return build_preferences_tab_external(user_id=USER_ID, session=None)
+            except Exception as e:
+                return html.Div([
+                    html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
+                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        return html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
     if tab == "admin":
-        return build_admin_tab()
+        if _ADMIN_TAB_AVAILABLE:
+            try:
+                return build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
+            except Exception as e:
+                return html.Div([
+                    html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
+                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
+                ], style={"padding":"60px","textAlign":"center"})
+        return html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
     if tab == "setup":
         return build_setup_tab()
     return html.Div("Unknown tab", style={"color":"#94a3b8"})
