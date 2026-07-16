@@ -3565,6 +3565,169 @@ def update_badges(live):
             badge("Alpaca SIP","blue"),
             html.Span("", style={"display":"none"}))
 
+
+# SIGMALYTIC_STEP100R_R_CACHE_HEAVY_TODAY_TABS_COMPLETE_UI
+import time as _step100r_r_time
+import threading as _step100r_r_threading
+
+_STEP100R_R_CACHE = {}
+_STEP100R_R_LOCK = _step100r_r_threading.RLock()
+_STEP100R_R_TTL_SECONDS = 60.0
+
+_STEP100R_R_HIDDEN = {"display": "none"}
+_STEP100R_R_SHOWN = {"display": "flex", "gap": "16px", "alignItems": "start"}
+
+def _step100r_r_error_panel(tab, exc):
+    return html.Div([
+        html.Div(f"{tab} tab error", style={
+            "color": "#f87171",
+            "fontWeight": "800",
+            "marginBottom": "8px",
+        }),
+        html.Div(str(exc), style={
+            "color": WHITE,
+            "fontSize": "12px",
+            "fontFamily": "monospace",
+            "whiteSpace": "pre-wrap",
+        }),
+    ], style={
+        "padding": "60px",
+        "textAlign": "center",
+    })
+
+def _step100r_r_cache_key(tab, symbol=None, tf=None):
+    if tab == "command":
+        return (tab, symbol or "AAPL", tf or "5m")
+    return (tab,)
+
+def _step100r_r_cache_get(key):
+    now = _step100r_r_time.time()
+    with _STEP100R_R_LOCK:
+        item = _STEP100R_R_CACHE.get(key)
+        if not item:
+            return None
+        created, value = item
+        if now - created > _STEP100R_R_TTL_SECONDS:
+            _STEP100R_R_CACHE.pop(key, None)
+            return None
+        return value
+
+def _step100r_r_cache_set(key, value):
+    with _STEP100R_R_LOCK:
+        _STEP100R_R_CACHE[key] = (_step100r_r_time.time(), value)
+    return value
+
+def _step100r_r_build_tab(tab, live=None, candles=None, live_mode=True, symbol="AAPL", tf="5m"):
+    live = live or _init_live
+    candles = candles or _init_candles
+    symbol = symbol or "AAPL"
+    tf = tf or "5m"
+
+    if tab == "command":
+        open_trade = _get(f"/api/behavior/open-trade/{USER_ID}")
+        trade_plan = _build_trade_plan_contents(live)
+        active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
+        main = html.Div([
+            build_weis_gamma_status_center_panel(),
+            build_command_tab(live, candles or _init_candles, symbol, tf),
+        ], style={"display": "flex", "flexDirection": "column", "gap": "16px"})
+        return main, _STEP100R_R_SHOWN, trade_plan, active_pane
+
+    if tab == "campaigns":
+        if _CAMPAIGN_TAB_AVAILABLE:
+            return build_campaign_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+        return html.Div("Campaign tab unavailable - check frontend/campaign_tab.py import.", style={
+            "color": MUTED,
+            "padding": "60px",
+            "textAlign": "center",
+        }), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "radar":
+        return build_radar_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "scoreboard":
+        return build_scoreboard_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "divergence":
+        return build_divergence_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "billing":
+        return build_billing_tab(session=None, perms=None), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "preferences":
+        if _PREFERENCES_TAB_AVAILABLE:
+            return build_preferences_tab_external(user_id=USER_ID, session=None), _STEP100R_R_HIDDEN, no_update, no_update
+        return html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={
+            "color": WHITE,
+            "padding": "60px",
+            "textAlign": "center",
+        }), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "admin":
+        if _ADMIN_TAB_AVAILABLE:
+            return build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP), _STEP100R_R_HIDDEN, no_update, no_update
+        return html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={
+            "color": WHITE,
+            "padding": "60px",
+            "textAlign": "center",
+        }), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "portfolio":
+        if _PORTFOLIO_TAB_AVAILABLE:
+            return build_portfolio_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+        return html.Div("Portfolio tab loading...", style={
+            "color": MUTED,
+            "padding": "60px",
+            "textAlign": "center",
+        }), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "journal":
+        if _JOURNAL_TAB_AVAILABLE:
+            return build_trade_journal_tab(session=None), _STEP100R_R_HIDDEN, no_update, no_update
+        return html.Div("Journal loading...", style={
+            "color": MUTED,
+            "padding": "60px",
+            "textAlign": "center",
+        }), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "import":
+        return build_import_tab(), _STEP100R_R_HIDDEN, no_update, no_update
+
+    if tab == "behavior":
+        return build_behavior_tab(), _STEP100R_R_HIDDEN, no_update, no_update
+
+    return html.Div(f"Unknown cached tab: {tab}", style={
+        "color": MUTED,
+        "padding": "60px",
+        "textAlign": "center",
+    }), _STEP100R_R_HIDDEN, no_update, no_update
+
+def _step100r_r_get_cached_tab(tab, live=None, candles=None, live_mode=True, symbol="AAPL", tf="5m"):
+    key = _step100r_r_cache_key(tab, symbol, tf)
+    cached = _step100r_r_cache_get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        value = _step100r_r_build_tab(tab, live=live, candles=candles, live_mode=live_mode, symbol=symbol, tf=tf)
+    except Exception as exc:
+        value = (_step100r_r_error_panel(tab, exc), _STEP100R_R_HIDDEN, no_update, no_update)
+        return value
+
+    return _step100r_r_cache_set(key, value)
+
+def _step100r_r_prewarm_tabs():
+    for tab in ("command", "campaigns", "radar", "scoreboard", "divergence", "billing", "preferences", "admin", "portfolio", "journal", "import", "behavior"):
+        try:
+            _step100r_r_get_cached_tab(tab, live=_init_live, candles=_init_candles, live_mode=True, symbol="AAPL", tf="5m")
+        except Exception:
+            pass
+
+try:
+    _step100r_r_threading.Thread(target=_step100r_r_prewarm_tabs, daemon=True).start()
+except Exception:
+    pass
+
 @app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
@@ -3614,65 +3777,21 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
         main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
         return (main, dash.no_update, dash.no_update, dash.no_update)
     if tab == "command":
-        open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
-        trade_plan  = _build_trade_plan_contents(live)
-        active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
-        return (html.Div([
-                    build_weis_gamma_status_center_panel(),
-                    build_command_tab(live, candles or _init_candles, symbol, tf),
-                ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
-                SHOWN, trade_plan, active_pane)
+        return _step100r_r_get_cached_tab("command", live, candles, live_mode, symbol, tf)
 
     if tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
-    elif tab=="behavior":    main = build_behavior_tab()
-    elif tab=="campaigns":
-        if _CAMPAIGN_TAB_AVAILABLE:
-            try:
-                main = build_campaign_tab(session=None)
-            except Exception as _ce:
-                main = html.Div([
-                    html.Div("⚠️ Campaign tab error", style={"color":"#f87171","fontWeight":"700","marginBottom":"8px"}),
-                    html.Div(str(_ce), style={"color":"#f8fafc","fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Campaign tab unavailable — check backend logs.", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="portfolio":
-        if _PORTFOLIO_TAB_AVAILABLE:
-            try:
-                main = build_portfolio_tab(session=None)
-            except Exception as _pe:
-                main = html.Div(str(_pe), style={"color":"#f87171","padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Portfolio tab loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="journal":     main = build_trade_journal_tab(session=None) if _JOURNAL_TAB_AVAILABLE else html.Div("Journal loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-    elif tab=="import":      main = build_import_tab()
-    elif tab=="radar":       main = build_radar_tab(session=None)
-    elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
-    elif tab=="divergence":  main = build_divergence_tab(session=None)
-    elif tab=="billing":     main = build_billing_tab(session=None, perms=None)
-    elif tab=="preferences":
-        if _PREFERENCES_TAB_AVAILABLE:
-            try:
-                main = build_preferences_tab_external(user_id=USER_ID, session=None)
-            except Exception as e:
-                main = html.Div([
-                    html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
-    elif tab=="admin":
-        if _ADMIN_TAB_AVAILABLE:
-            try:
-                main = build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
-            except Exception as e:
-                main = html.Div([
-                    html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        else:
-            main = html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
+    elif tab=="behavior":       return _step100r_r_get_cached_tab("behavior", live, candles, live_mode, symbol, tf)
+    elif tab=="campaigns":       return _step100r_r_get_cached_tab("campaigns", live, candles, live_mode, symbol, tf)
+    elif tab=="portfolio":       return _step100r_r_get_cached_tab("portfolio", live, candles, live_mode, symbol, tf)
+    elif tab=="journal":       return _step100r_r_get_cached_tab("journal", live, candles, live_mode, symbol, tf)
+    elif tab=="import":       return _step100r_r_get_cached_tab("import", live, candles, live_mode, symbol, tf)
+    elif tab=="radar":       return _step100r_r_get_cached_tab("radar", live, candles, live_mode, symbol, tf)
+    elif tab=="scoreboard":       return _step100r_r_get_cached_tab("scoreboard", live, candles, live_mode, symbol, tf)
+    elif tab=="divergence":       return _step100r_r_get_cached_tab("divergence", live, candles, live_mode, symbol, tf)
+    elif tab=="billing":       return _step100r_r_get_cached_tab("billing", live, candles, live_mode, symbol, tf)
+    elif tab=="preferences":       return _step100r_r_get_cached_tab("preferences", live, candles, live_mode, symbol, tf)
+    elif tab=="admin":       return _step100r_r_get_cached_tab("admin", live, candles, live_mode, symbol, tf)
     elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
