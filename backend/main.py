@@ -878,25 +878,185 @@ def _compat_scoreboard_summary(entries):
     }
 
 
-@app.get("/api/radar/scores")
-def radar_scores_compat(limit: int = 50):
+# SIGMALYTIC_STEP100R_W2_BACKEND_RADAR_STALE_WHILE_REVALIDATE
+# Backend Radar is served as stale-while-revalidate so the UI does not wait on
+# live market enrichment. This is read-only and does not mutate campaigns,
+# scores, ranks, probabilities, operator-control state, D3D, Stripe, or Supabase.
+import threading as _step100r_w2_threading
+import time as _step100r_w2_time
+from datetime import datetime as _step100r_w2_datetime
+
+_STEP100R_W2_RADAR_CACHE_LOCK = _step100r_w2_threading.RLock()
+_STEP100R_W2_RADAR_CACHE = {
+    "payload": None,
+    "cached_at_monotonic": 0.0,
+    "refreshing": False,
+}
+_STEP100R_W2_RADAR_CACHE_TTL_SECONDS = 120.0
+_STEP100R_W2_RADAR_LIMIT_MAX = 50
+
+
+def _step100r_w2_normalize_limit(limit: int = 50) -> int:
+    try:
+        value = int(limit)
+    except Exception:
+        value = 50
+    return max(1, min(value, _STEP100R_W2_RADAR_LIMIT_MAX))
+
+
+def _step100r_w2_build_base_radar_rows(limit: int = 50):
+    value = _step100r_w2_normalize_limit(limit)
     campaigns = _compat_campaigns()
     rows = [_compat_to_frontend_row(c) for c in campaigns]
     rows = [r for r in rows if r.get("symbol")]
     rows.sort(key=lambda r: r.get("composite_score", 0), reverse=True)
-    rows = rows[:limit]
+    return rows[:value]
 
-    market = _compat_enrich_market_rows(rows)
+
+def _step100r_w2_build_radar_payload(
+    enrich_market: bool = True,
+    source: str = "campaign_intelligence_compat",
+):
+    rows = _step100r_w2_build_base_radar_rows(_STEP100R_W2_RADAR_LIMIT_MAX)
+
+    if enrich_market:
+        market = _compat_enrich_market_rows(rows)
+        out_rows = list(market.get("rows") or [])
+        market_enriched_count = int(market.get("market_enriched_count") or 0)
+        market_error = market.get("market_error")
+    else:
+        out_rows = rows
+        market_enriched_count = 0
+        market_error = None
 
     return {
         "ok": True,
-        "source": "campaign_intelligence_compat",
-        "generated_at": datetime.utcnow().isoformat(),
-        "count": len(market["rows"]),
-        "market_enriched_count": market["market_enriched_count"],
-        "market_error": market["market_error"],
-        "symbols": market["rows"],
+        "source": source,
+        "generated_at": _step100r_w2_datetime.utcnow().isoformat(),
+        "count": len(out_rows),
+        "market_enriched_count": market_enriched_count,
+        "market_error": market_error,
+        "symbols": out_rows,
+        "guardrails": {
+            "diagnostic_only": True,
+            "read_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "changes_scores": False,
+            "changes_ranks": False,
+            "changes_states": False,
+            "changes_probabilities": False,
+            "changes_edge": False,
+        },
     }
+
+
+def _step100r_w2_slice_payload(payload: dict, limit: int = 50, cache_mode: str = "cache"):
+    value = _step100r_w2_normalize_limit(limit)
+    cloned = dict(payload or {})
+    symbols = list(cloned.get("symbols") or [])[:value]
+    cloned["symbols"] = symbols
+    cloned["count"] = len(symbols)
+    cloned["served_at"] = _step100r_w2_datetime.utcnow().isoformat()
+    cloned["cache"] = {
+        "mode": cache_mode,
+        "served_from_cache": True,
+        "ttl_seconds": _STEP100R_W2_RADAR_CACHE_TTL_SECONDS,
+    }
+    return cloned
+
+
+def _step100r_w2_refresh_worker():
+    try:
+        payload = _step100r_w2_build_radar_payload(
+            enrich_market=True,
+            source="campaign_intelligence_compat_cached_enriched",
+        )
+        payload["cache"] = {
+            "mode": "background_refreshed",
+            "served_from_cache": False,
+            "ttl_seconds": _STEP100R_W2_RADAR_CACHE_TTL_SECONDS,
+        }
+        with _STEP100R_W2_RADAR_CACHE_LOCK:
+            _STEP100R_W2_RADAR_CACHE["payload"] = payload
+            _STEP100R_W2_RADAR_CACHE["cached_at_monotonic"] = _step100r_w2_time.monotonic()
+    except Exception as exc:
+        try:
+            print(f"STEP100R_W2_RADAR_REFRESH_FAILED: {exc}")
+        except Exception:
+            pass
+    finally:
+        with _STEP100R_W2_RADAR_CACHE_LOCK:
+            _STEP100R_W2_RADAR_CACHE["refreshing"] = False
+
+
+def _step100r_w2_start_refresh_if_needed():
+    with _STEP100R_W2_RADAR_CACHE_LOCK:
+        if _STEP100R_W2_RADAR_CACHE.get("refreshing"):
+            return
+        _STEP100R_W2_RADAR_CACHE["refreshing"] = True
+
+    thread = _step100r_w2_threading.Thread(
+        target=_step100r_w2_refresh_worker,
+        daemon=True,
+    )
+    thread.start()
+
+
+@app.get("/api/radar/scores")
+def radar_scores_compat(limit: int = 50):
+    value = _step100r_w2_normalize_limit(limit)
+    now = _step100r_w2_time.monotonic()
+
+    with _STEP100R_W2_RADAR_CACHE_LOCK:
+        cached = _STEP100R_W2_RADAR_CACHE.get("payload")
+        cached_at = float(_STEP100R_W2_RADAR_CACHE.get("cached_at_monotonic") or 0.0)
+        refreshing = bool(_STEP100R_W2_RADAR_CACHE.get("refreshing"))
+        age = now - cached_at if cached else None
+
+    if cached and age is not None and age <= _STEP100R_W2_RADAR_CACHE_TTL_SECONDS:
+        return _step100r_w2_slice_payload(
+            cached,
+            limit=value,
+            cache_mode="fresh_backend_cache",
+        )
+
+    if not refreshing:
+        _step100r_w2_start_refresh_if_needed()
+
+    if cached:
+        return _step100r_w2_slice_payload(
+            cached,
+            limit=value,
+            cache_mode="stale_while_revalidate",
+        )
+
+    payload = _step100r_w2_build_radar_payload(
+        enrich_market=False,
+        source="campaign_intelligence_compat_fast_seed",
+    )
+    payload["cache"] = {
+        "mode": "fast_seed_background_refreshing",
+        "served_from_cache": False,
+        "ttl_seconds": _STEP100R_W2_RADAR_CACHE_TTL_SECONDS,
+    }
+
+    with _STEP100R_W2_RADAR_CACHE_LOCK:
+        if _STEP100R_W2_RADAR_CACHE.get("payload") is None:
+            _STEP100R_W2_RADAR_CACHE["payload"] = payload
+            _STEP100R_W2_RADAR_CACHE["cached_at_monotonic"] = _step100r_w2_time.monotonic()
+
+    return _step100r_w2_slice_payload(
+        payload,
+        limit=value,
+        cache_mode="fast_seed_background_refreshing",
+    )
+
 
 
 @app.get("/api/scoreboard")
