@@ -64,9 +64,9 @@ def save_body_snapshot(output_dir: Path, page: Any, name: str) -> Path:
 def find_clickable(page: Any, labels: list[str], timeout_ms: int = 3500) -> tuple[Any | None, str | None]:
     for label in labels:
         locators = [
-            page.get_by_role("button", name=label, exact=True).first(),
-            page.get_by_text(label, exact=True).first(),
-            page.locator(f"text={label}").first(),
+            page.get_by_role("button", name=label, exact=True).first,
+            page.get_by_text(label, exact=True).first,
+            page.locator(f"text={label}").first,
         ]
         for locator in locators:
             try:
@@ -155,7 +155,7 @@ def click_group(page: Any, group: dict[str, Any], required: bool, events: list[d
 def test_load_symbol(page: Any, events: list[dict[str, Any]]) -> dict[str, Any]:
     result = {"name": "Load Symbol", "required": True, "clicked": False, "matched_label": None, "status": "NOT_RUN"}
 
-    ticker_input = page.locator("#ticker-input").first()
+    ticker_input = page.locator("#ticker-input").first
     ticker_input.wait_for(state="visible", timeout=15000)
     ticker_input.fill("MSFT", timeout=10000)
 
