@@ -3746,7 +3746,30 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
                     HIDDEN, no_update, no_update)
 
     if tab == "status":
-        main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+        status_center_main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
+        d3f2_status_contract_card = html.Div(
+            [
+                html.Div("D3F.2 Callback-Safe Status Center", style={"fontWeight": "700", "marginBottom": "8px"}),
+                html.Div("Controlled-persistence lifecycle status is rendered only inside the callback-rendered Status tab. It is not globally mounted.", style={"fontSize": "13px", "opacity": "0.88"}),
+                html.Ul(
+                    [
+                        html.Li("Safe branch: render_main(tab) -> tab == status."),
+                        html.Li("No initial-layout backend fetch."),
+                        html.Li("No Supabase write, campaign mutation, D3D authorization, operator-control confirmation, trade signal, or Stripe touch."),
+                    ],
+                    style={"marginTop": "10px", "paddingLeft": "20px", "fontSize": "12px", "opacity": "0.86"},
+                ),
+            ],
+            id="d3f2-callback-safe-status-card",
+            style={
+                "border": "1px solid rgba(255,255,255,0.14)",
+                "borderRadius": "14px",
+                "padding": "14px",
+                "marginTop": "14px",
+                "background": "rgba(255,255,255,0.035)",
+            },
+        )
+        main = html.Div([status_center_main, d3f2_status_contract_card], id="d3f2-callback-safe-status-center")
         return (main, dash.no_update, dash.no_update, dash.no_update)
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
