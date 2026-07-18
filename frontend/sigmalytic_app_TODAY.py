@@ -3793,7 +3793,31 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
     elif tab=="divergence":       main = _step100r_u1_get_static_tab("divergence")
     elif tab=="billing":       main = _step100r_u1_get_static_tab("billing")
     elif tab=="preferences":       main = _step100r_u1_get_static_tab("preferences")
-    elif tab=="admin":       main = _step100r_u1_get_static_tab("admin")
+    elif tab=="admin":
+        admin_main = _step100r_u1_get_static_tab("admin")
+        d3f2_admin_status_card = html.Div(
+            [
+                html.Div("D3F.2 Callback-Safe Status Center", style={"fontWeight": "700", "marginBottom": "8px"}),
+                html.Div("Controlled-persistence lifecycle status is rendered only inside a callback-rendered tab. It is not globally mounted.", style={"fontSize": "13px", "opacity": "0.88"}),
+                html.Ul(
+                    [
+                        html.Li("Visible under Admin because the current live navigation exposes Admin but not a separate Status tab."),
+                        html.Li("No initial-layout backend fetch."),
+                        html.Li("No Supabase write, campaign mutation, D3D authorization, operator-control confirmation, trade signal, or Stripe touch."),
+                    ],
+                    style={"marginTop": "10px", "paddingLeft": "20px", "fontSize": "12px", "opacity": "0.86"},
+                ),
+            ],
+            id="d3f2-admin-callback-safe-status-card",
+            style={
+                "border": "1px solid rgba(255,255,255,0.14)",
+                "borderRadius": "14px",
+                "padding": "14px",
+                "marginTop": "14px",
+                "background": "rgba(255,255,255,0.035)",
+            },
+        )
+        main = html.Div([admin_main, d3f2_admin_status_card], id="d3f2-admin-callback-safe-status-center")
     elif tab=="setup":       main = _step100r_u1_get_static_tab("setup")
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
