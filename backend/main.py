@@ -1372,6 +1372,333 @@ def _phase12_17_transition_preview_for_row(row):
 
 
 
+
+# === PHASE 12.29A CONTROLLED AUDIT TABLE SCHEMA CREATION START ===
+# Controlled audit-table schema creation route.
+# This route is schema-write capable only after an explicit confirmation phrase.
+# It creates only public.campaign_state_transition_audit_events and its indexes/RLS/policy.
+# It does not mutate campaigns, does not change campaign states, does not authorize D3D,
+# does not confirm operator control, does not create trade signals, does not send alerts,
+# and does not touch Stripe/billing.
+def _phase12_29a_get_database_connection_info():
+    import os
+
+    candidates = [
+        "SUPABASE_DB_URL",
+        "DATABASE_URL",
+        "POSTGRES_URL",
+        "POSTGRES_PRISMA_URL",
+        "POSTGRESQL_URL",
+        "RENDER_POSTGRES_URL",
+    ]
+
+    for name in candidates:
+        value = os.environ.get(name)
+        if value:
+            return value, name
+
+    return None, None
+
+
+def _phase12_29a_schema_sql_statements():
+    return [
+        """
+        create table if not exists public.campaign_state_transition_audit_events (
+            id bigserial primary key,
+            created_at timestamptz not null default now(),
+
+            source text not null default 'phase12_controlled_campaign_state_mutation',
+            mode text not null default 'APPEND_ONLY_CAMPAIGN_STATE_TRANSITION_AUDIT',
+
+            symbol text not null,
+            campaign_id text null,
+
+            before_state text not null,
+            after_state text not null,
+            transition_required boolean not null default true,
+
+            lifecycle_field text not null default 'status',
+            evidence_source text not null,
+            rationale jsonb not null default '[]'::jsonb,
+
+            guardrails jsonb not null default '{}'::jsonb,
+            request_payload jsonb not null default '{}'::jsonb,
+            response_payload jsonb not null default '{}'::jsonb,
+
+            operator_control_confirmed boolean not null default false,
+            authorizes_d3d boolean not null default false,
+            not_a_trade_signal boolean not null default true,
+
+            writes_to_supabase boolean not null default true,
+            mutates_campaigns boolean not null default false,
+            changes_states boolean not null default false,
+
+            alert_send_execution boolean not null default false,
+            stripe_touched boolean not null default false,
+            billing_touched boolean not null default false,
+
+            constraint campaign_state_transition_audit_events_before_state_check
+                check (before_state in (
+                    'BIRTH',
+                    'CONFIRMED',
+                    'SURVIVING',
+                    'EXPANDING',
+                    'MATURING',
+                    'DISTRIBUTION_RISK',
+                    'CLOSED'
+                )),
+
+            constraint campaign_state_transition_audit_events_after_state_check
+                check (after_state in (
+                    'BIRTH',
+                    'CONFIRMED',
+                    'SURVIVING',
+                    'EXPANDING',
+                    'MATURING',
+                    'DISTRIBUTION_RISK',
+                    'CLOSED'
+                )),
+
+            constraint campaign_state_transition_audit_events_lifecycle_field_check
+                check (lifecycle_field = 'status'),
+
+            constraint campaign_state_transition_audit_events_no_operator_control_check
+                check (operator_control_confirmed = false),
+
+            constraint campaign_state_transition_audit_events_no_d3d_authorization_check
+                check (authorizes_d3d = false),
+
+            constraint campaign_state_transition_audit_events_not_trade_signal_check
+                check (not_a_trade_signal = true),
+
+            constraint campaign_state_transition_audit_events_no_alert_send_check
+                check (alert_send_execution = false),
+
+            constraint campaign_state_transition_audit_events_no_stripe_touch_check
+                check (stripe_touched = false),
+
+            constraint campaign_state_transition_audit_events_no_billing_touch_check
+                check (billing_touched = false)
+        )
+        """,
+        """
+        create index if not exists idx_campaign_state_transition_audit_events_symbol_created_at
+            on public.campaign_state_transition_audit_events (symbol, created_at desc)
+        """,
+        """
+        create index if not exists idx_campaign_state_transition_audit_events_campaign_id_created_at
+            on public.campaign_state_transition_audit_events (campaign_id, created_at desc)
+        """,
+        """
+        create index if not exists idx_campaign_state_transition_audit_events_before_after_state
+            on public.campaign_state_transition_audit_events (before_state, after_state)
+        """,
+        """
+        alter table public.campaign_state_transition_audit_events enable row level security
+        """,
+        """
+        drop policy if exists campaign_state_transition_audit_events_select_authenticated
+            on public.campaign_state_transition_audit_events
+        """,
+        """
+        create policy campaign_state_transition_audit_events_select_authenticated
+            on public.campaign_state_transition_audit_events
+            for select
+            to authenticated
+            using (true)
+        """,
+    ]
+
+
+@app.post("/api/campaigns/create-state-mutation-audit-table")
+def phase12_29a_create_state_mutation_audit_table(payload: dict):
+    confirmation_phrase = str(payload.get("confirmation_phrase") or "").strip()
+    dry_run = bool(payload.get("dry_run", False))
+
+    required_phrase = "CONFIRM CREATE APPEND ONLY CAMPAIGN STATE TRANSITION AUDIT TABLE"
+
+    if confirmation_phrase != required_phrase:
+        return {
+            "ok": False,
+            "source": "phase12_29a_create_state_mutation_audit_table",
+            "mode": "CONTROLLED_SCHEMA_CREATION_REJECTED",
+            "schema_write_executed": False,
+            "failure": "MISSING_EXPLICIT_SCHEMA_CREATION_CONFIRMATION_PHRASE",
+            "required_confirmation_phrase": required_phrase,
+            "guardrails": {
+                "read_only": False,
+                "schema_creation_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "alert_send_execution": False,
+                "stripe_touched": False,
+                "billing_touched": False,
+            },
+        }
+
+    statements = _phase12_29a_schema_sql_statements()
+
+    if dry_run:
+        return {
+            "ok": True,
+            "source": "phase12_29a_create_state_mutation_audit_table",
+            "mode": "CONTROLLED_SCHEMA_CREATION_DRY_RUN",
+            "schema_write_executed": False,
+            "statement_count": len(statements),
+            "target_table": "public.campaign_state_transition_audit_events",
+            "guardrails": {
+                "read_only": False,
+                "schema_creation_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "alert_send_execution": False,
+                "stripe_touched": False,
+                "billing_touched": False,
+            },
+        }
+
+    database_url, database_url_env_name = _phase12_29a_get_database_connection_info()
+
+    if not database_url:
+        return {
+            "ok": False,
+            "source": "phase12_29a_create_state_mutation_audit_table",
+            "mode": "CONTROLLED_SCHEMA_CREATION_BLOCKED_NO_DB_URL",
+            "schema_write_executed": False,
+            "failure": "MISSING_DATABASE_URL_FOR_DDL_EXECUTION",
+            "accepted_env_names": [
+                "SUPABASE_DB_URL",
+                "DATABASE_URL",
+                "POSTGRES_URL",
+                "POSTGRES_PRISMA_URL",
+                "POSTGRESQL_URL",
+                "RENDER_POSTGRES_URL",
+            ],
+            "guardrails": {
+                "read_only": False,
+                "schema_creation_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "alert_send_execution": False,
+                "stripe_touched": False,
+                "billing_touched": False,
+            },
+        }
+
+    executed = []
+    try:
+        try:
+            import psycopg
+            with psycopg.connect(database_url) as conn:
+                with conn.cursor() as cur:
+                    for statement in statements:
+                        cur.execute(statement)
+                        executed.append(statement.strip().splitlines()[0].strip())
+                conn.commit()
+        except Exception as psycopg_exc:
+            try:
+                import psycopg2
+                conn = psycopg2.connect(database_url)
+                try:
+                    cur = conn.cursor()
+                    try:
+                        for statement in statements:
+                            cur.execute(statement)
+                            executed.append(statement.strip().splitlines()[0].strip())
+                        conn.commit()
+                    finally:
+                        cur.close()
+                finally:
+                    conn.close()
+            except Exception as psycopg2_exc:
+                return {
+                    "ok": False,
+                    "source": "phase12_29a_create_state_mutation_audit_table",
+                    "mode": "CONTROLLED_SCHEMA_CREATION_DRIVER_FAILED",
+                    "schema_write_executed": False,
+                    "database_url_env_name": database_url_env_name,
+                    "failure": "POSTGRES_DRIVER_OR_EXECUTION_FAILED",
+                    "psycopg_error": str(psycopg_exc)[:600],
+                    "psycopg2_error": str(psycopg2_exc)[:600],
+                    "guardrails": {
+                        "read_only": False,
+                        "schema_creation_only": True,
+                        "writes_to_supabase": False,
+                        "mutates_campaigns": False,
+                        "changes_states": False,
+                        "executes_d3d": False,
+                        "authorizes_d3d": False,
+                        "operator_control_confirmed": False,
+                        "not_a_trade_signal": True,
+                        "alert_send_execution": False,
+                        "stripe_touched": False,
+                        "billing_touched": False,
+                    },
+                }
+
+        return {
+            "ok": True,
+            "source": "phase12_29a_create_state_mutation_audit_table",
+            "mode": "CONTROLLED_SCHEMA_CREATION_EXECUTED",
+            "schema_write_executed": True,
+            "target_table": "public.campaign_state_transition_audit_events",
+            "database_url_env_name": database_url_env_name,
+            "executed_statement_count": len(executed),
+            "executed_statement_starts": executed,
+            "guardrails": {
+                "read_only": False,
+                "schema_creation_only": True,
+                "writes_to_supabase": True,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "alert_send_execution": False,
+                "stripe_touched": False,
+                "billing_touched": False,
+            },
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "source": "phase12_29a_create_state_mutation_audit_table",
+            "mode": "CONTROLLED_SCHEMA_CREATION_UNHANDLED_FAILURE",
+            "schema_write_executed": False,
+            "failure": str(exc)[:700],
+            "guardrails": {
+                "read_only": False,
+                "schema_creation_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "executes_d3d": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+                "alert_send_execution": False,
+                "stripe_touched": False,
+                "billing_touched": False,
+            },
+        }
+# === PHASE 12.29A CONTROLLED AUDIT TABLE SCHEMA CREATION END ===
+
 # === PHASE 12.27-R2 LIVE-BACKED SCHEMA READINESS START ===
 # Read-only live backend schema readiness route.
 # This route exists because local development shells may not have Supabase credentials,
