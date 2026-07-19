@@ -1371,6 +1371,146 @@ def _phase12_17_transition_preview_for_row(row):
 
 
 
+
+# === PHASE 12.27-R2 LIVE-BACKED SCHEMA READINESS START ===
+# Read-only live backend schema readiness route.
+# This route exists because local development shells may not have Supabase credentials,
+# while the deployed backend does. It performs SELECT-only schema checks.
+# It never writes to Supabase, never mutates campaigns, never changes states,
+# never authorizes D3D, never confirms operator control, never creates trade signals,
+# never sends alerts, and never touches Stripe/billing.
+def _phase12_27_r2_get_supabase_client():
+    import os
+
+    url = (
+        os.environ.get("SUPABASE_URL")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        or os.environ.get("VITE_SUPABASE_URL")
+    )
+
+    key = (
+        os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or os.environ.get("SUPABASE_KEY")
+        or os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    )
+
+    if not url or not key:
+        return None, {
+            "has_supabase_url": bool(url),
+            "has_supabase_key": bool(key),
+            "error": "MISSING_SUPABASE_URL_OR_KEY",
+        }
+
+    try:
+        from supabase import create_client
+        return create_client(url, key), {
+            "has_supabase_url": True,
+            "has_supabase_key": True,
+            "error": None,
+        }
+    except Exception as exc:
+        return None, {
+            "has_supabase_url": bool(url),
+            "has_supabase_key": bool(key),
+            "error": "SUPABASE_CLIENT_IMPORT_OR_CREATE_FAILED: " + str(exc)[:400],
+        }
+
+
+def _phase12_27_r2_select_check(client, table_name, select_expr="*"):
+    try:
+        response = client.table(table_name).select(select_expr).limit(1).execute()
+        data = getattr(response, "data", None)
+        return {
+            "ok": isinstance(data, list),
+            "table": table_name,
+            "select": select_expr,
+            "row_count_sample": len(data or []) if isinstance(data, list) else None,
+            "sample_keys": sorted(list((data[0] or {}).keys())) if isinstance(data, list) and data else [],
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "table": table_name,
+            "select": select_expr,
+            "row_count_sample": None,
+            "sample_keys": [],
+            "error": str(exc)[:700],
+        }
+
+
+@app.get("/api/campaigns/state-mutation-schema-readiness")
+def phase12_27_r2_live_backed_state_mutation_schema_readiness():
+    client, client_status = _phase12_27_r2_get_supabase_client()
+
+    checks = {
+        "client": client_status,
+        "campaigns_table": None,
+        "campaigns_status_field": None,
+        "campaigns_current_state_field": None,
+        "campaigns_campaign_state_field": None,
+        "campaign_state_transition_audit_events_table": None,
+    }
+
+    if client is not None:
+        checks["campaigns_table"] = _phase12_27_r2_select_check(client, "campaigns", "*")
+        checks["campaigns_status_field"] = _phase12_27_r2_select_check(client, "campaigns", "status")
+        checks["campaigns_current_state_field"] = _phase12_27_r2_select_check(client, "campaigns", "current_state")
+        checks["campaigns_campaign_state_field"] = _phase12_27_r2_select_check(client, "campaigns", "campaign_state")
+        checks["campaign_state_transition_audit_events_table"] = _phase12_27_r2_select_check(
+            client,
+            "campaign_state_transition_audit_events",
+            "*",
+        )
+
+    has_campaigns_table = bool(checks["campaigns_table"] and checks["campaigns_table"].get("ok") is True)
+    has_status_field = bool(checks["campaigns_status_field"] and checks["campaigns_status_field"].get("ok") is True)
+    has_current_state_field = bool(checks["campaigns_current_state_field"] and checks["campaigns_current_state_field"].get("ok") is True)
+    has_campaign_state_field = bool(checks["campaigns_campaign_state_field"] and checks["campaigns_campaign_state_field"].get("ok") is True)
+    has_audit_table = bool(
+        checks["campaign_state_transition_audit_events_table"]
+        and checks["campaign_state_transition_audit_events_table"].get("ok") is True
+    )
+
+    schema_ready_for_controlled_mutation = (
+        has_campaigns_table
+        and has_status_field
+        and has_audit_table
+    )
+
+    return {
+        "ok": True,
+        "source": "phase12_27_r2_live_backed_state_mutation_schema_readiness",
+        "mode": "READ_ONLY_LIVE_BACKED_SCHEMA_READINESS",
+        "schema_ready_for_controlled_mutation": schema_ready_for_controlled_mutation,
+        "resolved_lifecycle_field": "status" if has_status_field else None,
+        "required_audit_table": "campaign_state_transition_audit_events",
+        "checks": checks,
+        "classification": {
+            "has_campaigns_table": has_campaigns_table,
+            "has_status_field": has_status_field,
+            "has_current_state_field": has_current_state_field,
+            "has_campaign_state_field": has_campaign_state_field,
+            "has_campaign_state_transition_audit_events_table": has_audit_table,
+        },
+        "guardrails": {
+            "read_only": True,
+            "schema_check_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "changes_states": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "alert_send_execution": False,
+            "stripe_touched": False,
+            "billing_touched": False,
+        },
+    }
+# === PHASE 12.27-R2 LIVE-BACKED SCHEMA READINESS END ===
+
 # === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT START ===
 # Controlled production mutation preflight route.
 # This validates a proposed campaign lifecycle-state mutation plan only.
