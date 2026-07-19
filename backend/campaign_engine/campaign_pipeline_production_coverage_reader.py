@@ -332,13 +332,13 @@ def build_get_only_production_coverage_snapshot() -> dict[str, Any]:
         "select=symbol&limit=" + str(MAX_SYMBOL_ROWS),
         "select=ticker&limit=" + str(MAX_SYMBOL_ROWS),
         "select=asset_symbol&limit=" + str(MAX_SYMBOL_ROWS),
-        "select=*&limit=1000",
+        "select=*&limit=" + str(MAX_SYMBOL_ROWS),
     )
 
     campaign_queries = (
-        "select=*&limit=1000",
-        "select=symbol&limit=1000",
-        "select=ticker&limit=1000",
+        "select=*&limit=" + str(MAX_SYMBOL_ROWS),
+        "select=symbol&limit=" + str(MAX_SYMBOL_ROWS),
+        "select=ticker&limit=" + str(MAX_SYMBOL_ROWS),
     )
 
     universe_result = _first_working_table(UNIVERSE_TABLE_CANDIDATES, symbol_select_queries)
