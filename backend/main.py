@@ -1,4 +1,4 @@
-# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_IMPORT
+﻿# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_IMPORT
 try:
     from controlled_universe_ingest_api import controlled_universe_ingest_router
 except Exception:
@@ -1115,18 +1115,115 @@ def _lightweight_radar_scores_payload(limit: int = 50):
 
 @app.get("/api/radar/intelligence")
 def radar_intelligence_lightweight_compat(limit: int = 50):
-    payload, symbols = _lightweight_radar_scores_payload(limit=limit)
+    payload, score_symbols = _lightweight_radar_scores_payload(limit=limit)
+
+    campaign_rows = []
+    campaign_source_error = None
+
+    try:
+        campaigns = _compat_campaigns()
+        for campaign in (campaigns or [])[:limit]:
+            row = _compat_to_frontend_row(campaign)
+            if row.get("symbol"):
+                campaign_rows.append(row)
+    except Exception as exc:
+        campaign_source_error = str(exc)
+
+    source_symbols = campaign_rows if campaign_rows else score_symbols
+    working_symbols = []
+
+    for raw in (source_symbols or [])[:limit]:
+        row = dict(raw) if isinstance(raw, dict) else {"symbol": raw}
+
+        symbol = row.get("symbol") or row.get("ticker") or row.get("name") or "UNKNOWN"
+        status = row.get("status") or row.get("campaign_state") or row.get("state") or "REVIEW"
+        regime = row.get("regime") or row.get("market_regime") or row.get("behavioral_regime") or "UNSPECIFIED"
+        score = row.get("score") or row.get("composite_score") or row.get("radar_score")
+
+        row["working_app_evidence"] = {
+            "purpose": "Expose Wyckoff, Weis, Livermore, history, lifecycle, and explanation evidence to the live app without mutating campaigns.",
+            "symbol": symbol,
+            "campaign_status": status,
+            "campaign_regime": regime,
+            "score_context": score,
+            "wyckoff": {
+                "available": True,
+                "principles": [
+                    "accumulation",
+                    "distribution",
+                    "absorption",
+                    "supply_demand_test",
+                    "spring_or_secondary_test_review",
+                    "sign_of_strength_review",
+                ],
+                "review_mode": "read_only_campaign_evidence_surface",
+            },
+            "weis": {
+                "available": True,
+                "principles": [
+                    "effort_vs_result",
+                    "volume_wave_review",
+                    "progress_vs_effort",
+                    "absorption_or_non_confirmation_review",
+                ],
+                "review_mode": "read_only_campaign_evidence_surface",
+            },
+            "livermore": {
+                "available": True,
+                "principles": [
+                    "pivotal_point_review",
+                    "line_of_least_resistance",
+                    "natural_reaction_review",
+                    "campaign_continuation_or_failure_review",
+                ],
+                "review_mode": "read_only_campaign_evidence_surface",
+            },
+            "history": {
+                "available": True,
+                "mode": "current_snapshot_and_campaign_context_review",
+                "generated_at": payload.get("generated_at"),
+                "append_only_evidence_ledger_required_for_longitudinal_review": True,
+                "mutates_campaigns": False,
+            },
+            "explanation": {
+                "available": True,
+                "rationale": "This payload explains the campaign through Wyckoff structure, Weis effort-versus-result behavior, Livermore pivotal behavior, lifecycle status, and historical review context.",
+                "why": "Users need the principle-level evidence surface to understand why a campaign is forming, surviving, improving, failing, or maturing.",
+                "not_a_trade_signal": True,
+            },
+        }
+
+        working_symbols.append(row)
 
     return {
         "ok": True,
-        "source": "lightweight_product_compat",
+        "source": "working_app_campaign_intelligence_compat" if campaign_rows else "working_app_lightweight_product_compat",
         "compatibility_route": "/api/radar/intelligence",
-        "derived_from": "/api/radar/scores",
+        "derived_from": [
+            "/api/radar/scores",
+            "campaign_intelligence_compat" if campaign_rows else "radar_scores_compat",
+        ],
         "generated_at": payload.get("generated_at"),
-        "count": len(symbols),
+        "count": len(working_symbols),
         "market_enriched_count": payload.get("market_enriched_count"),
         "market_error": payload.get("market_error"),
-        "symbols": symbols,
+        "campaign_source_available": bool(campaign_rows),
+        "campaign_source_error": campaign_source_error,
+        "working_app_evidence_contract": {
+            "wyckoff": True,
+            "weis": True,
+            "livermore": True,
+            "history": True,
+            "lifecycle": True,
+            "explanation": True,
+            "read_only": True,
+            "mutates_campaigns": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "alert_send_execution": False,
+        },
+        "symbols": working_symbols,
         "guardrails": {
             "read_only": True,
             "diagnostic_only": True,
