@@ -3397,6 +3397,113 @@ app.layout = html.Div([
 ], style={"margin":"0","background":NAVY})
 
 
+
+
+# === PHASE 12.19 FRONTEND TRANSITION PREVIEW PANEL START ===
+# Frontend read-only transition preview panel.
+# This consumes /api/campaigns/transition-preview for display only.
+# It does not mutate campaigns, change states, authorize D3D, confirm operator control,
+# create trade signals, send alerts, or touch Stripe/billing.
+def _phase12_19_build_transition_preview_panel(limit=5):
+    try:
+        payload = _backend_get_json(f"/api/campaigns/transition-preview?limit={limit}") or {}
+    except Exception as exc:
+        payload = {
+            "ok": False,
+            "source_error": str(exc),
+            "transitions": [],
+            "guardrails": {
+                "read_only": True,
+                "review_only": True,
+                "writes_to_supabase": False,
+                "mutates_campaigns": False,
+                "changes_states": False,
+                "authorizes_d3d": False,
+                "operator_control_confirmed": False,
+                "not_a_trade_signal": True,
+            },
+        }
+
+    transitions = payload.get("transitions") or []
+    guardrails = payload.get("guardrails") or {}
+
+    rows = []
+    for item in transitions[:limit]:
+        rows.append(
+            html.Tr(
+                [
+                    html.Td(str(item.get("symbol", "UNKNOWN"))),
+                    html.Td(str(item.get("current_state", "BIRTH"))),
+                    html.Td(str(item.get("proposed_next_state", "BIRTH"))),
+                    html.Td("YES" if item.get("transition_required") else "NO"),
+                    html.Td("; ".join([str(x) for x in (item.get("rationale") or [])])[:420]),
+                ]
+            )
+        )
+
+    if not rows:
+        rows = [
+            html.Tr(
+                [
+                    html.Td("No transition preview rows returned.", colSpan=5),
+                ]
+            )
+        ]
+
+    return html.Div(
+        id="phase12-19-transition-preview-panel",
+        children=[
+            html.H3("Controlled Transition Preview"),
+            html.P(
+                "Read-only proposed campaign lifecycle transitions. This preview does not change campaign state."
+            ),
+            html.Table(
+                [
+                    html.Thead(
+                        html.Tr(
+                            [
+                                html.Th("Symbol"),
+                                html.Th("Current State"),
+                                html.Th("Proposed Next State"),
+                                html.Th("Transition Required"),
+                                html.Th("Rationale"),
+                            ]
+                        )
+                    ),
+                    html.Tbody(rows),
+                ]
+            ),
+            html.Div(
+                [
+                    html.Strong("Guardrails: "),
+                    html.Span(
+                        "read_only={0} | review_only={1} | writes_to_supabase={2} | mutates_campaigns={3} | changes_states={4} | authorizes_d3d={5} | operator_control_confirmed={6} | not_a_trade_signal={7}".format(
+                            guardrails.get("read_only", True),
+                            guardrails.get("review_only", True),
+                            guardrails.get("writes_to_supabase", False),
+                            guardrails.get("mutates_campaigns", False),
+                            guardrails.get("changes_states", False),
+                            guardrails.get("authorizes_d3d", False),
+                            guardrails.get("operator_control_confirmed", False),
+                            guardrails.get("not_a_trade_signal", True),
+                        )
+                    ),
+                ]
+            ),
+        ],
+    )
+
+
+def _phase12_19_attach_transition_preview_panel(content):
+    panel = _phase12_19_build_transition_preview_panel(limit=5)
+
+    if isinstance(content, list):
+        return [panel] + content
+
+    return [panel, content]
+# === PHASE 12.19 FRONTEND TRANSITION PREVIEW PANEL END ===
+
+
 # === PHASE 12.11 WORKING APP WLW FRONTEND EVIDENCE PANEL START ===
 # Read-only frontend display panel.
 # GET-only backend consumption.
@@ -3794,7 +3901,7 @@ def _step100r_u1_build_static_tab(tab):
     if tab == "import":
         return build_import_tab()
     if tab == "radar":
-        return _phase12_11_attach_wlw_evidence_panel(build_radar_tab(session=None))
+        return _phase12_19_attach_transition_preview_panel(_phase12_11_attach_wlw_evidence_panel(build_radar_tab(session=None)))
     if tab == "scoreboard":
         return build_scoreboard_tab(session=None)
     if tab == "divergence":
