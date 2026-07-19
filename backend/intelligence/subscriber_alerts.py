@@ -1,4 +1,4 @@
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 backend/intelligence/subscriber_alerts.py
 ------------------------------------------
@@ -402,7 +402,31 @@ def _send_alert_email(
             f"mfe90 {float(alert.mfe90_expected):.0f}%"
         )
 
-        _resend.Emails.send({
+        # ALERT_EMAIL_SEND_DISABLED_BY_FORBIDDEN_ACTION_LOCK
+        # This intentionally prevents outbound alert email execution while preserving local return flow.
+        
+def _disabled_resend_email_send(_payload):
+            
+return {
+                
+"ok": False,
+                
+"email_sent": False,
+                
+"alert_send_disabled": True,
+                
+"mode": "ALERT_EMAIL_SEND_DISABLED_BY_FORBIDDEN_ACTION_LOCK",
+                
+"mutates_campaigns": False,
+                
+"authorizes_d3d": False,
+                
+"operator_control_confirmed": False,
+                
+"not_a_trade_signal": True,
+            
+}
+        _disabled_resend_email_send({
             "from":    "signals@sigmalytic.com",
             "to":      [recipient_email],
             "subject": subject,
