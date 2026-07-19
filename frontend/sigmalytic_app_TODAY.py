@@ -3696,7 +3696,8 @@ def _step100r_u4b_refresh_static_tabs_loop():
             pass
 
 try:
-    _step100r_u1_threading.Thread(target=_step100r_u4b_refresh_static_tabs_loop, daemon=True).start()
+    if __import__("os").environ.get("SIGMALYTIC_ENABLE_STATIC_TAB_BACKGROUND_REFRESH", "0") == "1":
+        _step100r_u1_threading.Thread(target=_step100r_u4b_refresh_static_tabs_loop, daemon=True).start()
 except Exception:
     pass
 

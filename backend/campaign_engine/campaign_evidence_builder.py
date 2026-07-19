@@ -1,4 +1,4 @@
-﻿"""
+"""
 backend/campaign_engine/campaign_evidence_builder.py
 
 Sigmalytic V2
@@ -668,7 +668,12 @@ class CampaignEvidenceBuilder:
 
             return {
                 "status": "OK",
-                "fallback_calculated_in_evidence_builder": True,
+                "fallback_calculated_in_evidence_builder": False,
+                "fallback_quarantined": True,
+                "diagnostic_only": True,
+                "production_evidence": False,
+                "profile_quality_policy": "FALLBACK_SYMBOL_PROFILE_IS_DIAGNOSTIC_ONLY_NOT_PRODUCTION_EVIDENCE",
+                "evidence_status": "UNAVAILABLE_DIAGNOSTIC_ONLY",
                 "symbol": str(symbol or "").upper(),
                 "bars_count": int(len(bars)),
                 "atr_20": round(atr20, 6),
@@ -684,7 +689,7 @@ class CampaignEvidenceBuilder:
                 "last20_return": round(last20_return, 6),
                 "liquidity_class": liquidity_class,
                 "volatility_class": volatility_class,
-                "profile_quality": "FALLBACK",
+                "profile_quality": "UNAVAILABLE_DIAGNOSTIC_ONLY",
                 "warnings": ["SymbolBehaviorProfile class is a result dataclass; fallback profile was calculated in evidence builder."],
             }
         except Exception as exc:
@@ -867,6 +872,13 @@ class CampaignEvidenceBuilder:
         }
 
         default_evidence = {
+            "overlay_available": False,
+            "evidence_present": False,
+            "diagnostic_only": True,
+            "production_evidence": False,
+            "fallback_quarantined": True,
+            "evidence_status": "UNAVAILABLE_DIAGNOSTIC_ONLY",
+            "confirmation_policy": "DEFAULT_OVERLAY_IS_NOT_WEIS_VSA_CONFIRMATION",
             "buying_climax": False,
             "upthrust_supply": False,
             "no_supply_test": False,
@@ -975,6 +987,12 @@ class CampaignEvidenceBuilder:
             bars=bars,
             symbol=symbol,
         )
+        if isinstance(symbol_profile, dict):
+            symbol_profile["fallback_quarantined"] = True
+            symbol_profile["diagnostic_only"] = True
+            symbol_profile["production_evidence"] = False
+            symbol_profile["profile_quality"] = "UNAVAILABLE_DIAGNOSTIC_ONLY"
+            symbol_profile["profile_quality_policy"] = "FALLBACK_SYMBOL_PROFILE_IS_DIAGNOSTIC_ONLY"
 
         weis_wave = cls._engine_build(
             WeisWaveEngine,

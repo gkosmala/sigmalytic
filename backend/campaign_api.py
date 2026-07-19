@@ -4798,7 +4798,7 @@ def macro_anchor_high_priority_resolution_evidence_review():
             or _get(row, "behavioral_resolution_confluence_status") == "HIGH_PRIORITY_BEHAVIORAL_RESOLUTION_REVIEW"
             or (
                 _get(row, "decision_zone_class") == "HIGH_QUALITY_ADVANCED_DECISION_ZONE"
-                and _get(row, "d3j_plausibility_status") == "LEGACY_OPERATOR_CONTROL_SHADOW_CONFIRMABLE"
+                and _get(row, "d3j_plausibility_status") == "D3D_PRODUCTION_CONFIRMED_OPERATOR_CONTROL"
             )
         )
 
