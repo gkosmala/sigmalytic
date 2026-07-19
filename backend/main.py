@@ -1370,6 +1370,150 @@ def _phase12_17_transition_preview_for_row(row):
     }
 
 
+
+# === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT START ===
+# Controlled production mutation preflight route.
+# This validates a proposed campaign lifecycle-state mutation plan only.
+# It does not write to Supabase, does not mutate campaigns, does not change states,
+# does not authorize D3D, does not confirm operator control, does not create trade signals,
+# does not send alerts, and does not touch Stripe/billing.
+def _phase12_25_allowed_campaign_state(value):
+    normalized = str(value or "").strip().upper().replace(" ", "_").replace("-", "_")
+    allowed = {
+        "BIRTH",
+        "CONFIRMED",
+        "SURVIVING",
+        "EXPANDING",
+        "MATURING",
+        "DISTRIBUTION_RISK",
+        "CLOSED",
+    }
+    return normalized if normalized in allowed else None
+
+
+def _phase12_25_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"true", "1", "yes", "y"}
+
+
+@app.post("/api/campaigns/controlled-state-mutation-preflight")
+def phase12_25_controlled_campaign_state_mutation_preflight(payload: dict):
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    campaign_id = payload.get("campaign_id") or payload.get("id")
+    current_state = _phase12_25_allowed_campaign_state(payload.get("current_state"))
+    proposed_next_state = _phase12_25_allowed_campaign_state(payload.get("proposed_next_state"))
+    transition_required = _phase12_25_bool(payload.get("transition_required"))
+    rationale = payload.get("rationale") or []
+    evidence_source = str(payload.get("evidence_source") or "phase12_transition_preview").strip()
+    confirmation_phrase = str(payload.get("confirmation_phrase") or "").strip()
+
+    failures = []
+
+    if not symbol:
+        failures.append("MISSING_SYMBOL")
+
+    if current_state is None:
+        failures.append("INVALID_CURRENT_STATE")
+
+    if proposed_next_state is None:
+        failures.append("INVALID_PROPOSED_NEXT_STATE")
+
+    if current_state is not None and proposed_next_state is not None and current_state == proposed_next_state:
+        failures.append("NO_STATE_CHANGE_REQUESTED")
+
+    if transition_required is not True:
+        failures.append("TRANSITION_REQUIRED_NOT_TRUE")
+
+    if not rationale:
+        failures.append("MISSING_RATIONALE")
+
+    if not evidence_source:
+        failures.append("MISSING_EVIDENCE_SOURCE")
+
+    if confirmation_phrase != "CONFIRM CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT":
+        failures.append("MISSING_EXPLICIT_PREFLIGHT_CONFIRMATION_PHRASE")
+
+    preflight_passed = len(failures) == 0
+
+    audit_event_plan = {
+        "table": "campaign_state_transition_audit_events",
+        "operation": "insert",
+        "append_only": True,
+        "would_write": False,
+        "payload": {
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+            "before_state": current_state,
+            "after_state": proposed_next_state,
+            "transition_required": transition_required,
+            "rationale": rationale,
+            "evidence_source": evidence_source,
+            "source": "phase12_25_controlled_campaign_state_mutation_preflight",
+            "operator_control_confirmed": False,
+            "authorizes_d3d": False,
+            "not_a_trade_signal": True,
+        },
+    }
+
+    campaign_update_plan = {
+        "table": "campaigns",
+        "operation": "update",
+        "field": "status",
+        "would_write": False,
+        "where": {
+            "symbol": symbol,
+            "campaign_id": campaign_id,
+        },
+        "set": {
+            "status": proposed_next_state,
+        },
+        "prohibited_fields": [
+            "score",
+            "rank",
+            "probability",
+            "edge",
+            "operator_control_confirmed",
+            "composite_operator_control_confirmed",
+            "authorizes_d3d",
+            "executes_d3d",
+            "trade_signal",
+            "alert_send_execution",
+            "stripe_touched",
+            "billing_touched",
+        ],
+    }
+
+    return {
+        "ok": True,
+        "source": "phase12_25_controlled_campaign_state_mutation_preflight",
+        "mode": "CONTROLLED_STATE_MUTATION_PREFLIGHT_NO_WRITE",
+        "preflight_passed": preflight_passed,
+        "failures": failures,
+        "symbol": symbol,
+        "campaign_id": campaign_id,
+        "current_state": current_state,
+        "proposed_next_state": proposed_next_state,
+        "transition_required": transition_required,
+        "audit_event_plan": audit_event_plan,
+        "campaign_update_plan": campaign_update_plan,
+        "guardrails": {
+            "read_only": True,
+            "preflight_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "changes_states": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "alert_send_execution": False,
+            "stripe_touched": False,
+            "billing_touched": False,
+        },
+    }
+# === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT END ===
+
 @app.get("/api/campaigns/transition-preview")
 def phase12_17_controlled_transition_preview(limit: int = 50):
     rows = []
