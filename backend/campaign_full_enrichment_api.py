@@ -360,7 +360,8 @@ def _formal_ods(row: Dict[str, Any]) -> Dict[str, Any]:
             "ods_score": 100,
             "ods_status": "CONFIRMED",
             "ods_reason": "Direct operator-control evidence field is present.",
-            "operator_control_confirmed": True,
+            "operator_control_confirmed": False,
+            "operator_control_confirmation_policy": "FORMAL_ODS_OUTPUT_DOES_NOT_CONFIRM_OPERATOR_CONTROL",
         }
 
     # Composite evidence can be declared pending, but not confirmed.
@@ -3161,7 +3162,8 @@ def _ods_from_7yr_history(
             "ods_reason": "7-year daily price/volume evidence confirms tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.",
             "ods_evidence_source": "seven_year_daily_price_volume_history",
             "ods_history_evaluated": True,
-            "operator_control_confirmed": True,
+            "operator_control_confirmed": False,
+            "operator_control_confirmation_policy": "SEVEN_YEAR_HISTORY_ODS_OUTPUT_DOES_NOT_CONFIRM_OPERATOR_CONTROL",
             "supply_exhaustion_confirmed": True,
             "demand_support_confirmed": True,
             "structural_location_confirmed": True,
