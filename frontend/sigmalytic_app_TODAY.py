@@ -3396,6 +3396,173 @@ app.layout = html.Div([
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
 ], style={"margin":"0","background":NAVY})
 
+
+# === PHASE 12.11 WORKING APP WLW FRONTEND EVIDENCE PANEL START ===
+# Read-only frontend display panel.
+# GET-only backend consumption.
+# No Supabase write. No campaign mutation. No D3D authorization.
+# No operator-control confirmation. No trade signal. No alert send. No Stripe.
+def _phase12_11_backend_get_json(endpoint, timeout=8):
+    try:
+        import os as _phase12_11_os
+        import requests as _phase12_11_requests
+
+        base_url = _phase12_11_os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
+        response = _phase12_11_requests.get(f"{base_url}{endpoint}", timeout=timeout)
+        if response.status_code != 200:
+            return {
+                "ok": False,
+                "error": f"HTTP {response.status_code}",
+                "status_code": response.status_code,
+                "endpoint": endpoint,
+            }
+        return response.json()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "endpoint": endpoint,
+        }
+
+
+def _phase12_11_join_principles(section):
+    if not isinstance(section, dict):
+        return "No principle list available."
+
+    values = section.get("principles", [])
+    if not isinstance(values, list) or not values:
+        return "No principle list available."
+
+    return ", ".join(str(value).replace("_", " ") for value in values[:8])
+
+
+def _phase12_11_build_wlw_evidence_panel(limit=5):
+    payload = _phase12_11_backend_get_json(f"/api/radar/intelligence?limit={limit}")
+
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return html.Div(
+            [
+                html.H3("Wyckoff · Weis · Livermore Evidence Surface"),
+                html.P("Backend evidence payload is not available yet. Refresh after backend initialization."),
+                html.Pre(str(payload), style={"whiteSpace": "pre-wrap", "fontSize": "11px"}),
+            ],
+            id="phase12-11-wlw-evidence-panel",
+            style={
+                "marginTop": "18px",
+                "padding": "14px",
+                "border": "1px solid rgba(255,255,255,0.18)",
+                "borderRadius": "12px",
+                "background": "rgba(255,255,255,0.04)",
+            },
+        )
+
+    contract = payload.get("working_app_evidence_contract", {})
+    symbols = payload.get("symbols", [])
+    if not isinstance(symbols, list):
+        symbols = []
+
+    contract_rows = [
+        html.Li("Wyckoff evidence surface: PASS" if contract.get("wyckoff") else "Wyckoff evidence surface: REVIEW"),
+        html.Li("Weis evidence surface: PASS" if contract.get("weis") else "Weis evidence surface: REVIEW"),
+        html.Li("Livermore evidence surface: PASS" if contract.get("livermore") else "Livermore evidence surface: REVIEW"),
+        html.Li("History review surface: PASS" if contract.get("history") else "History review surface: REVIEW"),
+        html.Li("Explanation/rationale surface: PASS" if contract.get("explanation") else "Explanation/rationale surface: REVIEW"),
+        html.Li("Read-only / not a trade signal / no operator-control confirmation."),
+    ]
+
+    cards = []
+    for raw in symbols[:limit]:
+        row = dict(raw) if isinstance(raw, dict) else {"symbol": raw}
+        evidence = row.get("working_app_evidence", {})
+        if not isinstance(evidence, dict):
+            evidence = {}
+
+        symbol = evidence.get("symbol") or row.get("symbol") or row.get("ticker") or "UNKNOWN"
+        status = evidence.get("campaign_status") or row.get("status") or "REVIEW"
+        regime = evidence.get("campaign_regime") or row.get("regime") or "UNSPECIFIED"
+
+        wyckoff = evidence.get("wyckoff", {})
+        weis = evidence.get("weis", {})
+        livermore = evidence.get("livermore", {})
+        history = evidence.get("history", {})
+        explanation = evidence.get("explanation", {})
+
+        cards.append(
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Strong(str(symbol)),
+                            html.Span(f" · status: {status} · regime: {regime}", style={"opacity": "0.82"}),
+                        ],
+                        style={"marginBottom": "8px"},
+                    ),
+                    html.Div(f"Wyckoff: {_phase12_11_join_principles(wyckoff)}"),
+                    html.Div(f"Weis: {_phase12_11_join_principles(weis)}"),
+                    html.Div(f"Livermore: {_phase12_11_join_principles(livermore)}"),
+                    html.Div(f"History: {history.get('mode', 'current snapshot and campaign context review') if isinstance(history, dict) else 'current snapshot and campaign context review'}"),
+                    html.Div(
+                        f"Explanation: {explanation.get('rationale', 'Evidence rationale available from backend payload.') if isinstance(explanation, dict) else 'Evidence rationale available from backend payload.'}",
+                        style={"marginTop": "6px"},
+                    ),
+                ],
+                style={
+                    "padding": "10px",
+                    "marginTop": "10px",
+                    "border": "1px solid rgba(255,255,255,0.14)",
+                    "borderRadius": "10px",
+                    "background": "rgba(0,0,0,0.18)",
+                    "fontSize": "13px",
+                    "lineHeight": "1.45",
+                },
+            )
+        )
+
+    if not cards:
+        cards = [
+            html.Div(
+                "No symbols returned yet, but the working-app evidence contract is present.",
+                style={"marginTop": "10px", "fontSize": "13px"},
+            )
+        ]
+
+    return html.Div(
+        [
+            html.H3("Wyckoff · Weis · Livermore Evidence Surface", style={"marginBottom": "6px"}),
+            html.P(
+                "Live backend evidence payload consumed by the frontend. Display-only. Not a trade signal.",
+                style={"fontSize": "13px", "opacity": "0.84", "marginBottom": "8px"},
+            ),
+            html.Ul(contract_rows, style={"fontSize": "13px", "lineHeight": "1.5"}),
+            html.Div(cards),
+        ],
+        id="phase12-11-wlw-evidence-panel",
+        style={
+            "marginTop": "18px",
+            "padding": "14px",
+            "border": "1px solid rgba(255,255,255,0.18)",
+            "borderRadius": "12px",
+            "background": "rgba(255,255,255,0.04)",
+        },
+    )
+
+
+def _phase12_11_attach_wlw_evidence_panel(content):
+    panel = _phase12_11_build_wlw_evidence_panel(limit=5)
+
+    if isinstance(content, list):
+        children = content + [panel]
+    elif isinstance(content, tuple):
+        children = list(content) + [panel]
+    else:
+        children = [content, panel]
+
+    return html.Div(
+        children,
+        id="phase12-11-radar-working-app-evidence-shell",
+    )
+# === PHASE 12.11 WORKING APP WLW FRONTEND EVIDENCE PANEL END ===
+
 # ── Callbacks ──────────────────────────────────────────────────────────────────
 
 # SIGMALYTIC_STEP85T_R2_FORCE_5M_TIMEFRAME_SYNC_START
@@ -3627,7 +3794,7 @@ def _step100r_u1_build_static_tab(tab):
     if tab == "import":
         return build_import_tab()
     if tab == "radar":
-        return build_radar_tab(session=None)
+        return _phase12_11_attach_wlw_evidence_panel(build_radar_tab(session=None))
     if tab == "scoreboard":
         return build_scoreboard_tab(session=None)
     if tab == "divergence":
@@ -4177,4 +4344,3 @@ def handle_csv_upload(contents, reset_clicks, filename):
             "",
         )
 # SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
-
