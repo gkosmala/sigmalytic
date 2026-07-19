@@ -1,4 +1,4 @@
-﻿# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_IMPORT
+# STEP76_CONTROLLED_UNIVERSE_INGEST_ROUTER_IMPORT
 try:
     from controlled_universe_ingest_api import controlled_universe_ingest_router
 except Exception:
@@ -1242,6 +1242,174 @@ def radar_intelligence_lightweight_compat(limit: int = 50):
     }
 
 
+
+# === PHASE 12.17 CONTROLLED TRANSITION PREVIEW START ===
+# Read-only transition preview route.
+# This route calculates proposed campaign lifecycle transitions for operator review only.
+# It does not write to Supabase, mutate campaigns, authorize D3D, confirm operator control,
+# create trade signals, send alerts, or touch Stripe/billing.
+def _phase12_17_normalize_campaign_state(value):
+    raw = str(value or "BIRTH").strip().upper().replace(" ", "_").replace("-", "_")
+    allowed = {
+        "BIRTH",
+        "CONFIRMED",
+        "SURVIVING",
+        "EXPANDING",
+        "MATURING",
+        "DISTRIBUTION_RISK",
+        "CLOSED",
+    }
+    return raw if raw in allowed else "BIRTH"
+
+
+def _phase12_17_safe_score(row, keys, default=0.0):
+    for key in keys:
+        try:
+            value = row.get(key)
+            if value is not None and value != "":
+                return float(value)
+        except Exception:
+            continue
+    return float(default)
+
+
+def _phase12_17_transition_preview_for_row(row):
+    symbol = row.get("symbol") or row.get("ticker") or row.get("name") or "UNKNOWN"
+    current_state = _phase12_17_normalize_campaign_state(
+        row.get("status") or row.get("campaign_state") or row.get("state") or row.get("current_state")
+    )
+
+    score = _phase12_17_safe_score(row, ["score", "composite_score", "radar_score"], 0.0)
+    progress = _phase12_17_safe_score(row, ["progress_score", "behavioral_score", "score"], score)
+    obstacle = _phase12_17_safe_score(row, ["obstacle_score", "resistance_score", "risk_score"], 0.0)
+
+    regime = str(row.get("regime") or row.get("market_regime") or row.get("behavioral_regime") or "").upper()
+    contrary_failure = (
+        "DISTRIBUTION" in regime
+        or "FAILURE" in regime
+        or "EXHAUSTION" in regime and progress < obstacle
+    )
+
+    proposed_state = current_state
+    rationale = []
+
+    if current_state == "BIRTH":
+        if score >= 70 or progress >= 70:
+            proposed_state = "CONFIRMED"
+            rationale.append("BIRTH can preview CONFIRMED when campaign score/progress reaches confirmation threshold.")
+        else:
+            rationale.append("BIRTH remains BIRTH until confirmation threshold is visible.")
+
+    elif current_state == "CONFIRMED":
+        if contrary_failure:
+            proposed_state = "DISTRIBUTION_RISK"
+            rationale.append("CONFIRMED previews DISTRIBUTION_RISK when contrary failure/regime pressure is visible.")
+        elif progress >= 65:
+            proposed_state = "SURVIVING"
+            rationale.append("CONFIRMED previews SURVIVING when campaign progress persists.")
+        else:
+            rationale.append("CONFIRMED remains CONFIRMED until survival evidence strengthens.")
+
+    elif current_state == "SURVIVING":
+        if contrary_failure:
+            proposed_state = "DISTRIBUTION_RISK"
+            rationale.append("SURVIVING previews DISTRIBUTION_RISK when contrary failure appears.")
+        elif progress >= 75 and score >= 70:
+            proposed_state = "EXPANDING"
+            rationale.append("SURVIVING previews EXPANDING when progress and score both remain strong.")
+        else:
+            rationale.append("SURVIVING remains SURVIVING pending stronger expansion evidence.")
+
+    elif current_state == "EXPANDING":
+        if contrary_failure:
+            proposed_state = "DISTRIBUTION_RISK"
+            rationale.append("EXPANDING previews DISTRIBUTION_RISK when distribution/failure pressure appears.")
+        elif progress >= 85 or score >= 85:
+            proposed_state = "MATURING"
+            rationale.append("EXPANDING previews MATURING when campaign strength becomes extended.")
+        else:
+            rationale.append("EXPANDING remains EXPANDING while extension evidence is not mature.")
+
+    elif current_state == "MATURING":
+        if contrary_failure:
+            proposed_state = "DISTRIBUTION_RISK"
+            rationale.append("MATURING previews DISTRIBUTION_RISK when late-cycle contrary failure appears.")
+        else:
+            rationale.append("MATURING remains MATURING while no contrary failure is visible.")
+
+    elif current_state == "DISTRIBUTION_RISK":
+        if score <= 35 or progress <= 35:
+            proposed_state = "CLOSED"
+            rationale.append("DISTRIBUTION_RISK previews CLOSED when score/progress collapses.")
+        else:
+            rationale.append("DISTRIBUTION_RISK remains active until closure evidence is stronger.")
+
+    elif current_state == "CLOSED":
+        proposed_state = "CLOSED"
+        rationale.append("CLOSED remains CLOSED.")
+
+    transition_required = proposed_state != current_state
+
+    return {
+        "symbol": symbol,
+        "current_state": current_state,
+        "proposed_next_state": proposed_state,
+        "transition_required": transition_required,
+        "score_context": score,
+        "progress_context": progress,
+        "obstacle_context": obstacle,
+        "regime_context": regime,
+        "rationale": rationale,
+        "review_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "changes_states": False,
+        "authorizes_d3d": False,
+        "operator_control_confirmed": False,
+        "not_a_trade_signal": True,
+    }
+
+
+@app.get("/api/campaigns/transition-preview")
+def phase12_17_controlled_transition_preview(limit: int = 50):
+    rows = []
+    source_error = None
+
+    try:
+        campaigns = _compat_campaigns()
+        for campaign in (campaigns or [])[:limit]:
+            row = _compat_to_frontend_row(campaign)
+            if row.get("symbol"):
+                rows.append(row)
+    except Exception as exc:
+        source_error = str(exc)
+
+    previews = [_phase12_17_transition_preview_for_row(row) for row in rows[:limit]]
+
+    return {
+        "ok": True,
+        "source": "phase12_17_controlled_transition_preview",
+        "mode": "READ_ONLY_TRANSITION_PREVIEW",
+        "count": len(previews),
+        "source_error": source_error,
+        "transitions": previews,
+        "guardrails": {
+            "read_only": True,
+            "review_only": True,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "changes_states": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "alert_send_execution": False,
+            "stripe_touched": False,
+            "billing_touched": False,
+        },
+    }
+# === PHASE 12.17 CONTROLLED TRANSITION PREVIEW END ===
+
 @app.get("/api/radar/probability-status")
 def radar_probability_status_lightweight_compat(limit: int = 50):
     payload, symbols = _lightweight_radar_scores_payload(limit=limit)
@@ -1608,4 +1776,3 @@ try:
 except Exception as _sig_step90b_full_enrichment_include_error:
     print("STEP90B full campaign universe enrichment include failed:", _sig_step90b_full_enrichment_include_error)
 # END_SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE_INCLUDE
-
