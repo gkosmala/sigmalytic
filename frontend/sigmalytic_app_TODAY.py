@@ -4874,13 +4874,13 @@ def handle_csv_upload(contents, reset_clicks, filename):
             "",
         )
 # SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
-# === PHASE 12.31P ACTIVE NAV CONTENT-AWARE CORRECTION START ===
+# === PHASE 12.31Q NAV CLICK STATE AND HEADING PRIORITY FIX START ===
 # Frontend-only visual correction.
 # Purpose:
-# 1. Keep scoped dark-mode readability.
-# 2. Preserve semantic/highlight colors.
-# 3. Correct active top navigation by excluding nav-button labels from page-content inference.
-# 4. Prevent Setup from illuminating merely because the Setup nav button text exists in the DOM.
+# 1. Active nav follows the user's actual clicked tab.
+# 2. Page-specific headings outrank shared header controls.
+# 3. Shared header text such as Load Symbol / Live Price cannot force Command Center.
+# 4. Command Center, Campaigns, Scoreboard, Divergence, Radar Screen, and Setup can each illuminate correctly.
 # No backend route changes. No mutation. No D3D authorization. No operator-control confirmation.
 # No trade signal. No alert send. No billing/Stripe.
 try:
@@ -4892,7 +4892,7 @@ try:
     <title>{%title%}</title>
     {%favicon%}
     {%css%}
-    <style id="phase12-31p-content-aware-nav-and-semantic-restore">
+    <style id="phase12-31q-click-state-nav-and-semantic-restore">
         html, body {
             background: #020617 !important;
             color: #e5e7eb !important;
@@ -4972,21 +4972,7 @@ try:
             background-color: #334155 !important;
         }
 
-        #main-content table,
-        #main-content thead,
-        #main-content tbody,
-        #main-content tr,
-        #main-content th,
-        #main-content td,
-        #main-content .dash-table-container,
-        #main-content .dash-spreadsheet,
-        #main-content .dash-spreadsheet-container,
-        #main-content .dash-cell,
-        #main-content .dash-header {
-            opacity: 1 !important;
-        }
-
-        .phase12-31p-active-nav {
+        .phase12-31q-active-nav {
             background: linear-gradient(135deg, #065f46, #0f766e) !important;
             border-color: #34d399 !important;
             color: #ffffff !important;
@@ -4994,7 +4980,7 @@ try:
             opacity: 1 !important;
         }
 
-        .phase12-31p-inactive-nav {
+        .phase12-31q-inactive-nav {
             background: #0f172a !important;
             border-color: #1e293b !important;
             color: #cbd5e1 !important;
@@ -5002,27 +4988,21 @@ try:
             opacity: 1 !important;
         }
 
-        .phase12-31p-semantic-bullish,
-        .phase12-31p-semantic-confirmed,
-        .phase12-31p-semantic-surviving,
-        .phase12-31p-semantic-pass {
-            font-weight: 700 !important;
-        }
-
-        .phase12-31p-semantic-watch,
-        .phase12-31p-semantic-spark,
-        .phase12-31p-semantic-review,
-        .phase12-31p-semantic-pending {
-            font-weight: 700 !important;
-        }
-
-        .phase12-31p-semantic-risk,
-        .phase12-31p-semantic-bearish,
-        .phase12-31p-semantic-fail {
+        .phase12-31q-semantic-bullish,
+        .phase12-31q-semantic-confirmed,
+        .phase12-31q-semantic-surviving,
+        .phase12-31q-semantic-pass,
+        .phase12-31q-semantic-watch,
+        .phase12-31q-semantic-spark,
+        .phase12-31q-semantic-review,
+        .phase12-31q-semantic-pending,
+        .phase12-31q-semantic-risk,
+        .phase12-31q-semantic-bearish,
+        .phase12-31q-semantic-fail {
             font-weight: 700 !important;
         }
     </style>
-    <script id="phase12-31p-content-aware-active-nav-and-highlight-restore">
+    <script id="phase12-31q-click-state-active-nav-and-highlight-restore">
     (function () {
         const NAV_LABELS = [
             "Command Center",
@@ -5042,18 +5022,61 @@ try:
             "Setup"
         ];
 
+        const STORAGE_KEY = "sigmalytic.phase12.activeNavLabel";
+
+        const HEADING_RULES = [
+            {label: "Campaigns", pattern: /Campaign Intelligence|Controlled Transition Preview|campaign lifecycle|Active campaigns/i},
+            {label: "Scoreboard", pattern: /Scoreboard|Live leaderboard|highest composite decision scores/i},
+            {label: "Divergence", pattern: /Divergence Watchlist|opposite directions|No divergence signals/i},
+            {label: "Radar Screen", pattern: /Radar Screen|Live multi-symbol signal scanner|A-grade setups across your universe/i},
+            {label: "Performance", pattern: /Performance/i},
+            {label: "Live Feed", pattern: /Live Feed/i},
+            {label: "Import History", pattern: /Import History/i},
+            {label: "Behavioural Intelligence", pattern: /Behavioural Intelligence|behavioral intelligence|behavioural/i},
+            {label: "Portfolio", pattern: /Portfolio/i},
+            {label: "Journal", pattern: /Journal/i},
+            {label: "Preferences", pattern: /Preferences/i},
+            {label: "Billing", pattern: /Billing/i},
+            {label: "Admin", pattern: /Admin/i},
+            {label: "Setup", pattern: /Setup|Configuration|API Keys|Settings/i},
+            {label: "Command Center", pattern: /Weis-Gamma Status Center|Price Ladder|Smart Chart/i}
+        ];
+
         const SEMANTIC_COLOR_MAP = [
-            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31p-semantic-bullish"},
-            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31p-semantic-confirmed"},
-            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31p-semantic-watch"},
-            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31p-semantic-risk"},
-            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31p-semantic-regime"},
-            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31p-semantic-birth"},
-            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31p-semantic-expanding"}
+            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31q-semantic-bullish"},
+            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31q-semantic-confirmed"},
+            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31q-semantic-watch"},
+            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31q-semantic-risk"},
+            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31q-semantic-regime"},
+            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31q-semantic-birth"},
+            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31q-semantic-expanding"}
         ];
 
         function normalizedText(el) {
             return String(el && el.textContent ? el.textContent : "").replace(/\\s+/g, " ").trim();
+        }
+
+        function getNavNodes() {
+            return Array.from(document.querySelectorAll("button, a, [role='button']")).filter(function (node) {
+                return NAV_LABELS.includes(normalizedText(node));
+            });
+        }
+
+        function installNavClickCapture() {
+            getNavNodes().forEach(function (node) {
+                if (node.getAttribute("data-phase12-nav-click-capture") === "true") return;
+
+                node.setAttribute("data-phase12-nav-click-capture", "true");
+                node.addEventListener("click", function () {
+                    const label = normalizedText(node);
+                    if (NAV_LABELS.includes(label)) {
+                        sessionStorage.setItem(STORAGE_KEY, label);
+                        setTimeout(applyPhase1231QVisualFixes, 25);
+                        setTimeout(applyPhase1231QVisualFixes, 250);
+                        setTimeout(applyPhase1231QVisualFixes, 900);
+                    }
+                }, true);
+            });
         }
 
         function cloneContentWithoutNavigation() {
@@ -5077,10 +5100,8 @@ try:
             return cloneContentWithoutNavigation();
         }
 
-        function inferActiveLabel() {
+        function pathLabel() {
             const path = String(window.location.pathname || "").toLowerCase();
-            const text = activeContentText();
-
             if (path.includes("radar")) return "Radar Screen";
             if (path.includes("campaign")) return "Campaigns";
             if (path.includes("divergence")) return "Divergence";
@@ -5093,44 +5114,74 @@ try:
             if (path.includes("setup")) return "Setup";
             if (path.includes("billing")) return "Billing";
             if (path.includes("preferences")) return "Preferences";
+            return "";
+        }
 
-            if (/Weis-Gamma Status Center|Price Ladder|Smart Chart|Load Symbol|Live Price|AAPL - Smart Chart/i.test(text)) {
-                return "Command Center";
+        function headingLabel() {
+            const text = activeContentText();
+
+            for (const rule of HEADING_RULES) {
+                if (rule.pattern.test(text)) {
+                    return rule.label;
+                }
             }
 
-            if (/Live multi-symbol signal scanner|Radar Screen/i.test(text)) return "Radar Screen";
-            if (/Controlled Transition Preview|campaign lifecycle|current_state|proposed_next_state/i.test(text)) return "Campaigns";
-            if (/Divergence/i.test(text)) return "Divergence";
-            if (/Scoreboard/i.test(text)) return "Scoreboard";
-            if (/Performance/i.test(text)) return "Performance";
-            if (/Live Feed/i.test(text)) return "Live Feed";
-            if (/Behavioural Intelligence/i.test(text)) return "Behavioural Intelligence";
-            if (/Portfolio/i.test(text)) return "Portfolio";
-            if (/Journal/i.test(text)) return "Journal";
+            return "";
+        }
 
-            if (path === "/" || path === "") return "Command Center";
+        function storedClickLabelStillValid() {
+            const stored = sessionStorage.getItem(STORAGE_KEY) || "";
+            if (!NAV_LABELS.includes(stored)) return "";
+
+            const text = activeContentText();
+
+            for (const rule of HEADING_RULES) {
+                if (rule.label === stored && rule.pattern.test(text)) {
+                    return stored;
+                }
+            }
+
+            if (stored === "Command Center" && /Weis-Gamma Status Center|Price Ladder|Smart Chart/i.test(text)) {
+                return stored;
+            }
+
+            return "";
+        }
+
+        function inferActiveLabel() {
+            const byPath = pathLabel();
+            if (byPath) return byPath;
+
+            const byHeading = headingLabel();
+            if (byHeading) return byHeading;
+
+            const byStoredClick = storedClickLabelStillValid();
+            if (byStoredClick) return byStoredClick;
+
             return "Command Center";
         }
 
         function applyActiveNavState() {
+            installNavClickCapture();
+
             const activeLabel = inferActiveLabel();
 
-            const nodes = Array.from(document.querySelectorAll("button, a, [role='button']"));
-            nodes.forEach(function (node) {
+            getNavNodes().forEach(function (node) {
                 const label = normalizedText(node);
-                if (!NAV_LABELS.includes(label)) return;
 
                 node.classList.remove("phase12-31o-active-nav");
                 node.classList.remove("phase12-31o-inactive-nav");
                 node.classList.remove("phase12-31p-active-nav");
                 node.classList.remove("phase12-31p-inactive-nav");
+                node.classList.remove("phase12-31q-active-nav");
+                node.classList.remove("phase12-31q-inactive-nav");
 
                 if (label === activeLabel) {
-                    node.classList.add("phase12-31p-active-nav");
+                    node.classList.add("phase12-31q-active-nav");
                     node.setAttribute("aria-current", "page");
                     node.setAttribute("data-phase12-active-nav", "true");
                 } else {
-                    node.classList.add("phase12-31p-inactive-nav");
+                    node.classList.add("phase12-31q-inactive-nav");
                     node.removeAttribute("aria-current");
                     node.setAttribute("data-phase12-active-nav", "false");
                 }
@@ -5169,30 +5220,32 @@ try:
 
             nodes.forEach(function (node) {
                 node.style.setProperty("opacity", "1", "important");
-                if (!node.classList.contains("phase12-31p-active-nav")) {
+                if (!node.classList.contains("phase12-31q-active-nav")) {
                     node.style.setProperty("color", "#e5e7eb", "important");
                 }
             });
         }
 
-        function applyPhase1231PVisualFixes() {
+        function applyPhase1231QVisualFixes() {
+            installNavClickCapture();
             applyScopedReadability();
             applySemanticHighlights();
             applyActiveNavState();
         }
 
-        window.phase1231PApplyVisualFixes = applyPhase1231PVisualFixes;
-        window.phase1231PInferActiveLabel = inferActiveLabel;
-        window.phase1231PActiveContentText = activeContentText;
+        window.phase1231QApplyVisualFixes = applyPhase1231QVisualFixes;
+        window.phase1231QInferActiveLabel = inferActiveLabel;
+        window.phase1231QActiveContentText = activeContentText;
+        window.phase1231QStoredClickLabelStillValid = storedClickLabelStillValid;
 
         if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", applyPhase1231PVisualFixes);
+            document.addEventListener("DOMContentLoaded", applyPhase1231QVisualFixes);
         } else {
-            applyPhase1231PVisualFixes();
+            applyPhase1231QVisualFixes();
         }
 
         const observer = new MutationObserver(function () {
-            applyPhase1231PVisualFixes();
+            applyPhase1231QVisualFixes();
         });
 
         observer.observe(document.documentElement, {
@@ -5201,7 +5254,7 @@ try:
             characterData: true
         });
 
-        setInterval(applyPhase1231PVisualFixes, 900);
+        setInterval(applyPhase1231QVisualFixes, 600);
     })();
     </script>
 </head>
@@ -5217,4 +5270,4 @@ try:
 """
 except Exception:
     pass
-# === PHASE 12.31P ACTIVE NAV CONTENT-AWARE CORRECTION END ===
+# === PHASE 12.31Q NAV CLICK STATE AND HEADING PRIORITY FIX END ===
