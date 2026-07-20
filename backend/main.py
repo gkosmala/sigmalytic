@@ -1700,11 +1700,12 @@ def phase12_29a_create_state_mutation_audit_table(payload: dict):
 # === PHASE 12.29A CONTROLLED AUDIT TABLE SCHEMA CREATION END ===
 
 # === PHASE 12.30A CONTROLLED CAMPAIGN STATE MUTATION EXECUTION ROUTE START ===
-# Controlled campaign lifecycle-state mutation route.
-# This route exists only after the append-only audit table has been created.
-# It performs no D3D authorization, no operator-control confirmation, no trade-signal creation,
+# Corrected in Phase 12.30A-R2:
+# The campaign lifecycle field is public.campaigns.current_state.
+# public.campaigns.status is operational status such as active/inactive and SHALL NOT be mutated as lifecycle state.
+# This route performs no D3D authorization, no operator-control confirmation, no trade-signal creation,
 # no alert send, and no Stripe/billing action.
-# Execution requires an explicit confirmation phrase and an exact campaign row/state match.
+# Execution requires an explicit confirmation phrase and an exact campaign row/current_state match.
 def _phase12_30a_valid_campaign_lifecycle_states():
     return {
         "BIRTH",
@@ -1800,7 +1801,7 @@ def _phase12_30a_insert_transition_audit_event(
         "read_only": False,
         "controlled_state_mutation": True,
         "append_only_audit_event_first": True,
-        "lifecycle_field": "status",
+        "lifecycle_field": "current_state",
         "writes_to_supabase": True,
         "mutates_campaigns": True,
         "changes_states": True,
@@ -1846,13 +1847,13 @@ def _phase12_30a_insert_transition_audit_event(
         returning id::text
         """,
         (
-            "phase12_30a_controlled_campaign_state_mutation",
-            "APPEND_ONLY_AUDIT_EVENT_BEFORE_CAMPAIGN_STATE_UPDATE",
+            "phase12_30a_r2_controlled_campaign_current_state_mutation",
+            "APPEND_ONLY_AUDIT_EVENT_BEFORE_CAMPAIGN_CURRENT_STATE_UPDATE",
             str(symbol).strip().upper(),
             str(campaign_id),
             before_state,
             after_state,
-            "status",
+            "current_state",
             str(evidence_source or "controlled_transition_preview"),
             json.dumps(_phase12_30a_safe_json_value(rationale, [])),
             json.dumps(guardrails),
@@ -1866,8 +1867,6 @@ def _phase12_30a_insert_transition_audit_event(
 
 @app.post("/api/campaigns/controlled-state-mutation-execution")
 def phase12_30a_controlled_state_mutation_execution(payload: dict):
-    import json
-
     required_phrase = "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION"
 
     confirmation_phrase = str(payload.get("confirmation_phrase") or "").strip()
@@ -1889,7 +1888,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
         "read_only": False,
         "controlled_state_mutation": True,
         "append_only_audit_event_first": True,
-        "lifecycle_field": "status",
+        "lifecycle_field": "current_state",
         "executes_d3d": False,
         "authorizes_d3d": False,
         "operator_control_confirmed": False,
@@ -1902,7 +1901,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
     if confirmation_phrase != required_phrase:
         return {
             "ok": False,
-            "source": "phase12_30a_controlled_state_mutation_execution",
+            "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
             "mode": "CONTROLLED_STATE_MUTATION_REJECTED",
             "failure": "MISSING_EXPLICIT_STATE_MUTATION_CONFIRMATION_PHRASE",
             "required_confirmation_phrase": required_phrase,
@@ -1939,7 +1938,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
     if validation_failures:
         return {
             "ok": False,
-            "source": "phase12_30a_controlled_state_mutation_execution",
+            "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
             "mode": "CONTROLLED_STATE_MUTATION_VALIDATION_FAILED",
             "validation_failures": validation_failures,
             "state_mutation_executed": False,
@@ -1964,7 +1963,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
     if not database_url:
         return {
             "ok": False,
-            "source": "phase12_30a_controlled_state_mutation_execution",
+            "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
             "mode": "CONTROLLED_STATE_MUTATION_BLOCKED_NO_DB_URL",
             "failure": "MISSING_DATABASE_URL_FOR_CONTROLLED_MUTATION",
             "state_mutation_executed": False,
@@ -1988,7 +1987,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
             if not selected:
                 return {
                     "ok": False,
-                    "source": "phase12_30a_controlled_state_mutation_execution",
+                    "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
                     "mode": "CONTROLLED_STATE_MUTATION_TARGET_NOT_FOUND",
                     "database_url_env_name": database_url_env_name,
                     "driver_name": driver_name,
@@ -2009,13 +2008,13 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
 
             selected_id = str(selected[0])
             selected_symbol = str(selected[1]).upper()
-            selected_status = _phase12_30a_normalize_state(selected[2])
+            selected_status = str(selected[2])
             selected_current_state = _phase12_30a_normalize_state(selected[3])
 
-            if selected_status != expected_before_state:
+            if selected_current_state != expected_before_state:
                 return {
                     "ok": False,
-                    "source": "phase12_30a_controlled_state_mutation_execution",
+                    "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
                     "mode": "CONTROLLED_STATE_MUTATION_BEFORE_STATE_MISMATCH",
                     "database_url_env_name": database_url_env_name,
                     "driver_name": driver_name,
@@ -2040,22 +2039,22 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
             response_plan = {
                 "symbol": selected_symbol,
                 "campaign_id": selected_id,
-                "before_status": selected_status,
+                "operational_status": selected_status,
                 "before_current_state": selected_current_state,
-                "after_status": requested_after_state,
-                "lifecycle_field": "status",
+                "after_current_state": requested_after_state,
+                "lifecycle_field": "current_state",
                 "audit_table": "public.campaign_state_transition_audit_events",
                 "campaign_table": "public.campaigns",
                 "execution_order": [
                     "insert append-only audit event",
-                    "update public.campaigns.status with exact id/symbol/before-state match",
+                    "update public.campaigns.current_state with exact id/symbol/before-current-state match",
                 ],
             }
 
             if dry_run:
                 return {
                     "ok": True,
-                    "source": "phase12_30a_controlled_state_mutation_execution",
+                    "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
                     "mode": "CONTROLLED_STATE_MUTATION_DRY_RUN",
                     "database_url_env_name": database_url_env_name,
                     "driver_name": driver_name,
@@ -2075,8 +2074,8 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                 }
 
             audit_response_payload = {
-                "planned_after_status": requested_after_state,
-                "selected_before_status": selected_status,
+                "planned_after_current_state": requested_after_state,
+                "selected_operational_status": selected_status,
                 "selected_before_current_state": selected_current_state,
                 "controlled_execution": True,
             }
@@ -2085,7 +2084,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                 cur,
                 selected_symbol,
                 selected_id,
-                selected_status,
+                selected_current_state,
                 requested_after_state,
                 evidence_source,
                 rationale,
@@ -2097,17 +2096,17 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
             cur.execute(
                 """
                 update public.campaigns
-                set status = %s
+                set current_state = %s
                 where id::text = %s
                   and symbol::text = %s
-                  and status::text = %s
-                returning id::text, symbol::text, status::text
+                  and current_state::text = %s
+                returning id::text, symbol::text, current_state::text
                 """,
                 (
                     requested_after_state,
                     selected_id,
                     selected_symbol,
-                    selected_status,
+                    selected_current_state,
                 ),
             )
             updated = cur.fetchone()
@@ -2116,7 +2115,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
             if not updated:
                 return {
                     "ok": False,
-                    "source": "phase12_30a_controlled_state_mutation_execution",
+                    "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
                     "mode": "CONTROLLED_STATE_MUTATION_UPDATE_NO_ROWS_AFTER_AUDIT",
                     "database_url_env_name": database_url_env_name,
                     "driver_name": driver_name,
@@ -2124,7 +2123,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                     "audit_event_inserted": True,
                     "audit_event_id": audit_event_id,
                     "campaign_update_executed": False,
-                    "failure": "CAMPAIGN_UPDATE_RETURNED_NO_ROWS_AFTER_AUDIT_INSERT",
+                    "failure": "CAMPAIGN_CURRENT_STATE_UPDATE_RETURNED_NO_ROWS_AFTER_AUDIT_INSERT",
                     "target": response_plan,
                     "guardrails": {
                         **base_guardrails,
@@ -2136,7 +2135,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
 
             return {
                 "ok": True,
-                "source": "phase12_30a_controlled_state_mutation_execution",
+                "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
                 "mode": "CONTROLLED_STATE_MUTATION_EXECUTED",
                 "database_url_env_name": database_url_env_name,
                 "driver_name": driver_name,
@@ -2147,9 +2146,9 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                 "target": {
                     "campaign_id": str(updated[0]),
                     "symbol": str(updated[1]).upper(),
-                    "before_state": selected_status,
+                    "before_state": selected_current_state,
                     "after_state": str(updated[2]).upper(),
-                    "lifecycle_field": "status",
+                    "lifecycle_field": "current_state",
                 },
                 "guardrails": {
                     **base_guardrails,
@@ -2171,7 +2170,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
             pass
         return {
             "ok": False,
-            "source": "phase12_30a_controlled_state_mutation_execution",
+            "source": "phase12_30a_r2_controlled_current_state_mutation_execution",
             "mode": "CONTROLLED_STATE_MUTATION_UNHANDLED_FAILURE",
             "failure": str(exc)[:900],
             "state_mutation_executed": False,
