@@ -4874,9 +4874,12 @@ def handle_csv_upload(contents, reset_clicks, filename):
             "",
         )
 # SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
-# === PHASE 12.31N-R2 RADAR READABILITY CONTRAST PATCH START ===
-# Frontend-only dark-mode readability correction.
-# Purpose: prevent Radar/Campaign evidence text from rendering muted/dark on dark backgrounds.
+# === PHASE 12.31O RADAR ACTIVE NAV AND SEMANTIC HIGHLIGHT RESTORE START ===
+# Frontend-only visual correction.
+# Purpose:
+# 1. Keep dark-mode text readable without flattening all semantic/highlight colors.
+# 2. Restore highlighted Radar/Campaign status, regime, bias, and lifecycle text.
+# 3. Keep the top navigation active state aligned with visible content so Radar Screen is not stuck on Command Center.
 # No backend route changes. No mutation. No D3D authorization. No operator-control confirmation.
 # No trade signal. No alert send. No billing/Stripe.
 try:
@@ -4888,35 +4891,14 @@ try:
     <title>{%title%}</title>
     {%favicon%}
     {%css%}
-    <style id="phase12-31n-r2-radar-readability-contrast">
+    <style id="phase12-31o-scoped-readability-and-highlight-restore">
         html, body {
             background: #020617 !important;
             color: #e5e7eb !important;
         }
 
-        #main-content,
-        #main-content div,
-        #main-content section,
-        #main-content article,
-        #main-content p,
-        #main-content span,
-        #main-content li,
-        #main-content ul,
-        #main-content ol,
-        #main-content table,
-        #main-content thead,
-        #main-content tbody,
-        #main-content tr,
-        #main-content th,
-        #main-content td,
-        #main-content label,
-        #main-content strong,
-        #main-content em,
-        #main-content small,
-        #main-content pre,
-        #main-content code {
+        #main-content {
             color: #e5e7eb !important;
-            opacity: 1 !important;
         }
 
         #main-content h1,
@@ -4926,6 +4908,17 @@ try:
         #main-content h5,
         #main-content h6 {
             color: #f8fafc !important;
+            opacity: 1 !important;
+        }
+
+        #main-content .card,
+        #main-content .panel,
+        #main-content .campaign-card,
+        #main-content .radar-card,
+        #main-content [class*="card"],
+        #main-content [class*="panel"] {
+            background-color: #0f172a !important;
+            border-color: #334155 !important;
             opacity: 1 !important;
         }
 
@@ -4941,16 +4934,15 @@ try:
             opacity: 1 !important;
         }
 
-        #main-content .card,
-        #main-content .panel,
-        #main-content .campaign-card,
-        #main-content .radar-card,
-        #main-content [class*="card"],
-        #main-content [class*="panel"],
-        #main-content [class*="campaign"],
-        #main-content [class*="radar"] {
-            background-color: #0f172a !important;
-            border-color: #334155 !important;
+        #main-content [style*="color: black"],
+        #main-content [style*="color:black"],
+        #main-content [style*="color: #000"],
+        #main-content [style*="color:#000"],
+        #main-content [style*="color: rgb(0, 0, 0)"],
+        #main-content [style*="color: #111"],
+        #main-content [style*="color:#111"],
+        #main-content [style*="color: #1f2937"],
+        #main-content [style*="color:#1f2937"] {
             color: #e5e7eb !important;
             opacity: 1 !important;
         }
@@ -4979,39 +4971,202 @@ try:
             background-color: #334155 !important;
         }
 
+        #main-content table,
+        #main-content thead,
+        #main-content tbody,
+        #main-content tr,
+        #main-content th,
+        #main-content td,
         #main-content .dash-table-container,
         #main-content .dash-spreadsheet,
         #main-content .dash-spreadsheet-container,
         #main-content .dash-cell,
         #main-content .dash-header {
-            color: #e5e7eb !important;
-            background-color: #0f172a !important;
             opacity: 1 !important;
         }
 
-        #main-content [style*="color: black"],
-        #main-content [style*="color:black"],
-        #main-content [style*="color: #000"],
-        #main-content [style*="color:#000"],
-        #main-content [style*="color: rgb(0, 0, 0)"],
-        #main-content [style*="color: #111"],
-        #main-content [style*="color:#111"],
-        #main-content [style*="color: #1f2937"],
-        #main-content [style*="color:#1f2937"] {
-            color: #e5e7eb !important;
+        .phase12-31o-active-nav {
+            background: linear-gradient(135deg, #065f46, #0f766e) !important;
+            border-color: #34d399 !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.45), 0 0 18px rgba(16, 185, 129, 0.35) !important;
             opacity: 1 !important;
         }
 
-        #main-content [style*="color: #64748b"],
-        #main-content [style*="color:#64748b"],
-        #main-content [style*="color: #6b7280"],
-        #main-content [style*="color:#6b7280"],
-        #main-content [style*="color: gray"],
-        #main-content [style*="color:grey"] {
+        .phase12-31o-inactive-nav {
+            background: #0f172a !important;
+            border-color: #1e293b !important;
             color: #cbd5e1 !important;
+            box-shadow: none !important;
             opacity: 1 !important;
+        }
+
+        .phase12-31o-semantic-bullish,
+        .phase12-31o-semantic-confirmed,
+        .phase12-31o-semantic-surviving,
+        .phase12-31o-semantic-pass {
+            font-weight: 700 !important;
+        }
+
+        .phase12-31o-semantic-watch,
+        .phase12-31o-semantic-spark,
+        .phase12-31o-semantic-review,
+        .phase12-31o-semantic-pending {
+            font-weight: 700 !important;
+        }
+
+        .phase12-31o-semantic-risk,
+        .phase12-31o-semantic-bearish,
+        .phase12-31o-semantic-fail {
+            font-weight: 700 !important;
         }
     </style>
+    <script id="phase12-31o-radar-active-nav-and-highlight-restore">
+    (function () {
+        const NAV_LABELS = [
+            "Command Center",
+            "Performance",
+            "Live Feed",
+            "Radar Screen",
+            "Campaigns",
+            "Divergence",
+            "Scoreboard",
+            "Import History",
+            "Behavioural Intelligence",
+            "Portfolio",
+            "Journal",
+            "Preferences",
+            "Billing",
+            "Admin",
+            "Setup"
+        ];
+
+        const SEMANTIC_COLOR_MAP = [
+            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31o-semantic-bullish"},
+            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31o-semantic-confirmed"},
+            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31o-semantic-watch"},
+            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31o-semantic-risk"},
+            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31o-semantic-regime"},
+            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31o-semantic-birth"},
+            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31o-semantic-expanding"}
+        ];
+
+        function normalizedText(el) {
+            return String(el && el.textContent ? el.textContent : "").replace(/\\s+/g, " ").trim();
+        }
+
+        function visibleMainText() {
+            const main = document.querySelector("#main-content") || document.body;
+            return String(main && main.innerText ? main.innerText : "");
+        }
+
+        function inferActiveLabel() {
+            const path = String(window.location.pathname || "").toLowerCase();
+            const text = visibleMainText();
+
+            if (path.includes("radar") || /Radar Screen/i.test(text)) return "Radar Screen";
+            if (path.includes("campaign") || /Campaigns/i.test(text)) return "Campaigns";
+            if (path.includes("divergence") || /Divergence/i.test(text)) return "Divergence";
+            if (path.includes("scoreboard") || /Scoreboard/i.test(text)) return "Scoreboard";
+            if (path.includes("portfolio") || /Portfolio/i.test(text)) return "Portfolio";
+            if (path.includes("journal") || /Journal/i.test(text)) return "Journal";
+            if (path.includes("performance") || /Performance/i.test(text)) return "Performance";
+            if (path.includes("live") || /Live Feed/i.test(text)) return "Live Feed";
+            if (path.includes("admin") || /Admin/i.test(text)) return "Admin";
+            if (path.includes("setup") || /Setup/i.test(text)) return "Setup";
+            if (path.includes("billing") || /Billing/i.test(text)) return "Billing";
+            if (path.includes("preferences") || /Preferences/i.test(text)) return "Preferences";
+            if (/Command Center/i.test(text)) return "Command Center";
+            return "";
+        }
+
+        function applyActiveNavState() {
+            const activeLabel = inferActiveLabel();
+            if (!activeLabel) return;
+
+            const nodes = Array.from(document.querySelectorAll("button, a, [role='button']"));
+            nodes.forEach(function (node) {
+                const label = normalizedText(node);
+                if (!NAV_LABELS.includes(label)) return;
+
+                node.classList.remove("phase12-31o-active-nav");
+                node.classList.remove("phase12-31o-inactive-nav");
+
+                if (label === activeLabel) {
+                    node.classList.add("phase12-31o-active-nav");
+                    node.setAttribute("aria-current", "page");
+                } else {
+                    node.classList.add("phase12-31o-inactive-nav");
+                    node.removeAttribute("aria-current");
+                }
+            });
+        }
+
+        function applySemanticHighlights() {
+            const main = document.querySelector("#main-content") || document.body;
+            const nodes = Array.from(main.querySelectorAll("td, th, span, strong, em, small, code, p"));
+
+            nodes.forEach(function (node) {
+                const text = normalizedText(node);
+                if (!text || text.length > 48) return;
+
+                for (const item of SEMANTIC_COLOR_MAP) {
+                    if (item.pattern.test(text)) {
+                        node.classList.add(item.cls);
+                        node.style.setProperty("color", item.color, "important");
+                        node.style.setProperty("opacity", "1", "important");
+                        node.style.setProperty("font-weight", "700", "important");
+                        return;
+                    }
+                }
+
+                if (/^WEIS_/i.test(text) || /^WLW/i.test(text)) {
+                    node.style.setProperty("color", "#c4b5fd", "important");
+                    node.style.setProperty("opacity", "1", "important");
+                    node.style.setProperty("font-weight", "700", "important");
+                }
+            });
+        }
+
+        function applyScopedReadability() {
+            const main = document.querySelector("#main-content") || document.body;
+            const nodes = Array.from(main.querySelectorAll("[style*='opacity: 0.'], [style*='opacity:.'], [style*='color: black'], [style*='color:black'], [style*='color: #000'], [style*='color:#000'], [style*='color: rgb(0, 0, 0)']"));
+
+            nodes.forEach(function (node) {
+                node.style.setProperty("opacity", "1", "important");
+                if (!node.classList.contains("phase12-31o-active-nav")) {
+                    node.style.setProperty("color", "#e5e7eb", "important");
+                }
+            });
+        }
+
+        function applyPhase1231OVisualFixes() {
+            applyScopedReadability();
+            applySemanticHighlights();
+            applyActiveNavState();
+        }
+
+        window.phase1231OApplyVisualFixes = applyPhase1231OVisualFixes;
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", applyPhase1231OVisualFixes);
+        } else {
+            applyPhase1231OVisualFixes();
+        }
+
+        const observer = new MutationObserver(function () {
+            applyPhase1231OVisualFixes();
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        setInterval(applyPhase1231OVisualFixes, 1200);
+    })();
+    </script>
 </head>
 <body>
     {%app_entry%}
@@ -5025,4 +5180,4 @@ try:
 """
 except Exception:
     pass
-# === PHASE 12.31N-R2 RADAR READABILITY CONTRAST PATCH END ===
+# === PHASE 12.31O RADAR ACTIVE NAV AND SEMANTIC HIGHLIGHT RESTORE END ===
