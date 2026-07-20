@@ -4256,6 +4256,176 @@ def toggle_alerts(n, currently_on):
 
 
 
+
+# === PHASE 12.31B-R2 OPERATOR LIFECYCLE CONTROL CONSOLE DRY-RUN UI START ===
+# Operator-facing controlled lifecycle console shell.
+# This UI is intentionally DRY-RUN ONLY.
+# It may preview transitions, read back the prior audited mutation, and call the mutation
+# endpoint only with dry_run set to true.
+# It must not expose a live mutation execution button, must not authorize D3D,
+# must not confirm operator control, must not create trade signals,
+# must not send alerts, and must not touch Stripe/billing.
+@app.server.route("/operator-lifecycle-control")
+def phase12_31b_r2_operator_lifecycle_control_console():
+    return """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Sigmalytic V2 Operator Lifecycle Control</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 28px; background: #0f172a; color: #e5e7eb; }
+    .panel { border: 1px solid #334155; border-radius: 12px; padding: 18px; margin-bottom: 18px; background: #111827; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 12px; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+    input { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e5e7eb; }
+    button { padding: 10px 14px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: #e5e7eb; cursor: pointer; margin-right: 8px; }
+    button:hover { background: #334155; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #020617; padding: 14px; border-radius: 10px; border: 1px solid #334155; max-height: 420px; overflow-y: auto; }
+    .safe { color: #86efac; }
+    .small { color: #94a3b8; font-size: 13px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>Sigmalytic V2 Operator Lifecycle Control</h1>
+
+  <div class="panel">
+    <h2 class="safe">Dry-Run Console Only</h2>
+    <p class="small">
+      This console previews controlled campaign lifecycle transitions and sends dry-run requests only.
+      It does not expose live execution. It does not authorize D3D. It does not confirm operator control.
+      It does not create trade signals, send alerts, or touch billing.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Target Campaign</h2>
+    <div class="grid">
+      <div>
+        <label>Campaign ID</label>
+        <input id="campaign_id" value="635">
+      </div>
+      <div>
+        <label>Symbol</label>
+        <input id="symbol" value="CDC">
+      </div>
+      <div>
+        <label>Expected Before State</label>
+        <input id="expected_before_state" value="CONFIRMED">
+      </div>
+      <div>
+        <label>Requested After State</label>
+        <input id="requested_after_state" value="SURVIVING">
+      </div>
+    </div>
+    <br>
+    <button onclick="loadPreview()">Refresh Transition Preview</button>
+    <button onclick="runDryRun()">Run Controlled Dry-Run</button>
+    <button onclick="loadReadback()">Read Back Prior Audit Event 2</button>
+  </div>
+
+  <div class="panel">
+    <h2>Guardrail Status</h2>
+    <pre id="guardrails">No request run yet.</pre>
+  </div>
+
+  <div class="panel">
+    <h2>Response</h2>
+    <pre id="output">Ready.</pre>
+  </div>
+
+<script>
+const BACKEND_BASE = "https://sigmalytic-backend.onrender.com";
+
+function show(obj) {
+  document.getElementById("output").textContent = JSON.stringify(obj, null, 2);
+  if (obj && obj.guardrails) {
+    document.getElementById("guardrails").textContent = JSON.stringify(obj.guardrails, null, 2);
+  }
+}
+
+function target() {
+  return {
+    campaign_id: document.getElementById("campaign_id").value.trim(),
+    symbol: document.getElementById("symbol").value.trim().toUpperCase(),
+    expected_before_state: document.getElementById("expected_before_state").value.trim().toUpperCase(),
+    requested_after_state: document.getElementById("requested_after_state").value.trim().toUpperCase()
+  };
+}
+
+async function loadPreview() {
+  const response = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
+  const data = await response.json();
+  const t = target();
+  const rows = data.transitions || [];
+  const row = rows.find(r => String(r.symbol || "").toUpperCase() === t.symbol);
+  show({
+    console_mode: "DRY_RUN_ONLY_OPERATOR_LIFECYCLE_CONTROL",
+    selected_symbol: t.symbol,
+    selected_transition: row || null,
+    preview_count: data.count,
+    guardrails: row ? {
+      writes_to_supabase: row.writes_to_supabase,
+      mutates_campaigns: row.mutates_campaigns,
+      changes_states: row.changes_states,
+      authorizes_d3d: row.authorizes_d3d,
+      operator_control_confirmed: row.operator_control_confirmed,
+      not_a_trade_signal: row.not_a_trade_signal
+    } : {
+      writes_to_supabase: false,
+      mutates_campaigns: false,
+      changes_states: false,
+      authorizes_d3d: false,
+      operator_control_confirmed: false,
+      not_a_trade_signal: true
+    },
+    raw_preview: data
+  });
+}
+
+async function runDryRun() {
+  const t = target();
+  const payload = {
+    confirmation_phrase: "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION",
+    dry_run: true,
+    symbol: t.symbol,
+    campaign_id: t.campaign_id,
+    expected_before_state: t.expected_before_state,
+    requested_after_state: t.requested_after_state,
+    evidence_source: "phase12_31b_r2_operator_lifecycle_control_console_dry_run_ui",
+    rationale: [
+      "Operator-facing UI dry-run only.",
+      "No live mutation execution is exposed in Phase 12.31B-R2.",
+      "No D3D authorization.",
+      "No operator-control confirmation.",
+      "Not a trade signal."
+    ]
+  };
+
+  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-execution", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  show(data);
+}
+
+async function loadReadback() {
+  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-readback?audit_event_id=2&campaign_id=635&symbol=CDC&expected_before_state=BIRTH&expected_after_state=CONFIRMED");
+  const data = await response.json();
+  show(data);
+}
+
+loadPreview().catch(err => show({ok:false, error:String(err)}));
+</script>
+</body>
+</html>
+"""
+# === PHASE 12.31B-R2 OPERATOR LIFECYCLE CONTROL CONSOLE DRY-RUN UI END ===
+
+
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
 
