@@ -1417,7 +1417,7 @@ def _phase12_29a_schema_sql_statements():
             after_state text not null,
             transition_required boolean not null default true,
 
-            lifecycle_field text not null default 'status',
+            lifecycle_field text not null default 'current_state',
             evidence_source text not null,
             rationale jsonb not null default '[]'::jsonb,
 
@@ -1460,7 +1460,7 @@ def _phase12_29a_schema_sql_statements():
                 )),
 
             constraint campaign_state_transition_audit_events_lifecycle_field_check
-                check (lifecycle_field = 'status'),
+                check (lifecycle_field = 'current_state'),
 
             constraint campaign_state_transition_audit_events_no_operator_control_check
                 check (operator_control_confirmed = false),
@@ -2190,6 +2190,229 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
         except Exception:
             pass
 # === PHASE 12.30A CONTROLLED CAMPAIGN STATE MUTATION EXECUTION ROUTE END ===
+
+# === PHASE 12.30C-R2 AUDIT LIFECYCLE CONSTRAINT CORRECTION ROUTE START ===
+# Controlled schema repair route for the append-only campaign state transition audit table.
+# The lifecycle field for campaign mutation is public.campaigns.current_state.
+# This route may repair only the audit table lifecycle_field default/check constraint.
+# It must not mutate campaigns, change campaign states, authorize D3D, confirm operator control,
+# create trade signals, send alerts, or touch Stripe/billing.
+@app.post("/api/campaigns/repair-state-mutation-audit-lifecycle-field-constraint")
+def phase12_30c_r2_repair_state_mutation_audit_lifecycle_field_constraint(payload: dict):
+    required_phrase = "CONFIRM REPAIR CAMPAIGN STATE TRANSITION AUDIT LIFECYCLE FIELD CONSTRAINT"
+
+    confirmation_phrase = str(payload.get("confirmation_phrase") or "").strip()
+    dry_run = bool(payload.get("dry_run", True))
+
+    base_guardrails = {
+        "read_only": False,
+        "controlled_schema_repair": True,
+        "target_table": "public.campaign_state_transition_audit_events",
+        "target_constraint": "campaign_state_transition_audit_events_lifecycle_field_check",
+        "target_lifecycle_field_value": "current_state",
+        "writes_to_supabase": False,
+        "schema_write_executed": False,
+        "mutates_campaigns": False,
+        "changes_states": False,
+        "executes_d3d": False,
+        "authorizes_d3d": False,
+        "operator_control_confirmed": False,
+        "not_a_trade_signal": True,
+        "alert_send_execution": False,
+        "stripe_touched": False,
+        "billing_touched": False,
+    }
+
+    if confirmation_phrase != required_phrase:
+        return {
+            "ok": False,
+            "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+            "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_REJECTED",
+            "failure": "MISSING_EXPLICIT_SCHEMA_REPAIR_CONFIRMATION_PHRASE",
+            "required_confirmation_phrase": required_phrase,
+            "constraint_repaired": False,
+            "guardrails": base_guardrails,
+        }
+
+    database_url, database_url_env_name = _phase12_29a_get_database_connection_info()
+    if not database_url:
+        return {
+            "ok": False,
+            "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+            "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_BLOCKED_NO_DB_URL",
+            "failure": "MISSING_DATABASE_URL_FOR_CONTROLLED_SCHEMA_REPAIR",
+            "constraint_repaired": False,
+            "guardrails": base_guardrails,
+        }
+
+    conn = None
+    try:
+        conn, driver_name = _phase12_30a_connect_database(database_url)
+        cur = conn.cursor()
+
+        try:
+            cur.execute(
+                """
+                select count(*)::int
+                from public.campaign_state_transition_audit_events
+                where lifecycle_field is distinct from 'current_state'
+                """
+            )
+            non_current_state_count_row = cur.fetchone()
+            non_current_state_count = int(non_current_state_count_row[0]) if non_current_state_count_row else 0
+
+            cur.execute(
+                """
+                select count(*)::int
+                from public.campaign_state_transition_audit_events
+                """
+            )
+            total_rows_row = cur.fetchone()
+            total_rows = int(total_rows_row[0]) if total_rows_row else 0
+
+            cur.execute(
+                """
+                select pg_get_constraintdef(c.oid)
+                from pg_constraint c
+                join pg_class t on t.oid = c.conrelid
+                join pg_namespace n on n.oid = t.relnamespace
+                where n.nspname = 'public'
+                  and t.relname = 'campaign_state_transition_audit_events'
+                  and c.conname = 'campaign_state_transition_audit_events_lifecycle_field_check'
+                limit 1
+                """
+            )
+            before_constraint_row = cur.fetchone()
+            before_constraint = str(before_constraint_row[0]) if before_constraint_row else ""
+
+            plan = {
+                "database_url_env_name": database_url_env_name,
+                "driver_name": driver_name,
+                "target_table": "public.campaign_state_transition_audit_events",
+                "target_constraint": "campaign_state_transition_audit_events_lifecycle_field_check",
+                "before_constraint": before_constraint,
+                "total_audit_rows": total_rows,
+                "non_current_state_audit_rows": non_current_state_count,
+                "repair_steps": [
+                    "drop existing lifecycle_field check constraint",
+                    "set lifecycle_field default to current_state",
+                    "add lifecycle_field check constraint requiring current_state",
+                ],
+            }
+
+            if non_current_state_count != 0:
+                return {
+                    "ok": False,
+                    "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+                    "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_BLOCKED_BY_EXISTING_ROWS",
+                    "failure": "EXISTING_AUDIT_ROWS_HAVE_NON_CURRENT_STATE_LIFECYCLE_FIELD",
+                    "constraint_repaired": False,
+                    "plan": plan,
+                    "guardrails": base_guardrails,
+                }
+
+            if dry_run:
+                return {
+                    "ok": True,
+                    "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+                    "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_DRY_RUN",
+                    "constraint_repaired": False,
+                    "plan": plan,
+                    "guardrails": {
+                        **base_guardrails,
+                        "would_write_to_supabase": True,
+                        "would_execute_schema_write": True,
+                    },
+                }
+
+            cur.execute(
+                """
+                alter table public.campaign_state_transition_audit_events
+                drop constraint if exists campaign_state_transition_audit_events_lifecycle_field_check
+                """
+            )
+            cur.execute(
+                """
+                alter table public.campaign_state_transition_audit_events
+                alter column lifecycle_field set default 'current_state'
+                """
+            )
+            cur.execute(
+                """
+                alter table public.campaign_state_transition_audit_events
+                add constraint campaign_state_transition_audit_events_lifecycle_field_check
+                check (lifecycle_field = 'current_state')
+                """
+            )
+            conn.commit()
+
+            cur.execute(
+                """
+                select pg_get_constraintdef(c.oid)
+                from pg_constraint c
+                join pg_class t on t.oid = c.conrelid
+                join pg_namespace n on n.oid = t.relnamespace
+                where n.nspname = 'public'
+                  and t.relname = 'campaign_state_transition_audit_events'
+                  and c.conname = 'campaign_state_transition_audit_events_lifecycle_field_check'
+                limit 1
+                """
+            )
+            after_constraint_row = cur.fetchone()
+            after_constraint = str(after_constraint_row[0]) if after_constraint_row else ""
+
+            repaired = "current_state" in after_constraint and "status" not in after_constraint
+
+            return {
+                "ok": repaired,
+                "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+                "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_EXECUTED" if repaired else "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_EXECUTED_BUT_NOT_VERIFIED",
+                "database_url_env_name": database_url_env_name,
+                "driver_name": driver_name,
+                "schema_write_executed": True,
+                "constraint_repaired": repaired,
+                "target_table": "public.campaign_state_transition_audit_events",
+                "target_constraint": "campaign_state_transition_audit_events_lifecycle_field_check",
+                "before_constraint": before_constraint,
+                "after_constraint": after_constraint,
+                "total_audit_rows": total_rows,
+                "non_current_state_audit_rows": non_current_state_count,
+                "guardrails": {
+                    **base_guardrails,
+                    "writes_to_supabase": True,
+                    "schema_write_executed": True,
+                    "mutates_campaigns": False,
+                    "changes_states": False,
+                },
+            }
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "source": "phase12_30c_r2_audit_lifecycle_constraint_repair",
+            "mode": "AUDIT_LIFECYCLE_CONSTRAINT_REPAIR_UNHANDLED_FAILURE",
+            "failure": str(exc)[:900],
+            "schema_write_executed": False,
+            "constraint_repaired": False,
+            "guardrails": base_guardrails,
+        }
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+# === PHASE 12.30C-R2 AUDIT LIFECYCLE CONSTRAINT CORRECTION ROUTE END ===
+
 
 
 # === PHASE 12.27-R2 LIVE-BACKED SCHEMA READINESS START ===

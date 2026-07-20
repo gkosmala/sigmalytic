@@ -1,4 +1,4 @@
-﻿-- SIGMALYTIC V2
+-- SIGMALYTIC V2
 -- PHASE 12.28 APPEND-ONLY CAMPAIGN STATE TRANSITION AUDIT TABLE
 -- Purpose:
 --   Create the required append-only audit table before any controlled
@@ -27,7 +27,7 @@ create table if not exists public.campaign_state_transition_audit_events (
     after_state text not null,
     transition_required boolean not null default true,
 
-    lifecycle_field text not null default 'status',
+    lifecycle_field text not null default 'current_state',
     evidence_source text not null,
     rationale jsonb not null default '[]'::jsonb,
 
@@ -70,7 +70,7 @@ create table if not exists public.campaign_state_transition_audit_events (
         )),
 
     constraint campaign_state_transition_audit_events_lifecycle_field_check
-        check (lifecycle_field = 'status'),
+        check (lifecycle_field = 'current_state'),
 
     constraint campaign_state_transition_audit_events_no_operator_control_check
         check (operator_control_confirmed = false),
