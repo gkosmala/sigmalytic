@@ -4874,3 +4874,155 @@ def handle_csv_upload(contents, reset_clicks, filename):
             "",
         )
 # SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
+# === PHASE 12.31N-R2 RADAR READABILITY CONTRAST PATCH START ===
+# Frontend-only dark-mode readability correction.
+# Purpose: prevent Radar/Campaign evidence text from rendering muted/dark on dark backgrounds.
+# No backend route changes. No mutation. No D3D authorization. No operator-control confirmation.
+# No trade signal. No alert send. No billing/Stripe.
+try:
+    app.index_string = """
+<!DOCTYPE html>
+<html>
+<head>
+    {%metas%}
+    <title>{%title%}</title>
+    {%favicon%}
+    {%css%}
+    <style id="phase12-31n-r2-radar-readability-contrast">
+        html, body {
+            background: #020617 !important;
+            color: #e5e7eb !important;
+        }
+
+        #main-content,
+        #main-content div,
+        #main-content section,
+        #main-content article,
+        #main-content p,
+        #main-content span,
+        #main-content li,
+        #main-content ul,
+        #main-content ol,
+        #main-content table,
+        #main-content thead,
+        #main-content tbody,
+        #main-content tr,
+        #main-content th,
+        #main-content td,
+        #main-content label,
+        #main-content strong,
+        #main-content em,
+        #main-content small,
+        #main-content pre,
+        #main-content code {
+            color: #e5e7eb !important;
+            opacity: 1 !important;
+        }
+
+        #main-content h1,
+        #main-content h2,
+        #main-content h3,
+        #main-content h4,
+        #main-content h5,
+        #main-content h6 {
+            color: #f8fafc !important;
+            opacity: 1 !important;
+        }
+
+        #main-content .muted,
+        #main-content .text-muted,
+        #main-content .secondary,
+        #main-content .small,
+        #main-content [class*="muted"],
+        #main-content [class*="secondary"],
+        #main-content [style*="opacity: 0."],
+        #main-content [style*="opacity:."] {
+            color: #cbd5e1 !important;
+            opacity: 1 !important;
+        }
+
+        #main-content .card,
+        #main-content .panel,
+        #main-content .campaign-card,
+        #main-content .radar-card,
+        #main-content [class*="card"],
+        #main-content [class*="panel"],
+        #main-content [class*="campaign"],
+        #main-content [class*="radar"] {
+            background-color: #0f172a !important;
+            border-color: #334155 !important;
+            color: #e5e7eb !important;
+            opacity: 1 !important;
+        }
+
+        #main-content a,
+        #main-content a:visited {
+            color: #93c5fd !important;
+            opacity: 1 !important;
+        }
+
+        #main-content button,
+        #main-content input,
+        #main-content select,
+        #main-content textarea {
+            color: #e5e7eb !important;
+            background-color: #020617 !important;
+            border-color: #475569 !important;
+            opacity: 1 !important;
+        }
+
+        #main-content button {
+            background-color: #1e293b !important;
+        }
+
+        #main-content button:hover {
+            background-color: #334155 !important;
+        }
+
+        #main-content .dash-table-container,
+        #main-content .dash-spreadsheet,
+        #main-content .dash-spreadsheet-container,
+        #main-content .dash-cell,
+        #main-content .dash-header {
+            color: #e5e7eb !important;
+            background-color: #0f172a !important;
+            opacity: 1 !important;
+        }
+
+        #main-content [style*="color: black"],
+        #main-content [style*="color:black"],
+        #main-content [style*="color: #000"],
+        #main-content [style*="color:#000"],
+        #main-content [style*="color: rgb(0, 0, 0)"],
+        #main-content [style*="color: #111"],
+        #main-content [style*="color:#111"],
+        #main-content [style*="color: #1f2937"],
+        #main-content [style*="color:#1f2937"] {
+            color: #e5e7eb !important;
+            opacity: 1 !important;
+        }
+
+        #main-content [style*="color: #64748b"],
+        #main-content [style*="color:#64748b"],
+        #main-content [style*="color: #6b7280"],
+        #main-content [style*="color:#6b7280"],
+        #main-content [style*="color: gray"],
+        #main-content [style*="color:grey"] {
+            color: #cbd5e1 !important;
+            opacity: 1 !important;
+        }
+    </style>
+</head>
+<body>
+    {%app_entry%}
+    <footer>
+        {%config%}
+        {%scripts%}
+        {%renderer%}
+    </footer>
+</body>
+</html>
+"""
+except Exception:
+    pass
+# === PHASE 12.31N-R2 RADAR READABILITY CONTRAST PATCH END ===
