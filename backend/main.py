@@ -2413,6 +2413,237 @@ def phase12_30c_r2_repair_state_mutation_audit_lifecycle_field_constraint(payloa
             pass
 # === PHASE 12.30C-R2 AUDIT LIFECYCLE CONSTRAINT CORRECTION ROUTE END ===
 
+# === PHASE 12.30D-R2 CONTROLLED STATE MUTATION READBACK ROUTE START ===
+# Read-only post-mutation closure route.
+# Verifies the append-only audit event and campaign current_state readback.
+# This route performs SELECT-only database reads.
+# It must not write schema, mutate campaigns, change states, authorize D3D,
+# confirm operator control, create trade signals, send alerts, or touch Stripe/billing.
+@app.get("/api/campaigns/controlled-state-mutation-readback")
+def phase12_30d_r2_controlled_state_mutation_readback(
+    audit_event_id: str = "2",
+    campaign_id: str = "635",
+    symbol: str = "CDC",
+    expected_before_state: str = "BIRTH",
+    expected_after_state: str = "CONFIRMED",
+):
+    target_symbol = str(symbol or "").strip().upper()
+    target_campaign_id = str(campaign_id or "").strip()
+    target_audit_event_id = str(audit_event_id or "").strip()
+    target_before_state = str(expected_before_state or "").strip().upper()
+    target_after_state = str(expected_after_state or "").strip().upper()
+
+    guardrails = {
+        "read_only": True,
+        "select_only": True,
+        "writes_to_supabase": False,
+        "schema_write_executed": False,
+        "mutates_campaigns": False,
+        "changes_states": False,
+        "executes_d3d": False,
+        "authorizes_d3d": False,
+        "operator_control_confirmed": False,
+        "not_a_trade_signal": True,
+        "alert_send_execution": False,
+        "stripe_touched": False,
+        "billing_touched": False,
+    }
+
+    database_url, database_url_env_name = _phase12_29a_get_database_connection_info()
+    if not database_url:
+        return {
+            "ok": False,
+            "source": "phase12_30d_r2_controlled_state_mutation_readback",
+            "mode": "READBACK_BLOCKED_NO_DB_URL",
+            "readback_verified": False,
+            "failure": "MISSING_DATABASE_URL_FOR_READ_ONLY_READBACK",
+            "guardrails": guardrails,
+        }
+
+    conn = None
+    try:
+        conn, driver_name = _phase12_30a_connect_database(database_url)
+        cur = conn.cursor()
+
+        try:
+            cur.execute(
+                """
+                select
+                    id::text,
+                    created_at::text,
+                    source::text,
+                    mode::text,
+                    symbol::text,
+                    campaign_id::text,
+                    before_state::text,
+                    after_state::text,
+                    transition_required,
+                    lifecycle_field::text,
+                    evidence_source::text,
+                    operator_control_confirmed,
+                    authorizes_d3d,
+                    not_a_trade_signal,
+                    writes_to_supabase,
+                    mutates_campaigns,
+                    changes_states,
+                    alert_send_execution,
+                    stripe_touched,
+                    billing_touched
+                from public.campaign_state_transition_audit_events
+                where id::text = %s
+                  and campaign_id::text = %s
+                  and symbol::text = %s
+                limit 1
+                """,
+                (target_audit_event_id, target_campaign_id, target_symbol),
+            )
+            audit_row = cur.fetchone()
+
+            cur.execute(
+                """
+                select
+                    campaign_id::text,
+                    symbol::text,
+                    status::text,
+                    current_state::text
+                from public.campaigns
+                where campaign_id::text = %s
+                  and symbol::text = %s
+                limit 1
+                """,
+                (target_campaign_id, target_symbol),
+            )
+            campaign_row = cur.fetchone()
+
+            cur.execute(
+                """
+                select count(*)::int
+                from public.campaign_state_transition_audit_events
+                where campaign_id::text = %s
+                  and symbol::text = %s
+                  and before_state::text = %s
+                  and after_state::text = %s
+                  and lifecycle_field::text = 'current_state'
+                  and mode::text = 'APPEND_ONLY_AUDIT_EVENT_BEFORE_CAMPAIGN_CURRENT_STATE_UPDATE'
+                """,
+                (
+                    target_campaign_id,
+                    target_symbol,
+                    target_before_state,
+                    target_after_state,
+                ),
+            )
+            count_row = cur.fetchone()
+            exact_transition_audit_event_count = int(count_row[0]) if count_row else 0
+
+            audit_event = None
+            if audit_row:
+                audit_event = {
+                    "id": str(audit_row[0]),
+                    "created_at": str(audit_row[1]),
+                    "source": str(audit_row[2]),
+                    "mode": str(audit_row[3]),
+                    "symbol": str(audit_row[4]).upper(),
+                    "campaign_id": str(audit_row[5]),
+                    "before_state": str(audit_row[6]).upper(),
+                    "after_state": str(audit_row[7]).upper(),
+                    "transition_required": bool(audit_row[8]),
+                    "lifecycle_field": str(audit_row[9]),
+                    "evidence_source": str(audit_row[10]),
+                    "operator_control_confirmed": bool(audit_row[11]),
+                    "authorizes_d3d": bool(audit_row[12]),
+                    "not_a_trade_signal": bool(audit_row[13]),
+                    "writes_to_supabase": bool(audit_row[14]),
+                    "mutates_campaigns": bool(audit_row[15]),
+                    "changes_states": bool(audit_row[16]),
+                    "alert_send_execution": bool(audit_row[17]),
+                    "stripe_touched": bool(audit_row[18]),
+                    "billing_touched": bool(audit_row[19]),
+                }
+
+            campaign = None
+            if campaign_row:
+                campaign = {
+                    "campaign_id": str(campaign_row[0]),
+                    "symbol": str(campaign_row[1]).upper(),
+                    "status": str(campaign_row[2]),
+                    "current_state": str(campaign_row[3]).upper(),
+                }
+
+            audit_verified = (
+                audit_event is not None
+                and audit_event["id"] == target_audit_event_id
+                and audit_event["campaign_id"] == target_campaign_id
+                and audit_event["symbol"] == target_symbol
+                and audit_event["before_state"] == target_before_state
+                and audit_event["after_state"] == target_after_state
+                and audit_event["lifecycle_field"] == "current_state"
+                and audit_event["operator_control_confirmed"] is False
+                and audit_event["authorizes_d3d"] is False
+                and audit_event["not_a_trade_signal"] is True
+                and audit_event["alert_send_execution"] is False
+                and audit_event["stripe_touched"] is False
+                and audit_event["billing_touched"] is False
+            )
+
+            campaign_verified = (
+                campaign is not None
+                and campaign["campaign_id"] == target_campaign_id
+                and campaign["symbol"] == target_symbol
+                and campaign["status"] == "active"
+                and campaign["current_state"] == target_after_state
+            )
+
+            duplicate_safe = exact_transition_audit_event_count == 1
+            readback_verified = audit_verified and campaign_verified and duplicate_safe
+
+            return {
+                "ok": readback_verified,
+                "source": "phase12_30d_r2_controlled_state_mutation_readback",
+                "mode": "READ_ONLY_POST_MUTATION_AUDIT_READBACK",
+                "database_url_env_name": database_url_env_name,
+                "driver_name": driver_name,
+                "readback_verified": readback_verified,
+                "audit_verified": audit_verified,
+                "campaign_verified": campaign_verified,
+                "duplicate_safe": duplicate_safe,
+                "exact_transition_audit_event_count": exact_transition_audit_event_count,
+                "target": {
+                    "audit_event_id": target_audit_event_id,
+                    "campaign_id": target_campaign_id,
+                    "symbol": target_symbol,
+                    "expected_before_state": target_before_state,
+                    "expected_after_state": target_after_state,
+                    "lifecycle_field": "current_state",
+                    "campaign_key": "campaign_id",
+                },
+                "audit_event": audit_event,
+                "campaign": campaign,
+                "guardrails": guardrails,
+            }
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        return {
+            "ok": False,
+            "source": "phase12_30d_r2_controlled_state_mutation_readback",
+            "mode": "READBACK_UNHANDLED_FAILURE",
+            "readback_verified": False,
+            "failure": str(exc)[:900],
+            "guardrails": guardrails,
+        }
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+# === PHASE 12.30D-R2 CONTROLLED STATE MUTATION READBACK ROUTE END ===
+
+
 
 
 # === PHASE 12.27-R2 LIVE-BACKED SCHEMA READINESS START ===
