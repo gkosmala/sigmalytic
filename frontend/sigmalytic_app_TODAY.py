@@ -4874,12 +4874,13 @@ def handle_csv_upload(contents, reset_clicks, filename):
             "",
         )
 # SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
-# === PHASE 12.31O RADAR ACTIVE NAV AND SEMANTIC HIGHLIGHT RESTORE START ===
+# === PHASE 12.31P ACTIVE NAV CONTENT-AWARE CORRECTION START ===
 # Frontend-only visual correction.
 # Purpose:
-# 1. Keep dark-mode text readable without flattening all semantic/highlight colors.
-# 2. Restore highlighted Radar/Campaign status, regime, bias, and lifecycle text.
-# 3. Keep the top navigation active state aligned with visible content so Radar Screen is not stuck on Command Center.
+# 1. Keep scoped dark-mode readability.
+# 2. Preserve semantic/highlight colors.
+# 3. Correct active top navigation by excluding nav-button labels from page-content inference.
+# 4. Prevent Setup from illuminating merely because the Setup nav button text exists in the DOM.
 # No backend route changes. No mutation. No D3D authorization. No operator-control confirmation.
 # No trade signal. No alert send. No billing/Stripe.
 try:
@@ -4891,7 +4892,7 @@ try:
     <title>{%title%}</title>
     {%favicon%}
     {%css%}
-    <style id="phase12-31o-scoped-readability-and-highlight-restore">
+    <style id="phase12-31p-content-aware-nav-and-semantic-restore">
         html, body {
             background: #020617 !important;
             color: #e5e7eb !important;
@@ -4985,7 +4986,7 @@ try:
             opacity: 1 !important;
         }
 
-        .phase12-31o-active-nav {
+        .phase12-31p-active-nav {
             background: linear-gradient(135deg, #065f46, #0f766e) !important;
             border-color: #34d399 !important;
             color: #ffffff !important;
@@ -4993,7 +4994,7 @@ try:
             opacity: 1 !important;
         }
 
-        .phase12-31o-inactive-nav {
+        .phase12-31p-inactive-nav {
             background: #0f172a !important;
             border-color: #1e293b !important;
             color: #cbd5e1 !important;
@@ -5001,27 +5002,27 @@ try:
             opacity: 1 !important;
         }
 
-        .phase12-31o-semantic-bullish,
-        .phase12-31o-semantic-confirmed,
-        .phase12-31o-semantic-surviving,
-        .phase12-31o-semantic-pass {
+        .phase12-31p-semantic-bullish,
+        .phase12-31p-semantic-confirmed,
+        .phase12-31p-semantic-surviving,
+        .phase12-31p-semantic-pass {
             font-weight: 700 !important;
         }
 
-        .phase12-31o-semantic-watch,
-        .phase12-31o-semantic-spark,
-        .phase12-31o-semantic-review,
-        .phase12-31o-semantic-pending {
+        .phase12-31p-semantic-watch,
+        .phase12-31p-semantic-spark,
+        .phase12-31p-semantic-review,
+        .phase12-31p-semantic-pending {
             font-weight: 700 !important;
         }
 
-        .phase12-31o-semantic-risk,
-        .phase12-31o-semantic-bearish,
-        .phase12-31o-semantic-fail {
+        .phase12-31p-semantic-risk,
+        .phase12-31p-semantic-bearish,
+        .phase12-31p-semantic-fail {
             font-weight: 700 !important;
         }
     </style>
-    <script id="phase12-31o-radar-active-nav-and-highlight-restore">
+    <script id="phase12-31p-content-aware-active-nav-and-highlight-restore">
     (function () {
         const NAV_LABELS = [
             "Command Center",
@@ -5042,47 +5043,77 @@ try:
         ];
 
         const SEMANTIC_COLOR_MAP = [
-            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31o-semantic-bullish"},
-            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31o-semantic-confirmed"},
-            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31o-semantic-watch"},
-            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31o-semantic-risk"},
-            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31o-semantic-regime"},
-            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31o-semantic-birth"},
-            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31o-semantic-expanding"}
+            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31p-semantic-bullish"},
+            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31p-semantic-confirmed"},
+            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31p-semantic-watch"},
+            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31p-semantic-risk"},
+            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31p-semantic-regime"},
+            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31p-semantic-birth"},
+            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31p-semantic-expanding"}
         ];
 
         function normalizedText(el) {
             return String(el && el.textContent ? el.textContent : "").replace(/\\s+/g, " ").trim();
         }
 
-        function visibleMainText() {
-            const main = document.querySelector("#main-content") || document.body;
-            return String(main && main.innerText ? main.innerText : "");
+        function cloneContentWithoutNavigation() {
+            const root = document.querySelector("#main-content") || document.body;
+            const clone = root.cloneNode(true);
+
+            Array.from(clone.querySelectorAll("button, a, nav, [role='button'], [role='navigation']")).forEach(function (node) {
+                node.remove();
+            });
+
+            NAV_LABELS.forEach(function (label) {
+                const escaped = label.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+                const re = new RegExp("\\\\b" + escaped + "\\\\b", "gi");
+                clone.textContent = String(clone.textContent || "").replace(re, " ");
+            });
+
+            return String(clone.innerText || clone.textContent || "").replace(/\\s+/g, " ").trim();
+        }
+
+        function activeContentText() {
+            return cloneContentWithoutNavigation();
         }
 
         function inferActiveLabel() {
             const path = String(window.location.pathname || "").toLowerCase();
-            const text = visibleMainText();
+            const text = activeContentText();
 
-            if (path.includes("radar") || /Radar Screen/i.test(text)) return "Radar Screen";
-            if (path.includes("campaign") || /Campaigns/i.test(text)) return "Campaigns";
-            if (path.includes("divergence") || /Divergence/i.test(text)) return "Divergence";
-            if (path.includes("scoreboard") || /Scoreboard/i.test(text)) return "Scoreboard";
-            if (path.includes("portfolio") || /Portfolio/i.test(text)) return "Portfolio";
-            if (path.includes("journal") || /Journal/i.test(text)) return "Journal";
-            if (path.includes("performance") || /Performance/i.test(text)) return "Performance";
-            if (path.includes("live") || /Live Feed/i.test(text)) return "Live Feed";
-            if (path.includes("admin") || /Admin/i.test(text)) return "Admin";
-            if (path.includes("setup") || /Setup/i.test(text)) return "Setup";
-            if (path.includes("billing") || /Billing/i.test(text)) return "Billing";
-            if (path.includes("preferences") || /Preferences/i.test(text)) return "Preferences";
-            if (/Command Center/i.test(text)) return "Command Center";
-            return "";
+            if (path.includes("radar")) return "Radar Screen";
+            if (path.includes("campaign")) return "Campaigns";
+            if (path.includes("divergence")) return "Divergence";
+            if (path.includes("scoreboard")) return "Scoreboard";
+            if (path.includes("portfolio")) return "Portfolio";
+            if (path.includes("journal")) return "Journal";
+            if (path.includes("performance")) return "Performance";
+            if (path.includes("live")) return "Live Feed";
+            if (path.includes("admin")) return "Admin";
+            if (path.includes("setup")) return "Setup";
+            if (path.includes("billing")) return "Billing";
+            if (path.includes("preferences")) return "Preferences";
+
+            if (/Weis-Gamma Status Center|Price Ladder|Smart Chart|Load Symbol|Live Price|AAPL - Smart Chart/i.test(text)) {
+                return "Command Center";
+            }
+
+            if (/Live multi-symbol signal scanner|Radar Screen/i.test(text)) return "Radar Screen";
+            if (/Controlled Transition Preview|campaign lifecycle|current_state|proposed_next_state/i.test(text)) return "Campaigns";
+            if (/Divergence/i.test(text)) return "Divergence";
+            if (/Scoreboard/i.test(text)) return "Scoreboard";
+            if (/Performance/i.test(text)) return "Performance";
+            if (/Live Feed/i.test(text)) return "Live Feed";
+            if (/Behavioural Intelligence/i.test(text)) return "Behavioural Intelligence";
+            if (/Portfolio/i.test(text)) return "Portfolio";
+            if (/Journal/i.test(text)) return "Journal";
+
+            if (path === "/" || path === "") return "Command Center";
+            return "Command Center";
         }
 
         function applyActiveNavState() {
             const activeLabel = inferActiveLabel();
-            if (!activeLabel) return;
 
             const nodes = Array.from(document.querySelectorAll("button, a, [role='button']"));
             nodes.forEach(function (node) {
@@ -5091,13 +5122,17 @@ try:
 
                 node.classList.remove("phase12-31o-active-nav");
                 node.classList.remove("phase12-31o-inactive-nav");
+                node.classList.remove("phase12-31p-active-nav");
+                node.classList.remove("phase12-31p-inactive-nav");
 
                 if (label === activeLabel) {
-                    node.classList.add("phase12-31o-active-nav");
+                    node.classList.add("phase12-31p-active-nav");
                     node.setAttribute("aria-current", "page");
+                    node.setAttribute("data-phase12-active-nav", "true");
                 } else {
-                    node.classList.add("phase12-31o-inactive-nav");
+                    node.classList.add("phase12-31p-inactive-nav");
                     node.removeAttribute("aria-current");
+                    node.setAttribute("data-phase12-active-nav", "false");
                 }
             });
         }
@@ -5134,28 +5169,30 @@ try:
 
             nodes.forEach(function (node) {
                 node.style.setProperty("opacity", "1", "important");
-                if (!node.classList.contains("phase12-31o-active-nav")) {
+                if (!node.classList.contains("phase12-31p-active-nav")) {
                     node.style.setProperty("color", "#e5e7eb", "important");
                 }
             });
         }
 
-        function applyPhase1231OVisualFixes() {
+        function applyPhase1231PVisualFixes() {
             applyScopedReadability();
             applySemanticHighlights();
             applyActiveNavState();
         }
 
-        window.phase1231OApplyVisualFixes = applyPhase1231OVisualFixes;
+        window.phase1231PApplyVisualFixes = applyPhase1231PVisualFixes;
+        window.phase1231PInferActiveLabel = inferActiveLabel;
+        window.phase1231PActiveContentText = activeContentText;
 
         if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", applyPhase1231OVisualFixes);
+            document.addEventListener("DOMContentLoaded", applyPhase1231PVisualFixes);
         } else {
-            applyPhase1231OVisualFixes();
+            applyPhase1231PVisualFixes();
         }
 
         const observer = new MutationObserver(function () {
-            applyPhase1231OVisualFixes();
+            applyPhase1231PVisualFixes();
         });
 
         observer.observe(document.documentElement, {
@@ -5164,7 +5201,7 @@ try:
             characterData: true
         });
 
-        setInterval(applyPhase1231OVisualFixes, 1200);
+        setInterval(applyPhase1231PVisualFixes, 900);
     })();
     </script>
 </head>
@@ -5180,4 +5217,4 @@ try:
 """
 except Exception:
     pass
-# === PHASE 12.31O RADAR ACTIVE NAV AND SEMANTIC HIGHLIGHT RESTORE END ===
+# === PHASE 12.31P ACTIVE NAV CONTENT-AWARE CORRECTION END ===
