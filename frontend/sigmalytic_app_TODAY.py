@@ -4257,16 +4257,17 @@ def toggle_alerts(n, currently_on):
 
 
 
-# === PHASE 12.31B-R2 OPERATOR LIFECYCLE CONTROL CONSOLE DRY-RUN UI START ===
-# Operator-facing controlled lifecycle console shell.
-# This UI is intentionally DRY-RUN ONLY.
-# It may preview transitions, read back the prior audited mutation, and call the mutation
-# endpoint only with dry_run set to true.
-# It must not expose a live mutation execution button, must not authorize D3D,
-# must not confirm operator control, must not create trade signals,
+
+# === PHASE 12.31E GUARDED OPERATOR LIFECYCLE LIVE EXECUTION UI START ===
+# Operator-facing controlled lifecycle console.
+# This UI exposes preview, readback, controlled dry-run, and a guarded live execution control.
+# The guarded live execution control is disabled until an exact dry-run succeeds and the
+# exact confirmation phrase is typed for the same campaign_id, symbol, before_state, and after_state.
+# Phase 12.31E adds the UI control only. The acceptance script does not click or invoke live execution.
+# This UI must not authorize D3D, must not confirm operator control, must not create trade signals,
 # must not send alerts, and must not touch Stripe/billing.
 @app.server.route("/operator-lifecycle-control")
-def phase12_31b_r2_operator_lifecycle_control_console():
+def phase12_31e_operator_lifecycle_control_console():
     return """
 <!doctype html>
 <html>
@@ -4281,8 +4282,11 @@ def phase12_31b_r2_operator_lifecycle_control_console():
     input { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e5e7eb; }
     button { padding: 10px 14px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: #e5e7eb; cursor: pointer; margin-right: 8px; }
     button:hover { background: #334155; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #020617; padding: 14px; border-radius: 10px; border: 1px solid #334155; max-height: 420px; overflow-y: auto; }
     .safe { color: #86efac; }
+    .warn { color: #fde68a; }
+    .danger { color: #fca5a5; }
     .small { color: #94a3b8; font-size: 13px; line-height: 1.4; }
   </style>
 </head>
@@ -4290,10 +4294,13 @@ def phase12_31b_r2_operator_lifecycle_control_console():
   <h1>Sigmalytic V2 Operator Lifecycle Control</h1>
 
   <div class="panel">
-    <h2 class="safe">Dry-Run Console Only</h2>
+    <h2 class="warn">Controlled Operator Console</h2>
     <p class="small">
-      This console previews controlled campaign lifecycle transitions and sends dry-run requests only.
-      It does not expose live execution. It does not authorize D3D. It does not confirm operator control.
+      This console previews controlled campaign lifecycle transitions, reads back audited mutations,
+      performs controlled dry-run validation, and exposes one guarded operator execution control.
+      Execution remains campaign-specific, confirmation-gated, exact-before-state matched, audit-first,
+      and limited to public.campaigns.current_state.
+      It does not authorize D3D. It does not confirm operator control.
       It does not create trade signals, send alerts, or touch billing.
     </p>
   </div>
@@ -4303,25 +4310,39 @@ def phase12_31b_r2_operator_lifecycle_control_console():
     <div class="grid">
       <div>
         <label>Campaign ID</label>
-        <input id="campaign_id" value="635">
+        <input id="campaign_id" value="635" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Symbol</label>
-        <input id="symbol" value="CDC">
+        <input id="symbol" value="CDC" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Expected Before State</label>
-        <input id="expected_before_state" value="CONFIRMED">
+        <input id="expected_before_state" value="CONFIRMED" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Requested After State</label>
-        <input id="requested_after_state" value="SURVIVING">
+        <input id="requested_after_state" value="SURVIVING" oninput="invalidateDryRun()">
       </div>
     </div>
     <br>
     <button onclick="loadPreview()">Refresh Transition Preview</button>
     <button onclick="runDryRun()">Run Controlled Dry-Run</button>
     <button onclick="loadReadback()">Read Back Prior Audit Event 2</button>
+  </div>
+
+  <div class="panel">
+    <h2 class="danger">Guarded Live Execution</h2>
+    <p class="small">
+      The execution button is disabled until the exact selected transition has passed dry-run and the
+      exact confirmation phrase is typed. This control sends one request only and uses exact
+      before-current-state matching.
+    </p>
+    <label>Typed Confirmation Phrase</label>
+    <input id="live_confirmation_phrase" value="" placeholder="Type the exact confirmation phrase" oninput="enableExecuteButtonIfAllowed()">
+    <br><br>
+    <button id="execute_live_button" onclick="executeControlledLifecycleMutation()" disabled>Execute One Controlled Lifecycle Mutation</button>
+    <p class="small" id="execution_gate_status">Execution gate locked. Run a successful dry-run first.</p>
   </div>
 
   <div class="panel">
@@ -4336,6 +4357,9 @@ def phase12_31b_r2_operator_lifecycle_control_console():
 
 <script>
 const BACKEND_BASE = "https://sigmalytic-backend.onrender.com";
+const EXACT_CONFIRMATION_PHRASE = "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION";
+let lastDryRunPlan = null;
+let dryRunPassed = false;
 
 function show(obj) {
   document.getElementById("output").textContent = JSON.stringify(obj, null, 2);
@@ -4353,6 +4377,36 @@ function target() {
   };
 }
 
+function invalidateDryRun() {
+  dryRunPassed = false;
+  lastDryRunPlan = null;
+  document.getElementById("execute_live_button").disabled = true;
+  document.getElementById("execution_gate_status").textContent = "Execution gate locked. Target changed; run a new successful dry-run.";
+}
+
+function exactTargetStillMatchesDryRun() {
+  if (!lastDryRunPlan) {
+    return false;
+  }
+  const t = target();
+  return (
+    String(lastDryRunPlan.campaign_id) === String(t.campaign_id) &&
+    String(lastDryRunPlan.symbol).toUpperCase() === t.symbol &&
+    String(lastDryRunPlan.before_current_state).toUpperCase() === t.expected_before_state &&
+    String(lastDryRunPlan.after_current_state).toUpperCase() === t.requested_after_state &&
+    String(lastDryRunPlan.lifecycle_field) === "current_state"
+  );
+}
+
+function enableExecuteButtonIfAllowed() {
+  const phrase = document.getElementById("live_confirmation_phrase").value.trim();
+  const allowed = dryRunPassed && exactTargetStillMatchesDryRun() && phrase === EXACT_CONFIRMATION_PHRASE;
+  document.getElementById("execute_live_button").disabled = !allowed;
+  document.getElementById("execution_gate_status").textContent = allowed
+    ? "Execution gate unlocked for the exact dry-run-verified transition only."
+    : "Execution gate locked. Requires exact dry-run match and exact confirmation phrase.";
+}
+
 async function loadPreview() {
   const response = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
   const data = await response.json();
@@ -4360,7 +4414,7 @@ async function loadPreview() {
   const rows = data.transitions || [];
   const row = rows.find(r => String(r.symbol || "").toUpperCase() === t.symbol);
   show({
-    console_mode: "DRY_RUN_ONLY_OPERATOR_LIFECYCLE_CONTROL",
+    console_mode: "GUARDED_OPERATOR_LIFECYCLE_CONTROL",
     selected_symbol: t.symbol,
     selected_transition: row || null,
     preview_count: data.count,
@@ -4386,16 +4440,16 @@ async function loadPreview() {
 async function runDryRun() {
   const t = target();
   const payload = {
-    confirmation_phrase: "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION",
+    confirmation_phrase: EXACT_CONFIRMATION_PHRASE,
     dry_run: true,
     symbol: t.symbol,
     campaign_id: t.campaign_id,
     expected_before_state: t.expected_before_state,
     requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31b_r2_operator_lifecycle_control_console_dry_run_ui",
+    evidence_source: "phase12_31e_operator_lifecycle_control_console_dry_run",
     rationale: [
-      "Operator-facing UI dry-run only.",
-      "No live mutation execution is exposed in Phase 12.31B-R2.",
+      "Operator-facing UI dry-run before any guarded execution.",
+      "Dry-run must match exact campaign_id, symbol, before state, and after state.",
       "No D3D authorization.",
       "No operator-control confirmation.",
       "Not a trade signal."
@@ -4409,6 +4463,65 @@ async function runDryRun() {
   });
 
   const data = await response.json();
+  dryRunPassed = (
+    data &&
+    data.ok === true &&
+    data.mode === "CONTROLLED_STATE_MUTATION_DRY_RUN" &&
+    data.state_mutation_executed === false &&
+    data.audit_event_inserted === false &&
+    data.campaign_update_executed === false &&
+    data.plan &&
+    String(data.plan.lifecycle_field) === "current_state"
+  );
+
+  lastDryRunPlan = dryRunPassed ? data.plan : null;
+  enableExecuteButtonIfAllowed();
+  show(data);
+}
+
+async function executeControlledLifecycleMutation() {
+  if (!dryRunPassed || !exactTargetStillMatchesDryRun()) {
+    show({ok:false, mode:"UI_EXECUTION_GATE_LOCKED", reason:"Exact successful dry-run is required before execution."});
+    return;
+  }
+
+  const phrase = document.getElementById("live_confirmation_phrase").value.trim();
+  if (phrase !== EXACT_CONFIRMATION_PHRASE) {
+    show({ok:false, mode:"UI_EXECUTION_CONFIRMATION_REJECTED", reason:"Exact confirmation phrase required."});
+    return;
+  }
+
+  const t = target();
+  const payload = {
+    confirmation_phrase: EXACT_CONFIRMATION_PHRASE,
+    dry_run: false,
+    symbol: t.symbol,
+    campaign_id: t.campaign_id,
+    expected_before_state: t.expected_before_state,
+    requested_after_state: t.requested_after_state,
+    evidence_source: "phase12_31e_operator_lifecycle_control_console_guarded_live_execution",
+    rationale: [
+      "Operator explicitly confirmed one controlled lifecycle mutation.",
+      "Exact prior dry-run passed for this campaign_id, symbol, before state, and after state.",
+      "Audit event must be inserted before campaign current_state update.",
+      "Only public.campaigns.current_state may be updated.",
+      "No D3D authorization.",
+      "No operator-control confirmation.",
+      "Not a trade signal."
+    ]
+  };
+
+  document.getElementById("execute_live_button").disabled = true;
+
+  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-execution", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  dryRunPassed = false;
+  lastDryRunPlan = null;
   show(data);
 }
 
@@ -4423,7 +4536,8 @@ loadPreview().catch(err => show({ok:false, error:String(err)}));
 </body>
 </html>
 """
-# === PHASE 12.31B-R2 OPERATOR LIFECYCLE CONTROL CONSOLE DRY-RUN UI END ===
+# === PHASE 12.31E GUARDED OPERATOR LIFECYCLE LIVE EXECUTION UI END ===
+
 
 
 if __name__ == "__main__":
