@@ -1770,12 +1770,12 @@ def _phase12_30a_select_campaign_row(cursor, campaign_id, symbol):
     cursor.execute(
         """
         select
-            id::text as id,
+            campaign_id::text as id,
             symbol::text as symbol,
             status::text as status,
             current_state::text as current_state
         from public.campaigns
-        where id::text = %s
+        where campaign_id::text = %s
           and symbol::text = %s
         limit 1
         """,
@@ -2047,7 +2047,7 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                 "campaign_table": "public.campaigns",
                 "execution_order": [
                     "insert append-only audit event",
-                    "update public.campaigns.current_state with exact id/symbol/before-current-state match",
+                    "update public.campaigns.current_state with exact campaign_id/symbol/before-current-state match",
                 ],
             }
 
@@ -2097,10 +2097,10 @@ def phase12_30a_controlled_state_mutation_execution(payload: dict):
                 """
                 update public.campaigns
                 set current_state = %s
-                where id::text = %s
+                where campaign_id::text = %s
                   and symbol::text = %s
                   and current_state::text = %s
-                returning id::text, symbol::text, current_state::text
+                returning campaign_id::text, symbol::text, current_state::text
                 """,
                 (
                     requested_after_state,
