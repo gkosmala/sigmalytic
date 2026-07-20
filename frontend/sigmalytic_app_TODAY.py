@@ -4259,17 +4259,18 @@ def toggle_alerts(n, currently_on):
 
 
 
-# === PHASE 12.31J GENERALIZED OPERATOR LIFECYCLE CONTROL UI START ===
+
+# === PHASE 12.31J-R2 GENERALIZED OPERATOR LIFECYCLE CONTROL UI CAMPAIGN-ID RESOLUTION START ===
 # Operator-facing controlled lifecycle console.
-# Generalized from a CDC-only default to preview-selectable lifecycle candidates.
-# This UI may select an eligible transition from /api/campaigns/transition-preview.
+# Preview rows may not expose campaign_id directly, so this UI resolves candidate IDs
+# from /api/campaigns/active by matching symbol and current_state.
 # Execution remains guarded: exact successful dry-run, exact typed confirmation phrase,
 # exact campaign_id/symbol/before_state/after_state binding, audit-first backend mutation.
-# Phase 12.31J patches the UI only. It does not click or invoke live execution.
+# Phase 12.31J-R2 patches the UI only. It does not click or invoke live execution.
 # This UI must not authorize D3D, must not confirm operator control, must not create trade signals,
 # must not send alerts, and must not touch Stripe/billing.
 @app.server.route("/operator-lifecycle-control")
-def phase12_31j_operator_lifecycle_control_console():
+def phase12_31j_r2_operator_lifecycle_control_console():
     return """
 <!doctype html>
 <html>
@@ -4298,10 +4299,9 @@ def phase12_31j_operator_lifecycle_control_console():
   <div class="panel">
     <h2 class="warn">Generalized Controlled Operator Console</h2>
     <p class="small">
-      This console loads preview-eligible campaign lifecycle transitions, allows an operator to select one,
-      performs controlled dry-run validation, reads back audited mutations, and exposes one guarded execution control.
-      Execution remains campaign-specific, confirmation-gated, exact-before-state matched, audit-first,
-      and limited to public.campaigns.current_state.
+      This console loads preview-eligible campaign lifecycle transitions and resolves their campaign IDs
+      from active campaigns before dry-run validation. Execution remains campaign-specific,
+      confirmation-gated, exact-before-state matched, audit-first, and limited to public.campaigns.current_state.
       It does not authorize D3D. It does not confirm operator control.
       It does not create trade signals, send alerts, or touch billing.
     </p>
@@ -4314,8 +4314,8 @@ def phase12_31j_operator_lifecycle_control_console():
       <option value="">Load preview candidates...</option>
     </select>
     <p class="small">
-      The selector is populated only from /api/campaigns/transition-preview rows where transition_required is true
-      and no-write guardrails are intact.
+      The selector is populated only from /api/campaigns/transition-preview rows where transition_required is true,
+      no-write guardrails are intact, and campaign_id can be resolved from /api/campaigns/active.
     </p>
   </div>
 
@@ -4324,19 +4324,19 @@ def phase12_31j_operator_lifecycle_control_console():
     <div class="grid">
       <div>
         <label>Campaign ID</label>
-        <input id="campaign_id" value="635" oninput="invalidateDryRun()">
+        <input id="campaign_id" value="" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Symbol</label>
-        <input id="symbol" value="CDC" oninput="invalidateDryRun()">
+        <input id="symbol" value="" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Expected Before State</label>
-        <input id="expected_before_state" value="SURVIVING" oninput="invalidateDryRun()">
+        <input id="expected_before_state" value="" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Requested After State</label>
-        <input id="requested_after_state" value="SURVIVING" oninput="invalidateDryRun()">
+        <input id="requested_after_state" value="" oninput="invalidateDryRun()">
       </div>
     </div>
     <br>
@@ -4375,12 +4375,46 @@ const EXACT_CONFIRMATION_PHRASE = "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE
 let lastDryRunPlan = null;
 let dryRunPassed = false;
 let previewCandidates = [];
+let activeCampaignRows = [];
 
 function show(obj) {
   document.getElementById("output").textContent = JSON.stringify(obj, null, 2);
   if (obj && obj.guardrails) {
     document.getElementById("guardrails").textContent = JSON.stringify(obj.guardrails, null, 2);
   }
+}
+
+function campaignIdFromRow(row) {
+  if (!row) {
+    return "";
+  }
+  return String(row.campaign_id || row.id || row.campaignId || row.campaignID || "").trim();
+}
+
+function normalizeState(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizeSymbol(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function resolveCandidateWithActive(row) {
+  let resolved = campaignIdFromRow(row);
+  const rowSymbol = normalizeSymbol(row && row.symbol);
+  const rowState = normalizeState(row && row.current_state);
+
+  if (!resolved) {
+    const match = activeCampaignRows.find(active => (
+      normalizeSymbol(active.symbol) === rowSymbol &&
+      normalizeState(active.current_state || active.state) === rowState
+    ));
+    resolved = campaignIdFromRow(match);
+  }
+
+  const clone = Object.assign({}, row || {});
+  clone.resolved_campaign_id = String(resolved || "").trim();
+  return clone;
 }
 
 function safeNoWriteCandidate(row) {
@@ -4392,7 +4426,8 @@ function safeNoWriteCandidate(row) {
     row.changes_states === false &&
     row.authorizes_d3d === false &&
     row.operator_control_confirmed === false &&
-    row.not_a_trade_signal === true
+    row.not_a_trade_signal === true &&
+    String(row.resolved_campaign_id || row.campaign_id || row.id || "").trim() !== ""
   );
 }
 
@@ -4405,16 +4440,17 @@ function target() {
   };
 }
 
-function populateCandidateSelector(rows) {
+function populateCandidateSelector(rows, activeRows) {
   const selector = document.getElementById("candidate_selector");
   selector.innerHTML = "";
 
-  previewCandidates = (rows || []).filter(safeNoWriteCandidate);
+  activeCampaignRows = activeRows || [];
+  previewCandidates = (rows || []).map(resolveCandidateWithActive).filter(safeNoWriteCandidate);
 
   if (previewCandidates.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "No eligible safe preview transitions available";
+    option.textContent = "No eligible safe preview transitions with resolved campaign IDs available";
     selector.appendChild(option);
     return;
   }
@@ -4422,10 +4458,12 @@ function populateCandidateSelector(rows) {
   previewCandidates.forEach((row, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    const campaignId = row.campaign_id || row.id || "";
-    option.textContent = `${row.symbol || ""} / campaign_id ${campaignId} / ${row.current_state || ""} -> ${row.proposed_next_state || ""}`;
+    option.textContent = `${row.symbol || ""} / campaign_id ${row.resolved_campaign_id} / ${row.current_state || ""} -> ${row.proposed_next_state || ""}`;
     selector.appendChild(option);
   });
+
+  selector.value = "0";
+  applySelectedCandidate();
 }
 
 function applySelectedCandidate() {
@@ -4437,11 +4475,11 @@ function applySelectedCandidate() {
 
   const row = previewCandidates[Number(value)];
   if (!safeNoWriteCandidate(row)) {
-    show({ok:false, mode:"UI_PREVIEW_SELECTION_REJECTED", reason:"Selected preview row failed no-write guardrails."});
+    show({ok:false, mode:"UI_PREVIEW_SELECTION_REJECTED", reason:"Selected preview row failed no-write or campaign-id-resolution guardrails."});
     return;
   }
 
-  document.getElementById("campaign_id").value = String(row.campaign_id || row.id || "");
+  document.getElementById("campaign_id").value = String(row.resolved_campaign_id);
   document.getElementById("symbol").value = String(row.symbol || "").toUpperCase();
   document.getElementById("expected_before_state").value = String(row.current_state || "").toUpperCase();
   document.getElementById("requested_after_state").value = String(row.proposed_next_state || "").toUpperCase();
@@ -4449,7 +4487,7 @@ function applySelectedCandidate() {
 
   show({
     ok: true,
-    mode: "UI_PREVIEW_CANDIDATE_SELECTED",
+    mode: "UI_PREVIEW_CANDIDATE_SELECTED_WITH_RESOLVED_CAMPAIGN_ID",
     selected: {
       campaign_id: document.getElementById("campaign_id").value,
       symbol: document.getElementById("symbol").value,
@@ -4499,18 +4537,23 @@ function enableExecuteButtonIfAllowed() {
 }
 
 async function loadPreview() {
-  const response = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
-  const data = await response.json();
+  const previewResponse = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
+  const activeResponse = await fetch(BACKEND_BASE + "/api/campaigns/active");
+  const data = await previewResponse.json();
+  const activeData = await activeResponse.json();
+
   const rows = data.transitions || [];
-  populateCandidateSelector(rows);
+  const activeRows = activeData.campaigns || activeData.rows || activeData.data || [];
+  populateCandidateSelector(rows, activeRows);
 
   const t = target();
-  const row = rows.find(r => String(r.symbol || "").toUpperCase() === t.symbol);
+  const row = previewCandidates.find(r => String(r.symbol || "").toUpperCase() === t.symbol) || null;
   show({
-    console_mode: "GENERALIZED_OPERATOR_LIFECYCLE_CONTROL",
+    console_mode: "GENERALIZED_OPERATOR_LIFECYCLE_CONTROL_WITH_CAMPAIGN_ID_RESOLUTION",
     eligible_preview_candidate_count: previewCandidates.length,
+    active_campaign_count: activeRows.length,
     selected_symbol: t.symbol,
-    selected_transition: row || null,
+    selected_transition: row,
     preview_count: data.count,
     guardrails: row ? {
       writes_to_supabase: row.writes_to_supabase,
@@ -4540,7 +4583,7 @@ async function runDryRun() {
     campaign_id: t.campaign_id,
     expected_before_state: t.expected_before_state,
     requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31j_generalized_operator_lifecycle_control_console_dry_run",
+    evidence_source: "phase12_31j_r2_generalized_operator_lifecycle_control_console_dry_run",
     rationale: [
       "Operator-facing generalized UI dry-run before any guarded execution.",
       "Dry-run must match exact campaign_id, symbol, before state, and after state.",
@@ -4593,7 +4636,7 @@ async function executeControlledLifecycleMutation() {
     campaign_id: t.campaign_id,
     expected_before_state: t.expected_before_state,
     requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31j_generalized_operator_lifecycle_control_console_guarded_live_execution",
+    evidence_source: "phase12_31j_r2_generalized_operator_lifecycle_control_console_guarded_live_execution",
     rationale: [
       "Operator explicitly confirmed one controlled lifecycle mutation.",
       "Exact prior dry-run passed for this campaign_id, symbol, before state, and after state.",
@@ -4630,7 +4673,8 @@ loadPreview().catch(err => show({ok:false, error:String(err)}));
 </body>
 </html>
 """
-# === PHASE 12.31J GENERALIZED OPERATOR LIFECYCLE CONTROL UI END ===
+# === PHASE 12.31J-R2 GENERALIZED OPERATOR LIFECYCLE CONTROL UI CAMPAIGN-ID RESOLUTION END ===
+
 
 
 
