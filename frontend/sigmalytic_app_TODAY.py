@@ -4258,16 +4258,18 @@ def toggle_alerts(n, currently_on):
 
 
 
-# === PHASE 12.31E GUARDED OPERATOR LIFECYCLE LIVE EXECUTION UI START ===
+
+# === PHASE 12.31J GENERALIZED OPERATOR LIFECYCLE CONTROL UI START ===
 # Operator-facing controlled lifecycle console.
-# This UI exposes preview, readback, controlled dry-run, and a guarded live execution control.
-# The guarded live execution control is disabled until an exact dry-run succeeds and the
-# exact confirmation phrase is typed for the same campaign_id, symbol, before_state, and after_state.
-# Phase 12.31E adds the UI control only. The acceptance script does not click or invoke live execution.
+# Generalized from a CDC-only default to preview-selectable lifecycle candidates.
+# This UI may select an eligible transition from /api/campaigns/transition-preview.
+# Execution remains guarded: exact successful dry-run, exact typed confirmation phrase,
+# exact campaign_id/symbol/before_state/after_state binding, audit-first backend mutation.
+# Phase 12.31J patches the UI only. It does not click or invoke live execution.
 # This UI must not authorize D3D, must not confirm operator control, must not create trade signals,
 # must not send alerts, and must not touch Stripe/billing.
 @app.server.route("/operator-lifecycle-control")
-def phase12_31e_operator_lifecycle_control_console():
+def phase12_31j_operator_lifecycle_control_console():
     return """
 <!doctype html>
 <html>
@@ -4279,7 +4281,7 @@ def phase12_31e_operator_lifecycle_control_console():
     .panel { border: 1px solid #334155; border-radius: 12px; padding: 18px; margin-bottom: 18px; background: #111827; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 12px; }
     label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-    input { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e5e7eb; }
+    input, select { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e5e7eb; }
     button { padding: 10px 14px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: #e5e7eb; cursor: pointer; margin-right: 8px; }
     button:hover { background: #334155; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -4294,14 +4296,26 @@ def phase12_31e_operator_lifecycle_control_console():
   <h1>Sigmalytic V2 Operator Lifecycle Control</h1>
 
   <div class="panel">
-    <h2 class="warn">Controlled Operator Console</h2>
+    <h2 class="warn">Generalized Controlled Operator Console</h2>
     <p class="small">
-      This console previews controlled campaign lifecycle transitions, reads back audited mutations,
-      performs controlled dry-run validation, and exposes one guarded operator execution control.
+      This console loads preview-eligible campaign lifecycle transitions, allows an operator to select one,
+      performs controlled dry-run validation, reads back audited mutations, and exposes one guarded execution control.
       Execution remains campaign-specific, confirmation-gated, exact-before-state matched, audit-first,
       and limited to public.campaigns.current_state.
       It does not authorize D3D. It does not confirm operator control.
       It does not create trade signals, send alerts, or touch billing.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Preview-Selectable Candidate</h2>
+    <label>Eligible Preview Transition</label>
+    <select id="candidate_selector" onchange="applySelectedCandidate()">
+      <option value="">Load preview candidates...</option>
+    </select>
+    <p class="small">
+      The selector is populated only from /api/campaigns/transition-preview rows where transition_required is true
+      and no-write guardrails are intact.
     </p>
   </div>
 
@@ -4318,7 +4332,7 @@ def phase12_31e_operator_lifecycle_control_console():
       </div>
       <div>
         <label>Expected Before State</label>
-        <input id="expected_before_state" value="CONFIRMED" oninput="invalidateDryRun()">
+        <input id="expected_before_state" value="SURVIVING" oninput="invalidateDryRun()">
       </div>
       <div>
         <label>Requested After State</label>
@@ -4328,7 +4342,7 @@ def phase12_31e_operator_lifecycle_control_console():
     <br>
     <button onclick="loadPreview()">Refresh Transition Preview</button>
     <button onclick="runDryRun()">Run Controlled Dry-Run</button>
-    <button onclick="loadReadback()">Read Back Prior Audit Event 2</button>
+    <button onclick="loadReadback()">Read Back Prior Audit Event 3</button>
   </div>
 
   <div class="panel">
@@ -4360,12 +4374,26 @@ const BACKEND_BASE = "https://sigmalytic-backend.onrender.com";
 const EXACT_CONFIRMATION_PHRASE = "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION";
 let lastDryRunPlan = null;
 let dryRunPassed = false;
+let previewCandidates = [];
 
 function show(obj) {
   document.getElementById("output").textContent = JSON.stringify(obj, null, 2);
   if (obj && obj.guardrails) {
     document.getElementById("guardrails").textContent = JSON.stringify(obj.guardrails, null, 2);
   }
+}
+
+function safeNoWriteCandidate(row) {
+  return (
+    row &&
+    row.transition_required === true &&
+    row.writes_to_supabase === false &&
+    row.mutates_campaigns === false &&
+    row.changes_states === false &&
+    row.authorizes_d3d === false &&
+    row.operator_control_confirmed === false &&
+    row.not_a_trade_signal === true
+  );
 }
 
 function target() {
@@ -4375,6 +4403,69 @@ function target() {
     expected_before_state: document.getElementById("expected_before_state").value.trim().toUpperCase(),
     requested_after_state: document.getElementById("requested_after_state").value.trim().toUpperCase()
   };
+}
+
+function populateCandidateSelector(rows) {
+  const selector = document.getElementById("candidate_selector");
+  selector.innerHTML = "";
+
+  previewCandidates = (rows || []).filter(safeNoWriteCandidate);
+
+  if (previewCandidates.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No eligible safe preview transitions available";
+    selector.appendChild(option);
+    return;
+  }
+
+  previewCandidates.forEach((row, index) => {
+    const option = document.createElement("option");
+    option.value = String(index);
+    const campaignId = row.campaign_id || row.id || "";
+    option.textContent = `${row.symbol || ""} / campaign_id ${campaignId} / ${row.current_state || ""} -> ${row.proposed_next_state || ""}`;
+    selector.appendChild(option);
+  });
+}
+
+function applySelectedCandidate() {
+  const selector = document.getElementById("candidate_selector");
+  const value = selector.value;
+  if (value === "") {
+    return;
+  }
+
+  const row = previewCandidates[Number(value)];
+  if (!safeNoWriteCandidate(row)) {
+    show({ok:false, mode:"UI_PREVIEW_SELECTION_REJECTED", reason:"Selected preview row failed no-write guardrails."});
+    return;
+  }
+
+  document.getElementById("campaign_id").value = String(row.campaign_id || row.id || "");
+  document.getElementById("symbol").value = String(row.symbol || "").toUpperCase();
+  document.getElementById("expected_before_state").value = String(row.current_state || "").toUpperCase();
+  document.getElementById("requested_after_state").value = String(row.proposed_next_state || "").toUpperCase();
+  invalidateDryRun();
+
+  show({
+    ok: true,
+    mode: "UI_PREVIEW_CANDIDATE_SELECTED",
+    selected: {
+      campaign_id: document.getElementById("campaign_id").value,
+      symbol: document.getElementById("symbol").value,
+      expected_before_state: document.getElementById("expected_before_state").value,
+      requested_after_state: document.getElementById("requested_after_state").value
+    },
+    guardrails: {
+      writes_to_supabase: false,
+      mutates_campaigns: false,
+      changes_states: false,
+      authorizes_d3d: false,
+      operator_control_confirmed: false,
+      not_a_trade_signal: true
+    },
+    raw_preview_row: row
+  });
 }
 
 function invalidateDryRun() {
@@ -4410,11 +4501,14 @@ function enableExecuteButtonIfAllowed() {
 async function loadPreview() {
   const response = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
   const data = await response.json();
-  const t = target();
   const rows = data.transitions || [];
+  populateCandidateSelector(rows);
+
+  const t = target();
   const row = rows.find(r => String(r.symbol || "").toUpperCase() === t.symbol);
   show({
-    console_mode: "GUARDED_OPERATOR_LIFECYCLE_CONTROL",
+    console_mode: "GENERALIZED_OPERATOR_LIFECYCLE_CONTROL",
+    eligible_preview_candidate_count: previewCandidates.length,
     selected_symbol: t.symbol,
     selected_transition: row || null,
     preview_count: data.count,
@@ -4446,9 +4540,9 @@ async function runDryRun() {
     campaign_id: t.campaign_id,
     expected_before_state: t.expected_before_state,
     requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31e_operator_lifecycle_control_console_dry_run",
+    evidence_source: "phase12_31j_generalized_operator_lifecycle_control_console_dry_run",
     rationale: [
-      "Operator-facing UI dry-run before any guarded execution.",
+      "Operator-facing generalized UI dry-run before any guarded execution.",
       "Dry-run must match exact campaign_id, symbol, before state, and after state.",
       "No D3D authorization.",
       "No operator-control confirmation.",
@@ -4499,7 +4593,7 @@ async function executeControlledLifecycleMutation() {
     campaign_id: t.campaign_id,
     expected_before_state: t.expected_before_state,
     requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31e_operator_lifecycle_control_console_guarded_live_execution",
+    evidence_source: "phase12_31j_generalized_operator_lifecycle_control_console_guarded_live_execution",
     rationale: [
       "Operator explicitly confirmed one controlled lifecycle mutation.",
       "Exact prior dry-run passed for this campaign_id, symbol, before state, and after state.",
@@ -4526,7 +4620,7 @@ async function executeControlledLifecycleMutation() {
 }
 
 async function loadReadback() {
-  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-readback?audit_event_id=2&campaign_id=635&symbol=CDC&expected_before_state=BIRTH&expected_after_state=CONFIRMED");
+  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-readback?audit_event_id=3&campaign_id=635&symbol=CDC&expected_before_state=CONFIRMED&expected_after_state=SURVIVING");
   const data = await response.json();
   show(data);
 }
@@ -4536,7 +4630,8 @@ loadPreview().catch(err => show({ok:false, error:String(err)}));
 </body>
 </html>
 """
-# === PHASE 12.31E GUARDED OPERATOR LIFECYCLE LIVE EXECUTION UI END ===
+# === PHASE 12.31J GENERALIZED OPERATOR LIFECYCLE CONTROL UI END ===
+
 
 
 
