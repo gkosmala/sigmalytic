@@ -1,3 +1,8 @@
+from datetime import datetime, timedelta, timezone
+import urllib.request
+import urllib.parse
+import ssl
+import os
 import json
 import math
 from fastapi import APIRouter
@@ -8647,3 +8652,505 @@ def src7g_runtime_dry_run_preflight_endpoint(
         },
     }
 # === SRC7G RUNTIME DRY-RUN PREFLIGHT ENDPOINT END ===
+
+
+# ============================================================
+# R4-R14C — Strict WLW explicit event-date fact route
+# Read-only market-data derivation only.
+# Does not write Supabase.
+# Does not mutate campaigns.
+# Does not confirm operator control.
+# Does not authorize D3D.
+# Does not create trade signals.
+# Gamma remains overlay only.
+# ============================================================
+
+def _r4_r14c_env_first(names):
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return ""
+
+def _r4_r14c_float(value):
+    try:
+        if value is None or value == "":
+            return None
+        number = float(str(value).replace(",", ""))
+        if math.isfinite(number):
+            return number
+    except Exception:
+        return None
+    return None
+
+def _r4_r14c_price(value):
+    number = _r4_r14c_float(value)
+    return "" if number is None else f"{number:.2f}"
+
+def _r4_r14c_bar_date(bar):
+    value = bar.get("t") or bar.get("timestamp") or bar.get("date") or bar.get("datetime")
+    if not value:
+        return ""
+    return str(value)[:10]
+
+def _r4_r14c_normalize_bar(bar):
+    return {
+        "date": _r4_r14c_bar_date(bar),
+        "open": _r4_r14c_float(bar.get("o", bar.get("open"))),
+        "high": _r4_r14c_float(bar.get("h", bar.get("high"))),
+        "low": _r4_r14c_float(bar.get("l", bar.get("low"))),
+        "close": _r4_r14c_float(bar.get("c", bar.get("close"))),
+        "volume": _r4_r14c_float(bar.get("v", bar.get("volume"))),
+    }
+
+def _r4_r14c_volume_ratio_20(bars, index):
+    if index is None or index < 0 or index >= len(bars):
+        return None
+    current_volume = bars[index].get("volume")
+    if current_volume is None or current_volume <= 0:
+        return None
+    prior = [
+        b.get("volume")
+        for b in bars[max(0, index - 20):index]
+        if b.get("volume") is not None and b.get("volume") > 0
+    ]
+    if not prior:
+        return None
+    average_volume = sum(prior) / len(prior)
+    if average_volume <= 0:
+        return None
+    return current_volume / average_volume
+
+def _r4_r14c_volume_label(ratio):
+    number = _r4_r14c_float(ratio)
+    if number is None:
+        return "unavailable"
+    if number >= 1.50:
+        return "confirming_high_volume"
+    if number >= 1.10:
+        return "moderately_confirming_volume"
+    if number >= 0.80:
+        return "neutral_volume"
+    return "low_volume_non_confirmation"
+
+def _r4_r14c_fact(prefix, status, method="", index=None, bar=None, target=None, distance=None, ratio=None):
+    return {
+        f"{prefix}_event_date": bar.get("date", "") if bar else "",
+        f"{prefix}_event_date_status": status,
+        f"{prefix}_event_date_method": method,
+        f"{prefix}_event_price_target": _r4_r14c_price(target),
+        f"{prefix}_event_price_match_distance": _r4_r14c_price(distance),
+        f"{prefix}_event_open": _r4_r14c_price(bar.get("open")) if bar else "",
+        f"{prefix}_event_high": _r4_r14c_price(bar.get("high")) if bar else "",
+        f"{prefix}_event_low": _r4_r14c_price(bar.get("low")) if bar else "",
+        f"{prefix}_event_close": _r4_r14c_price(bar.get("close")) if bar else "",
+        f"{prefix}_event_volume": str(int(bar.get("volume"))) if bar and bar.get("volume") is not None else "",
+        f"{prefix}_event_volume_ratio_20": "" if ratio is None else f"{ratio:.2f}",
+        f"{prefix}_event_volume_confirmation": _r4_r14c_volume_label(ratio),
+        f"{prefix}_event_bar_index": "" if index is None else str(index),
+    }
+
+def _r4_r14c_nearest_bar(bars, target, field):
+    target_number = _r4_r14c_float(target)
+    if target_number is None or not bars:
+        return None, None
+    best = None
+    best_distance = None
+    for index, bar in enumerate(bars):
+        value = bar.get(field)
+        if value is None:
+            continue
+        distance = abs(value - target_number)
+        if best_distance is None or distance < best_distance:
+            best = (index, bar)
+            best_distance = distance
+    return best, best_distance
+
+def _r4_r14c_derive_upthrust(bars, trigger_price, reference_resistance):
+    target = _r4_r14c_float(trigger_price) or _r4_r14c_float(reference_resistance)
+    resistance = _r4_r14c_float(reference_resistance) or target
+    if target is None or not bars:
+        return _r4_r14c_fact("wyckoff_upthrust", "unavailable_no_price_or_bars")
+    matches = []
+    for index, bar in enumerate(bars):
+        high = bar.get("high")
+        close = bar.get("close")
+        if high is None or close is None:
+            continue
+        if high >= target and resistance is not None and close <= resistance:
+            matches.append((index, bar, abs(high - target)))
+    if matches:
+        index, bar, distance = matches[-1]
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "wyckoff_upthrust",
+            "event_grade_date_derived",
+            "latest_bar_high_above_trigger_close_back_below_resistance",
+            index,
+            bar,
+            target,
+            distance,
+            ratio,
+        )
+    pair, distance = _r4_r14c_nearest_bar(bars, target, "high")
+    if pair:
+        index, bar = pair
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "wyckoff_upthrust",
+            "review_only_nearest_high_match",
+            "nearest_high_to_trigger_price_no_reversal_condition",
+            index,
+            bar,
+            target,
+            distance,
+            ratio,
+        )
+    return _r4_r14c_fact("wyckoff_upthrust", "unavailable_no_matching_bar")
+
+def _r4_r14c_derive_spring(bars, trigger_price, reference_support):
+    target = _r4_r14c_float(trigger_price) or _r4_r14c_float(reference_support)
+    support = _r4_r14c_float(reference_support) or target
+    if target is None or not bars:
+        return _r4_r14c_fact("wyckoff_spring", "unavailable_no_price_or_bars")
+    matches = []
+    for index, bar in enumerate(bars):
+        low = bar.get("low")
+        close = bar.get("close")
+        if low is None or close is None:
+            continue
+        if low <= target and support is not None and close >= support:
+            matches.append((index, bar, abs(low - target)))
+    if matches:
+        index, bar, distance = matches[-1]
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "wyckoff_spring",
+            "event_grade_date_derived",
+            "latest_bar_low_below_trigger_close_back_above_support",
+            index,
+            bar,
+            target,
+            distance,
+            ratio,
+        )
+    pair, distance = _r4_r14c_nearest_bar(bars, target, "low")
+    if pair:
+        index, bar = pair
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "wyckoff_spring",
+            "review_only_nearest_low_match",
+            "nearest_low_to_trigger_price_no_reversal_condition",
+            index,
+            bar,
+            target,
+            distance,
+            ratio,
+        )
+    return _r4_r14c_fact("wyckoff_spring", "unavailable_no_matching_bar")
+
+def _r4_r14c_derive_livermore_long(bars, pivot_price):
+    pivot = _r4_r14c_float(pivot_price)
+    if pivot is None or not bars:
+        return _r4_r14c_fact("livermore_long_pivot", "unavailable_no_pivot_or_bars")
+    matches = []
+    for index, bar in enumerate(bars):
+        close = bar.get("close")
+        previous_close = bars[index - 1].get("close") if index > 0 else None
+        if close is None:
+            continue
+        if close >= pivot and (previous_close is None or previous_close < pivot):
+            matches.append((index, bar, abs(close - pivot)))
+    if matches:
+        index, bar, distance = matches[-1]
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "livermore_long_pivot",
+            "event_grade_date_derived",
+            "latest_close_cross_above_pivot",
+            index,
+            bar,
+            pivot,
+            distance,
+            ratio,
+        )
+    pair, distance = _r4_r14c_nearest_bar(bars, pivot, "close")
+    if pair:
+        index, bar = pair
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "livermore_long_pivot",
+            "review_only_nearest_close_match",
+            "nearest_close_to_pivot_no_cross_condition",
+            index,
+            bar,
+            pivot,
+            distance,
+            ratio,
+        )
+    return _r4_r14c_fact("livermore_long_pivot", "unavailable_no_matching_bar")
+
+def _r4_r14c_derive_livermore_short(bars, pivot_price):
+    pivot = _r4_r14c_float(pivot_price)
+    if pivot is None or not bars:
+        return _r4_r14c_fact("livermore_short_risk_pivot", "unavailable_no_pivot_or_bars")
+    matches = []
+    for index, bar in enumerate(bars):
+        close = bar.get("close")
+        previous_close = bars[index - 1].get("close") if index > 0 else None
+        if close is None:
+            continue
+        if close <= pivot and (previous_close is None or previous_close > pivot):
+            matches.append((index, bar, abs(close - pivot)))
+    if matches:
+        index, bar, distance = matches[-1]
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "livermore_short_risk_pivot",
+            "event_grade_date_derived",
+            "latest_close_cross_below_pivot",
+            index,
+            bar,
+            pivot,
+            distance,
+            ratio,
+        )
+    pair, distance = _r4_r14c_nearest_bar(bars, pivot, "close")
+    if pair:
+        index, bar = pair
+        ratio = _r4_r14c_volume_ratio_20(bars, index)
+        return _r4_r14c_fact(
+            "livermore_short_risk_pivot",
+            "review_only_nearest_close_match",
+            "nearest_close_to_pivot_no_cross_condition",
+            index,
+            bar,
+            pivot,
+            distance,
+            ratio,
+        )
+    return _r4_r14c_fact("livermore_short_risk_pivot", "unavailable_no_matching_bar")
+
+def _r4_r14c_fetch_bars(symbols, lookback_days=730):
+    alpaca_key = _r4_r14c_env_first([
+        "ALPACA_API_KEY_ID",
+        "ALPACA_API_KEY",
+        "APCA_API_KEY_ID",
+        "ALPACA_KEY_ID",
+    ])
+    alpaca_secret = _r4_r14c_env_first([
+        "ALPACA_API_SECRET_KEY",
+        "ALPACA_API_SECRET",
+        "ALPACA_SECRET_KEY",
+        "APCA_API_SECRET_KEY",
+        "ALPACA_SECRET",
+    ])
+    if not alpaca_key or not alpaca_secret:
+        return {}, {
+            "ok": False,
+            "error": "missing_alpaca_credentials",
+            "key_aliases_checked": [
+                "ALPACA_API_KEY_ID",
+                "ALPACA_API_KEY",
+                "APCA_API_KEY_ID",
+                "ALPACA_KEY_ID",
+            ],
+            "secret_aliases_checked": [
+                "ALPACA_API_SECRET_KEY",
+                "ALPACA_API_SECRET",
+                "ALPACA_SECRET_KEY",
+                "APCA_API_SECRET_KEY",
+                "ALPACA_SECRET",
+            ],
+        }
+
+    headers = {
+        "APCA-API-KEY-ID": alpaca_key,
+        "APCA-API-SECRET-KEY": alpaca_secret,
+        "User-Agent": "Sigmalytic-R4-R14C-ReadOnly-Event-Date-Facts/1.0",
+    }
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=int(lookback_days or 730))
+    context = ssl.create_default_context()
+    output = {symbol: [] for symbol in symbols}
+    endpoint_errors = []
+    feed_used = None
+
+    for feed in ["sip", "iex"]:
+        try:
+            params = {
+                "symbols": ",".join(symbols[:5]),
+                "timeframe": "1Day",
+                "start": start.isoformat().replace("+00:00", "Z"),
+                "end": end.isoformat().replace("+00:00", "Z"),
+                "limit": "1000",
+                "adjustment": "all",
+                "feed": feed,
+                "sort": "asc",
+            }
+            url = "https://data.alpaca.markets/v2/stocks/bars?" + urllib.parse.urlencode(params)
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=45, context=context) as response:
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+            if isinstance(payload.get("bars"), dict):
+                feed_used = feed
+                break
+        except Exception as exc:
+            endpoint_errors.append({"feed": feed, "error": repr(exc)})
+
+    if not feed_used:
+        return output, {
+            "ok": False,
+            "error": "alpaca_bar_fetch_unavailable",
+            "endpoint_errors": endpoint_errors,
+        }
+
+    batch_size = 50
+    for batch_start in range(0, len(symbols), batch_size):
+        batch = symbols[batch_start:batch_start + batch_size]
+        page_token = ""
+        while True:
+            params = {
+                "symbols": ",".join(batch),
+                "timeframe": "1Day",
+                "start": start.isoformat().replace("+00:00", "Z"),
+                "end": end.isoformat().replace("+00:00", "Z"),
+                "limit": "10000",
+                "adjustment": "all",
+                "feed": feed_used,
+                "sort": "asc",
+            }
+            if page_token:
+                params["page_token"] = page_token
+            url = "https://data.alpaca.markets/v2/stocks/bars?" + urllib.parse.urlencode(params)
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(request, timeout=60, context=context) as response:
+                    payload = json.loads(response.read().decode("utf-8", errors="replace"))
+                bars = payload.get("bars") or {}
+                for symbol, symbol_bars in bars.items():
+                    normalized_symbol = str(symbol).upper()
+                    if normalized_symbol in output and isinstance(symbol_bars, list):
+                        output[normalized_symbol].extend(_r4_r14c_normalize_bar(bar) for bar in symbol_bars)
+                page_token = payload.get("next_page_token") or ""
+                if not page_token:
+                    break
+            except Exception as exc:
+                endpoint_errors.append({
+                    "batch_start": batch_start,
+                    "symbols": batch,
+                    "feed": feed_used,
+                    "error": repr(exc),
+                })
+                break
+
+    for symbol, bars in list(output.items()):
+        seen = set()
+        deduped = []
+        for bar in bars:
+            key = (bar.get("date"), bar.get("open"), bar.get("high"), bar.get("low"), bar.get("close"), bar.get("volume"))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(bar)
+        deduped.sort(key=lambda item: item.get("date") or "")
+        output[symbol] = deduped
+
+    return output, {
+        "ok": True,
+        "feed": feed_used,
+        "start": start.date().isoformat(),
+        "end": end.date().isoformat(),
+        "endpoint_error_count": len(endpoint_errors),
+    }
+
+@router.get("/api/reports/strict-wlw/event-date-facts")
+def r4_r14c_strict_wlw_event_date_facts(
+    symbols: str = "",
+    lookback_days: int = 730,
+    upthrust_trigger_price: str = "",
+    upthrust_reference_resistance: str = "",
+    spring_trigger_price: str = "",
+    spring_reference_support: str = "",
+    livermore_long_pivot_price: str = "",
+    livermore_short_risk_pivot_price: str = "",
+):
+    symbol_list = [
+        symbol.strip().upper()
+        for symbol in str(symbols or "").replace(";", ",").split(",")
+        if symbol.strip()
+    ]
+    symbol_list = symbol_list[:250]
+
+    bars_by_symbol, fetch_status = _r4_r14c_fetch_bars(symbol_list, lookback_days)
+
+    facts = []
+    for symbol in symbol_list:
+        bars = bars_by_symbol.get(symbol, [])
+        upthrust = _r4_r14c_derive_upthrust(bars, upthrust_trigger_price, upthrust_reference_resistance)
+        spring = _r4_r14c_derive_spring(bars, spring_trigger_price, spring_reference_support)
+        livermore_long = _r4_r14c_derive_livermore_long(bars, livermore_long_pivot_price)
+        livermore_short = _r4_r14c_derive_livermore_short(bars, livermore_short_risk_pivot_price)
+
+        merged = {
+            "symbol": symbol,
+            "bar_count": len(bars),
+            "bar_source": "alpaca_market_data_get_read_only" if fetch_status.get("ok") else "unavailable",
+        }
+        merged.update(upthrust)
+        merged.update(spring)
+        merged.update(livermore_long)
+        merged.update(livermore_short)
+
+        primary_event_date = ""
+        primary_event_date_source = ""
+        primary_event_date_status = ""
+
+        for source in [
+            "wyckoff_upthrust",
+            "wyckoff_spring",
+            "livermore_long_pivot",
+            "livermore_short_risk_pivot",
+        ]:
+            candidate_date = merged.get(f"{source}_event_date", "")
+            candidate_status = merged.get(f"{source}_event_date_status", "")
+            if candidate_date:
+                primary_event_date = candidate_date
+                primary_event_date_source = source
+                primary_event_date_status = candidate_status
+                break
+
+        merged["primary_event_date"] = primary_event_date
+        merged["primary_event_date_source"] = primary_event_date_source
+        merged["primary_event_date_status"] = primary_event_date_status
+
+        facts.append(merged)
+
+    return {
+        "ok": True,
+        "mode": "STRICT_WLW_R4_R14C_EVENT_DATE_FACTS_READ_ONLY",
+        "read_only": True,
+        "writes_to_supabase": False,
+        "mutates_campaigns": False,
+        "operator_control_confirmed": False,
+        "d3d_authorized": False,
+        "trade_signal": False,
+        "gamma_overlay_only": True,
+        "event_date_fields_added": [
+            "wyckoff_spring_event_date",
+            "wyckoff_spring_event_date_status",
+            "wyckoff_upthrust_event_date",
+            "wyckoff_upthrust_event_date_status",
+            "livermore_long_pivot_event_date",
+            "livermore_long_pivot_event_date_status",
+            "livermore_short_risk_pivot_event_date",
+            "livermore_short_risk_pivot_event_date_status",
+            "primary_event_date",
+            "primary_event_date_source",
+            "primary_event_date_status",
+        ],
+        "fetch_status": fetch_status,
+        "symbol_count": len(symbol_list),
+        "facts": facts,
+    }
