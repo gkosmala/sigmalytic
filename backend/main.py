@@ -3334,3 +3334,36 @@ try:
 except Exception as _sig_step90b_full_enrichment_include_error:
     print("STEP90B full campaign universe enrichment include failed:", _sig_step90b_full_enrichment_include_error)
 # END_SIGMALYTIC_STEP90B_FULL_CAMPAIGN_UNIVERSE_ENRICHMENT_ENGINE_INCLUDE
+
+# === R4-R14F STRICT WLW MAIN ROUTE BRIDGE START ===
+# Directly exposes the R4-R14C strict WLW event-date fact route through the mounted FastAPI app.
+# This bridge delegates to backend.campaign_api.r4_r14c_strict_wlw_event_date_facts.
+# Boundary: read-only market-data GET only; no Supabase write; no campaign mutation;
+# no D3D authorization; no operator-control confirmation; no trade signal; Gamma overlay only.
+@app.get("/api/reports/strict-wlw/event-date-facts")
+def r4_r14f_strict_wlw_event_date_facts_main_bridge(
+    symbols: str = "",
+    lookback_days: int = 730,
+    upthrust_trigger_price: str = "",
+    upthrust_reference_resistance: str = "",
+    spring_trigger_price: str = "",
+    spring_reference_support: str = "",
+    livermore_long_pivot_price: str = "",
+    livermore_short_risk_pivot_price: str = "",
+):
+    try:
+        from backend.campaign_api import r4_r14c_strict_wlw_event_date_facts as _r4_r14c_event_date_facts
+    except Exception:
+        from campaign_api import r4_r14c_strict_wlw_event_date_facts as _r4_r14c_event_date_facts
+
+    return _r4_r14c_event_date_facts(
+        symbols=symbols,
+        lookback_days=lookback_days,
+        upthrust_trigger_price=upthrust_trigger_price,
+        upthrust_reference_resistance=upthrust_reference_resistance,
+        spring_trigger_price=spring_trigger_price,
+        spring_reference_support=spring_reference_support,
+        livermore_long_pivot_price=livermore_long_pivot_price,
+        livermore_short_risk_pivot_price=livermore_short_risk_pivot_price,
+    )
+# === R4-R14F STRICT WLW MAIN ROUTE BRIDGE END ===
