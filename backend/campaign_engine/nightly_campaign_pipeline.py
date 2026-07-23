@@ -227,7 +227,21 @@ class NightlyCampaignPipeline:
     def run(self):
         discovery_results = self._run_discovery_stage()
 
-        campaigns = self.store.get_active_campaigns()
+        campaigns = self.store.get_active_campaigns(timeframe=self.timeframe)
+        active_campaigns_available = len(campaigns)
+
+        if self.symbols:
+            allowed_symbols = {str(symbol or "").upper() for symbol in self.symbols}
+            campaigns = [
+                campaign
+                for campaign in campaigns
+                if str(campaign.get("symbol") or "").upper() in allowed_symbols
+            ]
+
+        if self.max_symbols is not None:
+            campaigns = campaigns[: max(0, int(self.max_symbols))]
+
+        active_campaigns_selected = len(campaigns)
         results = []
 
         for campaign in campaigns:
@@ -273,6 +287,11 @@ class NightlyCampaignPipeline:
         return {
             "ok": True,
             "discovery": discovery_results,
+            "timeframe": self.timeframe,
+            "symbols_filter": self.symbols,
+            "max_symbols": self.max_symbols,
+            "active_campaigns_available": active_campaigns_available,
+            "active_campaigns_selected": active_campaigns_selected,
             "campaigns_processed": len(results),
             "results": results,
         }
