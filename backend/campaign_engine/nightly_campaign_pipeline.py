@@ -4,6 +4,7 @@ backend/campaign_engine/nightly_campaign_pipeline.py
 """
 
 import os
+from datetime import datetime, timezone
 
 from backend.campaign_engine.campaign_state_engine import (
     WyckoffSignals,
@@ -52,6 +53,11 @@ def _normalize_symbol_list(symbols=None):
 def _parse_discovery_symbols():
     raw = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
     return _normalize_symbol_list(raw)
+
+
+
+def _utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_float(value, default=0.0):
@@ -126,8 +132,9 @@ def _build_signals_from_campaign(campaign):
     )
 
 
-def _safe_update_payload(original_campaign, transition):
+def _safe_update_payload(original_campaign, transition, now_iso=None):
     payload = dict(original_campaign)
+    freshness_ts = now_iso or _utc_now_iso()
 
     payload.pop("campaign_state", None)
     payload.pop("last_pipeline_run", None)
@@ -148,6 +155,15 @@ def _safe_update_payload(original_campaign, transition):
         payload.pop(key, None)
 
     payload["current_state"] = transition.new_state.value
+
+    # Freshness contract:
+    # The nightly pipeline is the controlled persistence path that proves the
+    # active campaign table has actually been refreshed. Supabase does not appear
+    # to advance updated_at automatically on this upsert path, so the persisted
+    # payload must advance the visible freshness timestamps directly.
+    payload["updated_at"] = freshness_ts
+    if "evidence_updated_at" in payload:
+        payload["evidence_updated_at"] = freshness_ts
 
     if "state_enum" in payload:
         payload["state_enum"] = transition.new_state.value
@@ -229,7 +245,12 @@ class NightlyCampaignPipeline:
                 transition=transition,
             )
 
-            self.store.save_campaign(payload)
+            save_result = self.store.save_campaign(payload)
+            save_status = "saved"
+            if isinstance(save_result, dict) and save_result.get("status"):
+                save_status = str(save_result.get("status"))
+            elif save_result in (None, []):
+                save_status = "empty_save_result"
 
             results.append(
                 {
@@ -243,6 +264,9 @@ class NightlyCampaignPipeline:
                     "birth_score": hydrated_campaign.get("birth_score"),
                     "mci": hydrated_campaign.get("master_campaign_index"),
                     "survival": hydrated_campaign.get("master_survival_score"),
+                    "save_status": save_status,
+                    "updated_at": payload.get("updated_at"),
+                    "evidence_updated_at": payload.get("evidence_updated_at"),
                 }
             )
 
