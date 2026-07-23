@@ -190,6 +190,120 @@ def _normalize_radar_row(item: dict) -> dict:
     return row
 
 
+
+# SIGMALYTIC_RFA25D_STATUS_CENTER_FRESHNESS_VISIBILITY_START
+def _format_freshness_ts(value) -> str:
+    if not value:
+        return "-"
+
+    text = str(value).strip()
+    if not text:
+        return "-"
+
+    text = text.replace("T", " ").replace("Z", " UTC").replace("+00:00", " UTC")
+
+    if "." in text:
+        head, tail = text.split(".", 1)
+        suffix = " UTC" if "UTC" in tail else ""
+        return head + suffix
+
+    return text
+
+
+def _max_timestamp(rows, key: str) -> str:
+    values = []
+
+    for row in _safe_list(rows):
+        if not isinstance(row, dict):
+            continue
+
+        value = str(row.get(key) or "").strip()
+        if value:
+            values.append(value)
+
+    if not values:
+        return "-"
+
+    return max(values)
+
+
+def _freshness_pill(label: str, value, color=TEAL_DIM) -> html.Div:
+    return html.Div([
+        html.Div(label, style={
+            "fontSize": "9px",
+            "fontWeight": "800",
+            "color": MUTED,
+            "textTransform": "uppercase",
+            "letterSpacing": ".08em",
+            "marginBottom": "3px",
+        }),
+        html.Div(_format_freshness_ts(value), style={
+            "fontSize": "11px",
+            "fontWeight": "800",
+            "color": color,
+            "fontFamily": "DM Mono, monospace",
+            "whiteSpace": "nowrap",
+        }),
+    ], style={
+        "background": NAVY_MID,
+        "border": f"1px solid {BORDER}",
+        "borderRadius": "10px",
+        "padding": "8px 10px",
+        "minWidth": "165px",
+    })
+
+
+def _freshness_strip(
+    last_campaign_refresh="-",
+    last_evidence_refresh="-",
+    last_radar_refresh="-",
+    radar_cache_mode="-",
+    radar_served_at="-",
+) -> html.Div:
+    return _card([
+        html.Div([
+            html.Div([
+                html.Div("Data Freshness", style={
+                    "fontSize": "11px",
+                    "fontWeight": "900",
+                    "color": WHITE,
+                    "textTransform": "uppercase",
+                    "letterSpacing": ".08em",
+                }),
+                html.Div("Read-only visibility into the latest campaign and Radar refresh cycle.", style={
+                    "fontSize": "10px",
+                    "color": MUTED,
+                    "marginTop": "3px",
+                }),
+            ], style={"minWidth": "210px"}),
+
+            html.Div([
+                _freshness_pill("Campaign Refresh", last_campaign_refresh, TEAL_DIM),
+                _freshness_pill("Evidence Refresh", last_evidence_refresh, TEAL_DIM),
+                _freshness_pill("Radar Refresh", last_radar_refresh, BLUE_DIM),
+                _freshness_pill("Radar Cache", radar_cache_mode, YELLOW_DIM),
+                _freshness_pill("Radar Served", radar_served_at, MUTED),
+            ], style={
+                "display": "flex",
+                "gap": "8px",
+                "flexWrap": "wrap",
+                "alignItems": "center",
+            }),
+        ], style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "14px",
+            "alignItems": "center",
+            "flexWrap": "wrap",
+        }),
+    ], sx={
+        "padding": "12px 14px",
+        "marginBottom": "14px",
+        "border": f"1px solid {TEAL_DIM}30",
+    })
+# SIGMALYTIC_RFA25D_STATUS_CENTER_FRESHNESS_VISIBILITY_END
+
+
 def _campaign_mini(c: dict) -> html.Div:
     """Compact campaign row for Status Center."""
     symbol  = c.get("symbol", "-")
@@ -256,9 +370,14 @@ def build_status_center(session=None) -> html.Div:
     # Live Intelligence API consumption.
     # UI display only: no writes, no campaign mutation, no D3D authorization,
     # no operator-control confirmation, and no trade-signal creation.
-    intelligence_status = _fetch("/api/intelligence/status-center")
-    intelligence_opps   = _fetch("/api/intelligence/opportunities?limit=25")
-    radar_data          = _fetch("/api/radar/intelligence?limit=8")
+    intelligence_status  = _fetch("/api/intelligence/status-center")
+    intelligence_opps    = _fetch("/api/intelligence/opportunities?limit=25")
+    radar_data           = _fetch("/api/radar/intelligence?limit=8")
+
+    # RFA25D UI-only freshness reads.
+    # These calls are read-only and only surface timestamps already exposed by the backend.
+    campaign_freshness_data = _fetch("/api/campaigns/active")
+    radar_freshness_data    = _fetch("/api/radar/scores?limit=25")
 
     status_payload = (
         intelligence_status.get("status_center", {})
@@ -310,6 +429,30 @@ def build_status_center(session=None) -> html.Div:
         if isinstance(item, dict)
     ]
 
+    campaign_freshness_rows = []
+    if isinstance(campaign_freshness_data, dict):
+        campaign_freshness_rows = _safe_list(campaign_freshness_data.get("campaigns"))
+
+    if not campaign_freshness_rows:
+        campaign_freshness_rows = campaigns
+
+    last_campaign_refresh = _max_timestamp(campaign_freshness_rows, "updated_at")
+    last_evidence_refresh = _max_timestamp(campaign_freshness_rows, "evidence_updated_at")
+
+    if isinstance(radar_freshness_data, dict):
+        last_radar_refresh = radar_freshness_data.get("generated_at") or "-"
+        radar_served_at = radar_freshness_data.get("served_at") or "-"
+        radar_cache = radar_freshness_data.get("cache")
+        radar_cache_mode = (
+            radar_cache.get("mode")
+            if isinstance(radar_cache, dict)
+            else "-"
+        )
+    else:
+        last_radar_refresh = "-"
+        radar_served_at = "-"
+        radar_cache_mode = "-"
+
     # â”€â”€ Derived metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     total      = _safe_int(status_summary.get("total_campaigns") or summary.get("active_campaigns") or len(campaigns), len(campaigns))
     tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
@@ -357,6 +500,14 @@ def build_status_center(session=None) -> html.Div:
                   "alignItems": "flex-start", "marginBottom": "20px"}),
 
         # â”€â”€ System Alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        _freshness_strip(
+            last_campaign_refresh=last_campaign_refresh,
+            last_evidence_refresh=last_evidence_refresh,
+            last_radar_refresh=last_radar_refresh,
+            radar_cache_mode=radar_cache_mode,
+            radar_served_at=radar_served_at,
+        ),
+
         html.Div([
             *([_alert_banner(
                 f"{exits} conjunction exit signal{'s' if exits > 1 else ''} - "
