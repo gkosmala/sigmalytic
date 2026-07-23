@@ -18,9 +18,10 @@ SAVE AS:
 backend/main.py
 """
 
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Request, HTTPException
 from datetime import datetime, timedelta
 import os
+import hmac
 import requests
 
 from backend.campaign_api import router as campaign_router
@@ -226,8 +227,51 @@ def engine_status():
 
 
 @app.post("/api/admin/run-full-nightly")
-def run_full_nightly(payload: dict = Body(default=None)):
+def run_full_nightly(request: Request, payload: dict = Body(default=None)):
     payload = payload or {}
+
+    # SIGMALYTIC_RFA11_AUTHENTICATED_NIGHTLY_CRON_START
+    # This route is intentionally protected because it can persist refreshed
+    # campaign rows through CampaignStore. The cron caller supplies the shared
+    # secret in an HTTP header. The token value is never returned or logged.
+    cron_enabled = (os.getenv("SIGMALYTIC_NIGHTLY_CRON_ENABLED") or "").strip().lower()
+    if cron_enabled not in {"1", "true", "yes", "enabled", "on"}:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "ok": False,
+                "error": "nightly_campaign_cron_disabled",
+                "source": "rfa11_authenticated_nightly_cron_gate",
+            },
+        )
+
+    expected_token = (os.getenv("SIGMALYTIC_NIGHTLY_CRON_TOKEN") or "").strip()
+    provided_token = (
+        request.headers.get("x-sigmalytic-cron-token")
+        or request.headers.get("x-render-cron-token")
+        or ""
+    ).strip()
+
+    if not expected_token:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "ok": False,
+                "error": "missing_server_cron_token_configuration",
+                "source": "rfa11_authenticated_nightly_cron_gate",
+            },
+        )
+
+    if not provided_token or not hmac.compare_digest(provided_token, expected_token):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "ok": False,
+                "error": "unauthorized_nightly_campaign_cron_request",
+                "source": "rfa11_authenticated_nightly_cron_gate",
+            },
+        )
+    # SIGMALYTIC_RFA11_AUTHENTICATED_NIGHTLY_CRON_END
 
     requested_symbols = (
         payload.get("symbols")
