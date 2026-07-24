@@ -24,6 +24,8 @@ from datetime import datetime, timedelta
 import os
 import hmac
 import requests
+import threading
+import uuid
 
 from backend.campaign_api import router as campaign_router
 from backend.research_api import router as research_router
@@ -227,6 +229,60 @@ def engine_status():
     }
 
 
+# SIGMALYTIC_ASYNC_NIGHTLY_JOB_TRACKING
+# The nightly pipeline can take several minutes to run. Calling it via a
+# single blocking HTTP request risks Render's own edge proxy returning a
+# 502 before the backend has actually finished -- even though the backend
+# keeps working in the background regardless. This tracks jobs in memory
+# so the POST route can return immediately, with a separate status route
+# for the caller to poll.
+_NIGHTLY_JOBS: dict = {}
+_NIGHTLY_JOBS_LOCK = threading.Lock()
+_NIGHTLY_JOBS_MAX_KEPT = 20
+
+
+def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
+    with _NIGHTLY_JOBS_LOCK:
+        _NIGHTLY_JOBS[job_id]["status"] = "running"
+
+    try:
+        from backend.campaign_engine import nightly_campaign_pipeline as pipeline
+
+        runner = None
+        for name in [
+            "run_nightly_campaign_pipeline",
+            "run_campaign_pipeline",
+            "run_nightly_pipeline",
+            "main",
+        ]:
+            if hasattr(pipeline, name):
+                runner = getattr(pipeline, name)
+                break
+
+        if runner is None:
+            with _NIGHTLY_JOBS_LOCK:
+                _NIGHTLY_JOBS[job_id]["status"] = "failed"
+                _NIGHTLY_JOBS[job_id]["error"] = "No runner function found in nightly_campaign_pipeline.py"
+                _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+            return
+
+        pipeline_result = runner(**run_kwargs)
+
+        with _NIGHTLY_JOBS_LOCK:
+            _NIGHTLY_JOBS[job_id]["status"] = "completed"
+            _NIGHTLY_JOBS[job_id]["result"] = {
+                "runner": runner.__name__,
+                "result": pipeline_result,
+            }
+            _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+
+    except Exception as e:
+        with _NIGHTLY_JOBS_LOCK:
+            _NIGHTLY_JOBS[job_id]["status"] = "failed"
+            _NIGHTLY_JOBS[job_id]["error"] = str(e)
+            _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+
+
 @app.post("/api/admin/run-full-nightly")
 def run_full_nightly(request: Request, payload: dict = Body(default=None)):
     payload = payload or {}
@@ -302,58 +358,79 @@ def run_full_nightly(request: Request, payload: dict = Body(default=None)):
     if payload.get("timeframe") is not None:
         run_kwargs["timeframe"] = payload.get("timeframe")
 
-    results = {
+    job_id = str(uuid.uuid4())
+
+    with _NIGHTLY_JOBS_LOCK:
+        _NIGHTLY_JOBS[job_id] = {
+            "status": "queued",
+            "started_at": datetime.utcnow().isoformat(),
+            "request": {
+                "symbols": requested_symbols,
+                "max_symbols": payload.get("max_symbols"),
+                "bar_limit": payload.get("bar_limit"),
+                "timeframe": payload.get("timeframe"),
+            },
+        }
+        # Bound memory: this cron runs once a day, so keeping 20 is generous
+        # headroom while guaranteeing the dict never grows unbounded.
+        if len(_NIGHTLY_JOBS) > _NIGHTLY_JOBS_MAX_KEPT:
+            oldest_id = sorted(
+                _NIGHTLY_JOBS.items(), key=lambda kv: kv[1].get("started_at", "")
+            )[0][0]
+            _NIGHTLY_JOBS.pop(oldest_id, None)
+
+    thread = threading.Thread(
+        target=_run_nightly_job_in_background,
+        args=(job_id, run_kwargs),
+        daemon=True,
+    )
+    thread.start()
+
+    # Returns immediately -- this is the whole point. The actual pipeline
+    # keeps running in the background regardless of how long it takes,
+    # and cannot be interrupted by a proxy-level response timeout since
+    # nothing is waiting on this HTTP response.
+    return {
         "ok": True,
-        "started_at": datetime.utcnow().isoformat(),
-        "request": {
-            "symbols": requested_symbols,
-            "max_symbols": payload.get("max_symbols"),
-            "bar_limit": payload.get("bar_limit"),
-            "timeframe": payload.get("timeframe"),
-        },
-        "steps": {},
+        "status": "started",
+        "job_id": job_id,
+        "started_at": _NIGHTLY_JOBS[job_id]["started_at"],
+        "poll_url": f"/api/admin/nightly-status/{job_id}",
     }
 
-    try:
-        from backend.campaign_engine import nightly_campaign_pipeline as pipeline
 
-        runner = None
+@app.get("/api/admin/nightly-status/{job_id}")
+def nightly_status(request: Request, job_id: str):
+    # Same shared-secret protection as the route that creates jobs --
+    # job status can reveal campaign pipeline internals, so this isn't
+    # left open.
+    expected_token = (os.getenv("SIGMALYTIC_NIGHTLY_CRON_TOKEN") or "").strip()
+    provided_token = (
+        request.headers.get("x-sigmalytic-cron-token")
+        or request.headers.get("x-render-cron-token")
+        or ""
+    ).strip()
 
-        for name in [
-            "run_nightly_campaign_pipeline",
-            "run_campaign_pipeline",
-            "run_nightly_pipeline",
-            "main",
-        ]:
-            if hasattr(pipeline, name):
-                runner = getattr(pipeline, name)
-                break
+    if not expected_token or not provided_token or not hmac.compare_digest(provided_token, expected_token):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "ok": False,
+                "error": "unauthorized_nightly_campaign_cron_request",
+                "source": "rfa11_authenticated_nightly_cron_gate",
+            },
+        )
 
-        if runner is None:
-            results["ok"] = False
-            results["steps"]["campaign_pipeline"] = {
-                "status": "failed",
-                "error": "No runner function found in nightly_campaign_pipeline.py",
-            }
-            return results
+    with _NIGHTLY_JOBS_LOCK:
+        job = _NIGHTLY_JOBS.get(job_id)
 
-        pipeline_result = runner(**run_kwargs)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"ok": False, "error": "unknown_job_id", "job_id": job_id},
+        )
 
-        results["steps"]["campaign_pipeline"] = {
-            "status": "completed",
-            "runner": runner.__name__,
-            "result": pipeline_result,
-        }
-
-    except Exception as e:
-        results["ok"] = False
-        results["steps"]["campaign_pipeline"] = {
-            "status": "failed",
-            "error": str(e),
-        }
-
-    results["finished_at"] = datetime.utcnow().isoformat()
-    return results
+    return {"ok": True, "job_id": job_id, **job}
 
 
 @app.post("/api/admin/refresh-weis-gamma-evidence")
