@@ -47,14 +47,23 @@ def _int_env(name: str, default: int) -> int:
 
 _SECRET_KEYS = {"cron_token", "token", "secret", "authorization"}
 
+# These keys hold per-symbol verdict/result lists with deeply nested evidence
+# (Wyckoff/Livermore/Weis/option-chain trees). They are capped much harder
+# than other lists so a single run's log stays readable, while every
+# diagnostics/summary dict (universe_count, alpaca_bars_symbols, etc.) is
+# left fully intact -- dicts are never truncated by list capping.
+_NOISY_LIST_KEYS = {"results", "discovered_symbols"}
+_NOISY_LIST_MAX_ITEMS = 3
+
 
 def _compact(obj, depth: int = 0, max_depth: int = 12, max_list_items: int = 20):
     """
     Recursively copy `obj`, redacting secret-like keys and truncating only
-    lists that exceed `max_list_items`. Dict keys and nested structure are
+    lists that exceed their item cap. Dict keys and nested structure are
     preserved in full up to `max_depth`, which is deliberately generous
     relative to the actual response shape so nothing important is silently
-    dropped.
+    dropped. Lists under a key in `_NOISY_LIST_KEYS` get a much smaller cap
+    since they hold heavy per-symbol verdict data, not summary diagnostics.
     """
     if isinstance(obj, dict):
         keep = {}
@@ -65,7 +74,10 @@ def _compact(obj, depth: int = 0, max_depth: int = 12, max_list_items: int = 20)
             if depth >= max_depth:
                 keep[key] = "...max_depth_reached..."
                 continue
-            keep[key] = _compact(value, depth + 1, max_depth, max_list_items)
+            effective_max_list_items = (
+                _NOISY_LIST_MAX_ITEMS if key in _NOISY_LIST_KEYS else max_list_items
+            )
+            keep[key] = _compact(value, depth + 1, max_depth, effective_max_list_items)
         return keep
 
     if isinstance(obj, list):
