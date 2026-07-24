@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/portfolio_tab.py
 --------------------------
@@ -15,7 +15,7 @@ Shows the complete portfolio picture across all active campaigns:
 
 Plugs into sigmalytic_app_TODAY.py:
   1. from portfolio_tab import build_portfolio_tab
-  2. Add ("portfolio", "ðŸ’¼ Portfolio") to ALL_TABS
+  2. Add ("portfolio", "💼 Portfolio") to ALL_TABS
   3. Add elif tab=="portfolio": main = build_portfolio_tab() to tab router
 """
 
@@ -44,8 +44,8 @@ STATE_COLORS = {
     "EXPANDING": YELLOW_DIM, "MATURING": YELLOW, "DISTRIBUTION_RISK": RED_DIM,
 }
 STATE_ICONS = {
-    "BIRTH": "ðŸŒ±", "CONFIRMED": "âœ…", "SURVIVING": "ðŸ›¡ï¸",
-    "EXPANDING": "ðŸš€", "MATURING": "ðŸ“ˆ", "DISTRIBUTION_RISK": "âš ï¸",
+    "BIRTH": "🌱", "CONFIRMED": "✅", "SURVIVING": "🛡️",
+    "EXPANDING": "🚀", "MATURING": "📈", "DISTRIBUTION_RISK": "⚠️",
 }
 
 
@@ -90,7 +90,7 @@ def _hbar(label, value, max_val, color=TEAL_DIM):
 
 def _state_pill(state, count):
     color = STATE_COLORS.get(state, MUTED)
-    icon  = STATE_ICONS.get(state, "â€¢")
+    icon  = STATE_ICONS.get(state, "•")
     return html.Div([
         html.Div(f"{icon} {count}", style={"fontSize": "20px", "fontWeight": "900",
                                            "color": color, "fontFamily": "DM Mono, monospace"}),
@@ -102,8 +102,8 @@ def _state_pill(state, count):
 
 
 def _perf_row(c):
-    symbol  = c.get("symbol", "â€”")
-    tier    = c.get("historical_confidence", "â€”")
+    symbol  = c.get("symbol", "—")
+    tier    = c.get("historical_confidence", "—")
     ret_pct = float(c.get("return_pct", 0))
     days    = int(c.get("campaign_age_days", 0))
     state   = c.get("current_state", "BIRTH")
@@ -162,7 +162,7 @@ def build_portfolio_tab(session=None) -> html.Div:
     if not campaigns:
         return html.Div([_card([
             html.Div([
-                html.Div("ðŸ’¼", style={"fontSize": "40px", "marginBottom": "12px"}),
+                html.Div("💼", style={"fontSize": "40px", "marginBottom": "12px"}),
                 html.Div("Portfolio Building", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
                 html.Div("Signal spark engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
                          style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "400px"}),
@@ -171,11 +171,11 @@ def build_portfolio_tab(session=None) -> html.Div:
 
     return html.Div([
 
-        # Row 1 â€” Key metrics
+        # Row 1 — Key metrics
         _card([
             _section("Portfolio Overview"),
             html.Div([
-                _metric("Campaigns", str(total), cap_color, f"{cap_label} Â· optimal {OPTIMAL_MIN}â€“{OPTIMAL_MAX}"),
+                _metric("Campaigns", str(total), cap_color, f"{cap_label} · optimal {OPTIMAL_MIN}–{OPTIMAL_MAX}"),
                 _metric("TIER 1", str(tier1), TEAL_DIM),
                 _metric("TIER 2", str(tier2), BLUE_DIM),
                 _metric("Avg Age", f"{avg_age:.0f}d", WHITE, "days open"),
@@ -185,7 +185,7 @@ def build_portfolio_tab(session=None) -> html.Div:
             ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
         ]),
 
-        # Row 2 â€” State breakdown + distributions
+        # Row 2 — State breakdown + distributions
         html.Div([
             _card([
                 _section("Campaign Lifecycle"),
@@ -202,9 +202,9 @@ def build_portfolio_tab(session=None) -> html.Div:
 
             _card([
                 _section("Operator Dominance Distribution"),
-                _hbar("High ODS â‰¥70 â€” Operator in control",  ods_high, max(total, 1), TEAL_DIM),
-                _hbar("Mid ODS 40â€“70 â€” Mixed signals",        ods_mid,  max(total, 1), YELLOW_DIM),
-                _hbar("Low ODS <40 â€” Operator exiting",       ods_low,  max(total, 1), RED_DIM),
+                _hbar("High ODS ≥70 — Operator in control",  ods_high, max(total, 1), TEAL_DIM),
+                _hbar("Mid ODS 40–70 — Mixed signals",        ods_mid,  max(total, 1), YELLOW_DIM),
+                _hbar("Low ODS <40 — Operator exiting",       ods_low,  max(total, 1), RED_DIM),
 
                 html.Div(style={"height": "1px", "background": BORDER, "margin": "16px 0"}),
 
@@ -220,12 +220,12 @@ def build_portfolio_tab(session=None) -> html.Div:
                 })], style={"width": "100%", "height": "8px",
                             "background": "rgba(255,255,255,.06)", "borderRadius": "4px",
                             "marginTop": "10px"}),
-                html.Div(f"Optimal range: {OPTIMAL_MIN}â€“{OPTIMAL_MAX} simultaneous positions (Phase 11)",
+                html.Div(f"Optimal range: {OPTIMAL_MIN}–{OPTIMAL_MAX} simultaneous positions (Phase 11)",
                          style={"fontSize": "11px", "color": MUTED, "marginTop": "8px"}),
             ], sx={"flex": "1"}),
         ], style={"display": "flex", "gap": "16px"}),
 
-        # Row 3 â€” Top and watch
+        # Row 3 — Top and watch
         _card([
             _section("Position Performance"),
             html.Div([
@@ -246,4 +246,3 @@ def build_portfolio_tab(session=None) -> html.Div:
         ]),
 
     ])
-
