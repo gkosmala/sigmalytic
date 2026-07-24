@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from fastapi import BackgroundTasks
 
-from email_service import dispatch_alert_to_all_users
+from backend.email_service import dispatch_alert_to_all_users
 
 logger = logging.getLogger(__name__)
 
@@ -252,5 +252,3 @@ async def fire_alert(
 def send_alert(symbol_data: dict, old_status: str, new_status: str) -> bool:
     """Alias for maybe_send_alert for backward compatibility."""
     return maybe_send_alert(symbol_data, old_status, new_status)
-
-
