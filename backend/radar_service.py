@@ -47,10 +47,10 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from supabase_isolation import get_user_id_from_request
-from radar_alerts import maybe_send_alert, send_daily_summary
-from scoreboard_service import log_signal, grade_pending_signals
-from sms_alerts import maybe_send_sms
+from backend.supabase_isolation import get_user_id_from_request
+from backend.radar_alerts import maybe_send_alert, send_daily_summary
+from backend.scoreboard_service import log_signal, grade_pending_signals
+from backend.sms_alerts import maybe_send_sms
 
 # ── Behavioral Transition Engine (safe import) ────────────────────────────────
 try:
@@ -2267,5 +2267,3 @@ def get_watchlist(user_id: str):
         return {"symbols": symbols, "scores": scores}
     except Exception as e:
         return {"symbols": [], "scores": [], "error": str(e)}
-
-
