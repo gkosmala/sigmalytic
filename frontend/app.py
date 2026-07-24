@@ -60,6 +60,136 @@ BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrende
 SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
+
+
+# SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_START
+def _rfa25h_color(name, fallback):
+    return globals().get(name, fallback)
+
+
+def _rfa25h_fetch_json(path, timeout=5):
+    try:
+        response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+        if not response.ok:
+            return {}
+        data = response.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _rfa25h_safe_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _rfa25h_max_ts(rows, key):
+    values = []
+    for row in _rfa25h_safe_list(rows):
+        if not isinstance(row, dict):
+            continue
+        value = str(row.get(key) or "").strip()
+        if value:
+            values.append(value)
+    return max(values) if values else "-"
+
+
+def _rfa25h_fmt_ts(value):
+    if not value:
+        return "-"
+    text = str(value).strip()
+    if not text:
+        return "-"
+    had_utc = text.endswith("Z") or "+00:00" in text
+    text = text.replace("T", " ").replace("Z", "").replace("+00:00", "")
+    if "." in text:
+        text = text.split(".", 1)[0]
+    return text + (" UTC" if had_utc else "")
+
+
+def _rfa25h_chip(label, value, accent):
+    navy_mid = _rfa25h_color("NAVY_MID", "#0f172a")
+    border = _rfa25h_color("BORDER", "rgba(255,255,255,.08)")
+    muted = _rfa25h_color("MUTED", "#64748b")
+
+    return html.Div([
+        html.Div(label, style={
+            "fontSize": "8px",
+            "fontWeight": "900",
+            "color": muted,
+            "textTransform": "uppercase",
+            "letterSpacing": ".08em",
+            "marginBottom": "3px",
+        }),
+        html.Div(_rfa25h_fmt_ts(value), style={
+            "fontSize": "10px",
+            "fontWeight": "900",
+            "color": accent,
+            "fontFamily": "DM Mono, monospace",
+            "whiteSpace": "nowrap",
+        }),
+    ], style={
+        "background": navy_mid,
+        "border": f"1px solid {border}",
+        "borderRadius": "9px",
+        "padding": "7px 9px",
+        "minWidth": "132px",
+    })
+
+
+def _rfa25h_command_center_freshness_title():
+    white = _rfa25h_color("WHITE", "#f1f5f9")
+    muted = _rfa25h_color("MUTED", "#64748b")
+    teal = _rfa25h_color("TEAL_DIM", "#34d399")
+    blue = _rfa25h_color("BLUE_DIM", "#93c5fd")
+    yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
+    border = _rfa25h_color("BORDER", "rgba(255,255,255,.08)")
+
+    active = _rfa25h_fetch_json("/api/campaigns/active")
+    rows = _rfa25h_safe_list(active.get("campaigns"))
+
+    radar = _rfa25h_fetch_json("/api/radar/scores?limit=25")
+    cache = radar.get("cache") if isinstance(radar.get("cache"), dict) else {}
+
+    campaign_refresh = _rfa25h_max_ts(rows, "updated_at")
+    evidence_refresh = _rfa25h_max_ts(rows, "evidence_updated_at")
+    radar_refresh = radar.get("generated_at") or "-"
+    radar_served = radar.get("served_at") or "-"
+    radar_cache = cache.get("mode") or "-"
+
+    return html.Div([
+        html.Div("Weis-Gamma Status Center", style={
+            "fontSize": "14px",
+            "fontWeight": "900",
+            "color": white,
+            "marginBottom": "8px",
+        }),
+        html.Div("Data Freshness", style={
+            "fontSize": "9px",
+            "fontWeight": "900",
+            "color": muted,
+            "textTransform": "uppercase",
+            "letterSpacing": ".1em",
+            "marginBottom": "7px",
+        }),
+        html.Div([
+            _rfa25h_chip("Campaign Refresh", campaign_refresh, teal),
+            _rfa25h_chip("Evidence Refresh", evidence_refresh, teal),
+            _rfa25h_chip("Radar Refresh", radar_refresh, blue),
+            _rfa25h_chip("Radar Cache", radar_cache, yellow),
+            _rfa25h_chip("Radar Served", radar_served, muted),
+        ], style={
+            "display": "flex",
+            "gap": "8px",
+            "flexWrap": "wrap",
+            "alignItems": "center",
+            "borderTop": f"1px solid {border}",
+            "paddingTop": "8px",
+        }),
+    ])
+# SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_END
+
+
+
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
 
@@ -553,7 +683,7 @@ def build_weis_gamma_status_center_panel():
     if not wg:
         return html.Div([
             _build_d3f1b_controlled_persistence_lifecycle_panel(),
-            html.Div("Weis-Gamma Status Center", style={
+            html.Div(_rfa25h_command_center_freshness_title(), style={
                 "fontSize": "14px",
                 "fontWeight": "900",
                 "color": WHITE,
