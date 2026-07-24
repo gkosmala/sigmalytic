@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
+# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
 """
 frontend/trade_journal_tab.py
 ------------------------------
@@ -12,7 +12,7 @@ Shows:
 
 Plugs into sigmalytic_app_TODAY.py:
   1. from trade_journal_tab import build_trade_journal_tab
-  2. Add ("journal", "ðŸ““ Journal") to ALL_TABS
+  2. Add ("journal", "📓 Journal") to ALL_TABS
   3. Add elif tab=="journal": main = build_trade_journal_tab() to router
 """
 
@@ -50,7 +50,7 @@ def _section(text):
 
 def _grade_pill(grade: str) -> html.Span:
     color = GRADE_COLORS.get(grade or "N/A", MUTED)
-    return html.Span(grade or "â€”", style={
+    return html.Span(grade or "—", style={
         "fontSize": "11px", "fontWeight": "900", "color": color,
         "background": f"{color}18", "borderRadius": "6px",
         "padding": "2px 8px", "border": f"1px solid {color}30",
@@ -80,20 +80,20 @@ def _profile_stat(label: str, value: str, color: str = WHITE, bar_val: float = 0
 
 
 def _trade_row(t: dict, is_open: bool = False) -> html.Div:
-    symbol    = t.get("symbol", "â€”")
+    symbol    = t.get("symbol", "—")
     direction = t.get("direction", "LONG")
     entry_p   = float(t.get("entry_price", 0))
     exit_p    = float(t.get("exit_price", 0))
     pnl_pct   = float(t.get("pnl_pct", 0))
     pnl       = float(t.get("pnl", 0))
     hold      = int(t.get("hold_days", 0))
-    tier      = t.get("tier") or "â€”"
-    eq        = t.get("entry_quality_grade") or "â€”"
-    xq        = t.get("exit_quality_grade") or "â€”"
+    tier      = t.get("tier") or "—"
+    eq        = t.get("entry_quality_grade") or "—"
+    xq        = t.get("exit_quality_grade") or "—"
     patience  = float(t.get("patience_score", 0))
     fomo      = float(t.get("fomo_score", 0))
-    entry_d   = t.get("entry_date", "â€”")
-    exit_d    = t.get("exit_date", "â€”")
+    entry_d   = t.get("entry_date", "—")
+    exit_d    = t.get("exit_date", "—")
 
     dir_color = TEAL_DIM if direction == "LONG" else RED_DIM
     pnl_color = TEAL_DIM if pnl_pct >= 0 else RED_DIM
@@ -106,7 +106,7 @@ def _trade_row(t: dict, is_open: bool = False) -> html.Div:
             html.Div([
                 html.Span(direction, style={"fontSize": "9px", "color": dir_color,
                                             "fontWeight": "800"}),
-                html.Span(f" Â· {tier}", style={"fontSize": "9px", "color": MUTED}),
+                html.Span(f" · {tier}", style={"fontSize": "9px", "color": MUTED}),
             ]),
         ], style={"flex": "1"}),
 
@@ -120,13 +120,13 @@ def _trade_row(t: dict, is_open: bool = False) -> html.Div:
         html.Div([
             html.Div(f"${entry_p:,.2f}", style={"fontSize": "12px", "color": WHITE,
                                                   "fontFamily": "DM Mono, monospace"}),
-            html.Div(f"${exit_p:,.2f}" if not is_open else "â€”",
+            html.Div(f"${exit_p:,.2f}" if not is_open else "—",
                      style={"fontSize": "11px", "color": MUTED, "fontFamily": "DM Mono, monospace"}),
         ], style={"flex": "1"}),
 
         # P&L
         html.Div([
-            html.Div(f"{pnl_pct:+.1f}%" if not is_open else "â€”",
+            html.Div(f"{pnl_pct:+.1f}%" if not is_open else "—",
                      style={"fontSize": "13px", "fontWeight": "800",
                             "color": pnl_color, "fontFamily": "DM Mono, monospace"}),
             html.Div(f"${pnl:+,.0f}" if not is_open else f"{hold}d held",
@@ -142,7 +142,7 @@ def _trade_row(t: dict, is_open: bool = False) -> html.Div:
         # Exit quality
         html.Div([
             html.Div("Exit", style={"fontSize": "9px", "color": MUTED}),
-            _grade_pill(xq) if not is_open else html.Span("â€”", style={"color": MUTED}),
+            _grade_pill(xq) if not is_open else html.Span("—", style={"color": MUTED}),
         ], style={"flex": ".7", "textAlign": "center"}),
 
         # Patience
@@ -260,7 +260,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
     return html.Div([
 
-        # â”€â”€ Behavioral Profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Behavioral Profile ────────────────────────────────────────────
         _card([
             _section("Trader Behavioral Profile"),
             html.Div([
@@ -308,10 +308,10 @@ def build_trade_journal_tab(session=None) -> html.Div:
             ], style={"display": "flex"}),
         ]),
 
-        # â”€â”€ Log new trade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Log new trade ─────────────────────────────────────────────────
         _card([_log_trade_form()]),
 
-        # â”€â”€ Open trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Open trades ───────────────────────────────────────────────────
         _card([
             _section(f"Open Positions ({len(open_trades)})"),
             table_header,
@@ -321,7 +321,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
             if not open_trades else html.Div(),
         ]),
 
-        # â”€â”€ Closed trades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # ── Closed trades ─────────────────────────────────────────────────
         _card([
             _section(f"Trade History ({len(closed_trades)})"),
             table_header,
@@ -332,4 +332,3 @@ def build_trade_journal_tab(session=None) -> html.Div:
         ]),
 
     ])
-
