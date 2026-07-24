@@ -27,6 +27,21 @@ try:
 except Exception:
     build_campaign_tab = None
 
+try:
+    from portfolio_tab import build_portfolio_tab as build_portfolio_tab
+except Exception:
+    build_portfolio_tab = None
+
+try:
+    from trade_journal_tab import build_trade_journal_tab as build_trade_journal_tab
+except Exception:
+    build_trade_journal_tab = None
+
+try:
+    from status_center import build_status_center as build_status_center
+except Exception:
+    build_status_center = None
+
 import sys, pathlib
 
 # ── Safe preflight palette definitions ────────────────────────────────────────
@@ -4324,10 +4339,13 @@ ALL_TABS = [
     ("radar",       "Radar Screen"),
     ("scoreboard",  "Scoreboard"),
     ("divergence",  "🧠 Intelligence Change Detector"),
+    ("portfolio",   "Portfolio"),
+    ("journal",     "Journal"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
     ("admin",       "Admin"),
     ("setup",       "Setup"),
+    ("status",      "Status"),
 ]
 
 app.layout = html.Div([
@@ -4544,8 +4562,10 @@ def load_symbol(_, ticker, live, tf):
     Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
+    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    Input("tab-status","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
@@ -4773,6 +4793,48 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     elif tab=="radar":       main = build_radar_tab(session=session)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
     elif tab=="divergence":  main = build_divergence_tab(session=None)
+    elif tab=="portfolio":
+        if build_portfolio_tab is None:
+            main = card([
+                html.H2("Portfolio", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Portfolio module is present but did not import. Check frontend/portfolio_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_portfolio_tab(session=session)
+            except Exception as e:
+                main = card([
+                    html.H2("Portfolio", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Portfolio tab error: " + str(e), "blue"),
+                ])
+    elif tab=="journal":
+        if build_trade_journal_tab is None:
+            main = card([
+                html.H2("Journal", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Journal module is present but did not import. Check frontend/trade_journal_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_trade_journal_tab(session=session)
+            except Exception as e:
+                main = card([
+                    html.H2("Journal", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Journal tab error: " + str(e), "blue"),
+                ])
+    elif tab=="status":
+        if build_status_center is None:
+            main = card([
+                html.H2("Status", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Status Center module is present but did not import. Check frontend/status_center.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_status_center(session=session)
+            except Exception as e:
+                main = card([
+                    html.H2("Status", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Status Center error: " + str(e), "blue"),
+                ])
     elif tab=="billing":
         try:
             main = build_billing_tab(session=None, perms=None)
