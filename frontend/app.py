@@ -3778,6 +3778,20 @@ def register_preferences_callbacks(app):
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
 # ── Admin helpers ──────────────────────────────────────────────────────────────
+
+# FIX: GOLD, ADMIN_EMAIL, _tile, _severity_color, and _score_bar were referenced
+# below but never defined anywhere in this file -- clicking the Admin tab raised
+# a NameError immediately. These are safe, minimal definitions that reuse
+# existing patterns already in this file rather than introducing new ones.
+
+GOLD = "#F5C842"
+
+# ADMIN_EMAIL must come from an env var. If unset, default to a value that can
+# never match a real session email (NOT an empty string) -- otherwise a
+# session with no email set would incorrectly be treated as admin.
+ADMIN_EMAIL = os.getenv("SIGMALYTIC_ADMIN_EMAIL") or "no-admin-configured@invalid"
+
+
 def _admin_tile(label, value, color=None, sub=None):
     color = color or WHITE
     return html.Div([
@@ -3787,6 +3801,44 @@ def _admin_tile(label, value, color=None, sub=None):
         html.Div(sub,   style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}) if sub else html.Div(),
     ], style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
                "borderRadius":"12px","padding":"14px 16px"})
+
+
+# Alias: build_admin_tab below calls this as `_tile(...)`.
+_tile = _admin_tile
+
+
+def _severity_color(severity):
+    s = str(severity or "").upper().strip()
+    if s in {"CRITICAL", "HIGH", "ERROR"}:
+        return RED_DIM
+    if s in {"MEDIUM", "WARNING", "WARN"}:
+        return YELLOW_DIM
+    if s in {"LOW", "INFO"}:
+        return TEAL_DIM
+    return WHITE
+
+
+def _score_bar(score, width="80px"):
+    try:
+        pct = max(0, min(100, float(score)))
+    except Exception:
+        pct = 0
+    color = TEAL_DIM if pct >= 70 else (YELLOW_DIM if pct >= 45 else RED_DIM)
+    return html.Div(
+        html.Div(style={
+            "width": f"{pct}%", "height": "100%", "borderRadius": "999px",
+            "background": color,
+        }),
+        style={
+            "width": width, "height": "6px", "background": "rgba(255,255,255,.08)",
+            "borderRadius": "999px", "overflow": "hidden", "marginTop": "4px",
+        },
+    )
+
+
+# Alias: build_admin_tab below calls this as `_grade_color(...)`.
+# _probability_grade_color already implements the same A/B/C/D-F mapping.
+_grade_color = _probability_grade_color
 
 
 def _admin_card(children, sx=None):
@@ -3817,13 +3869,20 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     try:
         token = session.get("access_token","")
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        r = _req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
+        # FIX: was `_req.get(...)` -- _req is not defined at module scope in
+        # this function (it only exists as a local import inside two other,
+        # unrelated functions). This module already imports requests as `req`
+        # at the top of the file; use that instead.
+        r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
         data = r.json() if r.ok else {}
     except Exception as e:
         data = {}
 
     if not data:
-        return _card([
+        # FIX: was `_admin_card([...])` -- _card only exists as a local nested
+        # function inside build_preferences_tab and is not visible here.
+        # _admin_card is the real module-level equivalent already defined above.
+        return _admin_card([
             html.Div("⚠️ Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
             html.Div("Backend may be initializing. Refresh in 30 seconds.",
                      style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
@@ -3849,7 +3908,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         gen_label = generated_at
 
     # ── Header ────────────────────────────────────────────────────────────
-    header = _card([
+    header = _admin_card([
         html.Div([
             html.Div([
                 html.Div([
@@ -3882,7 +3941,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     perf_num = accuracy.get("a_grade",0)
     perf_den = accuracy.get("total",0)
 
-    accuracy_block = _card([
+    accuracy_block = _admin_card([
         html.Div("CLOSED-LOOP PERFORMANCE AUDIT",
                  style={"fontSize":"10px","fontWeight":"900","color":GOLD,
                         "letterSpacing":".2em","textTransform":"uppercase","marginBottom":"16px"}),
@@ -3900,7 +3959,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom":"16px","borderColor":"rgba(245,200,66,.2)"})
 
     # ── Snapshot writer health ────────────────────────────────────────────
-    snap_block = _card([
+    snap_block = _admin_card([
         html.Div([
             html.Div("📸 SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"4px"}),
@@ -3920,7 +3979,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom":"16px","padding":"14px 20px"})
 
     # ── Narrative block ───────────────────────────────────────────────────
-    narrative_block = _card([
+    narrative_block = _admin_card([
         html.Div("REGIME NARRATIVE", style={"fontSize":"10px","fontWeight":"900","color":GOLD,
                   "letterSpacing":".2em","marginBottom":"12px"}),
         html.Div(narrative, style={"fontSize":"14px","color":WHITE,"lineHeight":"1.7",
@@ -3963,7 +4022,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}",
                   "display":"flex","alignItems":"center"}))
 
-    anomaly_block = _card([
+    anomaly_block = _admin_card([
         html.Div([
             html.Div("🚨 ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
             html.Div(f"{len(anomalies)} issues detected",
@@ -4009,7 +4068,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
-    score_table = _card([
+    score_table = _admin_card([
         html.Div("🏆 TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
@@ -4078,7 +4137,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                                        "color":WHITE,"fontSize":"11px"}))
             table_rows.append(html.Tr(cells, style={"borderBottom":f"1px solid {BORDER}"}))
 
-        grade_grid = _card([
+        grade_grid = _admin_card([
             html.Div([
                 html.Div("📋 CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
                          style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
@@ -4101,7 +4160,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             ], style={"marginTop":"12px"}),
         ], sx={"marginBottom":"16px"})
     else:
-        grade_grid = _card([
+        grade_grid = _admin_card([
             html.Div("📋 CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"8px"}),
             html.Div("No daily close snapshots yet. The grade grid will populate automatically "
