@@ -10,6 +10,7 @@ Institutional-Grade Frontend · Dash + Plotly
 Includes: Behavioral Intelligence Layer v1.0
 """
 
+# test build filter frontend
 from __future__ import annotations
 import json
 import os
