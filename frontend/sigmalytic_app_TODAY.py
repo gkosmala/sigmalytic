@@ -411,6 +411,59 @@ except Exception as _atab:
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
+
+
+# ── Stale-data protection ────────────────────────────────────────────────────
+# Determines whether campaign data is actually current by checking the real
+# updated_at timestamp from the nightly pipeline, rather than assuming "LIVE"
+# unconditionally. Never raises; a missing or unparseable timestamp is always
+# treated as NOT live, since this must never claim freshness it cannot verify.
+_STALE_THRESHOLD_HOURS = 20
+
+
+def _freshness_status(campaign_refresh_iso, stale_hours=_STALE_THRESHOLD_HOURS):
+    if not campaign_refresh_iso or campaign_refresh_iso == "-":
+        return "NO DATA", "red"
+    try:
+        text = str(campaign_refresh_iso).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        ts = datetime.fromisoformat(text)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        return "UNKNOWN", "red"
+
+    age = datetime.now(timezone.utc) - ts
+    if age < timedelta(0):
+        return "UNKNOWN", "yellow"
+    if age <= timedelta(hours=stale_hours):
+        return "LIVE", "teal"
+    return "STALE", "red"
+
+
+def _fetch_campaign_freshness():
+    """
+    Fetches the real max updated_at across active campaigns and returns
+    (label, color, raw_timestamp). Never raises -- any failure is treated
+    as NO DATA / not live, not silently ignored.
+    """
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=6)
+        if not r.ok:
+            return "NO DATA", "red", None
+        data = r.json() if isinstance(r.json(), dict) else {}
+        rows = data.get("campaigns") if isinstance(data.get("campaigns"), list) else []
+        timestamps = [
+            str(row.get("updated_at") or "").strip()
+            for row in rows if isinstance(row, dict) and row.get("updated_at")
+        ]
+        latest = max(timestamps) if timestamps else None
+        label, color = _freshness_status(latest)
+        return label, color, latest
+    except Exception:
+        return "NO DATA", "red", None
+
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
 
@@ -3302,8 +3355,15 @@ app.layout = html.Div([
     dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0, disabled=True),
     dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
+    # Separate, slower interval for checking whether campaign data is
+    # actually current -- intentionally not tied to the live price ticker,
+    # since campaign freshness and price-feed connectivity are different
+    # things and conflating them would be misleading.
+    dcc.Interval(id="i-freshness", interval=120_000, n_intervals=0),
+    dcc.Store(id="s-freshness", data=None),
 
     html.Div([html.Div([
+        html.Div(id="stale-data-banner"),
         html.Header([
             # ── Compact single-row header ──────────────────────────────────
             html.Div([
@@ -3857,13 +3917,67 @@ def render_price_ctrl(live_mode, live):
                "padding":"8px 14px","width":"130px","minHeight":"50px","display":"flex","flexDirection":"column","justifyContent":"center"})
 
 @app.callback(
-    Output("b-connected","children"), Output("b-feed","children"), Output("b-tick","children"),
-    Input("s-live","data"),
+    Output("s-freshness", "data"),
+    Input("i-freshness", "n_intervals"),
 )
-def update_badges(live):
-    return (badge("LIVE","teal"),
+def check_data_freshness(_n):
+    label, color, raw_ts = _fetch_campaign_freshness()
+    return {"label": label, "color": color, "updated_at": raw_ts}
+
+
+@app.callback(
+    Output("b-connected","children"), Output("b-feed","children"), Output("b-tick","children"),
+    Input("s-live","data"), Input("s-freshness","data"),
+)
+def update_badges(live, freshness):
+    # FIX: this badge previously said "LIVE" unconditionally, regardless of
+    # whether campaign data was actually current. It now reflects the real
+    # freshness check. Defaults to NO DATA (not LIVE) before the first
+    # freshness check completes, since claiming freshness we haven't
+    # verified yet is exactly the failure mode this exists to prevent.
+    freshness = freshness or {}
+    label = freshness.get("label", "NO DATA")
+    color = freshness.get("color", "red")
+    return (badge(label, color),
             badge("Alpaca SIP","blue"),
             html.Span("", style={"display":"none"}))
+
+
+@app.callback(
+    Output("stale-data-banner", "children"),
+    Input("s-freshness", "data"),
+)
+def render_stale_data_banner(freshness):
+    freshness = freshness or {}
+    label = freshness.get("label", "NO DATA")
+
+    # Only show a banner when there's actually a problem. Nothing renders
+    # when data is genuinely LIVE -- this must not add visual noise to the
+    # normal, healthy state.
+    if label == "LIVE":
+        return html.Div()
+
+    messages = {
+        "STALE": "Campaign data has not refreshed recently. Figures shown may not reflect current market conditions.",
+        "NO DATA": "Campaign data is currently unavailable. The backend may be starting up or the nightly pipeline may have failed.",
+        "UNKNOWN": "Campaign data freshness could not be determined.",
+    }
+    message = messages.get(label, messages["UNKNOWN"])
+
+    return html.Div([
+        html.Span("⚠ ", style={"fontWeight": "900"}),
+        html.Span(f"{label}: ", style={"fontWeight": "900"}),
+        html.Span(message, style={"fontWeight": "600"}),
+    ], style={
+        "background": "rgba(239,68,68,.16)",
+        "border": "1px solid rgba(239,68,68,.5)",
+        "borderRadius": "10px",
+        "color": "#fecaca",
+        "fontSize": "13px",
+        "padding": "10px 16px",
+        "marginBottom": "10px",
+        "textAlign": "center",
+    })
 
 
 # SIGMALYTIC_STEP100R_U1_STATIC_TAB_CACHE_PREWARM
