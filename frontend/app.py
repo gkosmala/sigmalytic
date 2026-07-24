@@ -157,7 +157,7 @@ def _rfa25h_command_center_freshness_title():
     radar_cache = cache.get("mode") or "-"
 
     return html.Div([
-        html.Div("Weis-Gamma Status Center", style={
+        html.Div(_rfa25h_command_center_freshness_title(), style={
             "fontSize": "14px",
             "fontWeight": "900",
             "color": white,
@@ -728,7 +728,7 @@ def build_weis_gamma_status_center_panel():
     return html.Div([
         html.Div([
             html.Div([
-                html.Div("Weis-Gamma Status Center", style={
+                html.Div(_rfa25h_command_center_freshness_title(), style={
                     "fontSize": "16px",
                     "fontWeight": "900",
                     "color": WHITE,
