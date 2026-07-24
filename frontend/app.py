@@ -136,6 +136,38 @@ def _rfa25h_chip(label, value, accent):
     })
 
 
+def _rfa25h_freshness_status(campaign_refresh_iso):
+    """
+    Returns (label, color) based on how old campaign_refresh_iso is.
+    Never raises; a missing or unparseable timestamp is always treated as
+    NOT live, since this function must never claim freshness it cannot
+    actually verify.
+    """
+    red = _rfa25h_color("RED_DIM", "#fb7185")
+    yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
+    teal = _rfa25h_color("TEAL_DIM", "#34d399")
+
+    if not campaign_refresh_iso or campaign_refresh_iso == "-":
+        return "NO DATA", red
+
+    try:
+        text = str(campaign_refresh_iso).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        ts = datetime.fromisoformat(text)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        return "UNKNOWN", red
+
+    age = datetime.now(timezone.utc) - ts
+    if age < timedelta(0):
+        return "UNKNOWN", yellow
+    if age <= timedelta(hours=20):
+        return "LIVE", teal
+    return "STALE", red
+
+
 def _rfa25h_command_center_freshness_title():
     white = _rfa25h_color("WHITE", "#f1f5f9")
     muted = _rfa25h_color("MUTED", "#64748b")
@@ -156,11 +188,18 @@ def _rfa25h_command_center_freshness_title():
     radar_served = radar.get("served_at") or "-"
     radar_cache = cache.get("mode") or "-"
 
+    # FIX: this used to call itself here (infinite recursion -> RecursionError
+    # on every render). The title is now computed directly from the same
+    # campaign_refresh timestamp already fetched above, with real
+    # staleness-aware coloring instead of a hardcoded "white" title.
+    freshness_label, freshness_color = _rfa25h_freshness_status(campaign_refresh)
+    title_text = f"Data Freshness — {freshness_label}"
+
     return html.Div([
-        html.Div(_rfa25h_command_center_freshness_title(), style={
+        html.Div(title_text, style={
             "fontSize": "14px",
             "fontWeight": "900",
-            "color": white,
+            "color": freshness_color,
             "marginBottom": "8px",
         }),
         html.Div("Data Freshness", style={
