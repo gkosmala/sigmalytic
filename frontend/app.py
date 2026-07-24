@@ -1,353 +1,16 @@
+# SIGMALYTIC_STEP100R_L3_FAST_FIRST_LOAD_TAB_STATE_SYNC
+# SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_ACTIVE_ROUTER_WIRING
+# SIGMALYTIC_STEP100R_I_LINE_BASED_TAB_FREEZE_REPAIR
 # SIGMALYTIC_STEP100R_E_FORCE_VALID_FIRST_LOAD_RADAR_TAB
 # SIGMALYTIC_STEP100R_C_FRONTEND_PERMANENT_NAG_REPAIR
-from __future__ import annotations
-# Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-# Sigmalytic v2.2 — true OHLC candlestick rendering
-import requests
-
-
-# SIGMALYTIC_STEP85H_IMPORT_HISTORY_PERSISTENCE_HELPERS_START
-# Import-history persistence helpers.
-# These read the restored backend import-history file and render the same
-# upload result across tab changes. The file remains until Reset Import History
-# is explicitly pressed.
-def _sigmalytic_step85h_fetch_import_history():
-    try:
-        import requests as _requests
-
-        backend_url = globals().get("BACKEND_HTTP", "https://sigmalytic-backend.onrender.com")
-        resp = _requests.get(f"{backend_url}/api/trades/history", timeout=20)
-
-        if not resp.ok:
-            return None
-
-        data = resp.json()
-
-        if data.get("has_history") is False:
-            return None
-
-        trades = (
-            data.get("total_trades")
-            or data.get("trades_imported")
-            or data.get("parsed_rows")
-            or ((data.get("analysis") or {}).get("total_trades"))
-            or 0
-        )
-
-        try:
-            trades = int(float(trades))
-        except Exception:
-            trades = 0
-
-        if trades <= 0:
-            return None
-
-        return data
-
-    except Exception:
-        return None
-
-
-def _sigmalytic_step85h_num(value, default=0.0):
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except Exception:
-        return default
-
-
-def _sigmalytic_step85h_int(value, default=0):
-    try:
-        if value is None or value == "":
-            return default
-        return int(float(value))
-    except Exception:
-        return default
-
-
-def _sigmalytic_step85h_upload_status_from_payload(data):
-    if not data:
-        return html.Div(
-            "No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.",
-            style={
-                "color": "#93c5fd",
-                "fontWeight": "700",
-                "padding": "10px 12px",
-                "border": "1px solid rgba(59,130,246,0.35)",
-                "borderRadius": "10px",
-                "background": "rgba(30,64,175,0.20)",
-            },
-        )
-
-    analysis = (
-        data.get("analysis")
-        or data.get("behavioral_analysis")
-        or data.get("behavioral_snapshot")
-        or data.get("profile")
-        or {}
-    )
-
-    broker = (
-        data.get("broker")
-        or data.get("broker_detected")
-        or data.get("detected_broker")
-        or "Generic CSV"
-    )
-
-    if not broker or str(broker).strip().lower() == "unknown":
-        broker = "Generic CSV"
-
-    trades = _sigmalytic_step85h_int(
-        data.get("total_trades")
-        or data.get("trades_imported")
-        or data.get("parsed_rows")
-        or analysis.get("total_trades")
-        or analysis.get("trades_imported")
-        or 0
-    )
-
-    win_rate = _sigmalytic_step85h_num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
-    win_rate_display = win_rate * 100 if win_rate <= 1 else win_rate
-
-    total_pnl = _sigmalytic_step85h_num(
-        data.get("total_pnl")
-        or data.get("pnl")
-        or analysis.get("total_pnl")
-        or 0.0
-    )
-
-    flags = (
-        data.get("behavioral_flags")
-        or data.get("flags")
-        or analysis.get("behavioral_flags")
-        or []
-    )
-
-    flag_text = ", ".join([str(x) for x in flags[:4]]) if flags else "Behavioral snapshot generated."
-
-    return html.Div([
-        html.Div(
-            f"✅ {broker} detected · {trades} trades imported · Win rate: {win_rate_display:.0f}% · Total P&L: ${total_pnl:,.2f}",
-            style={"color": "#34d399", "fontWeight": "900"},
-        ),
-        html.Div(
-            f"Behavioral flags: {flag_text}",
-            style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
-        ),
-        html.Div(
-            "Switch to the Behavioural Intelligence tab to see your full profile.",
-            style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
-        ),
-    ])
-
-
-def _sigmalytic_step85h_import_status_from_history():
-    return _sigmalytic_step85h_upload_status_from_payload(
-        _sigmalytic_step85h_fetch_import_history()
-    )
-
-
-def _sigmalytic_step85h_behavioral_tab_from_history():
-    data = _sigmalytic_step85h_fetch_import_history()
-
-    if not data:
-        return html.Div(
-            "No behavioral data yet. Start tracking trades to build your profile.",
-            style={
-                "color": "#cbd5e1",
-                "fontWeight": "700",
-                "padding": "14px 16px",
-                "border": "1px solid rgba(59,130,246,0.35)",
-                "borderRadius": "10px",
-                "background": "rgba(30,64,175,0.20)",
-            },
-        )
-
-    analysis = (
-        data.get("analysis")
-        or data.get("behavioral_analysis")
-        or data.get("behavioral_snapshot")
-        or data.get("profile")
-        or {}
-    )
-
-    broker = (
-        data.get("broker")
-        or data.get("broker_detected")
-        or data.get("detected_broker")
-        or "Generic CSV"
-    )
-
-    if not broker or str(broker).strip().lower() == "unknown":
-        broker = "Generic CSV"
-
-    executions = _sigmalytic_step85h_int(
-        data.get("executions_imported")
-        or analysis.get("executions_analyzed")
-        or analysis.get("execution_count")
-        or data.get("parsed_rows")
-        or 0
-    )
-
-    round_trips = _sigmalytic_step85h_int(
-        data.get("round_trip_trades")
-        or analysis.get("round_trip_trades")
-        or analysis.get("total_trades")
-        or data.get("total_trades")
-        or 0
-    )
-
-    win_rate = _sigmalytic_step85h_num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
-    win_rate_display = win_rate * 100 if win_rate <= 1 else win_rate
-
-    realized_pnl = _sigmalytic_step85h_num(
-        data.get("realized_pnl")
-        or data.get("total_pnl")
-        or analysis.get("realized_pnl")
-        or analysis.get("total_pnl")
-        or 0.0
-    )
-
-    profit_factor = _sigmalytic_step85h_num(analysis.get("profit_factor") or data.get("profit_factor") or 0.0)
-    avg_win = _sigmalytic_step85h_num(analysis.get("average_win") or 0.0)
-    avg_loss = _sigmalytic_step85h_num(analysis.get("average_loss") or 0.0)
-    expectancy = _sigmalytic_step85h_num(analysis.get("expectancy_per_trade") or 0.0)
-    max_loss_streak = _sigmalytic_step85h_int(analysis.get("max_losing_streak") or 0)
-    losing_days = _sigmalytic_step85h_int(analysis.get("losing_days") or 0)
-    trading_days = _sigmalytic_step85h_int(analysis.get("trading_days") or 0)
-    avg_hold = _sigmalytic_step85h_num(analysis.get("average_hold_minutes") or 0.0)
-    quick_reentries = _sigmalytic_step85h_int(analysis.get("quick_reentry_after_loss_count") or 0)
-    size_after_loss = _sigmalytic_step85h_int(analysis.get("size_after_loss_count") or 0)
-
-    flags = analysis.get("behavioral_flags") or data.get("behavioral_flags") or []
-    profile = analysis.get("behavioral_profile") or "Behavioral snapshot generated from imported brokerage history."
-    worst_symbols = analysis.get("worst_symbols") or []
-    best_symbols = analysis.get("best_symbols") or []
-    worst_hours = analysis.get("worst_hours") or []
-
-    def metric(label, value, tone="#ffffff"):
-        return html.Div([
-            html.Div(label, style={"color": "#94a3b8", "fontSize": "12px", "fontWeight": "700"}),
-            html.Div(value, style={"color": tone, "fontWeight": "900", "fontSize": "20px", "marginTop": "6px"}),
-        ], style={
-            "background": "rgba(15,23,42,0.65)",
-            "border": "1px solid rgba(148,163,184,0.18)",
-            "borderRadius": "12px",
-            "padding": "14px",
-            "minWidth": "155px",
-        })
-
-    def symbol_rows(rows):
-        if not rows:
-            return html.Div("No symbol breakdown available.", style={"color": "#93c5fd", "fontWeight": "700"})
-
-        return html.Div([
-            html.Div(
-                f"{row.get('symbol')} · P&L ${_sigmalytic_step85h_num(row.get('pnl')):,.0f} · {row.get('trades', 0)} trades",
-                style={
-                    "color": "#e5e7eb",
-                    "fontSize": "13px",
-                    "padding": "6px 0",
-                    "borderBottom": "1px solid rgba(148,163,184,0.10)",
-                },
-            )
-            for row in rows[:6]
-        ])
-
-    pnl_tone = "#34d399" if realized_pnl >= 0 else "#f87171"
-
-    return html.Div([
-        html.H3(
-            "Brokerage Behavioural Intelligence",
-            style={"color": "#e5e7eb", "marginBottom": "8px"},
-        ),
-        html.Div(
-            f"{broker} · {executions} executions analyzed · {round_trips} round-trip trades",
-            style={"color": "#34d399", "fontWeight": "900", "marginBottom": "12px"},
-        ),
-
-        html.Div([
-            metric("Round-Trip Trades", str(round_trips)),
-            metric("Win Rate", f"{win_rate_display:.0f}%", "#fbbf24" if win_rate_display < 40 else "#34d399"),
-            metric("Realized P&L", f"${realized_pnl:,.0f}", pnl_tone),
-            metric("Profit Factor", f"{profit_factor:.2f}", "#f87171" if profit_factor < 1 else "#34d399"),
-            metric("Avg Win", f"${avg_win:,.0f}", "#34d399"),
-            metric("Avg Loss", f"${avg_loss:,.0f}", "#f87171"),
-            metric("Expectancy", f"${expectancy:,.0f}", "#f87171" if expectancy < 0 else "#34d399"),
-            metric("Max Loss Streak", str(max_loss_streak), "#f87171" if max_loss_streak >= 5 else "#ffffff"),
-            metric("Losing Days", f"{losing_days}/{trading_days}", "#f87171" if losing_days > trading_days / 2 else "#ffffff"),
-            metric("Avg Hold", f"{avg_hold:.0f} min"),
-        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "16px"}),
-
-        html.Div(
-            profile,
-            style={
-                "color": "#cbd5e1",
-                "padding": "12px 14px",
-                "border": "1px solid rgba(52,211,153,0.28)",
-                "borderRadius": "10px",
-                "background": "rgba(6,95,70,0.16)",
-                "marginBottom": "12px",
-            },
-        ),
-
-        html.Div([
-            html.H4("Behavioral Flags", style={"color": "#e5e7eb", "marginBottom": "8px"}),
-            html.Div([
-                html.Span(
-                    str(flag),
-                    style={
-                        "display": "inline-block",
-                        "margin": "4px 6px 4px 0",
-                        "padding": "6px 10px",
-                        "borderRadius": "999px",
-                        "background": "rgba(251,191,36,0.15)",
-                        "border": "1px solid rgba(251,191,36,0.35)",
-                        "color": "#fbbf24",
-                        "fontWeight": "800",
-                        "fontSize": "12px",
-                    },
-                )
-                for flag in flags
-            ]),
-        ], style={"marginBottom": "16px"}),
-
-        html.Div([
-            html.Div([
-                html.H4("Worst Symbols", style={"color": "#e5e7eb", "marginBottom": "8px"}),
-                symbol_rows(worst_symbols),
-            ], style={"flex": "1", "minWidth": "280px"}),
-            html.Div([
-                html.H4("Best Symbols", style={"color": "#e5e7eb", "marginBottom": "8px"}),
-                symbol_rows(best_symbols),
-            ], style={"flex": "1", "minWidth": "280px"}),
-        ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap", "marginBottom": "16px"}),
-
-        html.Div([
-            html.H4("Behavioral Pressure Points", style={"color": "#e5e7eb", "marginBottom": "8px"}),
-            html.Div(f"Quick re-entry after loss events: {quick_reentries}", style={"color": "#cbd5e1", "marginBottom": "4px"}),
-            html.Div(f"Size increase after loss events: {size_after_loss}", style={"color": "#cbd5e1", "marginBottom": "4px"}),
-            html.Div(
-                "Worst time windows: " + (", ".join([f"{x.get('hour')} (${_sigmalytic_step85h_num(x.get('pnl')):,.0f})" for x in worst_hours]) if worst_hours else "No hourly damage cluster available."),
-                style={"color": "#cbd5e1"},
-            ),
-        ], style={
-            "padding": "12px 14px",
-            "border": "1px solid rgba(148,163,184,0.16)",
-            "borderRadius": "10px",
-            "background": "rgba(15,23,42,0.50)",
-        }),
-    ])
-
-# SIGMALYTIC_STEP85H_IMPORT_HISTORY_PERSISTENCE_HELPERS_END
-
+# Sigmalytic v2.2 — integer x-axis for proper candle rendering
 """
 Sigmalytic Quant Corporation — Decision Intelligence Platform
 Institutional-Grade Frontend · Dash + Plotly
-Includes: Behavioural Intelligence Layer v1.0
+Includes: Behavioral Intelligence Layer v1.0
 """
 
+from __future__ import annotations
 import json
 import os
 import random
@@ -358,59 +21,214 @@ from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 import requests as req
 
+# SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_IMPORT
+try:
+    from campaign_tab import build_campaign_tab as build_campaign_tab
+except Exception:
+    build_campaign_tab = None
+
 import sys, pathlib
+
+# ── Safe preflight palette definitions ────────────────────────────────────────
+# These must exist before any global CSS f-strings are evaluated.
+WHITE = "#FFFFFF"
+TEXT = WHITE
+MUTED = WHITE
+TEXT_DIM = WHITE
+SUBTLE = WHITE
+GRAY = WHITE
+GRAY_DIM = WHITE
+
+NAVY = "#081827"
+NAVY_MID = "#0B1F35"
+NAVY_LIGHT = "#102A44"
+BORDER = "rgba(148,163,184,.24)"
+BORDER_T = "rgba(45,212,191,.55)"
+TEAL = "#2DD4BF"
+TEAL_DIM = "#34D399"
+TEAL_GLOW = "rgba(45,212,191,.16)"
+BLUE_DIM = "#93C5FD"
+YELLOW_DIM = "#FDE68A"
+RED_DIM = "#FB7185"
+PURPLE = "#C4B5FD"
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-sys.path.insert(0, str(pathlib.Path(__file__).parent))  # ensures campaign_tab, portfolio_tab etc. are importable
 from shared.engine import (
-    sanitize_symbol, create_live_update, generate_initial_candles, get_key_levels,
+    sanitize_symbol, create_live_update, get_key_levels,
 )
 
-try:
-    from campaign_tab import build_campaign_tab
-    _CAMPAIGN_TAB_AVAILABLE = True
-except Exception as _ct:
-    _CAMPAIGN_TAB_AVAILABLE = False
-    print(f"CAMPAIGN_TAB: FAILED — {_ct}", flush=True)
-
-try:
-    from portfolio_tab import build_portfolio_tab
-    _PORTFOLIO_TAB_AVAILABLE = True
-except Exception as _pt:
-    _PORTFOLIO_TAB_AVAILABLE = False
-    print(f"PORTFOLIO_TAB: FAILED — {_pt}", flush=True)
-
-try:
-    from status_center import build_status_center
-    _STATUS_CENTER_AVAILABLE = True
-except Exception as _sc:
-    _STATUS_CENTER_AVAILABLE = False
-    print(f"STATUS_CENTER: FAILED — {_sc}", flush=True)
-
-try:
-    from trade_journal_tab import build_trade_journal_tab
-    _JOURNAL_TAB_AVAILABLE = True
-except Exception as _jt:
-    _JOURNAL_TAB_AVAILABLE = False
-    print(f"TRADE_JOURNAL_TAB: FAILED — {_jt}", flush=True)
-
-
-try:
-    from preferences_tab import build_preferences_tab as build_preferences_tab_external
-    _PREFERENCES_TAB_AVAILABLE = True
-except Exception as _ptab:
-    _PREFERENCES_TAB_AVAILABLE = False
-    print(f"PREFERENCES_TAB: FAILED - {_ptab}", flush=True)
-
-try:
-    from admin_tab import build_admin_tab as build_admin_tab_external
-    _ADMIN_TAB_AVAILABLE = True
-except Exception as _atab:
-    _ADMIN_TAB_AVAILABLE = False
-    print(f"ADMIN_TAB: FAILED - {_atab}", flush=True)
-
-BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "greg.kosmala@gmail.com")
+BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
+SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
+
+
+# SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_START
+def _rfa25h_color(name, fallback):
+    return globals().get(name, fallback)
+
+
+def _rfa25h_fetch_json(path, timeout=5):
+    try:
+        response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+        if not response.ok:
+            return {}
+        data = response.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _rfa25h_safe_list(value):
+    return value if isinstance(value, list) else []
+
+
+def _rfa25h_max_ts(rows, key):
+    values = []
+    for row in _rfa25h_safe_list(rows):
+        if not isinstance(row, dict):
+            continue
+        value = str(row.get(key) or "").strip()
+        if value:
+            values.append(value)
+    return max(values) if values else "-"
+
+
+def _rfa25h_fmt_ts(value):
+    if not value:
+        return "-"
+    text = str(value).strip()
+    if not text:
+        return "-"
+    had_utc = text.endswith("Z") or "+00:00" in text
+    text = text.replace("T", " ").replace("Z", "").replace("+00:00", "")
+    if "." in text:
+        text = text.split(".", 1)[0]
+    return text + (" UTC" if had_utc else "")
+
+
+def _rfa25h_chip(label, value, accent):
+    navy_mid = _rfa25h_color("NAVY_MID", "#0f172a")
+    border = _rfa25h_color("BORDER", "rgba(255,255,255,.08)")
+    muted = _rfa25h_color("MUTED", "#64748b")
+
+    return html.Div([
+        html.Div(label, style={
+            "fontSize": "8px",
+            "fontWeight": "900",
+            "color": muted,
+            "textTransform": "uppercase",
+            "letterSpacing": ".08em",
+            "marginBottom": "3px",
+        }),
+        html.Div(_rfa25h_fmt_ts(value), style={
+            "fontSize": "10px",
+            "fontWeight": "900",
+            "color": accent,
+            "fontFamily": "DM Mono, monospace",
+            "whiteSpace": "nowrap",
+        }),
+    ], style={
+        "background": navy_mid,
+        "border": f"1px solid {border}",
+        "borderRadius": "9px",
+        "padding": "7px 9px",
+        "minWidth": "132px",
+    })
+
+
+def _rfa25h_freshness_status(campaign_refresh_iso):
+    """
+    Returns (label, color) based on how old campaign_refresh_iso is.
+    Never raises; a missing or unparseable timestamp is always treated as
+    NOT live, since this function must never claim freshness it cannot
+    actually verify.
+    """
+    red = _rfa25h_color("RED_DIM", "#fb7185")
+    yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
+    teal = _rfa25h_color("TEAL_DIM", "#34d399")
+
+    if not campaign_refresh_iso or campaign_refresh_iso == "-":
+        return "NO DATA", red
+
+    try:
+        text = str(campaign_refresh_iso).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        ts = datetime.fromisoformat(text)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        return "UNKNOWN", red
+
+    age = datetime.now(timezone.utc) - ts
+    if age < timedelta(0):
+        return "UNKNOWN", yellow
+    if age <= timedelta(hours=20):
+        return "LIVE", teal
+    return "STALE", red
+
+
+def _rfa25h_command_center_freshness_title():
+    white = _rfa25h_color("WHITE", "#f1f5f9")
+    muted = _rfa25h_color("MUTED", "#64748b")
+    teal = _rfa25h_color("TEAL_DIM", "#34d399")
+    blue = _rfa25h_color("BLUE_DIM", "#93c5fd")
+    yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
+    border = _rfa25h_color("BORDER", "rgba(255,255,255,.08)")
+
+    active = _rfa25h_fetch_json("/api/campaigns/active")
+    rows = _rfa25h_safe_list(active.get("campaigns"))
+
+    radar = _rfa25h_fetch_json("/api/radar/scores?limit=25")
+    cache = radar.get("cache") if isinstance(radar.get("cache"), dict) else {}
+
+    campaign_refresh = _rfa25h_max_ts(rows, "updated_at")
+    evidence_refresh = _rfa25h_max_ts(rows, "evidence_updated_at")
+    radar_refresh = radar.get("generated_at") or "-"
+    radar_served = radar.get("served_at") or "-"
+    radar_cache = cache.get("mode") or "-"
+
+    # FIX: this used to call itself here (infinite recursion -> RecursionError
+    # on every render). The title is now computed directly from the same
+    # campaign_refresh timestamp already fetched above, with real
+    # staleness-aware coloring instead of a hardcoded "white" title.
+    freshness_label, freshness_color = _rfa25h_freshness_status(campaign_refresh)
+    title_text = f"Data Freshness — {freshness_label}"
+
+    return html.Div([
+        html.Div(title_text, style={
+            "fontSize": "14px",
+            "fontWeight": "900",
+            "color": freshness_color,
+            "marginBottom": "8px",
+        }),
+        html.Div("Data Freshness", style={
+            "fontSize": "9px",
+            "fontWeight": "900",
+            "color": muted,
+            "textTransform": "uppercase",
+            "letterSpacing": ".1em",
+            "marginBottom": "7px",
+        }),
+        html.Div([
+            _rfa25h_chip("Campaign Refresh", campaign_refresh, teal),
+            _rfa25h_chip("Evidence Refresh", evidence_refresh, teal),
+            _rfa25h_chip("Radar Refresh", radar_refresh, blue),
+            _rfa25h_chip("Radar Cache", radar_cache, yellow),
+            _rfa25h_chip("Radar Served", radar_served, muted),
+        ], style={
+            "display": "flex",
+            "gap": "8px",
+            "flexWrap": "wrap",
+            "alignItems": "center",
+            "borderTop": f"1px solid {border}",
+            "paddingTop": "8px",
+        }),
+    ])
+# SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_END
+
+
+
 TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
 USER_ID      = "demo_user_001"
 
@@ -420,12 +238,12 @@ TF_TICKFMT    = {"1m": "%H:%M", "5m": "%H:%M", "15m": "%H:%M",
                  "1H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
 
 # ── Brand tokens ───────────────────────────────────────────────────────────────
+WHITE = "#FFFFFF"
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
-BLUE_DIM  = "#93c5fd"; MUTED = "#f8fafc"; TEXT = "#f8fafc"
-WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
+BLUE_DIM  = "#93c5fd"; MUTED = WHITE; TEXT = WHITE
 PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
 GLOBAL_CSS = f"""
@@ -451,6 +269,135 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
+# ── Historical Probability Display Helpers ───────────────────────────────────
+def _fmt_pct(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        return f"{float(v):.1f}%"
+    except Exception:
+        return default
+
+def _fmt_signed_pct(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        n = float(v)
+        return f"{n:+.2f}%"
+    except Exception:
+        return default
+
+def _fmt_num(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        n = float(v)
+        if abs(n) >= 1000:
+            return f"{n:,.0f}"
+        return f"{n:.2f}"
+    except Exception:
+        return default
+
+def _fmt_int(v, default="—"):
+    try:
+        if v is None or v == "":
+            return default
+        return f"{int(float(v)):,}"
+    except Exception:
+        return default
+
+def _probability_grade_color(grade):
+    g = str(grade or "").upper().strip()
+    if g.startswith("A"):
+        return TEAL
+    if g.startswith("B"):
+        return BLUE_DIM
+    if g.startswith("C"):
+        return YELLOW_DIM
+    if g in {"D", "F", "AVOID"}:
+        return RED_DIM
+    return WHITE
+
+def _historical_edge_payload(row):
+    row = row or {}
+    return {
+        "grade": row.get("probability_grade") or row.get("historical_grade") or "Unrated",
+        "success": row.get("historical_success") or row.get("historical_success_rate") or row.get("historical_tradeable_rate"),
+        "expected_return": row.get("expected_return") or row.get("historical_expected_return"),
+        "edge_ratio": row.get("edge_ratio") or row.get("historical_edge_ratio"),
+        "matches": row.get("historical_matches"),
+        "confidence": row.get("probability_confidence") or row.get("historical_confidence"),
+        "score": row.get("expected_opportunity_score"),
+        "edge_score": row.get("edge_score") or row.get("expected_opportunity_score"),
+        "match_type": row.get("probability_match_type"),
+        "setup": row.get("probability_setup_type") or row.get("setup_type"),
+        "weekly": row.get("probability_weekly_regime") or row.get("weekly_regime"),
+    }
+
+def historical_edge_card(row):
+    p = _historical_edge_payload(row)
+    grade = p["grade"]
+    grade_color = _probability_grade_color(grade)
+    return html.Div([
+        html.Div("Historical Edge", style={"fontSize":"13px","fontWeight":"800","color":WHITE,"letterSpacing":".4px","marginBottom":"8px"}),
+        html.Div([
+            html.Div([
+                html.Div("Grade", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(grade), style={"fontSize":"30px","fontWeight":"900","color":grade_color,"lineHeight":"1"}),
+            ], style={"minWidth":"76px"}),
+            html.Div([
+                html.Div("Probability", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_pct(p["success"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
+            ], style={"minWidth":"130px"}),
+            html.Div([
+                html.Div("Expected Return", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_signed_pct(p["expected_return"]), style={"fontSize":"22px","fontWeight":"900","color":WHITE}),
+            ], style={"minWidth":"130px"}),
+        ], style={"display":"flex","gap":"16px","flexWrap":"wrap","alignItems":"center"}),
+        html.Div([
+            html.Div([
+                html.Div("Edge Ratio", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_num(p["edge_ratio"]), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Matches", style={"fontSize":"11px","color":WHITE}),
+                html.Div(_fmt_int(p["matches"]), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Confidence", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(p["confidence"] or "—"), style={"fontSize":"16px","fontWeight":"800","color":WHITE}),
+            ]),
+            html.Div([
+                html.Div("Match", style={"fontSize":"11px","color":WHITE}),
+                html.Div(str(p["match_type"] or "—").replace("_"," "), style={"fontSize":"13px","fontWeight":"700","color":WHITE}),
+            ]),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,minmax(90px,1fr))","gap":"10px","marginTop":"12px"}),
+        html.Div([
+            html.Span(str(p["weekly"] or "Weekly: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+            html.Span(" · ", style={"color":WHITE}),
+            html.Span(str(p["setup"] or "Setup: —"), style={"color":WHITE,"fontSize":"12px","fontWeight":"700"}),
+        ], style={"marginTop":"10px"}),
+    ], style={
+        "border":"1px solid rgba(45,212,191,.26)",
+        "background":"rgba(8,24,39,.72)",
+        "borderRadius":"16px",
+        "padding":"14px",
+        "boxShadow":"0 0 0 1px rgba(45,212,191,.08) inset",
+        "color":WHITE,
+    })
+
+def probability_metric_pills(row):
+    p = _historical_edge_payload(row)
+    grade_color = _probability_grade_color(p["grade"])
+    return html.Div([
+        html.Div([html.Span("Grade ", style={"color":WHITE}), html.B(str(p["grade"]), style={"color":grade_color})], className="prob-pill"),
+        html.Div([html.Span("Success ", style={"color":WHITE}), html.B(_fmt_pct(p["success"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Exp Ret ", style={"color":WHITE}), html.B(_fmt_signed_pct(p["expected_return"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Edge ", style={"color":WHITE}), html.B(_fmt_num(p["edge_ratio"]), style={"color":WHITE})], className="prob-pill"),
+        html.Div([html.Span("Matches ", style={"color":WHITE}), html.B(_fmt_int(p["matches"]), style={"color":WHITE})], className="prob-pill"),
+    ], style={"display":"flex","gap":"8px","flexWrap":"wrap","marginTop":"10px"})
+
 def _track(event_type, symbol, price=None, timeframe=None, regime=None,
            decision_score=None, decision_status=None, metadata=None):
     """Fire-and-forget behavioral event to backend."""
@@ -471,6 +418,438 @@ def _get(path, **params):
     except Exception:
         return {}
 
+
+# ============================================================
+# D3F.1B LIVE DASH CONTROLLED PERSISTENCE PANEL
+# Mode: read-only frontend display. GET only. No write. No D3D. No Stripe.
+# ============================================================
+def _d3f1b_bool_text(value):
+    if value is True:
+        return "True"
+    if value is False:
+        return "False"
+    return "Unknown"
+
+
+def _d3f1b_guardrail_clean(data):
+    if not isinstance(data, dict):
+        return False
+
+    return (
+        data.get("writes_to_supabase") is False
+        and data.get("supabase_write_authorized") is False
+        and data.get("persistence_write_authorized") is False
+        and data.get("mutates_campaigns") is False
+        and data.get("executes_d3d") is False
+        and data.get("authorizes_d3d") is False
+        and data.get("operator_control_confirmed") is False
+        and data.get("composite_operator_control_confirmed") is False
+        and data.get("not_a_trade_signal") is True
+        and data.get("touches_stripe") is False
+    )
+
+
+def _d3f1b_row(label, value):
+    return html.Div(
+        [
+            html.Span(label, style={"color": "#94a3b8"}),
+            html.Span(str(value), style={"fontWeight": "700", "textAlign": "right"}),
+        ],
+        style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "14px",
+            "padding": "6px 0",
+            "borderTop": "1px solid rgba(148,163,184,0.14)",
+            "fontSize": "13px",
+        },
+    )
+
+
+def _build_d3f1b_controlled_persistence_lifecycle_panel():
+    endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
+
+    try:
+        data = _get(endpoint)
+    except Exception as exc:
+        data = {
+            "ok": False,
+            "d3e_phase": "D3E.9",
+            "final_lifecycle_verified": False,
+            "final_lifecycle_status": "D3F1B_FRONTEND_FETCH_ERROR",
+            "error": str(exc)[:240],
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "executes_d3d": False,
+            "authorizes_d3d": False,
+            "operator_control_confirmed": False,
+            "composite_operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
+
+    if not isinstance(data, dict):
+        data = {"ok": False, "final_lifecycle_verified": False}
+
+    complete = data.get("final_lifecycle_verified") is True
+    guardrail_clean = _d3f1b_guardrail_clean(data)
+
+    status_text = "COMPLETE" if complete else "ATTENTION"
+    guardrail_text = "Clean" if guardrail_clean else "Needs review"
+
+    lifecycle_rows = [
+        ("Phase", data.get("d3e_phase", "D3E.9")),
+        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified"))),
+        ("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
+        ("Inserted audit row id", data.get("inserted_row_id", "Unknown")),
+        ("Audit symbol", data.get("lifecycle_symbol", "Unknown")),
+        ("Audit version", data.get("lifecycle_audit_version", "Unknown")),
+        ("Operator-control status", data.get("lifecycle_operator_control_evidence_audit_status", "Unknown")),
+        ("D3D status", data.get("lifecycle_d3d_dry_run_gate_audit_status", "Unknown")),
+    ]
+
+    guardrail_rows = [
+        ("Writes to Supabase", _d3f1b_bool_text(data.get("writes_to_supabase"))),
+        ("Supabase write authorized", _d3f1b_bool_text(data.get("supabase_write_authorized"))),
+        ("Persistence write authorized", _d3f1b_bool_text(data.get("persistence_write_authorized"))),
+        ("Campaign mutation", _d3f1b_bool_text(data.get("mutates_campaigns"))),
+        ("D3D executed", _d3f1b_bool_text(data.get("executes_d3d"))),
+        ("D3D authorized", _d3f1b_bool_text(data.get("authorizes_d3d"))),
+        ("Operator control confirmed", _d3f1b_bool_text(data.get("operator_control_confirmed"))),
+        ("Composite operator control confirmed", _d3f1b_bool_text(data.get("composite_operator_control_confirmed"))),
+        ("Trade signal created", "False" if data.get("not_a_trade_signal") is True else "Unknown"),
+        ("Stripe touched", _d3f1b_bool_text(data.get("touches_stripe"))),
+    ]
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.Div(
+                                "Controlled Persistence Lifecycle",
+                                style={
+                                    "fontSize": "12px",
+                                    "letterSpacing": "0.08em",
+                                    "color": "#94a3b8",
+                                    "textTransform": "uppercase",
+                                },
+                            ),
+                            html.H2(
+                                "D3E.9 Final Lifecycle Regression Sweep",
+                                style={"margin": "6px 0 4px", "fontSize": "22px"},
+                            ),
+                            html.Div(
+                                "Read-only Status Center display. No write. No campaign mutation. No D3D. No operator-control confirmation. No Stripe.",
+                                style={"color": "#cbd5e1", "fontSize": "14px"},
+                            ),
+                        ]
+                    ),
+                    html.Div(
+                        status_text,
+                        style={
+                            "borderRadius": "999px",
+                            "padding": "8px 12px",
+                            "fontWeight": "800",
+                            "background": "rgba(22,101,52,0.35)" if complete else "rgba(127,29,29,0.35)",
+                            "border": "1px solid rgba(34,197,94,0.5)" if complete else "1px solid rgba(248,113,113,0.5)",
+                        },
+                    ),
+                ],
+                style={
+                    "display": "flex",
+                    "justifyContent": "space-between",
+                    "gap": "16px",
+                    "alignItems": "center",
+                    "marginBottom": "16px",
+                },
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        [html.H3("Lifecycle Proof", style={"margin": "0 0 10px", "fontSize": "16px"})]
+                        + [_d3f1b_row(label, value) for label, value in lifecycle_rows],
+                        style={
+                            "border": "1px solid rgba(148,163,184,0.22)",
+                            "borderRadius": "12px",
+                            "padding": "14px",
+                        },
+                    ),
+                    html.Div(
+                        [html.H3("Doctrine Guardrails", style={"margin": "0 0 10px", "fontSize": "16px"})]
+                        + [_d3f1b_row(label, value) for label, value in guardrail_rows]
+                        + [
+                            html.Div(
+                                f"Guardrail status: {guardrail_text}",
+                                style={
+                                    "marginTop": "12px",
+                                    "fontWeight": "800",
+                                    "color": "#86efac" if guardrail_clean else "#fecaca",
+                                },
+                            )
+                        ],
+                        style={
+                            "border": "1px solid rgba(148,163,184,0.22)",
+                            "borderRadius": "12px",
+                            "padding": "14px",
+                        },
+                    ),
+                ],
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "repeat(auto-fit, minmax(260px, 1fr))",
+                    "gap": "14px",
+                },
+            ),
+        ],
+        id="d3f1b-controlled-persistence-lifecycle-panel",
+        **{
+            "data-d3f1b-endpoint": endpoint,
+            "data-d3e-phase": "D3E.9",
+            "data-read-only": "true",
+        },
+        style={
+            "border": "1px solid rgba(148,163,184,0.35)",
+            "borderRadius": "16px",
+            "padding": "18px",
+            "margin": "18px 0",
+            "background": "rgba(15,23,42,0.78)",
+            "color": "#e5e7eb",
+        },
+    )
+# Weis-Gamma Status Center display cache.
+_WEIS_GAMMA_STATUS_CACHE = {
+    "as_of": None,
+    "data": None,
+}
+
+
+def _cached_campaign_summary(ttl_seconds: int = 30):
+    now = datetime.now(timezone.utc)
+    cached_at = _WEIS_GAMMA_STATUS_CACHE.get("as_of")
+
+    if cached_at is not None:
+        try:
+            age = (now - cached_at).total_seconds()
+            if age < ttl_seconds and isinstance(_WEIS_GAMMA_STATUS_CACHE.get("data"), dict):
+                return _WEIS_GAMMA_STATUS_CACHE.get("data") or {}
+        except Exception:
+            pass
+
+    data = _get("/api/campaigns/summary")
+
+    if not isinstance(data, dict) or not data:
+        data = _get("/api/campaign/status")
+
+    if isinstance(data, dict):
+        _WEIS_GAMMA_STATUS_CACHE["as_of"] = now
+        _WEIS_GAMMA_STATUS_CACHE["data"] = data
+        return data
+
+    return {}
+
+
+def _wg_metric_card(label, value, color=WHITE):
+    return html.Div([
+        html.Div(str(label), style={
+            "fontSize": "11px",
+            "color": WHITE,
+            "fontWeight": "800",
+            "letterSpacing": ".08em",
+            "textTransform": "uppercase",
+            "opacity": ".85",
+        }),
+        html.Div(str(value), style={
+            "fontSize": "24px",
+            "lineHeight": "1.1",
+            "color": color,
+            "fontWeight": "900",
+            "marginTop": "6px",
+        }),
+    ], style={
+        "background": "rgba(8,24,39,.72)",
+        "border": f"1px solid {BORDER}",
+        "borderRadius": "14px",
+        "padding": "12px",
+        "minHeight": "76px",
+    })
+
+
+def _wg_label(value):
+    mapping = {
+        "OK": "Gamma OK",
+        "NONE": "Missing Overlay",
+        "EMPTY": "Empty",
+        "NO_OPTIONS_RETURNED": "No Options Returned",
+        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
+        "NO_GAMMA_INPUT": "No Gamma Input",
+        "NOT_PRESENT": "Not Present",
+        "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
+        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
+        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
+        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
+        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
+        "WEIS_EXPANSION": "Weis Expansion",
+        "WEIS_BASELINE": "Weis Baseline",
+        "WEIS_TEST": "Weis Test",
+        "WEIS_EXHAUSTION": "Weis Exhaustion",
+        "A_PLUS": "A+",
+        "LOW_PRIORITY": "Low Priority",
+        "WATCHLIST": "Watchlist",
+        "AVOID": "Avoid",
+    }
+
+    key = str(value or "NONE")
+    return mapping.get(key, key.replace("_", " ").title())
+
+
+def _wg_counts_text(counts):
+    if not isinstance(counts, dict) or not counts:
+        return "-"
+
+    parts = []
+    for key, value in counts.items():
+        parts.append(f"{_wg_label(key)}: {value}")
+
+    return " | ".join(parts)
+
+
+def build_weis_gamma_status_center_panel():
+    summary = _cached_campaign_summary()
+    wg = summary.get("weis_gamma_status_center") or {}
+
+    if not wg:
+        return html.Div([
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
+            html.Div(_rfa25h_command_center_freshness_title(), style={
+                "fontSize": "14px",
+                "fontWeight": "900",
+                "color": WHITE,
+                "marginBottom": "6px",
+            }),
+            html.Div("Waiting for Weis-Gamma status data from backend.", style={
+                "fontSize": "12px",
+                "color": WHITE,
+                "opacity": ".85",
+            }),
+        ], style={
+            "border": f"1px solid {BORDER}",
+            "background": "rgba(8,24,39,.60)",
+            "borderRadius": "18px",
+            "padding": "16px",
+            "marginBottom": "16px",
+        })
+
+    total = wg.get("total_campaigns", summary.get("active_campaigns", 0))
+    present = wg.get("weis_gamma_present", 0)
+    missing = wg.get("weis_gamma_missing", 0)
+
+    gamma_ok = wg.get("gamma_ok", 0)
+    no_options_returned = wg.get("gamma_no_options_returned", 0)
+    no_option_chain = wg.get("gamma_no_option_chain", 0)
+    stale = wg.get("gamma_stale_or_unconfirmed", 0)
+    transition_enabled = wg.get("transition_enabled", 0)
+
+    phase_counts = wg.get("phase_counts") or {}
+    rank_counts = wg.get("rank_bucket_counts") or {}
+    gamma_counts = wg.get("gamma_status_counts") or {}
+    option_chain_counts = wg.get("option_chain_status_counts") or {}
+    fusion_counts = wg.get("fusion_state_counts") or {}
+
+    transitions_off = int(transition_enabled or 0) == 0
+    safety_color = TEAL_DIM if transitions_off else RED_DIM
+    safety_label = "TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED"
+
+    stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
+    no_input_color = TEAL_DIM if int(no_option_chain or 0) == 0 else YELLOW_DIM
+
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div(_rfa25h_command_center_freshness_title(), style={
+                    "fontSize": "16px",
+                    "fontWeight": "900",
+                    "color": WHITE,
+                }),
+                html.Div(
+                    "Gamma is a read-only execution-risk overlay. No Options Returned means Alpaca was queried and no listed chain was returned; it is not a stale Gamma failure.",
+                    style={
+                        "fontSize": "12px",
+                        "color": WHITE,
+                        "opacity": ".85",
+                        "marginTop": "4px",
+                    },
+                ),
+            ]),
+            html.Div(safety_label, style={
+                "fontSize": "11px",
+                "fontWeight": "900",
+                "color": safety_color,
+                "border": f"1px solid {safety_color}",
+                "borderRadius": "999px",
+                "padding": "6px 10px",
+            }),
+        ], style={
+            "display": "flex",
+            "justifyContent": "space-between",
+            "gap": "12px",
+            "alignItems": "center",
+            "marginBottom": "14px",
+        }),
+
+        html.Div([
+            _wg_metric_card("Total Campaigns", total, WHITE),
+            _wg_metric_card("Weis-Gamma Present", present, TEAL_DIM),
+            _wg_metric_card("Gamma OK", gamma_ok, TEAL_DIM),
+            _wg_metric_card("No Options Returned", no_options_returned, YELLOW_DIM),
+            _wg_metric_card("No Option-Chain Input", no_option_chain, no_input_color),
+            _wg_metric_card("Gamma Stale / Unconfirmed", stale, stale_color),
+            _wg_metric_card("Transitions Off", "YES" if transitions_off else "NO", safety_color),
+            _wg_metric_card("Missing Overlay", missing, YELLOW_DIM),
+        ], style={
+            "display": "grid",
+            "gridTemplateColumns": "repeat(auto-fit, minmax(150px, 1fr))",
+            "gap": "10px",
+        }),
+
+        html.Div([
+            html.Div([
+                html.Div("Phase Counts", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(phase_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Rank Buckets", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(rank_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(gamma_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(option_chain_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+            html.Div([
+                html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
+                html.Div(_wg_counts_text(fusion_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+            ]),
+        ], style={
+            "display": "grid",
+            "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
+            "gap": "10px",
+            "marginTop": "12px",
+        }),
+    ], style={
+        "border": "1px solid rgba(45,212,191,.30)",
+        "background": "rgba(8,24,39,.72)",
+        "borderRadius": "18px",
+        "padding": "16px",
+        "marginBottom": "16px",
+        "boxShadow": "0 0 0 1px rgba(45,212,191,.08) inset",
+    })
+
+
 def _post(path, body):
     try:
         r = req.post(f"{BACKEND_HTTP}{path}", json=body, timeout=4)
@@ -478,35 +857,146 @@ def _post(path, body):
     except Exception:
         return {}
 
-def _scaled_candles(anchor_price: float, tf: str) -> list[dict]:
+def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
     """
-    Generate historical candles with proper OHLC structure.
-    - Open  : locked at candle start
-    - High  : max(open, close) + realistic wick scaled to TF volatility
-    - Low   : min(open, close) - realistic wick scaled to TF volatility
-    - Close : end price of that period
-    - Timestamp: real UTC time anchored so last candle = now
+    Fetch real OHLCV bars from backend Alpaca candle endpoint.
+    No synthetic candles are created here.
     """
-    vol      = TF_VOLATILITY.get(tf, 0.60)
-    interval = TF_INTERVAL.get(tf, 300)
-    base     = generate_initial_candles(anchor_price)
-    n        = len(base)
-    now      = datetime.now(timezone.utc)
-    out      = []
-    for i, c in enumerate(base):
-        # Scale body by TF volatility
-        body  = (c.c - c.o) * vol
-        mid   = (c.o + c.c) / 2
-        o     = round(mid - body / 2, 2)
-        cl    = round(mid + body / 2, 2)
-        # Wick = 30% of body on each side, minimum 0.05% of price
-        wick  = max(abs(body) * 0.3, anchor_price * 0.0005)
-        h     = round(max(o, cl) + wick, 2)
-        l     = round(min(o, cl) - wick, 2)
-        # Timestamp: last candle = now, walk backwards
-        ts    = now - timedelta(seconds=interval * (n - 1 - i))
-        out.append({"o": o, "h": h, "l": l, "c": cl, "t": ts.isoformat()})
-    return out
+    tf_map = {
+        "1m": "1Min",
+        "5m": "5Min",
+        "15m": "15Min",
+        "1H": "1Hour",
+        "1D": "1Day",
+        "1W": "1Week",
+    }
+    clean = sanitize_symbol(symbol or "")
+    if not clean:
+        return []
+
+    timeframe = tf_map.get(tf, "5Min")
+
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/candles/{clean}",
+            params={"timeframe": timeframe, "limit": limit},
+            timeout=8,
+        )
+        if not r.ok:
+            print(f"REAL_CANDLES_HTTP_ERROR {clean} {timeframe}: {r.status_code} {r.text[:200]}")
+            return []
+
+        data = r.json() if r.ok else {}
+        bars = data.get("bars", []) if isinstance(data, dict) else []
+
+        cleaned = []
+        for b in bars:
+            try:
+                cleaned.append({
+                    "o": float(b["o"]),
+                    "h": float(b["h"]),
+                    "l": float(b["l"]),
+                    "c": float(b["c"]),
+                    "v": int(b.get("v", 0) or 0),
+                    "t": str(b.get("t", "")),
+                })
+            except Exception:
+                continue
+
+        return cleaned[-limit:]
+
+    except Exception as e:
+        print(f"REAL_CANDLES_FETCH_ERROR {clean} {timeframe}: {e}")
+        return []
+
+
+def _bucket_start(dt: datetime, tf: str) -> datetime:
+    """
+    Return the beginning of the selected timeframe bucket.
+    This is what prevents the chart from creating a new candle on every tick.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+
+    if tf == "1m":
+        return dt.replace(second=0, microsecond=0)
+
+    if tf == "5m":
+        minute = (dt.minute // 5) * 5
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    if tf == "15m":
+        minute = (dt.minute // 15) * 15
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    if tf == "1H":
+        return dt.replace(minute=0, second=0, microsecond=0)
+
+    if tf == "1D":
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if tf == "1W":
+        # Monday 00:00 UTC week bucket.
+        start = dt - timedelta(days=dt.weekday())
+        return start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    minute = (dt.minute // 5) * 5
+    return dt.replace(minute=minute, second=0, microsecond=0)
+
+
+def update_current_candle(candles: list[dict], price: float, volume: int, tick_time: str, tf: str) -> list[dict]:
+    """
+    Update only the active candle while inside the selected timeframe.
+    A new candle is appended only when the timeframe bucket rolls over.
+    """
+    try:
+        tick_dt = datetime.fromisoformat(str(tick_time).replace("Z", "+00:00"))
+    except Exception:
+        tick_dt = datetime.now(timezone.utc)
+
+    current_bucket = _bucket_start(tick_dt, tf)
+    current_t = current_bucket.isoformat()
+
+    if not candles:
+        return [{
+            "o": price,
+            "h": price,
+            "l": price,
+            "c": price,
+            "v": int(volume or 0),
+            "t": current_t,
+        }]
+
+    new_candles = [dict(c) for c in candles[-199:]]
+    last = new_candles[-1]
+
+    try:
+        last_dt = datetime.fromisoformat(str(last.get("t", "")).replace("Z", "+00:00"))
+        last_bucket = _bucket_start(last_dt, tf)
+    except Exception:
+        last_bucket = current_bucket
+
+    if last_bucket == current_bucket:
+        # Same candle: keep open fixed; update H/L/C and volume.
+        last["h"] = max(float(last.get("h", price)), price)
+        last["l"] = min(float(last.get("l", price)), price)
+        last["c"] = price
+        last["v"] = int(last.get("v", 0) or 0) + int(volume or 0)
+        last["t"] = current_t
+        new_candles[-1] = last
+    else:
+        # New timeframe bucket: close previous candle, append new candle.
+        new_candles.append({
+            "o": price,
+            "h": price,
+            "l": price,
+            "c": price,
+            "v": int(volume or 0),
+            "t": current_t,
+        })
+
+    return new_candles[-200:]
 
 def _regime_from_live(live: dict) -> str:
     score = live.get("decision", {}).get("score", 50)
@@ -532,10 +1022,10 @@ def badge(text, color="teal"):
 
 def metric_tile(label, value, accent=WHITE, sub=None):
     return html.Div([
-        html.Span(label, style={"display":"block","color":TEXT,"fontSize":"11px","fontWeight":"600",
+        html.Span(label, style={"display":"block","color":WHITE,"fontSize":"11px","fontWeight":"600",
                                 "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"6px"}),
         html.Strong(value, style={"display":"block","color":accent,"fontSize":"15px","fontWeight":"800"}),
-        *([html.Span(sub, style={"fontSize":"10px","color":MUTED,"marginTop":"2px","display":"block"})] if sub else []),
+        *([html.Span(sub, style={"fontSize":"10px","color":WHITE,"marginTop":"2px","display":"block"})] if sub else []),
     ], style={"background":"rgba(0,0,0,.25)","border":f"1px solid {BORDER}",
                "borderRadius":"12px","padding":"14px 16px","minHeight":"64px"})
 
@@ -547,7 +1037,7 @@ def card(children, sx=None):
 
 def note_box(text, variant=""):
     s = {"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
-         "padding":"12px 14px","color":TEXT,"fontSize":"12px","lineHeight":"1.6"}
+         "padding":"12px 14px","color":WHITE,"fontSize":"12px","lineHeight":"1.6"}
     if variant=="yellow": s.update({"borderColor":"rgba(245,158,11,.25)","background":"rgba(245,158,11,.08)","color":"#fef3c7"})
     elif variant=="blue":  s.update({"borderColor":"rgba(59,130,246,.25)","background":"rgba(59,130,246,.08)","color":"#dbeafe"})
     elif variant=="teal":  s.update({"borderColor":BORDER_T,"background":TEAL_GLOW,"color":"#d1fae5"})
@@ -556,14 +1046,14 @@ def note_box(text, variant=""):
     return html.Div(text, style=s)
 
 def slabel(text):
-    return html.Div(text, style={"color":MUTED,"fontSize":"10px","fontWeight":"800",
+    return html.Div(text, style={"color":WHITE,"fontSize":"10px","fontWeight":"800",
                                   "textTransform":"uppercase","letterSpacing":".28em","marginBottom":"8px"})
 
 def pbar(label, value, color=None):
     pct = max(0, min(100, value))
     c = color or (TEAL_DIM if pct>=70 else (YELLOW_DIM if pct>=45 else RED_DIM))
     return html.Div([
-        html.Div([html.Span(label,style={"color":TEXT,"fontSize":"12px","fontWeight":"600"}),
+        html.Div([html.Span(label,style={"color":WHITE,"fontSize":"12px","fontWeight":"600"}),
                   html.Span(f"{pct}%",style={"color":c,"fontWeight":"800","fontSize":"13px"})],
                  style={"display":"flex","justifyContent":"space-between","marginBottom":"6px"}),
         html.Div(html.Div(style={"width":f"{pct}%","height":"100%","borderRadius":"999px",
@@ -585,10 +1075,10 @@ def brow(label, value, tone):
 
 def zcard(name, level, desc, color):
     return html.Div([
-        html.P(name, style={"fontSize":"11px","color":TEXT,"margin":"0 0 6px","fontWeight":"600",
+        html.P(name, style={"fontSize":"11px","color":WHITE,"margin":"0 0 6px","fontWeight":"600",
                              "textTransform":"uppercase","letterSpacing":".1em"}),
         html.Div(level, style={"fontSize":"26px","fontWeight":"900","color":color,"margin":"4px 0 8px"}),
-        html.P(desc,  style={"fontSize":"11px","color":MUTED,"margin":"0"}),
+        html.P(desc,  style={"fontSize":"11px","color":WHITE,"margin":"0"}),
     ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"14px",
                "padding":"14px","textAlign":"center"})
 
@@ -603,16 +1093,6 @@ def _input_style(width="100%"):
             "borderRadius":"10px","padding":"9px 12px","width":width,"fontSize":"13px",
             "fontWeight":"600","fontFamily":"inherit"}
 
-def _bias_color(value):
-    v = str(value or "").upper().strip()
-    if v in {"BULL", "BULLISH"}:
-        return TEAL_DIM
-    if v in {"NEUTRAL", "WATCH"}:
-        return YELLOW_DIM
-    if v in {"BEAR", "BEARISH"}:
-        return RED_DIM
-    return WHITE
-
 def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
     s = {"background":bg,"border":f"1px solid {border}","color":color,"borderRadius":"12px",
          "padding":"10px 18px","fontSize":"13px","fontWeight":"800","cursor":"pointer","fontFamily":"inherit"}
@@ -622,84 +1102,23 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
 def build_chart(candles, price, nodes, tf="5m"):
-    """
-    True financial OHLC candlestick chart.
-
-    Each candle uses:
-    - open/close for the rectangular body
-    - high/low for the wick/shadow
-    - green body when close >= open
-    - red body when close < open
-
-    The x-axis is categorical so Plotly gives each candle a visible body instead
-    of compressing candles into thin line-like marks.
-    """
+    """Clean chart — integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price)
-
-    clean = []
-    for i, c in enumerate(candles or []):
-        if not isinstance(c, dict):
-            continue
-        try:
-            o = float(c.get("o", c.get("open")))
-            h = float(c.get("h", c.get("high")))
-            l = float(c.get("l", c.get("low")))
-            cl = float(c.get("c", c.get("close")))
-        except Exception:
-            continue
-
-        # Protect chart geometry if any upstream candle has bad high/low values.
-        h = max(h, o, cl)
-        l = min(l, o, cl)
-        label = str(i + 1)
-        raw_t = c.get("t") or c.get("time") or c.get("timestamp") or label
-        clean.append({"x": label, "o": o, "h": h, "l": l, "c": cl, "t": raw_t})
-
-    if not clean:
-        p = float(price or 0)
-        clean = [{"x": "1", "o": p, "h": p, "l": p, "c": p, "t": "No candle data"}]
-
-    xs = [c["x"] for c in clean]
-    opens = [c["o"] for c in clean]
-    highs = [c["h"] for c in clean]
-    lows = [c["l"] for c in clean]
-    closes = [c["c"] for c in clean]
-    hover_times = [c["t"] for c in clean]
-    hover_text = [
-        f"Candle {x}<br>Time {t}<br>Open {o:.2f}<br>High {h:.2f}<br>Low {l:.2f}<br>Close {cl:.2f}"
-        for x, t, o, h, l, cl in zip(xs, hover_times, opens, highs, lows, closes)
-    ]
-
-    y_min = min(lows + [float(price or 0)])
-    y_max = max(highs + [float(price or 0)])
-    y_span = max(y_max - y_min, max(abs(float(price or 1)) * 0.01, 0.25))
-    y_pad = y_span * 0.12
-
+    xs = list(range(len(candles)))
     fig = go.Figure()
-
     fig.add_trace(go.Candlestick(
         x=xs,
-        open=opens,
-        high=highs,
-        low=lows,
-        close=closes,
-        hovertext=hover_text,
-        hoverinfo="text",
+        open=[c["o"] for c in candles],
+        high=[c["h"] for c in candles],
+        low=[c["l"] for c in candles],
+        close=[c["c"] for c in candles],
         name="Price",
-        increasing=dict(
-            line=dict(color=TEAL_DIM, width=1.2),
-            fillcolor=TEAL_DIM,
-        ),
-        decreasing=dict(
-            line=dict(color=RED_DIM, width=1.2),
-            fillcolor=RED_DIM,
-        ),
-        whiskerwidth=0.35,
+        increasing=dict(line=dict(color=TEAL_DIM, width=2), fillcolor=TEAL_DIM),
+        decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
+        whiskerwidth=1.0,
     ))
-
-    # Level lines remain as context. The y-axis range is based on the candle
-    # data so the candle bodies stay visually readable.
-    for level, color, dash, width in [
+    # Level lines — no annotations (labels are in the Price Ladder panel)
+    for level,color,dash,width in [
         (kl.breakout,   TEAL_DIM,   "dash",    1.0),
         (kl.prior_high, TEAL_DIM,   "dot",     1.0),
         (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
@@ -709,48 +1128,32 @@ def build_chart(candles, price, nodes, tf="5m"):
         (kl.fail,       RED_DIM,    "dash",    1.0),
     ]:
         fig.add_hline(y=level, line_color=color, line_dash=dash,
-                      line_width=width, opacity=0.45)
-
-    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid",
-                  line_width=1.5, opacity=0.9)
-
+                      line_width=width, opacity=0.6)
+    # Live price line
+    fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=NAVY,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
         font=dict(family="DM Sans", color=WHITE, size=12),
         xaxis=dict(
-            type="category",
-            categoryorder="array",
-            categoryarray=xs,
-            showgrid=True,
-            gridcolor="rgba(255,255,255,.06)",
-            zeroline=False,
+            showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
             rangeslider=dict(visible=False),
             showticklabels=False,
             title=None,
             color=WHITE,
-            fixedrange=False,
         ),
         yaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(255,255,255,.06)",
-            zeroline=False,
-            color=WHITE,
-            side="right",
-            tickformat=".2f",
+            showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
+            color=WHITE, side="right", tickformat=".2f",
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
-            range=[y_min - y_pad, y_max + y_pad],
-            fixedrange=False,
         ),
+        # Enough right margin for y-axis labels, bottom for x-axis labels
         margin=dict(l=0, r=60, t=8, b=24),
         height=480,
         showlegend=False,
-        hovermode="x",
-        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE,
-                        bordercolor=BORDER, font_size=12),
+        hovermode="x unified",
+        hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
     )
-
     return fig
 
 def _build_clock_inline():
@@ -775,7 +1178,7 @@ def _build_trade_plan_contents(live):
     symbol = live.get("symbol", "")
     return html.Div([
         html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
-        html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":MUTED}),
+        html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":WHITE}),
     ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
 
 
@@ -830,7 +1233,7 @@ def build_active_trade_panel(trade: dict, current_price: float):
                     {"label": " Added size after adverse move","value": "added_size_adverse"},
                     {"label": " Changed TF to justify trade",  "value": "timeframe_changed"},
                 ], value=[],
-                style={"color":TEXT,"fontSize":"12px","lineHeight":"2"},
+                style={"color":WHITE,"fontSize":"12px","lineHeight":"2"},
                 inputStyle={"marginRight":"6px","accentColor":TEAL_DIM}),
             ], style={"marginBottom":"10px"}),
             dcc.Textarea(id="exit-notes", value="", placeholder="Exit notes…",
@@ -918,7 +1321,7 @@ def build_import_tab():
                 ]),
             ], style={"display":"flex","alignItems":"center","gap":"10px","marginBottom":"10px"}),
             *[html.P(f"• {step}",
-                     style={"fontSize":"11px","color":MUTED,"marginBottom":"4px","lineHeight":"1.5"})
+                     style={"fontSize":"11px","color":WHITE,"marginBottom":"4px","lineHeight":"1.5"})
               for step in EXPORT_INSTRUCTIONS[key]],
         ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
                    "borderRadius":"14px","padding":"14px","flex":"1","minWidth":"200px"}))
@@ -928,13 +1331,26 @@ def build_import_tab():
         html.H2("📤 Upload Brokerage History",
                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
         html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
-               style={"fontSize":"12px","color":MUTED,"marginBottom":"16px"}),
+               style={"fontSize":"12px","color":WHITE,"marginBottom":"16px"}),
 
         # Broker cards
         html.Div(broker_cards,
                  style={"display":"flex","flexWrap":"wrap","gap":"12px","marginBottom":"20px"}),
 
-        # Upload widget
+        # Upload widget + reset button
+        html.Div([
+            html.Div([
+                html.Div("Upload Brokerage Statement",
+                         style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
+                html.Button("🗑️ Clear All Trades", id="btn-reset-imports", n_clicks=0,
+                    style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
+                           "borderRadius":"10px","color":"#f87171","cursor":"pointer",
+                           "fontSize":"12px","fontWeight":"700","padding":"6px 14px",
+                           "fontFamily":"DM Sans, sans-serif"}),
+            ], style={"display":"flex","justifyContent":"space-between",
+                       "alignItems":"center","marginBottom":"12px"}),
+            html.Div(id="reset-status"),
+        ]),
         html.Div([
             dcc.Upload(
                 id="csv-upload",
@@ -943,7 +1359,7 @@ def build_import_tab():
                     html.Div("Drag & drop your CSV here, or click to browse",
                              style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
                     html.Div("Supports: Alpaca · TD Ameritrade · Schwab · IBKR · Robinhood · Webull · Generic CSV",
-                             style={"fontSize":"11px","color":MUTED}),
+                             style={"fontSize":"11px","color":WHITE}),
                 ], style={"textAlign":"center","padding":"20px"}),
                 style={
                     "border":f"2px dashed {BORDER_T}",
@@ -956,34 +1372,6 @@ def build_import_tab():
                 accept=".csv",
                 multiple=False,
             ),
-            # SIGMALYTIC_STEP85F_VISIBLE_RESET_BUTTON_START
-            html.Div([
-                html.Button(
-                    "Reset Import History",
-                    id="btn-reset-imports",
-                    n_clicks=0,
-                    style={
-                        "background": "#7f1d1d",
-                        "color": "white",
-                        "border": "1px solid #ef4444",
-                        "borderRadius": "10px",
-                        "padding": "10px 14px",
-                        "fontWeight": "800",
-                        "cursor": "pointer",
-                        "marginTop": "12px",
-                        "marginRight": "12px",
-                    },
-                ),
-                html.Span(
-                    id="reset-status",
-                    style={
-                        "color": "#fbbf24",
-                        "fontWeight": "700",
-                    },
-                ),
-            ], style={"marginTop": "10px", "display": "flex", "alignItems": "center"}),
-            # SIGMALYTIC_STEP85F_VISIBLE_RESET_BUTTON_END
-
             html.Div(id="csv-upload-status",
                      style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
         ]),
@@ -1030,7 +1418,7 @@ def build_import_tab():
             c = TEAL_DIM if sp["total_pnl"]>=0 else RED_DIM
             sym_rows.append(html.Tr([
                 html.Td(sym, style={"color":WHITE,"fontWeight":"700","padding":"8px 12px","fontSize":"12px"}),
-                html.Td(str(sp["trades"]), style={"color":TEXT,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
+                html.Td(str(sp["trades"]), style={"color":WHITE,"padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
                 html.Td(f"{sp['win_rate']:.0f}%", style={"color":TEAL_DIM if sp['win_rate']>=50 else RED_DIM,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"center"}),
                 html.Td(f"${sp['total_pnl']:+.2f}", style={"color":c,"fontWeight":"800","padding":"8px 12px","fontSize":"12px","textAlign":"right"}),
             ], style={"borderBottom":f"1px solid {BORDER}"}))
@@ -1055,7 +1443,7 @@ def build_import_tab():
                 html.Div([
                     html.Span("⚡ Mathematical Edge: ",
                               style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
-                    html.Span(edge_insight, style={"color":TEXT,"fontSize":"12px"}),
+                    html.Span(edge_insight, style={"color":WHITE,"fontSize":"12px"}),
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
                            "border":f"1px solid {BORDER}","marginBottom":"12px"}),
 
@@ -1088,7 +1476,7 @@ def build_import_tab():
                         html.Span("✅ " if any(w in f for w in ["Strong","Above","positive","discipline"])
                                   else "⚠️ ",
                                   style={"fontSize":"14px"}),
-                        html.Span(f, style={"fontSize":"12px","color":TEXT,"lineHeight":"1.6"}),
+                        html.Span(f, style={"fontSize":"12px","color":WHITE,"lineHeight":"1.6"}),
                     ], style={"padding":"8px 12px","borderRadius":"10px","marginBottom":"6px",
                                "background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}"})
                       for f in flags]
@@ -1101,14 +1489,14 @@ def build_import_tab():
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
                     html.Table([
                         html.Thead(html.Tr([
-                            html.Th("Symbol",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"left"}),
-                            html.Th("Trades",  style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
-                            html.Th("Win %",   style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
-                            html.Th("Total P&L",style={"color":MUTED,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"right"}),
+                            html.Th("Symbol",  style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"left"}),
+                            html.Th("Trades",  style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
+                            html.Th("Win %",   style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"center"}),
+                            html.Th("Total P&L",style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","padding":"6px 12px","textAlign":"right"}),
                         ])),
                         html.Tbody(sym_rows if sym_rows
                                    else [html.Tr([html.Td("No data",colSpan=4,
-                                                           style={"color":MUTED,"padding":"16px","textAlign":"center"})])]),
+                                                           style={"color":WHITE,"padding":"16px","textAlign":"center"})])]),
                     ], style={"width":"100%","borderCollapse":"collapse"}),
                 ], sx={"flex":"1"}),
             ], style={**ROW,"alignItems":"start"}),
@@ -1119,14 +1507,287 @@ def build_import_tab():
 
 # ── Behavioral Dashboard Tab ───────────────────────────────────────────────────
 
+def _behavior_empty_state():
+    return card([
+        html.H2("🧠 Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+        note_box("Behavioral tracking activates after your first trade upload. Go to Import History to upload a brokerage statement.", "blue"),
+        html.Div(style={"height":"12px"}),
+        note_box("Once trades are imported, your decision scores, regime memory, and behavioral patterns will appear here.", "yellow"),
+    ])
+
+
 def build_behavior_tab():
-    """
-    Behavioural Intelligence now reads the persisted brokerage import-history
-    payload from /api/trades/history. It must not remain a static placeholder
-    after a successful Import History upload.
-    """
+    dash_data = _get(f"/api/behavior/dashboard/{USER_ID}")
+    if not dash_data:
+        return card([note_box("No behavioral data yet. Start tracking trades to build your profile.", "blue")])
+
+    total    = dash_data.get("total_trades", 0)
+    comp     = dash_data.get("avg_decision_score", 0)
+    exec_    = dash_data.get("execution_score", 0)
+    disc     = dash_data.get("discipline_score", 0)
+    timing   = dash_data.get("timing_score", 0)
+    risk     = dash_data.get("risk_score", 0)
+    flag     = dash_data.get("common_behavior_flag", "neutral")
+    best_r   = dash_data.get("best_regime")
+    worst_r  = dash_data.get("worst_regime")
+    regimes  = dash_data.get("regime_performance", [])
+    cards_   = dash_data.get("recent_scorecards", [])
+    warnings = dash_data.get("adaptive_warnings", [])
+
+    def score_color(v): return TEAL_DIM if v>=70 else (YELLOW_DIM if v>=45 else RED_DIM)
+
+    flag_color = {
+        "plan_followed":"teal","disciplined_execution":"teal",
+        "late_chase":"yellow","premature_exit":"yellow","panic_exit":"red",
+        "plan_violated":"red","over_sized":"red","ignored_high_quality_signal":"yellow",
+        "revenge_trade":"red","neutral":"gray","under_sized":"gray",
+    }.get(flag, "gray")
+
+    ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
+
+    # Section 1 — Profile scores
+    section1 = card([
+        html.H2("🧠 Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+        html.Div([
+            metric_tile("Total Trades",    str(total),          WHITE),
+            metric_tile("Composite Score", f"{comp}%",          score_color(comp)),
+            metric_tile("Execution",       f"{exec_}%",         score_color(exec_)),
+            metric_tile("Discipline",      f"{disc}%",          score_color(disc)),
+            metric_tile("Timing",          f"{timing}%",        score_color(timing)),
+            metric_tile("Risk Mgmt",       f"{risk}%",          score_color(risk)),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(6,1fr)","gap":"10px","marginBottom":"16px"}),
+        html.Div([
+            pbar("Composite Decision Score", comp),
+            html.Div(style={"height":"8px"}),
+            pbar("Execution Quality",        exec_),
+            html.Div(style={"height":"8px"}),
+            pbar("Discipline",               disc),
+            html.Div(style={"height":"8px"}),
+            pbar("Timing Quality",           timing),
+            html.Div(style={"height":"8px"}),
+            pbar("Risk Management",          risk),
+        ]),
+    ])
+
+    # Section 2 — Adaptive warnings
+    def warn_box(w):
+        variant = "teal" if w["type"]=="strength" else "yellow"
+        icon    = "✅" if w["type"]=="strength" else "⚠️"
+        return note_box(f"{icon}  {w['message']}", variant)
+
+    section2 = card([
+        html.H2("🔔 Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        *([warn_box(w) for w in warnings] if warnings
+          else [note_box("No active warnings. Keep trading to build your profile.", "blue")]),
+        html.Div(style={"height":"8px"}),
+        html.Div([
+            html.Span("Most Common Pattern: ", style={"fontSize":"12px","color":WHITE}),
+            badge(flag.replace("_"," "), flag_color),
+        ], style={"marginTop":"10px"}),
+        html.Div([
+            *([html.Div([html.Span("Best Regime: ", style={"fontSize":"12px","color":WHITE}),
+                         badge(best_r.replace("_"," "), "teal")],
+                        style={"marginTop":"8px"})] if best_r else []),
+            *([html.Div([html.Span("Worst Regime: ", style={"fontSize":"12px","color":WHITE}),
+                         badge(worst_r.replace("_"," "), "red")],
+                        style={"marginTop":"8px"})] if worst_r else []),
+        ]),
+    ])
+
+    # Section 3 — Regime table
+    regime_rows_html = []
+    for r in regimes:
+        wr_color  = TEAL_DIM if r["win_rate"]>=60 else (YELLOW_DIM if r["win_rate"]>=40 else RED_DIM)
+        dec_color = TEAL_DIM if r["avg_decision_score"]>=70 else (YELLOW_DIM if r["avg_decision_score"]>=45 else RED_DIM)
+        regime_rows_html.append(html.Tr([
+            html.Td(r["regime"].replace("_"," ").title(),
+                    style={"color":WHITE,"fontWeight":"600","padding":"10px 12px","fontSize":"12px"}),
+            html.Td(str(r["total_trades"]),
+                    style={"color":WHITE,"padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
+            html.Td(f"{r['win_rate']:.0f}%",
+                    style={"color":wr_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
+            html.Td(f"{r['avg_decision_score']:.0f}",
+                    style={"color":dec_color,"fontWeight":"800","padding":"10px 12px","fontSize":"12px","textAlign":"center"}),
+            html.Td(r.get("common_behavior_flag","—").replace("_"," "),
+                    style={"color":WHITE,"padding":"10px 12px","fontSize":"11px"}),
+        ], style={"borderBottom":f"1px solid {BORDER}"}))
+
+    section3 = card([
+        html.H2("📊 Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
+        html.Table([
+            html.Thead(html.Tr([
+                html.Th("Regime",           style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
+                html.Th("Trades",           style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Win Rate",         style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Avg Score",        style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"center"}),
+                html.Th("Common Pattern",   style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
+            ])),
+            html.Tbody(regime_rows_html if regime_rows_html
+                       else [html.Tr([html.Td("No regime data yet.",
+                                               colSpan=5,style={"color":WHITE,"padding":"20px","textAlign":"center"})])]),
+        ], style={"width":"100%","borderCollapse":"collapse"}),
+    ]) if True else html.Div()
+
+    # Section 4 — Recent scorecards
+    def scorecard_row(s):
+        c = TEAL_DIM if s["composite_decision_score"]>=70 else (YELLOW_DIM if s["composite_decision_score"]>=45 else RED_DIM)
+        pnl = s.get("pnl_percent")
+        pnl_str = f"{pnl:+.2f}%" if pnl is not None else "—"
+        pnl_c = TEAL_DIM if (pnl or 0)>0 else RED_DIM
+        return html.Div([
+            html.Div([
+                html.Span(s.get("symbol","—"), style={"fontWeight":"800","color":WHITE,"fontSize":"13px"}),
+                html.Span(s.get("direction","").upper() if s.get("direction") else "",
+                          style={"fontSize":"10px","color":WHITE,"marginLeft":"8px"}),
+                html.Span(s.get("primary_behavior_flag","").replace("_"," "),
+                          style={"fontSize":"10px","color":WHITE,"marginLeft":"8px"}),
+            ]),
+            html.Div([
+                html.Span(f"Score: {s['composite_decision_score']:.0f}",
+                          style={"color":c,"fontWeight":"800","fontSize":"13px"}),
+                html.Span(f"P&L: {pnl_str}",
+                          style={"color":pnl_c,"fontWeight":"700","fontSize":"12px","marginLeft":"12px"}),
+                html.Span(s.get("timestamp","")[:16] if s.get("timestamp") else "",
+                          style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
+            ]),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+                   "padding":"10px 14px","borderBottom":f"1px solid {BORDER}",
+                   "borderRadius":"10px","background":"rgba(0,0,0,.15)","marginBottom":"6px"})
+
+    section4 = card([
+        html.H2("📋 Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        *([scorecard_row(s) for s in cards_] if cards_
+          else [note_box("No scorecards yet. Complete a trade to generate your first scorecard.", "blue")]),
+    ])
+
+    return html.Div([section1, html.Div(style={"height":"16px"}),
+                     html.Div([section2, section3], style={**ROW,"alignItems":"start"}),
+                     html.Div(style={"height":"16px"}), section4])
+
+# ── Command tab ────────────────────────────────────────────────────────────────
+
+def build_login_page(error=""):
     return html.Div([
-        _sigmalytic_step85h_behavioral_tab_from_history()
+        html.Div([
+            html.Div([
+                html.Div("Σ", style={"fontSize":"48px","fontWeight":"900","color":TEAL_DIM,"lineHeight":"1"}),
+                html.Div("SIGMALYTIC", style={"fontSize":"20px","fontWeight":"900","color":WHITE,"letterSpacing":".2em","marginTop":"4px"}),
+                html.Div("QUANT CORPORATION", style={"fontSize":"10px","fontWeight":"700","color":WHITE,"letterSpacing":".3em","marginTop":"2px"}),
+            ], style={"textAlign":"center","marginBottom":"40px"}),
+
+            html.Div([
+                # Login section
+                html.Div(id="login-section", children=[
+                    html.H2("Sign In", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="login-email", type="email", placeholder="you@example.com",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"16px"}),
+                    html.Div([
+                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="login-password", type="password", placeholder="••••••••",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Sign In", id="login-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer","marginBottom":"16px"}),
+                    html.Div([
+                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                        html.Span("or", style={"color":WHITE,"fontSize":"12px","padding":"0 12px"}),
+                        html.Div(style={"flex":"1","height":"1px","background":BORDER}),
+                    ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
+                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                        style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
+                               "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
+                               "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
+                    html.Div([
+                        html.Span("Don't have an account? ", style={"color":WHITE,"fontSize":"12px"}),
+                        html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                    ], style={"textAlign":"center"}),
+                ]),
+
+                # Signup section (hidden initially)
+                html.Div(id="signup-section", style={"display":"none"}, children=[
+                    html.H2("Create Account", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="signup-email", type="email", placeholder="you@example.com",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"16px"}),
+                    html.Div([
+                        html.Label("Password", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="signup-password", type="password", placeholder="Min 6 characters",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Create Account", id="signup-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer","marginBottom":"24px"}),
+                    html.Div([
+                        html.Span("Already have an account? ", style={"color":WHITE,"fontSize":"12px"}),
+                        html.Button("Sign In", id="goto-login-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                    ], style={"textAlign":"center"}),
+                ]),
+
+            ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
+                      "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"center",
+                  "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
+    ], style={"background":NAVY})
+
+def build_direction_panel(decision, score):
+    """Compact, user-readable Direction & Confidence panel."""
+    bias = decision.get("bias", "Neutral")
+    status = decision.get("status", "Watching")
+    confidence = decision.get("confidence", f"{score}%")
+    mode = decision.get("mode", "Standard")
+    grade = decision.get("grade", "—")
+
+    if str(bias).lower() == "bullish":
+        color = TEAL_DIM
+        icon = "🟢"
+    elif str(bias).lower() == "bearish":
+        color = RED_DIM
+        icon = "🔴"
+    else:
+        color = YELLOW_DIM
+        icon = "🟡"
+
+    return html.Div([
+        slabel("Direction Intelligence"),
+        html.Div(
+            f"{icon} {str(bias).upper()}",
+            style={
+                "color": color,
+                "fontSize": "28px",
+                "fontWeight": "900",
+                "lineHeight": "1",
+                "letterSpacing": "-.02em",
+                "margin": "6px 0 10px",
+            }
+        ),
+        html.Div([
+            metric_tile("Confidence", confidence, color),
+            metric_tile("Status", status, color),
+            metric_tile("Grade", grade, color),
+            metric_tile("Mode", mode, BLUE_DIM),
+        ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
     ])
 
 
@@ -1160,7 +1821,7 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(arrow+" " if arrow else "",
                           style={"color":color,"fontWeight":"900","fontSize":"11px","marginRight":"2px"}),
                 html.Span(label,
-                          style={"fontSize":"11px","fontWeight":"700","color":TEXT,
+                          style={"fontSize":"11px","fontWeight":"700","color":WHITE,
                                  "textTransform":"uppercase","letterSpacing":".08em"}),
             ], style={"flex":"1"}),
             html.Span(f"${level:.2f}",
@@ -1215,7 +1876,7 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(f"📊 {symbol}  ·  Smart Chart",
                           style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
                 html.Span(f"  {live_age}  ·  {tf}  ·  {regime.replace('_',' ').title()}",
-                          style={"fontSize":"10px","color":MUTED}),
+                          style={"fontSize":"10px","color":WHITE}),
             ]),
             html.Span(f"${price:.2f}",
                       style={"fontSize":"14px","fontWeight":"900","color":WHITE,
@@ -1254,26 +1915,9 @@ def build_command_tab(live, candles, symbol, tf):
     row2 = card([
         html.Div([
 
-            # Column A — Decision Engine signal
+            # Column A — Direction & Confidence Panel
             html.Div([
-                slabel("Decision Engine"),
-                html.Div(decision["status"],
-                         style={"color":sc,"fontSize":"28px","fontWeight":"900",
-                                "lineHeight":"1","letterSpacing":"-.02em","margin":"6px 0 4px"}),
-                html.Div(f"LIVE STATE: {decision['behavior']}",
-                         style={"fontSize":"9px","fontWeight":"800","color":TEXT,
-                                "textTransform":"uppercase","letterSpacing":".1em","marginBottom":"8px"}),
-                html.Div(decision["next_action"],
-                         style={"color":TEXT,"fontSize":"11px","fontWeight":"600",
-                                "lineHeight":"1.5","marginBottom":"6px"}),
-                pbar("Signal Strength", score),
-                html.Div(style={"height":"8px"}),
-                html.Div([
-                    metric_tile("Bias",       decision["bias"],       sc),
-                    metric_tile("Grade",      decision["grade"],      sc),
-                    metric_tile("Confidence", decision["confidence"], sc),
-                    metric_tile("Mode",       decision["mode"],       BLUE_DIM),
-                ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"6px"}),
+                build_direction_panel(decision, score),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
@@ -1282,17 +1926,17 @@ def build_command_tab(live, candles, symbol, tf):
                 slabel("Trade Card"),
                 html.Div(style={"height":"6px"}),
                 html.Div([
-                    html.Span("Bias  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                    html.Span("Bias  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
                                               "textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Span(decision["bias"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
                 ], style={"marginBottom":"8px"}),
                 html.Div([
-                    html.Span("Setup  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                    html.Span("Setup  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
                                                "textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Span(decision["status"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
                 ], style={"marginBottom":"8px"}),
                 html.Div([
-                    html.Span("Size  ",style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
+                    html.Span("Size  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
                                               "textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
                 ], style={"marginBottom":"10px"}),
@@ -1306,16 +1950,16 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Div(style={"height":"6px"}),
                 brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
                 html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
                 html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Hold / Balance", score, "neutral"),
                 html.P(f"Level ${kl.confirm:.2f}",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px","marginBottom":"6px"}),
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
                 brow("Failure Gate", 100-score, "down"),
                 html.P(f"Level ${kl.fail:.2f}",
-                       style={"fontSize":"9px","color":MUTED,"marginTop":"-3px"}),
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px"}),
             ], style={"flex":"1.5","minWidth":"180px","paddingLeft":"16px"}),
 
         ], style={"display":"flex","gap":"0","alignItems":"flex-start","flexWrap":"wrap"}),
@@ -1327,8 +1971,8 @@ def build_command_tab(live, candles, symbol, tf):
             html.Div([
                 html.H2("🧱 Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P("Options intelligence from Alpaca options feed, price, volume, volatility proxy, and decision score.",
-                       style={"fontSize":"12px","color":TEXT})]),
+                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                       style={"fontSize":"12px","color":WHITE})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
                    "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
@@ -1338,7 +1982,7 @@ def build_command_tab(live, candles, symbol, tf):
             zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Options intelligence layer - Alpaca options feed active.","blue"),
+        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
@@ -1406,11 +2050,11 @@ def build_feed_tab(live, live_mode):
     return card([
         html.Div([
             html.Div([html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                      html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":MUTED})]),
-            badge("Connected" if live_mode else "Synthetic","teal" if live_mode else "gray"),
+                      html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":WHITE})]),
+            badge("Connected", "teal"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"16px"}),
         html.Div([
-            metric_tile("Feed Mode","Live Alpaca" if live_mode else "Synthetic"),
+            metric_tile("Feed Mode","Live Alpaca"),
             metric_tile("Symbol",live["symbol"]),
             metric_tile("Price",f"${price:.2f}",TEAL_DIM),
             metric_tile("Volume",f"{live['volume']:,}"),
@@ -1448,431 +2092,1372 @@ def build_stub_tab(title, description):
 # REAL TAB FUNCTIONS — injected from source files
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# SIGMALYTIC_STEP100R_V1_FAST_RADAR_UI_TIMEOUT
-# UI read timeout only. Backend radar endpoint remains unchanged.
-_STEP100R_V1_RADAR_TIMEOUT = (0.75, 1.50)
-_STEP100R_V1_RADAR_MAX_ROWS = 30
 def build_radar_tab(session=None):
-    """Radar Screen — multi-symbol signal scanner."""
+    """Opportunity Dashboard — behavioral transition radar."""
     import requests as _rq
-    user_id = (session or {}).get("user_id", "demo_user_001")
-    
+
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=_STEP100R_V1_RADAR_TIMEOUT)
-        signals = r.json().get("symbols", []) if r.ok else []
-        signals = list(signals or [])[:_STEP100R_V1_RADAR_MAX_ROWS]
-    except Exception:
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=8)
+        data = r.json() if r.ok else {}
+
+        if isinstance(data, list):
+            signals = data
+            sort_mode = "local"
+            last_scan = None
+            data_delay = "—"
+        else:
+            signals = (
+                data.get("symbols")
+                or data.get("signals")
+                or data.get("scores")
+                or data.get("results")
+                or data.get("data")
+                or data.get("radar")
+                or []
+            )
+            sort_mode = data.get("sort_mode", "—")
+            last_scan = data.get("last_scan")
+            data_delay = data.get("data_delay", "—")
+
+    except Exception as e:
+        print(f"Radar fetch error: {e}")
         signals = []
+        sort_mode = "error"
+        last_scan = None
+        data_delay = "—"
 
-    def _sig_row(s):
-        score = s.get("composite_score", s.get("score", 0))
-        sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        chg = s.get("change_pct", 0)
+    def _safe_float(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    def _safe_text(value, default="—"):
+        if value is None or value == "":
+            return default
+        return str(value)
+
+    def _fmt_money(value):
+        try:
+            if value is None or value == "":
+                return "—"
+            return f"${float(value):,.2f}"
+        except Exception:
+            return "—"
+
+    def _fmt_pct(value, digits=1, signed=False):
+        try:
+            if value is None or value == "":
+                return "—"
+            v = float(value)
+            sign = "+" if signed and v > 0 else ""
+            return f"{sign}{v:.{digits}f}%"
+        except Exception:
+            return "—"
+
+    def _state_color(state, score=0):
+        st = (state or "").lower()
+        if "armed" in st:
+            return TEAL_DIM
+        if "setting" in st:
+            return BLUE_DIM
+        if "triggered" in st:
+            return YELLOW_DIM
+        if "avoid" in st or "reject" in st:
+            return RED_DIM
+        if score >= 80:
+            return TEAL_DIM
+        if score >= 70:
+            return YELLOW_DIM
+        return MUTED
+
+    def _side_color(side):
+        sd = (side or "").lower()
+        if "short" in sd:
+            return RED_DIM
+        if "long" in sd:
+            return TEAL_DIM
+        return MUTED
+
+    def _readiness_label(score):
+        if score >= 90:
+            return "Elite"
+        if score >= 80:
+            return "High"
+        if score >= 70:
+            return "Qualified"
+        if score >= 60:
+            return "Developing"
+        return "Low"
+
+    def _compact_transition(text):
+        t = _safe_text(text)
+        return t.replace(" to ", " → ").replace(" / ", " / ")
+
+    def _opportunity_card(s, rank):
+        symbol = _safe_text(s.get("symbol"), "")
+        price = s.get("price")
+        chg = _safe_float(s.get("change_pct"))
+        score = _safe_float(s.get("composite_score", s.get("score")))
+        readiness = _safe_float(s.get("readiness_score"))
+        state = _safe_text(s.get("opportunity_state"), "Watching")
+        transition = _compact_transition(s.get("transition_candidate"))
+        behavioral_state = _safe_text(s.get("behavioral_state"), "—")
+        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        trigger = s.get("trigger")
+        invalidation = s.get("invalidation")
+        why = _safe_text(s.get("why_this_trade"), "Awaiting more evidence.")
+        evidence = s.get("evidence") if isinstance(s.get("evidence"), list) else []
+        risk_notes = s.get("risk_notes") if isinstance(s.get("risk_notes"), list) else []
+        setup = _safe_text(s.get("setup_type"), "—")
+        regime = _safe_text(s.get("regime"), "—")
+        status = _safe_text(s.get("status"), "—")
+        alert_type = _safe_text(s.get("alert_type"), "—")
+
+        # Historical probability / edge fields from backend probability engine
+        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
+        hist_matches = _safe_float(s.get("historical_matches"))
+        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
+        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
+        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
+        prob_score = _safe_float(s.get("expected_opportunity_score"))
+        edge_score = _safe_float(s.get("edge_score", prob_score))
+        prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
+        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
+        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
+
+        color = _state_color(state, readiness)
+        side_color = _side_color(side)
+
         return html.Div([
-            html.Span(s.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"${s.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":WHITE}),
-            html.Span(f"{chg:+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
-                       "color":TEAL_DIM if chg>=0 else RED_DIM}),
-            html.Span(f"{score:.0f}%", style={"flex":"1","fontSize":"14px","fontWeight":"900","color":sc}),
-            html.Span(s.get("status","—"), style={"flex":"1.5","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(s.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(s.get("bias","—"), style={"flex":"1","fontSize":"11px","fontWeight":"800","color":_bias_color(s.get("bias","—"))}),
-        ], style={"display":"flex","alignItems":"center","gap":"12px",
-                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
+            html.Div([
+                html.Div([
+                    html.Div(f"#{rank}", style={
+                        "fontSize":"10px","fontWeight":"900","color":WHITE,
+                        "textTransform":"uppercase","letterSpacing":".08em"
+                    }),
+                    html.Div(symbol, style={
+                        "fontSize":"24px","fontWeight":"950","color":WHITE,
+                        "fontFamily":"DM Mono, monospace","lineHeight":"1"
+                    }),
+                    html.Div(f"{_fmt_money(price)} · {_fmt_pct(chg, 2, signed=True)}", style={
+                        "fontSize":"11px","fontWeight":"800",
+                        "color":TEAL_DIM if chg >= 0 else RED_DIM,
+                        "marginTop":"5px"
+                    }),
+                ], style={"flex":"1"}),
 
-    header_row = html.Div([
-        html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Price",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Chg%",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Status",  style={"flex":"1.5","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-        html.Span("Bias",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-    ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"})
+                html.Div([
+                    html.Div(prob_grade, style={
+                        "fontSize":"30px","fontWeight":"950","color":grade_color,
+                        "lineHeight":"1","textAlign":"right"
+                    }),
+                    html.Div("Opportunity", style={
+                        "fontSize":"10px","fontWeight":"950","color":WHITE,
+                        "textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"
+                    }),
+                    html.Div(f"Ready {readiness:.0f}", style={
+                        "fontSize":"10px","fontWeight":"900","color":color,
+                        "textAlign":"right","marginTop":"4px"
+                    }),
+                ]),
+            ], style={"display":"flex","alignItems":"flex-start","gap":"12px"}),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div([
+                html.Span(state, style={
+                    "display":"inline-block","padding":"5px 9px",
+                    "borderRadius":"999px","background":"rgba(255,255,255,.06)",
+                    "border":f"1px solid {color}","color":color,
+                    "fontSize":"10px","fontWeight":"900","textTransform":"uppercase",
+                    "letterSpacing":".08em","marginRight":"6px"
+                }),
+                html.Span(side, style={
+                    "display":"inline-block","padding":"5px 9px",
+                    "borderRadius":"999px","background":"rgba(255,255,255,.04)",
+                    "border":f"1px solid {side_color}","color":side_color,
+                    "fontSize":"10px","fontWeight":"900","textTransform":"uppercase",
+                    "letterSpacing":".08em","marginRight":"6px"
+                }),
+                html.Span(alert_type, style={
+                    "display":"inline-block","padding":"5px 9px",
+                    "borderRadius":"999px","background":"rgba(255,255,255,.04)",
+                    "border":f"1px solid {BORDER}","color":WHITE,
+                    "fontSize":"10px","fontWeight":"800"
+                }),
+            ]),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div([
+                html.Div([
+                    html.Div("Probability", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if hist_success >= 55 else YELLOW_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Grade", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(prob_grade, style={"fontSize":"18px","fontWeight":"950","color":grade_color}),
+                ], style={"flex":"1"}),
+            ], style={"display":"flex","gap":"10px","padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.035)"}),
+
+            html.Div([
+                html.Span(f"Matches {hist_matches:,.0f}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(f"Confidence {prob_conf}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(prob_weekly, style={"fontSize":"11px","fontWeight":"850","color":WHITE}),
+            ], style={"marginTop":"7px"}),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div("Behavioral Transition", style={
+                "fontSize":"10px","fontWeight":"950","color":WHITE,
+                "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"4px"
+            }),
+            html.Div(transition, style={
+                "fontSize":"14px","fontWeight":"900","color":WHITE,
+                "lineHeight":"1.25","minHeight":"34px"
+            }),
+            html.Div(behavioral_state, style={
+                "fontSize":"12px","fontWeight":"900","color":WHITE,
+                "marginTop":"4px"
+            }),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div([
+                html.Div([
+                    html.Div("Trigger", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_money(trigger), style={"fontSize":"13px","fontWeight":"900","color":TEAL_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Invalid", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_money(invalidation), style={"fontSize":"13px","fontWeight":"900","color":RED_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Score", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":YELLOW_DIM}),
+                ], style={"flex":"1"}),
+            ], style={"display":"flex","gap":"10px"}),
+
+            html.Div(style={"height":"12px"}),
+
+            html.Div("Why This Trade?", style={
+                "fontSize":"10px","fontWeight":"950","color":WHITE,
+                "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"6px"
+            }),
+            html.Div(why, style={
+                "fontSize":"12px","color":WHITE,"fontWeight":"850","lineHeight":"1.45",
+                "minHeight":"44px"
+            }),
+
+            html.Div(style={"height":"10px"}),
+
+            html.Div([
+                html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                html.Div(prob_setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
+                html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
+            ]),
+
+            html.Div([
+                html.Div("Evidence", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"10px","marginBottom":"4px"}),
+                html.Div([
+                    html.Div(f"✓ {e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
+                    for e in evidence[:4]
+                ] if evidence else [
+                    html.Div("No evidence details returned yet.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
+                ]),
+            ]),
+
+            html.Div([
+                html.Div("Risk Notes", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"8px","marginBottom":"4px"}),
+                html.Div([
+                    html.Div(f"⚠ {r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
+                    for r in risk_notes[:3]
+                ] if risk_notes else [
+                    html.Div("Risk defined by setup invalidation.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
+                ]),
+            ]),
+        ], style={
+            "border":f"1px solid {color}",
+            "background":"linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025))",
+            "borderRadius":"18px",
+            "padding":"16px",
+            "boxShadow":"0 18px 42px rgba(0,0,0,.22)",
+            "minHeight":"430px"
+        })
+
+    def _row(s):
+        symbol = _safe_text(s.get("symbol"), "")
+        score = _safe_float(s.get("composite_score", s.get("score")))
+        readiness = _safe_float(s.get("readiness_score"))
+        state = _safe_text(s.get("opportunity_state"), "Watching")
+        transition = _compact_transition(s.get("transition_candidate"))
+        behavioral_state = _safe_text(s.get("behavioral_state"), "—")
+        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        chg = _safe_float(s.get("change_pct"))
+        price = s.get("price")
+        trigger = s.get("trigger")
+        invalidation = s.get("invalidation")
+        setup = _safe_text(s.get("probability_setup_type", s.get("setup_type")), "—")
+        status = _safe_text(s.get("status"), "—")
+        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
+        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
+        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
+        color = _state_color(state, readiness)
+        side_color = _side_color(side)
+        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
+
+        return html.Div([
+            html.Span(symbol, style={
+                "flex":"0 0 72px","fontWeight":"950","fontSize":"13px",
+                "color":WHITE,"fontFamily":"DM Mono, monospace"
+            }),
+            html.Span(_fmt_money(price), style={"flex":"0 0 92px","fontSize":"12px","fontWeight":"800","color":WHITE}),
+            html.Span(_fmt_pct(chg, 2, signed=True), style={
+                "flex":"0 0 74px","fontSize":"12px","fontWeight":"900",
+                "color":TEAL_DIM if chg >= 0 else RED_DIM
+            }),
+            html.Span(f"{readiness:.0f}", style={
+                "flex":"0 0 72px","fontSize":"14px","fontWeight":"950",
+                "color":color,"textAlign":"center"
+            }),
+            html.Span(f"{score:.0f}", style={
+                "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
+                "color":YELLOW_DIM,"textAlign":"center"
+            }),
+            html.Span(prob_grade, style={
+                "flex":"0 0 62px","fontSize":"12px","fontWeight":"950",
+                "color":grade_color,"textAlign":"center"
+            }),
+            html.Span(_fmt_pct(hist_success, 1), style={
+                "flex":"0 0 86px","fontSize":"12px","fontWeight":"900",
+                "color":WHITE,"textAlign":"center"
+            }),
+            html.Span(_fmt_pct(exp_return, 2, signed=True), style={
+                "flex":"0 0 92px","fontSize":"12px","fontWeight":"900",
+                "color":TEAL_DIM if exp_return >= 0 else RED_DIM,"textAlign":"center"
+            }),
+            html.Span(f"{edge_ratio:.2f}", style={
+                "flex":"0 0 72px","fontSize":"12px","fontWeight":"900",
+                "color":YELLOW_DIM,"textAlign":"center"
+            }),
+            html.Span(state, style={
+                "flex":"0 0 100px","fontSize":"10px","fontWeight":"950",
+                "color":color,"textTransform":"uppercase","textAlign":"center"
+            }),
+            html.Span(side, style={
+                "flex":"0 0 58px","fontSize":"10px","fontWeight":"950",
+                "color":side_color,"textTransform":"uppercase","textAlign":"center"
+            }),
+            html.Span(transition, style={
+                "flex":"1.4","fontSize":"11px","fontWeight":"850",
+                "color":WHITE,"minWidth":"190px"
+            }),
+            html.Span(behavioral_state, style={
+                "flex":"1.2","fontSize":"10px","fontWeight":"750",
+                "color":BLUE_DIM,"minWidth":"160px"
+            }),
+            html.Span(setup, style={
+                "flex":"1.1","fontSize":"10px","fontWeight":"750",
+                "color":WHITE,"minWidth":"160px"
+            }),
+            html.Span(status, style={
+                "flex":"0 0 82px","fontSize":"10px","fontWeight":"850",
+                "color":WHITE,"textAlign":"center"
+            }),
+            html.Span(_fmt_money(trigger), style={
+                "flex":"0 0 86px","fontSize":"10px","fontWeight":"900",
+                "color":TEAL_DIM,"textAlign":"right"
+            }),
+            html.Span(_fmt_money(invalidation), style={
+                "flex":"0 0 86px","fontSize":"10px","fontWeight":"900",
+                "color":RED_DIM,"textAlign":"right"
+            }),
+        ], style={
+            "display":"flex","alignItems":"center","gap":"10px",
+            "padding":"11px 0","borderBottom":f"1px solid {BORDER}",
+            "minWidth":"1630px"
+        })
+
+    header = html.Div([
+        html.Span("Symbol", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Price", style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Chg%", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em"}),
+        html.Span("Ready", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Score", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Grade", style={"flex":"0 0 62px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Hist %", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Exp Ret", style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Edge", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("State", style={"flex":"0 0 100px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Side", style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Transition", style={"flex":"1.4","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"190px"}),
+        html.Span("Behavior", style={"flex":"1.2","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"160px"}),
+        html.Span("Setup", style={"flex":"1.1","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","minWidth":"160px"}),
+        html.Span("Status", style={"flex":"0 0 82px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
+        html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
+    ], style={
+        "display":"flex","gap":"10px","paddingBottom":"8px",
+        "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
+        "minWidth":"1630px"
+    })
+
+    # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
+    hero = signals[:3] if isinstance(signals, list) else []
+    armed_count = sum(1 for s in signals if _safe_text(s.get("opportunity_state")).lower() == "armed")
+    setup_count = sum(1 for s in signals if "setting" in _safe_text(s.get("opportunity_state")).lower())
+    elite_count = sum(1 for s in signals if _safe_float(s.get("readiness_score")) >= 90)
+    avg_ready = sum(_safe_float(s.get("readiness_score")) for s in signals) / max(len(signals), 1)
 
     return html.Div([
         card([
             html.Div([
-                html.H2("📡 Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live multi-symbol signal scanner — A-grade setups across your universe.",
-                       style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"16px"}),
-            header_row,
-            html.Div([_sig_row(s) for s in signals] if signals else [
-                html.Div("No signals available. Backend may be initializing or market is closed.",
-                         style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
+                html.Div([
+                    html.H2("🎯 Opportunity Dashboard", style={
+                        "color":WHITE,"fontSize":"20px","fontWeight":"950","margin":"0 0 4px"
+                    }),
+                    html.P("Pre-trigger trade discovery — ranked by opportunity state, readiness, and behavioral transition.",
+                           style={"color":WHITE,"fontSize":"13px","margin":"0"}),
+                ]),
+                html.Div([
+                    html.Div(f"{len(signals)}", style={"fontSize":"20px","fontWeight":"950","color":WHITE,"textAlign":"right"}),
+                    html.Div("Candidates", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
+                ]),
+            ], style={"display":"flex","justifyContent":"space-between","gap":"14px","alignItems":"flex-start","marginBottom":"16px"}),
+
+            html.Div([
+                metric_tile("Armed", armed_count, "pre-trigger candidates", "green"),
+                metric_tile("Setting Up", setup_count, "forming opportunities", "blue"),
+                metric_tile("Elite 90+", elite_count, "highest readiness", "yellow"),
+                metric_tile("Avg Ready", f"{avg_ready:.0f}", f"sort: {sort_mode}", "purple"),
+            ], style={"display":"grid","gridTemplateColumns":"repeat(4, 1fr)","gap":"12px","marginBottom":"18px"}),
+
+            html.Div([
+                html.H3("Top Opportunities", style={
+                    "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 10px"
+                }),
+                html.Div([
+                    _opportunity_card(s, i+1) for i, s in enumerate(hero)
+                ] if hero else [
+                    html.Div("No opportunities returned yet.", style={"color":WHITE,"fontSize":"13px","padding":"18px"})
+                ], style={"display":"grid","gridTemplateColumns":"repeat(3, 1fr)","gap":"14px"}),
             ]),
-        ], sx={"marginBottom":"16px"}),
+
+            html.Div(style={"height":"20px"}),
+
+            html.Div([
+                html.H3("Full Opportunity Radar", style={
+                    "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
+                }),
+                html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
+                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
+                html.Div([
+                    header,
+                    html.Div([_row(s) for s in signals] if signals else [
+                        html.Div("No signals available. Backend may be initializing or market is closed.",
+                                 style={"color":WHITE,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
+                    ]),
+                ], style={"overflowX":"auto"}),
+            ]),
+        ]),
     ])
 
-
 def build_scoreboard_tab(session=None):
-    """Scoreboard — decision score leaderboard."""
+    """Scoreboard — live outcome analytics from /api/scoreboard."""
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=8)
         board = r.json() if r.ok else {}
     except Exception:
         board = {}
 
-    entries   = board.get("entries", [])
-    generated = board.get("generated_at", "")
-    summary   = board.get("summary", {})
+    entries = board.get("recent_signals", [])
+    if not isinstance(entries, list):
+        entries = []
+
+    agreement_buckets = board.get("agreement_buckets", [])
+    if not isinstance(agreement_buckets, list):
+        agreement_buckets = []
+
+    agreement_thresholds = board.get("agreement_thresholds", [])
+    if not isinstance(agreement_thresholds, list):
+        agreement_thresholds = []
+
+    attribution_report = board.get("attribution_report", {})
+    if not isinstance(attribution_report, dict):
+        attribution_report = {}
+
+    generated = datetime.now(timezone(timedelta(hours=-4))).strftime("%b %d, %Y %I:%M %p ET")
+
+    def _safe_float(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    def _safe_int(value, default=0):
+        try:
+            if value is None or value == "":
+                return default
+            return int(float(value))
+        except Exception:
+            return default
+
+    def _fmt_pct(value, digits=1, signed=False):
+        if value is None or value == "":
+            return "—"
+        try:
+            v = float(value)
+            sign = "+" if signed and v > 0 else ""
+            return f"{sign}{v:.{digits}f}%"
+        except Exception:
+            return "—"
+
+    def _fmt_money(value):
+        if value is None or value == "":
+            return "—"
+        try:
+            return f"${float(value):,.2f}"
+        except Exception:
+            return "—"
+
+    total_signals = _safe_int(board.get("total_signals"))
+    with_outcomes = _safe_int(board.get("with_outcomes"))
+    pending_outcomes = _safe_int(board.get("pending_outcomes"))
+    direction_evaluated = _safe_int(board.get("direction_evaluated"))
+    direction_correct_rate = _safe_float(board.get("direction_correct_rate"))
+    avg_mfe_pct = _safe_float(board.get("avg_mfe_pct"))
+    avg_mae_pct = _safe_float(board.get("avg_mae_pct"))
+    edge_ratio = _safe_float(board.get("edge_ratio"))
+    hit_target1_rate = _safe_float(board.get("hit_target1_rate"))
+    hit_target2_rate = _safe_float(board.get("hit_target2_rate"))
+    outcome_window_hours = _safe_int(board.get("outcome_window_hours"))
+
+    def _metric(label, value, color=WHITE, sub=None):
+        return html.Div([
+            html.Div(label, style={
+                "fontSize":"10px","color":WHITE,"fontWeight":"800",
+                "textTransform":"uppercase","letterSpacing":".12em",
+                "marginBottom":"5px"
+            }),
+            html.Div(value, style={
+                "fontSize":"22px","fontWeight":"900","color":color,
+                "fontFamily":"DM Mono, monospace" if any(ch.isdigit() for ch in str(value)) else "inherit"
+            }),
+            html.Div(sub or "", style={
+                "fontSize":"10px","color":WHITE,"marginTop":"3px",
+                "minHeight":"14px"
+            }),
+        ], style={
+            "background":"rgba(0,0,0,.22)",
+            "border":f"1px solid {BORDER}",
+            "borderRadius":"14px",
+            "padding":"14px 16px",
+            "minHeight":"86px"
+        })
 
     def _entry_row(e, rank):
-        score = e.get("composite_score", e.get("score", 0))
-        sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else RED_DIM)
-        grade = e.get("grade","—")
-        gc = TEAL_DIM if grade.startswith("A") else (BLUE_DIM if grade.startswith("B") else (YELLOW_DIM if grade=="C" else RED_DIM))
-        return html.Div([
-            html.Span(f"#{rank}", style={"flex":"0 0 32px","fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-            html.Span(e.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"{score:.0f}", style={"flex":"1","fontSize":"20px","fontWeight":"900","color":sc}),
-            html.Span(grade, style={"flex":"0 0 40px","fontSize":"16px","fontWeight":"900","color":gc}),
-            html.Span(e.get("status","—"), style={"flex":"2","fontSize":"11px","color":sc,"fontWeight":"700"}),
-            html.Span(e.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-            html.Span(f"${e.get('price',0):,.2f}", style={"flex":"1","fontSize":"12px","color":TEXT}),
-            html.Span(f"{e.get('change_pct',0):+.2f}%", style={"flex":"1","fontSize":"12px","fontWeight":"700",
-                       "color":TEAL_DIM if e.get('change_pct',0)>=0 else RED_DIM}),
-        ], style={"display":"flex","alignItems":"center","gap":"12px",
-                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
+        symbol = e.get("symbol", "—")
+        signal_type = e.get("signal_type", e.get("status", "—"))
+        score = _safe_float(e.get("score", e.get("composite_score", 0)))
+        setup_type = e.get("setup_type", "—")
+        regime = e.get("regime", "—")
+        grade = str(e.get("grade", "—") or "—")
+        entry_price = e.get("entry_price", e.get("price"))
+        outcome_pct = e.get("outcome_pct")
+        mfe_pct = e.get("mfe_pct")
+        mae_pct = e.get("mae_pct")
+        direction_correct = e.get("direction_correct")
+        hit_t1 = e.get("hit_t1")
+        hit_t2 = e.get("hit_t2")
+        agreement_score = e.get("agreement_score")
+        intelligence_delta = e.get("intelligence_delta")
+        agreement_bucket = e.get("agreement_bucket") or "—"
+        delta_quality_label = e.get("delta_quality_label") or "—"
+        delta_action = e.get("delta_action") or "—"
 
-    top3_colors = [YELLOW_DIM, TEXT, "#CD7F32"]  # gold, silver, bronze
+        score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
+        grade_color = (
+            TEAL_DIM if grade.startswith("A")
+            else BLUE_DIM if grade.startswith("B")
+            else YELLOW_DIM if grade.startswith("C")
+            else RED_DIM if grade.startswith(("W", "F"))
+            else MUTED
+        )
+
+        if outcome_pct is None or outcome_pct == "":
+            outcome_color = MUTED
+        else:
+            outcome_color = TEAL_DIM if _safe_float(outcome_pct) >= 0 else RED_DIM
+
+        if direction_correct is True:
+            dir_text, dir_color = "✓", TEAL_DIM
+        elif direction_correct is False:
+            dir_text, dir_color = "✕", RED_DIM
+        else:
+            dir_text, dir_color = "—", MUTED
+
+        target_text = "T2" if hit_t2 else ("T1" if hit_t1 else "—")
+        target_color = TEAL_DIM if hit_t2 else (YELLOW_DIM if hit_t1 else MUTED)
+
+        agreement_value = _safe_float(agreement_score, -1)
+        agreement_color = TEAL_DIM if agreement_value >= 90 else (BLUE_DIM if agreement_value >= 80 else (YELLOW_DIM if agreement_value >= 70 else RED_DIM))
+
+        return html.Div([
+            html.Span(f"#{rank}", style={"flex":"0 0 34px","fontSize":"11px","color":WHITE,"fontWeight":"800"}),
+            html.Span(symbol, style={
+                "flex":"0 0 68px","fontWeight":"900","fontSize":"14px",
+                "color":WHITE,"fontFamily":"DM Mono, monospace"
+            }),
+            html.Span(signal_type, style={"flex":"0 0 92px","fontSize":"11px","color":score_color,"fontWeight":"800"}),
+            html.Span(f"{score:.1f}", style={"flex":"0 0 58px","fontSize":"15px","fontWeight":"900","color":score_color}),
+            html.Span(grade, style={"flex":"0 0 42px","fontSize":"15px","fontWeight":"900","color":grade_color}),
+            html.Span(_fmt_money(entry_price), style={"flex":"0 0 84px","fontSize":"12px","color":WHITE,"fontFamily":"DM Mono, monospace"}),
+            html.Span(_fmt_pct(outcome_pct, 2, signed=True), style={"flex":"0 0 74px","fontSize":"12px","fontWeight":"800","color":outcome_color}),
+            html.Span(_fmt_pct(mfe_pct, 2), style={"flex":"0 0 62px","fontSize":"12px","color":TEAL_DIM if mfe_pct not in (None, "") else MUTED}),
+            html.Span(_fmt_pct(mae_pct, 2), style={"flex":"0 0 62px","fontSize":"12px","color":RED_DIM if mae_pct not in (None, "") else MUTED}),
+            html.Span(dir_text, style={"flex":"0 0 36px","fontSize":"14px","fontWeight":"900","color":dir_color,"textAlign":"center"}),
+            html.Span(target_text, style={"flex":"0 0 42px","fontSize":"12px","fontWeight":"900","color":target_color,"textAlign":"center"}),
+            html.Span(
+                "—" if agreement_score in (None, "") else f"{float(agreement_score):.1f}",
+                style={"flex":"0 0 74px","fontSize":"12px","fontWeight":"900","color":agreement_color,"textAlign":"center"}
+            ),
+            html.Span(
+                "—" if intelligence_delta in (None, "") else f"{float(intelligence_delta):+.1f}",
+                style={"flex":"0 0 62px","fontSize":"12px","fontWeight":"800","color":agreement_color,"textAlign":"center"}
+            ),
+            html.Span(delta_quality_label, style={"flex":"0 0 104px","fontSize":"10px","fontWeight":"900","color":agreement_color,"textAlign":"center"}),
+            html.Span(delta_action, style={"flex":"0 0 118px","fontSize":"10px","fontWeight":"900","color":agreement_color,"textAlign":"center"}),
+            html.Span(agreement_bucket.replace(" Confirmation", ""), style={"flex":"0 0 150px","fontSize":"10px","color":agreement_color}),
+            html.Span(regime, style={"flex":"0 0 115px","fontSize":"11px","color":WHITE}),
+            html.Span(setup_type, style={"flex":"1","fontSize":"11px","color":WHITE,"minWidth":"160px"}),
+        ], style={
+            "display":"flex",
+            "alignItems":"center",
+            "gap":"10px",
+            "padding":"11px 0",
+            "borderBottom":f"1px solid {BORDER}",
+            "minWidth":"1620px"
+        })
+
+    header = html.Div([
+        html.Span("#",       style={"flex":"0 0 34px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Symbol",  style={"flex":"0 0 68px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Signal",  style={"flex":"0 0 92px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Score",   style={"flex":"0 0 58px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Grade",   style={"flex":"0 0 42px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Entry",   style={"flex":"0 0 84px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Outcome", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("MFE",     style={"flex":"0 0 62px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("MAE",     style={"flex":"0 0 62px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Dir",     style={"flex":"0 0 36px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Tgt",     style={"flex":"0 0 42px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Agree",   style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Delta",   style={"flex":"0 0 62px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("D-Quality", style={"flex":"0 0 104px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("D-Action", style={"flex":"0 0 118px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","textAlign":"center"}),
+        html.Span("Bucket",  style={"flex":"0 0 150px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Regime",  style={"flex":"0 0 115px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em"}),
+        html.Span("Setup",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","letterSpacing":".1em","minWidth":"160px"}),
+    ], style={
+        "display":"flex",
+        "gap":"10px",
+        "paddingBottom":"8px",
+        "borderBottom":f"1px solid {BORDER}",
+        "marginBottom":"4px",
+        "minWidth":"1620px"
+    })
+
+    def _bucket_card(b):
+        bucket = b.get("bucket", "—")
+        total = _safe_int(b.get("total_signals"))
+        evaluated = _safe_int(b.get("with_outcomes"))
+        acc = _safe_float(b.get("direction_correct_rate"))
+        edge = _safe_float(b.get("edge_ratio"))
+        mfe = _safe_float(b.get("avg_mfe_pct"))
+        mae = _safe_float(b.get("avg_mae_pct"))
+        color = TEAL_DIM if bucket.startswith("90") else (BLUE_DIM if bucket.startswith("80") else (YELLOW_DIM if bucket.startswith("70") else RED_DIM))
+        return html.Div([
+            html.Div(bucket, style={"fontSize":"11px","fontWeight":"900","color":color,"marginBottom":"8px"}),
+            html.Div([
+                html.Div([html.Span("Signals", style={"color":WHITE,"fontSize":"10px"}), html.Strong(str(total), style={"color":WHITE})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Evaluated", style={"color":WHITE,"fontSize":"10px"}), html.Strong(str(evaluated), style={"color":WHITE})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Accuracy", style={"color":WHITE,"fontSize":"10px"}), html.Strong(f"{acc:.1f}%", style={"color":color})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("Edge", style={"color":WHITE,"fontSize":"10px"}), html.Strong(f"{edge:.2f}", style={"color":color})], style={"display":"flex","justifyContent":"space-between"}),
+                html.Div([html.Span("MFE / MAE", style={"color":WHITE,"fontSize":"10px"}), html.Strong(f"{mfe:.2f}% / {mae:.2f}%", style={"color":WHITE})], style={"display":"flex","justifyContent":"space-between"}),
+            ], style={"display":"grid","gap":"5px"})
+        ], style={
+            "border":f"1px solid {BORDER}",
+            "background":"rgba(0,0,0,.2)",
+            "borderRadius":"14px",
+            "padding":"14px",
+            "minHeight":"134px"
+        })
+
+    def _threshold_row(t):
+        threshold = _safe_int(t.get("threshold"))
+        total = _safe_int(t.get("total_signals"))
+        evaluated = _safe_int(t.get("with_outcomes"))
+        acc = _safe_float(t.get("direction_correct_rate"))
+        edge = _safe_float(t.get("edge_ratio"))
+        outcome = _safe_float(t.get("avg_outcome_pct"))
+        color = TEAL_DIM if threshold >= 90 else (BLUE_DIM if threshold >= 80 else (YELLOW_DIM if threshold >= 70 else TEXT))
+        return html.Div([
+            html.Span(f">= {threshold}", style={"flex":"0 0 70px","fontWeight":"900","color":color}),
+            html.Span(str(total), style={"flex":"0 0 70px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(str(evaluated), style={"flex":"0 0 80px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{acc:.1f}%", style={"flex":"0 0 90px","color":color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge:.2f}", style={"flex":"0 0 80px","color":color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{outcome:+.2f}%", style={"flex":"0 0 90px","color":TEAL_DIM if outcome >= 0 else RED_DIM,"fontWeight":"900","textAlign":"center"}),
+        ], style={
+            "display":"flex",
+            "gap":"10px",
+            "alignItems":"center",
+            "padding":"9px 0",
+            "borderBottom":f"1px solid {BORDER}",
+        })
+
+
+    def _attribution_row(row):
+        group = row.get("group", "—")
+        n = _safe_int(row.get("total_signals"))
+        evaluated = _safe_int(row.get("with_outcomes"))
+        direction = _safe_float(row.get("direction_accuracy_rate"))
+        edge_acc = _safe_float(row.get("edge_accuracy_rate"))
+        tradeable = _safe_float(row.get("tradeable_mfe_rate"))
+        strong = _safe_float(row.get("strong_mfe_rate"))
+        edge = _safe_float(row.get("edge_ratio"))
+        mfe = _safe_float(row.get("avg_mfe_pct"))
+        mae = _safe_float(row.get("avg_mae_pct"))
+        outcome = _safe_float(row.get("avg_outcome_pct"))
+
+        edge_color = TEAL_DIM if edge >= 1.5 else (YELLOW_DIM if edge >= 1 else RED_DIM)
+
+        return html.Div([
+            html.Span(group, style={"flex":"1.4","fontSize":"11px","fontWeight":"900","color":WHITE,"minWidth":"150px"}),
+            html.Span(str(n), style={"flex":"0 0 54px","fontSize":"11px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(str(evaluated), style={"flex":"0 0 54px","fontSize":"11px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{direction:.1f}%", style={"flex":"0 0 74px","fontSize":"11px","color":BLUE_DIM,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge_acc:.1f}%", style={"flex":"0 0 74px","fontSize":"11px","color":edge_color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{tradeable:.1f}%", style={"flex":"0 0 78px","fontSize":"11px","color":TEAL_DIM if tradeable >= 40 else YELLOW_DIM,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{strong:.1f}%", style={"flex":"0 0 72px","fontSize":"11px","color":PURPLE,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{edge:.2f}", style={"flex":"0 0 64px","fontSize":"11px","color":edge_color,"fontWeight":"900","textAlign":"center"}),
+            html.Span(f"{mfe:.2f}%/{mae:.2f}%", style={"flex":"0 0 94px","fontSize":"11px","color":WHITE,"fontWeight":"800","textAlign":"center"}),
+            html.Span(f"{outcome:+.2f}%", style={"flex":"0 0 76px","fontSize":"11px","color":TEAL_DIM if outcome >= 0 else RED_DIM,"fontWeight":"900","textAlign":"center"}),
+        ], style={
+            "display":"flex",
+            "gap":"8px",
+            "alignItems":"center",
+            "padding":"8px 0",
+            "borderBottom":f"1px solid {BORDER}",
+            "minWidth":"900px"
+        })
+
+    def _attribution_table(title, rows):
+        rows = rows if isinstance(rows, list) else []
+        return html.Div([
+            html.Div(title, style={
+                "fontSize":"12px","fontWeight":"900","color":WHITE,
+                "textTransform":"uppercase","letterSpacing":".08em",
+                "marginBottom":"8px"
+            }),
+            html.Div([
+                html.Span("Group", style={"flex":"1.4","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","minWidth":"150px"}),
+                html.Span("Sig", style={"flex":"0 0 54px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Eval", style={"flex":"0 0 54px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Dir", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Edge Acc", style={"flex":"0 0 74px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Tradeable", style={"flex":"0 0 78px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Strong", style={"flex":"0 0 72px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Edge", style={"flex":"0 0 64px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("MFE/MAE", style={"flex":"0 0 94px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                html.Span("Outcome", style={"flex":"0 0 76px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+            ], style={
+                "display":"flex","gap":"8px","paddingBottom":"7px",
+                "borderBottom":f"1px solid {BORDER}",
+                "minWidth":"900px"
+            }),
+            html.Div([_attribution_row(r) for r in rows[:10]] if rows else [
+                html.Div("No attribution data yet.", style={"fontSize":"12px","color":WHITE,"padding":"10px 0"})
+            ]),
+        ], style={
+            "border":f"1px solid {BORDER}",
+            "background":"rgba(0,0,0,.15)",
+            "borderRadius":"14px",
+            "padding":"14px",
+            "overflowX":"auto"
+        })
+
+
+    if edge_ratio >= 1.2 and with_outcomes > 0:
+        edge_note = "Positive path edge: average favorable movement is larger than average adverse movement."
+        edge_variant = "teal"
+    elif with_outcomes > 0:
+        edge_note = "Path edge is not yet confirmed. Continue collecting outcomes before relying on this metric."
+        edge_variant = "yellow"
+    else:
+        edge_note = "Outcome statistics populate after signals have enough forward price data."
+        edge_variant = "blue"
 
     return html.Div([
         card([
             html.Div([
-                html.H2("🏆 Scoreboard", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Live leaderboard — highest composite decision scores across the universe.",
-                       style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"16px"}),
+                html.Div([
+                    html.H2("🏆 Scoreboard", style={
+                        "color":WHITE,"fontSize":"18px","fontWeight":"900",
+                        "margin":"0 0 4px"
+                    }),
+                    html.P(
+                        f"Live outcome validation · {outcome_window_hours}h window · backend /api/scoreboard",
+                        style={"color":WHITE,"fontSize":"13px","margin":"0"}
+                    ),
+                ]),
+                badge("LIVE BACKEND", "teal" if board else "red"),
+            ], style={
+                "display":"flex",
+                "justifyContent":"space-between",
+                "alignItems":"start",
+                "gap":"16px",
+                "marginBottom":"16px"
+            }),
 
-            # Summary strip
+            html.Div([
+                _metric("Total Signals", f"{total_signals}", WHITE, "All logged signals"),
+                _metric("Evaluated", f"{with_outcomes}", TEAL_DIM, "Signals with outcomes"),
+                _metric("Pending", f"{pending_outcomes}", YELLOW_DIM if pending_outcomes else MUTED, "Awaiting outcome window"),
+                _metric("Direction Accuracy", _fmt_pct(direction_correct_rate, 1), TEAL_DIM if direction_correct_rate >= 50 else YELLOW_DIM, f"{direction_evaluated} evaluated signals"),
+                _metric("Avg MFE", _fmt_pct(avg_mfe_pct, 2), TEAL_DIM, "Favorable excursion"),
+                _metric("Avg MAE", _fmt_pct(avg_mae_pct, 2), RED_DIM, "Adverse excursion"),
+                _metric("Edge Ratio", f"{edge_ratio:.2f}", TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM, "MFE ÷ MAE"),
+                _metric("Targets", f"T1 {hit_target1_rate:.1f}% / T2 {hit_target2_rate:.1f}%", BLUE_DIM, "Hit-rate snapshot"),
+            ], style={
+                "display":"grid",
+                "gridTemplateColumns":"repeat(4,1fr)",
+                "gap":"12px",
+                "marginBottom":"16px"
+            }),
+
+            note_box(edge_note, edge_variant),
+
+            html.Div(style={"height":"16px"}),
+
             html.Div([
                 html.Div([
-                    html.Div("Total Symbols", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("total_symbols","—")), style={"fontSize":"20px","fontWeight":"900","color":WHITE}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("Armed", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("armed","—")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("Avg Score", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(f"{summary.get('avg_score',0):.0f}%", style={"fontSize":"20px","fontWeight":"900","color":YELLOW_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-                html.Div([
-                    html.Div("A-Grade", style={"fontSize":"10px","color":MUTED,"fontWeight":"700",
-                              "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"4px"}),
-                    html.Div(str(summary.get("a_grade","—")), style={"fontSize":"20px","fontWeight":"900","color":TEAL_DIM}),
-                ], style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"12px","padding":"12px 16px"}),
-            ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"20px"}),
+                    html.H3("🧠 Intelligence Agreement Validation", style={
+                        "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
+                    }),
+                    html.Div("Shows whether deeper intelligence agreement improves direction accuracy and path edge.",
+                             style={"fontSize":"11px","color":WHITE}),
+                ]),
+            ], style={"marginBottom":"12px"}),
 
-            # Table header
+            html.Div(
+                [_bucket_card(b) for b in agreement_buckets] if agreement_buckets else [
+                    note_box("Agreement buckets are waiting for repaired or newly logged signals.", "yellow")
+                ],
+                style={
+                    "display":"grid",
+                    "gridTemplateColumns":"repeat(4,1fr)",
+                    "gap":"12px",
+                    "marginBottom":"16px"
+                }
+            ),
+
             html.Div([
-                html.Span("#",       style={"flex":"0 0 32px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Symbol",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Score",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Grade",   style={"flex":"0 0 40px","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Status",  style={"flex":"2","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Regime",  style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Price",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Chg%",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
+                html.Div("Minimum Agreement Filter", style={
+                    "fontSize":"12px","fontWeight":"900","color":WHITE,
+                    "textTransform":"uppercase","letterSpacing":".08em",
+                    "marginBottom":"8px"
+                }),
+                html.Div([
+                    html.Span("Filter", style={"flex":"0 0 70px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase"}),
+                    html.Span("Signals", style={"flex":"0 0 70px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Eval", style={"flex":"0 0 80px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Accuracy", style={"flex":"0 0 90px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Edge", style={"flex":"0 0 80px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                    html.Span("Outcome", style={"flex":"0 0 90px","fontSize":"9px","color":WHITE,"fontWeight":"800","textTransform":"uppercase","textAlign":"center"}),
+                ], style={"display":"flex","gap":"10px","borderBottom":f"1px solid {BORDER}","paddingBottom":"7px"}),
+                html.Div([_threshold_row(t) for t in agreement_thresholds] if agreement_thresholds else [
+                    html.Div("No agreement threshold data yet.", style={"fontSize":"12px","color":WHITE,"padding":"12px 0"})
+                ]),
+            ], style={
+                "border":f"1px solid {BORDER}",
+                "background":"rgba(0,0,0,.15)",
+                "borderRadius":"14px",
+                "padding":"14px",
+                "marginBottom":"18px",
+                "maxWidth":"620px"
+            }),
 
-            html.Div([_entry_row(e, i+1) for i, e in enumerate(entries)] if entries else [
-                html.Div("Scoreboard data not yet available. Populates after first market snapshot.",
-                         style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
-            ]),
+            html.Div(style={"height":"16px"}),
 
-            html.Div(f"Last updated: {generated}", style={"fontSize":"10px","color":MUTED,"marginTop":"12px"}) if generated else html.Div(),
+            html.Div([
+                html.Div([
+                    html.H3("📊 Live Performance Attribution", style={
+                        "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
+                    }),
+                    html.Div("Ranks which parts of the engine are producing direction, edge, and tradeable opportunity.",
+                             style={"fontSize":"11px","color":WHITE}),
+                ]),
+            ], style={"marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Agreement Bucket", attribution_report.get("by_agreement_bucket", [])),
+                _attribution_table("Delta Bucket", attribution_report.get("by_delta_bucket", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Regime", attribution_report.get("by_regime", [])),
+                _attribution_table("Setup Type", attribution_report.get("by_setup_type", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Grade", attribution_report.get("by_grade", [])),
+                _attribution_table("Signal Type", attribution_report.get("by_signal_type", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"12px"}),
+
+            html.Div([
+                _attribution_table("Delta Quality", attribution_report.get("by_delta_quality", [])),
+                _attribution_table("Delta Action", attribution_report.get("by_delta_action", [])),
+            ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"12px","marginBottom":"18px"}),
+
+            html.Div([
+                html.Div([
+                    html.Div("Recent Signal Outcomes", style={
+                        "fontSize":"12px","fontWeight":"900","color":WHITE,
+                        "textTransform":"uppercase","letterSpacing":".08em"
+                    }),
+                    html.Div("Pending rows show dashes until MFE / MAE / direction fields are populated.",
+                             style={"fontSize":"11px","color":WHITE,"marginTop":"3px"}),
+                ]),
+            ], style={"marginBottom":"12px"}),
+
+            html.Div([
+                header,
+                html.Div([_entry_row(e, i+1) for i, e in enumerate(entries)] if entries else [
+                    html.Div(
+                        "Scoreboard data not yet available. Backend returned no recent_signals.",
+                        style={"color":WHITE,"fontSize":"13px","padding":"24px 0","textAlign":"center"}
+                    )
+                ]),
+            ], style={
+                "overflowX":"auto",
+                "border":f"1px solid {BORDER}",
+                "borderRadius":"14px",
+                "padding":"12px",
+                "background":"rgba(0,0,0,.14)"
+            }),
+
+            html.Div(f"Last updated: {generated}", style={
+                "fontSize":"10px","color":WHITE,"marginTop":"12px"
+            }),
         ]),
     ])
 
 
+def classify_transition(old_status, new_status, delta):
+    """
+    Intelligence Change Detector transition classifier.
+
+    Delta is calculated as:
+        deep_score - composite_score
+
+    Positive delta = deeper intelligence is stronger than surface composite.
+    Negative delta = deeper intelligence is weaker than surface composite.
+
+    State transition has priority over delta:
+    - Building -> Watching = Improving / upgrade
+    - Watching -> Watching = Monitor
+    - Watching -> Avoid = Major downgrade
+    """
+    old_status_l = str(old_status or "").strip().lower()
+    new_status_l = str(new_status or "").strip().lower()
+
+    # Normalize common backend labels.
+    upgrade_states = ("watching", "armed", "triggered", "opportunity")
+    high_states = ("armed", "triggered", "opportunity")
+
+    # No state change should remain a monitor, even if the score delta is negative.
+    # This prevents Watching -> Watching rows from being counted as downgrades.
+    if old_status_l == new_status_l and old_status_l:
+        return "🟡 MONITOR", "yellow"
+
+    # Explicit improvement transitions first.
+    if old_status_l == "building" and new_status_l == "watching":
+        return "🟢 IMPROVING", "teal"
+
+    if old_status_l == "building" and new_status_l in high_states:
+        return "🟢 STRONG UPGRADE", "teal"
+
+    if old_status_l == "avoid" and new_status_l in upgrade_states:
+        return "🟢 UPGRADE", "teal"
+
+    if old_status_l == "watching" and new_status_l in high_states:
+        return "🟢 STRONG UPGRADE", "teal"
+
+    # Explicit deterioration transitions.
+    if old_status_l in high_states and new_status_l == "watching":
+        return "🔴 DOWNGRADE", "red"
+
+    if old_status_l in ("building", "watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
+        return "🔴 MAJOR DOWNGRADE", "red"
+
+    # Score-delta interpretation only applies when the state transition is not definitive.
+    if delta >= 20:
+        return "🟢 INTELLIGENCE LEAD", "teal"
+
+    if delta >= 10:
+        return "🟢 MODEST UPGRADE", "teal"
+
+    if delta <= -20:
+        return "🔴 INTELLIGENCE WARNING", "red"
+
+    if delta <= -10:
+        return "🔴 MODEST DOWNGRADE", "red"
+
+    return "🟡 MONITOR", "yellow"
+
 def build_divergence_tab(session=None):
-    """Divergence watchlist — symbols where price and score diverge."""
+    """
+    Intelligence Change Detector.
+
+    This page uses the actual backend divergence endpoint fields:
+    symbol, composite_score, deep_score, delta, old_status, new_status,
+    regime, price, audited_at.
+    """
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/admin/divergence-watchlist", timeout=6)
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=8)
         data = r.json() if r.ok else {}
     except Exception:
         data = {}
 
-    items = data.get("items", [])
-    audit_label = data.get("last_audit", "Pending — runs nightly at 8:30 PM ET")
+    raw_symbols = data.get("symbols", []) if isinstance(data, dict) else []
+    audit_raw = (
+        data.get("last_audit")
+        or data.get("audited_at")
+    ) if isinstance(data, dict) else None
 
-    def _div_row(d):
-        direction = d.get("direction","—")
-        dir_color = TEAL_DIM if direction=="BULLISH" else (RED_DIM if direction=="BEARISH" else MUTED)
-        return html.Div([
-            html.Span(d.get("symbol",""), style={"flex":"1","fontWeight":"900","fontSize":"14px",
-                       "color":WHITE,"fontFamily":"DM Mono, monospace"}),
-            html.Span(f"${d.get('price',0):,.2f}", style={"flex":"1","fontSize":"13px","color":TEXT}),
-            html.Span(f"{d.get('score',0):.0f}%", style={"flex":"1","fontSize":"13px","fontWeight":"700","color":YELLOW_DIM}),
-            html.Span(f"{d.get('behavioral_score',0):.0f}%", style={"flex":"1","fontSize":"13px","color":BLUE_DIM}),
-            html.Span(f"{d.get('delta',0):+.0f}", style={"flex":"1","fontSize":"13px","fontWeight":"700",
-                       "color":TEAL_DIM if d.get('delta',0)>0 else RED_DIM}),
-            html.Span(direction, style={"flex":"1","fontSize":"12px","fontWeight":"800","color":dir_color}),
-            html.Span(d.get("regime","—"), style={"flex":"1","fontSize":"11px","color":MUTED}),
-        ], style={"display":"flex","alignItems":"center","gap":"12px",
-                  "padding":"12px 0","borderBottom":f"1px solid {BORDER}"})
+    try:
+        if audit_raw:
+            audit_dt = datetime.fromtimestamp(
+                float(audit_raw),
+                tz=timezone.utc
+            ).astimezone(
+                timezone(timedelta(hours=-4))
+            )
 
-    return html.Div([
-        card([
+            audit_label = audit_dt.strftime(
+                "%b %d, %Y %I:%M %p ET"
+            )
+        else:
+            audit_label = "Pending — runs nightly after the EOD audit"
+
+    except Exception:
+        audit_label = str(audit_raw) if audit_raw else "Pending — runs nightly after the EOD audit"
+
+    def _num(value, default=0.0):
+        try:
+            if value is None or value == "":
+                return default
+            return float(value)
+        except Exception:
+            return default
+
+    items = []
+    for s in (raw_symbols if isinstance(raw_symbols, list) else []):
+        if not isinstance(s, dict):
+            continue
+
+        composite = _num(s.get("composite_score"), 0)
+        deep = _num(s.get("deep_score"), 0)
+
+        # Use intuitive displayed delta: deep intelligence minus surface composite.
+        # Example: Composite 62.5, Deep 34.85 = -27.65 = deeper engine downgraded it.
+        delta = round(deep - composite, 2)
+
+        old_status = s.get("old_status") or "—"
+        new_status = s.get("new_status") or s.get("status") or "—"
+        transition, tone = classify_transition(old_status, new_status, delta)
+
+        items.append({
+            "symbol": s.get("symbol", ""),
+            "price": _num(s.get("price"), 0),
+            "composite_score": composite,
+            "deep_score": deep,
+            "delta": delta,
+            "old_status": old_status,
+            "new_status": new_status,
+            "transition": transition,
+            "tone": tone,
+            "regime": s.get("regime") or "—",
+            "audited_at": s.get("audited_at") or audit_label,
+        })
+
+    # Largest intelligence gap first.
+    items = sorted(items, key=lambda d: abs(d.get("delta", 0)), reverse=True)
+
+    upgrades = sum(1 for d in items if d["tone"] == "teal")
+    downgrades = sum(1 for d in items if d["tone"] == "red")
+    monitoring = sum(1 for d in items if d["tone"] == "yellow")
+
+    best_upgrade = max(items, key=lambda d: d["delta"], default=None)
+    best_downgrade = min(items, key=lambda d: d["delta"], default=None)
+
+    def _tone_color(tone):
+        if tone == "teal":
+            return TEAL_DIM
+        if tone == "red":
+            return RED_DIM
+        if tone == "yellow":
+            return YELLOW_DIM
+        return MUTED
+
+    def _state_badge(value, tone="gray"):
+        color = _tone_color(tone)
+        bg = TEAL_GLOW if tone == "teal" else RED_GLOW if tone == "red" else "rgba(245,158,11,.10)" if tone == "yellow" else "rgba(100,116,139,.12)"
+        border = BORDER_T if tone == "teal" else "rgba(239,68,68,.35)" if tone == "red" else "rgba(245,158,11,.35)" if tone == "yellow" else "rgba(100,116,139,.25)"
+        return html.Span(
+            str(value),
+            style={
+                "display": "inline-block",
+                "borderRadius": "999px",
+                "border": f"1px solid {border}",
+                "background": bg,
+                "color": color,
+                "fontSize": "10px",
+                "fontWeight": "900",
+                "letterSpacing": ".06em",
+                "padding": "4px 9px",
+                "textTransform": "uppercase",
+                "whiteSpace": "nowrap",
+            }
+        )
+
+    summary_card = card([
+        html.Div([
             html.Div([
-                html.H2("🔍 Divergence Watchlist", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","margin":"0 0 4px"}),
-                html.P("Symbols where price action and behavioral score are moving in opposite directions.",
-                       style={"color":TEXT,"fontSize":"13px","margin":"0"}),
-            ], style={"marginBottom":"8px"}),
-            html.Div(f"Last audit: {audit_label}",
-                     style={"fontSize":"11px","color":MUTED,"marginBottom":"16px"}),
-
-            html.Div([
-                html.Span("Symbol",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Price",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Score",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Beh Score",style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Delta",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Direction",style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-                html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            ], style={"display":"flex","gap":"12px","paddingBottom":"8px","borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
-
-            html.Div([_div_row(d) for d in items] if items else [
-                html.Div("No divergence signals yet. The watchlist populates nightly after the EOD audit.",
-                         style={"color":MUTED,"fontSize":"13px","padding":"24px 0","textAlign":"center"})
+                html.H2(
+                    "🧠 Intelligence Change Detector",
+                    style={"color": WHITE, "fontSize": "20px", "fontWeight": "900", "margin": "0 0 4px"}
+                ),
+                html.P(
+                    "Detects where the deeper intelligence engine disagrees with the surface radar score.",
+                    style={"color": WHITE, "fontSize": "13px", "margin": "0"}
+                ),
             ]),
+            _state_badge(f"{len(items)} Symbols Audited", "gray"),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "gap": "16px", "marginBottom": "16px"}),
+
+        html.Div([
+            metric_tile("🟢 Upgrades", str(upgrades), TEAL_DIM),
+            metric_tile("🟡 Monitoring", str(monitoring), YELLOW_DIM),
+            metric_tile("🔴 Downgrades", str(downgrades), RED_DIM),
+            metric_tile("Last Audit", str(audit_label)[:22], BLUE_DIM),
+        ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)", "gap": "10px", "marginBottom": "14px"}),
+
+        html.Div([
+            note_box(
+                f"Strongest Upgrade: {(best_upgrade or {}).get('symbol','—')} "
+                f"({(best_upgrade or {}).get('delta',0):+.1f})",
+                "teal"
+            ),
+            note_box(
+                f"Strongest Downgrade: {(best_downgrade or {}).get('symbol','—')} "
+                f"({(best_downgrade or {}).get('delta',0):+.1f})",
+                "red"
+            ),
+        ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "10px"}),
+    ], sx={"marginBottom": "16px"})
+
+    def _row(d):
+        delta = d.get("delta", 0)
+        tone = d.get("tone", "gray")
+        color = _tone_color(tone)
+        delta_color = TEAL_DIM if delta > 0 else (RED_DIM if delta < 0 else MUTED)
+
+        return html.Div([
+            html.Span(
+                d.get("symbol", ""),
+                style={
+                    "flex": "0.75",
+                    "fontWeight": "900",
+                    "fontSize": "14px",
+                    "color": WHITE,
+                    "fontFamily": "DM Mono, monospace",
+                }
+            ),
+            html.Span(
+                f"${d.get('price', 0):,.2f}",
+                style={"flex": "0.85", "fontSize": "13px", "color": WHITE, "fontFamily": "DM Mono, monospace"}
+            ),
+            html.Span(
+                f"{d.get('composite_score', 0):.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "800", "color": YELLOW_DIM}
+            ),
+            html.Span(
+                f"{d.get('deep_score', 0):.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "800", "color": BLUE_DIM}
+            ),
+            html.Span(
+                f"{delta:+.1f}",
+                style={"flex": "0.75", "fontSize": "13px", "fontWeight": "900", "color": delta_color}
+            ),
+            html.Span(
+                d.get("old_status", "—"),
+                style={"flex": "0.9", "fontSize": "12px", "fontWeight": "700", "color": WHITE}
+            ),
+            html.Span(
+                d.get("new_status", "—"),
+                style={"flex": "0.9", "fontSize": "12px", "fontWeight": "900", "color": color}
+            ),
+            html.Span(
+                d.get("transition", "—"),
+                style={"flex": "1.65", "fontSize": "11px", "fontWeight": "900", "color": color}
+            ),
+            html.Span(
+                d.get("regime", "—"),
+                style={"flex": "0.95", "fontSize": "11px", "color": WHITE}
+            ),
+        ], style={
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "12px",
+            "padding": "12px 0",
+            "borderBottom": f"1px solid {BORDER}",
+        })
+
+    header = html.Div([
+        html.Span("Symbol", style={"flex": "0.75", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Price", style={"flex": "0.85", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Composite", style={"flex": "0.75", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Deep Score", style={"flex": "0.75", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Delta", style={"flex": "0.75", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Previous", style={"flex": "0.9", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Current", style={"flex": "0.9", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Transition", style={"flex": "1.65", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+        html.Span("Regime", style={"flex": "0.95", "fontSize": "9px", "color": WHITE, "fontWeight": "800", "textTransform": "uppercase", "letterSpacing": ".1em"}),
+    ], style={
+        "display": "flex",
+        "gap": "12px",
+        "paddingBottom": "8px",
+        "borderBottom": f"1px solid {BORDER}",
+        "marginBottom": "4px",
+    })
+
+    table_card = card([
+        html.Div([
+            html.H3(
+                "Intelligence Transitions",
+                style={"color": WHITE, "fontSize": "16px", "fontWeight": "900", "margin": "0"}
+            ),
+            html.P(
+                "Positive delta = deeper intelligence stronger than radar. Negative delta = deeper intelligence weaker than radar.",
+                style={"color": WHITE, "fontSize": "12px", "margin": "4px 0 0"}
+            ),
+        ], style={"marginBottom": "14px"}),
+
+        header,
+
+        html.Div([_row(d) for d in items] if items else [
+            html.Div(
+                "No intelligence changes yet. The detector populates after the EOD audit.",
+                style={"color": WHITE, "fontSize": "13px", "padding": "24px 0", "textAlign": "center"}
+            )
         ]),
     ])
 
-
-# FIX: build_billing_tab below references six names that were never defined
-# anywhere in this file (_metric, _badge, _feature_row, PRICING_TABLE_ID,
-# PUBLISHABLE_KEY, CONTACT_EMAIL) -- every render of this tab raised a
-# NameError. _badge and _metric alias existing working functions already
-# in this file (badge, metric_tile); _feature_row is a new small helper;
-# the three constants come from env vars with safe, non-crashing defaults.
-
-_badge = badge
-_metric = metric_tile
-
-
-def _feature_row(name, detail, enabled):
-    icon = "✓" if enabled else "—"
-    icon_color = TEAL_DIM if enabled else RED_DIM
-    return html.Div([
-        html.Span(icon, style={"color": icon_color, "fontWeight": "900",
-                                "width": "20px", "display": "inline-block"}),
-        html.Span(name, style={"color": WHITE, "fontSize": "13px",
-                                "fontWeight": "700", "flex": "1"}),
-        html.Span(detail, style={"color": TEXT, "fontSize": "12px"}),
-    ], style={
-        "display": "flex", "alignItems": "center", "gap": "10px",
-        "padding": "10px 0", "borderBottom": f"1px solid {BORDER}",
-    })
-
-
-PRICING_TABLE_ID = os.getenv("STRIPE_PRICING_TABLE_ID", "")
-PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
-CONTACT_EMAIL = os.getenv("SIGMALYTIC_CONTACT_EMAIL", "support@sigmalytic.com")
+    return html.Div([summary_card, table_card])
 
 
 def build_billing_tab(session=None, perms=None):
-    user_id = (session or {}).get("user_id", "")
-    email   = (session or {}).get("email", "")
+    """Delegate to billing_ui module."""
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from billing_ui import build_billing_tab as _build
+        return _build(session=session, perms=perms)
+    except Exception as e:
+        return card([
+            html.H2("💳 Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+            note_box(f"Billing error: {str(e)[:120]}", "yellow"),
+        ])
 
-    # Fetch billing state
-    billing = {}
-    if user_id:
-        try:
-            r = _req.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", timeout=5)
-            if r.ok:
-                billing = r.json()
-        except Exception:
-            pass
 
-    tier        = billing.get("tier", "free")
-    plan_name   = billing.get("plan_name", "Free")
-    plan_price  = billing.get("plan_price", "$0")
-    status      = billing.get("status", "active")
-    period_end  = billing.get("current_period_end", "—")
-    cancel_end  = billing.get("cancel_at_period_end", False)
-    features    = billing.get("features", {})
-    has_customer= bool(billing.get("stripe_customer_id"))
+def register_billing_callbacks_from_module(app):
+    try:
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from billing_ui import register_billing_callbacks
+        register_billing_callbacks_from_module(app)
+    except Exception as e:
+        print(f"Warning: billing callbacks: {e}")
 
-    # ── Status banner ──────────────────────────────────────────────────────────
-    if status == "past_due":
-        banner_color = RED_DIM
-        banner_bg    = "rgba(239,68,68,.08)"
-        banner_border= "rgba(239,68,68,.25)"
-        banner_text  = "⚠️ Payment past due — please update your payment method to restore full access."
-    elif cancel_end:
-        banner_color = YELLOW_DIM
-        banner_bg    = "rgba(245,158,11,.08)"
-        banner_border= "rgba(245,158,11,.25)"
-        banner_text  = f"⚠️ Your plan is set to cancel on {period_end}. Reactivate anytime below."
-    elif tier == "free":
-        banner_color = BLUE_DIM
-        banner_bg    = "rgba(59,130,246,.08)"
-        banner_border= "rgba(59,130,246,.25)"
-        banner_text  = "You are on the Free plan. Upgrade to unlock live data, alerts, and intelligence scoring."
-    else:
-        banner_color = TEAL_DIM
-        banner_bg    = TEAL_GLOW
-        banner_border= BORDER_T
-        banner_text  = f"✅ {plan_name} — Active. All features unlocked."
 
-    banner = html.Div(banner_text, style={
-        "background": banner_bg, "border": f"1px solid {banner_border}",
-        "borderRadius": "12px", "color": banner_color,
-        "fontSize": "13px", "padding": "14px 18px", "marginBottom": "16px",
-    })
 
-    # ── Current plan card (only if logged in and subscribed) ──────────────────
-    plan_card = _card([
-        html.Div([
-            html.Div([
-                html.H2(plan_name, style={"color": WHITE, "fontSize": "20px",
-                                          "fontWeight": "900", "margin": "0 0 4px"}),
-                html.Div(plan_price, style={"color": TEAL_DIM, "fontSize": "24px",
-                                            "fontWeight": "900", "marginBottom": "12px"}),
-                _badge("ACTIVE" if status == "active" else status.upper()),
-            ]),
-        ], style={"marginBottom": "20px"}),
-
-        html.Div([
-            _metric("Status",     status.title(),          TEAL_DIM if status=="active" else RED_DIM),
-            _metric("Renews",     period_end or "—",        TEXT),
-            _metric("Radar",      f"{features.get('radar_limit', 50)} symbols", WHITE),
-            _metric("SMS Alerts", "Unlimited" if features.get("sms_limit",-1)==-1
-                                  else f"{features.get('sms_limit',0)}/day"
-                                  if features.get("sms_limit",0) > 0 else "None", WHITE),
-        ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)",
-                  "gap": "12px", "marginBottom": "20px"}),
-
-        html.Div([
-            _feature_row("Live Market Data",        "SIP Feed",    features.get("live_data", False)),
-            _feature_row("Radar Screen",            f"{features.get('radar_limit',50)} symbols", True),
-            _feature_row("Status Alerts",           "Armed / Triggered", features.get("alerts", False)),
-            _feature_row("Intelligence Layer",      "GEX · BME · Hurst · VSA", features.get("intelligence", False)),
-            _feature_row("Weis Wave + 3-Bar",       "All 1,403 symbols", True),
-            _feature_row("Divergence Watchlist",    "EOD Audit",   features.get("intelligence", False)),
-            _feature_row("SMS Alerts",              "Via Twilio",  features.get("sms_limit", 0) != 0),
-        ], style={"marginBottom": "20px"}),
-
-        # Manage plan button (only if has Stripe customer)
-        html.Div([
-            html.Button("Manage Plan / Cancel",
-                id="btn-manage-plan",
-                n_clicks=0,
-                style={
-                    "background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
-                    "borderRadius": "10px", "color": TEXT, "cursor": "pointer",
-                    "fontFamily": "DM Sans, sans-serif", "fontSize": "13px",
-                    "fontWeight": "700", "padding": "10px 20px",
-                } if has_customer else {
-                    "display": "none"
-                }
-            ),
-            html.Div(id="billing-portal-status", style={"fontSize": "12px",
-                     "color": MUTED, "marginTop": "8px"}),
-        ]) if tier != "free" else html.Div(),
-    ]) if user_id else html.Div()
-
-    # ── Stripe pricing table ───────────────────────────────────────────────────
-    pricing_section = _card([
-        html.H2("Choose Your Plan", style={"color": WHITE, "fontSize": "18px",
-                                            "fontWeight": "900", "marginBottom": "8px"}),
-        html.P("Upgrade or change your plan anytime. Cancel anytime.",
-               style={"color": TEXT, "fontSize": "13px", "marginBottom": "24px"}),
-
-        # Stripe pricing table embedded via iframe/HTML component
-        html.Iframe(
-            srcDoc=f"""
-                <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
-                <stripe-pricing-table
-                    pricing-table-id="{PRICING_TABLE_ID}"
-                    publishable-key="{PUBLISHABLE_KEY}"
-                    client-reference-id="{user_id}"
-                    customer-email="{email}">
-                </stripe-pricing-table>
-            """,
-            style={
-                "width": "100%", "border": "none",
-                "minHeight": "600px", "background": "transparent",
-            },
-        ),
-
-        # Institutional contact
-        html.Div([
-            html.Div("🏛️ Institutional", style={"color": WHITE, "fontSize": "16px",
-                                                  "fontWeight": "800", "marginBottom": "8px"}),
-            html.Div("Custom universe · API access · Priority support · Dedicated onboarding",
-                     style={"color": TEXT, "fontSize": "13px", "marginBottom": "16px"}),
-            html.A("Contact Us →",
-                   href=f"mailto:{CONTACT_EMAIL}?subject=Sigmalytic Institutional Inquiry",
-                   style={
-                       "background": TEAL_GLOW, "border": f"1px solid {BORDER_T}",
-                       "borderRadius": "10px", "color": TEAL_DIM, "cursor": "pointer",
-                       "display": "inline-block", "fontSize": "14px", "fontWeight": "800",
-                       "padding": "12px 24px", "textDecoration": "none",
-                   }),
-        ], style={
-            "background": "rgba(0,0,0,.2)", "border": f"1px solid {BORDER}",
-            "borderRadius": "16px", "marginTop": "24px", "padding": "24px",
-            "textAlign": "center",
-        }),
-    ])
-
-    return html.Div([
-        # Header
-        _card([
-            html.H2("💳 Billing & Plans", style={"color": WHITE, "fontSize": "18px",
-                                                   "fontWeight": "900", "margin": "0 0 6px"}),
-            html.P("Manage your Sigmalytic subscription.",
-                   style={"color": TEXT, "fontSize": "13px", "margin": "0"}),
-        ], sx={"marginBottom": "16px", "padding": "20px"}),
-
-        banner,
-        plan_card,
-        pricing_section,
-    ], style={"maxWidth": "900px", "margin": "0 auto", "padding": "24px 16px"})
-
-def register_billing_callbacks(app):
-
-    @app.callback(
-        Output("billing-portal-status", "children"),
-        Input("btn-manage-plan", "n_clicks"),
-        State("s-session", "data"),
-        prevent_initial_call=True,
-    )
-    def open_portal(n, session):
-        if not n:
-            return no_update
-        user_id = (session or {}).get("user_id", "")
-        if not user_id:
-            return "Please log in first."
-        try:
-            r = _req.post(f"{BACKEND_HTTP}/api/v1/billing/{user_id}/portal", timeout=8)
-            if r.ok:
-                url = r.json().get("url", "")
-                if url:
-                    # Return a clickable link
-                    return html.A("Click here to manage your plan →",
-                                  href=url, target="_blank",
-                                  style={"color": TEAL_DIM, "fontSize": "13px"})
-            return html.Span(f"Error: {r.status_code}", style={"color": RED_DIM})
-        except Exception as e:
-            return html.Span(f"Error: {str(e)[:100]}", style={"color": RED_DIM})
 
 def build_preferences_tab(user_id="", session=None):
+    import requests as _preqs
+
+    def _card(c):
+        return html.Section(c, style={"background":NAVY_CARD,"border":f"1px solid {BORDER}",
+            "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)","marginBottom":"16px"})
+
+    def _label(t):
+        return html.Div(t, style={"color":WHITE,"fontSize":"10px","fontWeight":"800",
+            "textTransform":"uppercase","letterSpacing":".28em","marginBottom":"10px"})
+
+    def _stitle(t):
+        return html.Div(t, style={"color":TEAL_DIM,"fontSize":"11px","fontWeight":"800",
+            "textTransform":"uppercase","letterSpacing":".15em","marginBottom":"16px",
+            "paddingBottom":"10px","borderBottom":f"1px solid {BORDER}"})
+
+    def _on():
+        return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
+                "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                "fontWeight":"700","padding":"8px 16px","cursor":"pointer"}
+
+    def _off():
+        return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"8px",
+                "color":WHITE,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                "fontWeight":"700","padding":"8px 16px","cursor":"pointer"}
+
+    def _render_watchlist(wl):
+        if not wl:
+            return [html.Span("All symbols — no filter applied",
+                              style={"color":WHITE,"fontSize":"12px","fontStyle":"italic"})]
+        return [html.Span(s, style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+                "borderRadius":"6px","color":WHITE,"fontSize":"12px","padding":"4px 10px",
+                "marginRight":"6px","marginBottom":"6px","display":"inline-block"}) for s in wl]
+
+    def _save(uid, email, payload):
+        try:
+            url = f"{BACKEND_HTTP}/api/preferences/{uid}"
+            r = _preqs.patch(url, json=payload, timeout=8)
+            if r.status_code == 404:
+                r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
+            return ("✅ Saved", "teal") if r.ok else (f"❌ Error", "red")
+        except Exception as e:
+            return (f"❌ {str(e)[:60]}", "red")
+
+
     """
     Fetches saved preferences from backend and renders with correct state.
     All buttons save instantly on click.
@@ -1890,7 +3475,7 @@ def build_preferences_tab(user_id="", session=None):
 
     if user_id:
         try:
-            r = requests.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=4)
+            r = _preqs.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=4)
             if r.ok:
                 p = r.json()
                 prefs["delivery_mode"]     = p.get("delivery_mode", prefs["delivery_mode"])
@@ -1929,7 +3514,7 @@ def build_preferences_tab(user_id="", session=None):
 
         html.Div([
             html.H2("Alert Preferences", style={"color":WHITE,"fontSize":"22px","fontWeight":"800","marginBottom":"4px"}),
-            html.P("Changes save instantly.", style={"color":TEXT,"fontSize":"13px"}),
+            html.P("Changes save instantly.", style={"color":WHITE,"fontSize":"13px"}),
         ], style={"marginBottom":"24px"}),
 
         # Status message
@@ -1954,7 +3539,7 @@ def build_preferences_tab(user_id="", session=None):
                 tooltip={"placement":"bottom","always_visible":True}),
             html.Div(style={"height":"8px"}),
             html.Div("Higher score = fewer, higher-quality alerts",
-                     style={"color":MUTED,"fontSize":"11px"}),
+                     style={"color":WHITE,"fontSize":"11px"}),
             html.Button("Save Score", id="prefs-score-save", n_clicks=0, style={
                 "marginTop":"12px","background":TEAL_GLOW,"border":f"1px solid {BORDER_T}",
                 "borderRadius":"8px","color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif",
@@ -1996,7 +3581,7 @@ def build_preferences_tab(user_id="", session=None):
                 html.Div([
                     html.Div("Market hours only", style={"color":WHITE,"fontSize":"13px","fontWeight":"600"}),
                     html.Div("Suppress alerts outside 9:30–4:00 PM ET",
-                             style={"color":MUTED,"fontSize":"11px","marginTop":"2px"}),
+                             style={"color":WHITE,"fontSize":"11px","marginTop":"2px"}),
                 ], style={"flex":"1"}),
                 html.Button("ON" if hours else "OFF", id="pref-btn-hours", n_clicks=0,
                             style=_on() if hours else _off()),
@@ -2192,196 +3777,68 @@ def register_preferences_callbacks(app):
         msg, color = _save(uid, email, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
-
-def _live_wg_label(value):
-    mapping = {
-        "OK": "Gamma OK",
-        "NONE": "Missing Overlay",
-        "EMPTY": "Empty",
-        "NO_OPTIONS_RETURNED": "No Options Returned",
-        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
-        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
-        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
-        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
-        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
-        "WEIS_EXPANSION": "Weis Expansion",
-        "WEIS_BASELINE": "Weis Baseline",
-        "WEIS_TEST": "Weis Test",
-        "WEIS_EXHAUSTION": "Weis Exhaustion",
-        "A_PLUS": "A+",
-        "LOW_PRIORITY": "Low Priority",
-        "WATCHLIST": "Watchlist",
-        "AVOID": "Avoid",
-    }
-    key = str(value or "NONE")
-    return mapping.get(key, key.replace("_", " ").title())
-
-
-def _live_wg_counts_text(counts):
-    if not isinstance(counts, dict) or not counts:
-        return "-"
-    return " | ".join([f"{_live_wg_label(k)}: {v}" for k, v in counts.items()])
-
-
-def _live_wg_metric(label, value, color):
-    return html.Div([
-        html.Div(str(label), style={
-            "fontSize": "10px",
-            "fontWeight": "900",
-            "color": WHITE,
-            "opacity": ".85",
-            "textTransform": "uppercase",
-            "letterSpacing": ".08em",
-            "marginBottom": "4px",
-        }),
-        html.Div(str(value), style={
-            "fontSize": "20px",
-            "fontWeight": "900",
-            "color": color,
-            "lineHeight": "1.1",
-        }),
-    ], style={
-        "border": f"1px solid {BORDER}",
-        "background": "rgba(15,23,42,.42)",
-        "borderRadius": "14px",
-        "padding": "12px",
-        "minHeight": "68px",
-    })
-
-
-def build_weis_gamma_status_center_panel():
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/campaigns/summary", timeout=8)
-        data = r.json() if r.ok else {}
-    except Exception as e:
-        data = {}
-
-    wg = data.get("weis_gamma_status_center") if isinstance(data, dict) else {}
-
-    if not isinstance(wg, dict) or not wg:
-        return html.Div([
-            html.Div("Weis-Gamma Status Center", style={
-                "fontSize": "15px",
-                "fontWeight": "900",
-                "color": WHITE,
-            }),
-            html.Div("Waiting for backend Weis-Gamma status data.", style={
-                "fontSize": "12px",
-                "color": WHITE,
-                "opacity": ".85",
-                "marginTop": "4px",
-            }),
-        ], style={
-            "border": f"1px solid {BORDER}",
-            "background": "rgba(8,24,39,.72)",
-            "borderRadius": "18px",
-            "padding": "16px",
-            "marginBottom": "16px",
-        })
-
-    total = wg.get("total_campaigns", 0)
-    present = wg.get("weis_gamma_present", 0)
-    missing = wg.get("weis_gamma_missing", 0)
-    gamma_ok = wg.get("gamma_ok", 0)
-    no_options = wg.get("gamma_no_options_returned", 0)
-    no_chain = wg.get("gamma_no_option_chain", 0)
-    stale = wg.get("gamma_stale_or_unconfirmed", 0)
-    transitions = wg.get("transition_enabled", 0)
-
-    transitions_off = int(transitions or 0) == 0
-    safety_color = TEAL_DIM if transitions_off else RED_DIM
-    stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
-    no_chain_color = TEAL_DIM if int(no_chain or 0) == 0 else YELLOW_DIM
-
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Div("Weis-Gamma Status Center", style={
-                    "fontSize": "16px",
-                    "fontWeight": "900",
-                    "color": WHITE,
-                }),
-                html.Div(
-                    "Gamma is a read-only execution-risk overlay. No Options Returned means Alpaca was queried and no listed chain was returned.",
-                    style={
-                        "fontSize": "12px",
-                        "color": WHITE,
-                        "opacity": ".85",
-                        "marginTop": "4px",
-                    },
-                ),
-            ]),
-            html.Div("TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED", style={
-                "fontSize": "11px",
-                "fontWeight": "900",
-                "color": safety_color,
-                "border": f"1px solid {safety_color}",
-                "borderRadius": "999px",
-                "padding": "6px 10px",
-            }),
-        ], style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "gap": "12px",
-            "alignItems": "center",
-            "marginBottom": "14px",
-        }),
-
-        html.Div([
-            _live_wg_metric("Total Campaigns", total, WHITE),
-            _live_wg_metric("Weis-Gamma Present", present, TEAL_DIM),
-            _live_wg_metric("Gamma OK", gamma_ok, TEAL_DIM),
-            _live_wg_metric("No Options Returned", no_options, YELLOW_DIM),
-            _live_wg_metric("No Option-Chain Input", no_chain, no_chain_color),
-            _live_wg_metric("Gamma Stale / Unconfirmed", stale, stale_color),
-            _live_wg_metric("Transitions Off", "YES" if transitions_off else "NO", safety_color),
-            _live_wg_metric("Missing Overlay", missing, YELLOW_DIM),
-        ], style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(150px, 1fr))",
-            "gap": "10px",
-        }),
-
-        html.Div([
-            html.Div([
-                html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_live_wg_counts_text(wg.get("gamma_status_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_live_wg_counts_text(wg.get("option_chain_status_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_live_wg_counts_text(wg.get("fusion_state_counts")), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-        ], style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
-            "gap": "10px",
-            "marginTop": "12px",
-        }),
-    ], style={
-        "border": "1px solid rgba(45,212,191,.30)",
-        "background": "rgba(8,24,39,.72)",
-        "borderRadius": "18px",
-        "padding": "16px",
-        "marginBottom": "16px",
-        "boxShadow": "0 0 0 1px rgba(45,212,191,.08) inset",
-    })
-
-
-
 # ── Admin helpers ──────────────────────────────────────────────────────────────
+
+# FIX: GOLD, ADMIN_EMAIL, _tile, _severity_color, and _score_bar were referenced
+# below but never defined anywhere in this file -- clicking the Admin tab raised
+# a NameError immediately. These are safe, minimal definitions that reuse
+# existing patterns already in this file rather than introducing new ones.
+
+GOLD = "#F5C842"
+
+# ADMIN_EMAIL must come from an env var. If unset, default to a value that can
+# never match a real session email (NOT an empty string) -- otherwise a
+# session with no email set would incorrectly be treated as admin.
+ADMIN_EMAIL = os.getenv("SIGMALYTIC_ADMIN_EMAIL") or "no-admin-configured@invalid"
+
+
 def _admin_tile(label, value, color=None, sub=None):
     color = color or WHITE
     return html.Div([
-        html.Div(label, style={"fontSize":"10px","color":TEXT,"fontWeight":"700",
+        html.Div(label, style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
                                "textTransform":"uppercase","letterSpacing":".12em","marginBottom":"6px"}),
         html.Div(value, style={"fontSize":"22px","fontWeight":"900","color":color,"lineHeight":"1"}),
-        html.Div(sub,   style={"fontSize":"10px","color":MUTED,"marginTop":"4px"}) if sub else html.Div(),
+        html.Div(sub,   style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}) if sub else html.Div(),
     ], style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
                "borderRadius":"12px","padding":"14px 16px"})
+
+
+# Alias: build_admin_tab below calls this as `_tile(...)`.
+_tile = _admin_tile
+
+
+def _severity_color(severity):
+    s = str(severity or "").upper().strip()
+    if s in {"CRITICAL", "HIGH", "ERROR"}:
+        return RED_DIM
+    if s in {"MEDIUM", "WARNING", "WARN"}:
+        return YELLOW_DIM
+    if s in {"LOW", "INFO"}:
+        return TEAL_DIM
+    return WHITE
+
+
+def _score_bar(score, width="80px"):
+    try:
+        pct = max(0, min(100, float(score)))
+    except Exception:
+        pct = 0
+    color = TEAL_DIM if pct >= 70 else (YELLOW_DIM if pct >= 45 else RED_DIM)
+    return html.Div(
+        html.Div(style={
+            "width": f"{pct}%", "height": "100%", "borderRadius": "999px",
+            "background": color,
+        }),
+        style={
+            "width": width, "height": "6px", "background": "rgba(255,255,255,.08)",
+            "borderRadius": "999px", "overflow": "hidden", "marginTop": "4px",
+        },
+    )
+
+
+# Alias: build_admin_tab below calls this as `_grade_color(...)`.
+# _probability_grade_color already implements the same A/B/C/D-F mapping.
+_grade_color = _probability_grade_color
 
 
 def _admin_card(children, sx=None):
@@ -2390,15 +3847,6 @@ def _admin_card(children, sx=None):
          "boxShadow": "0 8px 32px rgba(0,0,0,.32)"}
     if sx: s.update(sx)
     return html.Div(children, style=s)
-
-
-# Compatibility aliases used inside the live Admin tab.
-def _card(children, sx=None):
-    return _admin_card(children, sx=sx)
-
-
-def _tile(label, value, color=None, sub=None):
-    return _admin_tile(label, value, color=color, sub=sub)
 
 
 def is_admin(session: dict) -> bool:
@@ -2414,25 +3862,30 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Div("🔒", style={"fontSize":"48px","marginBottom":"16px"}),
             html.Div("Admin Access Only", style={"fontSize":"18px","fontWeight":"800","color":WHITE}),
             html.Div("This page is only accessible to the system administrator.",
-                     style={"fontSize":"13px","color":TEXT,"marginTop":"8px"}),
+                     style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
         ], style={"textAlign":"center","padding":"80px 20px"})
 
     # ── Fetch report from backend ─────────────────────────────────────────
     try:
         token = session.get("access_token","")
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        r = _req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
-        if not r.ok:
-            r = _req.get(f"{backend_url}/api/admin/report/public", timeout=15)
+        # FIX: was `_req.get(...)` -- _req is not defined at module scope in
+        # this function (it only exists as a local import inside two other,
+        # unrelated functions). This module already imports requests as `req`
+        # at the top of the file; use that instead.
+        r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
         data = r.json() if r.ok else {}
     except Exception as e:
         data = {}
 
     if not data:
-        return _card([
+        # FIX: was `_admin_card([...])` -- _card only exists as a local nested
+        # function inside build_preferences_tab and is not visible here.
+        # _admin_card is the real module-level equivalent already defined above.
+        return _admin_card([
             html.Div("⚠️ Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
             html.Div("Backend may be initializing. Refresh in 30 seconds.",
-                     style={"color":TEXT,"fontSize":"12px","marginTop":"8px"}),
+                     style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
         ])
 
     live          = data.get("live_stats", {})
@@ -2455,7 +3908,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         gen_label = generated_at
 
     # ── Header ────────────────────────────────────────────────────────────
-    header = _card([
+    header = _admin_card([
         html.Div([
             html.Div([
                 html.Div([
@@ -2465,7 +3918,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                                      "letterSpacing":".08em"}),
                 ], style={"display":"flex","alignItems":"center","gap":"8px","marginBottom":"4px"}),
                 html.Div("Private · Internal Use Only · Sigmalytic Quant Corporation",
-                         style={"fontSize":"11px","color":MUTED,"letterSpacing":".06em"}),
+                         style={"fontSize":"11px","color":WHITE,"letterSpacing":".06em"}),
             ]),
             html.Div([
                 html.Span(snap_health.get("status","—"), style={
@@ -2475,7 +3928,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     "padding":"4px 12px","background":TEAL_GLOW,
                 }),
                 html.Div(f"Generated: {gen_label}",
-                         style={"fontSize":"10px","color":MUTED,"marginTop":"4px","textAlign":"right"}),
+                         style={"fontSize":"10px","color":WHITE,"marginTop":"4px","textAlign":"right"}),
             ]),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start"}),
     ], sx={"borderColor": "rgba(245,200,66,.3)", "marginBottom":"16px"})
@@ -2488,7 +3941,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     perf_num = accuracy.get("a_grade",0)
     perf_den = accuracy.get("total",0)
 
-    accuracy_block = _card([
+    accuracy_block = _admin_card([
         html.Div("CLOSED-LOOP PERFORMANCE AUDIT",
                  style={"fontSize":"10px","fontWeight":"900","color":GOLD,
                         "letterSpacing":".2em","textTransform":"uppercase","marginBottom":"16px"}),
@@ -2506,19 +3959,19 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom":"16px","borderColor":"rgba(245,200,66,.2)"})
 
     # ── Snapshot writer health ────────────────────────────────────────────
-    snap_block = _card([
+    snap_block = _admin_card([
         html.Div([
             html.Div("📸 SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"4px"}),
             html.Div([
-                html.Span("Status: ", style={"color":MUTED,"fontSize":"11px"}),
+                html.Span("Status: ", style={"color":WHITE,"fontSize":"11px"}),
                 html.Span(snap_health.get("status","—"),
                           style={"color": TEAL_DIM if "Active" in snap_health.get("status","") else YELLOW_DIM,
                                  "fontWeight":"700","fontSize":"11px"}),
-                html.Span("  ·  Last write: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
+                html.Span("  ·  Last write: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
                 html.Span(snap_health.get("last_write","—")[:19] if snap_health.get("last_write") else "—",
-                          style={"color":TEXT,"fontSize":"11px"}),
-                html.Span("  ·  Writes in last 10 min: ", style={"color":MUTED,"fontSize":"11px","marginLeft":"12px"}),
+                          style={"color":WHITE,"fontSize":"11px"}),
+                html.Span("  ·  Writes in last 10 min: ", style={"color":WHITE,"fontSize":"11px","marginLeft":"12px"}),
                 html.Span(str(snap_health.get("recent_count",0)),
                           style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"11px"}),
             ]),
@@ -2526,7 +3979,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom":"16px","padding":"14px 20px"})
 
     # ── Narrative block ───────────────────────────────────────────────────
-    narrative_block = _card([
+    narrative_block = _admin_card([
         html.Div("REGIME NARRATIVE", style={"fontSize":"10px","fontWeight":"900","color":GOLD,
                   "letterSpacing":".2em","marginBottom":"12px"}),
         html.Div(narrative, style={"fontSize":"14px","color":WHITE,"lineHeight":"1.7",
@@ -2535,7 +3988,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Div(style={"height":"16px"}),
 
         # Regime distribution pills
-        html.Div("REGIME DISTRIBUTION", style={"fontSize":"10px","fontWeight":"700","color":MUTED,
+        html.Div("REGIME DISTRIBUTION", style={"fontSize":"10px","fontWeight":"700","color":WHITE,
                   "letterSpacing":".16em","marginBottom":"8px"}),
         html.Div([
             html.Div([
@@ -2565,11 +4018,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 "fontFamily":"monospace","marginRight":"10px","minWidth":"60px",
                 "display":"inline-block",
             }),
-            html.Span(a.get("message",""), style={"fontSize":"12px","color":TEXT}),
+            html.Span(a.get("message",""), style={"fontSize":"12px","color":WHITE}),
         ], style={"padding":"8px 0","borderBottom":f"1px solid {BORDER}",
                   "display":"flex","alignItems":"center"}))
 
-    anomaly_block = _card([
+    anomaly_block = _admin_card([
         html.Div([
             html.Div("🚨 ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
             html.Div(f"{len(anomalies)} issues detected",
@@ -2592,7 +4045,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 "fontFamily":"monospace",
             }),
             html.Span(f"${s.get('price',0):,.2f}", style={
-                "flex":"1","fontSize":"12px","color":TEXT,
+                "flex":"1","fontSize":"12px","color":WHITE,
             }),
             html.Span(f"{chg:+.2f}%", style={
                 "flex":"1","fontSize":"12px","fontWeight":"700",
@@ -2610,23 +4063,23 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 "flex":"1","fontSize":"10px","fontWeight":"700","color":sc,
             }),
             html.Span(s.get("regime",""), style={
-                "flex":"1","fontSize":"10px","color":MUTED,
+                "flex":"1","fontSize":"10px","color":WHITE,
             }),
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
-    score_table = _card([
+    score_table = _admin_card([
         html.Div("🏆 TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
-            html.Span("Symbol",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Price",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Chg%",     style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Score",    style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Dimensions (C E RS VP B)", style={"flex":"2","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Status",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Symbol",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Price",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Chg%",     style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Score",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Dimensions (C E RS VP B)", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Status",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         ], style={"display":"flex","gap":"12px","paddingBottom":"8px",
                   "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
         html.Div([_sym_row(s) for s in top_scores]),
@@ -2643,13 +4096,13 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         # Table header row — dates
         date_headers = [
             html.Th("Symbol", style={"padding":"6px 10px","textAlign":"left",
-                                      "fontSize":"9px","color":MUTED,"fontWeight":"700",
+                                      "fontSize":"9px","color":WHITE,"fontWeight":"700",
                                       "textTransform":"uppercase","letterSpacing":".1em",
                                       "background":NAVY_MID,"position":"sticky","left":0}),
         ] + [
             html.Th(day["date"][5:],  # MM-DD
                     style={"padding":"6px 10px","textAlign":"center","minWidth":"56px",
-                           "fontSize":"9px","color":MUTED,"fontWeight":"700",
+                           "fontSize":"9px","color":WHITE,"fontWeight":"700",
                            "textTransform":"uppercase","letterSpacing":".06em",
                            "background":NAVY_MID})
             for day in daily_grades
@@ -2674,22 +4127,22 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                             html.Div(grade or "—", style={"fontSize":"12px","fontWeight":"900",
                                                            "color":gc,"lineHeight":"1"}),
                             html.Div(f"{sym_data.get('score',0):.0f}",
-                                     style={"fontSize":"9px","color":MUTED,"marginTop":"2px"}),
+                                     style={"fontSize":"9px","color":WHITE,"marginTop":"2px"}),
                         ], style={"textAlign":"center"}),
                         style={"padding":"5px 8px","background":f"{gc}12",
                                "borderLeft":f"1px solid rgba(255,255,255,.04)"},
                     ))
                 else:
                     cells.append(html.Td("—", style={"padding":"5px 8px","textAlign":"center",
-                                                       "color":MUTED,"fontSize":"11px"}))
+                                                       "color":WHITE,"fontSize":"11px"}))
             table_rows.append(html.Tr(cells, style={"borderBottom":f"1px solid {BORDER}"}))
 
-        grade_grid = _card([
+        grade_grid = _admin_card([
             html.Div([
                 html.Div("📋 CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
                          style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
                 html.Div("Grade / Score · A=Full target · B=Partial · C=Neutral · F=Miss",
-                         style={"fontSize":"10px","color":MUTED,"marginTop":"4px"}),
+                         style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}),
             ], style={"marginBottom":"16px"}),
             html.Div([
                 html.Table([
@@ -2703,16 +4156,16 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
             html.Div([
                 html.Span("* Starred dates = Pinning Report validation days",
-                          style={"fontSize":"10px","color":MUTED,"fontStyle":"italic"}),
+                          style={"fontSize":"10px","color":WHITE,"fontStyle":"italic"}),
             ], style={"marginTop":"12px"}),
         ], sx={"marginBottom":"16px"})
     else:
-        grade_grid = _card([
+        grade_grid = _admin_card([
             html.Div("📋 CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"8px"}),
             html.Div("No daily close snapshots yet. The grade grid will populate automatically "
                      "after 4:15 PM ET on the first trading day with the snapshot writer active.",
-                     style={"fontSize":"13px","color":TEXT,"lineHeight":"1.7"}),
+                     style={"fontSize":"13px","color":WHITE,"lineHeight":"1.7"}),
         ], sx={"marginBottom":"16px"})
 
     # ── Assemble full page ────────────────────────────────────────────────
@@ -2732,7 +4185,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
         # Footer
         html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
-                 style={"textAlign":"center","fontSize":"9px","color":MUTED,
+                 style={"textAlign":"center","fontSize":"9px","color":WHITE,
                         "letterSpacing":".2em","paddingTop":"16px","paddingBottom":"8px"}),
     ])
 
@@ -2745,7 +4198,7 @@ def build_setup_tab():
         html.Pre(
             f"Frontend  : Dash (Python)  →  Render\n"
             f"Backend   : FastAPI        →  Render\n"
-            f"Data      : Alpaca SIP (free) / SIP (paid)\n"
+            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
             f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
             f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
             f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
@@ -2777,9 +4230,33 @@ app = dash.Dash(__name__, title="Sigmalytic Quant Corporation — Decision Intel
                            {"name":"theme-color","content":NAVY}])
 server = app.server
 
+# Allow Stripe scripts and iframes via CSP
+@server.after_request
+def add_csp_headers(response):
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; "
+        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
+        "connect-src 'self' https://api.stripe.com; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:;"
+    )
+    return response
+
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
-<style>{GLOBAL_CSS}</style></head>
+<style>{GLOBAL_CSS}
+.prob-pill {{
+    border: 1px solid rgba(148,163,184,.24);
+    background: rgba(15,35,55,.70);
+    color: #FFFFFF !important;
+    border-radius: 999px;
+    padding: 6px 9px;
+    font-size: 12px;
+    font-weight: 700;
+}}
+</style></head>
 <body>{{%app_entry%}}<footer>{{%config%}}</footer>{{%scripts%}}{{%renderer%}}
 <script>
 window._sigmaAudioCtx = null;
@@ -2834,474 +4311,39 @@ window.dash_clientside.sigmalytic = {{
 </body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
-_init_candles = _scaled_candles(280.15, "5m")
+_init_candles = fetch_real_candles("AAPL", "5m")
 
 ALL_TABS = [
-    ("command", "Command Center"),
+    ("home",        "Home"),
+    ("command",     "Command Center"),
+    ("campaign",    "Campaign Intelligence"),
+    ("feed",        "Live Feed"),
     ("performance", "Performance"),
-    ("feed", "Live Feed"),
-    ("radar", "Radar Screen"),
-    ("campaigns", "Campaigns"),
-    ("divergence", "Divergence"),
-    ("scoreboard", "Scoreboard"),
-    ("import", "Import History"),
-    ("behavior", "Behavioural Intelligence"),
-    ("portfolio", "Portfolio"),
-    ("journal", "Journal"),
+    ("behavior",    "Behavioral Intelligence"),
+    ("import",      "Import History"),
+    ("radar",       "Radar Screen"),
+    ("scoreboard",  "Scoreboard"),
+    ("divergence",  "🧠 Intelligence Change Detector"),
+    ("billing",     "Billing"),
     ("preferences", "Preferences"),
-    ("billing", "Billing"),
-    ("admin", "Admin"),
-    ("setup", "Setup"),
-    ("status", "Status"),
+    ("admin",       "Admin"),
+    ("setup",       "Setup"),
 ]
-
-
-
-# D3F.1B TODAY ENTRYPOINT CONTROLLED PERSISTENCE PANEL
-# Mode: read-only frontend display. Backend GET only. No write. No campaign mutation. No D3D. No Stripe.
-def _d3f1b_today_backend_get(endpoint):
-    base_url = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
-    url = base_url + endpoint
-
-    response = requests.get(url, timeout=15)
-    response.raise_for_status()
-    return response.json()
-
-
-def _d3f1b_today_bool_text(value):
-    if value is True:
-        return "False" if False else "True"
-    if value is False:
-        return "False"
-    return str(value)
-
-
-def _d3f1b_today_guardrail_clean(data):
-    return (
-        data.get("writes_to_supabase") is False
-        and data.get("mutates_campaigns") is False
-        and data.get("executes_d3d") is False
-        and data.get("authorizes_d3d") is False
-        and data.get("operator_control_confirmed") is False
-        and data.get("touches_stripe") is False
-    )
-
-
-def _d3f1b_today_row(label, value):
-    return html.Div(
-        [
-            html.Span(label, style={"color": "#94a3b8"}),
-            html.Span(str(value), style={"fontWeight": "800", "textAlign": "right"}),
-        ],
-        style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "gap": "14px",
-            "padding": "6px 0",
-            "borderTop": "1px solid rgba(148,163,184,0.14)",
-            "fontSize": "13px",
-        },
-    )
-
-
-def _build_d3f1b_today_controlled_persistence_lifecycle_panel():
-    # D3F.1B TODAY NONBLOCKING STATIC CLOSED STATUS REPAIR
-    # This panel is a display-only closed lifecycle status. It performs no runtime backend call
-    # from the initial Dash layout, preventing UI freeze/stall risk.
-    data = {
-        "ok": True,
-        "d3e_phase": "D3E.9",
-        "final_lifecycle_verified": True,
-        "final_lifecycle_status": "D3E9_FINAL_CONTROLLED_PERSISTENCE_LIFECYCLE_REGRESSION_SWEEP_PASSED_READ_ONLY",
-        "inserted_row_id": 1,
-        "writes_to_supabase": False,
-        "mutates_campaigns": False,
-        "executes_d3d": False,
-        "authorizes_d3d": False,
-        "operator_control_confirmed": False,
-        "composite_operator_control_confirmed": False,
-        "not_a_trade_signal": True,
-        "touches_stripe": False,
-        "source": "STATIC_CLOSED_D3E9_READ_ONLY_STATUS_FOR_NONBLOCKING_DASH_LAYOUT",
-    }
-
-    complete = data.get("final_lifecycle_verified") is True
-    guardrail_clean = _d3f1b_today_guardrail_clean(data)
-
-    return html.Div(
-        [
-            html.Div(
-                [
-                    html.Div(
-                        "Controlled Persistence Lifecycle",
-                        style={
-                            "fontSize": "16px",
-                            "fontWeight": "900",
-                            "color": "#f8fafc",
-                            "marginBottom": "4px",
-                        },
-                    ),
-                    html.Div(
-                        "D3E.9 Final Lifecycle Regression Sweep",
-                        style={
-                            "fontSize": "12px",
-                            "color": "#94a3b8",
-                            "fontWeight": "700",
-                            "marginBottom": "10px",
-                        },
-                    ),
-                    html.Div(
-                        "COMPLETE" if complete else "ATTENTION",
-                        style={
-                            "display": "inline-block",
-                            "padding": "5px 10px",
-                            "borderRadius": "999px",
-                            "fontSize": "11px",
-                            "fontWeight": "900",
-                            "color": "#022c22" if complete else "#451a03",
-                            "background": "#34d399" if complete else "#fbbf24",
-                            "marginBottom": "10px",
-                        },
-                    ),
-                    html.Div(
-                        "Guardrails: Clean" if guardrail_clean else "Guardrails: Needs review",
-                        style={
-                            "fontSize": "12px",
-                            "color": "#cbd5e1",
-                            "fontWeight": "800",
-                            "marginBottom": "10px",
-                        },
-                    ),
-                    _d3f1b_today_row("Phase", data.get("d3e_phase", "D3E.9")),
-                    _d3f1b_today_row("Final lifecycle verified", _d3f1b_today_bool_text(data.get("final_lifecycle_verified"))),
-                    _d3f1b_today_row("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
-                    _d3f1b_today_row("No write", _d3f1b_today_bool_text(data.get("writes_to_supabase") is False)),
-                    _d3f1b_today_row("No campaign mutation", _d3f1b_today_bool_text(data.get("mutates_campaigns") is False)),
-                    _d3f1b_today_row("No D3D", _d3f1b_today_bool_text(data.get("executes_d3d") is False)),
-                    _d3f1b_today_row("No operator-control confirmation", _d3f1b_today_bool_text(data.get("operator_control_confirmed") is False)),
-                    _d3f1b_today_row("No Stripe", _d3f1b_today_bool_text(data.get("touches_stripe") is False)),
-                    _d3f1b_today_row("Writes to Supabase", _d3f1b_today_bool_text(data.get("writes_to_supabase"))),
-                    _d3f1b_today_row("Campaign mutation", _d3f1b_today_bool_text(data.get("mutates_campaigns"))),
-                    _d3f1b_today_row("D3D executed", _d3f1b_today_bool_text(data.get("executes_d3d"))),
-                    _d3f1b_today_row("Operator control confirmed", _d3f1b_today_bool_text(data.get("operator_control_confirmed"))),
-                    _d3f1b_today_row("Stripe touched", _d3f1b_today_bool_text(data.get("touches_stripe"))),
-                    html.Div(
-                        "Display-only status panel. This is not a trade signal and does not authorize D3D.",
-                        style={
-                            "fontSize": "11px",
-                            "color": "#94a3b8",
-                            "fontWeight": "700",
-                            "marginTop": "10px",
-                        },
-                    ),
-                ]
-            )
-        ],
-        id="d3f1b-today-entrypoint-controlled-persistence-mount",
-        **{
-            "data-d3f1b-today-entrypoint": "controlled-persistence-final-lifecycle-regression-sweep",
-        },
-        style={
-            "border": "1px solid rgba(148,163,184,0.28)",
-            "background": "rgba(8,24,39,.72)",
-            "borderRadius": "18px",
-            "padding": "16px",
-            "margin": "0 0 16px 0",
-            "boxShadow": "0 18px 40px rgba(0,0,0,.22)",
-        },
-    )
-
-
-# SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_START
-_SIG85O_TAB_ORDER = [
-    "command",
-    "performance",
-    "feed",
-    "radar",
-    "campaigns",
-    "divergence",
-    "scoreboard",
-    "import",
-    "behavior",
-    "portfolio",
-    "journal",
-    "preferences",
-    "billing",
-    "admin",
-    "setup",
-    "status",
-]
-
-def _sig85o_tab_style(key, active=False):
-    # Status Center remains available internally through the callback branch,
-    # but is hidden from the normal subscriber navigation row.
-    if key == "status":
-        return {"display": "none"}
-
-    style = {
-        "background": "rgba(15,23,42,0.56)",
-        "color": "#a7b3c7",
-        "border": "1px solid rgba(148,163,184,0.16)",
-        "borderRadius": "12px",
-        "padding": "10px 14px",
-        "fontSize": "13px",
-        "fontWeight": "800",
-        "whiteSpace": "nowrap",
-        "cursor": "pointer",
-        "transition": "background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 100ms ease",
-        "flex": "0 0 auto",
-    }
-
-    if active:
-        style.update({
-            "background": "linear-gradient(180deg, rgba(16,185,129,0.38), rgba(6,95,70,0.48))",
-            "color": "#ecfdf5",
-            "border": "1px solid rgba(52,211,153,0.92)",
-            "boxShadow": "0 0 0 1px rgba(52,211,153,0.36), 0 0 16px rgba(16,185,129,0.30)",
-            "transform": "translateY(-1px)",
-        })
-
-    return style
-
-def _sig85o_tab_styles(active_tab):
-    active_tab = active_tab or "command"
-    return tuple(_sig85o_tab_style(key, key == active_tab) for key in _SIG85O_TAB_ORDER)
-# SIGMALYTIC_STEP85O_DIRECT_NAV_HELPERS_END
-
-
-# SIGMALYTIC_STEP85U_EXACT_ID_NAV_SCROLLBAR_START
-app.clientside_callback(
-    """
-    function(n_status, n_command, n_feed, n_performance, n_behavior, n_campaigns,
-             n_portfolio, n_journal, n_import, n_radar, n_scoreboard, n_divergence,
-             n_billing, n_preferences, n_admin, n_setup) {
-
-        const ctx = dash_clientside.callback_context;
-
-        if (!ctx.triggered || ctx.triggered.length === 0) {
-            return dash_clientside.no_update;
-        }
-
-        let tab = ctx.triggered[0].prop_id.replace(".n_clicks", "").replace("tab-", "");
-
-        if (!tab) {
-            tab = "command";
-        }
-
-        return tab;
-    }
-    """,
-    Output("s-tab","data"),
-    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
-    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
-    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
-    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
-    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
-    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
-    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
-    prevent_initial_call=True,
-)
-
-app.index_string = r"""<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>Sigmalytic Quant Corporation</title>
-        {%favicon%}
-        {%css%}
-        <style id="sigmalytic-step85u-style">
-            html, body {
-                scrollbar-width: auto;
-                scrollbar-color: #6ee7b7 #071524;
-            }
-
-            * {
-                scrollbar-width: auto;
-                scrollbar-color: #6ee7b7 #071524;
-            }
-
-            ::-webkit-scrollbar {
-                width: 36px;
-                height: 36px;
-            }
-
-            ::-webkit-scrollbar-track {
-                background: #071524;
-                border-left: 2px solid rgba(148, 163, 184, 0.42);
-                border-radius: 999px;
-                box-shadow: inset 0 0 10px rgba(148, 163, 184, 0.22);
-            }
-
-            ::-webkit-scrollbar-thumb {
-                background: linear-gradient(180deg, #6ee7b7, #10b981, #0f766e);
-                border-radius: 999px;
-                border: 7px solid #071524;
-                box-shadow:
-                    0 0 0 1px rgba(110, 231, 183, 0.65),
-                    0 0 18px rgba(52, 211, 153, 0.60),
-                    inset 0 0 12px rgba(236, 253, 245, 0.25);
-            }
-
-            ::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(180deg, #a7f3d0, #34d399, #10b981);
-                box-shadow:
-                    0 0 0 1px rgba(167, 243, 208, 0.85),
-                    0 0 24px rgba(110, 231, 183, 0.75);
-            }
-
-            ::-webkit-scrollbar-corner {
-                background: #071524;
-            }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-            <script id="sigmalytic-step85u-script">
-                (function () {
-                    if (window.__SIGMALYTIC_STEP85U_EXACT_ID_NAV__) {
-                        return;
-                    }
-
-                    window.__SIGMALYTIC_STEP85U_EXACT_ID_NAV__ = true;
-
-                    const ids = [
-                        "tab-command",
-                        "tab-feed",
-                        "tab-performance",
-                        "tab-behavior",
-                        "tab-campaigns",
-                        "tab-portfolio",
-                        "tab-journal",
-                        "tab-import",
-                        "tab-radar",
-                        "tab-scoreboard",
-                        "tab-divergence",
-                        "tab-billing",
-                        "tab-preferences",
-                        "tab-admin",
-                        "tab-setup"
-                    ];
-
-                    const tabById = {
-                        "tab-command": "command",
-                        "tab-feed": "feed",
-                        "tab-performance": "performance",
-                        "tab-behavior": "behavior",
-                        "tab-campaigns": "campaigns",
-                        "tab-portfolio": "portfolio",
-                        "tab-journal": "journal",
-                        "tab-import": "import",
-                        "tab-radar": "radar",
-                        "tab-scoreboard": "scoreboard",
-                        "tab-divergence": "divergence",
-                        "tab-billing": "billing",
-                        "tab-preferences": "preferences",
-                        "tab-admin": "admin",
-                        "tab-setup": "setup"
-                    };
-
-                    const storageKey = "sigmalytic.step85u.activeTabId";
-
-                    function inactive(el) {
-                        if (!el) return;
-
-                        el.style.setProperty("background", "rgba(15,23,42,0.56)", "important");
-                        el.style.setProperty("color", "#a7b3c7", "important");
-                        el.style.setProperty("border", "1px solid rgba(148,163,184,0.16)", "important");
-                        el.style.setProperty("box-shadow", "none", "important");
-                        el.style.setProperty("transform", "none", "important");
-                        el.style.setProperty("font-weight", "800", "important");
-                    }
-
-                    function active(el) {
-                        if (!el) return;
-
-                        el.style.setProperty("background", "linear-gradient(180deg, rgba(30,64,175,0.78), rgba(15,23,42,0.92))", "important");
-                        el.style.setProperty("color", "#eff6ff", "important");
-                        el.style.setProperty("border", "1px solid rgba(96,165,250,0.95)", "important");
-                        el.style.setProperty("box-shadow", "0 0 0 1px rgba(96,165,250,0.36), 0 0 16px rgba(59,130,246,0.35)", "important");
-                        el.style.setProperty("transform", "translateY(-1px)", "important");
-                        el.style.setProperty("font-weight", "900", "important");
-                    }
-
-                    function setActiveId(id) {
-                        if (!ids.includes(id)) {
-                            id = "tab-command";
-                        }
-
-                        for (const oneId of ids) {
-                            inactive(document.getElementById(oneId));
-                        }
-
-                        active(document.getElementById(id));
-
-                        try {
-                            window.sessionStorage.setItem(storageKey, id);
-                        } catch (err) {
-                            /* no-op */
-                        }
-                    }
-
-                    function storedId() {
-                        try {
-                            return window.sessionStorage.getItem(storageKey) || "tab-command";
-                        } catch (err) {
-                            return "tab-command";
-                        }
-                    }
-
-                    function onPointerDown(event) {
-                        const target = event.target && event.target.closest ? event.target.closest("[id^='tab-']") : null;
-
-                        if (!target || !ids.includes(target.id)) {
-                            return;
-                        }
-
-                        setActiveId(target.id);
-                    }
-
-                    function boot() {
-                        const current = storedId();
-                        setActiveId(current);
-
-                        const status = document.getElementById("tab-status");
-                        if (status) {
-                            status.style.setProperty("display", "none", "important");
-                        }
-                    }
-
-                    document.addEventListener("pointerdown", onPointerDown, true);
-                    document.addEventListener("click", onPointerDown, true);
-
-                    if (document.readyState === "loading") {
-                        document.addEventListener("DOMContentLoaded", boot);
-                    } else {
-                        boot();
-                    }
-
-                    window.setTimeout(boot, 250);
-                    window.setTimeout(boot, 900);
-                })();
-            </script>
-        </footer>
-    </body>
-</html>"""
-# SIGMALYTIC_STEP85U_EXACT_ID_NAV_SCROLLBAR_END
-
 
 app.layout = html.Div([
+    dcc.Location(id="url", refresh=True),
+    html.Div(id="auth-overlay", children=build_login_page(),
+             style={"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":"#0a1628","overflowY":"auto"}),
     dcc.Store(id="s-live",      data=_init_live),
+    dcc.Store(id="s-session",    data=None, storage_type="session"),
+    dcc.Store(id="s-page",       data="login"), 
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
-    dcc.Store(id="s-tf",data="5m"),
-    dcc.Store(id="s-tab",       data="command"),
+    dcc.Store(id="s-tf",        data="5m"),
+    dcc.Store(id="s-tab",       data="home"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
@@ -3309,7 +4351,6 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    dcc.Interval(id="i-synth",  interval=1_400, n_intervals=0, disabled=True),
     dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
 
@@ -3328,7 +4369,14 @@ app.layout = html.Div([
                         html.Span(id="b-tick"),
                     ], style={"display":"flex","gap":"6px","marginTop":"4px"}),
                 ], style={"textAlign":"center"}),
-                html.Div(id="sim-label", style={"display":"none"}),
+                html.Div([
+                    html.Div(id="sim-label", style={"display":"none"}),
+                    html.Button("⏻ Log Out", id="btn-logout", n_clicks=0,
+                        style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
+                               "borderRadius":"10px","color":"#f87171","cursor":"pointer",
+                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
+                               "fontFamily":"DM Sans, sans-serif"}),
+                ], style={"display":"flex","alignItems":"center","gap":"8px"}),
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                        "width":"100%","marginBottom":"8px"}),
 
@@ -3343,12 +4391,12 @@ app.layout = html.Div([
                                    "borderRadius":"12px","padding":"10px 18px","fontSize":"13px","fontWeight":"800"}),
                 html.Div(id="price-ctrl"),
                 html.Div([
-                    html.Button("1m",  id="tf-1m",  n_clicks=0, style=_tf_btn_style("1m","5m")),
-                    html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m","5m")),
-                    html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m","5m")),
-                    html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H","5m")),
-                    html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D","5m")),
-                    html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W","5m")),
+                    html.Button("1m",  id="tf-1m",  n_clicks=0, style=_tf_btn_style("1m",  "5m")),
+                    html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m",  "5m")),
+                    html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m", "5m")),
+                    html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H",  "5m")),
+                    html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D",  "5m")),
+                    html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center",
@@ -3358,11 +4406,19 @@ app.layout = html.Div([
 
         html.Nav([
             html.Button(label, id=f"tab-{key}", n_clicks=0,
-                        style=_sig85o_tab_style(key, key == "command"))
+                        style={"background":"transparent","color":WHITE,"border":"none","borderRadius":"10px",
+                               "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key, label in ALL_TABS
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
-                   "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"flex-start","overflowX":"visible","flexWrap":"wrap","width":"100%","maxWidth":"100%","boxSizing":"border-box"}),
+                   "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
+        # D3F.1B INITIAL DASH LAYOUT MOUNT REPAIR
+        # Mode: read-only display mount. GET only through existing helper. No write. No D3D. No Stripe.
+        html.Div(
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
+            id="d3f1b-initial-layout-controlled-persistence-mount",
+            style={"margin": "0 0 16px 0"},
+        ),
         html.Main(id="main-content"),
 
         # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
@@ -3381,11 +4437,11 @@ app.layout = html.Div([
                             style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
                                    "cursor":"pointer","fontFamily":"inherit","borderRadius":"0",
                                    "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
-                                   "background":"transparent","color":TEXT}),
+                                   "background":"transparent","color":WHITE}),
                         html.Button("Neutral", id="dir-neutral", n_clicks=0,
                             style={"flex":"1","padding":"9px 0","fontSize":"13px","fontWeight":"700",
                                    "cursor":"pointer","fontFamily":"inherit","borderRadius":"0 8px 8px 0",
-                                   "border":f"1px solid {BORDER}","background":"transparent","color":TEXT}),
+                                   "border":f"1px solid {BORDER}","background":"transparent","color":WHITE}),
                     ], style={"display":"flex","width":"100%"}),
                 ], style={"marginBottom":"12px"}),
                 html.Div([
@@ -3427,283 +4483,8 @@ app.layout = html.Div([
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
 ], style={"margin":"0","background":NAVY})
 
-
-
-
-# === PHASE 12.19 FRONTEND TRANSITION PREVIEW PANEL START ===
-# Frontend read-only transition preview panel.
-# This consumes /api/campaigns/transition-preview for display only.
-# It does not mutate campaigns, change states, authorize D3D, confirm operator control,
-# create trade signals, send alerts, or touch Stripe/billing.
-def _phase12_19_build_transition_preview_panel(limit=5):
-    try:
-        payload = _backend_get_json(f"/api/campaigns/transition-preview?limit={limit}") or {}
-    except Exception as exc:
-        payload = {
-            "ok": False,
-            "source_error": str(exc),
-            "transitions": [],
-            "guardrails": {
-                "read_only": True,
-                "review_only": True,
-                "writes_to_supabase": False,
-                "mutates_campaigns": False,
-                "changes_states": False,
-                "authorizes_d3d": False,
-                "operator_control_confirmed": False,
-                "not_a_trade_signal": True,
-            },
-        }
-
-    transitions = payload.get("transitions") or []
-    guardrails = payload.get("guardrails") or {}
-
-    rows = []
-    for item in transitions[:limit]:
-        rows.append(
-            html.Tr(
-                [
-                    html.Td(str(item.get("symbol", "UNKNOWN"))),
-                    html.Td(str(item.get("current_state", "BIRTH"))),
-                    html.Td(str(item.get("proposed_next_state", "BIRTH"))),
-                    html.Td("YES" if item.get("transition_required") else "NO"),
-                    html.Td("; ".join([str(x) for x in (item.get("rationale") or [])])[:420]),
-                ]
-            )
-        )
-
-    if not rows:
-        rows = [
-            html.Tr(
-                [
-                    html.Td("No transition preview rows returned.", colSpan=5),
-                ]
-            )
-        ]
-
-    return html.Div(
-        id="phase12-19-transition-preview-panel",
-        children=[
-            html.H3("Controlled Transition Preview"),
-            html.P(
-                "Read-only proposed campaign lifecycle transitions. This preview does not change campaign state."
-            ),
-            html.Table(
-                [
-                    html.Thead(
-                        html.Tr(
-                            [
-                                html.Th("Symbol"),
-                                html.Th("Current State"),
-                                html.Th("Proposed Next State"),
-                                html.Th("Transition Required"),
-                                html.Th("Rationale"),
-                            ]
-                        )
-                    ),
-                    html.Tbody(rows),
-                ]
-            ),
-            html.Div(
-                [
-                    html.Strong("Guardrails: "),
-                    html.Span(
-                        "read_only={0} | review_only={1} | writes_to_supabase={2} | mutates_campaigns={3} | changes_states={4} | authorizes_d3d={5} | operator_control_confirmed={6} | not_a_trade_signal={7}".format(
-                            guardrails.get("read_only", True),
-                            guardrails.get("review_only", True),
-                            guardrails.get("writes_to_supabase", False),
-                            guardrails.get("mutates_campaigns", False),
-                            guardrails.get("changes_states", False),
-                            guardrails.get("authorizes_d3d", False),
-                            guardrails.get("operator_control_confirmed", False),
-                            guardrails.get("not_a_trade_signal", True),
-                        )
-                    ),
-                ]
-            ),
-        ],
-    )
-
-
-def _phase12_19_attach_transition_preview_panel(content):
-    panel = _phase12_19_build_transition_preview_panel(limit=5)
-
-    if isinstance(content, list):
-        return [panel] + content
-
-    return [panel, content]
-# === PHASE 12.19 FRONTEND TRANSITION PREVIEW PANEL END ===
-
-
-# === PHASE 12.11 WORKING APP WLW FRONTEND EVIDENCE PANEL START ===
-# Read-only frontend display panel.
-# GET-only backend consumption.
-# No Supabase write. No campaign mutation. No D3D authorization.
-# No operator-control confirmation. No trade signal. No alert send. No Stripe.
-def _phase12_11_backend_get_json(endpoint, timeout=8):
-    try:
-        import os as _phase12_11_os
-        import requests as _phase12_11_requests
-
-        base_url = _phase12_11_os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
-        response = _phase12_11_requests.get(f"{base_url}{endpoint}", timeout=timeout)
-        if response.status_code != 200:
-            return {
-                "ok": False,
-                "error": f"HTTP {response.status_code}",
-                "status_code": response.status_code,
-                "endpoint": endpoint,
-            }
-        return response.json()
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error": str(exc),
-            "endpoint": endpoint,
-        }
-
-
-def _phase12_11_join_principles(section):
-    if not isinstance(section, dict):
-        return "No principle list available."
-
-    values = section.get("principles", [])
-    if not isinstance(values, list) or not values:
-        return "No principle list available."
-
-    return ", ".join(str(value).replace("_", " ") for value in values[:8])
-
-
-def _phase12_11_build_wlw_evidence_panel(limit=5):
-    payload = _phase12_11_backend_get_json(f"/api/radar/intelligence?limit={limit}")
-
-    if not isinstance(payload, dict) or not payload.get("ok"):
-        return html.Div(
-            [
-                html.H3("Wyckoff · Weis · Livermore Evidence Surface"),
-                html.P("Backend evidence payload is not available yet. Refresh after backend initialization."),
-                html.Pre(str(payload), style={"whiteSpace": "pre-wrap", "fontSize": "11px"}),
-            ],
-            id="phase12-11-wlw-evidence-panel",
-            style={
-                "marginTop": "18px",
-                "padding": "14px",
-                "border": "1px solid rgba(255,255,255,0.18)",
-                "borderRadius": "12px",
-                "background": "rgba(255,255,255,0.04)",
-            },
-        )
-
-    contract = payload.get("working_app_evidence_contract", {})
-    symbols = payload.get("symbols", [])
-    if not isinstance(symbols, list):
-        symbols = []
-
-    contract_rows = [
-        html.Li("Wyckoff evidence surface: PASS" if contract.get("wyckoff") else "Wyckoff evidence surface: REVIEW"),
-        html.Li("Weis evidence surface: PASS" if contract.get("weis") else "Weis evidence surface: REVIEW"),
-        html.Li("Livermore evidence surface: PASS" if contract.get("livermore") else "Livermore evidence surface: REVIEW"),
-        html.Li("History review surface: PASS" if contract.get("history") else "History review surface: REVIEW"),
-        html.Li("Explanation/rationale surface: PASS" if contract.get("explanation") else "Explanation/rationale surface: REVIEW"),
-        html.Li("Read-only / not a trade signal / no operator-control confirmation."),
-    ]
-
-    cards = []
-    for raw in symbols[:limit]:
-        row = dict(raw) if isinstance(raw, dict) else {"symbol": raw}
-        evidence = row.get("working_app_evidence", {})
-        if not isinstance(evidence, dict):
-            evidence = {}
-
-        symbol = evidence.get("symbol") or row.get("symbol") or row.get("ticker") or "UNKNOWN"
-        status = evidence.get("campaign_status") or row.get("status") or "REVIEW"
-        regime = evidence.get("campaign_regime") or row.get("regime") or "UNSPECIFIED"
-
-        wyckoff = evidence.get("wyckoff", {})
-        weis = evidence.get("weis", {})
-        livermore = evidence.get("livermore", {})
-        history = evidence.get("history", {})
-        explanation = evidence.get("explanation", {})
-
-        cards.append(
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            html.Strong(str(symbol)),
-                            html.Span(f" · status: {status} · regime: {regime}", style={"opacity": "0.82"}),
-                        ],
-                        style={"marginBottom": "8px"},
-                    ),
-                    html.Div(f"Wyckoff: {_phase12_11_join_principles(wyckoff)}"),
-                    html.Div(f"Weis: {_phase12_11_join_principles(weis)}"),
-                    html.Div(f"Livermore: {_phase12_11_join_principles(livermore)}"),
-                    html.Div(f"History: {history.get('mode', 'current snapshot and campaign context review') if isinstance(history, dict) else 'current snapshot and campaign context review'}"),
-                    html.Div(
-                        f"Explanation: {explanation.get('rationale', 'Evidence rationale available from backend payload.') if isinstance(explanation, dict) else 'Evidence rationale available from backend payload.'}",
-                        style={"marginTop": "6px"},
-                    ),
-                ],
-                style={
-                    "padding": "10px",
-                    "marginTop": "10px",
-                    "border": "1px solid rgba(255,255,255,0.14)",
-                    "borderRadius": "10px",
-                    "background": "rgba(0,0,0,0.18)",
-                    "fontSize": "13px",
-                    "lineHeight": "1.45",
-                },
-            )
-        )
-
-    if not cards:
-        cards = [
-            html.Div(
-                "No symbols returned yet, but the working-app evidence contract is present.",
-                style={"marginTop": "10px", "fontSize": "13px"},
-            )
-        ]
-
-    return html.Div(
-        [
-            html.H3("Wyckoff · Weis · Livermore Evidence Surface", style={"marginBottom": "6px"}),
-            html.P(
-                "Live backend evidence payload consumed by the frontend. Display-only. Not a trade signal.",
-                style={"fontSize": "13px", "opacity": "0.84", "marginBottom": "8px"},
-            ),
-            html.Ul(contract_rows, style={"fontSize": "13px", "lineHeight": "1.5"}),
-            html.Div(cards),
-        ],
-        id="phase12-11-wlw-evidence-panel",
-        style={
-            "marginTop": "18px",
-            "padding": "14px",
-            "border": "1px solid rgba(255,255,255,0.18)",
-            "borderRadius": "12px",
-            "background": "rgba(255,255,255,0.04)",
-        },
-    )
-
-
-def _phase12_11_attach_wlw_evidence_panel(content):
-    panel = _phase12_11_build_wlw_evidence_panel(limit=5)
-
-    if isinstance(content, list):
-        children = content + [panel]
-    elif isinstance(content, tuple):
-        children = list(content) + [panel]
-    else:
-        children = [content, panel]
-
-    return html.Div(
-        children,
-        id="phase12-11-radar-working-app-evidence-shell",
-    )
-# === PHASE 12.11 WORKING APP WLW FRONTEND EVIDENCE PANEL END ===
-
 # ── Callbacks ──────────────────────────────────────────────────────────────────
 
-# SIGMALYTIC_STEP85T_R2_FORCE_5M_TIMEFRAME_SYNC_START
 @app.callback(
     Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
     Output("s-seq","data",allow_duplicate=True),
@@ -3715,145 +4496,163 @@ def _phase12_11_attach_wlw_evidence_panel(content):
 )
 def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     ctx = callback_context
-
     if not ctx.triggered:
         return (no_update,)*9
-
     btn_id = ctx.triggered[0]["prop_id"].split(".")[0]
     new_tf = btn_id.replace("tf-","")
-
-    if new_tf not in {"1m","5m","15m","1H","1D","1W"}:
-        return (no_update,)*9
-
-    price = live["price"] if live else 280.15
-    fresh = _scaled_candles(price, new_tf)
-
+    symbol = live.get("symbol", "AAPL") if live else "AAPL"
+    price  = live.get("price", 0) if live else 0
+    fresh  = fetch_real_candles(symbol, new_tf)
+    # Track event
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
                regime=_regime_from_live(live),
                decision_score=live.get("decision",{}).get("score"),
                decision_status=live.get("decision",{}).get("status"))
-
-    return (
-        new_tf,
-        fresh,
-        0,
-        _tf_btn_style("1m", new_tf),
-        _tf_btn_style("5m", new_tf),
-        _tf_btn_style("15m", new_tf),
-        _tf_btn_style("1H", new_tf),
-        _tf_btn_style("1D", new_tf),
-        _tf_btn_style("1W", new_tf),
-    )
-# SIGMALYTIC_STEP85T_R2_FORCE_5M_TIMEFRAME_SYNC_END
-
+    s0=_tf_btn_style("1m",new_tf); s1=_tf_btn_style("5m",new_tf); s2=_tf_btn_style("15m",new_tf)
+    s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
+    return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
 
 # Live-only mode — no toggle callback needed
 
 @app.callback(
-    Output("s-symbol","data"), Output("ticker-input","value"),
-    Input("btn-load","n_clicks"), State("ticker-input","value"),
-    State("s-live","data"), prevent_initial_call=True,
+    Output("s-symbol","data"),
+    Output("ticker-input","value"),
+    Output("s-candles","data", allow_duplicate=True),
+    Input("btn-load","n_clicks"),
+    State("ticker-input","value"),
+    State("s-live","data"),
+    State("s-tf","data"),
+    prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live):
+def load_symbol(_, ticker, live, tf):
     clean = sanitize_symbol(ticker or "")
-    if not clean: return no_update, no_update
-    price = live["price"] if live else 280.15
+    if not clean:
+        return no_update, no_update, no_update
+
+    price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
            decision_score=live.get("decision",{}).get("score") if live else None)
-    return clean, clean
 
+    fresh = fetch_real_candles(clean, tf or "5m")
+    return clean, clean, fresh
+
+@app.callback(
+    Output("s-tab","data"),
+    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-feed","n_clicks"),
+    Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
+    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
+    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
+    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
+    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    prevent_initial_call=True,
+)
+def set_tab(*_):
+    ctx = callback_context
+    if not ctx.triggered: return no_update
+    tab = ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
+    return tab
+
+
+# SIGMALYTIC_STEP100R_L3_ACTIVE_TAB_STYLE_SYNC
+@app.callback(
+    [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
+    Input("s-tab", "data"),
+)
+def sync_active_tab_styles(active_tab):
+    active_tab = active_tab or "home"
+
+    base = {
+        "borderRadius": "999px",
+        "padding": "8px 13px",
+        "fontSize": "12px",
+        "fontWeight": "800",
+        "cursor": "pointer",
+        "fontFamily": "DM Sans, sans-serif",
+        "transition": "background .12s ease, border-color .12s ease, color .12s ease",
+        "whiteSpace": "nowrap",
+    }
+
+    active_style = dict(base)
+    active_style.update({
+        "background": "rgba(20,184,166,.22)",
+        "border": f"1px solid {BORDER_T}",
+        "color": TEAL_DIM,
+        "boxShadow": "0 0 0 1px rgba(20,184,166,.10)",
+    })
+
+    inactive_style = dict(base)
+    inactive_style.update({
+        "background": "rgba(15,23,42,.62)",
+        "border": f"1px solid {BORDER}",
+        "color": WHITE,
+        "boxShadow": "none",
+    })
+
+    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
 
 @app.callback(
     Output("s-live","data"),
     Output("s-seq","data",allow_duplicate=True),
     Output("s-candles","data",allow_duplicate=True),
-    Input("i-synth","n_intervals"), Input("i-alpaca","n_intervals"),
+    Input("i-alpaca","n_intervals"),
     State("s-live","data"), State("s-seq","data"), State("s-candles","data"),
     State("s-live-mode","data"), State("s-symbol","data"), State("s-tf","data"),
     prevent_initial_call=True,
 )
-def tick(_,__,current,seq,candles,live_mode,symbol,tf):
-    ctx = callback_context
-    if not ctx.triggered: return no_update,no_update,no_update
-    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+def on_tick(_, current, seq, candles, live_mode, symbol, tf):
+    """
+    Live price refresh + real candle bucket behavior.
 
-    # Synthetic market movement is disabled.
-    # Chart updates must come from /api/stock/{symbol}, which uses Alpaca SIP only.
-    if trigger == "i-synth":
+    Important:
+    - Does NOT create a new candle on every tick.
+    - Updates only the active candle's high/low/close while the selected timeframe is still open.
+    - Appends a new candle only when the selected timeframe rolls over.
+    """
+    clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
+
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=4)
+        r.raise_for_status()
+        d      = r.json()
+        price  = float(d["price"])
+        volume = int(d.get("volume", 0) or 0)
+        tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    except Exception:
         return no_update, no_update, no_update
-    vol = TF_VOLATILITY.get(tf, 0.60)
-    # Always attempt Alpaca SIP first on live interval trigger.
-    # If Alpaca SIP fails, do not create synthetic movement.
-    prev = current["price"] if current else 280.15
-    price = None; volume = None
 
-    if trigger == "i-alpaca":
-        try:
-            r = req.get(f"{BACKEND_HTTP}/api/stock/{symbol}", timeout=4)
-            r.raise_for_status()
-            d = r.json()
-            price  = float(d["price"])
-            volume = int(d.get("volume", 0))
-        except Exception:
-            pass  # fall through to synthetic below
+    new_seq = (seq or 0) + 1
 
-    if price is None:
-        if trigger == "i-synth":
-            tick_scale = {
-                "1m": 0.05, "5m": 0.08, "15m": 0.12,
-                "1H": 0.18, "1D": 0.30, "1W":  0.50,
-            }.get(tf, 0.08)
-            price  = round(max(1.0, prev + (random.random() - 0.48) * tick_scale), 2)
-            volume = round(500_000 + random.random() * 5_000_000)
-        else:
-            return no_update, no_update, no_update
-    new_seq  = (seq or 0)+1
-    new_live = create_live_update(symbol,price,volume,new_seq,candles).to_dict()
-    if candles:
-        prior    = candles[-1]
-        interval = TF_INTERVAL.get(tf, 300)
-        now_utc  = datetime.now(timezone.utc)
+    # Preserve backend decision/confluence if present. Fall back to local engine output.
+    fallback_live = create_live_update(clean, price, volume, new_seq).to_dict()
+    new_live = {
+        **fallback_live,
+        "symbol": clean,
+        "price": price,
+        "volume": volume,
+        "timestamp": tick_time,
+        "sequence": new_seq,
+        "source": d.get("source", "alpaca"),
+    }
+    if d.get("decision"):
+        new_live["decision"] = d.get("decision")
+    if d.get("confluence"):
+        new_live["confluence"] = d.get("confluence")
 
-        try:    last_ts = datetime.fromisoformat(prior["t"])
-        except: last_ts = now_utc - timedelta(seconds=interval)
+    # If the candle store is empty, fetch real history once.
+    if not candles:
+        candles = fetch_real_candles(clean, tf or "5m")
 
-        # Only open a NEW candle if enough real time has passed for this TF.
-        # Otherwise update the current candle in-place (high/low/close update,
-        # timestamp stays fixed). This prevents weekly/daily candles from
-        # printing dates far into the future.
-        elapsed = (now_utc - last_ts).total_seconds()
+    new_candles = update_current_candle(
+        candles=candles or [],
+        price=price,
+        volume=volume,
+        tick_time=tick_time,
+        tf=tf or "5m",
+    )
 
-        if elapsed >= interval:
-            # Enough real time has passed — open a fresh candle.
-            # New candle: open = prior close, high = low = open (price hasn't moved yet),
-            # close = current price. No artificial offset on high/low at open.
-            new_ts  = last_ts + timedelta(seconds=interval)
-            o_price = prior["c"]          # open is prior close
-            new_c   = {
-                "o": o_price,
-                "h": round(max(o_price, price), 2),   # true high so far
-                "l": round(min(o_price, price), 2),   # true low so far
-                "c": price,
-                "t": new_ts.isoformat(),
-            }
-            new_candles = candles[-49:] + [new_c]
-        else:
-            # Still within the current candle period — update in-place.
-            # Open is permanently locked to candle start.
-            # High only moves up, low only moves down, close is latest price.
-            updated_last = {
-                "o": prior["o"],                         # LOCKED — never changes
-                "h": round(max(prior["h"], price), 2),   # only moves up
-                "l": round(min(prior["l"], price), 2),   # only moves down
-                "c": price,                              # always latest
-                "t": prior["t"],                         # timestamp locked to open
-            }
-            new_candles = candles[:-1] + [updated_last]
-    else:
-        new_candles = _init_candles
     return new_live, new_seq, new_candles
-
 @app.callback(
     Output("price-ctrl","children"),
     Input("s-live-mode","data"), Input("s-live","data"),
@@ -3861,7 +4660,7 @@ def tick(_,__,current,seq,candles,live_mode,symbol,tf):
 def render_price_ctrl(live_mode, live):
     price=live["price"] if live else 280.15
     return html.Div([
-        html.Span("LIVE PRICE",style={"fontSize":"10px","color":MUTED,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
+        html.Span("LIVE PRICE",style={"fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
         html.Strong(f"${price:.2f}",style={"fontSize":"17px","color":WHITE,"fontWeight":"900"}),
     ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}","borderRadius":"12px",
                "padding":"8px 14px","width":"130px","minHeight":"50px","display":"flex","flexDirection":"column","justifyContent":"center"})
@@ -3871,212 +4670,70 @@ def render_price_ctrl(live_mode, live):
     Input("s-live","data"),
 )
 def update_badges(live):
+    seq = live["sequence"] if live else 0
     return (badge("LIVE","teal"),
-            badge("Alpaca SIP","blue"),
-            html.Span("", style={"display":"none"}))
-
-
-# SIGMALYTIC_STEP100R_U1_STATIC_TAB_CACHE_PREWARM
-# Real component cache only. No lazy shell. No placeholder. No backend mutation.
-import time as _step100r_u1_time
-import threading as _step100r_u1_threading
-
-_STEP100R_U1_STATIC_TAB_CACHE = {}
-_STEP100R_U1_STATIC_TAB_LOCK = _step100r_u1_threading.RLock()
-# SIGMALYTIC_STEP100R_U4B_EXTEND_STATIC_CACHE_REFRESH
-_STEP100R_U1_STATIC_TAB_TTL_SECONDS = 1800
-_STEP100R_U1_STATIC_TABS = (
-    "behavior", "campaigns", "portfolio", "journal", "import",
-    "radar", "scoreboard", "divergence", "billing",
-    "preferences", "admin", "setup",
-)
-
-def _step100r_u1_cache_get(tab):
-    now = _step100r_u1_time.time()
-    with _STEP100R_U1_STATIC_TAB_LOCK:
-        entry = _STEP100R_U1_STATIC_TAB_CACHE.get(tab)
-        if not entry:
-            return None
-        ts, value = entry
-        if now - ts > _STEP100R_U1_STATIC_TAB_TTL_SECONDS:
-            _STEP100R_U1_STATIC_TAB_CACHE.pop(tab, None)
-            return None
-        return value
-
-def _step100r_u1_cache_put(tab, value):
-    with _STEP100R_U1_STATIC_TAB_LOCK:
-        _STEP100R_U1_STATIC_TAB_CACHE[tab] = (_step100r_u1_time.time(), value)
-    return value
-
-def _step100r_u1_error_panel(tab, exc):
-    return html.Div([
-        html.Div(f"{tab.title()} tab error", style={"fontWeight":"900","color":"#fca5a5","marginBottom":"8px"}),
-        html.Div(str(exc), style={"color":"#94a3b8","fontSize":"12px","whiteSpace":"pre-wrap"}),
-    ], style={"padding":"16px","border":"1px solid rgba(248,113,113,.35)","borderRadius":"12px","background":"rgba(127,29,29,.18)"})
-
-def _step100r_u1_build_static_tab(tab):
-    if tab == "behavior":
-        return build_behavior_tab()
-    if tab == "campaigns":
-        if _CAMPAIGN_TAB_AVAILABLE:
-            return build_campaign_tab(session=None)
-        return html.Div("Campaign tab unavailable", style={"color":"#94a3b8"})
-    if tab == "portfolio":
-        if _PORTFOLIO_TAB_AVAILABLE:
-            return build_portfolio_tab(session=None)
-        return html.Div("Portfolio tab unavailable", style={"color":"#94a3b8"})
-    if tab == "journal":
-        if _JOURNAL_TAB_AVAILABLE:
-            return build_trade_journal_tab(session=None)
-        return html.Div("Journal unavailable", style={"color":"#94a3b8"})
-    if tab == "import":
-        return build_import_tab()
-    if tab == "radar":
-        return _phase12_19_attach_transition_preview_panel(_phase12_11_attach_wlw_evidence_panel(build_radar_tab(session=None)))
-    if tab == "scoreboard":
-        return build_scoreboard_tab(session=None)
-    if tab == "divergence":
-        return build_divergence_tab(session=None)
-    if tab == "billing":
-        return build_billing_tab(session=None, perms=None)
-    # SIGMALYTIC_STEP100R_U2_PRESERVE_PREFS_ADMIN_BUILDERS
-    if tab == "preferences":
-        if _PREFERENCES_TAB_AVAILABLE:
-            try:
-                return build_preferences_tab_external(user_id=USER_ID, session=None)
-            except Exception as e:
-                return html.Div([
-                    html.Div("Preferences tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        return html.Div("Preferences tab unavailable - check frontend/preferences_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
-    if tab == "admin":
-        if _ADMIN_TAB_AVAILABLE:
-            try:
-                return build_admin_tab_external(session={"email": ADMIN_EMAIL}, backend_url=BACKEND_HTTP)
-            except Exception as e:
-                return html.Div([
-                    html.Div("Admin tab error", style={"color":"#f87171","fontWeight":"800","marginBottom":"8px"}),
-                    html.Div(str(e), style={"color":WHITE,"fontSize":"12px","fontFamily":"monospace"}),
-                ], style={"padding":"60px","textAlign":"center"})
-        return html.Div("Admin tab unavailable - check frontend/admin_tab.py import.", style={"color":WHITE,"padding":"60px","textAlign":"center"})
-    if tab == "setup":
-        return build_setup_tab()
-    return html.Div("Unknown tab", style={"color":"#94a3b8"})
-
-def _step100r_u1_get_static_tab(tab):
-    cached = _step100r_u1_cache_get(tab)
-    if cached is not None:
-        return cached
-    try:
-        built = _step100r_u1_build_static_tab(tab)
-    except Exception as exc:
-        return _step100r_u1_error_panel(tab, exc)
-    return _step100r_u1_cache_put(tab, built)
-
-def _step100r_u1_prewarm_static_tabs():
-    for _tab in _STEP100R_U1_STATIC_TABS:
-        try:
-            _step100r_u1_get_static_tab(_tab)
-        except Exception:
-            pass
-
-try:
-    _step100r_u1_threading.Thread(target=_step100r_u1_prewarm_static_tabs, daemon=True).start()
-except Exception:
-    pass
-
-_STEP100R_U4B_STATIC_TAB_REFRESH_SECONDS = 600
-
-def _step100r_u4b_refresh_static_tabs_loop():
-    while True:
-        try:
-            _step100r_u1_time.sleep(_STEP100R_U4B_STATIC_TAB_REFRESH_SECONDS)
-            for _tab in _STEP100R_U1_STATIC_TABS:
-                try:
-                    _step100r_u1_cache_put(_tab, _step100r_u1_build_static_tab(_tab))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-try:
-    if __import__("os").environ.get("SIGMALYTIC_ENABLE_STATIC_TAB_BACKGROUND_REFRESH", "0") == "1":
-        _step100r_u1_threading.Thread(target=_step100r_u4b_refresh_static_tabs_loop, daemon=True).start()
-except Exception:
-    pass
+            badge("Alpaca IEX","blue"),
+            badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
-    Input("tab-status","n_clicks"),       Input("tab-command","n_clicks"),
-    Input("tab-feed","n_clicks"),         Input("tab-performance","n_clicks"),
-    Input("tab-behavior","n_clicks"),     Input("tab-campaigns","n_clicks"),
-    Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
-    Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
-    Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
-    Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
-    Input("s-tf","data"),
-    State("s-tab","data"),
+    Input("s-tab","data"),
     State("s-live","data"),
     State("s-candles","data"),
     State("s-live-mode","data"),
     State("s-symbol","data"),
+    State("s-tf","data"),
+    State("s-session","data"),
 )
-def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clicks,
-                _behavior_clicks, _campaigns_clicks, _portfolio_clicks, _journal_clicks,
-                _import_clicks, _radar_clicks, _scoreboard_clicks, _divergence_clicks,
-                _billing_clicks, _preferences_clicks, _admin_clicks, _setup_clicks,
-                tf, tab, live, candles, live_mode, symbol):
-    ctx = callback_context
-    if ctx.triggered:
-        prop_id = ctx.triggered[0].get("prop_id", "")
-        if prop_id.endswith(".n_clicks") and prop_id.startswith("tab-"):
-            tab = prop_id.replace(".n_clicks", "").replace("tab-", "")
-
-    tab = tab or "command"
-
+def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
-    _STATIC_TABS = {"campaigns","portfolio","journal","scoreboard","divergence",
-                    "billing","preferences","admin","setup","behavior","import","radar","status"}
-
     if not live:
-        # Don't block static tabs — they don't need live data
-        if tab not in _STATIC_TABS:
-            return (html.Div("Initializing…",style={"color":MUTED,"padding":"60px","textAlign":"center"}),
-                    HIDDEN, no_update, no_update)
+        live = _init_live
 
-    if tab == "status":
-        status_center_main = build_status_center(session=None) if _STATUS_CENTER_AVAILABLE else html.Div("Status Center loading...", style={"color":MUTED,"padding":"60px","textAlign":"center"})
-        d3f2_status_contract_card = html.Div(
-            [
-                html.Div("D3F.2 Callback-Safe Status Center", style={"fontWeight": "700", "marginBottom": "8px"}),
-                html.Div("Controlled-persistence lifecycle status is rendered only inside the callback-rendered Status tab. It is not globally mounted.", style={"fontSize": "13px", "opacity": "0.88"}),
-                html.Ul(
-                    [
-                        html.Li("Safe branch: render_main(tab) -> tab == status."),
-                        html.Li("No initial-layout backend fetch."),
-                        html.Li("No Supabase write, campaign mutation, D3D authorization, operator-control confirmation, trade signal, or Stripe touch."),
-                    ],
-                    style={"marginTop": "10px", "paddingLeft": "20px", "fontSize": "12px", "opacity": "0.86"},
-                ),
-            ],
-            id="d3f2-callback-safe-status-card",
-            style={
-                "border": "1px solid rgba(255,255,255,0.14)",
-                "borderRadius": "14px",
-                "padding": "14px",
+    if not candles:
+        candles = _init_candles
+
+    if tab == "home":
+        main = card([
+            html.Div("Sigmalytic V2", style={
+                "color": TEAL_DIM,
+                "fontSize": "13px",
+                "fontWeight": "900",
+                "letterSpacing": ".18em",
+                "textTransform": "uppercase",
+                "marginBottom": "8px",
+            }),
+            html.H2("Decision Intelligence Ready", style={
+                "color": WHITE,
+                "fontSize": "22px",
+                "fontWeight": "900",
+                "margin": "0 0 10px 0",
+            }),
+            html.Div(
+                "Select Campaign Intelligence, Radar, Scoreboard, Divergence, Billing, Preferences, or Admin from the tabs above.",
+                style={
+                    "color": WHITE,
+                    "fontSize": "13px",
+                    "lineHeight": "1.6",
+                    "opacity": ".9",
+                },
+            ),
+            html.Div("Fast-load shell only. No campaign fetch, no backend write, no Supabase mutation, no D3D, no Stripe.", style={
+                "color": TEAL_DIM,
+                "fontSize": "11px",
+                "fontWeight": "800",
                 "marginTop": "14px",
-                "background": "rgba(255,255,255,0.035)",
-            },
-        )
-        main = html.Div([status_center_main, d3f2_status_contract_card], id="d3f2-callback-safe-status-center")
-        return (main, dash.no_update, dash.no_update, dash.no_update)
+                "textTransform": "uppercase",
+                "letterSpacing": ".08em",
+            }),
+        ])
+        return main, HIDDEN, no_update, no_update
+
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
         trade_plan  = _build_trade_plan_contents(live)
@@ -4087,44 +4744,81 @@ def render_main(_status_clicks, _command_clicks, _feed_clicks, _performance_clic
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
-    if tab=="feed":          main = build_feed_tab(live,live_mode)
+    if tab=="campaign":
+        if build_campaign_tab is None:
+            main = card([
+                html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Campaign module is present but did not import. Check frontend/campaign_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_campaign_tab(session=session)
+            except TypeError:
+                try:
+                    main = build_campaign_tab()
+                except Exception as e:
+                    main = card([
+                        html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                        note_box("Campaign module loading error: " + str(e), "blue"),
+                    ])
+            except Exception as e:
+                main = card([
+                    html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Campaign module loading error: " + str(e), "blue"),
+                ])
+    elif tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
-    elif tab=="behavior":       main = _step100r_u1_get_static_tab("behavior")
-    elif tab=="campaigns":       main = _step100r_u1_get_static_tab("campaigns")
-    elif tab=="portfolio":       main = _step100r_u1_get_static_tab("portfolio")
-    elif tab=="journal":       main = _step100r_u1_get_static_tab("journal")
-    elif tab=="import":       main = _step100r_u1_get_static_tab("import")
-    elif tab=="radar":       main = _step100r_u1_get_static_tab("radar")
-    elif tab=="scoreboard":       main = _step100r_u1_get_static_tab("scoreboard")
-    elif tab=="divergence":       main = _step100r_u1_get_static_tab("divergence")
-    elif tab=="billing":       main = _step100r_u1_get_static_tab("billing")
-    elif tab=="preferences":       main = _step100r_u1_get_static_tab("preferences")
+    elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="import":      main = build_import_tab()
+    elif tab=="radar":       main = build_radar_tab(session=session)
+    elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
+    elif tab=="divergence":  main = build_divergence_tab(session=None)
+    elif tab=="billing":
+        try:
+            main = build_billing_tab(session=None, perms=None)
+        except Exception as e:
+            main = card([
+                html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box(f"Billing module loading. Please refresh in a moment.", "blue"),
+            ])
+    elif tab=="preferences":
+        try:
+            main = build_preferences_tab(user_id="", session=None)
+        except Exception as e:
+            main = card([
+                html.H2("⚙️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Preferences loading. Please refresh in a moment.", "blue"),
+            ])
     elif tab=="admin":
-        admin_main = _step100r_u1_get_static_tab("admin")
-        d3f2_admin_status_card = html.Div(
-            [
-                html.Div("D3F.2 Callback-Safe Status Center", style={"fontWeight": "700", "marginBottom": "8px"}),
-                html.Div("Controlled-persistence lifecycle status is rendered only inside a callback-rendered tab. It is not globally mounted.", style={"fontSize": "13px", "opacity": "0.88"}),
-                html.Ul(
-                    [
-                        html.Li("Visible under Admin because the current live navigation exposes Admin but not a separate Status tab."),
-                        html.Li("No initial-layout backend fetch."),
-                        html.Li("No Supabase write, campaign mutation, D3D authorization, operator-control confirmation, trade signal, or Stripe touch."),
-                    ],
-                    style={"marginTop": "10px", "paddingLeft": "20px", "fontSize": "12px", "opacity": "0.86"},
-                ),
-            ],
-            id="d3f2-admin-callback-safe-status-card",
-            style={
-                "border": "1px solid rgba(255,255,255,0.14)",
-                "borderRadius": "14px",
-                "padding": "14px",
-                "marginTop": "14px",
-                "background": "rgba(255,255,255,0.035)",
-            },
-        )
-        main = html.Div([admin_main, d3f2_admin_status_card], id="d3f2-admin-callback-safe-status-center")
-    elif tab=="setup":       main = _step100r_u1_get_static_tab("setup")
+        try:
+            admin_session = session if isinstance(session, dict) else {}
+            main = html.Div([
+                build_weis_gamma_status_center_panel(),
+                build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
+            ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+        except Exception as e:
+            main = html.Div([
+                build_weis_gamma_status_center_panel(),
+                html.Div([
+                    html.Div("Admin tab error", style={
+                        "color": WHITE,
+                        "fontSize": "16px",
+                        "fontWeight": "900",
+                        "marginBottom": "8px",
+                    }),
+                    html.Div(str(e), style={
+                        "color": YELLOW_DIM,
+                        "fontSize": "12px",
+                        "whiteSpace": "pre-wrap",
+                    }),
+                ], style={
+                    "border": f"1px solid {BORDER}",
+                    "background": "rgba(8,24,39,.72)",
+                    "borderRadius": "16px",
+                    "padding": "18px",
+                }),
+            ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+    elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
     return main, HIDDEN, no_update, no_update
 
@@ -4235,12 +4929,12 @@ def _dir_styles(active):
     }
     idle = {
         "long":    {**base,"fontWeight":"700","borderRadius":"8px 0 0 8px",
-                    "border":f"1px solid {BORDER}","background":"transparent","color":TEXT},
+                    "border":f"1px solid {BORDER}","background":"transparent","color":WHITE},
         "short":   {**base,"fontWeight":"700","borderRadius":"0",
                     "border":f"1px solid {BORDER}","borderLeft":"none","borderRight":"none",
-                    "background":"transparent","color":TEXT},
+                    "background":"transparent","color":WHITE},
         "neutral": {**base,"fontWeight":"700","borderRadius":"0 8px 8px 0",
-                    "border":f"1px solid {BORDER}","background":"transparent","color":TEXT},
+                    "border":f"1px solid {BORDER}","background":"transparent","color":WHITE},
     }
     return (styles["long"]    if active=="long"    else idle["long"],
             styles["short"]   if active=="short"   else idle["short"],
@@ -4268,6 +4962,62 @@ def select_direction(_l, _s, _n):
 
 # ── CSV upload callback ──────────────────────────────────────────────────────
 @app.callback(
+    Output("csv-upload-status", "children"),
+    Input("csv-upload", "contents"),
+    State("csv-upload", "filename"),
+    prevent_initial_call=True,
+)
+def handle_csv_upload(contents, filename):
+    if not contents:
+        return no_update
+    import base64, io as _io
+    try:
+        # Decode base64 data URI
+        content_type, content_string = contents.split(",")
+        decoded = base64.b64decode(content_string)
+        # POST to backend
+        resp = req.post(
+            f"{BACKEND_HTTP}/api/import/upload",
+            files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
+            timeout=30,
+        )
+        if resp.ok:
+            data = resp.json()
+            a    = data.get("analysis", {})
+            return html.Div([
+                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
+                          style={"color":TEAL_DIM,"fontWeight":"800"}),
+                html.Span(f"{data.get('trades_closed',0)} trades imported · "
+                          f"Win rate: {a.get('win_rate',0)}% · "
+                          f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
+                          style={"color":WHITE}),
+                html.Br(),
+                html.Span("Switch to the Behavioral Intelligence tab to see your full profile.",
+                          style={"color":WHITE,"fontSize":"11px"}),
+            ])
+        else:
+            return f"❌ Upload failed: {resp.text[:200]}"
+    except Exception as e:
+        return f"❌ Error: {str(e)[:200]}"
+
+
+# ── Audio alert clientside callback ──────────────────────────────────────────
+app.clientside_callback(
+    """
+    function(score, prev_score, alerts_on) {
+        if (window.dash_clientside && window.dash_clientside.sigmalytic) {
+            return window.dash_clientside.sigmalytic.fireAlert(score, prev_score, alerts_on);
+        }
+        return score;
+    }
+    """,
+    Output("s-alert-score", "data"),
+    Input("s-live", "data"),
+    State("s-alert-score", "data"),
+    State("s-alerts-on", "data"),
+)
+
+@app.callback(
     Output("s-alerts-on", "data"),
     Output("btn-alerts-toggle", "children"),
     Output("btn-alerts-toggle", "style"),
@@ -4281,1000 +5031,147 @@ def toggle_alerts(n, currently_on):
     style  = {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                "borderRadius":"20px","padding":"4px 12px","fontSize":"11px","fontWeight":"800","cursor":"pointer"}
     if not new_on:
-        style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":MUTED})
+        style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":WHITE})
     return new_on, label, style
 
 
+@app.callback(Output("auth-overlay","style"),
+              Input("s-session","data"))
+def route_page(session):
+    overlay_base = {"position":"fixed","top":0,"left":0,"right":0,"bottom":0,
+                    "zIndex":9999,"background":NAVY,"overflowY":"auto"}
+    hidden = {"display":"none"}
+    if session and session.get("user_id"):
+        return hidden
+    return overlay_base
+
+@app.callback(Output("login-section","style"), Output("signup-section","style"),
+              Input("goto-signup-btn","n_clicks"), Input("goto-login-btn","n_clicks"),
+              prevent_initial_call=True)
+def toggle_auth_section(to_signup, to_login):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+    if trigger == "goto-signup-btn":
+        return {"display":"none"}, {"display":"block"}
+    return {"display":"block"}, {"display":"none"}
+
+@app.callback(Output("s-session","data"),Output("s-page","data"),
+              Output("login-error","children"), Output("signup-error","children"),
+              Input("login-btn","n_clicks"),Input("demo-btn","n_clicks"),
+              Input("signup-btn","n_clicks"),
+              State("login-email","value"),State("login-password","value"),
+              State("signup-email","value"),State("signup-password","value"),
+              prevent_initial_call=True)
+def handle_auth(login_clicks, demo_clicks, signup_clicks,
+                login_email, login_password, signup_email, signup_password):
+    ctx = callback_context
+    if not ctx.triggered: return no_update, no_update, no_update, no_update
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "demo-btn":
+        return {
+            "user_id": "demo_user_001",
+            "email": "demo@sigmalytic.com",
+            "is_demo": True,
+            "plan": "elite",
+            "plan_name": "Elite Trader",
+            "features": {
+                "radar_limit": 9999,
+                "delayed_data": False,
+                "delay_minutes": 0,
+                "alerts": True,
+                "sms_limit": -1,
+                "live_data": True,
+                "intelligence": True,
+                "composite_score_only": False,
+            }
+        }, "app", "", ""
+
+    if trigger == "login-btn":
+        if not login_email or not login_password:
+            return no_update, no_update, "Please enter both email and password.", no_update
+
+        if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+            return (no_update, no_update,
+                    "Sign-in is not configured on this server. Try Demo mode, or contact support.",
+                    no_update)
+
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":login_email,"password":login_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return ({"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app",
+                        "", no_update)
+
+            # Non-ok response: show a real reason instead of silently doing nothing.
+            if r.status_code in (400, 401, 422):
+                msg = "Incorrect email or password."
+            else:
+                msg = f"Sign-in failed (error {r.status_code}). Please try again."
+            return no_update, no_update, msg, no_update
+
+        except Exception as exc:
+            return no_update, no_update, f"Could not reach the sign-in service: {exc}", no_update
+
+    if trigger == "signup-btn":
+        if not signup_email or not signup_password:
+            return no_update, no_update, no_update, "Please enter both email and password."
+
+        if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+            return (no_update, no_update, no_update,
+                    "Sign-up is not configured on this server. Try Demo mode, or contact support.")
+
+        import requests as _req
+        try:
+            r = _req.post(
+                f"{SUPABASE_URL}/auth/v1/signup",
+                headers={"apikey":SUPABASE_ANON_KEY,"Content-Type":"application/json"},
+                json={"email":signup_email,"password":signup_password}, timeout=10,
+            )
+            if r.ok:
+                data = r.json()
+                user = data.get("user",{})
+                return ({"user_id":user.get("id",""),"email":user.get("email",""),
+                        "access_token":data.get("access_token",""),"is_demo":False}, "app",
+                        no_update, "")
+
+            if r.status_code in (400, 422):
+                msg = "Could not create account. That email may already be registered."
+            else:
+                msg = f"Sign-up failed (error {r.status_code}). Please try again."
+            return no_update, no_update, no_update, msg
+
+        except Exception as exc:
+            return no_update, no_update, no_update, f"Could not reach the sign-up service: {exc}"
+
+    return no_update, no_update, no_update, no_update
+
+# ── Main app callbacks ────────────────────────────────────────────────────────
 
 
 
-
-
-
-# === PHASE 12.31J-R2 GENERALIZED OPERATOR LIFECYCLE CONTROL UI CAMPAIGN-ID RESOLUTION START ===
-# Operator-facing controlled lifecycle console.
-# Preview rows may not expose campaign_id directly, so this UI resolves candidate IDs
-# from /api/campaigns/active by matching symbol and current_state.
-# Execution remains guarded: exact successful dry-run, exact typed confirmation phrase,
-# exact campaign_id/symbol/before_state/after_state binding, audit-first backend mutation.
-# Phase 12.31J-R2 patches the UI only. It does not click or invoke live execution.
-# This UI must not authorize D3D, must not confirm operator control, must not create trade signals,
-# must not send alerts, and must not touch Stripe/billing.
-@app.server.route("/operator-lifecycle-control")
-def phase12_31j_r2_operator_lifecycle_control_console():
-    return """
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Sigmalytic V2 Operator Lifecycle Control</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 28px; background: #0f172a; color: #e5e7eb; }
-    .panel { border: 1px solid #334155; border-radius: 12px; padding: 18px; margin-bottom: 18px; background: #111827; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 12px; }
-    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-    input, select { width: 100%; padding: 9px; border-radius: 8px; border: 1px solid #475569; background: #020617; color: #e5e7eb; }
-    button { padding: 10px 14px; border: 1px solid #64748b; border-radius: 8px; background: #1e293b; color: #e5e7eb; cursor: pointer; margin-right: 8px; }
-    button:hover { background: #334155; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #020617; padding: 14px; border-radius: 10px; border: 1px solid #334155; max-height: 420px; overflow-y: auto; }
-    .safe { color: #86efac; }
-    .warn { color: #fde68a; }
-    .danger { color: #fca5a5; }
-    .small { color: #94a3b8; font-size: 13px; line-height: 1.4; }
-  </style>
-</head>
-<body>
-  <h1>Sigmalytic V2 Operator Lifecycle Control</h1>
-
-  <div class="panel">
-    <h2 class="warn">Generalized Controlled Operator Console</h2>
-    <p class="small">
-      This console loads preview-eligible campaign lifecycle transitions and resolves their campaign IDs
-      from active campaigns before dry-run validation. Execution remains campaign-specific,
-      confirmation-gated, exact-before-state matched, audit-first, and limited to public.campaigns.current_state.
-      It does not authorize D3D. It does not confirm operator control.
-      It does not create trade signals, send alerts, or touch billing.
-    </p>
-  </div>
-
-  <div class="panel">
-    <h2>Preview-Selectable Candidate</h2>
-    <label>Eligible Preview Transition</label>
-    <select id="candidate_selector" onchange="applySelectedCandidate()">
-      <option value="">Load preview candidates...</option>
-    </select>
-    <p class="small">
-      The selector is populated only from /api/campaigns/transition-preview rows where transition_required is true,
-      no-write guardrails are intact, and campaign_id can be resolved from /api/campaigns/active.
-    </p>
-  </div>
-
-  <div class="panel">
-    <h2>Target Campaign</h2>
-    <div class="grid">
-      <div>
-        <label>Campaign ID</label>
-        <input id="campaign_id" value="" oninput="invalidateDryRun()">
-      </div>
-      <div>
-        <label>Symbol</label>
-        <input id="symbol" value="" oninput="invalidateDryRun()">
-      </div>
-      <div>
-        <label>Expected Before State</label>
-        <input id="expected_before_state" value="" oninput="invalidateDryRun()">
-      </div>
-      <div>
-        <label>Requested After State</label>
-        <input id="requested_after_state" value="" oninput="invalidateDryRun()">
-      </div>
-    </div>
-    <br>
-    <button onclick="loadPreview()">Refresh Transition Preview</button>
-    <button onclick="runDryRun()">Run Controlled Dry-Run</button>
-    <button onclick="loadReadback()">Read Back Prior Audit Event 3</button>
-  </div>
-
-  <div class="panel">
-    <h2 class="danger">Guarded Live Execution</h2>
-    <p class="small">
-      The execution button is disabled until the exact selected transition has passed dry-run and the
-      exact confirmation phrase is typed. This control sends one request only and uses exact
-      before-current-state matching.
-    </p>
-    <label>Typed Confirmation Phrase</label>
-    <input id="live_confirmation_phrase" value="" placeholder="Type the exact confirmation phrase" oninput="enableExecuteButtonIfAllowed()">
-    <br><br>
-    <button id="execute_live_button" onclick="executeControlledLifecycleMutation()" disabled>Execute One Controlled Lifecycle Mutation</button>
-    <p class="small" id="execution_gate_status">Execution gate locked. Run a successful dry-run first.</p>
-  </div>
-
-  <div class="panel">
-    <h2>Guardrail Status</h2>
-    <pre id="guardrails">No request run yet.</pre>
-  </div>
-
-  <div class="panel">
-    <h2>Response</h2>
-    <pre id="output">Ready.</pre>
-  </div>
-
-<script>
-const BACKEND_BASE = "https://sigmalytic-backend.onrender.com";
-const EXACT_CONFIRMATION_PHRASE = "CONFIRM EXECUTE ONE CONTROLLED CAMPAIGN STATE MUTATION";
-let lastDryRunPlan = null;
-let dryRunPassed = false;
-let previewCandidates = [];
-let activeCampaignRows = [];
-
-function show(obj) {
-  document.getElementById("output").textContent = JSON.stringify(obj, null, 2);
-  if (obj && obj.guardrails) {
-    document.getElementById("guardrails").textContent = JSON.stringify(obj.guardrails, null, 2);
-  }
-}
-
-function campaignIdFromRow(row) {
-  if (!row) {
-    return "";
-  }
-  return String(row.campaign_id || row.id || row.campaignId || row.campaignID || "").trim();
-}
-
-function normalizeState(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function normalizeSymbol(value) {
-  return String(value || "").trim().toUpperCase();
-}
-
-function resolveCandidateWithActive(row) {
-  let resolved = campaignIdFromRow(row);
-  const rowSymbol = normalizeSymbol(row && row.symbol);
-  const rowState = normalizeState(row && row.current_state);
-
-  if (!resolved) {
-    const match = activeCampaignRows.find(active => (
-      normalizeSymbol(active.symbol) === rowSymbol &&
-      normalizeState(active.current_state || active.state) === rowState
-    ));
-    resolved = campaignIdFromRow(match);
-  }
-
-  const clone = Object.assign({}, row || {});
-  clone.resolved_campaign_id = String(resolved || "").trim();
-  return clone;
-}
-
-function safeNoWriteCandidate(row) {
-  return (
-    row &&
-    row.transition_required === true &&
-    row.writes_to_supabase === false &&
-    row.mutates_campaigns === false &&
-    row.changes_states === false &&
-    row.authorizes_d3d === false &&
-    row.operator_control_confirmed === false &&
-    row.not_a_trade_signal === true &&
-    String(row.resolved_campaign_id || row.campaign_id || row.id || "").trim() !== ""
-  );
-}
-
-function target() {
-  return {
-    campaign_id: document.getElementById("campaign_id").value.trim(),
-    symbol: document.getElementById("symbol").value.trim().toUpperCase(),
-    expected_before_state: document.getElementById("expected_before_state").value.trim().toUpperCase(),
-    requested_after_state: document.getElementById("requested_after_state").value.trim().toUpperCase()
-  };
-}
-
-function populateCandidateSelector(rows, activeRows) {
-  const selector = document.getElementById("candidate_selector");
-  selector.innerHTML = "";
-
-  activeCampaignRows = activeRows || [];
-  previewCandidates = (rows || []).map(resolveCandidateWithActive).filter(safeNoWriteCandidate);
-
-  if (previewCandidates.length === 0) {
-    const option = document.createElement("option");
-    option.value = "";
-    option.textContent = "No eligible safe preview transitions with resolved campaign IDs available";
-    selector.appendChild(option);
-    return;
-  }
-
-  previewCandidates.forEach((row, index) => {
-    const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = `${row.symbol || ""} / campaign_id ${row.resolved_campaign_id} / ${row.current_state || ""} -> ${row.proposed_next_state || ""}`;
-    selector.appendChild(option);
-  });
-
-  selector.value = "0";
-  applySelectedCandidate();
-}
-
-function applySelectedCandidate() {
-  const selector = document.getElementById("candidate_selector");
-  const value = selector.value;
-  if (value === "") {
-    return;
-  }
-
-  const row = previewCandidates[Number(value)];
-  if (!safeNoWriteCandidate(row)) {
-    show({ok:false, mode:"UI_PREVIEW_SELECTION_REJECTED", reason:"Selected preview row failed no-write or campaign-id-resolution guardrails."});
-    return;
-  }
-
-  document.getElementById("campaign_id").value = String(row.resolved_campaign_id);
-  document.getElementById("symbol").value = String(row.symbol || "").toUpperCase();
-  document.getElementById("expected_before_state").value = String(row.current_state || "").toUpperCase();
-  document.getElementById("requested_after_state").value = String(row.proposed_next_state || "").toUpperCase();
-  invalidateDryRun();
-
-  show({
-    ok: true,
-    mode: "UI_PREVIEW_CANDIDATE_SELECTED_WITH_RESOLVED_CAMPAIGN_ID",
-    selected: {
-      campaign_id: document.getElementById("campaign_id").value,
-      symbol: document.getElementById("symbol").value,
-      expected_before_state: document.getElementById("expected_before_state").value,
-      requested_after_state: document.getElementById("requested_after_state").value
-    },
-    guardrails: {
-      writes_to_supabase: false,
-      mutates_campaigns: false,
-      changes_states: false,
-      authorizes_d3d: false,
-      operator_control_confirmed: false,
-      not_a_trade_signal: true
-    },
-    raw_preview_row: row
-  });
-}
-
-function invalidateDryRun() {
-  dryRunPassed = false;
-  lastDryRunPlan = null;
-  document.getElementById("execute_live_button").disabled = true;
-  document.getElementById("execution_gate_status").textContent = "Execution gate locked. Target changed; run a new successful dry-run.";
-}
-
-function exactTargetStillMatchesDryRun() {
-  if (!lastDryRunPlan) {
-    return false;
-  }
-  const t = target();
-  return (
-    String(lastDryRunPlan.campaign_id) === String(t.campaign_id) &&
-    String(lastDryRunPlan.symbol).toUpperCase() === t.symbol &&
-    String(lastDryRunPlan.before_current_state).toUpperCase() === t.expected_before_state &&
-    String(lastDryRunPlan.after_current_state).toUpperCase() === t.requested_after_state &&
-    String(lastDryRunPlan.lifecycle_field) === "current_state"
-  );
-}
-
-function enableExecuteButtonIfAllowed() {
-  const phrase = document.getElementById("live_confirmation_phrase").value.trim();
-  const allowed = dryRunPassed && exactTargetStillMatchesDryRun() && phrase === EXACT_CONFIRMATION_PHRASE;
-  document.getElementById("execute_live_button").disabled = !allowed;
-  document.getElementById("execution_gate_status").textContent = allowed
-    ? "Execution gate unlocked for the exact dry-run-verified transition only."
-    : "Execution gate locked. Requires exact dry-run match and exact confirmation phrase.";
-}
-
-async function loadPreview() {
-  const previewResponse = await fetch(BACKEND_BASE + "/api/campaigns/transition-preview?limit=250");
-  const activeResponse = await fetch(BACKEND_BASE + "/api/campaigns/active");
-  const data = await previewResponse.json();
-  const activeData = await activeResponse.json();
-
-  const rows = data.transitions || [];
-  const activeRows = activeData.campaigns || activeData.rows || activeData.data || [];
-  populateCandidateSelector(rows, activeRows);
-
-  const t = target();
-  const row = previewCandidates.find(r => String(r.symbol || "").toUpperCase() === t.symbol) || null;
-  show({
-    console_mode: "GENERALIZED_OPERATOR_LIFECYCLE_CONTROL_WITH_CAMPAIGN_ID_RESOLUTION",
-    eligible_preview_candidate_count: previewCandidates.length,
-    active_campaign_count: activeRows.length,
-    selected_symbol: t.symbol,
-    selected_transition: row,
-    preview_count: data.count,
-    guardrails: row ? {
-      writes_to_supabase: row.writes_to_supabase,
-      mutates_campaigns: row.mutates_campaigns,
-      changes_states: row.changes_states,
-      authorizes_d3d: row.authorizes_d3d,
-      operator_control_confirmed: row.operator_control_confirmed,
-      not_a_trade_signal: row.not_a_trade_signal
-    } : {
-      writes_to_supabase: false,
-      mutates_campaigns: false,
-      changes_states: false,
-      authorizes_d3d: false,
-      operator_control_confirmed: false,
-      not_a_trade_signal: true
-    },
-    raw_preview: data
-  });
-}
-
-async function runDryRun() {
-  const t = target();
-  const payload = {
-    confirmation_phrase: EXACT_CONFIRMATION_PHRASE,
-    dry_run: true,
-    symbol: t.symbol,
-    campaign_id: t.campaign_id,
-    expected_before_state: t.expected_before_state,
-    requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31j_r2_generalized_operator_lifecycle_control_console_dry_run",
-    rationale: [
-      "Operator-facing generalized UI dry-run before any guarded execution.",
-      "Dry-run must match exact campaign_id, symbol, before state, and after state.",
-      "No D3D authorization.",
-      "No operator-control confirmation.",
-      "Not a trade signal."
-    ]
-  };
-
-  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-execution", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json();
-  dryRunPassed = (
-    data &&
-    data.ok === true &&
-    data.mode === "CONTROLLED_STATE_MUTATION_DRY_RUN" &&
-    data.state_mutation_executed === false &&
-    data.audit_event_inserted === false &&
-    data.campaign_update_executed === false &&
-    data.plan &&
-    String(data.plan.lifecycle_field) === "current_state"
-  );
-
-  lastDryRunPlan = dryRunPassed ? data.plan : null;
-  enableExecuteButtonIfAllowed();
-  show(data);
-}
-
-async function executeControlledLifecycleMutation() {
-  if (!dryRunPassed || !exactTargetStillMatchesDryRun()) {
-    show({ok:false, mode:"UI_EXECUTION_GATE_LOCKED", reason:"Exact successful dry-run is required before execution."});
-    return;
-  }
-
-  const phrase = document.getElementById("live_confirmation_phrase").value.trim();
-  if (phrase !== EXACT_CONFIRMATION_PHRASE) {
-    show({ok:false, mode:"UI_EXECUTION_CONFIRMATION_REJECTED", reason:"Exact confirmation phrase required."});
-    return;
-  }
-
-  const t = target();
-  const payload = {
-    confirmation_phrase: EXACT_CONFIRMATION_PHRASE,
-    dry_run: false,
-    symbol: t.symbol,
-    campaign_id: t.campaign_id,
-    expected_before_state: t.expected_before_state,
-    requested_after_state: t.requested_after_state,
-    evidence_source: "phase12_31j_r2_generalized_operator_lifecycle_control_console_guarded_live_execution",
-    rationale: [
-      "Operator explicitly confirmed one controlled lifecycle mutation.",
-      "Exact prior dry-run passed for this campaign_id, symbol, before state, and after state.",
-      "Audit event must be inserted before campaign current_state update.",
-      "Only public.campaigns.current_state may be updated.",
-      "No D3D authorization.",
-      "No operator-control confirmation.",
-      "Not a trade signal."
-    ]
-  };
-
-  document.getElementById("execute_live_button").disabled = true;
-
-  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-execution", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json();
-  dryRunPassed = false;
-  lastDryRunPlan = null;
-  show(data);
-}
-
-async function loadReadback() {
-  const response = await fetch(BACKEND_BASE + "/api/campaigns/controlled-state-mutation-readback?audit_event_id=3&campaign_id=635&symbol=CDC&expected_before_state=CONFIRMED&expected_after_state=SURVIVING");
-  const data = await response.json();
-  show(data);
-}
-
-loadPreview().catch(err => show({ok:false, error:String(err)}));
-</script>
-</body>
-</html>
-"""
-# === PHASE 12.31J-R2 GENERALIZED OPERATOR LIFECYCLE CONTROL UI CAMPAIGN-ID RESOLUTION END ===
-
-
-
+@app.callback(
+    Output("s-session", "data", allow_duplicate=True),
+    Output("url", "href"),
+    Input("btn-logout", "n_clicks"),
+    prevent_initial_call=True,
+)
+def logout(n):
+    if n:
+        return None, "/"
+    return no_update, no_update
 
 
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
 
-# SIGMALYTIC_STEP85D_SCOPED_IMPORT_RESET_CALLBACK_START
-# Scoped reset for brokerage import-history UI only.
-# This does not reset campaigns, universe snapshots, D3D, operator-control evidence, or billing.
-
-# SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_START
-# Single browser-facing callback for Import History.
-# Upload and reset share the same visible output so reset clears stale upload messages.
-@app.callback(
-    Output("csv-upload-status", "children"),
-    Output("reset-status", "children"),
-    Input("csv-upload", "contents"),
-    Input("btn-reset-imports", "n_clicks"),
-    State("csv-upload", "filename"),
-    prevent_initial_call=True,
-)
-def handle_csv_upload(contents, reset_clicks, filename):
-    try:
-        from dash import callback_context as _sig_ctx
-        triggered = _sig_ctx.triggered[0]["prop_id"].split(".")[0] if _sig_ctx.triggered else ""
-    except Exception:
-        triggered = ""
-
-    backend_url = globals().get("BACKEND_HTTP", "https://sigmalytic-backend.onrender.com")
-
-    def _num(value, default=0.0):
-        try:
-            if value is None or value == "":
-                return default
-            return float(value)
-        except Exception:
-            return default
-
-    def _int(value, default=0):
-        try:
-            if value is None or value == "":
-                return default
-            return int(float(value))
-        except Exception:
-            return default
-
-    if triggered == "btn-reset-imports":
-        try:
-            import requests as _requests
-            resp = _requests.post(f"{backend_url}/api/trades/reset", timeout=30)
-
-            if not resp.ok:
-                return (
-                    html.Div(f"Reset failed: {resp.text[:200]}", style={"color": "#f87171", "fontWeight": "800"}),
-                    html.Span("Reset failed.", style={"color": "#f87171", "fontWeight": "800"}),
-                )
-
-            return (
-                html.Div(
-                    "No import history yet. Upload your brokerage CSV above to generate your behavioral snapshot.",
-                    style={
-                        "color": "#93c5fd",
-                        "fontWeight": "700",
-                        "padding": "10px 12px",
-                        "border": "1px solid rgba(59,130,246,0.35)",
-                        "borderRadius": "10px",
-                        "background": "rgba(30,64,175,0.20)",
-                    },
-                ),
-                html.Span(
-                    "Import history reset.",
-                    style={"color": "#fbbf24", "fontWeight": "800"},
-                ),
-            )
-        except Exception as exc:
-            return (
-                html.Div(f"Reset failed: {exc}", style={"color": "#f87171", "fontWeight": "800"}),
-                html.Span("Reset failed.", style={"color": "#f87171", "fontWeight": "800"}),
-            )
-
-    if triggered != "csv-upload":
-        return "", ""
-
-    if not contents:
-        return "", ""
-
-    try:
-        import base64 as _base64
-        import io as _io
-        import requests as _requests
-
-        if "," not in contents:
-            return (
-                html.Div("Upload failed: invalid browser file payload.", style={"color": "#f87171", "fontWeight": "800"}),
-                "",
-            )
-
-        _, encoded = contents.split(",", 1)
-        decoded = _base64.b64decode(encoded)
-
-        upload_name = filename or "brokerage_history.csv"
-
-        resp = _requests.post(
-            f"{backend_url}/api/import/upload-generic",
-            files={"file": (upload_name, _io.BytesIO(decoded), "text/csv")},
-            timeout=90,
-        )
-
-        if not resp.ok:
-            return (
-                html.Div(f"Upload failed: {resp.text[:300]}", style={"color": "#f87171", "fontWeight": "800"}),
-                "",
-            )
-
-        data = resp.json()
-        analysis = (
-            data.get("analysis")
-            or data.get("behavioral_analysis")
-            or data.get("behavioral_snapshot")
-            or data.get("profile")
-            or {}
-        )
-
-        broker = (
-            data.get("broker")
-            or data.get("broker_detected")
-            or data.get("detected_broker")
-            or "Generic CSV"
-        )
-
-        if not broker or str(broker).strip().lower() == "unknown":
-            broker = "Generic CSV"
-
-        trades = _int(
-            data.get("total_trades")
-            or data.get("trades_imported")
-            or data.get("parsed_rows")
-            or analysis.get("total_trades")
-            or analysis.get("trades_imported")
-            or 0
-        )
-
-        win_rate = _num(data.get("win_rate") or analysis.get("win_rate") or 0.0)
-        if win_rate <= 1:
-            win_rate_display = win_rate * 100
-        else:
-            win_rate_display = win_rate
-
-        total_pnl = _num(data.get("total_pnl") or data.get("pnl") or analysis.get("total_pnl") or 0.0)
-
-        flags = (
-            data.get("behavioral_flags")
-            or data.get("flags")
-            or analysis.get("behavioral_flags")
-            or []
-        )
-
-        if trades <= 0:
-            return (
-                html.Div([
-                    html.Div(
-                        "CSV uploaded, but no valid trade rows were parsed.",
-                        style={"color": "#fbbf24", "fontWeight": "900"},
-                    ),
-                    html.Div(
-                        "Required columns: Date, Symbol, Side, Quantity, Price. Try Generic CSV format if your broker export uses unusual headers.",
-                        style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
-                    ),
-                ]),
-                "",
-            )
-
-        flag_text = ", ".join([str(x) for x in flags[:4]]) if flags else "Behavioral snapshot generated."
-
-        return (
-            html.Div([
-                html.Div(
-                    f"✅ {broker} detected · {trades} trades imported · Win rate: {win_rate_display:.0f}% · Total P&L: ${total_pnl:,.2f}",
-                    style={"color": "#34d399", "fontWeight": "900"},
-                ),
-                html.Div(
-                    f"Behavioral flags: {flag_text}",
-                    style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
-                ),
-                html.Div(
-                    "Switch to the Behavioural Intelligence tab to see your full profile.",
-                    style={"color": "#cbd5e1", "fontSize": "12px", "marginTop": "4px"},
-                ),
-            ]),
-            "",
-        )
-
-    except Exception as exc:
-        return (
-            html.Div(f"Upload failed: {exc}", style={"color": "#f87171", "fontWeight": "800"}),
-            "",
-        )
-# SIGMALYTIC_STEP85G_BROWSER_IMPORT_RESET_CALLBACK_END
-# === PHASE 12.31S-R2 DETERMINISTIC CLICK-STATE NAV FIX START ===
-# Frontend-only visual correction.
-# Root-cause confirmed by Phase 12.31R-R2:
-# - No dcc.Location routing.
-# - ALL_TABS drives in-page navigation.
-# - Live Dash layout contains multiple nav/content labels at once.
-# Therefore, active nav must not infer from all page text.
-# Deterministic rule:
-# - clicked tab determines active nav.
-# - User click wins immediately and persists in sessionStorage.
-# - Hard refresh defaults to Command Center.
-# - Visible-content fallback is used only when no click has occurred in the session.
-# No backend route changes. No mutation. No D3D authorization. No operator-control confirmation.
-# No trade signal. No alert send. No billing/Stripe.
-try:
-    app.index_string = """
-<!DOCTYPE html>
-<html>
-<head>
-    {%metas%}
-    <title>{%title%}</title>
-    {%favicon%}
-    {%css%}
-    <style id="phase12-31s-r2-deterministic-click-state-nav">
-        html, body {
-            background: #020617 !important;
-            color: #e5e7eb !important;
-        }
-
-        #main-content {
-            color: #e5e7eb !important;
-        }
-
-        #main-content h1,
-        #main-content h2,
-        #main-content h3,
-        #main-content h4,
-        #main-content h5,
-        #main-content h6 {
-            color: #f8fafc !important;
-            opacity: 1 !important;
-        }
-
-        #main-content .card,
-        #main-content .panel,
-        #main-content .campaign-card,
-        #main-content .radar-card,
-        #main-content [class*="card"],
-        #main-content [class*="panel"] {
-            background-color: #0f172a !important;
-            border-color: #334155 !important;
-            opacity: 1 !important;
-        }
-
-        #main-content .muted,
-        #main-content .text-muted,
-        #main-content .secondary,
-        #main-content .small,
-        #main-content [class*="muted"],
-        #main-content [class*="secondary"],
-        #main-content [style*="opacity: 0."],
-        #main-content [style*="opacity:."] {
-            color: #cbd5e1 !important;
-            opacity: 1 !important;
-        }
-
-        #main-content [style*="color: black"],
-        #main-content [style*="color:black"],
-        #main-content [style*="color: #000"],
-        #main-content [style*="color:#000"],
-        #main-content [style*="color: rgb(0, 0, 0)"],
-        #main-content [style*="color: #111"],
-        #main-content [style*="color:#111"],
-        #main-content [style*="color: #1f2937"],
-        #main-content [style*="color:#1f2937"] {
-            color: #e5e7eb !important;
-            opacity: 1 !important;
-        }
-
-        #main-content a,
-        #main-content a:visited {
-            color: #93c5fd !important;
-            opacity: 1 !important;
-        }
-
-        #main-content button,
-        #main-content input,
-        #main-content select,
-        #main-content textarea {
-            color: #e5e7eb !important;
-            background-color: #020617 !important;
-            border-color: #475569 !important;
-            opacity: 1 !important;
-        }
-
-        #main-content button {
-            background-color: #1e293b !important;
-        }
-
-        #main-content button:hover {
-            background-color: #334155 !important;
-        }
-
-        .phase12-31s-r2-active-nav {
-            background: linear-gradient(135deg, #065f46, #0f766e) !important;
-            border-color: #34d399 !important;
-            color: #ffffff !important;
-            box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.45), 0 0 18px rgba(16, 185, 129, 0.35) !important;
-            opacity: 1 !important;
-        }
-
-        .phase12-31s-r2-inactive-nav {
-            background: #0f172a !important;
-            border-color: #1e293b !important;
-            color: #cbd5e1 !important;
-            box-shadow: none !important;
-            opacity: 1 !important;
-        }
-
-        .phase12-31s-r2-semantic-bullish,
-        .phase12-31s-r2-semantic-confirmed,
-        .phase12-31s-r2-semantic-surviving,
-        .phase12-31s-r2-semantic-pass,
-        .phase12-31s-r2-semantic-watch,
-        .phase12-31s-r2-semantic-spark,
-        .phase12-31s-r2-semantic-review,
-        .phase12-31s-r2-semantic-pending,
-        .phase12-31s-r2-semantic-risk,
-        .phase12-31s-r2-semantic-bearish,
-        .phase12-31s-r2-semantic-fail {
-            font-weight: 700 !important;
-        }
-    </style>
-    <script id="phase12-31s-r2-deterministic-click-state-nav-script">
-    (function () {
-        const NAV_LABELS = [
-            "Command Center",
-            "Performance",
-            "Live Feed",
-            "Radar Screen",
-            "Campaigns",
-            "Divergence",
-            "Scoreboard",
-            "Import History",
-            "Behavioural Intelligence",
-            "Portfolio",
-            "Journal",
-            "Preferences",
-            "Billing",
-            "Admin",
-            "Setup"
-        ];
-
-        const STORAGE_KEY = "sigmalytic.phase12.activeNavLabel";
-        const CLICKED_KEY = "sigmalytic.phase12.activeNavWasClicked";
-
-        const SEMANTIC_COLOR_MAP = [
-            {pattern: /^(BULLISH|PASS|ACTIVE)$/i, color: "#86efac", cls: "phase12-31s-r2-semantic-bullish"},
-            {pattern: /^(CONFIRMED|SURVIVING)$/i, color: "#67e8f9", cls: "phase12-31s-r2-semantic-confirmed"},
-            {pattern: /^(SPARK|WATCH|PENDING|REVIEW)$/i, color: "#fde68a", cls: "phase12-31s-r2-semantic-watch"},
-            {pattern: /^(BEARISH|FAIL|FAILED|RISK|DISTRIBUTION_RISK)$/i, color: "#fca5a5", cls: "phase12-31s-r2-semantic-risk"},
-            {pattern: /^(WEIS_TEST|WEIS_EXPANSION|WEIS_ONLY_GAMMA_STATE|WLW|WYCKOFF|LIVERMORE)$/i, color: "#c4b5fd", cls: "phase12-31s-r2-semantic-regime"},
-            {pattern: /^(BIRTH)$/i, color: "#93c5fd", cls: "phase12-31s-r2-semantic-birth"},
-            {pattern: /^(EXPANDING|MATURING)$/i, color: "#a7f3d0", cls: "phase12-31s-r2-semantic-expanding"}
-        ];
-
-        function normalizedText(el) {
-            return String(el && el.textContent ? el.textContent : "").replace(/\\s+/g, " ").trim();
-        }
-
-        function getNavNodes() {
-            return Array.from(document.querySelectorAll("button, a, [role='button']")).filter(function (node) {
-                return NAV_LABELS.includes(normalizedText(node));
-            });
-        }
-
-        function setStoredActiveLabel(label) {
-            if (!NAV_LABELS.includes(label)) return;
-            sessionStorage.setItem(STORAGE_KEY, label);
-            sessionStorage.setItem(CLICKED_KEY, "true");
-        }
-
-        function storedClickedLabel() {
-            const wasClicked = sessionStorage.getItem(CLICKED_KEY) === "true";
-            const label = sessionStorage.getItem(STORAGE_KEY) || "";
-            if (wasClicked && NAV_LABELS.includes(label)) {
-                return label;
-            }
-            return "";
-        }
-
-        function installNavClickCapture() {
-            getNavNodes().forEach(function (node) {
-                if (node.getAttribute("data-phase12s-r2-nav-click-capture") === "true") return;
-
-                node.setAttribute("data-phase12s-r2-nav-click-capture", "true");
-                node.addEventListener("click", function () {
-                    const label = normalizedText(node);
-                    setStoredActiveLabel(label);
-                    applyActiveNavState(label);
-                    setTimeout(function () { applyActiveNavState(label); }, 25);
-                    setTimeout(function () { applyActiveNavState(label); }, 250);
-                    setTimeout(function () { applyActiveNavState(label); }, 900);
-                    setTimeout(function () { applyActiveNavState(label); }, 1600);
-                }, true);
-            });
-        }
-
-        function isElementVisible(el) {
-            if (!el) return false;
-            const style = window.getComputedStyle(el);
-            if (!style) return false;
-            if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) === 0) return false;
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 && rect.height === 0) return false;
-            return true;
-        }
-
-        function visibleContentText() {
-            const main = document.querySelector("#main-content") || document.body;
-            const pieces = [];
-
-            Array.from(main.querySelectorAll("h1, h2, h3, h4, h5, h6, [class*='card'], [class*='panel'], table, p")).forEach(function (node) {
-                if (!isElementVisible(node)) return;
-                if (node.closest("button, a, nav, [role='button'], [role='navigation']")) return;
-                pieces.push(normalizedText(node));
-            });
-
-            return pieces.join(" ").replace(/\\s+/g, " ").trim();
-        }
-
-        function fallbackVisibleLabel() {
-            const text = visibleContentText();
-
-            if (/Campaign Intelligence|Controlled Transition Preview|campaign lifecycle|Active campaigns/i.test(text)) return "Campaigns";
-            if (/Scoreboard|Live leaderboard|highest composite decision scores/i.test(text)) return "Scoreboard";
-            if (/Divergence Watchlist|opposite directions|No divergence signals/i.test(text)) return "Divergence";
-            if (/Radar Screen|Live multi-symbol signal scanner|A-grade setups across your universe/i.test(text)) return "Radar Screen";
-            if (/Performance/i.test(text)) return "Performance";
-            if (/Live Feed/i.test(text)) return "Live Feed";
-            if (/Import History/i.test(text)) return "Import History";
-            if (/Behavioural Intelligence|behavioral intelligence|behavioural/i.test(text)) return "Behavioural Intelligence";
-            if (/Portfolio/i.test(text)) return "Portfolio";
-            if (/Journal/i.test(text)) return "Journal";
-            if (/Preferences/i.test(text)) return "Preferences";
-            if (/Billing/i.test(text)) return "Billing";
-            if (/Admin/i.test(text)) return "Admin";
-            if (/Setup|Configuration|API Keys|Settings/i.test(text)) return "Setup";
-            if (/Weis-Gamma Status Center|Price Ladder|Smart Chart|Decision Command Center/i.test(text)) return "Command Center";
-
-            return "Command Center";
-        }
-
-        function activeLabel() {
-            const clicked = storedClickedLabel();
-            if (clicked) return clicked;
-            return fallbackVisibleLabel();
-        }
-
-        function applyActiveNavState(forcedLabel) {
-            installNavClickCapture();
-
-            const active = NAV_LABELS.includes(forcedLabel || "") ? forcedLabel : activeLabel();
-
-            getNavNodes().forEach(function (node) {
-                const label = normalizedText(node);
-
-                node.classList.remove("phase12-31o-active-nav");
-                node.classList.remove("phase12-31o-inactive-nav");
-                node.classList.remove("phase12-31p-active-nav");
-                node.classList.remove("phase12-31p-inactive-nav");
-                node.classList.remove("phase12-31q-active-nav");
-                node.classList.remove("phase12-31q-inactive-nav");
-                node.classList.remove("phase12-31s-active-nav");
-                node.classList.remove("phase12-31s-inactive-nav");
-                node.classList.remove("phase12-31s-r2-active-nav");
-                node.classList.remove("phase12-31s-r2-inactive-nav");
-
-                if (label === active) {
-                    node.classList.add("phase12-31s-r2-active-nav");
-                    node.setAttribute("aria-current", "page");
-                    node.setAttribute("data-phase12-active-nav", "true");
-                } else {
-                    node.classList.add("phase12-31s-r2-inactive-nav");
-                    node.removeAttribute("aria-current");
-                    node.setAttribute("data-phase12-active-nav", "false");
-                }
-            });
-        }
-
-        function applySemanticHighlights() {
-            const main = document.querySelector("#main-content") || document.body;
-            const nodes = Array.from(main.querySelectorAll("td, th, span, strong, em, small, code, p"));
-
-            nodes.forEach(function (node) {
-                const text = normalizedText(node);
-                if (!text || text.length > 48) return;
-
-                for (const item of SEMANTIC_COLOR_MAP) {
-                    if (item.pattern.test(text)) {
-                        node.classList.add(item.cls);
-                        node.style.setProperty("color", item.color, "important");
-                        node.style.setProperty("opacity", "1", "important");
-                        node.style.setProperty("font-weight", "700", "important");
-                        return;
-                    }
-                }
-
-                if (/^WEIS_/i.test(text) || /^WLW/i.test(text)) {
-                    node.style.setProperty("color", "#c4b5fd", "important");
-                    node.style.setProperty("opacity", "1", "important");
-                    node.style.setProperty("font-weight", "700", "important");
-                }
-            });
-        }
-
-        function applyScopedReadability() {
-            const main = document.querySelector("#main-content") || document.body;
-            const nodes = Array.from(main.querySelectorAll("[style*='opacity: 0.'], [style*='opacity:.'], [style*='color: black'], [style*='color:black'], [style*='color: #000'], [style*='color:#000'], [style*='color: rgb(0, 0, 0)']"));
-
-            nodes.forEach(function (node) {
-                node.style.setProperty("opacity", "1", "important");
-                if (!node.classList.contains("phase12-31s-r2-active-nav")) {
-                    node.style.setProperty("color", "#e5e7eb", "important");
-                }
-            });
-        }
-
-        function applyPhase1231SR2VisualFixes() {
-            installNavClickCapture();
-            applyScopedReadability();
-            applySemanticHighlights();
-            applyActiveNavState();
-        }
-
-        window.phase1231SR2ApplyVisualFixes = applyPhase1231SR2VisualFixes;
-        window.phase1231SR2ActiveLabel = activeLabel;
-        window.phase1231SR2VisibleContentText = visibleContentText;
-        window.phase1231SR2SetStoredActiveLabel = setStoredActiveLabel;
-
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", applyPhase1231SR2VisualFixes);
-        } else {
-            applyPhase1231SR2VisualFixes();
-        }
-
-        const observer = new MutationObserver(function () {
-            applyPhase1231SR2VisualFixes();
-        });
-
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            characterData: true
-        });
-
-        setInterval(applyPhase1231SR2VisualFixes, 500);
-    })();
-    </script>
-</head>
-<body>
-    {%app_entry%}
-    <footer>
-        {%config%}
-        {%scripts%}
-        {%renderer%}
-    </footer>
-</body>
-</html>
-"""
-except Exception:
-    pass
-# === PHASE 12.31S-R2 DETERMINISTIC CLICK-STATE NAV FIX END ===
+# SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
+# Note: Opportunity Dashboard inline styles already force descriptive text to WHITE.
