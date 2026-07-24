@@ -6,6 +6,19 @@ pipeline directly and does not access Supabase. It calls the backend's protected
 nightly route using a shared secret header.
 
 No secret values are printed.
+
+FIX (2026-07-24): The original `_compact()` used a hard depth cutoff of 3 combined
+with a narrow key whitelist for recursion below depth 2. The real backend response
+nests discovery diagnostics 5+ levels deep
+(response -> steps -> campaign_pipeline -> result -> discovery -> diagnostics),
+so the old logic silently dropped the entire `discovery` block (not even printed
+as truncated -- just absent from the key list) and stringified even simple
+booleans like `ok` as "...truncated..." once they fell past depth 3.
+
+This version recurses through the full object graph up to a generous depth cap
+(12, chosen because the real payload is at most ~7 levels deep) and only
+truncates lists over `max_list_items`, with a visible count of how many items
+were dropped. Secret-like keys are still redacted regardless of depth.
 """
 
 from __future__ import annotations
@@ -32,40 +45,41 @@ def _int_env(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer.") from exc
 
 
-def _compact(obj, depth: int = 0):
-    if depth > 3:
-        return "...truncated..."
+_SECRET_KEYS = {"cron_token", "token", "secret", "authorization"}
 
+
+def _compact(obj, depth: int = 0, max_depth: int = 12, max_list_items: int = 20):
+    """
+    Recursively copy `obj`, redacting secret-like keys and truncating only
+    lists that exceed `max_list_items`. Dict keys and nested structure are
+    preserved in full up to `max_depth`, which is deliberately generous
+    relative to the actual response shape so nothing important is silently
+    dropped.
+    """
     if isinstance(obj, dict):
         keep = {}
         for key, value in obj.items():
-            if str(key).lower() in {"cron_token", "token", "secret", "authorization"}:
+            if str(key).lower() in _SECRET_KEYS:
                 keep[key] = "[redacted]"
-            elif key == "result":
-                keep[key] = _compact(value, depth + 1)
-            elif key in {
-                "ok",
-                "started_at",
-                "finished_at",
-                "request",
-                "steps",
-                "status",
-                "runner",
-                "error",
-                "counts",
-                "campaigns_processed",
-                "universe_count",
-                "records_built",
-                "saved",
-                "processed",
-            }:
-                keep[key] = _compact(value, depth + 1)
-            elif depth < 2 and len(keep) < 30:
-                keep[key] = _compact(value, depth + 1)
+                continue
+            if depth >= max_depth:
+                keep[key] = "...max_depth_reached..."
+                continue
+            keep[key] = _compact(value, depth + 1, max_depth, max_list_items)
         return keep
 
     if isinstance(obj, list):
-        return [_compact(x, depth + 1) for x in obj[:10]]
+        if depth >= max_depth:
+            return "...max_depth_reached..."
+        kept_items = obj[:max_list_items]
+        out = [
+            _compact(item, depth + 1, max_depth, max_list_items)
+            for item in kept_items
+        ]
+        remainder = len(obj) - len(kept_items)
+        if remainder > 0:
+            out.append(f"...and {remainder} more items truncated...")
+        return out
 
     return obj
 
