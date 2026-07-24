@@ -1652,7 +1652,28 @@ def build_divergence_tab(session=None):
         ]),
     ])
 
+_badge = badge
+_metric = metric_tile
 
+
+def _feature_row(name, detail, enabled):
+    icon = "✓" if enabled else "—"
+    icon_color = TEAL_DIM if enabled else RED_DIM
+    return html.Div([
+        html.Span(icon, style={"color": icon_color, "fontWeight": "900",
+                                "width": "20px", "display": "inline-block"}),
+        html.Span(name, style={"color": WHITE, "fontSize": "13px",
+                                "fontWeight": "700", "flex": "1"}),
+        html.Span(detail, style={"color": TEXT, "fontSize": "12px"}),
+    ], style={
+        "display": "flex", "alignItems": "center", "gap": "10px",
+        "padding": "10px 0", "borderBottom": f"1px solid {BORDER}",
+    })
+
+
+PRICING_TABLE_ID = os.getenv("STRIPE_PRICING_TABLE_ID", "")
+PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+CONTACT_EMAIL = os.getenv("SIGMALYTIC_CONTACT_EMAIL", "support@sigmalytic.com")
 def build_billing_tab(session=None, perms=None):
     user_id = (session or {}).get("user_id", "")
     email   = (session or {}).get("email", "")
