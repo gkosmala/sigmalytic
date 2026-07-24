@@ -43,6 +43,27 @@ STATE_COLORS = {
     "BIRTH": BLUE_DIM, "CONFIRMED": TEAL_DIM, "SURVIVING": TEAL_DIM,
     "EXPANDING": YELLOW_DIM, "MATURING": YELLOW, "DISTRIBUTION_RISK": RED_DIM,
 }
+
+
+def _safe_float(value, default=0.0):
+    """
+    Like float(value or default), but also handles the case dict.get(key, 0)
+    does NOT protect against: an explicit `null` in the backend JSON, where
+    the key exists but its value is None. .get(key, default) only supplies
+    default when the key is missing entirely.
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default=0):
+    return int(_safe_float(value, default))
+
+
 STATE_ICONS = {
     "BIRTH": "🌱", "CONFIRMED": "✅", "SURVIVING": "🛡️",
     "EXPANDING": "🚀", "MATURING": "📈", "DISTRIBUTION_RISK": "⚠️",
@@ -104,8 +125,8 @@ def _state_pill(state, count):
 def _perf_row(c):
     symbol  = c.get("symbol", "—")
     tier    = c.get("historical_confidence", "—")
-    ret_pct = float(c.get("return_pct", 0))
-    days    = int(c.get("campaign_age_days", 0))
+    ret_pct = _safe_float(c.get("return_pct"))
+    days    = _safe_int(c.get("campaign_age_days"))
     state   = c.get("current_state", "BIRTH")
     color   = TEAL_DIM if ret_pct >= 0 else RED_DIM
     return html.Div([
@@ -139,10 +160,10 @@ def build_portfolio_tab(session=None) -> html.Div:
     tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
     tier2      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
     tier3      = total - tier1 - tier2
-    avg_ods    = float(summary.get("avg_ods", 0))
-    exits      = int(summary.get("conjunction_exits", 0))
-    avg_return = float(summary.get("avg_return_pct", 0))
-    ages       = [int(c.get("campaign_age_days", 0)) for c in campaigns]
+    avg_ods    = _safe_float(summary.get("avg_ods"))
+    exits      = _safe_int(summary.get("conjunction_exits"))
+    avg_return = _safe_float(summary.get("avg_return_pct"))
+    ages       = [_safe_int(c.get("campaign_age_days")) for c in campaigns]
     avg_age    = sum(ages) / len(ages) if ages else 0
 
     state_counts: dict[str, int] = summary.get("state_breakdown", {})
@@ -233,14 +254,14 @@ def build_portfolio_tab(session=None) -> html.Div:
                     html.Div("â–² Top Performers", style={"fontSize": "12px", "color": TEAL_DIM,
                                                          "fontWeight": "800", "marginBottom": "10px"}),
                     *[_perf_row(c) for c in sorted(campaigns,
-                       key=lambda x: float(x.get("return_pct", 0)), reverse=True)[:6]],
+                       key=lambda x: _safe_float(x.get("return_pct")), reverse=True)[:6]],
                 ], style={"flex": "1"}),
                 html.Div(style={"width": "1px", "background": BORDER, "margin": "0 20px"}),
                 html.Div([
                     html.Div("âš  Watch List", style={"fontSize": "12px", "color": YELLOW_DIM,
                                                       "fontWeight": "800", "marginBottom": "10px"}),
                     *[_perf_row(c) for c in sorted(campaigns,
-                       key=lambda x: float(x.get("return_pct", 0)))[:6]],
+                       key=lambda x: _safe_float(x.get("return_pct")))[:6]],
                 ], style={"flex": "1"}),
             ], style={"display": "flex"}),
         ]),
