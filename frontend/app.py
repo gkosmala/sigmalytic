@@ -97,6 +97,55 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
 
 
+# FIX (2026-07-25): proactively keeps the shared cache warm for every
+# endpoint used across tabs, instead of waiting for a user's click to
+# trigger a refresh after the TTL expires. This is what actually makes
+# tab-switching consistently fast rather than "fast most of the time,
+# occasionally slow when the cache just expired." Registered once per
+# worker process at import time; with Redis active, all worker processes
+# coordinate so only one of them performs each scheduled refresh.
+def _start_all_background_refreshers():
+    if shared_cache is None:
+        return
+
+    def _make_fetcher(path, extra_headers=None, timeout=20):
+        def _fetch():
+            try:
+                r = req.get(f"{BACKEND_HTTP}{path}", headers=extra_headers or {}, timeout=timeout)
+                return r.json() if r.ok else {}
+            except Exception:
+                return {}
+        return _fetch
+
+    demo_auth_headers = {"Authorization": "Bearer demo"}
+
+    # (path, ttl_seconds, refresh_interval_seconds, extra_headers)
+    endpoints = [
+        ("/api/campaigns/active", 120, 90, None),
+        ("/api/campaigns/summary", 120, 90, None),
+        ("/api/radar/scores", 90, 65, None),
+        ("/api/radar/scores?limit=25", 90, 65, None),
+        ("/api/scoreboard", 120, 90, None),
+        ("/api/radar/divergence", 90, 65, None),
+        ("/api/intelligence/status-center", 90, 65, None),
+        ("/api/intelligence/opportunities?limit=25", 90, 65, None),
+        ("/api/radar/intelligence?limit=8", 90, 65, None),
+        ("/api/journal/trades", 90, 65, demo_auth_headers),
+        ("/api/journal/profile", 90, 65, demo_auth_headers),
+    ]
+
+    for path, ttl_seconds, refresh_interval_seconds, headers in endpoints:
+        shared_cache.start_background_refresh(
+            key=path,
+            fetch_fn=_make_fetcher(path, extra_headers=headers),
+            ttl_seconds=ttl_seconds,
+            refresh_interval_seconds=refresh_interval_seconds,
+        )
+
+
+_start_all_background_refreshers()
+
+
 # SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_START
 def _rfa25h_color(name, fallback):
     return globals().get(name, fallback)
