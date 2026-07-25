@@ -4929,12 +4929,15 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 # every tab) since this is an internal diagnostic tool, not
                 # customer-facing content.
                 _build_d3f1b_controlled_persistence_lifecycle_panel(),
-                build_weis_gamma_status_center_panel(),
+                # Weis-Gamma Status Center panel intentionally NOT repeated
+                # here -- it already lives on Command Center. Showing it
+                # twice was redundant, not intentional. (Re-applied here --
+                # this exact fix was lost once already during an earlier
+                # file handoff tonight.)
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
         except Exception as e:
             main = html.Div([
-                build_weis_gamma_status_center_panel(),
                 html.Div([
                     html.Div("Admin tab error", style={
                         "color": WHITE,
