@@ -25,6 +25,11 @@ import os
 import requests as _rq
 from dash import html
 
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
@@ -143,18 +148,28 @@ def _perf_row(c):
 
 
 def build_portfolio_tab(session=None) -> html.Div:
-    try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=8)
-        data = r.json() if r.ok else {}
-        campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
-    except Exception:
-        campaigns = []
+    def _fetch_active():
+        try:
+            r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
 
-    try:
-        r2 = _rq.get(f"{BACKEND_HTTP}/api/campaigns/summary", timeout=8)
-        summary = r2.json() if r2.ok else {}
-    except Exception:
-        summary = {}
+    def _fetch_summary():
+        try:
+            r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/summary", timeout=20)
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
+
+    if shared_cache is not None:
+        data = shared_cache.get_or_fetch("/api/campaigns/active", _fetch_active, ttl_seconds=25)
+        summary = shared_cache.get_or_fetch("/api/campaigns/summary", _fetch_summary, ttl_seconds=25)
+    else:
+        data = _fetch_active()
+        summary = _fetch_summary()
+
+    campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
 
     total      = len(campaigns)
     tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
