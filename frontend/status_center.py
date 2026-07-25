@@ -353,7 +353,11 @@ def _radar_mini(item: dict) -> html.Div:
 
 # â”€â”€ Data fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-def _fetch(path: str, timeout: int = 6) -> dict | list:
+def _fetch(path: str, timeout: int = 20) -> dict | list:
+    # FIX (2026-07-25): was timeout=6. This function is called five times per
+    # render, including large campaign payloads -- the same class of issue
+    # already found and fixed in sigmalytic_app_TODAY.py's freshness check.
+    # 20s matches that fix.
     try:
         r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
         return r.json() if r.ok else {}
@@ -668,4 +672,3 @@ def build_status_center(session=None) -> html.Div:
         ]),
 
     ])
-
