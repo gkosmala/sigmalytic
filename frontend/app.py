@@ -3977,6 +3977,66 @@ def _admin_card(children, sx=None):
 def is_admin(session: dict) -> bool:
     return (session or {}).get("email","") == ADMIN_EMAIL
 
+
+def build_cache_diagnostics_panel():
+    """
+    Shows real, measured data about the background cache-refresh system:
+    which backend is active (redis vs memory), and per-key last-refresh
+    timestamp/duration/success. Built so future slow-spike reports can be
+    diagnosed with actual evidence instead of guessing from browser
+    Network-tab timings alone.
+    """
+    if shared_cache is None:
+        return _admin_card([
+            html.Div("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900","marginBottom":"8px"}),
+            html.Div("shared_cache module did not import -- caching is fully disabled.", style={"color":RED_DIM,"fontSize":"12px"}),
+        ])
+
+    try:
+        diag = shared_cache.get_diagnostics()
+    except Exception as e:
+        return _admin_card([
+            html.Div("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900","marginBottom":"8px"}),
+            html.Div(f"Error reading diagnostics: {e}", style={"color":RED_DIM,"fontSize":"12px"}),
+        ])
+
+    backend = diag.get("backend", "unknown")
+    backend_color = TEAL_DIM if backend == "redis" else YELLOW_DIM
+
+    rows = []
+    for key, meta in sorted(diag.get("keys", {}).items()):
+        success = meta.get("last_refresh_success")
+        refreshed_at = meta.get("last_refreshed_at") or "never yet"
+        duration = meta.get("last_refresh_duration_ms")
+        error = meta.get("last_refresh_error")
+
+        status_color = TEAL_DIM if success else (RED_DIM if success is False else YELLOW_DIM)
+        status_text = "OK" if success else ("FAILED" if success is False else "PENDING")
+
+        rows.append(html.Div([
+            html.Span(key, style={"color":WHITE,"fontSize":"11px","flex":"2","fontFamily":"DM Mono, monospace"}),
+            html.Span(status_text, style={"color":status_color,"fontSize":"11px","fontWeight":"800","flex":"0.6"}),
+            html.Span(refreshed_at, style={"color":TEXT,"fontSize":"11px","flex":"1.2"}),
+            html.Span(f"{duration}ms" if duration is not None else "-", style={"color":TEXT,"fontSize":"11px","flex":"0.6"}),
+            html.Span(error or "", style={"color":RED_DIM,"fontSize":"10px","flex":"1.5"}),
+        ], style={"display":"flex","gap":"8px","padding":"6px 0","borderBottom":f"1px solid {BORDER}"}))
+
+    return _admin_card([
+        html.Div([
+            html.Span("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900"}),
+            html.Span(f"  backend: {backend}", style={"color":backend_color,"fontSize":"12px","fontWeight":"800","marginLeft":"10px"}),
+        ], style={"marginBottom":"12px"}),
+        html.Div([
+            html.Span("Key", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"2","textTransform":"uppercase"}),
+            html.Span("Status", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"0.6","textTransform":"uppercase"}),
+            html.Span("Last Refreshed", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"1.2","textTransform":"uppercase"}),
+            html.Span("Duration", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"0.6","textTransform":"uppercase"}),
+            html.Span("Error", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"1.5","textTransform":"uppercase"}),
+        ], style={"display":"flex","gap":"8px","paddingBottom":"6px","borderBottom":f"2px solid {BORDER}"}),
+        html.Div(rows if rows else [html.Div("No background-refreshed keys registered yet.", style={"color":MUTED,"fontSize":"12px","padding":"12px 0"})]),
+    ])
+
+
 def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     Build the full admin monitoring page.
@@ -4983,6 +5043,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 # twice was redundant, not intentional. (Re-applied here --
                 # this exact fix was lost once already during an earlier
                 # file handoff tonight.)
+                build_cache_diagnostics_panel(),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
         except Exception as e:
