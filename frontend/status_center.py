@@ -386,7 +386,7 @@ def _fetch(path: str, timeout: int = 20) -> dict | list:
     if shared_cache is None:
         return _do_fetch()
 
-    ttl = 25 if path.startswith(("/api/campaigns/active", "/api/campaigns/summary")) else 15
+    ttl = 120 if path.startswith(("/api/campaigns/active", "/api/campaigns/summary")) else 90
     return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=ttl)
 
 
