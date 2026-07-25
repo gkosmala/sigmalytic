@@ -22,6 +22,11 @@ import os
 import requests as _rq
 from dash import html, dcc
 
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
+
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
@@ -223,18 +228,32 @@ def build_trade_journal_tab(session=None) -> html.Div:
     """Build the Trade Journal tab."""
     user_id = "demo_user_001"  # replaced with real user_id when auth is wired
 
-    try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/journal/trades", timeout=8,
+    def _do_fetch_trades():
+        r = _rq.get(f"{BACKEND_HTTP}/api/journal/trades", timeout=15,
                     headers={"Authorization": "Bearer demo"})
-        data   = r.json() if r.ok else {}
+        return r.json() if r.ok else {}
+
+    try:
+        data = (
+            shared_cache.get_or_fetch("/api/journal/trades", _do_fetch_trades, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_trades()
+        )
         trades = data.get("trades", []) if isinstance(data, dict) else []
     except Exception:
         trades = []
 
+    def _do_fetch_profile():
+        r2 = _rq.get(f"{BACKEND_HTTP}/api/journal/profile", timeout=15,
+                     headers={"Authorization": "Bearer demo"})
+        return r2.json() if r2.ok else {}
+
     try:
-        r2     = _rq.get(f"{BACKEND_HTTP}/api/journal/profile", timeout=8,
-                         headers={"Authorization": "Bearer demo"})
-        profile = r2.json() if r2.ok else {}
+        profile = (
+            shared_cache.get_or_fetch("/api/journal/profile", _do_fetch_profile, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_profile()
+        )
     except Exception:
         profile = {}
 
