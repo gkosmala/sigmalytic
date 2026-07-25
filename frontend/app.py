@@ -36,6 +36,11 @@ import requests as req
 import sys as _early_sys
 _early_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
+
 # SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_IMPORT
 try:
     from campaign_tab import build_campaign_tab as build_campaign_tab
@@ -97,15 +102,21 @@ def _rfa25h_color(name, fallback):
     return globals().get(name, fallback)
 
 
-def _rfa25h_fetch_json(path, timeout=5):
-    try:
-        response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
-        if not response.ok:
+def _rfa25h_fetch_json(path, timeout=20):
+    def _do_fetch():
+        try:
+            response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+            if not response.ok:
+                return {}
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+        except Exception:
             return {}
-        data = response.json()
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+
+    if shared_cache is None:
+        return _do_fetch()
+
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=25)
 
 
 def _rfa25h_safe_list(value):
@@ -751,7 +762,6 @@ def build_weis_gamma_status_center_panel():
 
     if not wg:
         return html.Div([
-            _build_d3f1b_controlled_persistence_lifecycle_panel(),
             html.Div(_rfa25h_command_center_freshness_title(), style={
                 "fontSize": "14px",
                 "fontWeight": "900",
