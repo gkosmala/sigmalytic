@@ -447,12 +447,20 @@ def _fetch_campaign_freshness():
     Fetches the real max updated_at across active campaigns and returns
     (label, color, raw_timestamp). Never raises -- any failure is treated
     as NO DATA / not live, not silently ignored.
+
+    FIX (2026-07-25): timeout was 6 seconds, which is too short once the
+    active-campaign set grew large enough (246+ full campaign records with
+    nested evidence). The endpoint itself is healthy -- confirmed by
+    fetching it directly -- it's just a genuinely large response. Raised
+    to 20s, matching the staleness threshold's own generosity. Also fixed
+    calling r.json() twice (parsed the same large payload redundantly).
     """
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=6)
+        r = req.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
         if not r.ok:
             return "NO DATA", "red", None
-        data = r.json() if isinstance(r.json(), dict) else {}
+        parsed = r.json()
+        data = parsed if isinstance(parsed, dict) else {}
         rows = data.get("campaigns") if isinstance(data.get("campaigns"), list) else []
         timestamps = [
             str(row.get("updated_at") or "").strip()
