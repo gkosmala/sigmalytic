@@ -27,6 +27,7 @@ Plugs into sigmalytic_app_TODAY.py:
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import requests as _rq
 from dash import html
@@ -38,9 +39,12 @@ NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL      = "#2d8f6f"; TEAL_DIM  = "#34d399"; TEAL_GLOW = "rgba(45,143,111,.18)"
 RED_DIM   = "#f87171"; RED_GLOW  = "rgba(239,68,68,.15)"
 YELLOW    = "#f59e0b"; YELLOW_DIM= "#fde68a"
-BLUE_DIM  = "#93c5fd"; MUTED     = "#64748b"; TEXT = "#94a3b8"
+BLUE_DIM  = "#93c5fd"; MUTED     = "#f1f5f9"; TEXT = "#94a3b8"
 WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"
 PURPLE    = "#a78bfa"
+# FIX (2026-07-25): MUTED was #64748b (a dim gray) -- per explicit request,
+# changed to match WHITE. Every text color in this file that used MUTED
+# now renders bright white instead of muted gray.
 
 OPTIMAL_MIN = 20
 OPTIMAL_MAX = 25
@@ -374,14 +378,33 @@ def build_status_center(session=None) -> html.Div:
     # Live Intelligence API consumption.
     # UI display only: no writes, no campaign mutation, no D3D authorization,
     # no operator-control confirmation, and no trade-signal creation.
-    intelligence_status  = _fetch("/api/intelligence/status-center")
-    intelligence_opps    = _fetch("/api/intelligence/opportunities?limit=25")
-    radar_data           = _fetch("/api/radar/intelligence?limit=8")
+    #
+    # FIX (2026-07-25): these five calls were previously sequential -- each
+    # one waiting for the last to finish before starting. With a 20s timeout
+    # per call (needed for large campaign payloads, see _fetch's own fix
+    # note), a slow backend response on any one of them made every tab
+    # switch feel sluggish. Running them concurrently means total wait time
+    # is roughly the slowest single call, not the sum of all five.
+    fetch_paths = {
+        "intelligence_status": "/api/intelligence/status-center",
+        "intelligence_opps": "/api/intelligence/opportunities?limit=25",
+        "radar_data": "/api/radar/intelligence?limit=8",
+        "campaign_freshness_data": "/api/campaigns/active",
+        "radar_freshness_data": "/api/radar/scores?limit=25",
+    }
 
-    # RFA25D UI-only freshness reads.
-    # These calls are read-only and only surface timestamps already exposed by the backend.
-    campaign_freshness_data = _fetch("/api/campaigns/active")
-    radar_freshness_data    = _fetch("/api/radar/scores?limit=25")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            key: executor.submit(_fetch, path)
+            for key, path in fetch_paths.items()
+        }
+        fetched = {key: future.result() for key, future in futures.items()}
+
+    intelligence_status  = fetched["intelligence_status"]
+    intelligence_opps    = fetched["intelligence_opps"]
+    radar_data           = fetched["radar_data"]
+    campaign_freshness_data = fetched["campaign_freshness_data"]
+    radar_freshness_data    = fetched["radar_freshness_data"]
 
     status_payload = (
         intelligence_status.get("status_center", {})
