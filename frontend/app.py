@@ -3477,7 +3477,12 @@ def register_billing_callbacks_from_module(app):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from billing_ui import register_billing_callbacks
-        register_billing_callbacks_from_module(app)
+        # FIX: was calling itself (register_billing_callbacks_from_module),
+        # an unconditional self-call that would raise RecursionError the
+        # moment this function is actually invoked. Currently dead code
+        # (never called anywhere in this file), but fixed so it isn't a
+        # landmine if it gets wired up later.
+        register_billing_callbacks(app)
     except Exception as e:
         print(f"Warning: billing callbacks: {e}")
 
