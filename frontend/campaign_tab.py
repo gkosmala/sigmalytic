@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 import requests as _rq
 from dash import html
 
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
+
 NAVY      = "#0d1b2e"
 NAVY_CARD = "#111f35"
 NAVY_MID  = "#0f172a"
@@ -765,13 +770,27 @@ def _step88a_rows_from_payload(data):
 
 
 def _step88a_fetch_json(path: str, timeout: int = 45):
-    try:
+    def _do_fetch_raising():
+        # Raises on any failure (bad status or exception) so a transient
+        # error never gets cached -- only genuine successes are cached.
+        # A cached failure would otherwise "lock in" a 502 or similar for
+        # the full TTL window instead of allowing the next call to retry.
         r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
         if not r.ok:
-            return None, f"{path} backend {r.status_code}"
-        return r.json(), ""
+            raise RuntimeError(f"{path} backend {r.status_code}")
+        return r.json()
+
+    if shared_cache is None:
+        try:
+            return (_do_fetch_raising(), "")
+        except Exception as exc:
+            return (None, str(exc))
+
+    try:
+        data = shared_cache.get_or_fetch(path, _do_fetch_raising, ttl_seconds=20)
+        return (data, "")
     except Exception as exc:
-        return None, f"{path} error {exc}"
+        return (None, str(exc))
 
 
 def _step88a_campaign_keys(row: dict):
@@ -1087,7 +1106,3 @@ def build_campaign_tab(session=None) -> html.Div:
             html.Div(rows),
         ]),
     ])
-
-
-
-
