@@ -15,7 +15,7 @@ Shows the complete portfolio picture across all active campaigns:
 
 Plugs into sigmalytic_app_TODAY.py:
   1. from portfolio_tab import build_portfolio_tab
-  2. Add ("portfolio", "💼 Portfolio") to ALL_TABS
+  2. Add ("portfolio", "Portfolio") to ALL_TABS
   3. Add elif tab=="portfolio": main = build_portfolio_tab() to tab router
 """
 
@@ -70,8 +70,8 @@ def _safe_int(value, default=0):
 
 
 STATE_ICONS = {
-    "BIRTH": "🌱", "CONFIRMED": "✅", "SURVIVING": "🛡️",
-    "EXPANDING": "🚀", "MATURING": "📈", "DISTRIBUTION_RISK": "⚠️",
+    "BIRTH": "", "CONFIRMED": "", "SURVIVING": "",
+    "EXPANDING": "", "MATURING": "", "DISTRIBUTION_RISK": "",
 }
 
 
@@ -198,7 +198,7 @@ def build_portfolio_tab(session=None) -> html.Div:
     if not campaigns:
         return html.Div([_card([
             html.Div([
-                html.Div("💼", style={"fontSize": "40px", "marginBottom": "12px"}),
+                html.Div("", style={"fontSize": "40px", "marginBottom": "12px"}),
                 html.Div("Portfolio Building", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
                 html.Div("Signal spark engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
                          style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "400px"}),
