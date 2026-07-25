@@ -12,7 +12,7 @@ Shows:
 
 Plugs into sigmalytic_app_TODAY.py:
   1. from trade_journal_tab import build_trade_journal_tab
-  2. Add ("journal", "📓 Journal") to ALL_TABS
+  2. Add ("journal", "Journal") to ALL_TABS
   3. Add elif tab=="journal": main = build_trade_journal_tab() to router
 """
 
