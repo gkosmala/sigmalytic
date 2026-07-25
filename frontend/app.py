@@ -4443,7 +4443,15 @@ app.layout = html.Div([
                                "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key, label in ALL_TABS
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
-                   "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
+                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
+                   # FIX (2026-07-25): was justifyContent:"center". With 17 tabs
+                   # (~2200px of button width) exceeding any real viewport, centering
+                   # pushed the FIRST tabs (Home, Command Center) off-screen to the
+                   # left by default -- the browser centers the whole overflowing row,
+                   # not just what fits. flex-start makes the tab bar begin at Home/
+                   # Command Center as expected, with horizontal scroll available to
+                   # reach later tabs -- the standard pattern for overflowing tab bars.
+                   "justifyContent":"flex-start","overflowX":"auto"}),
 
         # D3F.1B INITIAL DASH LAYOUT MOUNT REPAIR
         # Mode: read-only display mount. GET only through existing helper. No write. No D3D. No Stripe.
