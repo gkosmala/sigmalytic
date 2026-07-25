@@ -357,16 +357,32 @@ def _radar_mini(item: dict) -> html.Div:
 
 # â”€â”€ Data fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
+
+
 def _fetch(path: str, timeout: int = 20) -> dict | list:
     # FIX (2026-07-25): was timeout=6. This function is called five times per
     # render, including large campaign payloads -- the same class of issue
     # already found and fixed in sigmalytic_app_TODAY.py's freshness check.
     # 20s matches that fix.
-    try:
-        r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
-        return r.json() if r.ok else {}
-    except Exception:
-        return {}
+    def _do_fetch():
+        try:
+            r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
+
+    # Only cache endpoints that are shared, large, and rarely change
+    # (campaign-wide data) -- not everything, since some of these five
+    # calls are meant to reflect the current moment more tightly.
+    cacheable_prefixes = ("/api/campaigns/active", "/api/campaigns/summary")
+    if shared_cache is not None and path.startswith(cacheable_prefixes):
+        return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=25)
+
+    return _do_fetch()
 
 
 # â”€â”€ Main builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
