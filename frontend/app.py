@@ -22,6 +22,20 @@ from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 import requests as req
 
+# FIX (2026-07-25): When this file is loaded as `frontend.app` (as gunicorn
+# does: `gunicorn "frontend.app:server"`), Python only adds the repo root to
+# sys.path -- NOT frontend/ itself. The old `python frontend/app.py`
+# invocation auto-added frontend/ as the running script's own directory,
+# which is why the bare imports directly below (campaign_tab, portfolio_tab,
+# trade_journal_tab, status_center) worked under that invocation style but
+# silently failed under gunicorn's -- falling back to None and showing
+# "module did not import" in the UI. This restores the same behavior
+# explicitly, regardless of how the file is loaded. Must run before any of
+# the bare imports below, which is why it's here rather than further down
+# near the other sys.path.insert call.
+import sys as _early_sys
+_early_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 # SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_IMPORT
 try:
     from campaign_tab import build_campaign_tab as build_campaign_tab
