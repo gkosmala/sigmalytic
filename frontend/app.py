@@ -4453,13 +4453,6 @@ app.layout = html.Div([
                    # reach later tabs -- the standard pattern for overflowing tab bars.
                    "justifyContent":"flex-start","overflowX":"auto"}),
 
-        # D3F.1B INITIAL DASH LAYOUT MOUNT REPAIR
-        # Mode: read-only display mount. GET only through existing helper. No write. No D3D. No Stripe.
-        html.Div(
-            _build_d3f1b_controlled_persistence_lifecycle_panel(),
-            id="d3f1b-initial-layout-controlled-persistence-mount",
-            style={"margin": "0 0 16px 0"},
-        ),
         html.Main(id="main-content"),
 
         # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
@@ -4878,6 +4871,11 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
         try:
             admin_session = session if isinstance(session, dict) else {}
             main = html.Div([
+                # D3F.1B: developer/audit-only safety verification panel.
+                # Moved here from a global page-wide mount (was showing on
+                # every tab) since this is an internal diagnostic tool, not
+                # customer-facing content.
+                _build_d3f1b_controlled_persistence_lifecycle_panel(),
                 build_weis_gamma_status_center_panel(),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
