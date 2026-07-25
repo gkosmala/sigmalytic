@@ -368,6 +368,14 @@ def _fetch(path: str, timeout: int = 20) -> dict | list:
     # render, including large campaign payloads -- the same class of issue
     # already found and fixed in sigmalytic_app_TODAY.py's freshness check.
     # 20s matches that fix.
+    #
+    # FIX (2026-07-25, part 2): previously only /api/campaigns/active and
+    # /api/campaigns/summary were cached. Given the explicit requirement
+    # that tab switching stay under 1 second consistently in every
+    # direction, all five endpoints this function touches are now cached
+    # -- not just the two campaign-wide ones. A shorter 15s TTL is used
+    # so radar/intelligence data doesn't go as stale as the 25s campaign
+    # cache.
     def _do_fetch():
         try:
             r = _rq.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
@@ -375,14 +383,11 @@ def _fetch(path: str, timeout: int = 20) -> dict | list:
         except Exception:
             return {}
 
-    # Only cache endpoints that are shared, large, and rarely change
-    # (campaign-wide data) -- not everything, since some of these five
-    # calls are meant to reflect the current moment more tightly.
-    cacheable_prefixes = ("/api/campaigns/active", "/api/campaigns/summary")
-    if shared_cache is not None and path.startswith(cacheable_prefixes):
-        return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=25)
+    if shared_cache is None:
+        return _do_fetch()
 
-    return _do_fetch()
+    ttl = 25 if path.startswith(("/api/campaigns/active", "/api/campaigns/summary")) else 15
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=ttl)
 
 
 # ── Main builder ──────────────────────────────────────────────────────────────
