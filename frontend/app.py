@@ -453,11 +453,21 @@ def _track(event_type, symbol, price=None, timeframe=None, regime=None,
         pass
 
 def _get(path, **params):
-    try:
-        r = req.get(f"{BACKEND_HTTP}{path}", params=params, timeout=4)
-        return r.json() if r.ok else {}
-    except Exception:
-        return {}
+    def _do_fetch():
+        try:
+            r = req.get(f"{BACKEND_HTTP}{path}", params=params, timeout=15)
+            return r.json() if r.ok else {}
+        except Exception:
+            return {}
+
+    if shared_cache is None or params:
+        # Don't cache calls with extra query params -- the cache key is
+        # just the path string, so a parameterized call could silently
+        # return another call's cached result. Rare in this codebase, but
+        # safer to just fetch fresh in that case.
+        return _do_fetch()
+
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=15)
 
 
 # ============================================================
@@ -2137,8 +2147,15 @@ def build_radar_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=8)
-        data = r.json() if r.ok else {}
+        def _do_fetch_radar():
+            r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=15)
+            return r.json() if r.ok else {}
+
+        data = (
+            shared_cache.get_or_fetch("/api/radar/scores", _do_fetch_radar, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_radar()
+        )
 
         if isinstance(data, list):
             signals = data
@@ -2620,8 +2637,15 @@ def build_scoreboard_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=8)
-        board = r.json() if r.ok else {}
+        def _do_fetch_scoreboard():
+            r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=15)
+            return r.json() if r.ok else {}
+
+        board = (
+            shared_cache.get_or_fetch("/api/scoreboard", _do_fetch_scoreboard, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_scoreboard()
+        )
     except Exception:
         board = {}
 
@@ -3184,8 +3208,15 @@ def build_divergence_tab(session=None):
     import requests as _rq
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=8)
-        data = r.json() if r.ok else {}
+        def _do_fetch_divergence():
+            r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=15)
+            return r.json() if r.ok else {}
+
+        data = (
+            shared_cache.get_or_fetch("/api/radar/divergence", _do_fetch_divergence, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_divergence()
+        )
     except Exception:
         data = {}
 
@@ -3913,8 +3944,15 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         # this function (it only exists as a local import inside two other,
         # unrelated functions). This module already imports requests as `req`
         # at the top of the file; use that instead.
-        r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
-        data = r.json() if r.ok else {}
+        def _do_fetch_admin_report():
+            r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
+            return r.json() if r.ok else {}
+
+        data = (
+            shared_cache.get_or_fetch("/api/admin/report", _do_fetch_admin_report, ttl_seconds=15)
+            if shared_cache is not None
+            else _do_fetch_admin_report()
+        )
     except Exception as e:
         data = {}
 
