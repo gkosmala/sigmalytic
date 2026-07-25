@@ -163,8 +163,8 @@ def build_portfolio_tab(session=None) -> html.Div:
             return {}
 
     if shared_cache is not None:
-        data = shared_cache.get_or_fetch("/api/campaigns/active", _fetch_active, ttl_seconds=25)
-        summary = shared_cache.get_or_fetch("/api/campaigns/summary", _fetch_summary, ttl_seconds=25)
+        data = shared_cache.get_or_fetch("/api/campaigns/active", _fetch_active, ttl_seconds=120)
+        summary = shared_cache.get_or_fetch("/api/campaigns/summary", _fetch_summary, ttl_seconds=120)
     else:
         data = _fetch_active()
         summary = _fetch_summary()
