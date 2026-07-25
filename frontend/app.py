@@ -116,7 +116,7 @@ def _rfa25h_fetch_json(path, timeout=20):
     if shared_cache is None:
         return _do_fetch()
 
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=25)
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=120)
 
 
 def _rfa25h_safe_list(value):
@@ -467,7 +467,7 @@ def _get(path, **params):
         # safer to just fetch fresh in that case.
         return _do_fetch()
 
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=15)
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=90)
 
 
 # ============================================================
@@ -2152,7 +2152,7 @@ def build_radar_tab(session=None):
             return r.json() if r.ok else {}
 
         data = (
-            shared_cache.get_or_fetch("/api/radar/scores", _do_fetch_radar, ttl_seconds=15)
+            shared_cache.get_or_fetch("/api/radar/scores", _do_fetch_radar, ttl_seconds=90)
             if shared_cache is not None
             else _do_fetch_radar()
         )
@@ -2642,7 +2642,7 @@ def build_scoreboard_tab(session=None):
             return r.json() if r.ok else {}
 
         board = (
-            shared_cache.get_or_fetch("/api/scoreboard", _do_fetch_scoreboard, ttl_seconds=15)
+            shared_cache.get_or_fetch("/api/scoreboard", _do_fetch_scoreboard, ttl_seconds=120)
             if shared_cache is not None
             else _do_fetch_scoreboard()
         )
@@ -3213,7 +3213,7 @@ def build_divergence_tab(session=None):
             return r.json() if r.ok else {}
 
         data = (
-            shared_cache.get_or_fetch("/api/radar/divergence", _do_fetch_divergence, ttl_seconds=15)
+            shared_cache.get_or_fetch("/api/radar/divergence", _do_fetch_divergence, ttl_seconds=90)
             if shared_cache is not None
             else _do_fetch_divergence()
         )
@@ -3954,7 +3954,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             return r.json() if r.ok else {}
 
         data = (
-            shared_cache.get_or_fetch("/api/admin/report", _do_fetch_admin_report, ttl_seconds=15)
+            shared_cache.get_or_fetch("/api/admin/report", _do_fetch_admin_report, ttl_seconds=90)
             if shared_cache is not None
             else _do_fetch_admin_report()
         )
