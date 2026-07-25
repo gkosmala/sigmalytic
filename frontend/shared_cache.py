@@ -129,16 +129,72 @@ class SharedCache:
         wants to refresh on its own schedule regardless of whether the
         current entry has technically expired yet.
         """
-        data = fetch_fn()
-        if self._redis_client is not None:
+        start = time.time()
+        success = True
+        error_text = None
+        try:
+            data = fetch_fn()
+        except Exception as exc:
+            success = False
+            error_text = str(exc)[:200]
+            data = None
+        duration_ms = round((time.time() - start) * 1000, 1)
+
+        meta = {
+            "last_refreshed_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "last_refresh_duration_ms": duration_ms,
+            "last_refresh_success": success,
+            "last_refresh_error": error_text,
+            "worker_pid": os.getpid(),
+        }
+
+        if success and self._redis_client is not None:
             try:
                 data_key = f"{self._key_prefix}data:{key}"
+                meta_key = f"{self._key_prefix}meta:{key}"
                 self._redis_client.set(data_key, json.dumps(data), ex=ttl_seconds)
+                self._redis_client.set(meta_key, json.dumps(meta), ex=ttl_seconds * 3)
                 return
             except Exception:
                 pass
+
         with self._memory_lock:
-            self._memory_store[key] = {"data": data, "cached_at": time.monotonic()}
+            if success:
+                self._memory_store[key] = {"data": data, "cached_at": time.monotonic()}
+            self._memory_store.setdefault("__meta__", {})[key] = meta
+
+    def get_diagnostics(self) -> dict:
+        """
+        Returns per-key diagnostic info: when each background-refreshed
+        key was last refreshed, how long that refresh took, whether it
+        succeeded, and which worker process did it. Useful for confirming
+        the cache is actually staying warm rather than guessing from
+        request timing alone.
+        """
+        keys = list(self._refresh_threads.keys())
+        result = {}
+
+        for key in keys:
+            meta = None
+            if self._redis_client is not None:
+                try:
+                    meta_key = f"{self._key_prefix}meta:{key}"
+                    raw = self._redis_client.get(meta_key)
+                    if raw is not None:
+                        meta = json.loads(raw)
+                except Exception:
+                    meta = None
+
+            if meta is None:
+                with self._memory_lock:
+                    meta = self._memory_store.get("__meta__", {}).get(key)
+
+            result[key] = meta or {"last_refreshed_at": None, "status": "no data yet"}
+
+        return {
+            "backend": self.backend,
+            "keys": result,
+        }
 
     # ---- In-memory fallback: used when Redis isn't configured/reachable ----
 
