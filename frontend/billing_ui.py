@@ -174,7 +174,16 @@ def build_billing_tab(session=None, perms=None):
         html.H2("Choose Your Plan", style={"color": WHITE, "fontSize": "18px",
                                             "fontWeight": "900", "marginBottom": "8px"}),
         html.P("Upgrade or change your plan anytime. Cancel anytime.",
-               style={"color": TEXT, "fontSize": "13px", "marginBottom": "24px"}),
+               style={"color": TEXT, "fontSize": "13px", "marginBottom": "8px"}),
+        html.P([
+            "By subscribing, you agree to our ",
+            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                   style={"color": TEAL_DIM, "textDecoration": "underline"}),
+            " and ",
+            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                   style={"color": TEAL_DIM, "textDecoration": "underline"}),
+            ".",
+        ], style={"color": TEXT, "fontSize": "11px", "marginBottom": "24px"}),
 
         # Stripe pricing table embedded via iframe/HTML component
         html.Iframe(
