@@ -241,6 +241,24 @@ _NIGHTLY_JOBS_LOCK = threading.Lock()
 _NIGHTLY_JOBS_MAX_KEPT = 20
 
 
+def _alert_nightly_job_failure(reason: str):
+    """
+    Sends an admin alert for a nightly job failure. Wrapped so that any
+    problem with the alerting system itself (missing config, network
+    issue, import failure) can never affect the job status tracking that
+    already happened above this call.
+    """
+    try:
+        from backend.email_service import send_admin_alert_sync
+        send_admin_alert_sync(
+            subject="Nightly campaign pipeline failed",
+            message=f"The nightly campaign refresh job failed.<br><br>Reason: {reason}",
+            alert_key="nightly_cron_failure",
+        )
+    except Exception:
+        pass
+
+
 def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
     with _NIGHTLY_JOBS_LOCK:
         _NIGHTLY_JOBS[job_id]["status"] = "running"
@@ -260,10 +278,12 @@ def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
                 break
 
         if runner is None:
+            error_msg = "No runner function found in nightly_campaign_pipeline.py"
             with _NIGHTLY_JOBS_LOCK:
                 _NIGHTLY_JOBS[job_id]["status"] = "failed"
-                _NIGHTLY_JOBS[job_id]["error"] = "No runner function found in nightly_campaign_pipeline.py"
+                _NIGHTLY_JOBS[job_id]["error"] = error_msg
                 _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+            _alert_nightly_job_failure(error_msg)
             return
 
         pipeline_result = runner(**run_kwargs)
@@ -281,6 +301,7 @@ def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
             _NIGHTLY_JOBS[job_id]["status"] = "failed"
             _NIGHTLY_JOBS[job_id]["error"] = str(e)
             _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+        _alert_nightly_job_failure(str(e))
 
 
 @app.post("/api/admin/run-full-nightly")
