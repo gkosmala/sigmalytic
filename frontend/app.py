@@ -340,7 +340,7 @@ GLOBAL_CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
 body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}}
-::-webkit-scrollbar{{width:4px;height:4px;}}
+::-webkit-scrollbar{{width:8px;height:4px;}}
 ::-webkit-scrollbar-track{{background:{NAVY};}}
 ::-webkit-scrollbar-thumb{{background:{TEAL};border-radius:2px;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
