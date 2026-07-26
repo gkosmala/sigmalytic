@@ -1832,6 +1832,23 @@ def build_login_page(error=""):
                                          "outline":"none","fontFamily":"DM Sans, sans-serif"}),
                     ], style={"marginBottom":"24px"}),
                     html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Div([
+                        dcc.Checklist(
+                            id="signup-agree-terms",
+                            options=[{"label": "", "value": "agreed"}],
+                            value=[],
+                            style={"display":"inline-block","marginRight":"8px","verticalAlign":"middle"},
+                            inputStyle={"marginRight":"8px"},
+                        ),
+                        html.Span([
+                            "I agree to the ",
+                            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                                   style={"color":TEAL_DIM,"textDecoration":"underline"}),
+                            " and ",
+                            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                                   style={"color":TEAL_DIM,"textDecoration":"underline"}),
+                        ], style={"fontSize":"12px","color":WHITE}),
+                    ], style={"display":"flex","alignItems":"center","marginBottom":"20px"}),
                     html.Button("Create Account", id="signup-btn", n_clicks=0,
                         style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
                                "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
@@ -1846,6 +1863,14 @@ def build_login_page(error=""):
 
             ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
                       "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
+
+            html.Div([
+                html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                       style={"color":MUTED,"fontSize":"11px","textDecoration":"underline","marginRight":"16px"}),
+                html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                       style={"color":MUTED,"fontSize":"11px","textDecoration":"underline"}),
+            ], style={"marginTop":"20px","textAlign":"center"}),
+
         ], style={"display":"flex","flexDirection":"column","alignItems":"center",
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
@@ -5311,9 +5336,11 @@ def toggle_auth_section(to_signup, to_login):
               Input("signup-btn","n_clicks"),
               State("login-email","value"),State("login-password","value"),
               State("signup-email","value"),State("signup-password","value"),
+              State("signup-agree-terms","value"),
               prevent_initial_call=True)
 def handle_auth(login_clicks, demo_clicks, signup_clicks,
-                login_email, login_password, signup_email, signup_password):
+                login_email, login_password, signup_email, signup_password,
+                signup_agree_terms):
     ctx = callback_context
     if not ctx.triggered: return no_update, no_update, no_update, no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
@@ -5373,6 +5400,10 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
     if trigger == "signup-btn":
         if not signup_email or not signup_password:
             return no_update, no_update, no_update, "Please enter both email and password."
+
+        if not signup_agree_terms or "agreed" not in signup_agree_terms:
+            return (no_update, no_update, no_update,
+                    "Please agree to the Terms of Service and Privacy Policy to create an account.")
 
         if not SUPABASE_URL or not SUPABASE_ANON_KEY:
             return (no_update, no_update, no_update,
