@@ -23,6 +23,12 @@ RESEND_API_KEY = os.environ["RESEND_API_KEY"]
 RESEND_URL = "https://api.resend.com/emails"
 FROM_ADDRESS = os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com")
 
+# Where critical system-failure alerts (nightly cron failed, etc.) get sent.
+# Uses .get() deliberately -- unlike the required constants above, a missing
+# value here should not crash the whole module import; it should just mean
+# admin alerts are silently unavailable until configured.
+ADMIN_ALERT_EMAIL = os.environ.get("ADMIN_ALERT_EMAIL", "")
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
@@ -170,3 +176,64 @@ async def send_digest(
     await _send_via_resend(user_prefs["email"], subject, html_body)
 
 
+# ── Admin/operator critical-failure alerts ─────────────────────────────────────
+# For system-level failures (nightly cron job failed, etc.) -- goes to the
+# operator, not to customers. Deliberately separate from the user-facing
+# alert path above.
+
+import time as _admin_alert_time
+
+# Rate-limits repeated identical alerts (e.g., if a job fails on every retry
+# for an hour) so the operator gets one notification, not a flood. Keyed by
+# alert_key so different failure types don't suppress each other.
+_admin_alert_last_sent: dict = {}
+_ADMIN_ALERT_MIN_INTERVAL_SECONDS = 900  # 15 minutes
+
+
+async def send_admin_alert(subject: str, message: str, alert_key: str = None) -> bool:
+    """
+    Sends a critical-failure notification to ADMIN_ALERT_EMAIL. Returns
+    False (without raising) if ADMIN_ALERT_EMAIL isn't configured, or if
+    an identical alert_key was already sent within the rate-limit window --
+    this must never be the thing that crashes whatever critical path is
+    reporting the failure.
+    """
+    if not ADMIN_ALERT_EMAIL:
+        logger.warning(f"[admin_alert] ADMIN_ALERT_EMAIL not configured, alert not sent: {subject}")
+        return False
+
+    key = alert_key or subject
+    now = _admin_alert_time.monotonic()
+    last_sent = _admin_alert_last_sent.get(key)
+    if last_sent is not None and (now - last_sent) < _ADMIN_ALERT_MIN_INTERVAL_SECONDS:
+        logger.info(f"[admin_alert] Suppressed duplicate alert within rate-limit window: {subject}")
+        return False
+
+    html_body = (
+        f"<div style='font-family:monospace;'>"
+        f"<h2 style='color:#f87171;'>Sigmalytic System Alert</h2>"
+        f"<p>{message}</p>"
+        f"<p style='color:#94a3b8;font-size:12px;'>"
+        f"Sent at {datetime.now(timezone.utc).isoformat()}</p>"
+        f"</div>"
+    )
+
+    success = await _send_via_resend(ADMIN_ALERT_EMAIL, f"[Sigmalytic Alert] {subject}", html_body)
+    if success:
+        _admin_alert_last_sent[key] = now
+    return success
+
+
+def send_admin_alert_sync(subject: str, message: str, alert_key: str = None) -> bool:
+    """
+    Synchronous wrapper for calling send_admin_alert from non-async contexts
+    (e.g., a background thread), such as the nightly job runner. Never
+    raises -- a failure to send the alert itself must not crash whatever
+    is reporting the original problem.
+    """
+    try:
+        import asyncio
+        return asyncio.run(send_admin_alert(subject, message, alert_key))
+    except Exception as e:
+        logger.error(f"[admin_alert] Failed to send admin alert: {e}")
+        return False
