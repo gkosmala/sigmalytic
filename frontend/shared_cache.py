@@ -225,7 +225,8 @@ class SharedCache:
     # ---- Background refresh ----
 
     def start_background_refresh(
-        self, key: str, fetch_fn, ttl_seconds: int = 120, refresh_interval_seconds: int = 90
+        self, key: str, fetch_fn, ttl_seconds: int = 120, refresh_interval_seconds: int = 90,
+        initial_delay_seconds: int = 0,
     ):
         """
         Starts a daemon thread that proactively refreshes `key` every
@@ -244,6 +245,17 @@ class SharedCache:
         refresh_interval_seconds should be somewhat shorter than
         ttl_seconds (e.g., 70-80%) so a refresh always lands before the
         previous entry would have expired.
+
+        initial_delay_seconds staggers this thread's FIRST refresh by a
+        fixed offset. FIX (2026-07-27): real production evidence showed
+        several large campaign-heavy endpoints all firing within the same
+        20-40 second window, every cycle, because every background thread
+        started at roughly the same moment (worker boot) with similar
+        intervals -- causing repeated concurrent memory spikes rather
+        than smooth, spread-out load. Staggering each endpoint's first
+        fetch means they naturally stay spread apart on every subsequent
+        cycle too, since each one keeps its own steady rhythm from a
+        different starting point.
         """
         if key in self._refresh_threads:
             return
@@ -252,6 +264,9 @@ class SharedCache:
         self._refresh_stop_flags[key] = stop_flag
 
         def _loop():
+            if initial_delay_seconds > 0:
+                stop_flag.wait(initial_delay_seconds)
+
             while not stop_flag.is_set():
                 try:
                     should_refresh = True
