@@ -119,27 +119,37 @@ def _start_all_background_refreshers():
 
     demo_auth_headers = {"Authorization": "Bearer demo"}
 
-    # (path, ttl_seconds, refresh_interval_seconds, extra_headers)
+    # FIX (2026-07-27): real production logs showed 6-7 of these large,
+    # campaign-heavy endpoints all firing within the same 20-40 second
+    # window, every single cycle -- because every thread started at
+    # roughly the same moment (worker boot) with similar intervals. That
+    # repeated concurrent burst, not slow gradual growth, is what was
+    # actually spiking memory and crashing the backend. Each endpoint now
+    # gets a staggered initial delay (roughly 8s apart) so they land at
+    # different points in time on every cycle, not just the first one.
+    #
+    # (path, ttl_seconds, refresh_interval_seconds, extra_headers, initial_delay_seconds)
     endpoints = [
-        ("/api/campaigns/active", 120, 90, None),
-        ("/api/campaigns/summary", 120, 90, None),
-        ("/api/radar/scores", 90, 65, None),
-        ("/api/radar/scores?limit=25", 90, 65, None),
-        ("/api/scoreboard", 120, 90, None),
-        ("/api/radar/divergence", 90, 65, None),
-        ("/api/intelligence/status-center", 90, 65, None),
-        ("/api/intelligence/opportunities?limit=25", 90, 65, None),
-        ("/api/radar/intelligence?limit=8", 90, 65, None),
-        ("/api/journal/trades", 90, 65, demo_auth_headers),
-        ("/api/journal/profile", 90, 65, demo_auth_headers),
+        ("/api/campaigns/active", 120, 90, None, 0),
+        ("/api/campaigns/summary", 120, 90, None, 8),
+        ("/api/radar/scores", 90, 65, None, 16),
+        ("/api/radar/scores?limit=25", 90, 65, None, 24),
+        ("/api/scoreboard", 120, 90, None, 32),
+        ("/api/radar/divergence", 90, 65, None, 40),
+        ("/api/intelligence/status-center", 90, 65, None, 48),
+        ("/api/intelligence/opportunities?limit=25", 90, 65, None, 56),
+        ("/api/radar/intelligence?limit=8", 90, 65, None, 64),
+        ("/api/journal/trades", 90, 65, demo_auth_headers, 72),
+        ("/api/journal/profile", 90, 65, demo_auth_headers, 80),
     ]
 
-    for path, ttl_seconds, refresh_interval_seconds, headers in endpoints:
+    for path, ttl_seconds, refresh_interval_seconds, headers, initial_delay in endpoints:
         shared_cache.start_background_refresh(
             key=path,
             fetch_fn=_make_fetcher(path, extra_headers=headers),
             ttl_seconds=ttl_seconds,
             refresh_interval_seconds=refresh_interval_seconds,
+            initial_delay_seconds=initial_delay,
         )
 
 
