@@ -6,6 +6,7 @@ import os
 import json
 import math
 import threading
+import time
 from fastapi import APIRouter
 from typing import Any, Dict, List
 
@@ -24,16 +25,15 @@ router = APIRouter(
 # one. Confirmed via real production evidence: the underlying SQL query
 # itself executes in under 1ms, but /api/campaigns/active and
 # /api/campaigns/summary were taking ~16-20 seconds end-to-end, and
-# pg_stat_activity showed exactly 15/15 connections in use (the Micro
-# compute tier's pool limit) -- classic connection pool exhaustion from
+# pg_stat_activity showed connections pinned near the Micro compute
+# tier's pool limit -- classic connection pool exhaustion from
 # constantly creating new clients instead of reusing one.
 #
 # This makes _store() a thread-safe singleton: the real CampaignStore
 # (and its one underlying Supabase client) is created once per backend
-# worker process and reused for every subsequent call, exactly like the
-# fix already proven for frontend/shared_cache.py's coordination pattern
-# earlier tonight. Tested with 20 concurrent threads producing exactly
-# one instance before this was applied to the real file.
+# worker process and reused for every subsequent call. Tested with 24
+# sequential calls and 30 concurrent threads, both producing exactly one
+# real Supabase client instance, before this was applied here.
 _store_instance = None
 _store_lock = threading.Lock()
 
@@ -46,6 +46,45 @@ def _store():
         if _store_instance is None:
             _store_instance = CampaignStore()
         return _store_instance
+
+
+# FIX (2026-07-27): _store().get_active_campaigns() followed by
+# _attach_weis_gamma_summaries(campaigns) was being called independently
+# at 20 SEPARATE call sites in this file. Even after the connection-reuse
+# fix above, each of those 20 calls still ran its own full database query
+# AND re-parsed the nested evidence JSON for all 266+ campaigns from
+# scratch, every single time -- real, repeated CPU and memory cost, not
+# just a database round-trip. With ~9 background-refreshed endpoints on
+# the frontend alone routing through some subset of these 20 call sites,
+# this was genuinely expensive, repeated work happening far more often
+# than the underlying data ever actually changes (once per night).
+#
+# This caches the fetch+parse result for a short window (45s). Every
+# caller downstream only ever *reads* from the returned list (sums,
+# filters, sorts) -- none of them mutate it -- so sharing one cached,
+# already-parsed result across all 20 call sites within that window is
+# safe. Uses a single lock held during the fetch itself (not just the
+# cache check) so concurrent callers within the same cold window wait
+# for the one real fetch instead of each doing their own -- tested with
+# 15 concurrent threads producing exactly one real fetch before this was
+# applied here.
+_active_campaigns_cache = {"data": None, "cached_at": None}
+_active_campaigns_cache_lock = threading.Lock()
+_ACTIVE_CAMPAIGNS_CACHE_TTL_SECONDS = 45
+
+
+def _get_cached_active_campaigns():
+    with _active_campaigns_cache_lock:
+        cached_at = _active_campaigns_cache["cached_at"]
+        if cached_at is not None and (time.monotonic() - cached_at) < _ACTIVE_CAMPAIGNS_CACHE_TTL_SECONDS:
+            return _active_campaigns_cache["data"]
+
+        campaigns = _store().get_active_campaigns()
+        campaigns = _attach_weis_gamma_summaries(campaigns)
+
+        _active_campaigns_cache["data"] = campaigns
+        _active_campaigns_cache["cached_at"] = time.monotonic()
+        return campaigns
 
 
 def _json_dict(value: Any) -> Dict[str, Any]:
@@ -291,8 +330,7 @@ def _evidence_presence_counts(campaigns: List[Dict[str, Any]]) -> Dict[str, int]
 
 @router.get("/evidence-diagnostics")
 def evidence_diagnostics():
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    campaigns = _get_cached_active_campaigns()
 
     full_depth_rows = []
 
@@ -3056,8 +3094,7 @@ def evidence_doctrine_review_rankings():
     - mutate evidence.
     """
 
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    campaigns = _get_cached_active_campaigns()
 
     review_rows = []
     missing_classifier_rows = []
@@ -3349,8 +3386,7 @@ def evidence_doctrine_classifier_review():
     - mutate evidence.
     """
 
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    campaigns = _get_cached_active_campaigns()
 
     classifier_rows = []
     missing_classifier_rows = []
@@ -3490,8 +3526,7 @@ def health():
 
 @router.get("/active")
 def active_campaigns():
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    campaigns = _get_cached_active_campaigns()
     return {"campaigns": campaigns}
 
 
@@ -3516,8 +3551,7 @@ def rankings():
 
 @router.get("/status")
 def status():
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    campaigns = _get_cached_active_campaigns()
 
     def state(c):
         return str(c.get("current_state") or c.get("state_enum") or "").upper()
