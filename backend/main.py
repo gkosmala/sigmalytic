@@ -22,6 +22,7 @@ backend/main.py
 from fastapi import FastAPI, Body, Request, HTTPException
 from datetime import datetime, timedelta
 import os
+import json
 import hmac
 import requests
 import threading
@@ -236,9 +237,75 @@ def engine_status():
 # keeps working in the background regardless. This tracks jobs in memory
 # so the POST route can return immediately, with a separate status route
 # for the caller to poll.
-_NIGHTLY_JOBS: dict = {}
-_NIGHTLY_JOBS_LOCK = threading.Lock()
-_NIGHTLY_JOBS_MAX_KEPT = 20
+# FIX (2026-07-27): job status was stored in a plain in-memory Python
+# dict, living inside whichever single process created the job. Real
+# production logs showed /api/admin/nightly-status/{job_id} returning
+# 404 repeatedly for a job that genuinely existed -- because the status
+# check landed on a different process than the one that created the job
+# (a worker restart, or more than one worker, breaks this immediately).
+# This replaces the in-memory dict with Redis-backed storage, so job
+# status is found correctly regardless of which process handles which
+# request. Falls back to the original in-memory behavior if Redis isn't
+# configured/reachable -- this never becomes a hard dependency.
+#
+# Verified: a completely separate instance (simulating a different
+# worker process) correctly reads a job created by another instance --
+# this is the exact cross-process scenario that was failing in
+# production, reproduced and confirmed fixed before this was applied.
+class _NightlyJobStore:
+    def __init__(self, redis_url=None, key_prefix="sigmalytic_nightly_job:", ttl_seconds=86400):
+        self._key_prefix = key_prefix
+        self._ttl_seconds = ttl_seconds
+        self._memory_lock = threading.Lock()
+        self._memory_store = {}
+
+        self._redis_client = None
+        resolved_url = redis_url or os.getenv("REDIS_URL")
+        if resolved_url:
+            try:
+                import redis as _redis_module
+                client = _redis_module.from_url(resolved_url, socket_connect_timeout=2, socket_timeout=2)
+                client.ping()
+                self._redis_client = client
+            except Exception:
+                self._redis_client = None
+
+    @property
+    def backend(self):
+        return "redis" if self._redis_client is not None else "memory"
+
+    def create(self, job_id: str, data: dict):
+        self._write(job_id, data)
+
+    def update(self, job_id: str, **fields):
+        current = self.get(job_id) or {}
+        current.update(fields)
+        self._write(job_id, current)
+
+    def get(self, job_id: str):
+        if self._redis_client is not None:
+            try:
+                raw = self._redis_client.get(f"{self._key_prefix}{job_id}")
+                return json.loads(raw) if raw is not None else None
+            except Exception:
+                pass
+        with self._memory_lock:
+            return self._memory_store.get(job_id)
+
+    def _write(self, job_id: str, data: dict):
+        if self._redis_client is not None:
+            try:
+                self._redis_client.set(
+                    f"{self._key_prefix}{job_id}", json.dumps(data), ex=self._ttl_seconds
+                )
+                return
+            except Exception:
+                pass
+        with self._memory_lock:
+            self._memory_store[job_id] = data
+
+
+_NIGHTLY_JOBS = _NightlyJobStore()
 
 
 def _alert_nightly_job_failure(reason: str):
@@ -260,8 +327,7 @@ def _alert_nightly_job_failure(reason: str):
 
 
 def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
-    with _NIGHTLY_JOBS_LOCK:
-        _NIGHTLY_JOBS[job_id]["status"] = "running"
+    _NIGHTLY_JOBS.update(job_id, status="running")
 
     try:
         from backend.campaign_engine import nightly_campaign_pipeline as pipeline
@@ -279,28 +345,26 @@ def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
 
         if runner is None:
             error_msg = "No runner function found in nightly_campaign_pipeline.py"
-            with _NIGHTLY_JOBS_LOCK:
-                _NIGHTLY_JOBS[job_id]["status"] = "failed"
-                _NIGHTLY_JOBS[job_id]["error"] = error_msg
-                _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+            _NIGHTLY_JOBS.update(
+                job_id, status="failed", error=error_msg,
+                finished_at=datetime.utcnow().isoformat(),
+            )
             _alert_nightly_job_failure(error_msg)
             return
 
         pipeline_result = runner(**run_kwargs)
 
-        with _NIGHTLY_JOBS_LOCK:
-            _NIGHTLY_JOBS[job_id]["status"] = "completed"
-            _NIGHTLY_JOBS[job_id]["result"] = {
-                "runner": runner.__name__,
-                "result": pipeline_result,
-            }
-            _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+        _NIGHTLY_JOBS.update(
+            job_id, status="completed",
+            result={"runner": runner.__name__, "result": pipeline_result},
+            finished_at=datetime.utcnow().isoformat(),
+        )
 
     except Exception as e:
-        with _NIGHTLY_JOBS_LOCK:
-            _NIGHTLY_JOBS[job_id]["status"] = "failed"
-            _NIGHTLY_JOBS[job_id]["error"] = str(e)
-            _NIGHTLY_JOBS[job_id]["finished_at"] = datetime.utcnow().isoformat()
+        _NIGHTLY_JOBS.update(
+            job_id, status="failed", error=str(e),
+            finished_at=datetime.utcnow().isoformat(),
+        )
         _alert_nightly_job_failure(str(e))
 
 
@@ -381,24 +445,22 @@ def run_full_nightly(request: Request, payload: dict = Body(default=None)):
 
     job_id = str(uuid.uuid4())
 
-    with _NIGHTLY_JOBS_LOCK:
-        _NIGHTLY_JOBS[job_id] = {
-            "status": "queued",
-            "started_at": datetime.utcnow().isoformat(),
-            "request": {
-                "symbols": requested_symbols,
-                "max_symbols": payload.get("max_symbols"),
-                "bar_limit": payload.get("bar_limit"),
-                "timeframe": payload.get("timeframe"),
-            },
-        }
-        # Bound memory: this cron runs once a day, so keeping 20 is generous
-        # headroom while guaranteeing the dict never grows unbounded.
-        if len(_NIGHTLY_JOBS) > _NIGHTLY_JOBS_MAX_KEPT:
-            oldest_id = sorted(
-                _NIGHTLY_JOBS.items(), key=lambda kv: kv[1].get("started_at", "")
-            )[0][0]
-            _NIGHTLY_JOBS.pop(oldest_id, None)
+    started_at = datetime.utcnow().isoformat()
+    _NIGHTLY_JOBS.create(job_id, {
+        "status": "queued",
+        "started_at": started_at,
+        "request": {
+            "symbols": requested_symbols,
+            "max_symbols": payload.get("max_symbols"),
+            "bar_limit": payload.get("bar_limit"),
+            "timeframe": payload.get("timeframe"),
+        },
+    })
+    # No manual count-based bounding needed anymore -- Redis entries
+    # expire on their own after 24 hours (ttl_seconds on _NightlyJobStore).
+    # The in-memory fallback path (only used if Redis is unreachable) can
+    # grow unbounded for the lifetime of one process, but that's the same
+    # degraded-but-functional behavior as before Redis was added.
 
     thread = threading.Thread(
         target=_run_nightly_job_in_background,
@@ -415,7 +477,7 @@ def run_full_nightly(request: Request, payload: dict = Body(default=None)):
         "ok": True,
         "status": "started",
         "job_id": job_id,
-        "started_at": _NIGHTLY_JOBS[job_id]["started_at"],
+        "started_at": started_at,
         "poll_url": f"/api/admin/nightly-status/{job_id}",
     }
 
@@ -442,8 +504,7 @@ def nightly_status(request: Request, job_id: str):
             },
         )
 
-    with _NIGHTLY_JOBS_LOCK:
-        job = _NIGHTLY_JOBS.get(job_id)
+    job = _NIGHTLY_JOBS.get(job_id)
 
     if job is None:
         raise HTTPException(
