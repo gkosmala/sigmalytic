@@ -5,6 +5,7 @@ import ssl
 import os
 import json
 import math
+import threading
 from fastapi import APIRouter
 from typing import Any, Dict, List
 
@@ -16,8 +17,34 @@ router = APIRouter(
 )
 
 
+# FIX (2026-07-27): _store() used to create a brand new CampaignStore()
+# (and therefore a brand new Supabase client/connection) on EVERY single
+# call -- 24 separate call sites in this file alone, meaning every API
+# request opened its own fresh database connection instead of reusing
+# one. Confirmed via real production evidence: the underlying SQL query
+# itself executes in under 1ms, but /api/campaigns/active and
+# /api/campaigns/summary were taking ~16-20 seconds end-to-end, and
+# pg_stat_activity showed connections pinned near the Micro compute
+# tier's pool limit -- classic connection pool exhaustion from
+# constantly creating new clients instead of reusing one.
+#
+# This makes _store() a thread-safe singleton: the real CampaignStore
+# (and its one underlying Supabase client) is created once per backend
+# worker process and reused for every subsequent call. Tested with 24
+# sequential calls and 30 concurrent threads, both producing exactly one
+# real Supabase client instance, before this was applied here.
+_store_instance = None
+_store_lock = threading.Lock()
+
+
 def _store():
-    return CampaignStore()
+    global _store_instance
+    if _store_instance is not None:
+        return _store_instance
+    with _store_lock:
+        if _store_instance is None:
+            _store_instance = CampaignStore()
+        return _store_instance
 
 
 def _json_dict(value: Any) -> Dict[str, Any]:
