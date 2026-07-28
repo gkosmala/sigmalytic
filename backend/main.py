@@ -56,6 +56,7 @@ except Exception:
 # does not execute a payment, and does not write to Supabase by itself.
 from backend.billing_router import billing_router
 from backend.legal_pages import legal_router
+from backend.preferences_router import preferences_router
 # === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
 app = FastAPI(
     title="Sigmalytic V2",
@@ -3409,6 +3410,11 @@ if admin_router is not None:
 # to Supabase.
 app.include_router(billing_router)
 app.include_router(legal_router)
+# FIX (2026-07-28): preferences_router was defined but never included --
+# confirmed via a full audit of every router in the backend, and
+# confirmed the frontend actively calls /api/preferences/{user_id} in
+# three separate places, meaning this has been 404'ing this whole time.
+app.include_router(preferences_router)
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
 
 # ============================================================
