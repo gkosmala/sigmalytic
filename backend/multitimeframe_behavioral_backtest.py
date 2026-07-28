@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 try:
-    from behavioral_transition_engine import evaluate_behavioral_transition
+    from backend.behavioral_transition_engine import evaluate_behavioral_transition
     BEHAVIORAL_ENGINE_AVAILABLE = True
 except Exception:
     BEHAVIORAL_ENGINE_AVAILABLE = False
@@ -704,4 +704,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
