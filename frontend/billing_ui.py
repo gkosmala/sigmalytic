@@ -75,7 +75,9 @@ def build_billing_tab(session=None, perms=None):
     billing = {}
     if user_id:
         try:
-            r = _req.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", timeout=5)
+            token = (session or {}).get("access_token", "")
+            auth_headers = {"Authorization": f"Bearer {token}"} if token else {}
+            r = _req.get(f"{BACKEND_HTTP}/api/v1/billing/{user_id}", headers=auth_headers, timeout=5)
             if r.ok:
                 billing = r.json()
         except Exception:
@@ -253,7 +255,9 @@ def register_billing_callbacks(app):
         if not user_id:
             return "Please log in first."
         try:
-            r = _req.post(f"{BACKEND_HTTP}/api/v1/billing/{user_id}/portal", timeout=8)
+            token = (session or {}).get("access_token", "")
+            auth_headers = {"Authorization": f"Bearer {token}"} if token else {}
+            r = _req.post(f"{BACKEND_HTTP}/api/v1/billing/{user_id}/portal", headers=auth_headers, timeout=8)
             if r.ok:
                 url = r.json().get("url", "")
                 if url:

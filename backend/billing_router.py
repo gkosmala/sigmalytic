@@ -17,9 +17,11 @@ import os
 import logging
 import stripe
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi import APIRouter, HTTPException, Request, Header, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from backend.supabase_isolation import get_user_id_from_request
 
 log = logging.getLogger("billing_router")
 
@@ -125,7 +127,9 @@ def _get_subscription(user_id: str) -> dict:
 
 # ── GET /api/v1/billing/{user_id} ─────────────────────────────────────────────
 @billing_router.get("/api/v1/billing/{user_id}")
-async def get_billing(user_id: str):
+async def get_billing(user_id: str, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    if user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to view this user's billing status")
     data = _get_subscription(user_id)
     tier = data.get("tier", "free") if data else "free"
 
@@ -151,8 +155,14 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
     payload = await request.body()
 
     if not STRIPE_WEBHOOK_SECRET:
-        log.warning("[BILLING] STRIPE_WEBHOOK_SECRET not set")
-        return JSONResponse({"status": "ok"})
+        # SECURITY FIX (2026-07-28): this used to return {"status": "ok"}
+        # here -- meaning if this env var was ever unset, the endpoint
+        # would accept ANY unsigned POST body as a legitimate Stripe event
+        # (e.g. a forged "checkout.session.completed" granting a free
+        # subscription). Fail closed instead: refuse to process events we
+        # can't verify, rather than silently trusting everything.
+        log.error("[BILLING] STRIPE_WEBHOOK_SECRET not set — rejecting webhook, cannot verify signature")
+        raise HTTPException(status_code=503, detail="Webhook verification not configured")
 
     try:
         event = stripe.Webhook.construct_event(payload, stripe_signature, STRIPE_WEBHOOK_SECRET)
@@ -238,7 +248,13 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
 
 # ── POST /api/v1/billing/{user_id}/upgrade ────────────────────────────────────
 @billing_router.post("/api/v1/billing/{user_id}/upgrade")
-async def create_checkout(user_id: str, payload: UpgradeRequest):
+async def create_checkout(user_id: str, payload: UpgradeRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    # SECURITY FIX (2026-07-28): this used to take user_id from the URL with
+    # no check -- someone could create a checkout session that attributes
+    # the resulting subscription to a different user's account than the
+    # one actually paying.
+    if user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to create a checkout session for this user")
     if not stripe.api_key:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     try:
@@ -258,7 +274,9 @@ async def create_checkout(user_id: str, payload: UpgradeRequest):
 
 # ── POST /api/billing/portal ──────────────────────────────────────────────────
 @billing_router.post("/api/billing/portal")
-async def customer_portal(payload: PortalRequest):
+async def customer_portal(payload: PortalRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    if payload.user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to open this user's billing portal")
     data        = _get_subscription(payload.user_id)
     customer_id = data.get("stripe_customer_id")
     if not customer_id:
@@ -282,7 +300,9 @@ async def customer_portal(payload: PortalRequest):
 # all). Adding a route matching the frontend's real contract here, reusing
 # the same Stripe portal-session logic rather than duplicating it.
 @billing_router.post("/api/v1/billing/{user_id}/portal")
-async def customer_portal_by_path(user_id: str):
+async def customer_portal_by_path(user_id: str, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    if user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to open this user's billing portal")
     data        = _get_subscription(user_id)
     customer_id = data.get("stripe_customer_id")
     if not customer_id:
