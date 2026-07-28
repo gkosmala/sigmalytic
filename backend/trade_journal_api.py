@@ -26,13 +26,13 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from trade_journal_service import (
+from backend.trade_journal_service import (
     log_trade_entry,
     log_trade_exit,
     get_journal_entries,
     get_trader_profile,
 )
-from supabase_isolation import get_user_id_from_request
+from backend.supabase_isolation import get_user_id_from_request
 
 log = logging.getLogger("trade_journal_api")
 
@@ -144,4 +144,3 @@ async def get_profile(request: Request) -> dict:
     user_id = get_user_id_from_request(request)
     profile = get_trader_profile(user_id)
     return profile
-
