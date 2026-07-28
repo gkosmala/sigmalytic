@@ -189,6 +189,125 @@ def get_stock_quote(symbol: str):
         }
 
 
+# FIX (2026-07-28): the frontend's fetch_real_candles() has been calling
+# this endpoint all along, but it never existed on the backend at all --
+# confirmed via production logs showing a consistent 404. This is a real,
+# separate gap from tonight's crash/cron investigation, not a regression.
+# Built to match the existing /api/stock/{symbol} endpoint's exact style,
+# using Alpaca's historical bars endpoint instead of "latest".
+@app.get("/api/candles/{symbol}")
+def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
+    sym = (symbol or "").upper().strip()
+
+    if not sym:
+        return {"ok": False, "error": "missing_symbol", "bars": []}
+
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+
+    if not key or not secret:
+        return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials", "bars": []}
+
+    url = f"{base_url}/v2/stocks/{sym}/bars"
+    headers = {
+        "APCA-API-KEY-ID": key,
+        "APCA-API-SECRET-KEY": secret,
+    }
+    params = {
+        "timeframe": timeframe,
+        "limit": max(1, min(int(limit or 200), 1000)),
+        "feed": "sip",
+        "adjustment": "raw",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+
+        if not r.ok:
+            return {
+                "ok": False,
+                "symbol": sym,
+                "error": f"alpaca_bars_http_{r.status_code}",
+                "detail": r.text[:300],
+                "bars": [],
+            }
+
+        payload = r.json() or {}
+        raw_bars = payload.get("bars") or []
+
+        bars = [
+            {
+                "o": b.get("o"),
+                "h": b.get("h"),
+                "l": b.get("l"),
+                "c": b.get("c"),
+                "v": b.get("v"),
+                "t": b.get("t"),
+            }
+            for b in raw_bars
+            if isinstance(b, dict)
+        ]
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "timeframe": timeframe,
+            "bars": bars,
+            "source": "alpaca",
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "symbol": sym,
+            "error": str(exc)[:300],
+            "bars": [],
+        }
+
+
+# FIX (2026-07-28): journal_router (trade_journal_api.py) and radar_router
+# (radar_service.py) both define real, working handlers for these three
+# routes -- but neither router was ever actually included in this app.
+# Confirmed via production logs showing consistent 404s, and via grep
+# finding zero app.include_router(...) calls for either router anywhere
+# in this file. Rather than include the whole router (which may have
+# other routes not yet audited for this app's specific conventions),
+# these add matching compatibility routes here, same pattern as the
+# other *_compat routes in this file, delegating to the real underlying
+# functions those routers already call.
+@app.get("/api/journal/trades")
+def journal_trades_compat(request: Request, status: str = None, limit: int = 100):
+    try:
+        from backend.supabase_isolation import get_user_id_from_request
+        from backend.trade_journal_service import get_journal_entries
+
+        user_id = get_user_id_from_request(request)
+        trades = get_journal_entries(user_id, status=status, limit=limit)
+        return {"trades": trades, "count": len(trades), "user_id": user_id}
+    except Exception as exc:
+        return {"trades": [], "count": 0, "error": str(exc)[:300]}
+
+
+@app.get("/api/journal/profile")
+def journal_profile_compat(request: Request):
+    try:
+        from backend.supabase_isolation import get_user_id_from_request
+        from backend.trade_journal_service import get_trader_profile
+
+        user_id = get_user_id_from_request(request)
+        return get_trader_profile(user_id)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.get("/api/radar/divergence")
+def radar_divergence_compat():
+    try:
+        from backend.radar_service import get_divergence_watchlist
+        return get_divergence_watchlist()
+    except Exception as exc:
+        return {"count": 0, "symbols": [], "error": str(exc)[:300]}
 
 
 @app.get("/api/behavior/open-trade/{user_id}")
