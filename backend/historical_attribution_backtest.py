@@ -193,7 +193,7 @@ def _make_market_data(symbol: str, bars: list[Bar], idx: int):
     Build ConfluenceEngine MarketData using only information available
     through the current historical day.
     """
-    from confluence_engine import MarketData
+    from backend.confluence_engine import MarketData
 
     current = bars[idx]
     prev = bars[idx - 1] if idx > 0 else current
@@ -237,7 +237,7 @@ def _make_market_data(symbol: str, bars: list[Bar], idx: int):
 
 
 def _empty_options_data():
-    from confluence_engine import OptionsData
+    from backend.confluence_engine import OptionsData
     return OptionsData()
 
 
@@ -385,7 +385,7 @@ def group_summary(results: list[SignalResult], field: str) -> list[dict[str, Any
 
 
 def run_backtest(symbols: list[str], years: int, lookahead_days: int, output_dir: Path) -> None:
-    from confluence_engine import ConfluenceEngine
+    from backend.confluence_engine import ConfluenceEngine
 
     engine = ConfluenceEngine()
     all_results: list[SignalResult] = []
@@ -557,4 +557,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
