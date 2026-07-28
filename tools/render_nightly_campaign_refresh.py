@@ -1,40 +1,30 @@
 """
-RFA11 authenticated Render cron caller for Sigmalytic nightly campaign refresh.
+RFA11 nightly campaign refresh -- DIRECT EXECUTION VERSION (2026-07-28)
+------------------------------------------------------------------------
+This replaces the earlier HTTP-based design (POST to the backend's
+/api/admin/run-full-nightly, then poll /api/admin/nightly-status/{job_id}
+until done or timeout).
 
-This script is intended to run as a Render cron job. It does not import the
-pipeline directly and does not access Supabase. It calls the backend's protected
-nightly route using a shared secret header.
+Why this changed:
+That HTTP-based design ran the actual pipeline as a background thread
+INSIDE the shared backend web server process. This created an
+unavoidable conflict: the backend needed periodic worker recycling
+(--max-requests) to prevent memory growth from crashing it, but that
+same recycling could kill the nightly job mid-run if it happened to
+fire while the job was still working -- which it repeatedly did in
+production. Tuning the numbers on either side just traded one failure
+mode for the other; it could never fully resolve both at once as long
+as the job and the recyclable web server shared one process.
+
+This version runs the pipeline directly, in this script's own process --
+the cron service, not the web service. This process starts fresh for
+each scheduled run and exits when done; gunicorn's worker recycling on
+the backend has nothing to do with it and can never interrupt it.
+Requires this cron service to have its own Supabase and Alpaca
+credentials (previously only the backend needed them, since this script
+only made HTTP calls to it).
 
 No secret values are printed.
-
-FIX (2026-07-24, compaction): The original `_compact()` used a hard depth
-cutoff of 3 combined with a narrow key whitelist for recursion below depth 2.
-The real backend response nests discovery diagnostics 5+ levels deep, so the
-old logic silently dropped the entire `discovery` block. This version
-recurses through the full object graph up to a generous depth cap (12) and
-only truncates lists over `max_list_items`, with noisy per-symbol lists
-capped much harder than summary/diagnostics dicts.
-
-FIX (2026-07-24, async execution): The nightly pipeline can take 6-14+
-minutes to run. The previous version sent ONE blocking HTTP POST and waited
-for the entire pipeline to finish before getting a response. Render's own
-edge/proxy layer has its own response timeout that is shorter than that --
-independent of anything configurable in this script or in gunicorn/uvicorn --
-so long runs intermittently came back as "502 Bad Gateway" even though the
-backend was still working correctly in the background.
-
-This version instead:
-  1. POSTs to /api/admin/run-full-nightly, which now returns almost
-     instantly with a job_id (the backend runs the actual pipeline in a
-     background thread).
-  2. Polls /api/admin/nightly-status/{job_id} at a fixed interval until the
-     job reports "completed" or "failed", or until the overall time budget
-     (SIGMALYTIC_NIGHTLY_CRON_TIMEOUT_SECONDS) is exhausted.
-  3. Prints the same compacted JSON summary as before once the job finishes,
-     or a clear timeout report if it doesn't finish within the budget (the
-     job may still complete on the backend even if this script gives up
-     waiting -- that is a distinct, correctly-labeled outcome from a
-     genuine failure).
 """
 
 from __future__ import annotations
@@ -43,8 +33,6 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 
 
@@ -62,13 +50,7 @@ def _int_env(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer.") from exc
 
 
-_SECRET_KEYS = {"cron_token", "token", "secret", "authorization"}
-
-# These keys hold per-symbol verdict/result lists with deeply nested evidence
-# (Wyckoff/Livermore/Weis/option-chain trees). They are capped much harder
-# than other lists so a single run's log stays readable, while every
-# diagnostics/summary dict (universe_count, alpaca_bars_symbols, etc.) is
-# left fully intact -- dicts are never truncated by list capping.
+_SECRET_KEYS = {"cron_token", "token", "secret", "authorization", "api_key", "api_secret"}
 _NOISY_LIST_KEYS = {"results", "discovered_symbols"}
 _NOISY_LIST_MAX_ITEMS = 3
 
@@ -76,11 +58,9 @@ _NOISY_LIST_MAX_ITEMS = 3
 def _compact(obj, depth: int = 0, max_depth: int = 12, max_list_items: int = 20):
     """
     Recursively copy `obj`, redacting secret-like keys and truncating only
-    lists that exceed their item cap. Dict keys and nested structure are
-    preserved in full up to `max_depth`, which is deliberately generous
-    relative to the actual response shape so nothing important is silently
-    dropped. Lists under a key in `_NOISY_LIST_KEYS` get a much smaller cap
-    since they hold heavy per-symbol verdict data, not summary diagnostics.
+    lists that exceed their item cap. Preserved from the previous version
+    of this script -- same compaction logic, still needed since the real
+    pipeline result can be large.
     """
     if isinstance(obj, dict):
         keep = {}
@@ -113,56 +93,60 @@ def _compact(obj, depth: int = 0, max_depth: int = 12, max_list_items: int = 20)
     return obj
 
 
-def _request_json(url: str, token: str, method: str = "GET", payload: dict | None = None,
-                   timeout: int = 30):
+def _alert_failure(reason: str):
     """
-    Makes one HTTP request and returns (status_code, parsed_json_or_None,
-    raw_text). Never raises for HTTP error responses -- the caller decides
-    what to do with a non-200 status. Only raises for genuine connection-
-    level failures (DNS, refused connection, etc.), which the caller
-    catches separately.
+    Sends an admin alert on failure, reusing the same alerting system
+    already built for the backend. Wrapped so a problem with alerting
+    itself can never mask or replace the real failure being reported.
     """
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Sigmalytic-RFA11-Render-Nightly-Campaign-Cron",
-        "X-Sigmalytic-Cron-Token": token,
-    }
-    body = json.dumps(payload).encode("utf-8") if payload is not None else None
-
-    req = urllib.request.Request(url, data=body, method=method, headers=headers)
-
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            status_code = resp.status
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        status_code = exc.code
-
-    try:
-        data = json.loads(raw)
+        # This script runs from the repo root (same as the backend), so
+        # the same package-qualified import works here too.
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from backend.email_service import send_admin_alert_sync
+        send_admin_alert_sync(
+            subject="Nightly campaign pipeline failed",
+            message=f"The nightly campaign refresh job failed (direct-execution cron).<br><br>Reason: {reason}",
+            alert_key="nightly_cron_failure",
+        )
     except Exception:
-        data = None
-
-    return status_code, data, raw
+        pass
 
 
 def main() -> int:
-    backend_url = (
-        os.getenv("BACKEND_URL")
-        or os.getenv("SIGMALYTIC_BACKEND_URL")
-        or "https://sigmalytic-backend.onrender.com"
-    ).rstrip("/")
+    started_at = datetime.utcnow().isoformat()
 
-    token = (os.getenv("SIGMALYTIC_NIGHTLY_CRON_TOKEN") or "").strip()
+    required_env = ["SUPABASE_URL"]
+    missing = [name for name in required_env if not (os.getenv(name) or "").strip()]
+    has_supabase_key = bool(
+        (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "").strip()
+    )
+    has_alpaca_key = bool(
+        (os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or "").strip()
+    )
+    has_alpaca_secret = bool(
+        (os.getenv("ALPACA_API_SECRET") or os.getenv("ALPACA_SECRET_KEY") or os.getenv("APCA_API_SECRET_KEY") or "").strip()
+    )
 
-    if not token:
+    if missing or not has_supabase_key or not has_alpaca_key or not has_alpaca_secret:
+        problems = []
+        if missing:
+            problems.append(f"missing: {', '.join(missing)}")
+        if not has_supabase_key:
+            problems.append("missing: SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY")
+        if not has_alpaca_key:
+            problems.append("missing: ALPACA_API_KEY or APCA_API_KEY_ID")
+        if not has_alpaca_secret:
+            problems.append("missing: ALPACA_API_SECRET, ALPACA_SECRET_KEY, or APCA_API_SECRET_KEY")
+        error_msg = "; ".join(problems)
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "error": "missing_SIGMALYTIC_NIGHTLY_CRON_TOKEN",
-                    "source": "rfa11_render_nightly_campaign_refresh",
+                    "error": f"Cron service is missing required credentials ({error_msg}). "
+                             f"This script now runs the pipeline directly and needs its own "
+                             f"Supabase and Alpaca credentials, not just BACKEND_URL.",
+                    "source": "rfa11_render_nightly_campaign_refresh_direct",
                     "generated_at": datetime.utcnow().isoformat(),
                 },
                 indent=2,
@@ -184,11 +168,9 @@ def main() -> int:
                 {
                     "ok": True,
                     "dry_run": True,
-                    "source": "rfa11_render_nightly_campaign_refresh",
-                    "backend_url": backend_url,
-                    "token_present": bool(token),
+                    "source": "rfa11_render_nightly_campaign_refresh_direct",
                     "payload": payload,
-                    "would_call": f"{backend_url}/api/admin/run-full-nightly",
+                    "would_run": "backend.campaign_engine.nightly_campaign_pipeline.run_nightly_campaign_pipeline",
                     "generated_at": datetime.utcnow().isoformat(),
                 },
                 indent=2,
@@ -196,117 +178,68 @@ def main() -> int:
         )
         return 0
 
-    overall_timeout_seconds = _int_env("SIGMALYTIC_NIGHTLY_CRON_TIMEOUT_SECONDS", 900)
-    poll_interval_seconds = _int_env("SIGMALYTIC_NIGHTLY_CRON_POLL_INTERVAL_SECONDS", 15)
-
-    started_at = datetime.utcnow().isoformat()
-    deadline = time.monotonic() + overall_timeout_seconds
-
-    # ---- Step 1: start the job. This call should return almost instantly. ----
-    start_url = f"{backend_url}/api/admin/run-full-nightly"
+    # Make the repo root importable, same as the backend service does,
+    # so `from backend.campaign_engine... import ...` resolves correctly.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, repo_root)
 
     try:
-        status_code, data, raw = _request_json(
-            start_url, token, method="POST", payload=payload, timeout=30
-        )
+        from backend.campaign_engine.nightly_campaign_pipeline import run_nightly_campaign_pipeline
     except Exception as exc:
+        error_msg = f"Failed to import pipeline: {exc}"
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "error": f"failed_to_start_job: {exc}",
-                    "source": "rfa11_render_nightly_campaign_refresh",
+                    "error": error_msg,
+                    "source": "rfa11_render_nightly_campaign_refresh_direct",
                     "started_at": started_at,
                     "finished_at": datetime.utcnow().isoformat(),
                 },
                 indent=2,
             )
         )
+        _alert_failure(error_msg)
         return 1
 
-    if status_code != 200 or not isinstance(data, dict) or not data.get("job_id"):
+    try:
+        result = run_nightly_campaign_pipeline(**payload)
+        ok = bool(result.get("ok", True)) if isinstance(result, dict) else True
+
+        print(
+            json.dumps(
+                {
+                    "ok": ok,
+                    "source": "rfa11_render_nightly_campaign_refresh_direct",
+                    "started_at": started_at,
+                    "finished_at": datetime.utcnow().isoformat(),
+                    "result": _compact(result),
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        if not ok:
+            _alert_failure("Pipeline returned ok=False -- see result for details.")
+        return 0 if ok else 1
+
+    except Exception as exc:
+        error_msg = str(exc)
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "http_status": status_code,
-                    "error": "did_not_receive_job_id",
-                    "response_preview": (raw or "")[:4000],
-                    "source": "rfa11_render_nightly_campaign_refresh",
+                    "error": error_msg,
+                    "source": "rfa11_render_nightly_campaign_refresh_direct",
                     "started_at": started_at,
                     "finished_at": datetime.utcnow().isoformat(),
                 },
                 indent=2,
+                default=str,
             )
         )
+        _alert_failure(error_msg)
         return 1
-
-    job_id = data["job_id"]
-
-    # ---- Step 2: poll until the job completes, fails, or we run out of time. ----
-    status_url = f"{backend_url}/api/admin/nightly-status/{job_id}"
-    last_status_payload = None
-
-    while time.monotonic() < deadline:
-        time.sleep(poll_interval_seconds)
-
-        try:
-            poll_status_code, poll_data, poll_raw = _request_json(
-                status_url, token, method="GET", timeout=30
-            )
-        except Exception as exc:
-            # A single failed poll doesn't mean the job failed -- the job
-            # keeps running on the backend regardless. Just try again on
-            # the next interval, up to the overall deadline.
-            continue
-
-        if poll_status_code != 200 or not isinstance(poll_data, dict):
-            continue
-
-        last_status_payload = poll_data
-        job_status = poll_data.get("status")
-
-        if job_status in ("completed", "failed"):
-            ok = job_status == "completed"
-            print(
-                json.dumps(
-                    {
-                        "ok": ok,
-                        "job_status": job_status,
-                        "job_id": job_id,
-                        "source": "rfa11_render_nightly_campaign_refresh",
-                        "started_at": started_at,
-                        "finished_at": datetime.utcnow().isoformat(),
-                        "response": _compact(poll_data),
-                    },
-                    indent=2,
-                    default=str,
-                )
-            )
-            return 0 if ok else 1
-
-    # ---- Deadline exceeded without the job reporting completed/failed. ----
-    # This is a distinct, honestly-labeled outcome: the job may well still
-    # be running (or may have finished) on the backend -- this script simply
-    # gave up waiting within its own time budget. Treat as a failure for
-    # the cron's exit code, but do not claim the pipeline itself failed.
-    print(
-        json.dumps(
-            {
-                "ok": False,
-                "error": "polling_timeout_before_job_finished",
-                "job_id": job_id,
-                "note": "The job may still be running or may have finished on the backend; this script stopped waiting after its own time budget.",
-                "last_known_status": _compact(last_status_payload) if last_status_payload else None,
-                "source": "rfa11_render_nightly_campaign_refresh",
-                "started_at": started_at,
-                "finished_at": datetime.utcnow().isoformat(),
-            },
-            indent=2,
-            default=str,
-        )
-    )
-    return 1
 
 
 if __name__ == "__main__":
