@@ -1,4 +1,4 @@
-﻿"""
+"""
 SAVE AS:
 backend/campaign_engine/campaign_discovery_engine.py
 
@@ -752,12 +752,16 @@ class CampaignDiscoveryEngine:
     def build_records_from_universe(self, symbols: Optional[Iterable[str]] = None) -> List[Dict[str, Any]]:
         self.diagnostics = {}
         universe = self.load_universe_symbols(symbols=symbols)
+        print(f"[discovery] Universe loaded: {len(universe) if universe else 0} symbols", flush=True)
         if not universe:
             return []
 
+        print(f"[discovery] Attempting bar fetch via radar_service for {len(universe)} symbols...", flush=True)
         bars_cache = self._fetch_bars_from_radar(universe)
         if not bars_cache:
+            print(f"[discovery] radar_service bars unavailable -- falling back to direct Alpaca fetch for {len(universe)} symbols. This may take a while.", flush=True)
             bars_cache = self._fetch_bars_from_alpaca(universe)
+        print(f"[discovery] Bar fetch complete: bars available for {len(bars_cache) if bars_cache else 0} symbols", flush=True)
 
         records: List[Dict[str, Any]] = []
 
@@ -777,6 +781,8 @@ class CampaignDiscoveryEngine:
                     "bars": bars,
                 }
             )
+
+        print(f"[discovery] Records built: {len(records)} symbols have usable bars", flush=True)
 
         self.diagnostics["records_built"] = len(records)
         if records:
@@ -1040,8 +1046,15 @@ class CampaignDiscoveryEngine:
         return self._json_safe(verdict)
 
     def run_records(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
-        results = [self.evaluate_record(record) for record in records]
+        total = len(records)
+        print(f"[discovery] Starting per-record evaluation for {total} records...", flush=True)
+        results = []
+        for i, record in enumerate(records, start=1):
+            results.append(self.evaluate_record(record))
+            if i % 100 == 0 or i == total:
+                print(f"[discovery] Evaluated {i}/{total} records", flush=True)
         discovered = [row for row in results if row.get("discovered")]
+        print(f"[discovery] Evaluation complete: {len(discovered)} campaigns discovered out of {total} records", flush=True)
         return self._json_safe({
             "ok": True,
             "engine": "campaign_discovery_engine",
@@ -1092,4 +1105,3 @@ __all__ = [
     "CampaignDiscoveryRunner",
     "run_campaign_discovery",
 ]
-
