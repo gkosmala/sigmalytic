@@ -228,7 +228,7 @@ def _load_symbols_from_csv_import(max_symbols: int | None = None) -> List[str]:
     the authoritative universe source.
     """
     try:
-        import csv_import as ci
+        from backend import csv_import as ci
     except Exception as e:
         log.warning(f"csv_import unavailable for universe loading: {e}")
         return []
