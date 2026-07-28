@@ -57,6 +57,13 @@ except Exception:
 from backend.billing_router import billing_router
 from backend.legal_pages import legal_router
 from backend.preferences_router import preferences_router
+# FIX (2026-07-28): behavior_router.py is a new module -- the Behavioral
+# Intelligence tab and its trade-plan/entry/exit workflow previously called
+# five endpoints (/api/behavior/trade-plan, trade-entry, trade-exit, event,
+# dashboard/{user_id}) that had no backend implementation anywhere at all,
+# confirmed via full route audit. This is not a wiring fix like the others;
+# it's a new, working implementation of the feature.
+from backend.behavior_router import behavior_router
 # === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
 app = FastAPI(
     title="Sigmalytic V2",
@@ -3415,6 +3422,11 @@ app.include_router(legal_router)
 # confirmed the frontend actively calls /api/preferences/{user_id} in
 # three separate places, meaning this has been 404'ing this whole time.
 app.include_router(preferences_router)
+# FIX (2026-07-28): mounting the new behavior_router (see import comment
+# above) -- this is what makes the Behavioral Intelligence tab and the
+# trade-plan/entry/exit workflow actually work end-to-end for the first
+# time, rather than always falling back to their empty states.
+app.include_router(behavior_router)
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
 
 # ============================================================
