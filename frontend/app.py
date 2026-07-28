@@ -5269,8 +5269,16 @@ def handle_csv_upload(contents, filename):
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
         # POST to backend
+        # FIX (2026-07-28): this posted to /api/import/upload, which has no
+        # matching backend route (confirmed via full route audit) -- every
+        # CSV upload was silently 404ing, so nothing was ever actually
+        # imported. The real, working endpoint is /api/import/upload-generic
+        # in import_history_restore_api.py. Its response also uses different
+        # key names than this code was reading (trades_imported, not
+        # trades_closed; no broker_name field at all), so those are
+        # corrected below too.
         resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload",
+            f"{BACKEND_HTTP}/api/import/upload-generic",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             timeout=30,
         )
@@ -5278,10 +5286,9 @@ def handle_csv_upload(contents, filename):
             data = resp.json()
             a    = data.get("analysis", {})
             return html.Div([
-                html.Span(f"{data.get('broker_name','Unknown')} detected · ",
+                html.Span(f"{data.get('trades_imported',0)} trades imported · ",
                           style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"{data.get('trades_closed',0)} trades imported · "
-                          f"Win rate: {a.get('win_rate',0)}% · "
+                html.Span(f"Win rate: {a.get('win_rate',0)}% · "
                           f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
                           style={"color":WHITE}),
                 html.Br(),
