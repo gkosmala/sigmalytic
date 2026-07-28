@@ -376,7 +376,7 @@ def log_signal(sym: dict, signal_type: str):
 def _fetch_close_price(symbol: str) -> Optional[float]:
     """Fetch the most recent closing price for outcome tracking."""
     try:
-        from radar_service import RADAR_CACHE
+        from backend.radar_service import RADAR_CACHE
         cached = RADAR_CACHE.get(symbol.upper())
         if cached:
             price = cached.get("price")
@@ -1309,4 +1309,3 @@ def get_scoreboard_stats() -> dict:
     except Exception as e:
         log.warning(f"Scoreboard stats error: {e}")
         return {}
-
