@@ -55,11 +55,28 @@ def get_user_id_from_request(request: Request) -> str:
 
     # Decode JWT without verification (Supabase already verified it)
     # We only need the sub (user UUID) from the payload
+    #
+    # FIX (2026-07-28): this used to jump straight to token.split(".")[1],
+    # assuming every token has the real JWT structure (header.payload.
+    # signature, 3 dot-separated parts). The frontend deliberately sends
+    # the literal string "demo" as a sentinel for demo sessions -- that
+    # has zero dots, so indexing [1] raised IndexError every single time,
+    # logged as "JWT decode failed: list index out of range" on every
+    # request. The fallback to DEMO_USER_ID was always correct, but it
+    # was reached via an actual exception on the expected, normal case
+    # rather than a clean check. This checks the token's shape first, so
+    # demo sessions -- and any other non-JWT token -- are recognized
+    # immediately without an exception or a misleading warning log.
+    token_parts = token.split(".")
+    if len(token_parts) != 3:
+        log.debug(f"Token is not JWT-shaped ({len(token_parts)} part(s), expected 3) — using demo fallback")
+        return DEMO_USER_ID
+
     try:
         import base64, json as _json
 
         # JWT structure: header.payload.signature
-        payload_b64 = token.split(".")[1]
+        payload_b64 = token_parts[1]
 
         # Fix base64 padding
         padding = 4 - len(payload_b64) % 4
@@ -97,5 +114,3 @@ def get_auth_headers(session: dict) -> dict:
     if not token:
         return {}
     return {"Authorization": f"Bearer {token}"}
-
-
