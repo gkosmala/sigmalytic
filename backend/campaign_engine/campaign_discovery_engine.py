@@ -562,6 +562,7 @@ class CampaignDiscoveryEngine:
             cleaned = self._clean_universe(symbols, self.max_symbols)
             self.diagnostics["universe_source"] = "provided_symbols"
             self.diagnostics["universe_count"] = len(cleaned)
+            print(f"[discovery] Universe source: provided_symbols ({len(cleaned)} symbols)", flush=True)
             return cleaned
 
         env_symbols = os.getenv("SIGMALYTIC_DISCOVERY_SYMBOLS", "")
@@ -569,22 +570,38 @@ class CampaignDiscoveryEngine:
             cleaned = self._clean_universe(env_symbols.split(","), self.max_symbols)
             self.diagnostics["universe_source"] = "SIGMALYTIC_DISCOVERY_SYMBOLS"
             self.diagnostics["universe_count"] = len(cleaned)
+            print(f"[discovery] Universe source: SIGMALYTIC_DISCOVERY_SYMBOLS ({len(cleaned)} symbols)", flush=True)
             return cleaned
 
-        if load_russell1000 is not None:
+        # FIX (2026-07-28): this function already tracked WHICH source was
+        # used and WHY a fallback happened in self.diagnostics, but that
+        # dict was only ever visible in the final returned JSON -- never
+        # printed live. When a run crashed (e.g. from OOM) before finishing,
+        # that reasoning was lost entirely, even though it was the single
+        # most useful piece of information for diagnosing exactly this
+        # kind of failure. Printing it directly now.
+        if load_russell1000 is None:
+            print("[discovery] load_russell1000 is None -- the import from backend.radar_service failed earlier at module load time.", flush=True)
+        else:
             try:
                 loaded = load_russell1000()
                 cleaned = self._clean_universe(loaded, self.max_symbols)
                 if cleaned:
                     self.diagnostics["universe_source"] = "radar_service.load_russell1000"
                     self.diagnostics["universe_count"] = len(cleaned)
+                    print(f"[discovery] Universe source: radar_service.load_russell1000 ({len(cleaned)} symbols)", flush=True)
                     return cleaned
+                else:
+                    print(f"[discovery] load_russell1000() returned {len(loaded) if loaded else 0} raw symbols, 0 after cleaning -- falling through to Alpaca fallback.", flush=True)
             except Exception as exc:
                 self.diagnostics["radar_universe_error"] = str(exc)
+                print(f"[discovery] load_russell1000() raised an exception: {exc} -- falling through to Alpaca fallback.", flush=True)
 
+        print("[discovery] Using Alpaca assets fallback (last resort, requires valid Alpaca credentials)...", flush=True)
         cleaned = self._load_alpaca_assets()
         self.diagnostics["universe_source"] = "alpaca_assets_fallback"
         self.diagnostics["universe_count"] = len(cleaned)
+        print(f"[discovery] Alpaca assets fallback returned {len(cleaned)} symbols", flush=True)
         return cleaned
 
     def _fetch_bars_from_radar(self, universe: List[str]) -> Dict[str, Any]:
