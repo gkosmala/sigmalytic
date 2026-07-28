@@ -54,7 +54,7 @@ from backend.sms_alerts import maybe_send_sms
 
 # ── Behavioral Transition Engine (safe import) ────────────────────────────────
 try:
-    from behavioral_transition_engine import evaluate_behavioral_transition
+    from backend.behavioral_transition_engine import evaluate_behavioral_transition
     _BEHAVIORAL_TRANSITIONS_AVAILABLE = True
 except Exception as _bt:
     _BEHAVIORAL_TRANSITIONS_AVAILABLE = False
@@ -62,7 +62,7 @@ except Exception as _bt:
 
 # ── Historical Probability Service (safe import) ──────────────────────────────
 try:
-    from probability_service import get_probability_profile, probability_status
+    from backend.probability_service import get_probability_profile, probability_status
     _PROBABILITY_SERVICE_AVAILABLE = True
 except Exception as _ps:
     _PROBABILITY_SERVICE_AVAILABLE = False
@@ -90,7 +90,7 @@ except Exception:
 
 # ── Confluence bridge (safe import) ───────────────────────────────────────────
 try:
-    from confluence_bridge import score_symbol_ab, ab_summary as _ab_summary
+    from backend.confluence_bridge import score_symbol_ab, ab_summary as _ab_summary
     _CONFLUENCE_AVAILABLE = True
 except Exception as _ce:
     _CONFLUENCE_AVAILABLE = False
@@ -98,7 +98,7 @@ except Exception as _ce:
 
 # ── Weis Wave radar scoring (safe import) ──────────────────────────────────────
 try:
-    from weis_wave import score_weis_wave_radar
+    from backend.weis_wave import score_weis_wave_radar
     _WEIS_RADAR_AVAILABLE = True
 except Exception as _we:
     _WEIS_RADAR_AVAILABLE = False
@@ -106,7 +106,7 @@ except Exception as _we:
 
 # ── GEX engine (safe import) ───────────────────────────────────────────────────
 try:
-    from gex_engine import score_gex
+    from backend.gex_engine import score_gex
     _GEX_AVAILABLE = True
 except Exception as _ge:
     _GEX_AVAILABLE = False
@@ -114,7 +114,7 @@ except Exception as _ge:
 
 # ── Confluence engine direct import for divergence scoring ─────────────────────
 try:
-    from confluence_engine import (
+    from backend.confluence_engine import (
         ConfluenceEngine, MarketData, OptionsData, Candle, Direction
     )
     _intelligence_engine = ConfluenceEngine()
@@ -684,7 +684,7 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     bme_score  = None
     bme_regime = None
     try:
-        from behavioral_memory import evaluate as _bme_evaluate
+        from backend.behavioral_memory import evaluate as _bme_evaluate
         bme_result = _bme_evaluate(
             symbol       = symbol,
             current_price= price,
@@ -998,7 +998,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
         # ── Step 1: Try Supabase cache first (fast startup) ───────────────────
         if not force_alpaca and not _historical_bars:
             try:
-                from supabase_bars import load_bars_from_supabase, supabase_bars_available
+                from backend.supabase_bars import load_bars_from_supabase, supabase_bars_available
                 if supabase_bars_available():
                     sb_bars = load_bars_from_supabase()
                     if sb_bars:
@@ -1008,7 +1008,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                         log.info(f"Loaded {len(_historical_bars)} symbols from Supabase cache")
                         # Trigger BME training from Supabase data
                         try:
-                            from behavioral_memory import train_batch as _bme_train
+                            from backend.behavioral_memory import train_batch as _bme_train
                             trained = _bme_train(dict(_historical_bars))
                             log.info(f"BME training from Supabase: {trained}/{len(_historical_bars)} symbols")
                         except Exception as _bme_e:
@@ -1041,7 +1041,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
         # ── Step 3: Save to Supabase for next startup ─────────────────────────
         if loaded > 0:
             try:
-                from supabase_bars import save_bars_to_supabase
+                from backend.supabase_bars import save_bars_to_supabase
                 threading.Thread(
                     target=save_bars_to_supabase,
                     args=(dict(_historical_bars),),
@@ -1053,7 +1053,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
 
         # ── Trigger BME training immediately after bars load ───────────────────
         try:
-            from behavioral_memory import train_batch as _bme_train
+            from backend.behavioral_memory import train_batch as _bme_train
             trained = _bme_train(dict(_historical_bars))
             log.info(f"BME training triggered from bar refresh: {trained}/{len(_historical_bars)} symbols")
         except Exception as _bme_e:
@@ -1220,7 +1220,7 @@ def run_radar_scan():
         if spy_snap and _CONFLUENCE_AVAILABLE:
             spy_result = score_symbol("SPY", spy_snap, spy_bars)
             if spy_result and spy_result.get("change_pct") is not None:
-                from confluence_bridge import update_spy_benchmark
+                from backend.confluence_bridge import update_spy_benchmark
                 update_spy_benchmark(spy_result["change_pct"])
                 log.info(f"SPY benchmark seeded: {spy_result['change_pct']:.2f}%")
     except Exception as _e:
@@ -1793,7 +1793,7 @@ def start_radar_scheduler():
         trigger="cron", hour=21, minute=15, id="grade_signals",
     )
     try:
-        from snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
+        from backend.snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
         _scheduler.add_job(
             lambda: write_intraday_snapshots(RADAR_CACHE),
             trigger="interval", seconds=300, id="snapshot_intraday",
