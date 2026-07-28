@@ -225,10 +225,15 @@ class NightlyCampaignPipeline:
             }
 
     def run(self):
+        print(f"[nightly_pipeline] Starting discovery stage (timeframe={self.timeframe})...", flush=True)
         discovery_results = self._run_discovery_stage()
+        discovered_count = discovery_results.get("campaigns_discovered", "?") if isinstance(discovery_results, dict) else "?"
+        discovery_ok = discovery_results.get("ok") if isinstance(discovery_results, dict) else None
+        print(f"[nightly_pipeline] Discovery stage finished: ok={discovery_ok}, campaigns_discovered={discovered_count}", flush=True)
 
         campaigns = self.store.get_active_campaigns(timeframe=self.timeframe)
         active_campaigns_available = len(campaigns)
+        print(f"[nightly_pipeline] {active_campaigns_available} active campaigns available before filtering", flush=True)
 
         if self.symbols:
             allowed_symbols = {str(symbol or "").upper() for symbol in self.symbols}
@@ -242,9 +247,21 @@ class NightlyCampaignPipeline:
             campaigns = campaigns[: max(0, int(self.max_symbols))]
 
         active_campaigns_selected = len(campaigns)
+        print(f"[nightly_pipeline] {active_campaigns_selected} campaigns selected for processing -- starting per-campaign loop", flush=True)
         results = []
 
-        for campaign in campaigns:
+        # FIX (2026-07-27): this loop previously had zero logging of any
+        # kind. When a nightly run appeared stuck, there was no way to
+        # tell whether it was genuinely hung or simply slow (this loop
+        # hydrates evidence, computes a state transition, AND saves to
+        # the database individually for every single campaign -- real
+        # per-campaign network calls, not a single batched operation).
+        # Printing progress every 25 campaigns means the actual logs now
+        # show real, visible signs of life during a run, rather than
+        # total silence for however long the run takes.
+        progress_log_interval = 25
+
+        for i, campaign in enumerate(campaigns, start=1):
             hydrated_campaign = _hydrate_campaign_evidence(campaign)
             signals = _build_signals_from_campaign(hydrated_campaign)
 
@@ -283,6 +300,15 @@ class NightlyCampaignPipeline:
                     "evidence_updated_at": payload.get("evidence_updated_at"),
                 }
             )
+
+            if i % progress_log_interval == 0 or i == active_campaigns_selected:
+                print(
+                    f"[nightly_pipeline] Processed {i}/{active_campaigns_selected} campaigns "
+                    f"({(i / active_campaigns_selected * 100):.1f}%)",
+                    flush=True,
+                )
+
+        print(f"[nightly_pipeline] Pipeline run complete: {len(results)} campaigns processed", flush=True)
 
         return {
             "ok": True,
