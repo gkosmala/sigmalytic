@@ -201,6 +201,47 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ------------------------------------------------------------------
+# Universe-loading compatibility export
+# backend.radar_service._load_symbols_from_csv_import() looks for one of
+# several function names (get_symbols, load_symbols, etc.) on this module.
+# (Re-applied 2026-07-27 -- this was lost once already in a regression;
+# confirmed missing again via real production logs showing "csv_import
+# unavailable" and the universe falling back to the generic Alpaca list.)
+# ------------------------------------------------------------------
+
+def get_symbols() -> list[str]:
+    """
+    Reads the curated universe CSV this module's own main() writes
+    (backend/data/russell1000.csv by default) and returns the symbol list.
+    Returns [] (not an exception) if the file doesn't exist yet -- the
+    caller already has its own fallback for that case.
+    """
+    csv_path = Path(__file__).parent / "data" / "russell1000.csv"
+    if not csv_path.exists():
+        return []
+
+    symbols: List[str] = []
+    try:
+        with csv_path.open("r", newline="") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+    except Exception:
+        return []
+
+    for row in rows:
+        if not row:
+            continue
+        value = str(row[0]).strip().upper()
+        if not value or value == "SYMBOL":
+            continue
+        symbols.append(value)
+
+    return symbols
+
+
 # ------------------------------------------------------------------
 # FastAPI compatibility export
 # backend.main imports: from csv_import import csv_router
