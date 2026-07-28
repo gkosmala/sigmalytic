@@ -14,6 +14,7 @@ resend==0.7.0
 twilio>=8.0.0
 redis
 supabase
+PyJWT>=2.8.0
 scipy
 scikit-learn
 stripe>=7.0.0

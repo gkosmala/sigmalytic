@@ -498,32 +498,53 @@ def probability_metric_pills(row):
         html.Div([html.Span("Matches ", style={"color":WHITE}), html.B(_fmt_int(p["matches"]), style={"color":WHITE})], className="prob-pill"),
     ], style={"display":"flex","gap":"8px","flexWrap":"wrap","marginTop":"10px"})
 
+def _current_user_id(session=None):
+    """Real logged-in user id if available, else the shared demo id."""
+    return (session or {}).get("user_id") or USER_ID
+
+
+def _auth_headers(session=None):
+    """Authorization header for the logged-in user, or empty for demo/no session."""
+    token = (session or {}).get("access_token", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def _track(event_type, symbol, price=None, timeframe=None, regime=None,
-           decision_score=None, decision_status=None, metadata=None):
-    """Fire-and-forget behavioral event to backend."""
+           decision_score=None, decision_status=None, metadata=None, session=None):
+    """Fire-and-forget behavioral event to backend.
+
+    SECURITY/CORRECTNESS FIX (2026-07-28): this used to always send the
+    hardcoded USER_ID constant ("demo_user_001") no matter who was actually
+    logged in -- meaning every real user's behavior events were being
+    written into the shared demo account instead of their own. Now takes
+    the caller's session and sends that user's real id and auth token
+    (the backend verifies the token independently either way, but sending
+    the right identity is what makes a logged-in user's own dashboard
+    show their own data).
+    """
     try:
         req.post(f"{BACKEND_HTTP}/api/behavior/event", json={
-            "user_id": USER_ID, "event_type": event_type, "symbol": symbol,
+            "user_id": _current_user_id(session), "event_type": event_type, "symbol": symbol,
             "price": price, "timeframe": timeframe, "market_regime": regime,
             "decision_score": decision_score, "decision_status": decision_status,
             "metadata": metadata or {},
-        }, timeout=2)
+        }, headers=_auth_headers(session), timeout=2)
     except Exception:
         pass
 
-def _get(path, **params):
+def _get(path, headers=None, **params):
     def _do_fetch():
         try:
-            r = req.get(f"{BACKEND_HTTP}{path}", params=params, timeout=15)
+            r = req.get(f"{BACKEND_HTTP}{path}", params=params, headers=headers or {}, timeout=15)
             return r.json() if r.ok else {}
         except Exception:
             return {}
 
-    if shared_cache is None or params:
-        # Don't cache calls with extra query params -- the cache key is
-        # just the path string, so a parameterized call could silently
-        # return another call's cached result. Rare in this codebase, but
-        # safer to just fetch fresh in that case.
+    if shared_cache is None or params or headers:
+        # Don't cache calls with extra query params or per-user auth headers --
+        # the cache key is just the path string, so a parameterized/authenticated
+        # call could silently return another call's (or another user's!)
+        # cached result. Rare in this codebase, but safer to just fetch fresh.
         return _do_fetch()
 
     return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=90)
@@ -959,9 +980,9 @@ def build_weis_gamma_status_center_panel():
     })
 
 
-def _post(path, body):
+def _post(path, body, headers=None):
     try:
-        r = req.post(f"{BACKEND_HTTP}{path}", json=body, timeout=4)
+        r = req.post(f"{BACKEND_HTTP}{path}", json=body, headers=headers or {}, timeout=4)
         return r.json() if r.ok else {}
     except Exception:
         return {}
@@ -1634,8 +1655,10 @@ def _behavior_empty_state():
     ])
 
 
-def build_behavior_tab():
-    dash_data = _get(f"/api/behavior/dashboard/{USER_ID}")
+def build_behavior_tab(session=None):
+    # FIX (2026-07-28): was always fetching demo_user_001's dashboard
+    # regardless of who was actually logged in.
+    dash_data = _get(f"/api/behavior/dashboard/{_current_user_id(session)}", headers=_auth_headers(session))
     if not dash_data:
         return card([note_box("No behavioral data yet. Start tracking trades to build your profile.", "blue")])
 
@@ -4732,9 +4755,9 @@ app.layout = html.Div([
     Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
     Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
-    State("s-live","data"), prevent_initial_call=True,
+    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
 )
-def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
+def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
     ctx = callback_context
     if not ctx.triggered:
         return (no_update,)*9
@@ -4748,7 +4771,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
                regime=_regime_from_live(live),
                decision_score=live.get("decision",{}).get("score"),
-               decision_status=live.get("decision",{}).get("status"))
+               decision_status=live.get("decision",{}).get("status"), session=session)
     s0=_tf_btn_style("1m",new_tf); s1=_tf_btn_style("5m",new_tf); s2=_tf_btn_style("15m",new_tf)
     s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
     return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
@@ -4763,16 +4786,17 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     State("ticker-input","value"),
     State("s-live","data"),
     State("s-tf","data"),
+    State("s-session","data"),
     prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live, tf):
+def load_symbol(_, ticker, live, tf, session):
     clean = sanitize_symbol(ticker or "")
     if not clean:
         return no_update, no_update, no_update
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
-           decision_score=live.get("decision",{}).get("score") if live else None)
+           decision_score=live.get("decision",{}).get("score") if live else None, session=session)
 
     fresh = fetch_real_candles(clean, tf or "5m")
     return clean, clean, fresh
@@ -4977,7 +5001,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
         return main, HIDDEN, no_update, no_update
 
     if tab == "command":
-        open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
+        open_trade  = _get(f"/api/behavior/open-trade/{_current_user_id(session)}", headers=_auth_headers(session))
         trade_plan  = _build_trade_plan_contents(live)
         active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
         return (html.Div([
@@ -5010,7 +5034,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 ])
     elif tab=="feed":          main = build_feed_tab(live,live_mode)
     elif tab=="performance": main = build_performance_tab(live)
-    elif tab=="behavior":    main = build_behavior_tab()
+    elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=session)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
@@ -5124,9 +5148,9 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     State("tp-direction","data"), State("tp-entry","value"),
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"), State("tp-notes","value"),
-    State("s-live","data"), prevent_initial_call=True,
+    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
 )
-def save_plan(n,direction,entry,stop,target,size,notes,live):
+def save_plan(n,direction,entry,stop,target,size,notes,live,session):
     if not n: return no_update, no_update
     try:
         price  = live["price"] if live else 0
@@ -5134,14 +5158,14 @@ def save_plan(n,direction,entry,stop,target,size,notes,live):
         score  = live.get("decision",{}).get("score",0) if live else 0
         regime = _regime_from_live(live) if live else "neutral"
         resp = _post("/api/behavior/trade-plan",{
-            "user_id":USER_ID,"symbol":symbol,"direction":direction,
+            "user_id":_current_user_id(session),"symbol":symbol,"direction":direction,
             "planned_entry":float(entry),"planned_stop":float(stop),
             "planned_target":float(target),"planned_size":float(size),
             "setup_reason":notes or "","signal_score_at_plan":score,"regime_at_plan":regime,
-        })
+        }, headers=_auth_headers(session))
         plan_id = resp.get("plan_id")
         _track("trade_planned",symbol,price=price,regime=regime,decision_score=score,
-               metadata={"plan_id":plan_id,"direction":direction})
+               metadata={"plan_id":plan_id,"direction":direction}, session=session)
         return f"Plan saved: {plan_id}", plan_id
     except Exception as e:
         return f"Error: {e}", no_update
@@ -5153,9 +5177,9 @@ def save_plan(n,direction,entry,stop,target,size,notes,live):
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"),
     State("s-current-plan-id","data"),
-    State("s-live","data"), prevent_initial_call=True,
+    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
 )
-def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
+def enter_trade(n,direction,entry,stop,target,size,plan_id,live,session):
     if not n: return no_update
     try:
         price  = live["price"] if live else 0
@@ -5163,14 +5187,14 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
         score  = live.get("decision",{}).get("score",0) if live else 0
         regime = _regime_from_live(live) if live else "neutral"
         resp = _post("/api/behavior/trade-entry",{
-            "user_id":USER_ID,"symbol":symbol,"direction":direction,
+            "user_id":_current_user_id(session),"symbol":symbol,"direction":direction,
             "entry_price":float(entry),"stop_price":float(stop) if stop else None,
             "target_price":float(target) if target else None,"size":float(size),
             "plan_id":plan_id,"market_regime_entry":regime,"signal_score_entry":score,
-        })
+        }, headers=_auth_headers(session))
         trade_id = resp.get("trade_id")
         _track("trade_entered",symbol,price=float(entry),regime=regime,decision_score=score,
-               metadata={"trade_id":trade_id,"direction":direction})
+               metadata={"trade_id":trade_id,"direction":direction}, session=session)
         return f"Trade entered: {trade_id}"
     except Exception as e:
         return f"Error: {e}"
@@ -5181,9 +5205,9 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
     State("s-active-trade-id","data"),
     State("exit-flags","value"),
     State("exit-notes","value"),
-    State("s-live","data"), prevent_initial_call=True,
+    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
 )
-def exit_trade(n,trade_id,flags,notes,live):
+def exit_trade(n,trade_id,flags,notes,live,session):
     if not n or not trade_id: return no_update
     try:
         price  = live["price"] if live else 0
@@ -5199,10 +5223,10 @@ def exit_trade(n,trade_id,flags,notes,live):
             "premature_exit":     "premature_exit"      in flags,
             "added_size_adverse": "added_size_adverse"  in flags,
             "timeframe_changed":  "timeframe_changed"   in flags,
-        })
+        }, headers=_auth_headers(session))
         scores = resp.get("scores",{})
         _track("trade_exited",live.get("symbol",""),price=price,regime=regime,decision_score=score,
-               metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")})
+               metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")}, session=session)
         return (f"Exited · P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) · "
                 f"Score: {scores.get('composite',0):.0f} · Flag: {resp.get('behavior_flag','—')}")
     except Exception as e:

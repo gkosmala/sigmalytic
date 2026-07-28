@@ -40,12 +40,28 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+
+from backend.supabase_isolation import get_user_id_from_request
 
 log = logging.getLogger("preferences")
 
 preferences_router = APIRouter(prefix="/api/preferences", tags=["preferences"])
+
+
+def _require_self(user_id: str, authenticated_user_id: str) -> None:
+    """
+    SECURITY FIX (2026-07-28): these endpoints used to take user_id
+    straight from the URL with no check at all that the caller actually
+    *is* that user -- anyone could read or overwrite anyone else's alert
+    preferences and watchlist just by knowing their user_id. Now every
+    endpoint requires a verified session (see supabase_isolation.py) and
+    confirms the path's user_id matches the authenticated identity before
+    doing anything.
+    """
+    if user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to access this user's preferences")
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
@@ -107,8 +123,9 @@ def _supabase():
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @preferences_router.get("/{user_id}")
-def get_preferences(user_id: str):
+def get_preferences(user_id: str, authenticated_user_id: str = Depends(get_user_id_from_request)):
     """Get preferences for a user. Returns defaults if not found."""
+    _require_self(user_id, authenticated_user_id)
     try:
         response = (
             _supabase()
@@ -133,8 +150,9 @@ def get_preferences(user_id: str):
 
 
 @preferences_router.post("/{user_id}")
-def create_preferences(user_id: str, payload: PreferencesCreate):
+def create_preferences(user_id: str, payload: PreferencesCreate, authenticated_user_id: str = Depends(get_user_id_from_request)):
     """Create (or fully replace) preferences for a user."""
+    _require_self(user_id, authenticated_user_id)
     try:
         row = {
             "user_id":           user_id,
@@ -159,8 +177,9 @@ def create_preferences(user_id: str, payload: PreferencesCreate):
 
 
 @preferences_router.patch("/{user_id}")
-def update_preferences(user_id: str, payload: PreferencesUpdate):
+def update_preferences(user_id: str, payload: PreferencesUpdate, authenticated_user_id: str = Depends(get_user_id_from_request)):
     """Patch preferences -- only updates provided fields."""
+    _require_self(user_id, authenticated_user_id)
     updates: Dict[str, Any] = {}
 
     if payload.delivery_mode     is not None: updates["delivery_mode"]     = payload.delivery_mode

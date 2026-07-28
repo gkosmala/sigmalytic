@@ -7,11 +7,27 @@ Per-user Supabase client dependency for FastAPI.
 HOW IT WORKS
 ────────────
 - Real users: Dash passes their Supabase JWT as Authorization: Bearer <token>
-  FastAPI extracts it and creates a Supabase client scoped to that JWT.
-  Postgres RLS then enforces auth.uid() = user_id on every query.
+  FastAPI verifies the token's signature (not just its contents) using the
+  project's Supabase JWT secret, then uses the verified 'sub' claim as the
+  user's identity.
 
-- Demo users: No JWT is passed. Backend falls back to demo_user_001
-  using the service role / anon key with no RLS filtering.
+- Demo users: No JWT is passed (or the literal sentinel "demo" is sent).
+  Backend falls back to demo_user_001.
+
+SECURITY FIX (2026-07-28): this previously base64-decoded the JWT payload
+and trusted whatever 'sub' claim was inside it WITHOUT verifying the
+signature at all -- the comment here used to say "Supabase already
+verified it," but nothing in this code path actually checked that. Anyone
+could construct a fake token with any 'sub' (user UUID) they wanted and
+the backend would treat the request as that user, since preferences,
+journal, and behavior endpoints use the Supabase *service role* key
+(which bypasses Postgres RLS) keyed off whatever user_id this function
+returned. This is a real account-isolation vulnerability: one user could
+read or write another user's data. Fixed by actually verifying the
+token's signature against SUPABASE_JWT_SECRET (Supabase dashboard ->
+Settings -> API -> JWT Settings -> JWT Secret) before trusting anything
+in it, and rejecting (401) rather than silently downgrading to demo when
+a JWT-shaped token fails verification.
 
 USAGE IN ENDPOINTS
 ──────────────────
@@ -22,27 +38,34 @@ async def my_endpoint(
     request: Request,
     user_id: str = Depends(get_user_id_from_request),
 ):
-    # user_id is now either the real Supabase UUID or "demo_user_001"
+    # user_id is now either a cryptographically verified Supabase UUID,
+    # or "demo_user_001" for demo sessions.
     ...
 """
 
 import os
 import logging
-from fastapi import Request
+from fastapi import Request, HTTPException
 
 log = logging.getLogger("supabase_isolation")
 
 DEMO_USER_ID = "demo_user_001"
 
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+
 
 def get_user_id_from_request(request: Request) -> str:
     """
-    FastAPI dependency — extracts user_id from the Authorization header.
+    FastAPI dependency — extracts and verifies user_id from the Authorization header.
 
-    - If header is present and valid: decodes JWT and returns Supabase user UUID
-    - If header is missing or invalid: returns "demo_user_001" (demo fallback)
-
-    This keeps demo sessions working without JWT while isolating real users.
+    - Missing header, or the literal sentinel "demo": returns DEMO_USER_ID.
+    - Present and a valid, signature-verified Supabase JWT: returns the
+      real user UUID from the verified 'sub' claim.
+    - Present but fails verification (forged, expired, wrong secret):
+      raises 401. This is deliberate -- silently falling back to demo
+      here would hide bugs and, more importantly, would mean a bad actor
+      could probe the API with garbage tokens with no signal anything
+      was wrong.
     """
     auth_header = request.headers.get("Authorization", "")
 
@@ -50,52 +73,34 @@ def get_user_id_from_request(request: Request) -> str:
         return DEMO_USER_ID
 
     token = auth_header.split(" ", 1)[1].strip()
-    if not token:
+    if not token or token == "demo":
         return DEMO_USER_ID
 
-    # Decode JWT without verification (Supabase already verified it)
-    # We only need the sub (user UUID) from the payload
-    #
-    # FIX (2026-07-28): this used to jump straight to token.split(".")[1],
-    # assuming every token has the real JWT structure (header.payload.
-    # signature, 3 dot-separated parts). The frontend deliberately sends
-    # the literal string "demo" as a sentinel for demo sessions -- that
-    # has zero dots, so indexing [1] raised IndexError every single time,
-    # logged as "JWT decode failed: list index out of range" on every
-    # request. The fallback to DEMO_USER_ID was always correct, but it
-    # was reached via an actual exception on the expected, normal case
-    # rather than a clean check. This checks the token's shape first, so
-    # demo sessions -- and any other non-JWT token -- are recognized
-    # immediately without an exception or a misleading warning log.
-    token_parts = token.split(".")
-    if len(token_parts) != 3:
-        log.debug(f"Token is not JWT-shaped ({len(token_parts)} part(s), expected 3) — using demo fallback")
-        return DEMO_USER_ID
+    if not SUPABASE_JWT_SECRET:
+        # Fail closed, not open: if we can't verify signatures at all,
+        # we must not trust any non-demo token's claimed identity.
+        log.error("SUPABASE_JWT_SECRET not configured — rejecting authenticated request")
+        raise HTTPException(503, "Authentication is not configured on this server")
 
     try:
-        import base64, json as _json
+        import jwt as pyjwt
 
-        # JWT structure: header.payload.signature
-        payload_b64 = token_parts[1]
-
-        # Fix base64 padding
-        padding = 4 - len(payload_b64) % 4
-        if padding != 4:
-            payload_b64 += "=" * padding
-
-        payload = _json.loads(base64.b64decode(payload_b64).decode("utf-8"))
-        user_id = payload.get("sub", "")
-
-        if user_id:
-            log.debug(f"Authenticated user: {user_id[:8]}…")
-            return user_id
-        else:
-            log.warning("JWT payload missing 'sub' field — falling back to demo")
-            return DEMO_USER_ID
-
+        payload = pyjwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
     except Exception as e:
-        log.warning(f"JWT decode failed: {e} — falling back to demo")
-        return DEMO_USER_ID
+        log.warning(f"JWT verification failed: {e}")
+        raise HTTPException(401, "Invalid or expired session — please log in again")
+
+    user_id = payload.get("sub", "")
+    if not user_id:
+        raise HTTPException(401, "Invalid session token")
+
+    log.debug(f"Authenticated user: {user_id[:8]}…")
+    return user_id
 
 
 def get_auth_headers(session: dict) -> dict:

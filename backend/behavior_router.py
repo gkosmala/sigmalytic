@@ -46,8 +46,10 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+
+from backend.supabase_isolation import get_user_id_from_request
 
 log = logging.getLogger("behavior")
 
@@ -173,11 +175,14 @@ def _score_and_flag(payload: TradeExitRequest, pnl: float) -> tuple[float, str]:
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @behavior_router.post("/trade-plan")
-def create_trade_plan(payload: TradePlanRequest):
+def create_trade_plan(payload: TradePlanRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    # SECURITY FIX (2026-07-28): use the verified identity from the session,
+    # not whatever user_id the client happened to put in the request body --
+    # a client could otherwise write trade plans into any other user's account.
     plan_id = str(uuid.uuid4())
     row = {
         "plan_id": plan_id,
-        "user_id": payload.user_id,
+        "user_id": authenticated_user_id,
         "symbol": payload.symbol,
         "direction": payload.direction,
         "planned_entry": payload.planned_entry,
@@ -198,12 +203,12 @@ def create_trade_plan(payload: TradePlanRequest):
 
 
 @behavior_router.post("/trade-entry")
-def create_trade_entry(payload: TradeEntryRequest):
+def create_trade_entry(payload: TradeEntryRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
     trade_id = str(uuid.uuid4())
     row = {
         "trade_id": trade_id,
         "plan_id": payload.plan_id,
-        "user_id": payload.user_id,
+        "user_id": authenticated_user_id,
         "symbol": payload.symbol,
         "direction": payload.direction,
         "entry_price": payload.entry_price,
@@ -224,7 +229,7 @@ def create_trade_entry(payload: TradeEntryRequest):
 
 
 @behavior_router.post("/trade-exit")
-def exit_trade(payload: TradeExitRequest):
+def exit_trade(payload: TradeExitRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
     sb = _supabase()
     try:
         existing = (
@@ -242,6 +247,13 @@ def exit_trade(payload: TradeExitRequest):
     if not rows:
         raise HTTPException(404, "Trade not found")
     trade = rows[0]
+
+    # SECURITY FIX (2026-07-28): confirm this trade actually belongs to the
+    # authenticated caller before letting them modify it -- otherwise any
+    # user who learned or guessed a trade_id could close out someone else's
+    # open trade and write over their exit data.
+    if trade.get("user_id") != authenticated_user_id:
+        raise HTTPException(404, "Trade not found")
 
     entry_price = float(trade.get("entry_price") or 0)
     size = float(trade.get("size") or 0)
@@ -288,12 +300,12 @@ def exit_trade(payload: TradeExitRequest):
 
 
 @behavior_router.post("/event")
-def log_behavior_event(payload: BehaviorEventRequest):
+def log_behavior_event(payload: BehaviorEventRequest, authenticated_user_id: str = Depends(get_user_id_from_request)):
     """Fire-and-forget telemetry. Failures here should never break the caller
     (the frontend already wraps this call in try/except), but we still try
     to persist it for real, rather than silently discarding it."""
     row = {
-        "user_id": payload.user_id,
+        "user_id": authenticated_user_id,
         "event_type": payload.event_type,
         "symbol": payload.symbol,
         "price": payload.price,
@@ -313,7 +325,9 @@ def log_behavior_event(payload: BehaviorEventRequest):
 
 
 @behavior_router.get("/dashboard/{user_id}")
-def get_behavior_dashboard(user_id: str):
+def get_behavior_dashboard(user_id: str, authenticated_user_id: str = Depends(get_user_id_from_request)):
+    if user_id != authenticated_user_id:
+        raise HTTPException(403, "Not authorized to view this user's dashboard")
     try:
         result = (
             _supabase()
