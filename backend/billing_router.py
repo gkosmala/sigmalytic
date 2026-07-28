@@ -273,6 +273,30 @@ async def customer_portal(payload: PortalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# FIX (2026-07-28): frontend/billing_ui.py's "Manage Plan" button calls
+# POST /api/v1/billing/{user_id}/portal (user_id in the path, no body) and
+# reads the result from a top-level "url" key. The only portal endpoint that
+# existed, POST /api/billing/portal, expects user_id in a JSON body and
+# returns "portal_url" instead of "url" -- a genuine mismatch confirmed via
+# full route audit (this route was simply never hit by the live frontend at
+# all). Adding a route matching the frontend's real contract here, reusing
+# the same Stripe portal-session logic rather than duplicating it.
+@billing_router.post("/api/v1/billing/{user_id}/portal")
+async def customer_portal_by_path(user_id: str):
+    data        = _get_subscription(user_id)
+    customer_id = data.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=404, detail="No Stripe customer found")
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=customer_id,
+            return_url=f"{FRONTEND_URL}?billing=portal_return",
+        )
+        return {"url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── GET /api/billing/config ───────────────────────────────────────────────────
 @billing_router.get("/api/billing/config")
 async def billing_config():

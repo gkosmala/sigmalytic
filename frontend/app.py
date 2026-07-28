@@ -1408,7 +1408,16 @@ EXPORT_INSTRUCTIONS = {
 
 def build_import_tab():
     # Fetch latest analysis if exists
-    analysis = _get(f"/api/import/analysis/{USER_ID}")
+    # FIX (2026-07-28): this previously called /api/import/analysis/{USER_ID},
+    # which has no matching backend route (confirmed via full route audit) and
+    # always silently returned {}. The working endpoint that actually returns
+    # this data is /api/trades/history in import_history_restore_api.py.
+    # Its payload nests the actual numbers (total_trades, win_rate, etc.)
+    # under an "analysis" key rather than at the top level, so unwrap that
+    # here -- the rest of this function reads analysis.get("total_trades"),
+    # analysis.get("win_rate"), etc. directly.
+    _history_payload = _get("/api/trades/history")
+    analysis = (_history_payload or {}).get("analysis") or {}
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
