@@ -84,6 +84,35 @@ def _db():
     return psycopg2.connect(DATABASE_URL)
 
 
+# FIX (2026-07-28): get_journal_entries() and get_trader_profile() below
+# used to go through _db() (raw psycopg2 + DATABASE_URL) -- the one
+# credential path that resisted every fix attempt tonight (fresh
+# passwords, pooler vs direct connection, IPv4 vs IPv6), while every
+# other part of this app reads/writes Supabase successfully via the
+# Supabase client (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY), which has
+# worked reliably all session. Rather than keep chasing that one
+# specific credential, these two read functions now use the same proven
+# client method as everything else. This also means, if these tables
+# don't exist yet in Supabase (very possible -- no trade has ever
+# actually been logged in this environment), the resulting error will be
+# a clear, specific PostgREST message instead of an opaque connection
+# failure.
+_supabase_client = None
+
+
+def _supabase():
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or ""
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set")
+    from supabase import create_client
+    _supabase_client = create_client(supabase_url, supabase_key)
+    return _supabase_client
+
+
 def _ensure_tables():
     """Create trade_journal and trader_profile tables if they don't exist."""
     try:
@@ -509,54 +538,51 @@ def get_journal_entries(
 ) -> list[dict]:
     """Fetch journal entries for a user."""
     try:
-        conn = _db()
-        cur  = conn.cursor()
+        columns = (
+            "journal_id, symbol, direction, entry_date, entry_price, "
+            "exit_date, exit_price, shares, position_value, pnl, pnl_pct, "
+            "hold_days, tier, entry_quality_grade, exit_quality_grade, "
+            "patience_score, fomo_score, sizing_grade, status, notes, "
+            "signal_id, campaign_id, created_at"
+        )
 
-        where = "WHERE user_id = %s"
-        params: list = [user_id]
+        query = (
+            _supabase()
+            .table("trade_journal")
+            .select(columns)
+            .eq("user_id", user_id)
+        )
         if status:
-            where += " AND status = %s"
-            params.append(status)
+            query = query.eq("status", status)
 
-        cur.execute(f"""
-            SELECT journal_id, symbol, direction, entry_date, entry_price,
-                   exit_date, exit_price, shares, position_value, pnl, pnl_pct,
-                   hold_days, tier, entry_quality_grade, exit_quality_grade,
-                   patience_score, fomo_score, sizing_grade, status, notes,
-                   signal_id, campaign_id, created_at
-            FROM trade_journal {where}
-            ORDER BY created_at DESC LIMIT %s
-        """, params + [limit])
-
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
+        response = query.order("created_at", desc=True).limit(limit).execute()
+        rows = response.data or []
 
         return [
             {
-                "journal_id":          r[0],
-                "symbol":              r[1],
-                "direction":           r[2],
-                "entry_date":          str(r[3]) if r[3] else None,
-                "entry_price":         float(r[4]) if r[4] else 0,
-                "exit_date":           str(r[5]) if r[5] else None,
-                "exit_price":          float(r[6]) if r[6] else 0,
-                "shares":              r[7] or 0,
-                "position_value":      float(r[8]) if r[8] else 0,
-                "pnl":                 float(r[9]) if r[9] else 0,
-                "pnl_pct":             float(r[10]) if r[10] else 0,
-                "hold_days":           r[11] or 0,
-                "tier":                r[12],
-                "entry_quality_grade": r[13],
-                "exit_quality_grade":  r[14],
-                "patience_score":      float(r[15]) if r[15] else 0,
-                "fomo_score":          float(r[16]) if r[16] else 0,
-                "sizing_grade":        r[17],
-                "status":              r[18],
-                "notes":               r[19],
-                "signal_id":           r[20],
-                "campaign_id":         r[21],
-                "created_at":          str(r[22]) if r[22] else None,
+                "journal_id":          r.get("journal_id"),
+                "symbol":              r.get("symbol"),
+                "direction":           r.get("direction"),
+                "entry_date":          str(r["entry_date"]) if r.get("entry_date") else None,
+                "entry_price":         float(r["entry_price"]) if r.get("entry_price") else 0,
+                "exit_date":           str(r["exit_date"]) if r.get("exit_date") else None,
+                "exit_price":          float(r["exit_price"]) if r.get("exit_price") else 0,
+                "shares":              r.get("shares") or 0,
+                "position_value":      float(r["position_value"]) if r.get("position_value") else 0,
+                "pnl":                 float(r["pnl"]) if r.get("pnl") else 0,
+                "pnl_pct":             float(r["pnl_pct"]) if r.get("pnl_pct") else 0,
+                "hold_days":           r.get("hold_days") or 0,
+                "tier":                r.get("tier"),
+                "entry_quality_grade": r.get("entry_quality_grade"),
+                "exit_quality_grade":  r.get("exit_quality_grade"),
+                "patience_score":      float(r["patience_score"]) if r.get("patience_score") else 0,
+                "fomo_score":          float(r["fomo_score"]) if r.get("fomo_score") else 0,
+                "sizing_grade":        r.get("sizing_grade"),
+                "status":              r.get("status"),
+                "notes":               r.get("notes"),
+                "signal_id":           r.get("signal_id"),
+                "campaign_id":         r.get("campaign_id"),
+                "created_at":          str(r["created_at"]) if r.get("created_at") else None,
             }
             for r in rows
         ]
@@ -568,27 +594,20 @@ def get_journal_entries(
 def get_trader_profile(user_id: str) -> dict:
     """Get the behavioral profile for a trader."""
     try:
-        conn = _db()
-        cur  = conn.cursor()
-        cur.execute(
-            "SELECT * FROM trader_profile WHERE user_id = %s",
-            (user_id,)
+        response = (
+            _supabase()
+            .table("trader_profile")
+            .select("*")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
         )
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
+        rows = response.data or []
 
-        if not row:
+        if not rows:
             return {"user_id": user_id, "total_trades": 0, "message": "No trades logged yet."}
 
-        cols = [
-            "user_id", "total_trades", "open_trades", "win_rate", "avg_pnl_pct",
-            "avg_hold_days", "avg_entry_quality", "avg_exit_quality",
-            "avg_patience_score", "avg_fomo_score", "entry_grade_dist",
-            "exit_grade_dist", "behavioral_trend", "strongest_pattern",
-            "weakest_pattern", "updated_at",
-        ]
-        return dict(zip(cols, row))
+        return rows[0]
 
     except Exception as exc:
         log.error("Get profile error for %s: %s", user_id, exc)
@@ -681,4 +700,3 @@ def _update_trader_profile(entry_price_unused: Any, journal_id: str) -> None:
 
     except Exception as exc:
         log.error("Profile update error: %s", exc)
-
