@@ -62,9 +62,10 @@ except Exception:
 
 try:
     from backend.radar_service import load_russell1000, fetch_bars_batch
-except Exception:
+except Exception as _radar_service_import_error:
     load_russell1000 = None
     fetch_bars_batch = None
+    print(f"[discovery] from backend.radar_service import ... FAILED: {_radar_service_import_error}", flush=True)
 
 
 @dataclass
