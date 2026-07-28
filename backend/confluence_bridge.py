@@ -25,7 +25,7 @@ log = logging.getLogger("confluence_bridge")
 
 # ── Person's Pivots (safe import) ─────────────────────────────────────────────
 try:
-    from persons_pivots import calculate_from_bars, get_pivot_levels_for_chart
+    from backend.persons_pivots import calculate_from_bars, get_pivot_levels_for_chart
     _PERSONS_PIVOTS_AVAILABLE = True
 except Exception as _ppe:
     _PERSONS_PIVOTS_AVAILABLE = False
@@ -33,7 +33,7 @@ except Exception as _ppe:
 
 # ── Weis Wave (safe import) ────────────────────────────────────────────────────
 try:
-    from weis_wave import score_weis_wave, score_weis_wave_enhanced
+    from backend.weis_wave import score_weis_wave, score_weis_wave_enhanced
     _WEIS_AVAILABLE = True
 except Exception as _we:
     _WEIS_AVAILABLE = False
@@ -41,7 +41,7 @@ except Exception as _we:
 
 # ── Hurst Cycle (safe import) ──────────────────────────────────────────────────
 try:
-    from hurst_cycle import score_hurst_cycle
+    from backend.hurst_cycle import score_hurst_cycle
     _HURST_AVAILABLE = True
 except Exception as _he:
     _HURST_AVAILABLE = False
@@ -49,7 +49,7 @@ except Exception as _he:
 
 # ── GEX Engine (safe import) ───────────────────────────────────────────────────
 try:
-    from gex_engine import score_gex
+    from backend.gex_engine import score_gex
     _GEX_AVAILABLE = True
 except Exception as _ge:
     _GEX_AVAILABLE = False
@@ -57,7 +57,7 @@ except Exception as _ge:
 
 # ── Behavioral Memory Engine (safe import) ─────────────────────────────────────
 try:
-    from behavioral_memory import evaluate as bme_evaluate, train_memory_bank
+    from backend.behavioral_memory import evaluate as bme_evaluate, train_memory_bank
     _BME_AVAILABLE = True
 except Exception as _bme:
     _BME_AVAILABLE = False
@@ -80,7 +80,7 @@ def _get_engine():
     if _confluence_import_error is not None:
         return None
     try:
-        from confluence_engine import ConfluenceEngine
+        from backend.confluence_engine import ConfluenceEngine
         _confluence_engine_instance = ConfluenceEngine()
         log.info("ConfluenceEngine loaded successfully.")
         return _confluence_engine_instance
@@ -143,7 +143,7 @@ def _fetch_intraday_bars_cached(symbol: str) -> List[dict]:
 def _bars_to_candles(bars: List[dict]):
     """Convert Alpaca bar dicts to Candle objects."""
     try:
-        from confluence_engine import Candle
+        from backend.confluence_engine import Candle
     except ImportError:
         return []
     candles = []
@@ -181,7 +181,7 @@ def update_spy_benchmark(change_pct: float) -> None:
 def _build_market_data(symbol: str, snap: dict, bars: list,
                        bars_5m: List[dict]):
     try:
-        from confluence_engine import MarketData, OptionsData
+        from backend.confluence_engine import MarketData, OptionsData
     except ImportError:
         return None, None
 
@@ -500,5 +500,3 @@ def ab_summary(scored: List[dict]) -> Dict[str, Any]:
         "rs_warning"           : rs_warning,
         "rs_unique_values"     : rs_unique,
     }
-
-
