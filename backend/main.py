@@ -1440,19 +1440,18 @@ def _lightweight_radar_scores_payload(limit: int = 50):
 def radar_intelligence_lightweight_compat(limit: int = 50):
     payload, score_symbols = _lightweight_radar_scores_payload(limit=limit)
 
-    campaign_rows = []
-    campaign_source_error = None
-
-    try:
-        campaigns = _compat_campaigns()
-        for campaign in (campaigns or [])[:limit]:
-            row = _compat_to_frontend_row(campaign)
-            if row.get("symbol"):
-                campaign_rows.append(row)
-    except Exception as exc:
-        campaign_source_error = str(exc)
-
-    source_symbols = campaign_rows if campaign_rows else score_symbols
+    # FIX (2026-07-28): this used to make a SEPARATE, fresh (uncached) call
+    # to _compat_campaigns() and prefer that over score_symbols whenever it
+    # returned anything. Since /api/radar/scores (via
+    # _lightweight_radar_scores_payload -> radar_scores_compat) reads from
+    # a cached snapshot with its own TTL, and this fresh call bypassed that
+    # cache entirely, the two endpoints could show slightly different
+    # symbol lists depending on exact timing -- confirmed via real user
+    # report of Radar Screen and this panel disagreeing on the same
+    # underlying data. Using score_symbols directly here means both
+    # endpoints always show the identical cached snapshot, eliminating
+    # that drift entirely.
+    source_symbols = score_symbols
     working_symbols = []
 
     for raw in (source_symbols or [])[:limit]:
@@ -1520,18 +1519,18 @@ def radar_intelligence_lightweight_compat(limit: int = 50):
 
     return {
         "ok": True,
-        "source": "working_app_campaign_intelligence_compat" if campaign_rows else "working_app_lightweight_product_compat",
+        "source": "working_app_lightweight_product_compat",
         "compatibility_route": "/api/radar/intelligence",
         "derived_from": [
             "/api/radar/scores",
-            "campaign_intelligence_compat" if campaign_rows else "radar_scores_compat",
+            "radar_scores_compat",
         ],
         "generated_at": payload.get("generated_at"),
         "count": len(working_symbols),
         "market_enriched_count": payload.get("market_enriched_count"),
         "market_error": payload.get("market_error"),
-        "campaign_source_available": bool(campaign_rows),
-        "campaign_source_error": campaign_source_error,
+        "campaign_source_available": None,
+        "campaign_source_error": None,
         "working_app_evidence_contract": {
             "wyckoff": True,
             "weis": True,
