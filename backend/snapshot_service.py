@@ -580,7 +580,7 @@ def _load_radar_cache_for_admin_report():
         errors.append(f"backend.radar_service: {exc}")
 
     try:
-        from radar_service import RADAR_CACHE
+        from backend.radar_service import RADAR_CACHE
         return RADAR_CACHE or {}
     except Exception as exc:
         errors.append(f"radar_service: {exc}")
@@ -669,4 +669,3 @@ def _is_admin(authorization: Optional[str]) -> bool:
     except Exception as e:
         log.warning(f"Admin auth check failed: {e}")
     return False
-
