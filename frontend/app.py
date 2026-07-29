@@ -1281,7 +1281,7 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
-def build_chart(candles, price, nodes, tf="5m"):
+def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None):
     """Clean chart — integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price)
     xs = list(range(len(candles)))
@@ -1313,11 +1313,19 @@ def build_chart(candles, price, nodes, tf="5m"):
         fig.add_hline(y=level, line_color=color, line_dash=dash,
                       line_width=width, opacity=0.6)
 
-    for level,color,label in [
-        (kl.breakout, TEAL_DIM,   f"CALL WALL  ${level:.0f}"),
-        (kl.confirm,  YELLOW_DIM, f"GAMMA PIVOT  ${level:.0f}"),
-        (kl.fail,     RED_DIM,    f"PUT WALL  ${level:.0f}"),
+    # BUG FIX (2026-07-29): the label f-strings here were built as part of
+    # the list literal itself, which Python evaluates fully *before* the
+    # for-loop assigns `level` on each iteration -- so every label used
+    # whatever `level` was left over from the previous loop above (kl.trap)
+    # instead of each line's own value. All three labels were silently
+    # showing the same wrong number. Fixed by building the label text
+    # inside the loop body, after `level` is actually bound per-iteration.
+    for level,color,prefix in [
+        (call_wall   if call_wall   is not None else kl.breakout, TEAL_DIM,   "CALL WALL"),
+        (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA PIVOT"),
+        (put_wall    if put_wall    is not None else kl.fail,     RED_DIM,    "PUT WALL"),
     ]:
+        label = f"{prefix}  ${level:.0f}"
         fig.add_hline(
             y=level, line_color=color, line_dash="solid", line_width=2.5, opacity=0.95,
             annotation_text=label,
@@ -2036,13 +2044,48 @@ def build_command_tab(live, candles, symbol, tf):
     sc   = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
     top  = nodes[0] if nodes else {"public_label":"—","score":0}
-    vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
-    cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
-    pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
-    fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
+
+    # FIX (2026-07-29): the Options Matrix widget below only ever showed
+    # synthetic price-percentage numbers, even though real Alpaca options
+    # data is already wired up and working elsewhere in the app (the
+    # Campaign Intelligence gamma overlay). Now fetches the same real
+    # gamma-exposure-based call/put walls for the currently loaded symbol,
+    # falling back to the synthetic model only if no real options data is
+    # available for this symbol right now (e.g. options aren't listed, or
+    # the chain snapshot came back empty).
+    real_gamma = _get(f"/api/options/gamma-matrix/{symbol}", spot_price=price)
+    has_real_options = bool(real_gamma.get("has_real_data"))
+    real_call_walls = real_gamma.get("top_call_walls") or []
+    real_put_walls  = real_gamma.get("top_put_walls") or []
+
+    if has_real_options and real_call_walls and real_put_walls:
+        call_wall_level = real_call_walls[0]["strike"]
+        put_wall_level  = real_put_walls[0]["strike"]
+        gamma_pivot_level = real_gamma.get("zero_gamma_level") or price
+        _cs = max(0.0, float(real_call_walls[0].get("call_wall_strength") or 0))
+        _ps = max(0.0, float(real_put_walls[0].get("put_wall_strength") or 0))
+        cp = round(_cs / (_cs + _ps) * 100) if (_cs + _ps) > 0 else 50
+        pp = 100 - cp
+        gp = 50  # placeholder pressure gauge; real dealer-sensitivity % needs a separate model
+        vs = max(18, min(96, round(abs(price - gamma_pivot_level) * 18 + (seq % 9) * 4)))
+        fb = real_gamma.get("net_gamma_regime") or (
+            "Call Accumulation / Supportive Flow" if price >= gamma_pivot_level else "Neutral Rotation / Pinning"
+        )
+        options_note = f"Live options data — Alpaca chain snapshot, {real_gamma.get('contract_count', 0)} contracts."
+    else:
+        call_wall_level, put_wall_level, gamma_pivot_level = kl.breakout, kl.fail, kl.confirm
+        vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
+        cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
+        pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
+        fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
+        options_note = (
+            "Synthetic options layer — no live options chain returned for this symbol right now."
+            if not has_real_options else
+            "Synthetic options layer — connect Tradier or CBOE for live institutional flow data."
+        )
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
-    fig  = build_chart(candles, price, nodes, tf)
+    fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level)
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -2205,18 +2248,20 @@ def build_command_tab(live, candles, symbol, tf):
             html.Div([
                 html.H2("Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
-                       style={"fontSize":"12px","color":WHITE})]),
+                html.P(
+                    "Live gamma-exposure data from your Alpaca options chain." if has_real_options
+                    else "Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                    style={"fontSize":"12px","color":WHITE})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
                    "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
         html.Div([
-            zcard("Call Wall",   f"${round(kl.breakout):.0f}",  f"{cp}% call-side pressure", TEAL_DIM),
-            zcard("Put Wall",    f"${round(kl.fail):.0f}",     f"{pp}% put-side pressure",  RED_DIM),
-            zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
+            zcard("Call Wall",   f"${round(call_wall_level):.0f}",   f"{cp}% call-side pressure", TEAL_DIM),
+            zcard("Put Wall",    f"${round(put_wall_level):.0f}",    f"{pp}% put-side pressure",  RED_DIM),
+            zcard("Gamma Pivot", f"${round(gamma_pivot_level):.0f}", f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
+        note_box(options_note, "blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────

@@ -203,6 +203,56 @@ def get_stock_quote(symbol: str):
 # separate gap from tonight's crash/cron investigation, not a regression.
 # Built to match the existing /api/stock/{symbol} endpoint's exact style,
 # using Alpaca's historical bars endpoint instead of "latest".
+# FIX (2026-07-29): the Command Center's "Dynamic Options Matrix" widget
+# only ever showed synthetic price-percentage numbers (shared/engine.py's
+# get_key_levels), completely unrelated to any real options data, even
+# though real Alpaca options data is genuinely wired up and working
+# elsewhere (the Campaign Intelligence gamma overlay). This endpoint
+# reuses that same real machinery (AlpacaOptionChainAdapter -> live chain
+# snapshot -> GammaStrikeMatrixEngine -> real gamma-exposure-based call/
+# put walls) for a single live symbol, on demand, so the Command Center
+# can show genuinely live options data instead of synthetic math.
+@app.get("/api/options/gamma-matrix/{symbol}")
+def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
+    sym = (symbol or "").upper().strip()
+
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    if spot_price <= 0:
+        return {"ok": False, "symbol": sym, "error": "missing_or_invalid_spot_price"}
+
+    try:
+        from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+        from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": f"gamma_engine_import_failed: {e}"}
+
+    chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=spot_price)
+
+    if chain.get("status") == "MISSING_ALPACA_CREDENTIALS":
+        return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
+
+    options_data = chain.get("options_data") or []
+
+    if not options_data:
+        return {
+            "ok": True,
+            "symbol": sym,
+            "status": chain.get("status", "NO_OPTIONS_DATA"),
+            "has_real_data": False,
+        }
+
+    result = GammaStrikeMatrixEngine.build(
+        options_data=options_data,
+        symbol=sym,
+        spot_price=spot_price,
+    )
+    result["ok"] = True
+    result["has_real_data"] = True
+    return result
+
+
 @app.get("/api/candles/{symbol}")
 def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     sym = (symbol or "").upper().strip()
