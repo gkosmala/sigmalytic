@@ -1373,6 +1373,33 @@ def run_eod_audit():
 
     LAST_EOD_AUDIT_TIME = time.time()
 
+    # FIX (2026-07-29): user confirmed the Intelligence Change Detector
+    # tab stayed stuck on a stale (June 18) audit date even after a
+    # successful manual audit run. Root cause: both the read fallback
+    # (get_divergence_watchlist's _load_divergence_watchlist_from_db)
+    # and the write path (_write_divergence_watchlist, just above/below)
+    # use the same raw DATABASE_URL/psycopg2 connection that's been
+    # failing all day with a password authentication error -- confirmed
+    # in production logs. On top of that, DIVERGENCE_WATCHLIST is a
+    # local in-process variable, so even a working DB write wouldn't
+    # help the main backend see it directly (this scanner runs in its
+    # own separate worker service now, same issue already fixed for
+    # RADAR_CACHE). Writing to Redis here too, bypassing the broken DB
+    # path entirely -- see get_divergence_watchlist's Redis read below.
+    try:
+        if _redis_client:
+            import json as _div_json
+            _redis_client.set(
+                "radar:divergence",
+                _div_json.dumps({
+                    "symbols": divergences,
+                    "last_audit": LAST_EOD_AUDIT_TIME,
+                }),
+                ex=90000,  # 25h -- comfortably survives until the next nightly run
+            )
+    except Exception as _dve:
+        log.warning(f"Divergence watchlist Redis write failed: {_dve}")
+
 
 def _write_divergence_watchlist(divergences: list):
     if not DATABASE_URL or not divergences:
@@ -2147,12 +2174,28 @@ def scanner_health():
 
 @radar_router.get("/divergence")
 def get_divergence_watchlist():
-    global DIVERGENCE_WATCHLIST
+    global DIVERGENCE_WATCHLIST, LAST_EOD_AUDIT_TIME
 
     source = "memory"
 
-    # Render restarts wipe memory. If memory is empty, reload the
-    # latest persisted divergence watchlist before returning a blank screen.
+    # Render restarts wipe memory. If memory is empty, try Redis first
+    # (written by run_eod_audit, works regardless of which process ran
+    # the audit -- this scanner runs in its own separate worker service
+    # now), then fall back to the DB-backed reload only if that's also
+    # unavailable.
+    if not DIVERGENCE_WATCHLIST:
+        try:
+            if _redis_client:
+                import json as _div_json
+                _raw = _redis_client.get("radar:divergence")
+                if _raw:
+                    _payload = _div_json.loads(_raw)
+                    DIVERGENCE_WATCHLIST = _payload.get("symbols") or []
+                    LAST_EOD_AUDIT_TIME = _payload.get("last_audit")
+                    source = "redis" if DIVERGENCE_WATCHLIST else "empty"
+        except Exception as e:
+            log.warning(f"Divergence endpoint Redis fallback failed: {e}")
+
     if not DIVERGENCE_WATCHLIST:
         try:
             _load_divergence_watchlist_from_db()
