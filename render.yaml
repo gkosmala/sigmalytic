@@ -4,7 +4,7 @@ services:
     runtime: python
     pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 300 --max-requests-jitter 50 --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
