@@ -43,6 +43,7 @@ import requests as _req
 import psycopg2
 import psycopg2.extras
 import redis as _redis
+import psutil
 from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -1750,6 +1751,43 @@ def _populate_synthetic_cache():
 _scheduler: Optional[BackgroundScheduler] = None
 
 
+def _log_mem(tag: str) -> None:
+    """
+    DIAGNOSTIC INSTRUMENTATION (2026-07-29): added specifically to get
+    certainty about the source of repeated production OOM crashes (>2GB),
+    rather than continuing to infer it from timing coincidences. Logs
+    the actual current process memory (RSS) before and after every
+    scheduled background job, so the next crash's logs will show exactly
+    which job was running and how much memory it was using at the time --
+    real evidence instead of another hypothesis.
+    """
+    try:
+        rss_mb = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+        log.warning(f"[MEM] {tag}: {rss_mb:.1f} MB RSS")
+    except Exception as e:
+        log.warning(f"[MEM] {tag}: failed to read memory ({e})")
+
+
+def _instrumented(name: str, fn):
+    def _wrapped(*args, **kwargs):
+        _log_mem(f"BEFORE {name}")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _log_mem(f"AFTER {name}")
+    return _wrapped
+
+
+def _start_memory_heartbeat(scheduler: "BackgroundScheduler") -> None:
+    """Logs memory every 60s regardless of whether any job is running,
+    so a gradual leak (steadily rising baseline) is distinguishable from
+    a sudden single-job spike (baseline flat, one BEFORE/AFTER pair jumps)."""
+    scheduler.add_job(
+        lambda: _log_mem("heartbeat"),
+        trigger="interval", seconds=60, id="memory_heartbeat",
+    )
+
+
 def start_radar_scheduler():
     global SYMBOLS, _scheduler
     SYMBOLS = load_russell1000()
@@ -1767,7 +1805,7 @@ def start_radar_scheduler():
     # GEX focused scan — runs every 8 minutes during market hours
     if _GEX_AVAILABLE:
         _scheduler.add_job(
-            lambda: threading.Thread(target=run_gex_scan, daemon=True).start(),
+            lambda: threading.Thread(target=_instrumented("gex_scan", run_gex_scan), daemon=True).start(),
             trigger="interval",
             seconds=SCAN_INTERVAL_SECONDS,
             id="gex_scan",
@@ -1777,7 +1815,7 @@ def start_radar_scheduler():
 
     # Layer 1 — Lightweight universe scan every 8 minutes
     _scheduler.add_job(
-        run_radar_scan,
+        _instrumented("radar_scan", run_radar_scan),
         trigger="interval",
         seconds=SCAN_INTERVAL_SECONDS,
         id="radar_scan",
@@ -1787,7 +1825,7 @@ def start_radar_scheduler():
     # Divergence watchlist intraday deep scan — runs alongside radar scan
     if _INTELLIGENCE_AVAILABLE:
         _scheduler.add_job(
-            lambda: threading.Thread(target=run_divergence_scan, daemon=True).start(),
+            lambda: threading.Thread(target=_instrumented("divergence_scan", run_divergence_scan), daemon=True).start(),
             trigger="interval",
             seconds=SCAN_INTERVAL_SECONDS,
             id="divergence_scan",
@@ -1797,7 +1835,7 @@ def start_radar_scheduler():
 
     # EOD audit — 8:30 PM ET = 00:30 UTC
     _scheduler.add_job(
-        lambda: threading.Thread(target=run_eod_audit, daemon=True).start(),
+        lambda: threading.Thread(target=_instrumented("eod_audit", run_eod_audit), daemon=True).start(),
         trigger="cron",
         hour=0, minute=30,
         id="eod_audit",
@@ -1805,26 +1843,28 @@ def start_radar_scheduler():
     log.info("EOD audit scheduled at 8:30 PM ET (00:30 UTC)")
 
     _scheduler.add_job(
-        lambda: send_daily_summary(list(RADAR_CACHE.values())),
+        _instrumented("daily_summary", lambda: send_daily_summary(list(RADAR_CACHE.values()))),
         trigger="cron", hour=12, minute=0, id="daily_summary",
     )
     _scheduler.add_job(
-        lambda: threading.Thread(target=grade_pending_signals, daemon=True).start(),
+        lambda: threading.Thread(target=_instrumented("grade_signals", grade_pending_signals), daemon=True).start(),
         trigger="cron", hour=21, minute=15, id="grade_signals",
     )
     try:
         from backend.snapshot_service import write_intraday_snapshots, write_daily_close_snapshots
         _scheduler.add_job(
-            lambda: write_intraday_snapshots(RADAR_CACHE),
+            _instrumented("snapshot_intraday", lambda: write_intraday_snapshots(RADAR_CACHE)),
             trigger="interval", seconds=300, id="snapshot_intraday",
         )
         _scheduler.add_job(
-            lambda: write_daily_close_snapshots(RADAR_CACHE),
+            _instrumented("snapshot_daily_close", lambda: write_daily_close_snapshots(RADAR_CACHE)),
             trigger="cron", hour=20, minute=15, id="snapshot_daily_close",
         )
         log.info("Snapshot writer jobs scheduled")
     except ImportError:
         log.warning("snapshot_service not found — snapshot writing disabled")
+
+    _start_memory_heartbeat(_scheduler)
 
     _scheduler.start()
     log.info("Radar scheduler started")

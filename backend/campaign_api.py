@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import time
+import logging
+import psutil
 import urllib.request
 import urllib.parse
 import ssl
@@ -11,6 +13,8 @@ from fastapi import APIRouter
 from typing import Any, Dict, List
 
 from backend.campaign_engine.campaign_store import CampaignStore
+
+log = logging.getLogger("campaign_api")
 
 router = APIRouter(
     prefix="/api/campaign",
@@ -3504,6 +3508,24 @@ _CAMPAIGN_ENDPOINT_CACHE_LOCK = threading.Lock()
 _CAMPAIGN_ENDPOINT_CACHE: Dict[str, tuple] = {}
 
 
+def _log_mem(tag: str) -> None:
+    """
+    DIAGNOSTIC INSTRUMENTATION (2026-07-29): added to get certainty about
+    the source of repeated production OOM crashes (>2GB), rather than
+    continuing to infer it from timing coincidences. This is the single
+    choke point all three heavy functions (active_campaigns, rankings,
+    status) funnel through, so instrumenting here covers all of them at
+    once. Logs actual current process RSS before/after a real (uncached)
+    computation, so the next crash's logs show whether one of these
+    three was actually running or just ran, and how much memory it used.
+    """
+    try:
+        rss_mb = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+        log.warning(f"[MEM] {tag}: {rss_mb:.1f} MB RSS")
+    except Exception as e:
+        log.warning(f"[MEM] {tag}: failed to read memory ({e})")
+
+
 def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
     now = time.time()
     with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
@@ -3511,7 +3533,9 @@ def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
         if cached and (now - cached[0]) < ttl_seconds:
             return cached[1]
 
+    _log_mem(f"BEFORE compute {cache_key}")
     result = compute_fn()
+    _log_mem(f"AFTER compute {cache_key}")
 
     with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
         _CAMPAIGN_ENDPOINT_CACHE[cache_key] = (now, result)
