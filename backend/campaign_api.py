@@ -89,6 +89,25 @@ def _attach_weis_gamma_summary(campaign: Dict[str, Any]) -> Dict[str, Any]:
         or {}
     )
 
+    # FIX (2026-07-29): confirmed via live memory instrumentation that a
+    # single call to active_campaigns/rankings/status uses ~400-450MB for
+    # what should be ~100-280 campaign records. Found the cause: this
+    # function's own docstring says it's "display/API enrichment only",
+    # but `out = dict(campaign or {})` keeps the ENTIRE original record --
+    # including whatever raw evidence/evidence_payload blob it has (the
+    # full Wyckoff/gamma/VSA/phase computation data used internally by the
+    # nightly transition engine) -- fully intact, then just adds ~15-20
+    # small derived weis_gamma_* summary fields on top. The bulky raw
+    # blob was never actually needed in these read-only summary/ranking
+    # API responses; every one of these fields' consumers (the frontend
+    # tabs, the /intelligence/* compat routes) only reads the small
+    # derived fields. Stripping it here, once, covers both of this
+    # function's return paths and directly cuts each cached copy's
+    # footprint substantially, since this was being duplicated across all
+    # three separately-cached endpoint results at once.
+    out.pop("evidence", None)
+    out.pop("evidence_payload", None)
+
     raw_metrics = (
         evidence.get("raw_metrics")
         if isinstance(evidence, dict)
