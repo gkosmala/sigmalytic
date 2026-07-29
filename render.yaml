@@ -3,7 +3,6 @@ services:
     name: sigmalytic-backend
     runtime: python
     region: oregon
-    pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 120
     envVars:
@@ -26,7 +25,6 @@ services:
     name: sigmalytic-frontend
     runtime: python
     region: oregon
-    pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python frontend/app.py
     envVars:
@@ -44,7 +42,6 @@ services:
     name: sigmalytic-radar-scanner
     runtime: python
     region: oregon
-    pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python tools/render_radar_scanner_worker.py
     # NOTE: this service also needs SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -66,7 +63,6 @@ services:
     name: sigmalytic-nightly-campaign-refresh
     runtime: python
     region: oregon
-    pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python tools/render_nightly_campaign_refresh.py
     schedule: "15 22 * * MON-FRI"
