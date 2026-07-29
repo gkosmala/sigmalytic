@@ -419,6 +419,31 @@ def get_open_trade(user_id: str):
     return {}
 
 
+@app.get("/api/admin/trigger-eod-audit")
+def trigger_eod_audit():
+    # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()
+    # (normally scheduled nightly at 8:30 PM ET) right now, to refresh
+    # the Intelligence Change Detector tab's stale data without waiting.
+    # The radar scanner runs in its own separate Background Worker
+    # service with no public HTTP endpoint -- this just sets a Redis
+    # flag that worker checks every 20s (see manual_trigger_check in
+    # radar_service.py's start_radar_scheduler), rather than trying to
+    # reach that service directly.
+    try:
+        from backend.radar_service import _redis_client
+        if not _redis_client:
+            return {"ok": False, "error": "Redis not configured"}
+        _redis_client.set("trigger:eod_audit", "1", ex=120)
+        return {
+            "ok": True,
+            "message": "EOD audit trigger set. The radar scanner worker checks for "
+                       "this every 20 seconds -- check its logs in a minute or two "
+                       "for 'Manual EOD audit trigger received'.",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.get("/api/admin/engine-status")
 def engine_status():
     return {

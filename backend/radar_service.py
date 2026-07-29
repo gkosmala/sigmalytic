@@ -1882,6 +1882,31 @@ def start_radar_scheduler():
 
     _start_memory_heartbeat(_scheduler)
 
+    # FIX (2026-07-29): user asked to manually trigger run_eod_audit()
+    # right now rather than wait for its regular 8:30 PM ET schedule.
+    # This scanner runs as a Background Worker with no public HTTP
+    # endpoint of its own (that's the whole point of moving it out of
+    # the web-serving process). Instead, this checks a Redis flag every
+    # 20s -- the main backend (which IS reachable via HTTP) can set that
+    # flag through a new admin endpoint, and this picks it up shortly
+    # after without needing a redeploy or direct network access to this
+    # worker.
+    def _check_manual_triggers():
+        try:
+            if not _redis_client:
+                return
+            if _redis_client.get("trigger:eod_audit"):
+                _redis_client.delete("trigger:eod_audit")
+                log.info("Manual EOD audit trigger received -- running now")
+                _instrumented("eod_audit_manual", run_eod_audit)()
+        except Exception as e:
+            log.warning(f"Manual trigger check failed: {e}")
+
+    _scheduler.add_job(
+        _check_manual_triggers,
+        trigger="interval", seconds=20, id="manual_trigger_check",
+    )
+
     _scheduler.start()
     log.info("Radar scheduler started")
 
