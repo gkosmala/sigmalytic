@@ -751,7 +751,20 @@ def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
 # UI display only: no database write, no campaign mutation, no D3D authorization,
 # no operator-control confirmation, no trade-signal creation, no Stripe billing
 _STEP88A_BASE_LIMIT = 100
-_STEP88A_SAFE_ENRICH_LIMIT = 100
+# FIX (2026-07-29): was 100 -- each symbol in this batch triggers 7 years
+# of daily-bar cohort analysis (a deliberate design choice for analytical
+# quality, not something to shrink -- see CAMPAIGN_HISTORY_YEARS in
+# campaign_full_enrichment_api.py) plus several other heavy per-symbol
+# computations (gamma overlay, divergence overlay, PnF, lifecycle status).
+# Processing 100 symbols' worth of that simultaneously in one request
+# caused the shared backend web service to repeatedly run out of memory
+# (>2GB, confirmed via production crash logs). Reducing the batch size is
+# the safe lever here -- it doesn't touch analytical quality per symbol,
+# just how many symbols get processed in one request. Combined with the
+# much longer cache window below (10 min vs the previous 20s), this cuts
+# both how much memory a single request needs and how often that request
+# happens at all.
+_STEP88A_SAFE_ENRICH_LIMIT = 40
 
 
 def _step88a_rows_from_payload(data):
@@ -769,7 +782,7 @@ def _step88a_rows_from_payload(data):
     return []
 
 
-def _step88a_fetch_json(path: str, timeout: int = 45):
+def _step88a_fetch_json(path: str, timeout: int = 45, ttl_seconds: int = 20):
     def _do_fetch_raising():
         # Raises on any failure (bad status or exception) so a transient
         # error never gets cached -- only genuine successes are cached.
@@ -787,7 +800,7 @@ def _step88a_fetch_json(path: str, timeout: int = 45):
             return (None, str(exc))
 
     try:
-        data = shared_cache.get_or_fetch(path, _do_fetch_raising, ttl_seconds=20)
+        data = shared_cache.get_or_fetch(path, _do_fetch_raising, ttl_seconds=ttl_seconds)
         return (data, "")
     except Exception as exc:
         return (None, str(exc))
@@ -835,7 +848,15 @@ def _step88a_fetch_base_campaigns():
 
 def _step88a_fetch_enriched_batch():
     endpoint = f"/api/campaigns/read-only/full-universe-enriched-campaign-table?limit={_STEP88A_SAFE_ENRICH_LIMIT}"
-    data, err = _step88a_fetch_json(endpoint, timeout=75)
+    # FIX (2026-07-29): was using the default 20s TTL, which meant this
+    # heavy endpoint got re-fetched almost every time the tab re-rendered
+    # (render_main reacts to live price ticks roughly every 20s). The
+    # underlying campaign data only actually changes once per night (the
+    # nightly cron pipeline) -- there was never a real need to refresh
+    # this more than a few times an hour, let alone every 20 seconds.
+    # 10 minutes is still far more responsive than the data itself
+    # changes, while cutting call frequency by ~30x.
+    data, err = _step88a_fetch_json(endpoint, timeout=75, ttl_seconds=600)
     if err:
         return [], err
 
@@ -971,22 +992,21 @@ def _step100r_t_build_campaign_rows_fast_initial():
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        # REVERTED (2026-07-29): the previous version of this line called
-        # _step88a_build_campaign_rows_all_with_safe_enrichment(), which
-        # correctly fetches real enrichment data -- but doing that on
-        # every ~20s live-tick re-render (since render_main now reacts to
-        # live price updates) caused the shared backend web service to
-        # repeatedly crash from memory exhaustion (>2GB, confirmed via
-        # Render's own crash logs, timed to match this change exactly).
-        # That's a production incident affecting every user and feature,
-        # not just this tab's display -- reverting immediately to stop it,
-        # rather than rushing a fix under incident pressure. Re-enabling
-        # real enrichment data needs a properly throttled approach (a much
-        # longer cache window decoupled from the live-tick interval, a
-        # smaller batch limit, and/or investigating why the enrichment
-        # endpoint itself uses so much memory per call) verified before
-        # being turned back on.
-        campaigns, fetch_error = _step100r_t_build_campaign_rows_fast_initial()
+        # RE-ENABLED (2026-07-29): reverted earlier today after this call
+        # caused the shared backend to repeatedly run out of memory
+        # (>2GB) -- root cause was calling a heavy 100-symbol batch
+        # (each involving 7 years of daily-bar cohort analysis) on
+        # effectively every ~20s live-tick re-render, since the previous
+        # cache TTL (20s) was barely longer than the render interval
+        # itself. Now safe to re-enable: batch size reduced to 40
+        # symbols, and the cache TTL raised to 600s (10 min) -- verified
+        # this cache is genuinely shared across all backend workers via
+        # Redis (see shared_cache.py), not per-session, so this means one
+        # real fetch roughly every 10 minutes for the whole backend, not
+        # one per user per tick. 10 minutes is still far more responsive
+        # than the underlying data changes (once per night, via the
+        # nightly campaign pipeline).
+        campaigns, fetch_error = _step88a_build_campaign_rows_all_with_safe_enrichment()
     except Exception as exc:
         campaigns = []
         fetch_error = str(exc)
