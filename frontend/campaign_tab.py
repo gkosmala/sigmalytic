@@ -971,7 +971,22 @@ def _step100r_t_build_campaign_rows_fast_initial():
 def build_campaign_tab(session=None) -> html.Div:
     try:
         fetch_error = None
-        campaigns, fetch_error = _step100r_t_build_campaign_rows_fast_initial()
+        # FIX (2026-07-29): this called _step100r_t_build_campaign_rows_fast_initial(),
+        # a "fast initial load" meant as a temporary first-paint optimization
+        # per its own comment ("Initial UI render must not call the full-
+        # universe enriched campaign endpoint") -- but no follow-up call to
+        # actually fetch the real enriched data (ODS, decay, outcome
+        # economics, targets, failure/RR) was ever wired in anywhere. Every
+        # campaign, every field, every time this tab was viewed, showed the
+        # literal "PENDING" placeholder forever. The real enrichment merge
+        # function already existed and works correctly
+        # (_step88a_build_campaign_rows_all_with_safe_enrichment, which
+        # fetches /api/campaigns/read-only/full-universe-enriched-campaign-table
+        # and merges it into the base campaign list) -- it was just never
+        # called. Now calling it directly; its own caching (20s TTL) already
+        # keeps this reasonably cheap given the tab re-renders roughly every
+        # 20s along with live ticks.
+        campaigns, fetch_error = _step88a_build_campaign_rows_all_with_safe_enrichment()
     except Exception as exc:
         campaigns = []
         fetch_error = str(exc)
