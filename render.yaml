@@ -2,6 +2,7 @@ services:
   - type: web
     name: sigmalytic-backend
     runtime: python
+    region: oregon
     pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 120
@@ -24,6 +25,7 @@ services:
   - type: web
     name: sigmalytic-frontend
     runtime: python
+    region: oregon
     pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python frontend/app.py
@@ -41,6 +43,7 @@ services:
   - type: worker
     name: sigmalytic-radar-scanner
     runtime: python
+    region: oregon
     pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python tools/render_radar_scanner_worker.py
@@ -62,6 +65,7 @@ services:
   - type: cron
     name: sigmalytic-nightly-campaign-refresh
     runtime: python
+    region: oregon
     pythonVersion: 3.11
     buildCommand: pip install -r requirements.txt
     startCommand: python tools/render_nightly_campaign_refresh.py
