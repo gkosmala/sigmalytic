@@ -71,6 +71,28 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+def _start_radar_scheduler_on_boot():
+    # FIX (2026-07-29): user asked to tackle the Radar Screen tab showing
+    # placeholder/campaign-derived data instead of real radar analysis.
+    # Root cause traced to this: start_radar_scheduler() (radar_service.py)
+    # -- the function that scans the Russell 1000 universe every 8
+    # minutes and computes real relative_strength/volume_pressure/
+    # behavioral/readiness_score/probability data -- was fully built and
+    # correct, but never actually called anywhere in this app. Every job
+    # it would run already has memory instrumentation added earlier today
+    # (during the unrelated OOM investigation) logging RSS before/after
+    # each run, so this activation is being watched closely, not just
+    # switched on blind. Wrapped defensively: if starting the scheduler
+    # fails for any reason, it's logged, not allowed to crash the app.
+    try:
+        from backend.radar_service import start_radar_scheduler
+        start_radar_scheduler()
+        print("[STARTUP] Radar scheduler started successfully", flush=True)
+    except Exception as e:
+        print(f"[STARTUP] Radar scheduler failed to start: {e}", flush=True)
+
+
 @app.get("/")
 def root():
     return {
@@ -1411,6 +1433,23 @@ def _step100r_w2_start_refresh_if_needed():
 
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
+    # FIX (2026-07-29): now that start_radar_scheduler() is actually
+    # running (see startup handler above), the real radar engine's cache
+    # is genuinely populated ~45s after boot and every 8 minutes after
+    # that. Prefer it -- it has real relative_strength/volume_pressure/
+    # behavioral/readiness_score/probability/grade data, which the old
+    # campaign-derived fallback below never had. Falls back to the
+    # previous behavior only if the real cache is still empty (e.g. in
+    # the brief window right after a fresh deploy, before the first scan
+    # completes), so the tab is never left completely blank.
+    try:
+        from backend.radar_service import get_radar_scores as _real_get_radar_scores
+        real_payload = _real_get_radar_scores(limit=limit)
+        if real_payload and real_payload.get("symbols"):
+            return real_payload
+    except Exception as e:
+        print(f"[RADAR_COMPAT] Real radar engine unavailable, falling back: {e}", flush=True)
+
     value = _step100r_w2_normalize_limit(limit)
     now = _step100r_w2_time.monotonic()
 
