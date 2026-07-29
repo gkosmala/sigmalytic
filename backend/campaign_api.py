@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import time
 import urllib.request
 import urllib.parse
 import ssl
@@ -3487,34 +3488,73 @@ def health():
     }
 
 
+# FIX (2026-07-29): user-reported backend OOM crashes (>2GB), traced to
+# these three functions (active_campaigns, rankings, status) each doing a
+# full Supabase fetch + weis-gamma-summary attachment across all active
+# campaigns (up to ~280), from scratch, with zero caching, on every call.
+# Multiple frontend endpoints funnel into these same three functions
+# independently within the same ~20s poll cycle (backend/intelligence_api.py's
+# /rankings, /status-center, /opportunities, /dashboard, plus these routes
+# directly) -- meaning a single frontend refresh cycle could trigger this
+# expensive work being redone many times over in a single-worker process,
+# with no coordination between callers. A short shared cache collapses
+# all of those into one real computation per TTL window, regardless of
+# how many different endpoints/callers hit it in that window.
+_CAMPAIGN_ENDPOINT_CACHE_LOCK = threading.Lock()
+_CAMPAIGN_ENDPOINT_CACHE: Dict[str, tuple] = {}
+
+
+def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
+    now = time.time()
+    with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
+        cached = _CAMPAIGN_ENDPOINT_CACHE.get(cache_key)
+        if cached and (now - cached[0]) < ttl_seconds:
+            return cached[1]
+
+    result = compute_fn()
+
+    with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
+        _CAMPAIGN_ENDPOINT_CACHE[cache_key] = (now, result)
+
+    return result
+
+
 @router.get("/active")
 def active_campaigns():
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
-    return {"campaigns": campaigns}
+    def _compute():
+        campaigns = _store().get_active_campaigns()
+        campaigns = _attach_weis_gamma_summaries(campaigns)
+        return {"campaigns": campaigns}
+    return _cached_endpoint_result("active_campaigns", 15, _compute)
 
 
 @router.get("/rankings")
 def rankings():
-    campaigns = _store().get_top_campaigns(limit=100)
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    def _compute():
+        campaigns = _store().get_top_campaigns(limit=100)
+        campaigns = _attach_weis_gamma_summaries(campaigns)
 
-    ranked = sorted(
-        campaigns,
-        key=lambda x: float(
-            x.get("operator_dominance")
-            or x.get("outcome_quality_score")
-            or x.get("obstacle_score")
-            or 0
-        ),
-        reverse=True,
-    )
+        ranked = sorted(
+            campaigns,
+            key=lambda x: float(
+                x.get("operator_dominance")
+                or x.get("outcome_quality_score")
+                or x.get("obstacle_score")
+                or 0
+            ),
+            reverse=True,
+        )
 
-    return {"campaigns": ranked}
+        return {"campaigns": ranked}
+    return _cached_endpoint_result("rankings", 15, _compute)
 
 
 @router.get("/status")
 def status():
+    return _cached_endpoint_result("status", 15, _status_uncached)
+
+
+def _status_uncached():
     campaigns = _store().get_active_campaigns()
     campaigns = _attach_weis_gamma_summaries(campaigns)
 
