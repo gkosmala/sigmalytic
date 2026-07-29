@@ -127,5 +127,85 @@ class CampaignStore:
         )
 
     def get_top_campaigns(self, limit: int = 100) -> List[Dict[str, Any]]:
-        campaigns = self.get_active_campaigns()
-        return campaigns[:limit]
+        # FIX (2026-07-29): user-reported production OOM crashes, traced
+        # (via live memory instrumentation) to this. Previously called
+        # get_active_campaigns() with NO limit at all -- fetching every
+        # column (including the bulky evidence blob) for every single
+        # active campaign (all ~280 of them), over the network, fully
+        # deserialized into Python objects, THEN sliced down to the
+        # requested `limit` client-side afterward, after already paying
+        # the full cost for all ~280.
+        #
+        # Simply pushing .limit() into the query instead would have been
+        # a correctness bug: campaigns aren't sorted by score at the
+        # database level, so an unordered LIMIT would return an arbitrary
+        # ~100 rows, not the true top 100 by score -- silently wrong
+        # "rankings" data, not just a performance fix.
+        #
+        # Correct fix: two-step fetch. First, a lightweight query for
+        # only the columns needed to rank (excluding evidence and other
+        # bulky fields) across the FULL active set -- cheap, since it
+        # skips the large blob entirely. Determine the true top `limit`
+        # campaign_ids from that. Then a second, targeted query fetching
+        # full data (including evidence, genuinely needed as input for
+        # the weis-gamma summary computation) for ONLY those `limit`
+        # campaign_ids, instead of all ~280.
+        if not self.client:
+            return []
+
+        try:
+            light_result = (
+                self.client
+                .table(CAMPAIGN_TABLE)
+                .select("campaign_id,ucr_score,ods_score")
+                .in_(
+                    "current_state",
+                    [
+                        "BIRTH",
+                        "CONFIRMED",
+                        "SURVIVING",
+                        "EXPANDING",
+                        "MATURING",
+                        "DISTRIBUTION_RISK",
+                    ],
+                )
+                .execute()
+            )
+        except Exception:
+            # If the lightweight query fails for any reason (e.g. a
+            # column name mismatch on some deployment), fall back to the
+            # previous, safe-but-heavier behavior rather than returning
+            # nothing.
+            return self.get_active_campaigns()[:limit]
+
+        light_rows = light_result.data or []
+
+        if not light_rows:
+            return []
+
+        ranked_ids = [
+            row.get("campaign_id")
+            for row in sorted(
+                light_rows,
+                key=lambda x: float(x.get("ucr_score") or x.get("ods_score") or 0),
+                reverse=True,
+            )[:limit]
+            if row.get("campaign_id") is not None
+        ]
+
+        if not ranked_ids:
+            return []
+
+        full_result = (
+            self.client
+            .table(CAMPAIGN_TABLE)
+            .select("*")
+            .in_("campaign_id", ranked_ids)
+            .execute()
+        )
+        full_rows = full_result.data or []
+
+        # Preserve the exact ranked order determined above -- the second
+        # query's row order isn't guaranteed to match ranked_ids' order.
+        by_id = {row.get("campaign_id"): row for row in full_rows}
+        return [by_id[cid] for cid in ranked_ids if cid in by_id]
