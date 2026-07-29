@@ -1297,18 +1297,36 @@ def build_chart(candles, price, nodes, tf="5m"):
         decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
         whiskerwidth=1.0,
     ))
-    # Level lines — no annotations (labels are in the Price Ladder panel)
+    # Level lines — the 4 generic structural levels stay unlabeled (labels
+    # live in the Price Ladder panel), but Call Wall / Put Wall / Gamma
+    # Pivot are the exact same numbers shown in the Options Matrix widget
+    # below, and were previously indistinguishable from the other 4 faint
+    # lines -- same thin width, no text, easy to lose track of which line
+    # was which. These three now get their own clear, bolder, labeled
+    # lines so they're immediately identifiable on the chart itself.
     for level,color,dash,width in [
-        (kl.breakout,   TEAL_DIM,   "dash",    1.0),
         (kl.prior_high, TEAL_DIM,   "dot",     1.0),
         (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
-        (kl.confirm,    YELLOW_DIM, "solid",   1.0),
         (kl.trigger,    YELLOW_DIM, "dash",    1.0),
         (kl.trap,       RED_DIM,    "dot",     1.0),
-        (kl.fail,       RED_DIM,    "dash",    1.0),
     ]:
         fig.add_hline(y=level, line_color=color, line_dash=dash,
                       line_width=width, opacity=0.6)
+
+    for level,color,label in [
+        (kl.breakout, TEAL_DIM,   f"CALL WALL  ${level:.0f}"),
+        (kl.confirm,  YELLOW_DIM, f"GAMMA PIVOT  ${level:.0f}"),
+        (kl.fail,     RED_DIM,    f"PUT WALL  ${level:.0f}"),
+    ]:
+        fig.add_hline(
+            y=level, line_color=color, line_dash="solid", line_width=2.5, opacity=0.95,
+            annotation_text=label,
+            annotation_position="top left",
+            annotation_font=dict(color=color, size=11, family="DM Mono, monospace"),
+            annotation_bgcolor="rgba(8,24,39,.85)",
+            annotation_bordercolor=color,
+            annotation_borderwidth=1,
+        )
     # Live price line
     fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
     fig.update_layout(
