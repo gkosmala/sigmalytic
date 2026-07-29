@@ -926,8 +926,20 @@ def build_weis_gamma_status_center_panel():
     fusion_counts = wg.get("fusion_state_counts") or {}
 
     transitions_off = int(transition_enabled or 0) == 0
+    # FIX (2026-07-29): this badge was labeled "TRANSITIONS OFF" /
+    # "TRANSITIONS ENABLED", which reads as if it reports whether your
+    # actual campaign lifecycle engine (BIRTH -> ... -> CLOSED, which
+    # genuinely runs nightly via campaign_state_engine.py) is active.
+    # It doesn't -- this flag comes from a read-only Weis-Gamma evidence
+    # *preview* (_build_transition_readiness_evidence in
+    # campaign_evidence_builder.py) that is explicitly documented as
+    # "does not change the campaign state engine, only explains what
+    # evidence would support" -- i.e. it's SUPPOSED to always read as
+    # off, as a safety self-check, and has no bearing on whether your
+    # real product is actually transitioning campaigns. Renamed so it
+    # can't be mistaken for the real engine's status.
     safety_color = TEAL_DIM if transitions_off else RED_DIM
-    safety_label = "TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED"
+    safety_label = "GAMMA PREVIEW: READ-ONLY (EXPECTED)" if transitions_off else "⚠ GAMMA PREVIEW CLAIMS WRITE ACCESS"
 
     stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
     no_input_color = TEAL_DIM if int(no_option_chain or 0) == 0 else YELLOW_DIM
@@ -973,7 +985,7 @@ def build_weis_gamma_status_center_panel():
             _wg_metric_card("No Options Returned", no_options_returned, YELLOW_DIM),
             _wg_metric_card("No Option-Chain Input", no_option_chain, no_input_color),
             _wg_metric_card("Gamma Stale / Unconfirmed", stale, stale_color),
-            _wg_metric_card("Transitions Off", "YES" if transitions_off else "NO", safety_color),
+            _wg_metric_card("Gamma Preview Read-Only", "YES" if transitions_off else "NO", safety_color),
             _wg_metric_card("Missing Overlay", missing, YELLOW_DIM),
         ], style={
             "display": "grid",
@@ -4985,8 +4997,16 @@ def update_badges(live):
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-tab","data"),
-    State("s-live","data"),
-    State("s-candles","data"),
+    # FIX (2026-07-29): these were States, not Inputs -- meaning this entire
+    # main content area (chart, Trade Card, Price Ladder, decision panel,
+    # Options Matrix) only ever re-rendered when the user switched tabs.
+    # New live price ticks (i-alpaca fires every 20s) updated s-live in the
+    # background, but nothing told this callback to react to it, so the
+    # whole dashboard sat frozen on stale/placeholder data (visibly the
+    # startup default, $280.15) while only the small top badge -- which
+    # correctly already used Input("s-live","data") -- updated live.
+    Input("s-live","data"),
+    Input("s-candles","data"),
     State("s-live-mode","data"),
     State("s-symbol","data"),
     State("s-tf","data"),
