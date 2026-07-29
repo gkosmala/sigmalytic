@@ -296,6 +296,17 @@ def _campaign_row(c: dict) -> html.Div:
     tier = c.get("historical_confidence") or DASH
     days = _campaign_days(c)
 
+    # FIX (2026-07-29): "return_pct" and "pnf_progress_pct" are never
+    # actually set anywhere in the backend's enrichment output (confirmed
+    # by direct search) -- unlike historical_confidence/outcome_quality
+    # above, there's no clean existing field to derive a genuine live
+    # return % or Point-and-Figure progress % from without risking an
+    # incorrect fabricated financial figure. Every campaign showing an
+    # identical "+0.0% | 0%" was this default masquerading as real data.
+    # Tracking presence explicitly so the display can show an honest dash
+    # instead of a look-alike zero.
+    _has_ret_pct = c.get("return_pct") is not None
+    _has_pnf_pct = c.get("pnf_progress_pct") is not None
     ret_pct = _safe_float(c.get("return_pct"), 0)
     pnf_pct = _safe_float(c.get("pnf_progress_pct"), 0)
 
@@ -469,7 +480,11 @@ def _campaign_row(c: dict) -> html.Div:
                     "fontFamily": "DM Mono, monospace",
                 }),
             ]),
-            html.Div(f"Live {ret_pct:+.1f}% | P&F {pnf_pct:.0f}%", style={
+            html.Div(
+                f"Live {ret_pct:+.1f}% | P&F {pnf_pct:.0f}%"
+                if (_has_ret_pct or _has_pnf_pct)
+                else "Live — | P&F —",
+                style={
                 "fontSize": "9px",
                 "color": WHITE,
                 "marginTop": "4px",
@@ -645,12 +660,64 @@ def _step87c_b_enriched_campaign_alias(row: dict) -> dict:
         default=None,
     )
 
-    c["outcome_quality"] = _step87c_b_pick(
-        c,
-        "outcome_quality",
-        "outcome_status",
-        default="PENDING",
-    )
+    # FIX (2026-07-29): neither "historical_confidence" (checked against
+    # literal "TIER_1"/"TIER_2") nor "outcome_quality" (checked against
+    # literal "B"/"C"/"WATCH"/"AVOID") is ever actually set anywhere in
+    # the backend's enrichment output (campaign_full_enrichment_api.py) --
+    # confirmed by direct search. These were frontend classification
+    # concepts that summary counters (Tier 1, Tier 2, B/C, Watch, Avoid)
+    # were built to display, but the backend side of them was never
+    # implemented, so they've always read as their defaults (DASH/
+    # "PENDING") and every summary count showed 0. Deriving both from
+    # real fields that do exist, rather than leaving them permanently
+    # unpopulated:
+    #   - historical_confidence: derived from cohort_status, the real
+    #     analog-match confidence classification already computed by
+    #     _cohort_readiness() on the backend (COHORT_READY = enough
+    #     historical analogs for a reliable expectation = Tier 1;
+    #     COHORT_LIMITED = some analogs found but a small sample = Tier
+    #     2; anything else -- insufficient matches/history -- stays
+    #     unclassified rather than being forced into a tier).
+    #   - outcome_quality: derived from the real 0-100 composite score
+    #     already present (outcome_quality_score, just picked above),
+    #     using the same A+/A/B/C/W grading scale used elsewhere in this
+    #     codebase (e.g. intelligence_api.py's _grade()) for consistency,
+    #     mapping the "W" grade to "WATCH" to match what this tab's
+    #     summary counters check for.
+    _cohort_status = str(c.get("cohort_status") or "").upper()
+    if _cohort_status == "COHORT_READY":
+        c["historical_confidence"] = "TIER_1"
+    elif _cohort_status == "COHORT_LIMITED":
+        c["historical_confidence"] = "TIER_2"
+    else:
+        c["historical_confidence"] = _step87c_b_pick(
+            c, "historical_confidence", "grade", default=DASH,
+        )
+
+    _oq_score = c.get("outcome_quality_score")
+    if _oq_score is not None:
+        try:
+            _oq_val = float(_oq_score)
+            if _oq_val >= 85:
+                c["outcome_quality"] = "A+"
+            elif _oq_val >= 75:
+                c["outcome_quality"] = "A"
+            elif _oq_val >= 65:
+                c["outcome_quality"] = "B"
+            elif _oq_val >= 50:
+                c["outcome_quality"] = "C"
+            elif _oq_val >= 35:
+                c["outcome_quality"] = "WATCH"
+            else:
+                c["outcome_quality"] = "AVOID"
+        except (TypeError, ValueError):
+            c["outcome_quality"] = _step87c_b_pick(
+                c, "outcome_quality", "outcome_status", default="PENDING",
+            )
+    else:
+        c["outcome_quality"] = _step87c_b_pick(
+            c, "outcome_quality", "outcome_status", default="PENDING",
+        )
 
     c["outcome_expected_return"] = _step87c_b_pick(
         c,
