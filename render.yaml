@@ -38,6 +38,27 @@ services:
       - key: BACKEND_WS_URL
         value: "wss://sigmalytic-backend.onrender.com"
 
+  - type: worker
+    name: sigmalytic-radar-scanner
+    runtime: python
+    pythonVersion: 3.11
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/render_radar_scanner_worker.py
+    # NOTE: this service also needs SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+    # (or SUPABASE_ANON_KEY), REDIS_URL, and RESEND_API_KEY set manually in
+    # Render's dashboard -- same as the backend service, which doesn't
+    # track those here either (they were set directly in the dashboard,
+    # not via this file). Copy the same values this service already uses.
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_API_SECRET
+        sync: false
+      - key: ALPACA_BASE_URL
+        value: "https://data.alpaca.markets"
+
   - type: cron
     name: sigmalytic-nightly-campaign-refresh
     runtime: python

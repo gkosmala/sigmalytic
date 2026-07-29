@@ -1275,6 +1275,22 @@ def run_radar_scan():
     for s in scored:
         RADAR_CACHE[s["symbol"]] = s
 
+    # FIX (2026-07-29): user-confirmed OOM crashes from running this
+    # scanner in the same process as the main web backend (~1000-symbol
+    # scan pushed combined memory past 2GB when it overlapped with other
+    # heavy work). Moving this scanner to its own separate Render worker
+    # service (mirroring the earlier fix for the nightly campaign
+    # pipeline) -- this write makes its results available to the main
+    # backend via Redis (already used elsewhere in this codebase, e.g.
+    # the heartbeat below) instead of an in-process dict only that
+    # process itself could see.
+    try:
+        if _redis_client:
+            import json as _radar_json
+            _redis_client.set("radar:cache", _radar_json.dumps(RADAR_CACHE), ex=900)
+    except Exception as _rce:
+        log.warning(f"Radar cache Redis write failed: {_rce}")
+
     # Heartbeat
     try:
         if _redis_client:
@@ -2259,6 +2275,21 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
     offset = max(0, offset)
 
     results = list(RADAR_CACHE.values())
+
+    # FIX (2026-07-29): the radar scanner now runs in its own separate
+    # worker process (moved out of this shared web-serving process after
+    # confirmed OOM crashes). This process's own RADAR_CACHE will be
+    # empty here, since the scan no longer runs in this process at all --
+    # falling back to Redis, which the scanner worker now writes its
+    # results to after every scan.
+    if not results and _redis_client:
+        try:
+            import json as _radar_json
+            _raw = _redis_client.get("radar:cache")
+            if _raw:
+                results = list(_radar_json.loads(_raw).values())
+        except Exception as _rre:
+            log.warning(f"Radar cache Redis read failed: {_rre}")
 
     # DIAGNOSTIC (2026-07-29): the previous diagnostic (inside the shared
     # _attach_behavioral_transition, called from 5+ different places) showed
