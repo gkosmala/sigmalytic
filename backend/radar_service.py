@@ -1967,6 +1967,31 @@ def _attach_behavioral_transition(row: dict) -> dict:
         if "setup_type" not in enriched and "setup" in enriched:
             enriched["setup_type"] = enriched.get("setup")
 
+        # DIAGNOSTIC (2026-07-29): user-reported every symbol on the Radar
+        # Screen tab showing identical zero/dash readiness, probability,
+        # edge ratio, grade, etc. Confirmed via isolated testing that
+        # evaluate_behavioral_transition() itself produces real, varied,
+        # non-zero output when given realistic non-null inputs -- so the
+        # function isn't the problem. Also confirmed via log search that
+        # the broad exception handler around this code isn't firing
+        # (enrichment isn't silently failing). That leaves one remaining
+        # explanation: the actual production inputs (volume_pressure,
+        # relative_strength, expansion_node, behavioral, composite_score)
+        # are themselves null/missing for real symbols. Logging the actual
+        # values for a small sample so the next scan's logs show real
+        # evidence instead of another guess.
+        import random as _diag_random
+        if _diag_random.random() < 0.05:
+            log.warning(
+                f"[RADAR_DIAG] {enriched.get('symbol')}: "
+                f"composite_score={enriched.get('composite_score')} "
+                f"volume_pressure={enriched.get('volume_pressure')} "
+                f"relative_strength={enriched.get('relative_strength')} "
+                f"expansion_node={enriched.get('expansion_node')} "
+                f"behavioral={enriched.get('behavioral')} "
+                f"regime={enriched.get('regime')!r}"
+            )
+
         bt = evaluate_behavioral_transition(enriched)
 
         enriched["behavioral_transition"] = bt
