@@ -128,8 +128,28 @@ log = logging.getLogger("radar")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 
-ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
-ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
+# FIX (2026-07-29): this file was the one place in the codebase that only
+# checked ALPACA_API_KEY/ALPACA_API_SECRET with no fallback. Every other
+# module (campaign_api.py, campaign_discovery_engine.py, main.py,
+# gamma/alpaca_option_chain_adapter.py) already falls back across all
+# three naming conventions Alpaca credentials show up under in this repo's
+# history. If Render's backend service only has credentials set under a
+# different name than this one, this module silently got empty strings --
+# which produces a generic edge-level 401 (a bare nginx auth-wall HTML
+# page, not Alpaca's own JSON error format) rather than a clear failure,
+# because the request never carried real credentials in the first place.
+ALPACA_API_KEY    = (
+    os.getenv("ALPACA_API_KEY")
+    or os.getenv("APCA_API_KEY_ID")
+    or os.getenv("ALPACA_KEY_ID")
+    or ""
+)
+ALPACA_API_SECRET = (
+    os.getenv("ALPACA_API_SECRET")
+    or os.getenv("APCA_API_SECRET_KEY")
+    or os.getenv("ALPACA_SECRET_KEY")
+    or ""
+)
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
 ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
