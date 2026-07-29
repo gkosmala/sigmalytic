@@ -807,41 +807,79 @@ def _wg_metric_card(label, value, color=WHITE):
     })
 
 
-def _wg_label(value):
-    mapping = {
-        "OK": "Gamma OK",
+def _wg_label(value, category="gamma"):
+    """
+    FIX (2026-07-28): this used to be a single label dictionary shared
+    across five conceptually different metric categories (gamma status,
+    option-chain fetch status, fusion state, phase, rank bucket). Several
+    raw backend status codes happen to collide across categories (e.g.
+    both a gamma computation and an option-chain fetch can independently
+    report "OK"), so the *same* human-readable text -- "Gamma OK" -- was
+    appearing in unrelated panels like "Option Chain Status", where it
+    doesn't describe what that panel is actually showing. This reads as
+    duplicated output even though the underlying counts are genuinely
+    different fields. Each category now has its own accurate label set.
+    """
+    shared = {
         "NONE": "Missing Overlay",
         "EMPTY": "Empty",
-        "NO_OPTIONS_RETURNED": "No Options Returned",
-        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
-        "NO_GAMMA_INPUT": "No Gamma Input",
         "NOT_PRESENT": "Not Present",
-        "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
-        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
-        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
-        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
-        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
-        "WEIS_EXPANSION": "Weis Expansion",
-        "WEIS_BASELINE": "Weis Baseline",
-        "WEIS_TEST": "Weis Test",
-        "WEIS_EXHAUSTION": "Weis Exhaustion",
-        "A_PLUS": "A+",
-        "LOW_PRIORITY": "Low Priority",
-        "WATCHLIST": "Watchlist",
-        "AVOID": "Avoid",
+    }
+
+    by_category = {
+        "gamma": {
+            "OK": "Gamma OK",
+            "NO_OPTIONS_RETURNED": "No Options Returned",
+            "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
+            "NO_GAMMA_INPUT": "No Gamma Input",
+            "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
+        },
+        "option_chain": {
+            "OK": "Chain Fetched OK",
+            "NO_OPTIONS_RETURNED": "No Options Returned",
+            "SKIPPED_FETCH_CAP_REACHED": "Skipped - Fetch Cap Reached",
+            "SKIPPED_SYMBOL_NOT_ALLOWED": "Skipped - Symbol Not Allowed",
+            "SKIPPED_NOT_DISCOVERED": "Skipped - Not Yet Discovered",
+            "DISABLED": "Option-Chain Fetch Disabled",
+            "ADAPTER_UNAVAILABLE": "Adapter Unavailable",
+            "FETCH_EXCEPTION": "Fetch Exception",
+        },
+        "fusion": {
+            "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
+            "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
+            "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
+            "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
+        },
+        "phase": {
+            "WEIS_EXPANSION": "Weis Expansion",
+            "WEIS_BASELINE": "Weis Baseline",
+            "WEIS_TEST": "Weis Test",
+            "WEIS_EXHAUSTION": "Weis Exhaustion",
+        },
+        "rank": {
+            "A_PLUS": "A+",
+            "LOW_PRIORITY": "Low Priority",
+            "WATCHLIST": "Watchlist",
+            "AVOID": "Avoid",
+        },
     }
 
     key = str(value or "NONE")
-    return mapping.get(key, key.replace("_", " ").title())
+    if key in shared:
+        return shared[key]
+    mapping = by_category.get(category, by_category["gamma"])
+    if key in mapping:
+        return mapping[key]
+    return key.replace("_", " ").title()
 
 
-def _wg_counts_text(counts):
+def _wg_counts_text(counts, category="gamma"):
     if not isinstance(counts, dict) or not counts:
         return "-"
 
     parts = []
     for key, value in counts.items():
-        parts.append(f"{_wg_label(key)}: {value}")
+        parts.append(f"{_wg_label(key, category=category)}: {value}")
 
     return " | ".join(parts)
 
@@ -946,23 +984,23 @@ def build_weis_gamma_status_center_panel():
         html.Div([
             html.Div([
                 html.Div("Phase Counts", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(phase_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(phase_counts, category="phase"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Rank Buckets", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(rank_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(rank_counts, category="rank"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(gamma_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(gamma_counts, category="gamma"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(option_chain_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(option_chain_counts, category="option_chain"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(fusion_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(fusion_counts, category="fusion"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
         ], style={
             "display": "grid",
