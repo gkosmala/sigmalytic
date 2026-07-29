@@ -3506,6 +3506,8 @@ def health():
 # how many different endpoints/callers hit it in that window.
 _CAMPAIGN_ENDPOINT_CACHE_LOCK = threading.Lock()
 _CAMPAIGN_ENDPOINT_CACHE: Dict[str, tuple] = {}
+_CAMPAIGN_ENDPOINT_KEY_LOCKS: Dict[str, threading.Lock] = {}
+_CAMPAIGN_ENDPOINT_KEY_LOCKS_LOCK = threading.Lock()
 
 
 def _log_mem(tag: str) -> None:
@@ -3526,6 +3528,15 @@ def _log_mem(tag: str) -> None:
         log.warning(f"[MEM] {tag}: failed to read memory ({e})")
 
 
+def _get_key_lock(cache_key: str) -> threading.Lock:
+    with _CAMPAIGN_ENDPOINT_KEY_LOCKS_LOCK:
+        lock = _CAMPAIGN_ENDPOINT_KEY_LOCKS.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _CAMPAIGN_ENDPOINT_KEY_LOCKS[cache_key] = lock
+        return lock
+
+
 def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
     now = time.time()
     with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
@@ -3533,14 +3544,40 @@ def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
         if cached and (now - cached[0]) < ttl_seconds:
             return cached[1]
 
-    _log_mem(f"BEFORE compute {cache_key}")
-    result = compute_fn()
-    _log_mem(f"AFTER compute {cache_key}")
+    # SINGLE-FLIGHT FIX (2026-07-29): confirmed via live memory
+    # instrumentation that the previous version of this function had a
+    # real thundering-herd bug -- the lock only protected the cache
+    # dict's *check*, not the compute itself, so two requests arriving
+    # close together could both see "no fresh cache" and both
+    # independently run the same ~400-500MB computation at the same
+    # time, compounding instead of one being prevented (observed
+    # directly: two concurrent active_campaigns computations both
+    # starting from the same baseline RSS reading). Holding a per-key
+    # lock for the entire check+compute+store means a second concurrent
+    # request for the SAME key now blocks and waits for the first to
+    # finish, then gets its now-fresh cached result, instead of
+    # redoing the work itself. Per-key (not one global lock) so
+    # different keys (active_campaigns/rankings/status) can still
+    # compute concurrently with each other.
+    key_lock = _get_key_lock(cache_key)
+    with key_lock:
+        # Re-check the cache after acquiring the lock -- another thread
+        # may have already computed and stored a fresh result while this
+        # one was waiting.
+        now = time.time()
+        with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
+            cached = _CAMPAIGN_ENDPOINT_CACHE.get(cache_key)
+            if cached and (now - cached[0]) < ttl_seconds:
+                return cached[1]
 
-    with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
-        _CAMPAIGN_ENDPOINT_CACHE[cache_key] = (now, result)
+        _log_mem(f"BEFORE compute {cache_key}")
+        result = compute_fn()
+        _log_mem(f"AFTER compute {cache_key}")
 
-    return result
+        with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
+            _CAMPAIGN_ENDPOINT_CACHE[cache_key] = (now, result)
+
+        return result
 
 
 @router.get("/active")
