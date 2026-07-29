@@ -1286,6 +1286,22 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     kl = get_key_levels(price)
     xs = list(range(len(candles)))
     fig = go.Figure()
+
+    # Positive/negative gamma regime shading, above/below the Gamma Flip
+    # Point -- standard convention for these overlays (as described by the
+    # user): above the flip, dealers are net long gamma and hedge by
+    # buying dips/selling rallies, pinning price (shaded green); below it,
+    # dealers are net short gamma, hedging amplifies moves instead of
+    # dampening them (shaded red). Purely visual context behind the
+    # candles, drawn first so it never covers price action.
+    _flip = gamma_pivot if gamma_pivot is not None else kl.confirm
+    _highs = [c["h"] for c in candles] if candles else [price]
+    _lows  = [c["l"] for c in candles] if candles else [price]
+    _y_top = max(max(_highs), _flip, price) * 1.02
+    _y_bot = min(min(_lows),  _flip, price) * 0.98
+    fig.add_hrect(y0=_flip, y1=_y_top, fillcolor=TEAL_DIM, opacity=0.06, layer="below", line_width=0)
+    fig.add_hrect(y0=_y_bot, y1=_flip, fillcolor=RED_DIM,  opacity=0.06, layer="below", line_width=0)
+
     fig.add_trace(go.Candlestick(
         x=xs,
         open=[c["o"] for c in candles],
@@ -1322,7 +1338,7 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     # inside the loop body, after `level` is actually bound per-iteration.
     for level,color,prefix in [
         (call_wall   if call_wall   is not None else kl.breakout, TEAL_DIM,   "CALL WALL"),
-        (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA PIVOT"),
+        (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA FLIP POINT"),
         (put_wall    if put_wall    is not None else kl.fail,     RED_DIM,    "PUT WALL"),
     ]:
         label = f"{prefix}  ${level:.0f}"
@@ -2058,6 +2074,14 @@ def build_command_tab(live, candles, symbol, tf):
     real_call_walls = real_gamma.get("top_call_walls") or []
     real_put_walls  = real_gamma.get("top_put_walls") or []
 
+    _REGIME_LABELS = {
+        "DEEP_POSITIVE": "Deep positive gamma — strong pinning",
+        "POSITIVE":      "Positive gamma — pinning likely",
+        "NEUTRAL":       "Neutral gamma regime",
+        "NEGATIVE":      "Negative gamma — moves can accelerate",
+        "DEEP_NEGATIVE": "Deep negative gamma — high volatility risk",
+    }
+
     if has_real_options and real_call_walls and real_put_walls:
         call_wall_level = real_call_walls[0]["strike"]
         put_wall_level  = real_put_walls[0]["strike"]
@@ -2066,17 +2090,17 @@ def build_command_tab(live, candles, symbol, tf):
         _ps = max(0.0, float(real_put_walls[0].get("put_wall_strength") or 0))
         cp = round(_cs / (_cs + _ps) * 100) if (_cs + _ps) > 0 else 50
         pp = 100 - cp
-        gp = 50  # placeholder pressure gauge; real dealer-sensitivity % needs a separate model
+        _regime = real_gamma.get("net_gamma_regime") or "NEUTRAL"
+        gamma_flip_subtitle = _REGIME_LABELS.get(_regime, _regime.replace("_"," ").title())
         vs = max(18, min(96, round(abs(price - gamma_pivot_level) * 18 + (seq % 9) * 4)))
-        fb = real_gamma.get("net_gamma_regime") or (
-            "Call Accumulation / Supportive Flow" if price >= gamma_pivot_level else "Neutral Rotation / Pinning"
-        )
+        fb = _regime
         options_note = f"Live options data — Alpaca chain snapshot, {real_gamma.get('contract_count', 0)} contracts."
     else:
         call_wall_level, put_wall_level, gamma_pivot_level = kl.breakout, kl.fail, kl.confirm
         vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
         cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
         pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
+        gamma_flip_subtitle = f"{gp}% dealer sensitivity (synthetic)"
         fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
         # BUG FIX (2026-07-29): this only checked `has_real_options`, but
         # we reach this branch whenever has_real_options is True AND the
@@ -2265,7 +2289,7 @@ def build_command_tab(live, candles, symbol, tf):
         html.Div([
             zcard("Call Wall",   f"${round(call_wall_level):.0f}",   f"{cp}% call-side pressure", TEAL_DIM),
             zcard("Put Wall",    f"${round(put_wall_level):.0f}",    f"{pp}% put-side pressure",  RED_DIM),
-            zcard("Gamma Pivot", f"${round(gamma_pivot_level):.0f}", f"{gp}% dealer sensitivity", YELLOW_DIM),
+            zcard("Gamma Flip Point", f"${round(gamma_pivot_level):.0f}", gamma_flip_subtitle, YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
         note_box(options_note, "blue"),
