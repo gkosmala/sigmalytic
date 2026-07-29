@@ -272,11 +272,31 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
         "APCA-API-KEY-ID": key,
         "APCA-API-SECRET-KEY": secret,
     }
+    # FIX (2026-07-29): user-reported -- switching to the 1D timeframe only
+    # ever showed 1 candle (1m/5m/etc worked fine, showing ~90+ candles).
+    # This is a documented Alpaca behavior already noted elsewhere in this
+    # codebase (radar_service.py's fetch_bars_batch docstring): calling
+    # /bars with only timeframe+limit, no explicit start/end window, can
+    # silently return just the single most recent bar for daily/weekly
+    # timeframes. This endpoint never had that same fix applied. Sizing
+    # the lookback window to the requested timeframe + limit so enough
+    # calendar time is actually covered.
+    _clean_limit = max(1, min(int(limit or 200), 1000))
+    _calendar_days_per_bar = {
+        "1Min": 1, "5Min": 1, "15Min": 1, "1Hour": 3,
+        "1Day": 1.6, "1Week": 8, "1Month": 35,
+    }.get(timeframe, 1)
+    _lookback_days = max(5, int(_clean_limit * _calendar_days_per_bar) + 10)
+    _end_dt = datetime.utcnow() + timedelta(days=1)
+    _start_dt = _end_dt - timedelta(days=_lookback_days)
+
     params = {
         "timeframe": timeframe,
-        "limit": max(1, min(int(limit or 200), 1000)),
+        "limit": _clean_limit,
         "feed": "sip",
         "adjustment": "raw",
+        "start": _start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end": _end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     try:
