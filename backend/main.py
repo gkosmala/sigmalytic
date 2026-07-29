@@ -73,18 +73,16 @@ app = FastAPI(
 
 @app.on_event("startup")
 def _start_radar_scheduler_on_boot():
-    # FIX (2026-07-29): user asked to tackle the Radar Screen tab showing
-    # placeholder/campaign-derived data instead of real radar analysis.
-    # Root cause traced to this: start_radar_scheduler() (radar_service.py)
-    # -- the function that scans the Russell 1000 universe every 8
-    # minutes and computes real relative_strength/volume_pressure/
-    # behavioral/readiness_score/probability data -- was fully built and
-    # correct, but never actually called anywhere in this app. Every job
-    # it would run already has memory instrumentation added earlier today
-    # (during the unrelated OOM investigation) logging RSS before/after
-    # each run, so this activation is being watched closely, not just
-    # switched on blind. Wrapped defensively: if starting the scheduler
-    # fails for any reason, it's logged, not allowed to crash the app.
+    # DISABLED (2026-07-29): user confirmed a real "ran out of memory"
+    # crash exactly 5 minutes after this activation deployed -- suspiciously
+    # close to snapshot_intraday's 300-second interval. Reverting
+    # immediately to stop active risk while this is investigated properly
+    # with real evidence (same protocol as the earlier OOM investigation),
+    # rather than leaving a newly-activated, unverified heavy background
+    # system crash-looping in production. The scheduler code itself is
+    # untouched -- only this call is disabled.
+    print("[STARTUP] Radar scheduler activation disabled pending investigation of a confirmed crash", flush=True)
+    return
     try:
         from backend.radar_service import start_radar_scheduler
         start_radar_scheduler()
