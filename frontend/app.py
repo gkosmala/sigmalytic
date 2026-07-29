@@ -2078,11 +2078,18 @@ def build_command_tab(live, candles, symbol, tf):
         cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
         pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
         fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
-        options_note = (
-            "Synthetic options layer — no live options chain returned for this symbol right now."
-            if not has_real_options else
-            "Synthetic options layer — connect Tradier or CBOE for live institutional flow data."
-        )
+        # BUG FIX (2026-07-29): this only checked `has_real_options`, but
+        # we reach this branch whenever has_real_options is True AND the
+        # wall lists are empty (chain data came back, just no qualifying
+        # gamma walls near the current price) -- that case was wrongly
+        # showing "connect Tradier or CBOE", which implies no options
+        # data exists at all. That's misleading when real data genuinely
+        # was received; now distinguishes the two cases correctly.
+        if has_real_options:
+            options_note = "Live options chain received, but no active gamma walls found near the current price — showing the synthetic model instead."
+        else:
+            _reason = real_gamma.get("error") or real_gamma.get("status") or "unknown_reason"
+            options_note = f"Synthetic options layer — no live options data available ({_reason})."
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
     fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level)
