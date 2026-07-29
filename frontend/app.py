@@ -1284,23 +1284,27 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None):
     """Clean chart — integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price)
+    # FIX (2026-07-29): user-reported -- on the 1D/1W chart, Call Wall/
+    # Gamma Flip Point/Put Wall (and the 4 generic level lines) all
+    # appeared "clustered" near the top. They aren't wrong -- these are
+    # inherently short-term levels (a few % around *today's* price), so
+    # stretched across months of historical range they naturally bunch up
+    # near wherever price currently sits. The right fix is showing them
+    # only on timeframes where they're actually meaningful (intraday),
+    # rather than distorting the math to force them to spread out over a
+    # price history they have nothing to do with.
+    show_price_overlays = tf not in ("1D", "1W")
     xs = list(range(len(candles)))
     fig = go.Figure()
 
-    # Positive/negative gamma regime shading, above/below the Gamma Flip
-    # Point -- standard convention for these overlays (as described by the
-    # user): above the flip, dealers are net long gamma and hedge by
-    # buying dips/selling rallies, pinning price (shaded green); below it,
-    # dealers are net short gamma, hedging amplifies moves instead of
-    # dampening them (shaded red). Purely visual context behind the
-    # candles, drawn first so it never covers price action.
-    _flip = gamma_pivot if gamma_pivot is not None else kl.confirm
-    _highs = [c["h"] for c in candles] if candles else [price]
-    _lows  = [c["l"] for c in candles] if candles else [price]
-    _y_top = max(max(_highs), _flip, price) * 1.02
-    _y_bot = min(min(_lows),  _flip, price) * 0.98
-    fig.add_hrect(y0=_flip, y1=_y_top, fillcolor=TEAL_DIM, opacity=0.06, layer="below", line_width=0)
-    fig.add_hrect(y0=_y_bot, y1=_flip, fillcolor=RED_DIM,  opacity=0.06, layer="below", line_width=0)
+    if show_price_overlays:
+        _flip = gamma_pivot if gamma_pivot is not None else kl.confirm
+        _highs = [c["h"] for c in candles] if candles else [price]
+        _lows  = [c["l"] for c in candles] if candles else [price]
+        _y_top = max(max(_highs), _flip, price) * 1.02
+        _y_bot = min(min(_lows),  _flip, price) * 0.98
+        fig.add_hrect(y0=_flip, y1=_y_top, fillcolor=TEAL_DIM, opacity=0.06, layer="below", line_width=0)
+        fig.add_hrect(y0=_y_bot, y1=_flip, fillcolor=RED_DIM,  opacity=0.06, layer="below", line_width=0)
 
     fig.add_trace(go.Candlestick(
         x=xs,
@@ -1320,14 +1324,15 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     # lines -- same thin width, no text, easy to lose track of which line
     # was which. These three now get their own clear, bolder, labeled
     # lines so they're immediately identifiable on the chart itself.
-    for level,color,dash,width in [
-        (kl.prior_high, TEAL_DIM,   "dot",     1.0),
-        (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
-        (kl.trigger,    YELLOW_DIM, "dash",    1.0),
-        (kl.trap,       RED_DIM,    "dot",     1.0),
-    ]:
-        fig.add_hline(y=level, line_color=color, line_dash=dash,
-                      line_width=width, opacity=0.6)
+    if show_price_overlays:
+        for level,color,dash,width in [
+            (kl.prior_high, TEAL_DIM,   "dot",     1.0),
+            (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
+            (kl.trigger,    YELLOW_DIM, "dash",    1.0),
+            (kl.trap,       RED_DIM,    "dot",     1.0),
+        ]:
+            fig.add_hline(y=level, line_color=color, line_dash=dash,
+                          line_width=width, opacity=0.6)
 
     # BUG FIX (2026-07-29): the label f-strings here were built as part of
     # the list literal itself, which Python evaluates fully *before* the
@@ -1336,21 +1341,22 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     # instead of each line's own value. All three labels were silently
     # showing the same wrong number. Fixed by building the label text
     # inside the loop body, after `level` is actually bound per-iteration.
-    for level,color,prefix in [
-        (call_wall   if call_wall   is not None else kl.breakout, TEAL_DIM,   "CALL WALL"),
-        (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA FLIP POINT"),
-        (put_wall    if put_wall    is not None else kl.fail,     RED_DIM,    "PUT WALL"),
-    ]:
-        label = f"{prefix}  ${level:.0f}"
-        fig.add_hline(
-            y=level, line_color=color, line_dash="solid", line_width=2.5, opacity=0.95,
-            annotation_text=label,
-            annotation_position="top left",
-            annotation_font=dict(color=color, size=11, family="DM Mono, monospace"),
-            annotation_bgcolor="rgba(8,24,39,.85)",
-            annotation_bordercolor=color,
-            annotation_borderwidth=1,
-        )
+    if show_price_overlays:
+        for level,color,prefix in [
+            (call_wall   if call_wall   is not None else kl.breakout, TEAL_DIM,   "CALL WALL"),
+            (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA FLIP POINT"),
+            (put_wall    if put_wall    is not None else kl.fail,     RED_DIM,    "PUT WALL"),
+        ]:
+            label = f"{prefix}  ${level:.0f}"
+            fig.add_hline(
+                y=level, line_color=color, line_dash="solid", line_width=2.5, opacity=0.95,
+                annotation_text=label,
+                annotation_position="top left",
+                annotation_font=dict(color=color, size=11, family="DM Mono, monospace"),
+                annotation_bgcolor="rgba(8,24,39,.85)",
+                annotation_bordercolor=color,
+                annotation_borderwidth=1,
+            )
     # Live price line
     fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
     fig.update_layout(
@@ -2205,7 +2211,7 @@ def build_command_tab(live, candles, symbol, tf):
             html.Span(f"{tf}  ·  {len(candles)} candles",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
-            html.Span(f"Vol {live['volume']:,}",
+            html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
