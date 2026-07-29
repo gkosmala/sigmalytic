@@ -2260,6 +2260,29 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
 
     results = list(RADAR_CACHE.values())
 
+    # DIAGNOSTIC (2026-07-29): the previous diagnostic (inside the shared
+    # _attach_behavioral_transition, called from 5+ different places) showed
+    # volume_pressure/relative_strength/expansion_node/behavioral as None
+    # for every symbol -- but that function is shared across multiple
+    # callers, so those log lines weren't necessarily from *this* endpoint
+    # specifically. This logs the RAW RADAR_CACHE values directly, right
+    # here in get_radar_scores (the exact endpoint the Radar Screen tab
+    # calls), before any enrichment happens -- unambiguous evidence of
+    # whether score_symbol's computed values actually make it into the
+    # cache this endpoint reads, or whether something is stripping/
+    # overwriting them before this point.
+    if results:
+        _sample = results[0]
+        log.warning(
+            f"[RADAR_DIAG_RAW] {_sample.get('symbol')}: "
+            f"composite_score={_sample.get('composite_score')} "
+            f"volume_pressure={_sample.get('volume_pressure')} "
+            f"relative_strength={_sample.get('relative_strength')} "
+            f"expansion_node={_sample.get('expansion_node')} "
+            f"behavioral={_sample.get('behavioral')} "
+            f"all_keys={sorted(_sample.keys())}"
+        )
+
     if status:
         results = [r for r in results if r.get("status") == status]
     if min_score > 0:
