@@ -31,10 +31,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: BACKEND_URL
-        fromService:
-          name: sigmalytic-backend
-          type: web
-          property: url
+        value: "https://sigmalytic-backend.onrender.com"
       - key: BACKEND_WS_URL
         value: "wss://sigmalytic-backend.onrender.com"
 
@@ -70,10 +67,7 @@ services:
       - key: PYTHON_VERSION
         value: 3.11
       - key: BACKEND_URL
-        fromService:
-          name: sigmalytic-backend
-          type: web
-          property: url
+        value: "https://sigmalytic-backend.onrender.com"
       - key: SIGMALYTIC_NIGHTLY_CRON_ENABLED
         value: "true"
       - key: SIGMALYTIC_NIGHTLY_CRON_TOKEN
