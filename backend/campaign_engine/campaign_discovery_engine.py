@@ -664,6 +664,21 @@ class CampaignDiscoveryEngine:
         batches_attempted = 0
         total_pages_loaded = 0
 
+        # FIX (2026-07-29): previously, if the configured feed (default "sip",
+        # a separate paid Alpaca subscription from options/trading access)
+        # returned 401 Unauthorized, every single batch failed the same way
+        # and discovery silently ended up with zero usable symbols for the
+        # entire run -- with no automatic recovery, this meant campaigns
+        # were never actually being discovered, night after night, even
+        # though the underlying universe (Russell 1000) loaded correctly.
+        # Now: the first time SIP returns 401, switch to the free "iex"
+        # feed for the rest of this run and keep going, instead of quietly
+        # returning nothing. This is a genuine data-quality tradeoff (IEX
+        # is a single-exchange feed, not the consolidated tape) but it's a
+        # strictly better outcome than discovering nothing at all.
+        effective_feed = feed
+        feed_downgraded = False
+
         for start_idx in range(0, len(universe), batch_size):
             batch = universe[start_idx:start_idx + batch_size]
             batches_attempted += 1
@@ -675,7 +690,7 @@ class CampaignDiscoveryEngine:
                     "symbols": ",".join(batch),
                     "timeframe": "1Day",
                     "limit": page_limit,
-                    "feed": feed,
+                    "feed": effective_feed,
                     "adjustment": "raw",
                     "start": start_dt.isoformat().replace("+00:00", "Z"),
                     "end": end_dt.isoformat().replace("+00:00", "Z"),
@@ -691,6 +706,29 @@ class CampaignDiscoveryEngine:
                         params=params,
                         timeout=60,
                     )
+                    if response.status_code == 401 and effective_feed == "sip" and not feed_downgraded:
+                        # One-time downgrade for the whole run, not a
+                        # per-batch retry loop -- a 401 on SIP means the
+                        # account isn't authorized for it at all, so
+                        # retrying SIP on every subsequent batch would
+                        # just fail identically 92 times over again.
+                        feed_downgraded = True
+                        effective_feed = "iex"
+                        self.diagnostics["alpaca_feed_downgraded_to_iex"] = True
+                        self.diagnostics["alpaca_feed_downgrade_reason"] = (
+                            f"SIP feed returned 401 Unauthorized at batch_start={batch[0]} "
+                            f"-- this Alpaca account/key is not authorized for the SIP "
+                            f"market-data subscription. Falling back to the free IEX feed "
+                            f"for the remainder of this run."
+                        )
+                        params["feed"] = effective_feed
+                        response = requests.get(
+                            f"{base_url}/v2/stocks/bars",
+                            headers=headers,
+                            params=params,
+                            timeout=60,
+                        )
+
                     response.raise_for_status()
                     data = response.json() or {}
                     bars = data.get("bars") or {}
@@ -749,6 +787,7 @@ class CampaignDiscoveryEngine:
                 cleaned[sym.upper()] = final_rows
 
         self.diagnostics["alpaca_batches_attempted"] = int(batches_attempted)
+        self.diagnostics["alpaca_feed_effective"] = str(effective_feed)
         self.diagnostics["alpaca_total_pages_loaded"] = int(total_pages_loaded)
 
         if cleaned:
