@@ -5098,9 +5098,29 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     if d.get("confluence"):
         new_live["confluence"] = d.get("confluence")
 
-    # If the candle store is empty, fetch real history once.
-    if not candles:
-        candles = fetch_real_candles(clean, tf or "5m")
+    # FIX (2026-07-30): user-reported the chart's candlesticks didn't
+    # match the live price, by a large and persistent margin that a hard
+    # browser refresh never fixed. Root cause: the module-level
+    # _init_candles = fetch_real_candles("AAPL", "5m") at the bottom of
+    # this file runs exactly once, at Python process boot -- not per
+    # session, not per page load. Every user's chart started from that
+    # one frozen snapshot (whatever AAPL's price was whenever this
+    # server process last restarted, possibly hours or days ago), and
+    # this "if not candles" check only ever re-fetched full history if
+    # the store was completely empty -- which it never was after that
+    # one boot-time fetch. From then on, only the single most recent
+    # candle's high/low/close ever got nudged (below); the rest of the
+    # historical series stayed frozen indefinitely, which is also why a
+    # hard refresh never helped -- this was a server-side Python
+    # variable, not anything cached in the browser.
+    #
+    # Re-fetching full history periodically (roughly every 15 ticks,
+    # ~5 minutes at the current 20s interval) self-heals a stale
+    # snapshot without hammering the backend on every single tick.
+    if not candles or (new_seq % 15 == 0):
+        fresh_history = fetch_real_candles(clean, tf or "5m")
+        if fresh_history:
+            candles = fresh_history
 
     new_candles = update_current_candle(
         candles=candles or [],
