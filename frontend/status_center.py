@@ -147,6 +147,25 @@ def _campaign_state(c: dict) -> str:
 
 
 def _campaign_age_days(c: dict, default=99) -> int:
+    # FIX (2026-07-30): user-confirmed via direct API inspection that
+    # campaign_age_days/duration_days are set to 0 exactly once, at
+    # campaign creation (campaign_discovery_engine.py), and never
+    # updated again anywhere in the entire codebase -- confirmed by
+    # direct search. Every campaign, regardless of true age, was frozen
+    # at "0 days old" forever, which is why the Yellow Alert banner
+    # incorrectly showed all 280 campaigns as "new in the last 3 days".
+    # birth_date, by contrast, is set once and never needs touching
+    # again to remain accurate -- computing the real age from it
+    # (today's date minus birth_date) instead.
+    birth_date = c.get("birth_date")
+    if birth_date:
+        try:
+            from datetime import date
+            birth = date.fromisoformat(str(birth_date)[:10])
+            return (date.today() - birth).days
+        except Exception:
+            pass
+
     return _safe_int(
         c.get("campaign_age_days")
         if c.get("campaign_age_days") is not None
