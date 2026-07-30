@@ -541,7 +541,21 @@ class GannGeometryEngine:
 
     def fan_levels(self, pivot: Pivot, current_time: datetime,
                    price_per_day: float = 1.0) -> Dict[str, float]:
-        days = max((current_time - pivot.timestamp).total_seconds() / 86400.0, 0.0)
+        # FIX (2026-07-30): user-confirmed via production diagnostic that
+        # this subtraction was failing for every symbol with "can't
+        # subtract offset-naive and offset-aware datetimes" -- pivot
+        # timestamps and current_time can come from different upstream
+        # data sources (daily bars vs 5-minute intraday bars) that don't
+        # consistently produce timezone-aware datetimes. Normalizing both
+        # to aware UTC right here, regardless of which one (if either)
+        # came in naive, rather than chasing every possible upstream
+        # source of the inconsistency.
+        pivot_ts = pivot.timestamp
+        if pivot_ts.tzinfo is None:
+            pivot_ts = pivot_ts.replace(tzinfo=timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        days = max((current_time - pivot_ts).total_seconds() / 86400.0, 0.0)
         direction = 1 if pivot.kind == "low" else -1
         levels: Dict[str, float] = {}
         ratio_labels = {1/8: "fan_1x8", 1/4: "fan_1x4", 1/3: "fan_1x3",
