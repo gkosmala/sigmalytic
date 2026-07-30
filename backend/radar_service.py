@@ -1316,6 +1316,21 @@ def run_radar_scan():
         log.debug(f"Heartbeat write failed: {_he}")
 
     LAST_SCAN_TIME = time.time()
+
+    # FIX (2026-07-30): user-confirmed via direct API inspection that
+    # "last_scan" was null on the main backend, even though real scans
+    # are genuinely completing in this worker process. Same root cause
+    # already fixed for DIVERGENCE_WATCHLIST: LAST_SCAN_TIME is a local,
+    # in-process variable -- it gets set here, in the worker, but the
+    # main backend (a separate process that no longer runs this
+    # function itself) never sees this update, since only RADAR_CACHE
+    # itself was being pushed to Redis, not this separate variable.
+    try:
+        if _redis_client:
+            _redis_client.set("radar:last_scan_time", str(LAST_SCAN_TIME), ex=900)
+    except Exception as _lste:
+        log.warning(f"LAST_SCAN_TIME Redis write failed: {_lste}")
+
     log.info(f"Radar scan complete — {len(scored)} symbols scored (lightweight)")
 
     _process_events(scored)
@@ -2460,6 +2475,7 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
     the requested page, and only then attach the heavier behavioral/probability
     display fields.
     """
+    global LAST_SCAN_TIME
     try:
         limit = int(limit or 100)
     except Exception:
@@ -2489,6 +2505,19 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
                 results = list(_radar_json.loads(_raw).values())
         except Exception as _rre:
             log.warning(f"Radar cache Redis read failed: {_rre}")
+
+    # FIX (2026-07-30): user-confirmed via direct API inspection that
+    # "last_scan" was null on the main backend. Same root cause as the
+    # RADAR_CACHE fix above -- LAST_SCAN_TIME is set inside run_radar_scan(),
+    # which now only runs in the separate scanner worker process; the
+    # main backend's own copy of this variable never gets updated.
+    if not LAST_SCAN_TIME and _redis_client:
+        try:
+            _raw_ts = _redis_client.get("radar:last_scan_time")
+            if _raw_ts:
+                LAST_SCAN_TIME = float(_raw_ts)
+        except Exception as _lsre:
+            log.warning(f"LAST_SCAN_TIME Redis read failed: {_lsre}")
 
     # DIAGNOSTIC (2026-07-29): the previous diagnostic (inside the shared
     # _attach_behavioral_transition, called from 5+ different places) showed
