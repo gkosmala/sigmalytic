@@ -222,14 +222,30 @@ class GammaStrikeMatrixEngine:
         return cls._safe_float(ordered["strike"].iloc[idx])
 
     @classmethod
-    def _net_gamma_regime(cls, total_gex: float) -> str:
-        if total_gex >= 1_000_000:
+    def _net_gamma_regime(cls, spot_price: float, zero_gamma_level: Optional[float]) -> str:
+        # FIX (2026-07-30): user gave a precise definition of the gamma
+        # flip regime: dealers are net long gamma (positive zone) when
+        # price is ABOVE the flip level, and net short gamma (negative
+        # zone) when price is BELOW it -- the regime is defined by where
+        # spot price sits relative to the flip point itself. This
+        # previously classified the regime from total_gex (the aggregate
+        # GEX summed across the entire chain), a different metric that
+        # doesn't directly reference where current price sits relative
+        # to the flip level and can diverge from it. Deriving the regime
+        # directly from the price-vs-flip-level comparison instead, per
+        # the exact definition given.
+        if zero_gamma_level is None or zero_gamma_level <= 0 or spot_price <= 0:
+            return "NEUTRAL"
+
+        distance_pct = (spot_price - zero_gamma_level) / zero_gamma_level * 100
+
+        if distance_pct >= 2.0:
             return "DEEP_POSITIVE"
-        if total_gex > 0:
+        if distance_pct > 0:
             return "POSITIVE"
-        if total_gex <= -1_000_000:
+        if distance_pct <= -2.0:
             return "DEEP_NEGATIVE"
-        if total_gex < 0:
+        if distance_pct < 0:
             return "NEGATIVE"
         return "NEUTRAL"
 
@@ -402,8 +418,8 @@ class GammaStrikeMatrixEngine:
             nearest_gamma_wall = all_nearest[0] if all_nearest else None
 
         total_gex = cls._safe_float(grouped["net_gamma_exposure"].sum())
-        net_gamma_regime = cls._net_gamma_regime(total_gex)
         zero_gamma_level = cls._estimate_zero_gamma_level(grouped)
+        net_gamma_regime = cls._net_gamma_regime(spot_price, zero_gamma_level)
 
         total_zero_dte_volume = cls._safe_float(grouped["zero_dte_volume"].sum())
         total_zero_dte_oi = cls._safe_float(grouped["zero_dte_open_interest"].sum())
