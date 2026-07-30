@@ -2394,6 +2394,36 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_guide_tab():
+    """
+    User Guide tab -- serves the PDF version of the Sigmalytic V2 User
+    Guide directly from the frontend's assets folder (Dash serves
+    everything under frontend/assets/ automatically at /assets/<file>).
+    """
+    guide_path = "/assets/Sigmalytic_V2_User_Guide.pdf"
+    return card([
+        html.Div([
+            html.Div([
+                html.H2("User Guide", style={"fontSize":"18px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"}),
+                html.P("The complete Sigmalytic V2 user guide -- every tab explained, a daily/weekly routine, worked examples, and a full glossary.",
+                       style={"fontSize":"13px","color":"rgba(255,255,255,.6)","margin":"0"}),
+            ]),
+            html.A(
+                "⬇ Download PDF",
+                href=guide_path,
+                download="Sigmalytic_V2_User_Guide.pdf",
+                style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"10px",
+                       "color":TEAL_DIM,"cursor":"pointer","fontSize":"13px","fontWeight":"800",
+                       "padding":"10px 18px","textDecoration":"none","whiteSpace":"nowrap"},
+            ),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
+        html.Iframe(
+            src=guide_path,
+            style={"width":"100%","height":"85vh","border":f"1px solid {BORDER}","borderRadius":"14px"},
+        ),
+    ])
+
+
 def build_stub_tab(title, description):
     """Placeholder for tabs under development."""
     return card([
@@ -4740,6 +4770,7 @@ ALL_TABS = [
     ("admin",       "Admin"),
     ("setup",       "Setup"),
     ("status",      "Status"),
+    ("guide",       "User Guide"),
 ]
 
 app.layout = html.Div([
@@ -5294,7 +5325,24 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
     elif tab=="setup":       main = build_setup_tab()
+    elif tab=="guide":       main = build_guide_tab()
     else:                    main = html.Div("Unknown tab")
+
+    # Persistent copyright footer -- appears at the bottom of every tab's
+    # content, regardless of which tab is active, without needing to
+    # modify the large static app.layout structure.
+    main = html.Div([
+        main,
+        html.Div([
+            html.Span(f"© {datetime.now().year} Sigmalytic Quant Corporation. All rights reserved.",
+                      style={"fontSize":"11px","color":"rgba(255,255,255,.35)"}),
+            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
+            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
+        ], style={"textAlign":"center","padding":"24px 0 8px","marginTop":"24px"}),
+    ])
+
     return main, HIDDEN, no_update, no_update
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
