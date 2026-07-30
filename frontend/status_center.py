@@ -313,14 +313,23 @@ def _campaign_mini(c: dict) -> html.Div:
     symbol  = c.get("symbol", "-")
     state   = c.get("current_state", "BIRTH")
     tier    = c.get("historical_confidence", "-")
-    # FIX (2026-07-30): "return_pct" is the same field already confirmed
-    # (earlier tonight, in campaign_tab.py) to never actually be set
-    # anywhere in the backend's enrichment output -- every row here was
-    # showing an identical fabricated "+0.0%" that looks like real data
-    # but isn't. Same treatment: track presence, show an honest dash
-    # instead of a look-alike zero.
-    _has_ret_pct = c.get("return_pct") is not None
-    ret_pct = float(c.get("return_pct") or 0)
+    # FIX (2026-07-30): "return_pct" is never actually set anywhere in
+    # the backend's enrichment output (confirmed earlier tonight in
+    # campaign_tab.py) -- every row showed an identical fabricated
+    # "+0.0%". Rather than just show a dash for something that could
+    # genuinely be computed, using entry_price (set once, at campaign
+    # discovery/birth -- campaign_discovery_engine.py) against the
+    # current live price to derive a real return percentage.
+    _entry_price = c.get("entry_price")
+    _current_price = c.get("current_price") or c.get("price")
+    _has_ret_pct = (
+        _entry_price is not None and _current_price is not None
+        and float(_entry_price) > 0
+    )
+    if _has_ret_pct:
+        ret_pct = (float(_current_price) - float(_entry_price)) / float(_entry_price) * 100
+    else:
+        ret_pct = 0.0
     ods     = float(c.get("operator_dominance") or 0)
     days    = _campaign_age_days(c, default=0)
     s_color = STATE_COLORS.get(state, MUTED)
@@ -554,7 +563,18 @@ def build_status_center(session=None) -> html.Div:
     _ods_values = [float(c["operator_dominance"]) for c in campaign_freshness_rows if c.get("operator_dominance") is not None]
     avg_ods    = (sum(_ods_values) / len(_ods_values)) if _ods_values else 0.0
     exits      = int(summary.get("conjunction_exits", 0))
-    avg_return = float(summary.get("avg_return_pct", 0))
+    # FIX (2026-07-30): summary.get("avg_return_pct") is the same class
+    # of never-populated backend field already found for avg_ods earlier
+    # tonight. Computing a genuine average directly from entry_price vs
+    # current price (same real calculation just added to _campaign_mini)
+    # across the full campaign set instead.
+    _return_values = []
+    for _c in campaign_freshness_rows:
+        _ep = _c.get("entry_price")
+        _cp = _c.get("current_price") or _c.get("price")
+        if _ep is not None and _cp is not None and float(_ep) > 0:
+            _return_values.append((float(_cp) - float(_ep)) / float(_ep) * 100)
+    avg_return = (sum(_return_values) / len(_return_values)) if _return_values else 0.0
     state_counts: dict[str, int] = summary.get("state_breakdown", {})
 
     cap_color = (TEAL_DIM if OPTIMAL_MIN <= total <= OPTIMAL_MAX
