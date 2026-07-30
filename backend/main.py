@@ -273,6 +273,17 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
     return result
 
 
+# FIX (2026-07-30): extracted to a module-level constant (was previously
+# local to get_candles) specifically so tests/test_candle_lookback_window.py
+# can import these exact values directly, rather than duplicating them --
+# guaranteeing the regression test can never silently drift out of sync
+# with the real implementation.
+CANDLE_CALENDAR_DAYS_PER_BAR = {
+    "1Min": 1/390, "5Min": 1/78, "15Min": 1/26, "1Hour": 1/6.5,
+    "1Day": 1.6, "1Week": 8, "1Month": 35,
+}
+
+
 @app.get("/api/candles/{symbol}")
 def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     sym = (symbol or "").upper().strip()
@@ -319,10 +330,7 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     # rather than an obvious empty/error response -- exactly the
     # sustained, reboot-proof mismatch reported. Corrected to reflect
     # real trading-bars-per-day for each intraday granularity.
-    _calendar_days_per_bar = {
-        "1Min": 1/390, "5Min": 1/78, "15Min": 1/26, "1Hour": 1/6.5,
-        "1Day": 1.6, "1Week": 8, "1Month": 35,
-    }.get(timeframe, 1)
+    _calendar_days_per_bar = CANDLE_CALENDAR_DAYS_PER_BAR.get(timeframe, 1)
     _lookback_days = max(5, int(_clean_limit * _calendar_days_per_bar) + 10)
     _end_dt = datetime.utcnow() + timedelta(days=1)
     _start_dt = _end_dt - timedelta(days=_lookback_days)
