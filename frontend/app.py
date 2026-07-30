@@ -4993,6 +4993,7 @@ def load_symbol(_, ticker, live, tf, session):
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
     Input("tab-status","n_clicks"),
+    Input("tab-guide","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
