@@ -182,8 +182,8 @@ def _build_market_data(symbol: str, snap: dict, bars: list,
                        bars_5m: List[dict]):
     try:
         from backend.confluence_engine import MarketData, OptionsData
-    except ImportError:
-        return None, None
+    except ImportError as _imp_err:
+        return None, None, f"IMPORT_FAILED: {_imp_err}"
 
     daily_bar    = snap.get("dailyBar",    {}) or {}
     prev_daily   = snap.get("prevDailyBar", {}) or {}
@@ -205,7 +205,7 @@ def _build_market_data(symbol: str, snap: dict, bars: list,
             pass
 
     if price <= 0 or prev_close <= 0:
-        return None, None
+        return None, None, f"INVALID_PRICE: price={price} prev_close={prev_close} bars_len={len(bars)}"
 
     # Benchmark: use SPY tracker, fall back to snapshot change
     change_pct = ((price - prev_close) / prev_close) * 100
@@ -273,7 +273,7 @@ def _build_market_data(symbol: str, snap: dict, bars: list,
     if persons_data:
         market.__dict__.update({"persons_pivots": persons_data})
 
-    return market, OptionsData()
+    return market, OptionsData(), None
 
 
 def _calc_atr_from_bars(bars: list, period: int = 14) -> float:
@@ -341,10 +341,10 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
         # Fetch intraday bars (cached, 5-min TTL)
         bars_5m = _fetch_intraday_bars_cached(symbol)
 
-        market, options = _build_market_data(symbol, snap, bars, bars_5m)
+        market, options, _mkt_fail_reason = _build_market_data(symbol, snap, bars, bars_5m)
 
         if market is None:
-            old_result["new_engine_error"] = "Could not build MarketData"
+            old_result["new_engine_error"] = f"Could not build MarketData: {_mkt_fail_reason}"
             old_result["ab_mode"]          = True
             old_result["score_delta"]      = 0.0
             return old_result
