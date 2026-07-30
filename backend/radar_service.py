@@ -95,6 +95,18 @@ try:
     _CONFLUENCE_AVAILABLE = True
 except Exception as _ce:
     _CONFLUENCE_AVAILABLE = False
+
+# ── Doctrine-aligned deep engine (safe import) ────────────────────────────────
+# FIX (2026-07-30): run_eod_audit() (Layer 2 / Intelligence Change Detector)
+# now uses this instead of ConfluenceEngine -- see doctrine_deep_engine.py's
+# module docstring for the full product-decision rationale. Only depends
+# on backend.weis_wave (a real, existing Wyckoff/Weis engine already used
+# elsewhere in this codebase), decoupled from confluence_bridge entirely.
+try:
+    from backend.doctrine_deep_engine import compute_doctrine_deep_score
+    _DOCTRINE_ENGINE_AVAILABLE = True
+except Exception as _de:
+    _DOCTRINE_ENGINE_AVAILABLE = False
     logging.getLogger("radar").warning(f"Confluence bridge not loaded: {_ce}")
 
 # ── Weis Wave radar scoring (safe import) ──────────────────────────────────────
@@ -1313,13 +1325,14 @@ def run_radar_scan():
 def run_eod_audit():
     """
     Runs nightly at 8:30 PM ET.
-    Scores all symbols with full ConfluenceEngine, computes delta vs composite_score.
+    Scores all symbols with the doctrine-aligned deep engine (Wyckoff/Weis/
+    Livermore-based, see doctrine_deep_engine.py), computes delta vs composite_score.
     Symbols with |delta| >= 15 written to divergence_watchlist in Supabase.
     """
     global DIVERGENCE_WATCHLIST, LAST_EOD_AUDIT_TIME
 
-    if not _CONFLUENCE_AVAILABLE:
-        log.warning("EOD audit skipped — confluence bridge not available")
+    if not _DOCTRINE_ENGINE_AVAILABLE:
+        log.warning("EOD audit skipped — doctrine deep engine not available")
         return
     if not RADAR_CACHE:
         log.warning("EOD audit skipped — radar cache empty")
@@ -1331,42 +1344,33 @@ def run_eod_audit():
     for _idx, (symbol, cached) in enumerate(list(RADAR_CACHE.items())):
         if _idx > 0 and _idx % 200 == 0:
             _log_mem(f"eod_audit: mid-loop at symbol {_idx}/{len(RADAR_CACHE)}")
-        # FIX (2026-07-30): user-confirmed via [EOD_SCORE_CHECK] diagnostic
-        # that _build_market_data() was failing with "Could not build
-        # MarketData" for 100% of symbols, every single run -- not a real
-        # "no divergences today" result. Root cause: this loop passed an
-        # empty snap={} for every symbol, so price always computed as 0,
-        # which always failed _build_market_data's `if price <= 0 or
-        # prev_close <= 0: return None` check, regardless of real market
-        # conditions. Building a real snapshot from the price/change_pct
-        # already sitting in RADAR_CACHE (populated moments earlier by the
-        # regular radar scan) instead of an empty dict.
+        # FIX (2026-07-30): PRODUCT DECISION -- following a full read-only
+        # audit (confirmed by direct file/line citations) that found the
+        # previous Layer 2 engine (ConfluenceEngine.evaluate()) computed
+        # its "deep score" from twelve weighted families, only ~10-20%
+        # of which relate to this product's stated doctrine (Wyckoff /
+        # Weis / Livermore behavioral campaign intelligence) -- the rest
+        # being Gann geometry, time cycles, astrology, numerology/
+        # biblical, Fibonacci, and Elliott waves. Explicit decision: do
+        # not reweight, replace the doctrine entirely. This now calls
+        # compute_doctrine_deep_score() (backend/doctrine_deep_engine.py),
+        # built from seven pillars, all genuine Wyckoff/Weis/Livermore-
+        # aligned price/volume evidence, no exotic methodologies at all.
         _live_price = float(cached.get("price") or 0)
-        _change_pct = float(cached.get("change_pct") or 0)
-        if _live_price > 0 and _change_pct not in (0, -100):
-            _prev_close = _live_price / (1 + _change_pct / 100)
-        else:
-            _prev_close = _live_price
-        snap = {
-            "dailyBar": {
-                "c": _live_price, "o": _live_price, "h": _live_price, "l": _live_price,
-                "v": cached.get("volume", 0), "vw": _live_price,
-            },
-            "prevDailyBar": {"c": _prev_close, "h": _prev_close, "l": _prev_close},
-            "latestTrade": {"p": _live_price},
-        }
         bars = _historical_bars.get(symbol, [])
         composite = cached.get("composite_score", 0)
         if not composite:
             continue
         try:
-            result = score_symbol_ab(symbol, snap, bars, dict(cached))
+            result = compute_doctrine_deep_score(symbol, bars, _live_price)
             if _idx < 5 or result.get("new_engine_error"):
                 log.warning(
                     f"[EOD_SCORE_CHECK] {symbol}: new_engine_error={result.get('new_engine_error')!r} "
-                    f"ab_mode={result.get('ab_mode')} score_delta={result.get('score_delta')}"
+                    f"new_composite_score={result.get('new_composite_score')}"
                 )
-            new_score = result.get("new_composite_score") or result.get("composite_score", 0)
+            new_score = result.get("new_composite_score")
+            if new_score is None:
+                continue
             delta = round(new_score - composite, 2)
 
             if abs(delta) >= DIVERGENCE_THRESHOLD:
