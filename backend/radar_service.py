@@ -1811,13 +1811,40 @@ def _log_mem(tag: str) -> None:
         log.warning(f"[MEM] {tag}: failed to read memory ({e})")
 
 
+_HEAVY_JOB_LOCK = threading.Lock()
+
+
 def _instrumented(name: str, fn):
+    # FIX (2026-07-29): user-confirmed OOM crash on the new radar scanner
+    # worker service, traced to multiple heavy jobs (radar_scan, gex_scan,
+    # divergence_scan, snapshot_intraday, and a manually-triggered
+    # eod_audit) all running concurrently in the same process -- the
+    # exact same memory-stacking pattern already diagnosed and fixed on
+    # the main backend earlier today (see campaign_api.py's
+    # _cached_endpoint_result single-flight fix), just now happening
+    # here instead since this service inherited all of these jobs when
+    # it was split out. A shared, non-blocking lock means only one of
+    # these heavy jobs can actually run at a time process-wide -- if a
+    # second one's scheduled moment arrives while another is still
+    # running, it's skipped (not queued) rather than allowed to stack on
+    # top and compound memory. All jobs registered below go through this
+    # wrapper, so this one change protects all of them uniformly.
     def _wrapped(*args, **kwargs):
-        _log_mem(f"BEFORE {name}")
+        acquired = _HEAVY_JOB_LOCK.acquire(blocking=False)
+        if not acquired:
+            log.warning(
+                f"[SKIP] {name} skipped -- another heavy job is already running "
+                f"(prevents concurrent jobs from stacking memory on top of each other)"
+            )
+            return None
         try:
-            return fn(*args, **kwargs)
+            _log_mem(f"BEFORE {name}")
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _log_mem(f"AFTER {name}")
         finally:
-            _log_mem(f"AFTER {name}")
+            _HEAVY_JOB_LOCK.release()
     return _wrapped
 
 
