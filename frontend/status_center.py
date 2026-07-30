@@ -601,7 +601,15 @@ def build_status_center(session=None) -> html.Div:
     expanding = [c for c in campaign_freshness_rows if _campaign_state(c) == "EXPANDING"]
 
     # New sparks - less than 3 days old
-    new_births = [c for c in campaigns if _campaign_age_days(c, default=99) <= 3]
+    # FIX (2026-07-30): same gap already fixed for expanding/urgent --
+    # missed this one. new_births feeds both "Active Campaigns" and
+    # "New Campaigns" panels, and was still using the small sample
+    # (campaigns, via _campaign_row()), which never includes entry_price
+    # at all -- confirmed via direct API inspection (KAUG has real
+    # entry_price=28.66/current_price=28.65 on the full record, but that
+    # field simply isn't present on the stripped-down sample version).
+    # Switching to campaign_freshness_rows, same as expanding/urgent.
+    new_births = [c for c in campaign_freshness_rows if _campaign_age_days(c, default=99) <= 3]
 
     now_utc = datetime.now(timezone.utc).strftime("%b %d, %Y - %H:%M UTC")
 
