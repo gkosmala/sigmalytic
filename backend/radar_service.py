@@ -1040,6 +1040,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
 
         # ── Step 2: Fetch from Alpaca (nightly refresh or Supabase miss) ─────
         raw = fetch_bars_batch(SYMBOLS, timeframe="1Day", limit=target_limit)
+        _log_mem(f"_refresh_historical_bars: after fetch_bars_batch ({len(raw)} symbols)")
         sample_raw = list(raw.items())[:8]
         if sample_raw:
             log.info(
@@ -1057,6 +1058,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                 _historical_bars[sym] = bars[-target_limit:]
                 loaded += 1
         _bars_last_refresh = time.time()
+        _log_mem(f"_refresh_historical_bars: after copying into _historical_bars ({loaded} loaded)")
         log.info(f"Historical bars loaded for {loaded}/{len(SYMBOLS)} symbols; cache={len(_historical_bars)}")
 
         # ── Step 3: Save to Supabase for next startup ─────────────────────────
@@ -1233,6 +1235,7 @@ def run_radar_scan():
 
     log.info(f"Radar scan starting — {len(SYMBOLS)} symbols (lightweight)")
     snapshots = fetch_snapshots(SYMBOLS)
+    _log_mem(f"radar_scan: after fetch_snapshots ({len(snapshots)} returned)")
 
     # Seed SPY benchmark
     try:
@@ -1251,7 +1254,9 @@ def run_radar_scan():
     div_symbols = {d["symbol"] for d in DIVERGENCE_WATCHLIST}
 
     scored = []
-    for symbol in SYMBOLS:
+    for _idx, symbol in enumerate(SYMBOLS):
+        if _idx > 0 and _idx % 200 == 0:
+            _log_mem(f"radar_scan: mid-loop at symbol {_idx}/{len(SYMBOLS)}")
         snap = snapshots.get(symbol, {})
         if not snap:
             continue
@@ -1323,7 +1328,9 @@ def run_eod_audit():
     log.info(f"EOD audit starting — {len(RADAR_CACHE)} symbols")
     divergences = []
 
-    for symbol, cached in list(RADAR_CACHE.items()):
+    for _idx, (symbol, cached) in enumerate(list(RADAR_CACHE.items())):
+        if _idx > 0 and _idx % 200 == 0:
+            _log_mem(f"eod_audit: mid-loop at symbol {_idx}/{len(RADAR_CACHE)}")
         snap = {}
         bars = _historical_bars.get(symbol, [])
         composite = cached.get("composite_score", 0)
