@@ -487,15 +487,23 @@ def build_status_center(session=None) -> html.Div:
     last_campaign_refresh = _max_timestamp(campaign_freshness_rows, "updated_at")
     last_evidence_refresh = _max_timestamp(campaign_freshness_rows, "evidence_updated_at")
 
-    if isinstance(radar_freshness_data, dict):
-        last_radar_refresh = radar_freshness_data.get("generated_at") or "-"
-        radar_served_at = radar_freshness_data.get("served_at") or "-"
-        radar_cache = radar_freshness_data.get("cache")
-        radar_cache_mode = (
-            radar_cache.get("mode")
-            if isinstance(radar_cache, dict)
-            else "-"
-        )
+    # FIX (2026-07-30): this expected "generated_at"/"served_at"/"cache",
+    # fields that belonged to the old synthetic compat radar endpoint.
+    # Since that endpoint was fixed earlier today to prefer the real
+    # radar engine (which has genuine live data, but a different response
+    # shape -- "last_scan" as a Unix timestamp, no separate cache-mode
+    # concept since it reads directly from Redis), those three fields
+    # always read as "-" here even though real data is flowing. Reading
+    # the real field and formatting it the same way as the other
+    # freshness timestamps on this page.
+    if isinstance(radar_freshness_data, dict) and radar_freshness_data.get("last_scan"):
+        try:
+            _scan_dt = datetime.fromtimestamp(float(radar_freshness_data["last_scan"]), tz=timezone.utc)
+            last_radar_refresh = _scan_dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            last_radar_refresh = "-"
+        radar_served_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        radar_cache_mode = "live_redis_scan"
     else:
         last_radar_refresh = "-"
         radar_served_at = "-"
@@ -503,9 +511,26 @@ def build_status_center(session=None) -> html.Div:
 
     # ── Derived metrics ───────────────────────────────────────────────────
     total      = _safe_int(status_summary.get("total_campaigns") or summary.get("active_campaigns") or len(campaigns), len(campaigns))
-    tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
-    tier2      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
-    avg_ods    = float(summary.get("avg_ods", 0))
+    # FIX (2026-07-30): "historical_confidence" == "TIER_1"/"TIER_2" is
+    # never set anywhere on this data source (campaigns comes from the
+    # lightweight /api/campaigns/active endpoint, not the enrichment
+    # endpoint that computes cohort_status -- same class of gap already
+    # fixed in campaign_tab.py, but that fix doesn't reach this tab since
+    # it's a separate fetch). Deliberately not calling the heavier
+    # enrichment endpoint here given tonight's OOM history -- instead,
+    # using weis_gamma_rank_bucket, a real classification (A+/A/
+    # Watchlist/Low Priority/Avoid) already safely attached to this same
+    # lightweight endpoint by campaign_api.py's _attach_weis_gamma_summaries.
+    tier1      = sum(1 for c in campaigns if c.get("weis_gamma_rank_bucket") == "A+")
+    tier2      = sum(1 for c in campaigns if c.get("weis_gamma_rank_bucket") == "A")
+    # FIX (2026-07-30): summary.get("avg_ods") is never actually set
+    # anywhere in the backend's /api/intelligence/status-center response
+    # -- confirmed by direct search, always silently defaulting to 0.
+    # operator_dominance is a real per-campaign field already present on
+    # this same safe campaigns list; computing a genuine average directly
+    # from it instead.
+    _ods_values = [float(c["operator_dominance"]) for c in campaigns if c.get("operator_dominance") is not None]
+    avg_ods    = (sum(_ods_values) / len(_ods_values)) if _ods_values else 0.0
     exits      = int(summary.get("conjunction_exits", 0))
     avg_return = float(summary.get("avg_return_pct", 0))
     state_counts: dict[str, int] = summary.get("state_breakdown", {})
