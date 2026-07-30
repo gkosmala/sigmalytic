@@ -313,11 +313,18 @@ def _campaign_mini(c: dict) -> html.Div:
     symbol  = c.get("symbol", "-")
     state   = c.get("current_state", "BIRTH")
     tier    = c.get("historical_confidence", "-")
+    # FIX (2026-07-30): "return_pct" is the same field already confirmed
+    # (earlier tonight, in campaign_tab.py) to never actually be set
+    # anywhere in the backend's enrichment output -- every row here was
+    # showing an identical fabricated "+0.0%" that looks like real data
+    # but isn't. Same treatment: track presence, show an honest dash
+    # instead of a look-alike zero.
+    _has_ret_pct = c.get("return_pct") is not None
     ret_pct = float(c.get("return_pct", 0))
     ods     = float(c.get("operator_dominance") or 0)
     days    = _campaign_age_days(c, default=0)
     s_color = STATE_COLORS.get(state, MUTED)
-    r_color = TEAL_DIM if ret_pct >= 0 else RED_DIM
+    r_color = MUTED if not _has_ret_pct else (TEAL_DIM if ret_pct >= 0 else RED_DIM)
     conj    = ods < 40 and state in {"MATURING", "DISTRIBUTION_RISK"}
 
     return html.Div([
@@ -326,9 +333,11 @@ def _campaign_mini(c: dict) -> html.Div:
                                  "fontSize": "13px", "color": WHITE, "flex": "1"}),
         html.Span(tier, style={"fontSize": "9px", "color": MUTED, "flex": ".8"}),
         html.Span(f"D{days}", style={"fontSize": "10px", "color": MUTED, "flex": ".5"}),
-        html.Span(f"{ret_pct:+.1f}%", style={"fontSize": "12px", "fontWeight": "800",
-                                              "color": r_color, "fontFamily": "DM Mono, monospace",
-                                              "flex": ".7", "textAlign": "right"}),
+        html.Span(
+            f"{ret_pct:+.1f}%" if _has_ret_pct else "—",
+            style={"fontSize": "12px", "fontWeight": "800",
+                   "color": r_color, "fontFamily": "DM Mono, monospace",
+                   "flex": ".7", "textAlign": "right"}),
         html.Span("ALERT", style={"color": RED_DIM, "fontSize": "12px",
                                "marginLeft": "6px"}) if conj else html.Span(),
     ], style={
@@ -738,7 +747,7 @@ def build_status_center(session=None) -> html.Div:
                     html.Span(time, style={"fontFamily": "DM Mono, monospace", "fontSize": "12px",
                                           "color": BLUE_DIM, "fontWeight": "700",
                                           "minWidth": "55px"}),
-                    html.Span(engine, style={"fontSize": "12px", "color": TEXT}),
+                    html.Span(engine, style={"fontSize": "12px", "color": WHITE}),
                 ], style={"display": "flex", "gap": "16px", "padding": "6px 0",
                           "borderBottom": f"1px solid {BORDER}"})
                 for time, engine in [
