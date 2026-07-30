@@ -2254,6 +2254,19 @@ def get_divergence_watchlist():
     # audit run) over local memory, using the last_audit timestamp to
     # decide, and only falls back to whatever's already in local memory
     # or the DB reload if Redis is genuinely unavailable/empty.
+    # FIX (2026-07-30): found via the new unambiguous logging -- the
+    # write side confirmed a real, successful audit run correctly wrote
+    # "0 symbols found" as today's genuine result. This read function
+    # correctly adopted that from Redis... and then a few lines below,
+    # saw the resulting empty list and treated "empty" as "Redis must
+    # have failed", falling through to the stale DB reload and
+    # overwriting the correct fresh answer with old June 18 data. Empty
+    # is a legitimate real answer, not a failure signal -- tracking
+    # whether Redis gave a genuine fresh response at all (regardless of
+    # whether the symbol list itself is empty) so the DB fallback is
+    # only used when Redis is truly unavailable, not when it correctly
+    # reports zero divergences.
+    got_fresh_redis_answer = False
     try:
         if _redis_client:
             import json as _div_json
@@ -2270,8 +2283,10 @@ def get_divergence_watchlist():
                     DIVERGENCE_WATCHLIST = _payload.get("symbols") or []
                     LAST_EOD_AUDIT_TIME = _redis_audit_time
                     source = "redis"
+                    got_fresh_redis_answer = True
                     log.warning(f"[DIVERGENCE_READ] Adopted fresh Redis data ({len(DIVERGENCE_WATCHLIST)} symbols)")
                 else:
+                    got_fresh_redis_answer = True
                     log.warning("[DIVERGENCE_READ] Redis data not newer than current local data -- kept existing")
             else:
                 log.warning("[DIVERGENCE_READ] Redis key 'radar:divergence' does not exist or is empty")
@@ -2280,7 +2295,7 @@ def get_divergence_watchlist():
     except Exception as e:
         log.warning(f"Divergence endpoint Redis read failed: {e}")
 
-    if not DIVERGENCE_WATCHLIST:
+    if not DIVERGENCE_WATCHLIST and not got_fresh_redis_answer:
         try:
             _load_divergence_watchlist_from_db()
             source = "database_fallback" if DIVERGENCE_WATCHLIST else "empty"
