@@ -1331,7 +1331,30 @@ def run_eod_audit():
     for _idx, (symbol, cached) in enumerate(list(RADAR_CACHE.items())):
         if _idx > 0 and _idx % 200 == 0:
             _log_mem(f"eod_audit: mid-loop at symbol {_idx}/{len(RADAR_CACHE)}")
-        snap = {}
+        # FIX (2026-07-30): user-confirmed via [EOD_SCORE_CHECK] diagnostic
+        # that _build_market_data() was failing with "Could not build
+        # MarketData" for 100% of symbols, every single run -- not a real
+        # "no divergences today" result. Root cause: this loop passed an
+        # empty snap={} for every symbol, so price always computed as 0,
+        # which always failed _build_market_data's `if price <= 0 or
+        # prev_close <= 0: return None` check, regardless of real market
+        # conditions. Building a real snapshot from the price/change_pct
+        # already sitting in RADAR_CACHE (populated moments earlier by the
+        # regular radar scan) instead of an empty dict.
+        _live_price = float(cached.get("price") or 0)
+        _change_pct = float(cached.get("change_pct") or 0)
+        if _live_price > 0 and _change_pct not in (0, -100):
+            _prev_close = _live_price / (1 + _change_pct / 100)
+        else:
+            _prev_close = _live_price
+        snap = {
+            "dailyBar": {
+                "c": _live_price, "o": _live_price, "h": _live_price, "l": _live_price,
+                "v": cached.get("volume", 0), "vw": _live_price,
+            },
+            "prevDailyBar": {"c": _prev_close, "h": _prev_close, "l": _prev_close},
+            "latestTrade": {"p": _live_price},
+        }
         bars = _historical_bars.get(symbol, [])
         composite = cached.get("composite_score", 0)
         if not composite:
