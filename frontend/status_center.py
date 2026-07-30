@@ -371,7 +371,7 @@ def _radar_mini(item: dict) -> html.Div:
     return html.Div([
         html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
                                  "fontSize": "13px", "color": WHITE, "flex": "1"}),
-        html.Span(str(signal)[:24], style={"fontSize": "11px", "color": TEXT, "flex": "2"}),
+        html.Span(str(signal)[:24], style={"fontSize": "11px", "color": WHITE, "flex": "2"}),
         html.Span(f"{score:.0f}", style={"fontSize": "13px", "fontWeight": "800",
                                          "color": s_color, "fontFamily": "DM Mono, monospace"}),
     ], style={
@@ -632,7 +632,7 @@ def build_status_center(session=None) -> html.Div:
             ]),
             html.Div([
                 _badge(f"● LIVE", TEAL_DIM),
-                html.Span(f" {total} campaigns", style={"fontSize": "12px", "color": TEXT,
+                html.Span(f" {total} campaigns", style={"fontSize": "12px", "color": WHITE,
                                                          "marginLeft": "8px"}),
             ], style={"display": "flex", "alignItems": "center"}),
         ], style={"display": "flex", "justifyContent": "space-between",
