@@ -444,7 +444,7 @@ def score_symbol_ab(symbol: str, snap: dict, bars: list,
 
     except Exception as e:
         log.warning(f"ConfluenceEngine error for {symbol}: {e}")
-        log.debug(traceback.format_exc())
+        log.warning(f"[TRACEBACK] {traceback.format_exc()}")
         old_result["new_engine_error"] = str(e)
         old_result["ab_mode"]          = True
         old_result["score_delta"]      = 0.0
