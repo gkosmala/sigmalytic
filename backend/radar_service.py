@@ -1404,8 +1404,14 @@ def run_eod_audit():
                 }),
                 ex=90000,  # 25h -- comfortably survives until the next nightly run
             )
+            log.warning(
+                f"[DIVERGENCE_WRITE] Wrote {len(divergences)} symbols to Redis, "
+                f"last_audit={LAST_EOD_AUDIT_TIME}"
+            )
+        else:
+            log.warning("[DIVERGENCE_WRITE] Skipped -- _redis_client is not configured")
     except Exception as _dve:
-        log.warning(f"Divergence watchlist Redis write failed: {_dve}")
+        log.warning(f"[DIVERGENCE_WRITE] Failed: {_dve}")
 
 
 def _write_divergence_watchlist(divergences: list):
@@ -2255,10 +2261,22 @@ def get_divergence_watchlist():
             if _raw:
                 _payload = _div_json.loads(_raw)
                 _redis_audit_time = _payload.get("last_audit") or 0
+                log.warning(
+                    f"[DIVERGENCE_READ] Redis has {len(_payload.get('symbols') or [])} symbols, "
+                    f"redis_last_audit={_redis_audit_time}, "
+                    f"current_local_last_audit={LAST_EOD_AUDIT_TIME}"
+                )
                 if _redis_audit_time and _redis_audit_time > (LAST_EOD_AUDIT_TIME or 0):
                     DIVERGENCE_WATCHLIST = _payload.get("symbols") or []
                     LAST_EOD_AUDIT_TIME = _redis_audit_time
                     source = "redis"
+                    log.warning(f"[DIVERGENCE_READ] Adopted fresh Redis data ({len(DIVERGENCE_WATCHLIST)} symbols)")
+                else:
+                    log.warning("[DIVERGENCE_READ] Redis data not newer than current local data -- kept existing")
+            else:
+                log.warning("[DIVERGENCE_READ] Redis key 'radar:divergence' does not exist or is empty")
+        else:
+            log.warning("[DIVERGENCE_READ] _redis_client is not configured")
     except Exception as e:
         log.warning(f"Divergence endpoint Redis read failed: {e}")
 
