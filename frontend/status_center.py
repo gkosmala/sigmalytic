@@ -678,13 +678,13 @@ def build_status_center(session=None) -> html.Div:
                 _section(" Active Campaigns"),
                 html.Div([
                     _campaign_mini(c)
-                    for c in sorted(campaigns,
+                    for c in sorted(campaign_freshness_rows,
                         key=lambda x: (
                             -int(float(x.get("operator_dominance") or 100) < 40
                                  and x.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}),
-                            -float(x.get("return_pct", 0))
+                            -float(x.get("operator_dominance") or 0)
                         ))[:8]
-                ]) if campaigns else html.Div(
+                ]) if campaign_freshness_rows else html.Div(
                     "No active campaigns yet. Signal spark runs at 20:30 UTC.",
                     style={"color": MUTED, "fontSize": "12px", "padding": "20px 0",
                            "textAlign": "center"}
