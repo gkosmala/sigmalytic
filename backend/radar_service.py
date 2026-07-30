@@ -1338,6 +1338,11 @@ def run_eod_audit():
             continue
         try:
             result = score_symbol_ab(symbol, snap, bars, dict(cached))
+            if _idx < 5 or result.get("new_engine_error"):
+                log.warning(
+                    f"[EOD_SCORE_CHECK] {symbol}: new_engine_error={result.get('new_engine_error')!r} "
+                    f"ab_mode={result.get('ab_mode')} score_delta={result.get('score_delta')}"
+                )
             new_score = result.get("new_composite_score") or result.get("composite_score", 0)
             delta = round(new_score - composite, 2)
 
