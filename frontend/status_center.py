@@ -332,7 +332,7 @@ def _campaign_mini(c: dict) -> html.Div:
         html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
                                  "fontSize": "13px", "color": WHITE, "flex": "1"}),
         html.Span(tier, style={"fontSize": "9px", "color": MUTED, "flex": ".8"}),
-        html.Span(f"D{days}", style={"fontSize": "10px", "color": MUTED, "flex": ".5"}),
+        html.Span(f"D {days}", style={"fontSize": "10px", "color": MUTED, "flex": ".5"}),
         html.Span(
             f"{ret_pct:+.1f}%" if _has_ret_pct else "—",
             style={"fontSize": "12px", "fontWeight": "800",
@@ -564,12 +564,21 @@ def build_status_center(session=None) -> html.Div:
     ret_color = TEAL_DIM if avg_return >= 0 else RED_DIM
 
     # Most urgent campaigns - conjunction exits first, then distribution risk
-    urgent = [c for c in campaigns
+    # FIX (2026-07-30): same root cause already fixed for tier1/tier2/
+    # avg_ods -- campaigns here is a small ~25-item sample
+    # (sample_campaigns/opportunities), not the full ~280-campaign set.
+    # Campaign Intelligence separately confirmed 13 real EXPANDING
+    # campaigns exist among the full 280 -- this small sample just
+    # doesn't happen to include any of them, showing "None in expansion"
+    # as a sample-size artifact, not a genuine zero. Using
+    # campaign_freshness_rows (the full list, already proven correct)
+    # instead.
+    urgent = [c for c in campaign_freshness_rows
               if float(c.get("operator_dominance") or 100) < 40
               and c.get("current_state") in {"MATURING", "DISTRIBUTION_RISK"}]
 
     # Most active - expanding campaigns
-    expanding = [c for c in campaigns if _campaign_state(c) == "EXPANDING"]
+    expanding = [c for c in campaign_freshness_rows if _campaign_state(c) == "EXPANDING"]
 
     # New sparks - less than 3 days old
     new_births = [c for c in campaigns if _campaign_age_days(c, default=99) <= 3]
