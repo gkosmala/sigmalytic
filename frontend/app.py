@@ -1303,7 +1303,16 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
         last["c"] = price
         last["h"] = max(last["h"], price)
         last["l"] = min(last["l"], price)
-    show_price_overlays = tf not in ("1D", "1W")
+    # FIX (2026-07-30): user clarified that Call Wall / Put Wall / Gamma
+    # Flip Point represent *current* options/gamma structure -- they
+    # should always be visible and always move with real, live options
+    # data, regardless of which historical timeframe the chart happens
+    # to be showing. Earlier tonight this was set to hide on 1D/1W,
+    # reasoning that short-term levels would visually cluster near the
+    # top when stretched across months of daily candles -- but that
+    # visual-clustering concern doesn't justify hiding genuinely current,
+    # real data. Always showing them now.
+    show_price_overlays = True
     xs = list(range(len(candles)))
     fig = go.Figure()
 
