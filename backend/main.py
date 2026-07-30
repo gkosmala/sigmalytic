@@ -313,7 +313,20 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     params = {
         "timeframe": timeframe,
         "limit": _clean_limit,
-        "feed": "sip",
+        # FIX (2026-07-30): user-reported the chart's candles didn't
+        # match the live price -- a large, sustained gap, not just the
+        # last candle being one bar stale. Root cause: this endpoint
+        # requested feed="sip" for historical bars, while the live price
+        # ticker (confirmed by the "ALPACA IEX" header badge) uses feed=
+        # iex. We already confirmed earlier tonight (campaign discovery
+        # engine's 401s) that this account's Alpaca plan doesn't have
+        # full real-time SIP authorization -- SIP data can come back
+        # valid but meaningfully delayed rather than erroring outright,
+        # which would produce exactly this kind of sustained, silent
+        # divergence between the chart and the live price rather than
+        # an obvious failure. Using the same feed (iex) for both closes
+        # that gap entirely rather than just reducing it.
+        "feed": "iex",
         "adjustment": "raw",
         "start": _start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "end": _end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),

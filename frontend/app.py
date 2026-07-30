@@ -1284,15 +1284,25 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None):
     """Clean chart — integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price)
-    # FIX (2026-07-29): user-reported -- on the 1D/1W chart, Call Wall/
-    # Gamma Flip Point/Put Wall (and the 4 generic level lines) all
-    # appeared "clustered" near the top. They aren't wrong -- these are
-    # inherently short-term levels (a few % around *today's* price), so
-    # stretched across months of historical range they naturally bunch up
-    # near wherever price currently sits. The right fix is showing them
-    # only on timeframes where they're actually meaningful (intraday),
-    # rather than distorting the math to force them to spread out over a
-    # price history they have nothing to do with.
+    # FIX (2026-07-30): user-reported the candlesticks don't match the
+    # live price shown elsewhere on the page. Root cause: fetch_real_candles
+    # only returns bars the backend's Alpaca endpoint has already closed
+    # (its own docstring says "No synthetic candles are created here") --
+    # so the chart's rightmost candle can lag the live tick price by up
+    # to a full bar duration (up to 5 minutes on the 5m timeframe) even
+    # though the live price display updates every tick. Nothing anywhere
+    # between the fetch and this render function ever reconciled the two.
+    # Fixing this here, at render time only (not in fetch_real_candles,
+    # which deliberately stays fetch-only per its own docstring) --
+    # updating a copy of the last candle's close/high/low to reflect the
+    # live price, so the chart visually tracks real-time price movement
+    # between actual bar closes instead of only updating once per bar.
+    if candles and price and price > 0:
+        candles = candles[:-1] + [dict(candles[-1])]
+        last = candles[-1]
+        last["c"] = price
+        last["h"] = max(last["h"], price)
+        last["l"] = min(last["l"], price)
     show_price_overlays = tf not in ("1D", "1W")
     xs = list(range(len(candles)))
     fig = go.Figure()
