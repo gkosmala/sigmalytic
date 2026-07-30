@@ -320,7 +320,7 @@ def _campaign_mini(c: dict) -> html.Div:
     # but isn't. Same treatment: track presence, show an honest dash
     # instead of a look-alike zero.
     _has_ret_pct = c.get("return_pct") is not None
-    ret_pct = float(c.get("return_pct", 0))
+    ret_pct = float(c.get("return_pct") or 0)
     ods     = float(c.get("operator_dominance") or 0)
     days    = _campaign_age_days(c, default=0)
     s_color = STATE_COLORS.get(state, MUTED)
