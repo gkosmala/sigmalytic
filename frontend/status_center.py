@@ -510,7 +510,18 @@ def build_status_center(session=None) -> html.Div:
         radar_cache_mode = "-"
 
     # ── Derived metrics ───────────────────────────────────────────────────
-    total      = _safe_int(status_summary.get("total_campaigns") or summary.get("active_campaigns") or len(campaigns), len(campaigns))
+    # FIX (2026-07-30): user-confirmed this showed 25 instead of the true
+    # ~280 total campaigns (confirmed separately on the Campaign
+    # Intelligence tab). The status_summary/summary fallback chain was
+    # silently resolving to a small sample count instead of the real
+    # total -- rather than continue chasing that specific nesting/field
+    # path, preferring campaign_freshness_rows (the full campaign list
+    # already fetched from /api/campaigns/active, already proven correct
+    # moments ago for the tier1/tier2/avg_ods fix) as the primary source.
+    total      = _safe_int(
+        len(campaign_freshness_rows) or status_summary.get("total_campaigns") or summary.get("active_campaigns") or len(campaigns),
+        len(campaigns),
+    )
     # FIX (2026-07-30): "historical_confidence" == "TIER_1"/"TIER_2" is
     # never set anywhere on this data source (campaigns comes from the
     # lightweight /api/campaigns/active endpoint, not the enrichment
