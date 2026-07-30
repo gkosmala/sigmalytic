@@ -302,8 +302,25 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     # the lookback window to the requested timeframe + limit so enough
     # calendar time is actually covered.
     _clean_limit = max(1, min(int(limit or 200), 1000))
+    # FIX (2026-07-30): user-reported the chart's candles showed a price
+    # range wildly different from (and never converging with) the live
+    # price, even immediately after a fresh server reboot -- ruling out
+    # staleness as the cause. Found a real units error here: these values
+    # were meant to size the lookback window for daily/weekly/monthly
+    # bars (where each bar genuinely spans about that many calendar
+    # days), but the same "~1 day per bar" logic was also applied to
+    # intraday timeframes, where many bars fit inside a single trading
+    # day (about 78 five-minute bars per 6.5-hour session). That made
+    # "5Min": 1 request roughly a 210-calendar-day window for 200 bars,
+    # when 200 five-minute bars only need about 3-4 calendar days. If
+    # Alpaca returns bars oldest-first within that window and caps at
+    # the limit, the result is genuinely old data (whatever the price
+    # was ~7 months ago) with a small enough count to look plausible,
+    # rather than an obvious empty/error response -- exactly the
+    # sustained, reboot-proof mismatch reported. Corrected to reflect
+    # real trading-bars-per-day for each intraday granularity.
     _calendar_days_per_bar = {
-        "1Min": 1, "5Min": 1, "15Min": 1, "1Hour": 3,
+        "1Min": 1/390, "5Min": 1/78, "15Min": 1/26, "1Hour": 1/6.5,
         "1Day": 1.6, "1Week": 8, "1Month": 35,
     }.get(timeframe, 1)
     _lookback_days = max(5, int(_clean_limit * _calendar_days_per_bar) + 10)
