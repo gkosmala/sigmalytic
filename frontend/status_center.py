@@ -359,7 +359,14 @@ def _radar_mini(item: dict) -> html.Div:
     """Compact radar signal row."""
     symbol = item.get("symbol", "-")
     score  = float(item.get("score", 0))
-    signal = item.get("signal_type", item.get("setup", "-"))
+    # FIX (2026-07-30): user-confirmed via direct API inspection that
+    # status="Armed" and regime="Neutral" are genuinely present on every
+    # real radar row. Found the actual bug: _normalize_radar_row() (above)
+    # sets a field called "signal" (derived from status/regime), but this
+    # was checking for "signal_type"/"setup" instead -- neither of which
+    # is ever set anywhere -- so it always fell through to "-", regardless
+    # of how much real data was actually available upstream.
+    signal = item.get("signal", "-")
     s_color = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 45 else MUTED)
     return html.Div([
         html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
