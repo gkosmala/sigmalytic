@@ -1953,13 +1953,35 @@ def start_radar_scheduler():
     # after without needing a redeploy or direct network access to this
     # worker.
     def _check_manual_triggers():
+        # FIX (2026-07-29): user-confirmed the manual trigger kept losing
+        # the race against regularly-scheduled jobs (radar_scan/gex_scan/
+        # divergence_scan fire every 5-8 minutes, leaving little idle
+        # time) -- the old version deleted the Redis flag as soon as it
+        # was seen, then separately tried to acquire the heavy-job lock;
+        # if that lock wasn't free, the whole attempt was silently
+        # wasted, and the flag was already gone. Now acquires the lock
+        # directly here first -- if unavailable, the flag is left in
+        # place so the next check (20s later) retries, instead of
+        # consuming the trigger on a failed attempt.
         try:
             if not _redis_client:
                 return
-            if _redis_client.get("trigger:eod_audit"):
+            if not _redis_client.get("trigger:eod_audit"):
+                return
+            acquired = _HEAVY_JOB_LOCK.acquire(blocking=False)
+            if not acquired:
+                log.info("Manual EOD audit trigger pending -- waiting for a clear window")
+                return
+            try:
                 _redis_client.delete("trigger:eod_audit")
                 log.info("Manual EOD audit trigger received -- running now")
-                _instrumented("eod_audit_manual", run_eod_audit)()
+                _log_mem("BEFORE eod_audit_manual")
+                try:
+                    run_eod_audit()
+                finally:
+                    _log_mem("AFTER eod_audit_manual")
+            finally:
+                _HEAVY_JOB_LOCK.release()
         except Exception as e:
             log.warning(f"Manual trigger check failed: {e}")
 

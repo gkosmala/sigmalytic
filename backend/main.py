@@ -433,7 +433,7 @@ def trigger_eod_audit():
         from backend.radar_service import _redis_client
         if not _redis_client:
             return {"ok": False, "error": "Redis not configured"}
-        _redis_client.set("trigger:eod_audit", "1", ex=120)
+        _redis_client.set("trigger:eod_audit", "1", ex=600)
         return {
             "ok": True,
             "message": "EOD audit trigger set. The radar scanner worker checks for "
