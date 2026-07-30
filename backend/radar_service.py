@@ -2234,23 +2234,33 @@ def get_divergence_watchlist():
 
     source = "memory"
 
-    # Render restarts wipe memory. If memory is empty, try Redis first
-    # (written by run_eod_audit, works regardless of which process ran
-    # the audit -- this scanner runs in its own separate worker service
-    # now), then fall back to the DB-backed reload only if that's also
-    # unavailable.
-    if not DIVERGENCE_WATCHLIST:
-        try:
-            if _redis_client:
-                import json as _div_json
-                _raw = _redis_client.get("radar:divergence")
-                if _raw:
-                    _payload = _div_json.loads(_raw)
+    # FIX (2026-07-30): the previous version only checked Redis when
+    # DIVERGENCE_WATCHLIST (a local in-process variable) was completely
+    # empty -- meaning once this process successfully loaded data into
+    # it ONE time (even from a stale source, ages ago), it never checked
+    # Redis again for the rest of that process's lifetime, no matter how
+    # many fresh audits ran afterward. Confirmed this was the actual
+    # cause of the tab staying frozen all night even after multiple
+    # genuinely successful audit runs (verified separately via full mid-
+    # loop progression logs) -- the backend process had loaded some old
+    # snapshot into memory long ago and never looked at Redis again.
+    # Now always prefers Redis (the fresh source, written by every real
+    # audit run) over local memory, using the last_audit timestamp to
+    # decide, and only falls back to whatever's already in local memory
+    # or the DB reload if Redis is genuinely unavailable/empty.
+    try:
+        if _redis_client:
+            import json as _div_json
+            _raw = _redis_client.get("radar:divergence")
+            if _raw:
+                _payload = _div_json.loads(_raw)
+                _redis_audit_time = _payload.get("last_audit") or 0
+                if _redis_audit_time and _redis_audit_time > (LAST_EOD_AUDIT_TIME or 0):
                     DIVERGENCE_WATCHLIST = _payload.get("symbols") or []
-                    LAST_EOD_AUDIT_TIME = _payload.get("last_audit")
-                    source = "redis" if DIVERGENCE_WATCHLIST else "empty"
-        except Exception as e:
-            log.warning(f"Divergence endpoint Redis fallback failed: {e}")
+                    LAST_EOD_AUDIT_TIME = _redis_audit_time
+                    source = "redis"
+    except Exception as e:
+        log.warning(f"Divergence endpoint Redis read failed: {e}")
 
     if not DIVERGENCE_WATCHLIST:
         try:
