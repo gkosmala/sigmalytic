@@ -521,15 +521,17 @@ def build_status_center(session=None) -> html.Div:
     # using weis_gamma_rank_bucket, a real classification (A+/A/
     # Watchlist/Low Priority/Avoid) already safely attached to this same
     # lightweight endpoint by campaign_api.py's _attach_weis_gamma_summaries.
-    tier1      = sum(1 for c in campaigns if c.get("weis_gamma_rank_bucket") == "A+")
-    tier2      = sum(1 for c in campaigns if c.get("weis_gamma_rank_bucket") == "A")
-    # FIX (2026-07-30): summary.get("avg_ods") is never actually set
-    # anywhere in the backend's /api/intelligence/status-center response
-    # -- confirmed by direct search, always silently defaulting to 0.
-    # operator_dominance is a real per-campaign field already present on
-    # this same safe campaigns list; computing a genuine average directly
-    # from it instead.
-    _ods_values = [float(c["operator_dominance"]) for c in campaigns if c.get("operator_dominance") is not None]
+    # FIX (2026-07-30): user chose option (b) -- scan the full campaign
+    # set for a true count, not just the small sample_campaigns/
+    # opportunities subset (which could show 0/0 simply because none of
+    # its ~10-25 sampled symbols happened to score high enough, even if
+    # real A+/A campaigns exist elsewhere in the full 280). Reusing
+    # campaign_freshness_rows (already fetched above from
+    # /api/campaigns/active, the full campaign list with weis_gamma_rank_bucket
+    # already safely attached by campaign_api.py) instead of the small sample.
+    tier1      = sum(1 for c in campaign_freshness_rows if c.get("weis_gamma_rank_bucket") == "A+")
+    tier2      = sum(1 for c in campaign_freshness_rows if c.get("weis_gamma_rank_bucket") == "A")
+    _ods_values = [float(c["operator_dominance"]) for c in campaign_freshness_rows if c.get("operator_dominance") is not None]
     avg_ods    = (sum(_ods_values) / len(_ods_values)) if _ods_values else 0.0
     exits      = int(summary.get("conjunction_exits", 0))
     avg_return = float(summary.get("avg_return_pct", 0))
