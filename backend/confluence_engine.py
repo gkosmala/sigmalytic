@@ -656,8 +656,13 @@ class TimeCycleEngine:
         if not candles:
             return 0
         pivot_ts = pivot.timestamp
+        if pivot_ts.tzinfo is None:
+            pivot_ts = pivot_ts.replace(tzinfo=timezone.utc)
         for i, c in enumerate(candles):
-            if c.timestamp >= pivot_ts:
+            c_ts = c.timestamp
+            if c_ts.tzinfo is None:
+                c_ts = c_ts.replace(tzinfo=timezone.utc)
+            if c_ts >= pivot_ts:
                 return len(candles) - i
         return len(candles)
 
