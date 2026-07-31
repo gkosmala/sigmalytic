@@ -205,20 +205,45 @@ class GammaStrikeMatrixEngine:
         if len(cumulative) == 0:
             return None
 
-        # First try to locate a sign crossing.
-        for i in range(1, len(cumulative)):
+        # FIX (2026-07-30): confirmed via a real AAPL request that this
+        # was returning $5 as the "zero gamma level" for a stock trading
+        # around $302. Root cause: many deep out-of-the-money strikes at
+        # the low end of a sorted chain genuinely have zero gamma
+        # exposure (no real open interest/activity there), so the
+        # cumulative sum sits at exactly 0 through a long leading run of
+        # them -- and the old "if prev_val == 0" check treated the very
+        # first such occurrence as a genuine sign crossing, returning a
+        # spuriously low strike from that leading dead zone rather than
+        # the real crossing point near where actual trading activity
+        # exists. Skipping past that leading run of trivial zeros before
+        # looking for a genuine crossing.
+        first_active_idx = None
+        for i, val in enumerate(cumulative):
+            if cls._safe_float(val) != 0:
+                first_active_idx = i
+                break
+        if first_active_idx is None:
+            # Every strike had zero net gamma exposure -- no real signal
+            # anywhere in this chain to estimate a crossing from.
+            return None
+
+        # First try to locate a genuine sign crossing, only considering
+        # the region from the first real (non-zero) activity onward.
+        for i in range(max(1, first_active_idx), len(cumulative)):
             prev_val = cls._safe_float(cumulative.iloc[i - 1])
             curr_val = cls._safe_float(cumulative.iloc[i])
 
-            if prev_val == 0:
-                return cls._safe_float(ordered["strike"].iloc[i - 1])
+            if prev_val != 0 and curr_val == 0:
+                return cls._safe_float(ordered["strike"].iloc[i])
 
             if (prev_val < 0 and curr_val > 0) or (prev_val > 0 and curr_val < 0):
                 return cls._safe_float(ordered["strike"].iloc[i])
 
         # If there is no sign crossing, use the strike where cumulative exposure
-        # is closest to zero.
-        idx = cumulative.abs().idxmin()
+        # is closest to zero, again only considering the active region so the
+        # leading dead zone of far-OTM zero-exposure strikes can't win by default.
+        active_cumulative = cumulative.iloc[first_active_idx:]
+        idx = active_cumulative.abs().idxmin()
         return cls._safe_float(ordered["strike"].iloc[idx])
 
     @classmethod
