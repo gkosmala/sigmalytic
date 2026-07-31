@@ -47,7 +47,8 @@ CONTRACT_MULTIPLIER = 100.0
 
 class AlpacaOptionChainAdapter:
     DEFAULT_BASE_URL = "https://data.alpaca.markets"
-    DEFAULT_FEED = "indicative"
+    # DEFAULT_FEED intentionally removed (2026-07-30) -- see fetch_chain's
+    # feed-parameter handling for why.
 
     @classmethod
     def _api_key(cls) -> str:
@@ -383,10 +384,26 @@ class AlpacaOptionChainAdapter:
         base_url = os.getenv("ALPACA_BASE_URL", cls.DEFAULT_BASE_URL).rstrip("/")
         chain_url = f"{base_url}/v1beta1/options/snapshots/{symbol}"
 
+        # FIX (2026-07-30): confirmed directly against Alpaca's own docs
+        # (docs.alpaca.markets/reference/optionchain) that this feed
+        # parameter defaults to "opra" (the official, full feed) on
+        # Alpaca's own side automatically -- IF the account has an OPRA
+        # subscription -- and only falls back to "indicative" (a
+        # limited, delayed feed) if it doesn't. This code was
+        # unconditionally hardcoding "indicative" as our own default,
+        # meaning we were forcing the limited feed even for an account
+        # that might actually be entitled to full data, rather than
+        # letting Alpaca apply its own real entitlement-aware default.
+        # Confirmed via a raw response dump that greeks were completely
+        # absent under indicative -- omitting the parameter entirely
+        # unless explicitly overridden lets Alpaca decide correctly.
+        _resolved_feed = feed or os.getenv("ALPACA_OPTIONS_FEED")
+
         params: Dict[str, Any] = {
-            "feed": feed or os.getenv("ALPACA_OPTIONS_FEED", cls.DEFAULT_FEED),
             "limit": int(limit),
         }
+        if _resolved_feed:
+            params["feed"] = _resolved_feed
 
         if strike_price_gte is not None:
             params["strike_price_gte"] = float(strike_price_gte)
