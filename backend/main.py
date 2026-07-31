@@ -355,6 +355,20 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
         "adjustment": "raw",
         "start": _start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "end": _end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        # FIX (2026-07-30, follow-up): confirmed via the user checking
+        # this endpoint's raw response directly that even after the
+        # window-sizing and feed fixes above, the returned bars still
+        # stopped 8 days before "now" -- not a small lag. Root cause,
+        # confirmed against Alpaca's own docs: this API sorts "asc"
+        # (oldest-first) by default. A 12-day window can contain far
+        # more 5-minute bars (~936) than our limit=200 cap, so with the
+        # default ascending sort we were only ever getting the OLDEST
+        # ~200 bars within the window -- roughly the first 2.5 trading
+        # days of it -- never reaching anywhere near the present.
+        # Requesting sort=desc gets the most recent `limit` bars instead
+        # (reversed back to chronological order below, since the chart
+        # expects oldest-to-newest left-to-right).
+        "sort": "desc",
     }
 
     try:
@@ -384,6 +398,9 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
             for b in raw_bars
             if isinstance(b, dict)
         ]
+        # Requested sort=desc (most recent first) above -- reverse back
+        # to chronological (oldest-to-newest) order for the chart.
+        bars.reverse()
 
         return {
             "ok": True,
