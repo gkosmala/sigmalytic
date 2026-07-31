@@ -496,6 +496,48 @@ def reports_get(report_date: str):
         return {"ok": False, "error": str(exc)[:500]}
 
 
+@app.get("/api/reports/{report_date}/pdf")
+def reports_get_pdf(report_date: str):
+    """
+    Returns the stored report for a specific date as a downloadable PDF,
+    converted on the fly from the stored HTML using xhtml2pdf (pure
+    Python, no external browser binary needed -- unlike the original
+    tools/generate_nightly_intelligence_report_v2.py's Edge-based PDF
+    export, which isn't available in this lightweight web service
+    container).
+    """
+    from fastapi.responses import Response as _FastAPIResponse
+    from xhtml2pdf import pisa
+    import io
+
+    try:
+        from backend.reports_engine import get_report_html
+        html_doc = get_report_html(report_date)
+        if not html_doc:
+            return _FastAPIResponse(
+                content=f"No report found for {report_date}",
+                status_code=404,
+            )
+
+        buf = io.BytesIO()
+        result = pisa.CreatePDF(html_doc, dest=buf)
+        if result.err:
+            return _FastAPIResponse(
+                content="PDF conversion failed",
+                status_code=500,
+            )
+
+        return _FastAPIResponse(
+            content=buf.getvalue(),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="Sigmalytic_Daily_Report_{report_date}.pdf"'
+            },
+        )
+    except Exception as exc:
+        return _FastAPIResponse(content=str(exc)[:500], status_code=500)
+
+
 @app.get("/api/admin/trigger-eod-audit")
 def trigger_eod_audit():
     # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()

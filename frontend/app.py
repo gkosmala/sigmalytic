@@ -2447,13 +2447,25 @@ def build_reports_tab():
                 html.P("Daily subscriber intelligence report, generated once per day from the live full-universe campaign engine.",
                        style={"fontSize": "13px", "color": "rgba(255,255,255,.6)", "margin": "0"}),
             ]),
-            dcc.Dropdown(
-                id="reports-date-picker",
-                options=[{"label": d, "value": d} for d in dates],
-                value=most_recent,
-                clearable=False,
-                style={"width": "220px", "color": "#111"},
-            ),
+            html.Div([
+                dcc.Dropdown(
+                    id="reports-date-picker",
+                    options=[{"label": d, "value": d} for d in dates],
+                    value=most_recent,
+                    clearable=False,
+                    style={"width": "220px", "color": "#111"},
+                ),
+                html.A(
+                    "⬇ Download PDF",
+                    id="reports-download-btn",
+                    href=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf",
+                    download=f"Sigmalytic_Daily_Report_{most_recent}.pdf",
+                    style={"background": TEAL_GLOW, "border": f"1px solid {BORDER_T}", "borderRadius": "10px",
+                           "color": TEAL_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
+                           "padding": "10px 18px", "textDecoration": "none", "whiteSpace": "nowrap",
+                           "marginLeft": "10px"},
+                ),
+            ], style={"display": "flex", "alignItems": "center"}),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
         html.Iframe(
             id="reports-iframe",
@@ -4769,6 +4781,21 @@ def update_report_view(selected_date):
     except Exception:
         pass
     return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>"
+
+
+@app.callback(
+    Output("reports-download-btn", "href"),
+    Output("reports-download-btn", "download"),
+    Input("reports-date-picker", "value"),
+    prevent_initial_call=True,
+)
+def update_report_download_link(selected_date):
+    if not selected_date:
+        return no_update, no_update
+    return (
+        f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf",
+        f"Sigmalytic_Daily_Report_{selected_date}.pdf",
+    )
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
