@@ -2463,24 +2463,6 @@ def build_reports_tab():
     ])
 
 
-@app.callback(
-    Output("reports-iframe", "srcDoc"),
-    Input("reports-date-picker", "value"),
-    prevent_initial_call=True,
-)
-def update_report_view(selected_date):
-    if not selected_date:
-        return no_update
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
-        payload = r.json() if r.ok else {}
-        if payload.get("ok"):
-            return payload.get("html")
-    except Exception:
-        pass
-    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>"
-
-
 def build_guide_tab():
     """
     User Guide tab -- serves the PDF version of the Sigmalytic V2 User
@@ -4769,6 +4751,24 @@ def add_csp_headers(response):
         "font-src 'self' https://fonts.gstatic.com data:;"
     )
     return response
+
+
+@app.callback(
+    Output("reports-iframe", "srcDoc"),
+    Input("reports-date-picker", "value"),
+    prevent_initial_call=True,
+)
+def update_report_view(selected_date):
+    if not selected_date:
+        return no_update
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
+        payload = r.json() if r.ok else {}
+        if payload.get("ok"):
+            return payload.get("html")
+    except Exception:
+        pass
+    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>"
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
