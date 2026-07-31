@@ -2452,7 +2452,7 @@ def build_reports_tab():
                 html.A(
                     "⬇ Download PDF",
                     id="reports-download-btn",
-                    href=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf",
+                    href=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf?download=true",
                     download=f"Sigmalytic_Daily_Report_{most_recent}.pdf",
                     style={"background": TEAL_GLOW, "border": f"1px solid {BORDER_T}", "borderRadius": "10px",
                            "color": TEAL_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
@@ -4769,8 +4769,8 @@ def add_csp_headers(response):
 def update_report_view(selected_date):
     if not selected_date:
         return no_update, no_update, no_update
-    pdf_url = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf"
-    return pdf_url, pdf_url, f"Sigmalytic_Daily_Report_{selected_date}.pdf"
+    base = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf"
+    return base, f"{base}?download=true", f"Sigmalytic_Daily_Report_{selected_date}.pdf"
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}

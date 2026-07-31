@@ -497,14 +497,23 @@ def reports_get(report_date: str):
 
 
 @app.get("/api/reports/{report_date}/pdf")
-def reports_get_pdf(report_date: str):
+def reports_get_pdf(report_date: str, download: bool = False):
     """
-    Returns the stored report for a specific date as a downloadable PDF,
-    converted on the fly from the stored HTML using xhtml2pdf (pure
-    Python, no external browser binary needed -- unlike the original
+    Returns the stored report for a specific date as a PDF, converted
+    on the fly from the stored HTML using xhtml2pdf (pure Python, no
+    external browser binary needed -- unlike the original
     tools/generate_nightly_intelligence_report_v2.py's Edge-based PDF
     export, which isn't available in this lightweight web service
     container).
+
+    Defaults to inline disposition, so the browser's native PDF viewer
+    renders it directly when embedded in an iframe (matching the User
+    Guide tab's behavior) -- pass ?download=true for attachment
+    disposition instead, which the frontend's separate Download PDF
+    button uses. Both are needed: browsers generally ignore the HTML
+    <a download> attribute for cross-origin links (this endpoint is on
+    a different origin than the frontend), so forcing an actual
+    download for that button has to happen via this header instead.
     """
     from fastapi.responses import Response as _FastAPIResponse
     from xhtml2pdf import pisa
@@ -527,11 +536,12 @@ def reports_get_pdf(report_date: str):
                 status_code=500,
             )
 
+        disposition = "attachment" if download else "inline"
         return _FastAPIResponse(
             content=buf.getvalue(),
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f'attachment; filename="Sigmalytic_Daily_Report_{report_date}.pdf"'
+                "Content-Disposition": f'{disposition}; filename="Sigmalytic_Daily_Report_{report_date}.pdf"'
             },
         )
     except Exception as exc:
