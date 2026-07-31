@@ -232,6 +232,37 @@ def get_stock_quote(symbol: str):
 # snapshot -> GammaStrikeMatrixEngine -> real gamma-exposure-based call/
 # put walls) for a single live symbol, on demand, so the Command Center
 # can show genuinely live options data instead of synthetic math.
+@app.get("/api/admin/debug-raw-options-snapshot/{symbol}")
+def debug_raw_options_snapshot(symbol: str):
+    """
+    TEMPORARY diagnostic (2026-07-30): returns Alpaca's raw, unprocessed
+    options snapshot response for one symbol, to determine whether
+    open_interest/volume are genuinely absent from this specific
+    endpoint or just under different field names than
+    AlpacaOptionChainAdapter checks for. All wall calculations were
+    coming back zero for every strike despite 3000 real contracts
+    loading successfully -- this bypasses all of our own processing to
+    see Alpaca's actual response shape directly. Safe to remove once
+    the real cause is found.
+    """
+    import os as _os
+    import requests as _requests
+
+    try:
+        from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter as _Adapter
+        base_url = _os.getenv("ALPACA_BASE_URL", _Adapter.DEFAULT_BASE_URL).rstrip("/")
+        url = f"{base_url}/v1beta1/options/snapshots/{symbol.upper()}"
+        r = _requests.get(
+            url,
+            headers=_Adapter._headers(),
+            params={"feed": _os.getenv("ALPACA_OPTIONS_FEED", _Adapter.DEFAULT_FEED), "limit": 3},
+            timeout=10,
+        )
+        return {"ok": r.ok, "status_code": r.status_code, "raw": r.json() if r.ok else r.text[:2000]}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/options/gamma-matrix/{symbol}")
 def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
     sym = (symbol or "").upper().strip()
