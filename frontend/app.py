@@ -5209,10 +5209,17 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # hard refresh never helped -- this was a server-side Python
     # variable, not anything cached in the browser.
     #
-    # Re-fetching full history periodically (roughly every 15 ticks,
-    # ~5 minutes at the current 20s interval) self-heals a stale
-    # snapshot without hammering the backend on every single tick.
-    if not candles or (new_seq % 15 == 0):
+    # FIX (2026-07-30, follow-up): confirmed the ~5-minute version of
+    # this self-heal window still wasn't tight enough -- it's keyed to
+    # server uptime (every 15th tick since this process booted), not to
+    # when an individual user loads the page. Given this backend
+    # restarted many times tonight, a freshly-opened page can easily
+    # land within that first ~5-minute window and still see a stale
+    # snapshot, confirmed directly: user reported a mismatch on a page
+    # they'd "just opened fresh." Tightened to every 3 ticks (~1 minute)
+    # to substantially shrink the worst-case staleness window, while
+    # still not re-fetching full history on every single 20-second tick.
+    if not candles or (new_seq % 3 == 0):
         fresh_history = fetch_real_candles(clean, tf or "5m")
         if fresh_history:
             candles = fresh_history
