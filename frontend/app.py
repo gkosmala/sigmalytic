@@ -2433,6 +2433,12 @@ def build_reports_tab():
         ])
 
     most_recent = dates[0]
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/{most_recent}", timeout=20)
+        payload = r.json() if r.ok else {}
+        html_doc = payload.get("html") if payload.get("ok") else None
+    except Exception:
+        html_doc = None
 
     return card([
         html.Div([
@@ -2463,7 +2469,7 @@ def build_reports_tab():
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
         html.Iframe(
             id="reports-iframe",
-            src=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf",
+            srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
             style={"width": "100%", "height": "85vh", "border": f"1px solid {BORDER}", "borderRadius": "14px"},
         ),
     ])
@@ -4760,7 +4766,7 @@ def add_csp_headers(response):
 
 
 @app.callback(
-    Output("reports-iframe", "src"),
+    Output("reports-iframe", "srcDoc"),
     Output("reports-download-btn", "href"),
     Output("reports-download-btn", "download"),
     Input("reports-date-picker", "value"),
@@ -4769,8 +4775,16 @@ def add_csp_headers(response):
 def update_report_view(selected_date):
     if not selected_date:
         return no_update, no_update, no_update
-    base = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf"
-    return base, f"{base}?download=true", f"Sigmalytic_Daily_Report_{selected_date}.pdf"
+    download_href = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf?download=true"
+    download_name = f"Sigmalytic_Daily_Report_{selected_date}.pdf"
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
+        payload = r.json() if r.ok else {}
+        if payload.get("ok"):
+            return payload.get("html"), download_href, download_name
+    except Exception:
+        pass
+    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
