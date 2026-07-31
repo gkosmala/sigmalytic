@@ -4750,8 +4750,8 @@ def add_csp_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; "
-        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
-        "connect-src 'self' https://api.stripe.com; "
+        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://sigmalytic-backend.onrender.com; "
+        "connect-src 'self' https://api.stripe.com https://sigmalytic-backend.onrender.com; "
         "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:;"
