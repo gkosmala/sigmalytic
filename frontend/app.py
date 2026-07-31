@@ -2433,12 +2433,6 @@ def build_reports_tab():
         ])
 
     most_recent = dates[0]
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/{most_recent}", timeout=20)
-        payload = r.json() if r.ok else {}
-        html_doc = payload.get("html") if payload.get("ok") else None
-    except Exception:
-        html_doc = None
 
     return card([
         html.Div([
@@ -2469,7 +2463,7 @@ def build_reports_tab():
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
         html.Iframe(
             id="reports-iframe",
-            srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
+            src=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf",
             style={"width": "100%", "height": "85vh", "border": f"1px solid {BORDER}", "borderRadius": "14px"},
         ),
     ])
@@ -4766,36 +4760,17 @@ def add_csp_headers(response):
 
 
 @app.callback(
-    Output("reports-iframe", "srcDoc"),
-    Input("reports-date-picker", "value"),
-    prevent_initial_call=True,
-)
-def update_report_view(selected_date):
-    if not selected_date:
-        return no_update
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
-        payload = r.json() if r.ok else {}
-        if payload.get("ok"):
-            return payload.get("html")
-    except Exception:
-        pass
-    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>"
-
-
-@app.callback(
+    Output("reports-iframe", "src"),
     Output("reports-download-btn", "href"),
     Output("reports-download-btn", "download"),
     Input("reports-date-picker", "value"),
     prevent_initial_call=True,
 )
-def update_report_download_link(selected_date):
+def update_report_view(selected_date):
     if not selected_date:
-        return no_update, no_update
-    return (
-        f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf",
-        f"Sigmalytic_Daily_Report_{selected_date}.pdf",
-    )
+        return no_update, no_update, no_update
+    pdf_url = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf"
+    return pdf_url, pdf_url, f"Sigmalytic_Daily_Report_{selected_date}.pdf"
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
