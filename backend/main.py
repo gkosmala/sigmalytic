@@ -457,6 +457,45 @@ def get_open_trade(user_id: str):
     return {}
 
 
+@app.get("/api/admin/generate-report")
+def generate_report_now(date: str = None):
+    """
+    Manually triggers report generation for a given date (YYYY-MM-DD),
+    defaulting to today (UTC) if not specified. Used both for the
+    initial backfill (generating the first report for a past date) and
+    as a manual/emergency trigger outside the normal daily cron schedule.
+    """
+    try:
+        from backend.reports_engine import generate_and_store_report
+        result = generate_and_store_report(date)
+        return result
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
+@app.get("/api/reports/list")
+def reports_list():
+    """Returns every date that currently has a stored daily report, newest first."""
+    try:
+        from backend.reports_engine import list_available_reports
+        return {"ok": True, "dates": list_available_reports()}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500], "dates": []}
+
+
+@app.get("/api/reports/{report_date}")
+def reports_get(report_date: str):
+    """Returns the stored HTML report for a specific date."""
+    try:
+        from backend.reports_engine import get_report_html
+        html_doc = get_report_html(report_date)
+        if not html_doc:
+            return {"ok": False, "error": f"No report found for {report_date}"}
+        return {"ok": True, "date": report_date, "html": html_doc}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/admin/trigger-eod-audit")
 def trigger_eod_audit():
     # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()

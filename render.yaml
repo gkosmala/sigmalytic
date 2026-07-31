@@ -80,3 +80,20 @@ services:
         value: "DAILY"
       - key: SIGMALYTIC_NIGHTLY_CRON_TIMEOUT_SECONDS
         value: "900"
+
+  - type: cron
+    name: sigmalytic-daily-report
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/render_daily_report_generator.py
+    # Scheduled 30 minutes after sigmalytic-nightly-campaign-refresh
+    # (22:15 UTC) so the report reflects that day's freshly-refreshed
+    # campaign data, not the previous day's.
+    schedule: "45 22 * * MON-FRI"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: SIGMALYTIC_BACKEND_URL
+        value: "https://sigmalytic-backend.onrender.com"
+

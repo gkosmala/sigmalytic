@@ -2413,6 +2413,74 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def build_reports_tab():
+    """
+    Reports tab -- lets subscribers browse and read the daily
+    subscriber intelligence report (backend/reports_engine.py), one
+    per calendar date, generated once daily by a Render cron job.
+    """
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
+        dates = (r.json().get("dates") or []) if r.ok else []
+    except Exception:
+        dates = []
+
+    if not dates:
+        return card([
+            html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "marginBottom": "8px"}),
+            html.P("No daily reports are available yet. The first report is generated once daily; check back after the next scheduled run.",
+                   style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
+        ])
+
+    most_recent = dates[0]
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/{most_recent}", timeout=20)
+        payload = r.json() if r.ok else {}
+        html_doc = payload.get("html") if payload.get("ok") else None
+    except Exception:
+        html_doc = None
+
+    return card([
+        html.Div([
+            html.Div([
+                html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
+                html.P("Daily subscriber intelligence report, generated once per day from the live full-universe campaign engine.",
+                       style={"fontSize": "13px", "color": "rgba(255,255,255,.6)", "margin": "0"}),
+            ]),
+            dcc.Dropdown(
+                id="reports-date-picker",
+                options=[{"label": d, "value": d} for d in dates],
+                value=most_recent,
+                clearable=False,
+                style={"width": "220px", "color": "#111"},
+            ),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
+        html.Iframe(
+            id="reports-iframe",
+            srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
+            style={"width": "100%", "height": "85vh", "border": f"1px solid {BORDER}", "borderRadius": "14px"},
+        ),
+    ])
+
+
+@app.callback(
+    Output("reports-iframe", "srcDoc"),
+    Input("reports-date-picker", "value"),
+    prevent_initial_call=True,
+)
+def update_report_view(selected_date):
+    if not selected_date:
+        return no_update
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
+        payload = r.json() if r.ok else {}
+        if payload.get("ok"):
+            return payload.get("html")
+    except Exception:
+        pass
+    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>"
+
+
 def build_guide_tab():
     """
     User Guide tab -- serves the PDF version of the Sigmalytic V2 User
@@ -4789,6 +4857,7 @@ ALL_TABS = [
     ("admin",       "Admin"),
     ("setup",       "Setup"),
     ("status",      "Status"),
+    ("reports",     "Reports"),
     ("guide",       "User Guide"),
 ]
 
@@ -5012,6 +5081,7 @@ def load_symbol(_, ticker, live, tf, session):
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
     Input("tab-status","n_clicks"),
+    Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     prevent_initial_call=True,
 )
@@ -5365,6 +5435,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
     elif tab=="setup":       main = build_setup_tab()
+    elif tab=="reports":      main = build_reports_tab()
     elif tab=="guide":       main = build_guide_tab()
     else:                    main = html.Div("Unknown tab")
 
