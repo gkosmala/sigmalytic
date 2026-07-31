@@ -2445,7 +2445,7 @@ def build_reports_tab():
             html.Div([
                 html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
                 html.P("Daily subscriber intelligence report, generated once per day from the live full-universe campaign engine.",
-                       style={"fontSize": "13px", "color": "rgba(255,255,255,.6)", "margin": "0"}),
+                       style={"fontSize": "13px", "color": WHITE, "margin": "0"}),
             ]),
             html.Div([
                 dcc.Dropdown(
