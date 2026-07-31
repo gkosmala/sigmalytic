@@ -176,7 +176,9 @@ _CSS = """
 body { font-family: Arial, Helvetica, sans-serif; color: #111827; margin: 0; background: #f3f4f6; }
 .page { max-width: 1120px; margin: 0 auto; background: white; padding: 40px 46px; }
 .cover { border-bottom: 4px solid #111827; padding-bottom: 24px; margin-bottom: 28px; }
-h1 { font-size: 30px; margin: 0 0 8px 0; letter-spacing: -0.02em; }
+h1 { font-size: 30px; margin: 0 0 2px 0; letter-spacing: -0.02em; }
+.sigma { color: #0F766E; }
+.corp-subtitle { font-size: 12px; font-weight: bold; letter-spacing: 0.12em; color: #0F766E; margin-bottom: 10px; }
 h2 { font-size: 21px; margin: 24px 0 10px 0; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
 .subtitle { font-size: 15px; color: #374151; margin-bottom: 16px; }
 .meta { display: grid; grid-template-columns: 210px 1fr; gap: 6px 14px; font-size: 13px; }
@@ -188,9 +190,9 @@ h2 { font-size: 21px; margin: 24px 0 10px 0; border-bottom: 1px solid #d1d5db; p
 .metric .txt { color: #4b5563; font-size: 12px; }
 .note { color: #374151; font-size: 13px; }
 .muted { color: #6b7280; }
-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
 th { background: #111827; color: white; text-align: left; padding: 7px; }
-td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; }
+td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
 .num { text-align: right; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; }
@@ -270,7 +272,8 @@ def build_report_html(report_date_str: str) -> str:
 <body>
   <div class="page">
     <div class="cover">
-      <h1>SIGMALYTIC QUANT CORPORATION</h1>
+      <h1><span class="sigma">&Sigma;</span> SIGMALYTIC</h1>
+      <div class="corp-subtitle">QUANT CORPORATION</div>
       <div class="subtitle">{_esc(REPORT_SUBTITLE)}</div>
       <div class="meta">
         <div class="label">Report date</div><div>{_esc(display_date)}</div>
