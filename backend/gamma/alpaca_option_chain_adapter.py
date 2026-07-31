@@ -211,9 +211,16 @@ class AlpacaOptionChainAdapter:
         latest_trade = snapshot.get("latest_trade") or snapshot.get("trade") or {}
         latest_quote = snapshot.get("latest_quote") or snapshot.get("quote") or {}
 
+        # FIX (2026-07-30): confirmed via direct inspection of Alpaca's
+        # actual raw response that this endpoint uses camelCase keys with
+        # abbreviated sub-fields (dailyBar.v, latestTrade.s), not the
+        # snake_case/spelled-out names this was checking for -- volume
+        # was silently defaulting to 0.0 for every single contract.
         volume = (
             cls._safe_float(snapshot.get("volume"), 0.0)
+            or cls._safe_float(cls._nested_get(snapshot, "dailyBar", "v"), 0.0)
             or cls._safe_float(cls._nested_get(snapshot, "daily_bar", "volume"), 0.0)
+            or cls._safe_float(cls._nested_get(snapshot, "latestTrade", "s"), 0.0)
             or cls._safe_float(cls._nested_get(snapshot, "latest_trade", "size"), 0.0)
         )
 
