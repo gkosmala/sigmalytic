@@ -516,12 +516,19 @@ def reports_get(report_date: str):
 @app.get("/api/reports/{report_date}/pdf")
 def reports_get_pdf(report_date: str, download: bool = False):
     """
-    Returns the stored report for a specific date as a PDF, converted
-    on the fly from the stored HTML using xhtml2pdf (pure Python, no
-    external browser binary needed -- unlike the original
-    tools/generate_nightly_intelligence_report_v2.py's Edge-based PDF
-    export, which isn't available in this lightweight web service
-    container).
+    Returns the stored report for a specific date as a PDF.
+
+    FIX (2026-07-31): user reported the downloaded PDF looked visibly
+    different from the on-screen HTML view (which uses full real-browser
+    rendering). Root cause: xhtml2pdf has much more limited CSS support
+    than a real browser -- confirmed earlier by warnings it couldn't
+    parse letter-spacing at all. Tested WeasyPrint directly against our
+    actual report HTML/CSS: renders with zero warnings, meaningfully
+    closer to real browser output. Now the primary renderer, with a
+    fallback to xhtml2pdf if WeasyPrint's native library dependencies
+    (Pango/Cairo) aren't available in this specific deploy environment --
+    couldn't fully verify that from a sandbox, so this fails safely
+    rather than risking another crashed-on-deploy scenario.
 
     Defaults to inline disposition, so the browser's native PDF viewer
     renders it directly when embedded in an iframe (matching the User
@@ -533,7 +540,6 @@ def reports_get_pdf(report_date: str, download: bool = False):
     download for that button has to happen via this header instead.
     """
     from fastapi.responses import Response as _FastAPIResponse
-    from xhtml2pdf import pisa
     import io
 
     try:
@@ -545,17 +551,36 @@ def reports_get_pdf(report_date: str, download: bool = False):
                 status_code=404,
             )
 
-        buf = io.BytesIO()
-        result = pisa.CreatePDF(html_doc, dest=buf)
-        if result.err:
+        pdf_bytes = None
+        render_error = None
+
+        try:
+            from weasyprint import HTML as _WeasyHTML
+            pdf_bytes = _WeasyHTML(string=html_doc).write_pdf()
+        except Exception as exc:
+            render_error = f"weasyprint_failed: {exc}"
+
+        if pdf_bytes is None:
+            try:
+                from xhtml2pdf import pisa
+                buf = io.BytesIO()
+                result = pisa.CreatePDF(html_doc, dest=buf)
+                if not result.err:
+                    pdf_bytes = buf.getvalue()
+                else:
+                    render_error = (render_error or "") + " | xhtml2pdf_failed"
+            except Exception as exc:
+                render_error = (render_error or "") + f" | xhtml2pdf_failed: {exc}"
+
+        if pdf_bytes is None:
             return _FastAPIResponse(
-                content="PDF conversion failed",
+                content=f"PDF conversion failed: {render_error}",
                 status_code=500,
             )
 
         disposition = "attachment" if download else "inline"
         return _FastAPIResponse(
-            content=buf.getvalue(),
+            content=pdf_bytes,
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f'{disposition}; filename="Sigmalytic_Daily_Report_{report_date}.pdf"'
