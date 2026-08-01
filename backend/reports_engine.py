@@ -83,6 +83,64 @@ def _is_bullish(row: Dict[str, Any]) -> bool:
     return bias in ("LONG", "BULLISH")
 
 
+# FIX (2026-07-31): user pointed out several report readability issues.
+# The app itself already relabels the backend's "BIRTH" lifecycle state
+# as "SPARK" everywhere in the UI (frontend/campaign_tab.py's
+# _STATE_ICONS mapping) -- the report wasn't applying that same
+# relabeling, showing the raw backend value instead.
+_STATE_LABELS = {
+    "BIRTH": "SPARK",
+    "CONFIRMED": "CONFIRMED",
+    "SURVIVING": "SURVIVING",
+    "EXPANDING": "EXPANDING",
+    "MATURING": "MATURING",
+    "DISTRIBUTION_RISK": "RISK",
+    "CLOSED": "CLOSED",
+}
+
+
+def _state_label(value: Any) -> str:
+    text = str(value or "").upper()
+    return _STATE_LABELS.get(text, text or "—")
+
+
+def _readable_label(value: Any) -> str:
+    """
+    Converts backend-style ALL_CAPS_WITH_UNDERSCORES enum values (e.g.
+    "PENDING_INCOMPLETE_7YR_EVIDENCE") into readable text
+    ("Pending Incomplete 7yr Evidence") -- user reported the raw form
+    was hard to read.
+    """
+    if not value:
+        return "—"
+    words = str(value).replace("_", " ").split()
+    return " ".join(w.capitalize() for w in words)
+
+
+def _cohort_label(value: Any) -> str:
+    """
+    Strips the redundant "COHORT_" prefix -- user pointed out the
+    column header already says "Cohort", so repeating it in every
+    value is redundant.
+    """
+    text = str(value or "")
+    if text.upper().startswith("COHORT_"):
+        text = text[len("COHORT_"):]
+    return _readable_label(text) if text else "—"
+
+
+def _readable_missing_components(row: Dict[str, Any]) -> str:
+    """
+    User reported this column showed a raw Python list repr (brackets,
+    quotes, underscores) and asked for either "0" or a plain statement
+    of what's missing.
+    """
+    items = _missing_components(row)
+    if not items:
+        return "0"
+    return ", ".join(_readable_label(i) for i in items)
+
+
 def _missing_components(row: Dict[str, Any]) -> List[str]:
     return row.get("ods_missing_components") or []
 
@@ -113,17 +171,17 @@ def _table_html(rows: List[Dict[str, Any]], title: str, note: str = "", limit: i
         body.append(f"""
         <tr>
           <td><strong>{_esc(_row_symbol(row))}</strong></td>
-          <td>{_esc(_subscriber_state(row.get("state")) or row.get("status"))}</td>
+          <td>{_esc(_state_label(row.get("state")) or row.get("status"))}</td>
           <td>{_esc(row.get("bias") or row.get("watch_bias"))}</td>
           <td>{_esc(row.get("ods_status"))}</td>
-          <td>{_esc(row.get("ods_label"))}</td>
+          <td>{_esc(_readable_label(row.get("ods_label")))}</td>
           <td class="num">{_fmt(row.get("ods_score"), 0)}</td>
           <td>{_esc(row.get("lifecycle_maturity"))}</td>
-          <td>{_esc(row.get("cohort_status"))}</td>
+          <td>{_esc(_cohort_label(row.get("cohort_status")))}</td>
           <td class="num">{_fmt(row.get("expected_return_pct"), 2)}</td>
           <td class="num">{_fmt(row.get("target_1_price"), 2)}</td>
           <td class="num">{_fmt(row.get("failure_price"), 2)}</td>
-          <td>{_esc(_missing_components(row))}</td>
+          <td>{_esc(_readable_missing_components(row))}</td>
         </tr>
         """)
     return f"""
@@ -193,7 +251,7 @@ h2 { font-size: 21px; margin: 24px 0 10px 0; border-bottom: 1px solid #d1d5db; p
 table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
 th { background: #111827; color: white; text-align: left; padding: 7px; }
 td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
-.num { text-align: right; }
+.num { text-align: center; }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; }
 .card-title { font-size: 15px; font-weight: bold; display: flex; justify-content: space-between; }
