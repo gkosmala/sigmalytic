@@ -257,4 +257,21 @@
   div[style*="borderRadius:\"20px\""] {
     padding: 10px !important;
   }
+
+  /* ── User Guide PDF ──────────────────────────────────────── */
+  /* FIX (2026-08-02): user reported the User Guide freezes on the
+     first/splash page on mobile, while the Reports tab (raw HTML, not
+     a PDF) scrolls through fine. This is a known iOS Safari limitation:
+     it doesn't support scrolling within an iframe-embedded PDF
+     properly, unlike a normal HTML page in an iframe. Hiding the
+     iframe entirely on mobile and relying on the "Open Full Guide"
+     button instead, which opens the PDF directly in the device's
+     native, full-screen PDF viewer -- that one scrolls correctly,
+     since it isn't constrained inside an iframe at all. */
+  #guide-pdf-iframe {
+    display: none !important;
+  }
+  #guide-mobile-note {
+    display: block !important;
+  }
 }
