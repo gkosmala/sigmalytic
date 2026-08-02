@@ -5281,18 +5281,8 @@ def update_badges(live):
     State("s-symbol","data"),
     State("s-tf","data"),
     State("s-session","data"),
-    # FIX (2026-07-31): user reported the Reports tab kept "switching"
-    # back to the latest date while they were reading an older one.
-    # Root cause: this callback rebuilds every tab from scratch on every
-    # ~20s live-price tick (needed for the Command Center), and
-    # build_reports_tab() always defaulted to the most recent date on
-    # every rebuild -- discarding whatever date the user had actually
-    # selected. Passing the date picker's current value through as a
-    # State so a tick-driven rebuild can preserve it instead of
-    # resetting the dropdown out from under the user mid-read.
-    State("reports-date-picker","value"),
 )
-def render_main(tab,live,candles,live_mode,symbol,tf,session=None,reports_selected_date=None):
+def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -5474,7 +5464,31 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None,reports_select
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
     elif tab=="setup":       main = build_setup_tab()
-    elif tab=="reports":      main = build_reports_tab(selected_date=reports_selected_date)
+    elif tab=="reports":
+        # FIX (2026-07-31): user reported the Reports tab kept "switching"
+        # back to the latest date while reading an older one. Root cause:
+        # this callback rebuilds every tab from scratch on every ~20s
+        # live-price tick (needed for the Command Center), and
+        # build_reports_tab() always defaulted to the most recent date on
+        # every rebuild. First attempted fix (reading the date picker's
+        # current value back in via State) broke the callback entirely --
+        # confirmed via the actual browser console error -- because that
+        # component is created by this same callback's own output, a
+        # circular dependency Dash's client-side renderer can't resolve,
+        # even with suppress_callback_exceptions=True (which only covers
+        # server-side Python validation, not this).
+        #
+        # Correct fix: don't rebuild this tab's content at all on a
+        # live-tick-only trigger -- only rebuild it on a genuine tab
+        # switch. That preserves whatever the user has on screen
+        # (including their date selection) untouched between real
+        # navigation events, without needing to read anything back from
+        # a component this same callback creates.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if _trigger.startswith("s-tab"):
+            main = build_reports_tab()
+        else:
+            return no_update, no_update, no_update, no_update
     elif tab=="guide":       main = build_guide_tab()
     else:                    main = html.Div("Unknown tab")
 
