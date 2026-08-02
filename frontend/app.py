@@ -2516,7 +2516,7 @@ def build_guide_tab():
             ], style={"display":"flex","alignItems":"center"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
         html.Div(
-            "On mobile, tap \"Open Full Guide\" above for the best reading experience -- PDFs don't scroll properly inside this preview on phones.",
+            "On mobile, tap \"Open Full Guide\" above for the best reading experience -- PDFs don't scroll properly inside this preview on phones. To return to the app afterward, look for a \"Done\" button in the top corner of the screen.",
             id="guide-mobile-note",
             style={"display":"none","fontSize":"13px","color":"rgba(255,255,255,.7)",
                    "padding":"14px","border":f"1px solid {BORDER_T}","borderRadius":"10px",
