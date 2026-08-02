@@ -516,24 +516,58 @@ def generate_report_now(date: str = None):
 @app.get("/api/reports/list")
 def reports_list():
     """Returns every date that currently has a stored daily report, newest first."""
+    from fastapi.responses import JSONResponse as _JSONResponse
+
     try:
         from backend.reports_engine import list_available_reports
-        return {"ok": True, "dates": list_available_reports()}
+        result = {"ok": True, "dates": list_available_reports()}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)[:500], "dates": []}
+        result = {"ok": False, "error": str(exc)[:500], "dates": []}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/reports/{report_date}")
 def reports_get(report_date: str):
-    """Returns the stored HTML report for a specific date."""
+    """
+    Returns the stored HTML report for a specific date.
+
+    FIX (2026-08-02): the generate-report endpoint got explicit
+    no-cache headers earlier, but this read endpoint -- the one
+    actually being checked repeatedly to verify a regeneration took
+    effect -- was missed. If a browser cached a response from this
+    exact URL before, checking it again could keep showing the old
+    cached content even after a genuinely successful regeneration on
+    the backend, which would look exactly like the regeneration itself
+    wasn't working.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
     try:
         from backend.reports_engine import get_report_html
         html_doc = get_report_html(report_date)
         if not html_doc:
-            return {"ok": False, "error": f"No report found for {report_date}"}
-        return {"ok": True, "date": report_date, "html": html_doc}
+            result = {"ok": False, "error": f"No report found for {report_date}"}
+        else:
+            result = {"ok": True, "date": report_date, "html": html_doc}
     except Exception as exc:
-        return {"ok": False, "error": str(exc)[:500]}
+        result = {"ok": False, "error": str(exc)[:500]}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/reports/{report_date}/pdf")
