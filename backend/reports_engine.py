@@ -43,7 +43,7 @@ REPORT_SUBTITLE = "V2 Campaign Intelligence - Daily Subscriber Edition"
 # is present in a freshly-regenerated report, the new code is running;
 # if it's absent, something is preventing the latest deploy from
 # actually taking effect. Safe to remove once resolved.
-REPORT_BUILD_MARKER = "MOVERS_BUILD_MARKER_20260802B"
+REPORT_BUILD_MARKER = "MOVERS_BUILD_MARKER_20260802C"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 REDIS_REPORT_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
@@ -273,7 +273,7 @@ td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-w
 """
 
 
-def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str, Any]]:
+def _fetch_market_movers(report_date_str: str, limit: int = 15) -> "tuple[List[Dict[str, Any]], str]":
     """
     "What Happened in the Market Today" -- user pointed out the existing
     report only shows the top 100 highest-quality setups (a Wyckoff/
@@ -283,21 +283,14 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
     full radar universe and sorts purely by raw |% change|, so a big
     move can't be excluded just because it isn't a "quality" setup.
 
-    FIX (2026-08-02): user caught a real, serious bug -- the original
-    version of this function pulled from get_radar_scores(), a LIVE
-    cache reflecting whatever moment it happens to be called at, not a
-    historical snapshot for report_date. That worked fine for the
-    same-day cron-generated report, but was silently wrong for any
-    later manual regeneration of a past date (confirmed directly: the
-    07-30 and 07-31 reports showed identical movers, because both were
-    regenerated around the same time days later, both just reflecting
-    "right now" rather than their labeled date at all).
-
-    Fixed by fetching genuine historical daily bars for the exact
-    requested date from Alpaca directly (not the live radar cache),
-    computing each symbol's real (close-open)/open dollar move for
-    that specific day. This is correct regardless of when the report
-    is generated or regenerated.
+    Returns (movers, reason) -- reason is a short human-readable string
+    explaining an empty result. FIX (2026-08-02, second pass): print()
+    diagnostics weren't visible to the user in Render's logs even after
+    confirming (via a build marker) that this exact code was genuinely
+    running end to end. Rather than keep relying on log access, the
+    diagnostic reason is now returned directly and displayed in the
+    report's own "unavailable" message -- visible immediately, no log
+    navigation required.
     """
     import os
     import requests as _requests
@@ -308,37 +301,31 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
 
     symbols = list(RADAR_CACHE.keys())
     if not symbols:
-        print(f"[MOVERS] {report_date_str}: RADAR_CACHE is empty, no symbols to query", flush=True)
-        return []
+        reason = "RADAR_CACHE is empty (no symbols currently tracked)"
+        print(f"[MOVERS] {report_date_str}: {reason}", flush=True)
+        return [], reason
 
     key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
     secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
     base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
     if not key or not secret:
-        print(f"[MOVERS] {report_date_str}: missing Alpaca credentials", flush=True)
-        return []
+        reason = "missing Alpaca API credentials"
+        print(f"[MOVERS] {report_date_str}: {reason}", flush=True)
+        return [], reason
 
     try:
         start_dt = _dt.strptime(report_date_str, "%Y-%m-%d")
     except Exception as exc:
-        print(f"[MOVERS] {report_date_str}: failed to parse report date -- {exc}", flush=True)
-        return []
+        reason = f"failed to parse report date -- {exc}"
+        print(f"[MOVERS] {report_date_str}: {reason}", flush=True)
+        return [], reason
     end_dt = start_dt + _td(days=1)
 
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     url = f"{base_url}/v2/stocks/bars"
     bars_by_symbol: Dict[str, Dict[str, float]] = {}
+    batch_errors: List[str] = []
 
-    # FIX (2026-08-02): the real root cause of the marker never
-    # appearing in a regenerated report at all -- these batches ran
-    # sequentially, and with ~5 batches at up to 20s each (plus
-    # pagination), total wall-clock time could easily exceed 100+
-    # seconds, well past a likely proxy-level request timeout. That
-    # would kill the whole request before build_report_html ever
-    # finishes and the result gets saved -- explaining why NOTHING from
-    # this feature was ever actually being stored, not just the movers
-    # data specifically. Running batches concurrently keeps total time
-    # to roughly one batch's duration instead of the sum of all of them.
     import concurrent.futures as _futures
 
     def _fetch_batch(batch: List[str]) -> Dict[str, Dict[str, float]]:
@@ -358,11 +345,15 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
             try:
                 r = _requests.get(url, headers=headers, params=params, timeout=15)
                 if not r.ok:
-                    print(f"[MOVERS] {report_date_str}: batch HTTP {r.status_code} -- {r.text[:300]}", flush=True)
+                    err = f"HTTP {r.status_code}: {r.text[:200]}"
+                    print(f"[MOVERS] {report_date_str}: batch {err}", flush=True)
+                    batch_errors.append(err)
                     break
                 payload = r.json() or {}
             except Exception as exc:
-                print(f"[MOVERS] {report_date_str}: batch request failed -- {exc}", flush=True)
+                err = f"request exception: {exc}"
+                print(f"[MOVERS] {report_date_str}: batch {err}", flush=True)
+                batch_errors.append(err)
                 break
 
             for sym, bar_list in (payload.get("bars") or {}).items():
@@ -385,6 +376,10 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
 
     print(f"[MOVERS] {report_date_str}: collected bars for {len(bars_by_symbol)} of {len(symbols)} symbols", flush=True)
 
+    if not bars_by_symbol:
+        reason = f"no bars returned for any symbol ({len(batches)} batches, errors: {batch_errors[:2] if batch_errors else 'none reported'})"
+        return [], reason
+
     movers = []
     for sym, bar in bars_by_symbol.items():
         try:
@@ -405,15 +400,16 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
 
     movers.sort(key=lambda s: abs(_safe_float(s.get("change_pct")) or 0), reverse=True)
     print(f"[MOVERS] {report_date_str}: returning {min(len(movers), limit)} movers", flush=True)
-    return movers[:limit]
+    return movers[:limit], ""
 
 
-def _movers_table(movers: List[Dict[str, Any]]) -> str:
+def _movers_table(movers: List[Dict[str, Any]], reason: str = "") -> str:
     if not movers:
-        return """
+        detail = f" (reason: {reason})" if reason else ""
+        return f"""
         <section class="section">
           <h2>What Happened in the Market Today</h2>
-          <p class="muted">Market movers data unavailable for this report.</p>
+          <p class="muted">Market movers data unavailable for this report{_esc(detail)}.</p>
         </section>
         """
     rows_html = []
@@ -487,9 +483,9 @@ def build_report_html(report_date_str: str) -> str:
         display_date = report_date_str
 
     print(f"[MOVERS] {report_date_str}: build_report_html about to call _fetch_market_movers", flush=True)
-    movers = _fetch_market_movers(report_date_str, limit=15)
+    movers, movers_reason = _fetch_market_movers(report_date_str, limit=15)
     print(f"[MOVERS] {report_date_str}: build_report_html got back {len(movers)} movers", flush=True)
-    movers_html = _movers_table(movers)
+    movers_html = _movers_table(movers, movers_reason)
 
     executive = f"""
     <section class="section">
