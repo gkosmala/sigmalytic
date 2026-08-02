@@ -154,18 +154,18 @@
   }
 
   /* Top Opportunities tiles — user reported these don't scroll on
-     mobile. Root cause: a fixed 3-column CSS grid (repeat(3,1fr)),
+     mobile. Root cause: a fixed 3-column CSS grid (repeat(3, 1fr)),
      which just squeezes into cramped columns on a narrow screen
      rather than scrolling. Converting to a horizontally-scrollable
      row of fixed-width cards instead, matching the user's explicit
      preference for horizontal scroll over a squeezed/stacked layout. */
-  div[style*="gridTemplateColumns:\"repeat(3,1fr)\""] {
+  div[style*="gridTemplateColumns:\"repeat(3, 1fr)\""] {
     display: flex !important;
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch !important;
     gap: 12px !important;
   }
-  div[style*="gridTemplateColumns:\"repeat(3,1fr)\""] > * {
+  div[style*="gridTemplateColumns:\"repeat(3, 1fr)\""] > * {
     flex: 0 0 82% !important;
     min-width: 82% !important;
   }
