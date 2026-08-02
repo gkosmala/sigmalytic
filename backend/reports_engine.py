@@ -262,29 +262,112 @@ td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-w
 """
 
 
-def _fetch_market_movers(limit: int = 15) -> List[Dict[str, Any]]:
+def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str, Any]]:
     """
     "What Happened in the Market Today" -- user pointed out the existing
     report only shows the top 100 highest-quality setups (a Wyckoff/
     Weis-style structural score), which can silently exclude a genuinely
     dramatic, newsworthy move (e.g. a sharp high-volume drop) if it
     scores poorly as a bullish setup. This pulls independently from the
-    full radar universe (~1000 symbols, not just tracked campaigns or
-    top-ranked setups) and sorts purely by raw |% change|, so a big move
-    can't be excluded just because it isn't a "quality" setup.
-    """
-    from backend.radar_service import get_radar_scores
+    full radar universe and sorts purely by raw |% change|, so a big
+    move can't be excluded just because it isn't a "quality" setup.
 
-    try:
-        payload = get_radar_scores(limit=1500)
-        symbols = payload.get("symbols") or []
-    except Exception:
+    FIX (2026-08-02): user caught a real, serious bug -- the original
+    version of this function pulled from get_radar_scores(), a LIVE
+    cache reflecting whatever moment it happens to be called at, not a
+    historical snapshot for report_date. That worked fine for the
+    same-day cron-generated report, but was silently wrong for any
+    later manual regeneration of a past date (confirmed directly: the
+    07-30 and 07-31 reports showed identical movers, because both were
+    regenerated around the same time days later, both just reflecting
+    "right now" rather than their labeled date at all).
+
+    Fixed by fetching genuine historical daily bars for the exact
+    requested date from Alpaca directly (not the live radar cache),
+    computing each symbol's real (close-open)/open dollar move for
+    that specific day. This is correct regardless of when the report
+    is generated or regenerated.
+    """
+    import os
+    import requests as _requests
+    from datetime import datetime as _dt, timedelta as _td
+    from backend.radar_service import RADAR_CACHE
+
+    symbols = list(RADAR_CACHE.keys())
+    if not symbols:
         return []
 
-    movers = [
-        s for s in symbols
-        if isinstance(s, dict) and s.get("change_pct") is not None
-    ]
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+    if not key or not secret:
+        return []
+
+    try:
+        start_dt = _dt.strptime(report_date_str, "%Y-%m-%d")
+    except Exception:
+        return []
+    end_dt = start_dt + _td(days=1)
+
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    url = f"{base_url}/v2/stocks/bars"
+    bars_by_symbol: Dict[str, Dict[str, float]] = {}
+
+    # Batch symbols to keep each request's URL/query a reasonable size
+    # (a single comma-separated list of ~1000 tickers risks hitting URL
+    # length limits on some proxies).
+    batch_size = 200
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i + batch_size]
+        params = {
+            "symbols": ",".join(batch),
+            "timeframe": "1Day",
+            "start": start_dt.strftime("%Y-%m-%dT00:00:00Z"),
+            "end": end_dt.strftime("%Y-%m-%dT00:00:00Z"),
+            "feed": "iex",
+            "limit": 1000,
+        }
+        page_token = None
+        for _page in range(5):  # safety cap on pagination depth per batch
+            if page_token:
+                params["page_token"] = page_token
+            try:
+                r = _requests.get(url, headers=headers, params=params, timeout=20)
+                if not r.ok:
+                    break
+                payload = r.json() or {}
+            except Exception:
+                break
+
+            for sym, bar_list in (payload.get("bars") or {}).items():
+                if bar_list:
+                    b = bar_list[0]
+                    o, c = b.get("o"), b.get("c")
+                    if o and c:
+                        bars_by_symbol[sym] = {"open": o, "close": c, "volume": b.get("v")}
+
+            page_token = payload.get("next_page_token")
+            if not page_token:
+                break
+
+    movers = []
+    for sym, bar in bars_by_symbol.items():
+        try:
+            o, c = float(bar["open"]), float(bar["close"])
+            if o <= 0:
+                continue
+            change_pct = (c - o) / o * 100
+        except Exception:
+            continue
+        cached = RADAR_CACHE.get(sym, {})
+        movers.append({
+            "symbol": sym,
+            "price": c,
+            "change_pct": change_pct,
+            "rel_volume": cached.get("rel_volume"),
+            "volume": bar.get("volume"),
+        })
+
     movers.sort(key=lambda s: abs(_safe_float(s.get("change_pct")) or 0), reverse=True)
     return movers[:limit]
 
@@ -367,7 +450,7 @@ def build_report_html(report_date_str: str) -> str:
     except Exception:
         display_date = report_date_str
 
-    movers = _fetch_market_movers(limit=15)
+    movers = _fetch_market_movers(report_date_str, limit=15)
     movers_html = _movers_table(movers)
 
     executive = f"""
