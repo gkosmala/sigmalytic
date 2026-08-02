@@ -16,6 +16,24 @@
     max-width: 100vw !important;
   }
 
+  /* ── Universal table horizontal scroll ──────────────────────
+     FIX (2026-08-02): user reported that on the iPhone PWA, some
+     data-dense tabs (Campaign Intelligence, Status Center, and
+     others beyond the Radar Screen) simply cut content off the edge
+     of the screen instead of being scrollable. The existing rule
+     further below only targeted div[id*="radar"] specifically. HTML
+     tables don't scroll on their own by default -- they just
+     overflow their parent silently. This applies to every table on
+     mobile, regardless of which tab it's in, wrapping each one in
+     its own horizontally-scrollable block so nothing gets cut off. */
+  table {
+    display: block !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    white-space: nowrap !important;
+    max-width: 100% !important;
+  }
+
   /* ── Header / ticker bar ─────────────────────────────────── */
   /* Top announcement bar — smaller text */
   div[style*="font-size:11px"] {
