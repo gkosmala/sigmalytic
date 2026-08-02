@@ -4794,6 +4794,13 @@ def update_report_view(selected_date):
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
+<link rel="manifest" href="/assets/manifest.json">
+<meta name="theme-color" content="#0F766E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sigmalytic">
+<link rel="apple-touch-icon" href="/assets/icon-192.png">
 <style>{GLOBAL_CSS}
 .prob-pill {{
     border: 1px solid rgba(148,163,184,.24);
@@ -4855,6 +4862,13 @@ window.dash_clientside.sigmalytic = {{
         return score;
     }}
 }};
+if ('serviceWorker' in navigator) {{
+    window.addEventListener('load', function() {{
+        navigator.serviceWorker.register('/assets/sw.js').catch(function(err) {{
+            console.warn('Sigmalytic: service worker registration failed', err);
+        }});
+    }});
+}}
 </script>
 </body></html>"""
 
