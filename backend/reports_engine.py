@@ -329,12 +329,20 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
     url = f"{base_url}/v2/stocks/bars"
     bars_by_symbol: Dict[str, Dict[str, float]] = {}
 
-    # Batch symbols to keep each request's URL/query a reasonable size
-    # (a single comma-separated list of ~1000 tickers risks hitting URL
-    # length limits on some proxies).
-    batch_size = 200
-    for i in range(0, len(symbols), batch_size):
-        batch = symbols[i:i + batch_size]
+    # FIX (2026-08-02): the real root cause of the marker never
+    # appearing in a regenerated report at all -- these batches ran
+    # sequentially, and with ~5 batches at up to 20s each (plus
+    # pagination), total wall-clock time could easily exceed 100+
+    # seconds, well past a likely proxy-level request timeout. That
+    # would kill the whole request before build_report_html ever
+    # finishes and the result gets saved -- explaining why NOTHING from
+    # this feature was ever actually being stored, not just the movers
+    # data specifically. Running batches concurrently keeps total time
+    # to roughly one batch's duration instead of the sum of all of them.
+    import concurrent.futures as _futures
+
+    def _fetch_batch(batch: List[str]) -> Dict[str, Dict[str, float]]:
+        batch_bars: Dict[str, Dict[str, float]] = {}
         params = {
             "symbols": ",".join(batch),
             "timeframe": "1Day",
@@ -348,13 +356,13 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
             if page_token:
                 params["page_token"] = page_token
             try:
-                r = _requests.get(url, headers=headers, params=params, timeout=20)
+                r = _requests.get(url, headers=headers, params=params, timeout=15)
                 if not r.ok:
-                    print(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} HTTP {r.status_code} -- {r.text[:300]}", flush=True)
+                    print(f"[MOVERS] {report_date_str}: batch HTTP {r.status_code} -- {r.text[:300]}", flush=True)
                     break
                 payload = r.json() or {}
             except Exception as exc:
-                print(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} request failed -- {exc}", flush=True)
+                print(f"[MOVERS] {report_date_str}: batch request failed -- {exc}", flush=True)
                 break
 
             for sym, bar_list in (payload.get("bars") or {}).items():
@@ -362,11 +370,18 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
                     b = bar_list[0]
                     o, c = b.get("o"), b.get("c")
                     if o and c:
-                        bars_by_symbol[sym] = {"open": o, "close": c, "volume": b.get("v")}
+                        batch_bars[sym] = {"open": o, "close": c, "volume": b.get("v")}
 
             page_token = payload.get("next_page_token")
             if not page_token:
                 break
+        return batch_bars
+
+    batch_size = 200
+    batches = [symbols[i:i + batch_size] for i in range(0, len(symbols), batch_size)]
+    with _futures.ThreadPoolExecutor(max_workers=min(8, len(batches) or 1)) as executor:
+        for result in executor.map(_fetch_batch, batches):
+            bars_by_symbol.update(result)
 
     print(f"[MOVERS] {report_date_str}: collected bars for {len(bars_by_symbol)} of {len(symbols)} symbols", flush=True)
 
