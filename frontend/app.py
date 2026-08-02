@@ -2413,11 +2413,17 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
-def build_reports_tab():
+def build_reports_tab(selected_date=None):
     """
     Reports tab -- lets subscribers browse and read the daily
     subscriber intelligence report (backend/reports_engine.py), one
     per calendar date, generated once daily by a Render cron job.
+
+    selected_date: the date the user currently has selected, if any.
+    This callback gets re-invoked on every ~20s live-price tick (needed
+    for the Command Center tab), so without this, the date picker would
+    silently reset to the most recent date on every rebuild, out from
+    under a user actively reading an older report.
     """
     try:
         r = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
@@ -2432,7 +2438,7 @@ def build_reports_tab():
                    style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
         ])
 
-    most_recent = dates[0]
+    most_recent = selected_date if selected_date in dates else dates[0]
     try:
         r = req.get(f"{BACKEND_HTTP}/api/reports/{most_recent}", timeout=20)
         payload = r.json() if r.ok else {}
@@ -5275,8 +5281,18 @@ def update_badges(live):
     State("s-symbol","data"),
     State("s-tf","data"),
     State("s-session","data"),
+    # FIX (2026-07-31): user reported the Reports tab kept "switching"
+    # back to the latest date while they were reading an older one.
+    # Root cause: this callback rebuilds every tab from scratch on every
+    # ~20s live-price tick (needed for the Command Center), and
+    # build_reports_tab() always defaulted to the most recent date on
+    # every rebuild -- discarding whatever date the user had actually
+    # selected. Passing the date picker's current value through as a
+    # State so a tick-driven rebuild can preserve it instead of
+    # resetting the dropdown out from under the user mid-read.
+    State("reports-date-picker","value"),
 )
-def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
+def render_main(tab,live,candles,live_mode,symbol,tf,session=None,reports_selected_date=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -5458,7 +5474,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
     elif tab=="setup":       main = build_setup_tab()
-    elif tab=="reports":      main = build_reports_tab()
+    elif tab=="reports":      main = build_reports_tab(selected_date=reports_selected_date)
     elif tab=="guide":       main = build_guide_tab()
     else:                    main = html.Div("Unknown tab")
 
