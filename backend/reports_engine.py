@@ -33,17 +33,6 @@ from typing import Any, Dict, List, Optional
 
 REPORT_TITLE = "Sigmalytic Quant Corporation - Nightly Intelligence Report"
 REPORT_SUBTITLE = "V2 Campaign Intelligence - Daily Subscriber Edition"
-# TEMPORARY (2026-08-02): a distinctive marker to verify, directly from
-# a report's own raw output, whether the currently-running code
-# actually includes the movers-fetch changes -- print() diagnostics
-# added in the previous two commits produced zero log output at all,
-# even a print at the very top of _fetch_market_movers before any
-# early returns, which pointed at something more fundamental than a
-# silent failure. This settles that question directly: if this string
-# is present in a freshly-regenerated report, the new code is running;
-# if it's absent, something is preventing the latest deploy from
-# actually taking effect. Safe to remove once resolved.
-REPORT_BUILD_MARKER = "MOVERS_BUILD_MARKER_20260802D"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 REDIS_REPORT_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
@@ -427,11 +416,10 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> "tuple[List[D
 
 def _movers_table(movers: List[Dict[str, Any]], reason: str = "") -> str:
     if not movers:
-        detail = f" (reason: {reason})" if reason else ""
-        return f"""
+        return """
         <section class="section">
           <h2>What Happened in the Market Today</h2>
-          <p class="muted">Market movers data unavailable for this report{_esc(detail)}.</p>
+          <p class="muted">Market movers data unavailable for this report.</p>
         </section>
         """
     rows_html = []
@@ -531,7 +519,6 @@ def build_report_html(report_date_str: str) -> str:
 <head>
   <meta charset="utf-8">
   <title>{_esc(REPORT_TITLE)} - {_esc(display_date)}</title>
-  <!-- {REPORT_BUILD_MARKER} -->
   <style>{_CSS}</style>
 </head>
 <body>
