@@ -481,13 +481,36 @@ def generate_report_now(date: str = None):
     defaulting to today (UTC) if not specified. Used both for the
     initial backfill (generating the first report for a past date) and
     as a manual/emergency trigger outside the normal daily cron schedule.
+
+    FIX (2026-08-02): user reported repeated regenerations of the same
+    date never reflecting the latest code, even with the deploy
+    confirmed live and a build marker proving the new code was
+    genuinely running elsewhere -- but the stored report content
+    stayed on an old version regardless. A plausible explanation:
+    browsers can cache a GET request's response, and this endpoint had
+    no explicit cache-control headers telling it not to. Repeated
+    visits to the exact same URL could have been served straight from
+    browser cache, never actually reaching this function again at all,
+    which would explain everything observed. Explicit no-cache headers
+    added defensively; this is a real gap regardless of whether it was
+    the specific cause here.
     """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
     try:
         from backend.reports_engine import generate_and_store_report
         result = generate_and_store_report(date)
-        return result
     except Exception as exc:
-        return {"ok": False, "error": str(exc)[:500]}
+        result = {"ok": False, "error": str(exc)[:500]}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/reports/list")
