@@ -300,22 +300,13 @@ def _movers_table(movers: List[Dict[str, Any]]) -> str:
     rows_html = []
     for m in movers:
         chg = _safe_float(m.get("change_pct")) or 0
-        rel_vol = _safe_float(m.get("rel_volume")) or 0
         color = "#166534" if chg >= 0 else "#991b1b"
-        # Highlight genuinely notable values, not just color-code direction:
-        # a large move (>=5%) or unusually heavy relative volume (>=2x)
-        # gets a visible background tint so the most significant rows
-        # stand out at a glance, not just their sign.
-        row_bg = ""
-        if abs(chg) >= 5:
-            row_bg = "background-color: #fef3c7;" if chg >= 0 else "background-color: #fee2e2;"
-        vol_style = "font-weight:bold; color:#92400e;" if rel_vol >= 2 else ""
         rows_html.append(f"""
-        <tr style="{row_bg}">
+        <tr>
           <td><strong>{_esc(m.get("symbol"))}</strong></td>
           <td class="num">{_esc(_fmt(m.get("price"), 2))}</td>
           <td class="num" style="color:{color}; font-weight:bold;">{chg:+.2f}%</td>
-          <td class="num" style="{vol_style}">{_esc(_fmt(m.get("rel_volume"), 2))}x</td>
+          <td class="num">{_esc(_fmt(m.get("rel_volume"), 2))}x</td>
           <td class="num">{_esc(f'{int(m.get("volume")):,}' if m.get("volume") else "—")}</td>
         </tr>
         """)
