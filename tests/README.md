@@ -47,6 +47,17 @@ and pull request to `main`.
   per-campaign return percentages must be derived from real, populated
   fields, not literal string matches or field names that are never
   actually set anywhere in the backend.
+- `test_reports_engine.py` -- the daily report's "What Happened in the
+  Market Today" section must use the properly Redis-bridged
+  `get_radar_scores()`, never read the raw, always-empty-on-this-
+  service `RADAR_CACHE` dict directly (the exact bug that broke this
+  section on 2026-08-02, after a well-intentioned but ultimately
+  reverted attempt to make it date-specific). Also locks in the
+  simple, working function signatures (guarding against silently
+  reintroducing the more complex, less reliable historical-fetch
+  version), the report's core branding/formatting fixes (SPARK label,
+  centered table headers, readable ODS/cohort text), and a clean
+  "unavailable" message with no leftover internal diagnostic text.
 
 ## What's deliberately NOT covered (yet)
 
