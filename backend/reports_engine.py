@@ -289,29 +289,28 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
     is generated or regenerated.
     """
     import os
-    import logging as _logging
     import requests as _requests
     from datetime import datetime as _dt, timedelta as _td
     from backend.radar_service import RADAR_CACHE
 
-    _log = _logging.getLogger("sigmalytic.reports")
+    print(f"[MOVERS] {report_date_str}: _fetch_market_movers called", flush=True)
 
     symbols = list(RADAR_CACHE.keys())
     if not symbols:
-        _log.warning(f"[MOVERS] {report_date_str}: RADAR_CACHE is empty, no symbols to query")
+        print(f"[MOVERS] {report_date_str}: RADAR_CACHE is empty, no symbols to query", flush=True)
         return []
 
     key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
     secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
     base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
     if not key or not secret:
-        _log.warning(f"[MOVERS] {report_date_str}: missing Alpaca credentials")
+        print(f"[MOVERS] {report_date_str}: missing Alpaca credentials", flush=True)
         return []
 
     try:
         start_dt = _dt.strptime(report_date_str, "%Y-%m-%d")
     except Exception as exc:
-        _log.warning(f"[MOVERS] {report_date_str}: failed to parse report date -- {exc}")
+        print(f"[MOVERS] {report_date_str}: failed to parse report date -- {exc}", flush=True)
         return []
     end_dt = start_dt + _td(days=1)
 
@@ -340,11 +339,11 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
             try:
                 r = _requests.get(url, headers=headers, params=params, timeout=20)
                 if not r.ok:
-                    _log.warning(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} HTTP {r.status_code} -- {r.text[:300]}")
+                    print(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} HTTP {r.status_code} -- {r.text[:300]}", flush=True)
                     break
                 payload = r.json() or {}
             except Exception as exc:
-                _log.warning(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} request failed -- {exc}")
+                print(f"[MOVERS] {report_date_str}: batch {i}-{i+batch_size} request failed -- {exc}", flush=True)
                 break
 
             for sym, bar_list in (payload.get("bars") or {}).items():
@@ -358,7 +357,7 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
             if not page_token:
                 break
 
-    _log.info(f"[MOVERS] {report_date_str}: collected bars for {len(bars_by_symbol)} of {len(symbols)} symbols")
+    print(f"[MOVERS] {report_date_str}: collected bars for {len(bars_by_symbol)} of {len(symbols)} symbols", flush=True)
 
     movers = []
     for sym, bar in bars_by_symbol.items():
@@ -379,7 +378,7 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> List[Dict[str
         })
 
     movers.sort(key=lambda s: abs(_safe_float(s.get("change_pct")) or 0), reverse=True)
-    _log.info(f"[MOVERS] {report_date_str}: returning {min(len(movers), limit)} movers")
+    print(f"[MOVERS] {report_date_str}: returning {min(len(movers), limit)} movers", flush=True)
     return movers[:limit]
 
 
@@ -461,7 +460,9 @@ def build_report_html(report_date_str: str) -> str:
     except Exception:
         display_date = report_date_str
 
+    print(f"[MOVERS] {report_date_str}: build_report_html about to call _fetch_market_movers", flush=True)
     movers = _fetch_market_movers(report_date_str, limit=15)
+    print(f"[MOVERS] {report_date_str}: build_report_html got back {len(movers)} movers", flush=True)
     movers_html = _movers_table(movers)
 
     executive = f"""
