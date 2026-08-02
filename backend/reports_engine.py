@@ -519,6 +519,7 @@ def build_report_html(report_date_str: str) -> str:
 <head>
   <meta charset="utf-8">
   <title>{_esc(REPORT_TITLE)} - {_esc(display_date)}</title>
+  <!-- generated_at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} -->
   <style>{_CSS}</style>
 </head>
 <body>
