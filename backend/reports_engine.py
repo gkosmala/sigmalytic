@@ -43,7 +43,7 @@ REPORT_SUBTITLE = "V2 Campaign Intelligence - Daily Subscriber Edition"
 # is present in a freshly-regenerated report, the new code is running;
 # if it's absent, something is preventing the latest deploy from
 # actually taking effect. Safe to remove once resolved.
-REPORT_BUILD_MARKER = "MOVERS_BUILD_MARKER_20260802C"
+REPORT_BUILD_MARKER = "MOVERS_BUILD_MARKER_20260802D"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 REDIS_REPORT_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
@@ -295,13 +295,35 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> "tuple[List[D
     import os
     import requests as _requests
     from datetime import datetime as _dt, timedelta as _td
-    from backend.radar_service import RADAR_CACHE
+    from backend.radar_service import get_radar_scores
 
     print(f"[MOVERS] {report_date_str}: _fetch_market_movers called", flush=True)
 
-    symbols = list(RADAR_CACHE.keys())
+    # FIX (2026-08-02): the actual, confirmed root cause of the empty
+    # movers section -- direct access to the raw, in-process RADAR_CACHE
+    # dict is always empty on this specific service, because the actual
+    # scanning that populates it runs in a separate worker service
+    # (sigmalytic-radar-scanner), not this backend. This backend only
+    # ever sees real data by going through the Redis-bridged fallback
+    # that get_radar_scores() already has built in -- the same
+    # in-process-variable-not-shared-across-processes bug class already
+    # fixed multiple times earlier the same night for RADAR_CACHE and
+    # DIVERGENCE_WATCHLIST directly, just a new instance of it in this
+    # newly-written code.
+    try:
+        _radar_payload = get_radar_scores(limit=1500)
+        _radar_rows = {
+            s["symbol"]: s for s in (_radar_payload.get("symbols") or [])
+            if isinstance(s, dict) and s.get("symbol")
+        }
+    except Exception as exc:
+        reason = f"get_radar_scores() failed -- {exc}"
+        print(f"[MOVERS] {report_date_str}: {reason}", flush=True)
+        return [], reason
+
+    symbols = list(_radar_rows.keys())
     if not symbols:
-        reason = "RADAR_CACHE is empty (no symbols currently tracked)"
+        reason = "get_radar_scores() returned no symbols (radar cache empty on both this service and Redis)"
         print(f"[MOVERS] {report_date_str}: {reason}", flush=True)
         return [], reason
 
@@ -389,7 +411,7 @@ def _fetch_market_movers(report_date_str: str, limit: int = 15) -> "tuple[List[D
             change_pct = (c - o) / o * 100
         except Exception:
             continue
-        cached = RADAR_CACHE.get(sym, {})
+        cached = _radar_rows.get(sym, {})
         movers.append({
             "symbol": sym,
             "price": c,
