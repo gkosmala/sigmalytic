@@ -262,6 +262,70 @@ td { border-bottom: 1px solid #e5e7eb; padding: 6px; vertical-align: top; word-w
 """
 
 
+def _fetch_market_movers(limit: int = 15) -> List[Dict[str, Any]]:
+    """
+    "What Happened in the Market Today" -- user pointed out the existing
+    report only shows the top 100 highest-quality setups (a Wyckoff/
+    Weis-style structural score), which can silently exclude a genuinely
+    dramatic, newsworthy move (e.g. a sharp high-volume drop) if it
+    scores poorly as a bullish setup. This pulls independently from the
+    full radar universe (~1000 symbols, not just tracked campaigns or
+    top-ranked setups) and sorts purely by raw |% change|, so a big move
+    can't be excluded just because it isn't a "quality" setup.
+    """
+    from backend.radar_service import get_radar_scores
+
+    try:
+        payload = get_radar_scores(limit=1500)
+        symbols = payload.get("symbols") or []
+    except Exception:
+        return []
+
+    movers = [
+        s for s in symbols
+        if isinstance(s, dict) and s.get("change_pct") is not None
+    ]
+    movers.sort(key=lambda s: abs(_safe_float(s.get("change_pct")) or 0), reverse=True)
+    return movers[:limit]
+
+
+def _movers_table(movers: List[Dict[str, Any]]) -> str:
+    if not movers:
+        return """
+        <section class="section">
+          <h2>What Happened in the Market Today</h2>
+          <p class="muted">Market movers data unavailable for this report.</p>
+        </section>
+        """
+    rows_html = []
+    for m in movers:
+        chg = _safe_float(m.get("change_pct")) or 0
+        color = "#166534" if chg >= 0 else "#991b1b"
+        rows_html.append(f"""
+        <tr>
+          <td><strong>{_esc(m.get("symbol"))}</strong></td>
+          <td class="num">{_esc(_fmt(m.get("price"), 2))}</td>
+          <td class="num" style="color:{color}; font-weight:bold;">{chg:+.2f}%</td>
+          <td class="num">{_esc(_fmt(m.get("rel_volume"), 2))}x</td>
+          <td class="num">{_esc(f'{int(m.get("volume")):,}' if m.get("volume") else "—")}</td>
+        </tr>
+        """)
+    return f"""
+    <section class="section">
+      <h2>What Happened in the Market Today</h2>
+      <p class="note">The largest price moves across the full scanned universe today, by raw percentage
+      change and relative volume -- independent of setup-quality ranking, so a dramatic move is never
+      silently excluded just because it doesn't score as a high-quality bullish setup.</p>
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Price</th><th>Change</th><th>Rel. Volume</th><th>Volume</th></tr>
+        </thead>
+        <tbody>{''.join(rows_html)}</tbody>
+      </table>
+    </section>
+    """
+
+
 def build_report_html(report_date_str: str) -> str:
     """
     Builds the full HTML report document for a given date, using the
@@ -303,6 +367,9 @@ def build_report_html(report_date_str: str) -> str:
     except Exception:
         display_date = report_date_str
 
+    movers = _fetch_market_movers(limit=15)
+    movers_html = _movers_table(movers)
+
     executive = f"""
     <section class="section">
       <h2>Executive Market Review</h2>
@@ -342,6 +409,8 @@ def build_report_html(report_date_str: str) -> str:
     </div>
 
     {executive}
+
+    {movers_html}
 
     <section class="section">
       <h2>Coverage Summary</h2>
