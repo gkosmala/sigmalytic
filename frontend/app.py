@@ -5554,7 +5554,18 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 SHOWN, trade_plan, active_pane)
 
     if tab == "heatmap":
-        main = build_heatmap_tab()
+        # FIX (2026-08-03): same bug class already fixed for the Reports
+        # tab -- this callback rebuilds every tab from scratch on every
+        # ~20s live-price tick (needed for the Command Center), and
+        # build_heatmap_tab() always defaults back to "daily" on every
+        # rebuild, with no memory of what the user had selected. Only
+        # rebuild on a genuine tab switch (s-tab), so a live-tick while
+        # already on this tab doesn't reset the user's timeframe choice.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if _trigger.startswith("s-tab"):
+            main = build_heatmap_tab()
+        else:
+            return no_update, no_update, no_update, no_update
     elif tab=="campaign":
         if build_campaign_tab is None:
             main = card([
