@@ -4818,6 +4818,28 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                      style={"fontSize":"13px","color":WHITE,"lineHeight":"1.7"}),
         ], sx={"marginBottom":"16px"})
 
+    # ── Setup & Deployment (merged in from the removed Setup tab) ──────────
+    setup_deployment_block = _admin_card([
+        html.Div("SETUP & DEPLOYMENT", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "12px"}),
+        html.Pre(
+            f"Frontend  : Dash (Python)  →  Render\n"
+            f"Backend   : FastAPI        →  Render\n"
+            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
+            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
+            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
+            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
+            f"Env vars:\n"
+            f"  ALPACA_API_KEY     — Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  — Alpaca secret\n"
+            f"  BACKEND_URL        — HTTP base URL\n"
+            f"  BACKEND_WS_URL     — WebSocket base URL\n"
+            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
+            style={"margin": "0", "borderRadius": "14px", "border": f"1px solid {BORDER}",
+                   "background": "rgba(0,0,0,.35)", "padding": "16px", "color": TEAL_DIM,
+                   "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
+    ], sx={"marginBottom": "16px"})
+
     # ── Assemble full page ────────────────────────────────────────────────
     return html.Div([
         header,
@@ -4832,6 +4854,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
         score_table,
         grade_grid,
+        setup_deployment_block,
 
         # Footer
         html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
@@ -4841,27 +4864,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
 
 
-
-def build_setup_tab():
-    return card([
-        html.H2("Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
-        html.Pre(
-            f"Frontend  : Dash (Python)  →  Render\n"
-            f"Backend   : FastAPI        →  Render\n"
-            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
-            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
-            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
-            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
-            f"Env vars:\n"
-            f"  ALPACA_API_KEY     — Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  — Alpaca secret\n"
-            f"  BACKEND_URL        — HTTP base URL\n"
-            f"  BACKEND_WS_URL     — WebSocket base URL\n"
-            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
-            style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
-                   "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
-                   "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"}),
-    ])
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -5056,7 +5058,6 @@ ALL_TABS = [
     ("journal",     "Journal"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
-    ("setup",       "Setup"),
     ("status",      "Status"),
     ("reports",     "Reports"),
     ("guide",       "User Guide"),
@@ -5280,7 +5281,7 @@ def load_symbol(_, ticker, live, tf, session):
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
+    Input("tab-admin","n_clicks"),
     Input("tab-status","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
@@ -5653,7 +5654,6 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     "padding": "18px",
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
-    elif tab=="setup":       main = build_setup_tab()
     elif tab=="reports":
         # FIX (2026-07-31): user reported the Reports tab kept "switching"
         # back to the latest date while reading an older one. Root cause:
