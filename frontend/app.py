@@ -5549,8 +5549,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
 
     if tab == "heatmap":
         main = build_heatmap_tab()
-
-    if tab=="campaign":
+    elif tab=="campaign":
         if build_campaign_tab is None:
             main = card([
                 html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
