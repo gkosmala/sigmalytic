@@ -4528,14 +4528,43 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     except Exception as e:
         data = {}
 
+    # ── Setup & Deployment (merged in from the removed Setup tab) ──────────
+    # Defined here, before the early-return check below, and unconditionally
+    # appended in both the early-return and full-assembly paths further down
+    # -- this is static config info that shouldn't depend on whether the
+    # admin report data itself loads successfully.
+    setup_deployment_block = _admin_card([
+        html.Div("SETUP & DEPLOYMENT", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "12px"}),
+        html.Pre(
+            f"Frontend  : Dash (Python)  →  Render\n"
+            f"Backend   : FastAPI        →  Render\n"
+            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
+            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
+            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
+            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
+            f"Env vars:\n"
+            f"  ALPACA_API_KEY     — Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  — Alpaca secret\n"
+            f"  BACKEND_URL        — HTTP base URL\n"
+            f"  BACKEND_WS_URL     — WebSocket base URL\n"
+            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
+            style={"margin": "0", "borderRadius": "14px", "border": f"1px solid {BORDER}",
+                   "background": "rgba(0,0,0,.35)", "padding": "16px", "color": TEAL_DIM,
+                   "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
+    ], sx={"marginBottom": "16px"})
+
     if not data:
         # FIX: was `_admin_card([...])` -- _card only exists as a local nested
         # function inside build_preferences_tab and is not visible here.
         # _admin_card is the real module-level equivalent already defined above.
-        return _admin_card([
-            html.Div("Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
-            html.Div("Backend may be initializing. Refresh in 30 seconds.",
-                     style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
+        return html.Div([
+            _admin_card([
+                html.Div("Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
+                html.Div("Backend may be initializing. Refresh in 30 seconds.",
+                         style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
+            ], sx={"marginBottom": "16px"}),
+            setup_deployment_block,
         ])
 
     live          = data.get("live_stats", {})
@@ -4817,28 +4846,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                      "after 4:15 PM ET on the first trading day with the snapshot writer active.",
                      style={"fontSize":"13px","color":WHITE,"lineHeight":"1.7"}),
         ], sx={"marginBottom":"16px"})
-
-    # ── Setup & Deployment (merged in from the removed Setup tab) ──────────
-    setup_deployment_block = _admin_card([
-        html.Div("SETUP & DEPLOYMENT", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "12px"}),
-        html.Pre(
-            f"Frontend  : Dash (Python)  →  Render\n"
-            f"Backend   : FastAPI        →  Render\n"
-            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
-            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
-            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
-            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
-            f"Env vars:\n"
-            f"  ALPACA_API_KEY     — Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  — Alpaca secret\n"
-            f"  BACKEND_URL        — HTTP base URL\n"
-            f"  BACKEND_WS_URL     — WebSocket base URL\n"
-            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
-            style={"margin": "0", "borderRadius": "14px", "border": f"1px solid {BORDER}",
-                   "background": "rgba(0,0,0,.35)", "padding": "16px", "color": TEAL_DIM,
-                   "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
-    ], sx={"marginBottom": "16px"})
 
     # ── Assemble full page ────────────────────────────────────────────────
     return html.Div([
