@@ -2380,39 +2380,6 @@ def build_command_tab(live, candles, symbol, tf):
                     style={"display":"flex","flexDirection":"column"})
 
 
-def build_feed_tab(live, live_mode):
-    price = live["price"]
-    return card([
-        html.Div([
-            html.Div([html.H2("Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                      html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":WHITE})]),
-            badge("Connected", "teal"),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"16px"}),
-        html.Div([
-            metric_tile("Feed Mode","Live Alpaca"),
-            metric_tile("Symbol",live["symbol"]),
-            metric_tile("Price",f"${price:.2f}",TEAL_DIM),
-            metric_tile("Volume",f"{live['volume']:,}"),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"16px"}),
-        html.Pre(json.dumps(live,indent=2),style={"margin":"0","maxHeight":"460px","overflow":"auto","borderRadius":"14px",
-            "border":f"1px solid {BORDER}","background":"rgba(0,0,0,.35)","padding":"16px",
-            "color":TEAL_DIM,"fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.6"}),
-    ])
-
-def build_performance_tab(live):
-    price=live["price"]; decision=live["decision"]; score=decision["score"]
-    sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
-    return card([
-        html.H2("Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
-        html.Div([
-            metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
-            metric_tile("Setup",decision["status"],sc),
-            metric_tile("Score",f"{score}%",sc),
-            metric_tile("Bias",decision["bias"],BLUE_DIM),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
-        note_box("Trade logging reconnects automatically once live feed stabilizes."),
-    ])
-
 def _build_heatmap_treemap(timeframe: str = "daily"):
     """
     Builds the Plotly treemap figure for the Sector/Industry Heat Map --
@@ -5080,8 +5047,6 @@ ALL_TABS = [
     ("command",     "Command Center"),
     ("heatmap",     "Heat Map"),
     ("campaign",    "Campaign Intelligence"),
-    ("feed",        "Live Feed"),
-    ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
     ("radar",       "Radar Screen"),
@@ -5310,8 +5275,7 @@ def load_symbol(_, ticker, live, tf, session):
 @app.callback(
     Output("s-tab","data"),
     Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
-    Input("tab-feed","n_clicks"),
-    Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
+    Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
@@ -5588,8 +5552,6 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                     note_box("Campaign module loading error: " + str(e), "blue"),
                 ])
-    elif tab=="feed":          main = build_feed_tab(live,live_mode)
-    elif tab=="performance": main = build_performance_tab(live)
     elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=session)
