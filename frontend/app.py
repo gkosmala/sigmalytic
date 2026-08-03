@@ -2542,13 +2542,11 @@ def build_heatmap_tab(timeframe: str = "daily"):
             ]),
             html.Div([_tf_button(k, l) for k, l in timeframes], id="heatmap-tf-row"),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
-        dcc.Loading(
-            dcc.Graph(
-                id="heatmap-treemap",
-                figure=_build_heatmap_treemap(timeframe),
-                config={"displayModeBar": False},
-            ),
-            type="circle",
+        dcc.Graph(
+            id="heatmap-treemap",
+            figure=_build_heatmap_treemap(timeframe),
+            config={"displayModeBar": False},
+            style={"height": "650px", "width": "100%"},
         ),
         dcc.Store(id="heatmap-selected-tf", data=timeframe),
     ])
