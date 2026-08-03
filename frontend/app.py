@@ -5056,11 +5056,11 @@ ALL_TABS = [
     ("journal",     "Journal"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
-    ("admin",       "Admin"),
     ("setup",       "Setup"),
     ("status",      "Status"),
     ("reports",     "Reports"),
     ("guide",       "User Guide"),
+    ("admin",       "Admin"),
 ]
 
 app.layout = html.Div([
