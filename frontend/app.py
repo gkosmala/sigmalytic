@@ -2413,6 +2413,138 @@ def build_performance_tab(live):
         note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
 
+def _build_heatmap_treemap(timeframe: str = "daily"):
+    """
+    Builds the Plotly treemap figure for the Sector/Industry Heat Map --
+    sector -> industry -> symbol hierarchy, sized by volume, colored by
+    real % change at the requested time frame. Similar in concept to
+    Barchart's Industry Heat Map (barchart.com/stocks/sectors/industry-heat-map),
+    adapted with an hourly option given this app already tracks intraday
+    data, on top of Barchart's own daily/weekly/monthly-style granularity.
+    """
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/heatmap/data", params={"timeframe": timeframe}, timeout=60)
+        payload = r.json() if r.ok else {}
+    except Exception:
+        payload = {}
+
+    symbols = payload.get("symbols") or []
+    if not symbols:
+        fig = go.Figure()
+        fig.add_annotation(text="Heat map data unavailable for this time frame.",
+                            showarrow=False, font=dict(color=WHITE, size=14))
+        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=600)
+        return fig
+
+    ids, labels, parents, values, colors, hovertext = [], [], [], [], [], []
+    sectors_seen = set()
+    industries_seen = set()
+
+    for s in symbols:
+        sector = s.get("sector") or "Unknown"
+        industry = s.get("industry") or "Unknown"
+        ticker = s.get("ticker")
+        change = s.get("change_pct") or 0
+        volume = max(s.get("volume") or 0, 1)
+
+        sector_id = f"sector::{sector}"
+        industry_id = f"industry::{sector}::{industry}"
+        symbol_id = f"symbol::{sector}::{industry}::{ticker}"
+
+        if sector_id not in sectors_seen:
+            ids.append(sector_id); labels.append(sector); parents.append(""); values.append(0); colors.append(0)
+            hovertext.append(sector)
+            sectors_seen.add(sector_id)
+
+        if industry_id not in industries_seen:
+            ids.append(industry_id); labels.append(industry); parents.append(sector_id); values.append(0); colors.append(0)
+            hovertext.append(f"{industry} ({sector})")
+            industries_seen.add(industry_id)
+
+        ids.append(symbol_id)
+        labels.append(ticker)
+        parents.append(industry_id)
+        values.append(volume)
+        colors.append(change)
+        hovertext.append(f"{ticker} — {change:+.2f}%<br>{industry}")
+
+    fig = go.Figure(go.Treemap(
+        ids=ids,
+        labels=labels,
+        parents=parents,
+        values=values,
+        branchvalues="total",
+        marker=dict(
+            colors=colors,
+            colorscale=[[0, RED_DIM], [0.5, "#1e2a3d"], [1, TEAL_DIM]],
+            cmid=0,
+            line=dict(width=1, color=NAVY),
+        ),
+        text=hovertext,
+        hoverinfo="text",
+        textfont=dict(color=WHITE, size=13),
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=4, r=4, t=4, b=4),
+        height=650,
+    )
+    return fig
+
+
+def build_heatmap_tab(timeframe: str = "daily"):
+    """
+    Sector/Industry Heat Map tab -- groups the tracked Russell 1000
+    universe by real sector and industry classification (sourced
+    directly from iShares' own official fund holdings export), colored
+    by real price performance, with a selectable time frame. Similar in
+    concept to Barchart's Industry Heat Map, adapted for this app's own
+    universe and with an hourly option on top of the daily/weekly/
+    monthly granularity Barchart itself offers.
+    """
+    timeframes = [("hourly", "Hourly"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly")]
+
+    def _tf_button(key, label):
+        active = key == timeframe
+        return html.Button(
+            label,
+            id=f"heatmap-tf-{key}",
+            n_clicks=0,
+            style={
+                "background": TEAL_GLOW if active else "transparent",
+                "border": f"1px solid {TEAL if active else BORDER}",
+                "borderRadius": "10px",
+                "color": TEAL_DIM if active else "rgba(255,255,255,.7)",
+                "cursor": "pointer",
+                "fontSize": "13px",
+                "fontWeight": "800",
+                "padding": "8px 16px",
+                "marginRight": "8px",
+            },
+        )
+
+    return card([
+        html.Div([
+            html.Div([
+                html.H2("Sector / Industry Heat Map", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
+                html.P("Real Russell 1000 sector and industry groupings, colored by price performance. Box size reflects trading volume.",
+                       style={"fontSize": "13px", "color": WHITE, "margin": "0"}),
+            ]),
+            html.Div([_tf_button(k, l) for k, l in timeframes], id="heatmap-tf-row"),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
+        dcc.Loading(
+            dcc.Graph(
+                id="heatmap-treemap",
+                figure=_build_heatmap_treemap(timeframe),
+                config={"displayModeBar": False},
+            ),
+            type="circle",
+        ),
+        dcc.Store(id="heatmap-selected-tf", data=timeframe),
+    ])
+
+
 def build_reports_tab(selected_date=None):
     """
     Reports tab -- lets subscribers browse and read the daily
@@ -4810,6 +4942,49 @@ def update_report_view(selected_date):
     except Exception:
         pass
     return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name
+@app.callback(
+    Output("heatmap-treemap", "figure"),
+    Output("heatmap-selected-tf", "data"),
+    Output("heatmap-tf-row", "children"),
+    Input("heatmap-tf-hourly", "n_clicks"),
+    Input("heatmap-tf-daily", "n_clicks"),
+    Input("heatmap-tf-weekly", "n_clicks"),
+    Input("heatmap-tf-monthly", "n_clicks"),
+    prevent_initial_call=True,
+)
+def update_heatmap_timeframe(n_hourly, n_daily, n_weekly, n_monthly):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update, no_update
+    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    timeframe = trigger_id.replace("heatmap-tf-", "")
+    if timeframe not in ("hourly", "daily", "weekly", "monthly"):
+        return no_update, no_update, no_update
+
+    timeframes = [("hourly", "Hourly"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly")]
+
+    def _tf_button(key, label):
+        active = key == timeframe
+        return html.Button(
+            label,
+            id=f"heatmap-tf-{key}",
+            n_clicks=0,
+            style={
+                "background": TEAL_GLOW if active else "transparent",
+                "border": f"1px solid {TEAL if active else BORDER}",
+                "borderRadius": "10px",
+                "color": TEAL_DIM if active else "rgba(255,255,255,.7)",
+                "cursor": "pointer",
+                "fontSize": "13px",
+                "fontWeight": "800",
+                "padding": "8px 16px",
+                "marginRight": "8px",
+            },
+        )
+
+    return _build_heatmap_treemap(timeframe), timeframe, [_tf_button(k, l) for k, l in timeframes]
+
+
 
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
@@ -4897,6 +5072,7 @@ _init_candles = fetch_real_candles("AAPL", "5m")
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
+    ("heatmap",     "Heat Map"),
     ("campaign",    "Campaign Intelligence"),
     ("feed",        "Live Feed"),
     ("performance", "Performance"),
@@ -5127,7 +5303,7 @@ def load_symbol(_, ticker, live, tf, session):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
     Input("tab-feed","n_clicks"),
     Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
@@ -5370,6 +5546,9 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     build_command_tab(live, candles or _init_candles, symbol, tf),
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
+
+    if tab == "heatmap":
+        main = build_heatmap_tab()
 
     if tab=="campaign":
         if build_campaign_tab is None:

@@ -513,6 +513,32 @@ def generate_report_now(date: str = None):
     )
 
 
+@app.get("/api/heatmap/data")
+def heatmap_data(timeframe: str = "daily"):
+    """
+    Sector/Industry Heat Map data -- real Russell 1000 sector/industry
+    classification (sourced directly from iShares' own official fund
+    holdings export) grouped and colored by real price performance at
+    the requested time frame (hourly, daily, weekly, monthly).
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    try:
+        from backend.heatmap_engine import build_heatmap_data
+        result = build_heatmap_data(timeframe)
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:500], "symbols": []}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 @app.get("/api/reports/list")
 def reports_list():
     """Returns every date that currently has a stored daily report, newest first."""
