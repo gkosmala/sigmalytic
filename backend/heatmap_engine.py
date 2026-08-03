@@ -192,9 +192,20 @@ def build_heatmap_data(timeframe: str = "daily") -> Dict[str, Any]:
             "volume": change_data["volume"],
         })
 
+    reason = ""
+    if not symbols_out:
+        if not lookup:
+            reason = "sector/industry lookup file failed to load"
+        elif not changes:
+            reason = "no price data returned from Alpaca for this time frame (check credentials/logs)"
+        else:
+            reason = "lookup and price data both loaded, but had no overlapping symbols"
+        print(f"[HEATMAP] {timeframe}: empty result -- {reason}", flush=True)
+
     return {
         "ok": True,
         "timeframe": timeframe,
+        "reason": reason,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "symbol_count": len(symbols_out),
         "symbols": symbols_out,

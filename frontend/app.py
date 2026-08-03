@@ -2423,16 +2423,25 @@ def _build_heatmap_treemap(timeframe: str = "daily"):
     data, on top of Barchart's own daily/weekly/monthly-style granularity.
     """
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/heatmap/data", params={"timeframe": timeframe}, timeout=60)
-        payload = r.json() if r.ok else {}
-    except Exception:
+        r = req.get(f"{BACKEND_HTTP}/api/heatmap/data", params={"timeframe": timeframe}, timeout=90)
+        if r.ok:
+            payload = r.json()
+            request_error = ""
+        else:
+            payload = {}
+            request_error = f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as exc:
         payload = {}
+        request_error = f"request failed: {exc}"
 
     symbols = payload.get("symbols") or []
     if not symbols:
+        detail = request_error or payload.get("reason") or "no details available"
         fig = go.Figure()
-        fig.add_annotation(text="Heat map data unavailable for this time frame.",
-                            showarrow=False, font=dict(color=WHITE, size=14))
+        fig.add_annotation(
+            text=f"Heat map data unavailable for this time frame.<br><span style='font-size:12px'>{detail}</span>",
+            showarrow=False, font=dict(color=WHITE, size=16), align="center",
+        )
         fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=600)
         return fig
 
