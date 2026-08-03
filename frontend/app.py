@@ -2542,12 +2542,16 @@ def build_heatmap_tab(timeframe: str = "daily"):
             ]),
             html.Div([_tf_button(k, l) for k, l in timeframes], id="heatmap-tf-row"),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
-        dcc.Graph(
-            id="heatmap-treemap",
-            figure=_build_heatmap_treemap(timeframe),
-            config={"displayModeBar": False},
-            style={"height": "650px", "width": "100%"},
-        ),
+        html.Div([
+            html.P("DIAGNOSTIC: if you can read this line, the container is present.",
+                   style={"color": "#ff0000", "fontSize": "14px", "fontWeight": "900", "margin": "0 0 8px"}),
+            dcc.Graph(
+                id="heatmap-treemap",
+                figure=_build_heatmap_treemap(timeframe),
+                config={"displayModeBar": False},
+                style={"height": "650px", "width": "100%"},
+            ),
+        ], style={"border": "3px solid #ff0000", "padding": "8px"}),
         dcc.Store(id="heatmap-selected-tf", data=timeframe),
     ])
 
