@@ -1595,7 +1595,7 @@ def _render_behavioral_analysis_panel(live):
                     style={"paddingLeft": "18px"}),
         ]))
 
-    return card(children, sx={"flex": "1", "display": "flex", "flexDirection": "column"})
+    return card(children, sx={"height": "640px", "overflowY": "auto", "boxSizing": "border-box"})
 
 
 def _build_trade_plan_contents(live):
@@ -5596,13 +5596,14 @@ app.layout = html.Div([
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
                 html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
-            ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
+            ], style={"flex":"1","minWidth":"0","height":"640px","overflowY":"auto",
+                       "background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
 
             # Behavioral Analysis panel -- updates on the same live-tick
             # cycle as the rest of Command Center, independent of the
             # main tab-switching callback.
-            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0","display":"flex","flexDirection":"column"}),
+            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0","height":"640px"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"stretch"}),
 
