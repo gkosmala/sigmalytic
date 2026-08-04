@@ -65,6 +65,28 @@ and pull request to `main`.
   ratios for a true 50/50 split. Also guards against Active Trade
   Panel moving back into the same row as those two, which would break
   the exact 50/50 split it currently has in its own separate row.
+- `test_behavioral_analysis.py` -- the full Behavioral Analysis
+  feature: exact score-tier thresholds shared with the alert-sound
+  system, the narrative generator correctly distinguishes actionable
+  (Bias/Status/Grade/Score Tier all aligned, no gates shown) from
+  non-actionable (real long AND short gates listed) scenarios for
+  both bullish and bearish cases, honest handling when volume data is
+  unavailable rather than fabricating a reading, defensive handling
+  of missing decision data, the panel's real placeholder before live
+  data loads, the dedicated callback exists and delegates correctly,
+  and the volume-expansion note uses the current "Score Tier A/B"
+  wording rather than the old "A-grade"/"B-grade" terms that were
+  explicitly renamed to avoid confusion with the Decision Engine's
+  separate Grade metric.
+- `test_radar_symbol_lookup.py` -- the backend endpoint powering the
+  live volume-expansion check. Locks in the actual fix for a real,
+  confirmed bug (a genuinely-tracked symbol, AAPL, incorrectly coming
+  back "not found" because the original implementation called
+  get_radar_scores(), which silently hard-caps its limit to 250
+  internally): confirms a symbol is found in a large cache regardless
+  of position, and explicitly asserts the function's real code (not
+  its docstring, which legitimately documents the bug's history)
+  never calls get_radar_scores() again.
 
 ## What's deliberately NOT covered (yet)
 
