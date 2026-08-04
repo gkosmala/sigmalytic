@@ -1595,7 +1595,7 @@ def _render_behavioral_analysis_panel(live):
                     style={"paddingLeft": "18px"}),
         ]))
 
-    return card(children)
+    return card(children, sx={"height": "100%"})
 
 
 def _build_trade_plan_contents(live):
@@ -5596,10 +5596,13 @@ app.layout = html.Div([
 
             # Behavioral Analysis panel -- updates on the same live-tick
             # cycle as the rest of Command Center, independent of the
-            # main tab-switching callback.
-            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0"}),
+            # main tab-switching callback. flex:2 (vs 1 for its
+            # siblings) approximates the 50% row width of Visual +
+            # Audio Alerts above, per request to keep proportions
+            # visually consistent across the page.
+            html.Div(id="behavioral-analysis-panel", style={"flex":"2","minWidth":"0"}),
         ], id="trade-panels-row",
-           style={"display":"none","gap":"16px","alignItems":"start"}),
+           style={"display":"none","gap":"16px","alignItems":"stretch"}),
 
     ], style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
