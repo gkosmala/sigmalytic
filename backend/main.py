@@ -19,7 +19,7 @@ backend/main.py
 """
 
 # test build filter backend
-from fastapi import FastAPI, Body, Request, HTTPException
+from fastapi import FastAPI, Body, Request, HTTPException, Header, Depends
 from datetime import datetime, timedelta
 import os
 import json
@@ -474,8 +474,80 @@ def get_open_trade(user_id: str):
     return {}
 
 
+# ── Admin/staff access control ──────────────────────────────────────────
+# SECURITY FIX (2026-08-03): every /api/admin/* endpoint, plus the
+# read-only diagnostic endpoints that feed the frontend's Admin tab, had
+# NO server-side authentication at all. The frontend's is_admin(session)
+# check only controlled whether the UI *displayed* this content -- it did
+# nothing to stop anyone (subscriber or otherwise, no login required at
+# all) from calling these URLs directly and viewing or triggering them.
+# Some of these are action-triggering endpoints (run-full-nightly,
+# trigger-eod-audit), not just data reads, making this a real, serious
+# gap. This dependency verifies the request's Bearer token against
+# Supabase directly (never trusts a client-supplied email) and checks the
+# resulting verified email against an authorized admin/staff allowlist.
+def _get_admin_emails() -> set:
+    """
+    Comma-separated list of authorized admin/staff emails. Supports
+    multiple people (not just a single owner), per explicit request.
+    Falls back to the single legacy SIGMALYTIC_ADMIN_EMAIL var too, so
+    a deployment with only that one set still works.
+    """
+    raw = os.getenv("SIGMALYTIC_ADMIN_EMAILS") or os.getenv("SIGMALYTIC_ADMIN_EMAIL") or ""
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def require_admin(authorization: str = Header(default="")) -> str:
+    """
+    FastAPI dependency: raises 401/403 unless the request's Bearer token
+    belongs to a verified, authorized admin/staff email. Returns the
+    verified email on success, for use/logging in the endpoint if needed.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token.")
+
+    admin_emails = _get_admin_emails()
+    if not admin_emails:
+        # No admin emails configured at all -- fail closed, not open.
+        raise HTTPException(status_code=503, detail="Admin access is not configured on this server.")
+
+    supabase_url = (
+        os.environ.get("SUPABASE_URL")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        or os.environ.get("VITE_SUPABASE_URL")
+    )
+    supabase_anon_key = (
+        os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    )
+    if not supabase_url or not supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Admin access verification is not configured on this server.")
+
+    try:
+        r = requests.get(
+            f"{supabase_url}/auth/v1/user",
+            headers={"apikey": supabase_anon_key, "Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not verify admin token right now.")
+
+    if not r.ok:
+        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+
+    verified_email = (r.json() or {}).get("email", "").strip().lower()
+    if not verified_email or verified_email not in admin_emails:
+        raise HTTPException(status_code=403, detail="Admin access only.")
+
+    return verified_email
+
+
 @app.get("/api/admin/generate-report")
-def generate_report_now(date: str = None):
+def generate_report_now(date: str = None, _admin: str = Depends(require_admin)):
     """
     Manually triggers report generation for a given date (YYYY-MM-DD),
     defaulting to today (UTC) if not specified. Used both for the
@@ -674,7 +746,7 @@ def reports_get_pdf(report_date: str, download: bool = False):
 
 
 @app.get("/api/admin/trigger-eod-audit")
-def trigger_eod_audit():
+def trigger_eod_audit(_admin: str = Depends(require_admin)):
     # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()
     # (normally scheduled nightly at 8:30 PM ET) right now, to refresh
     # the Intelligence Change Detector tab's stale data without waiting.
@@ -699,7 +771,7 @@ def trigger_eod_audit():
 
 
 @app.get("/api/admin/engine-status")
-def engine_status():
+def engine_status(_admin: str = Depends(require_admin)):
     return {
         "signal_birth_engine": True,
         "wyckoff_verdict_engine": True,
@@ -865,7 +937,7 @@ def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
 
 
 @app.post("/api/admin/run-full-nightly")
-def run_full_nightly(request: Request, payload: dict = Body(default=None)):
+def run_full_nightly(request: Request, payload: dict = Body(default=None), _admin: str = Depends(require_admin)):
     payload = payload or {}
 
     # SIGMALYTIC_RFA11_AUTHENTICATED_NIGHTLY_CRON_START
@@ -979,7 +1051,7 @@ def run_full_nightly(request: Request, payload: dict = Body(default=None)):
 
 
 @app.get("/api/admin/nightly-status/{job_id}")
-def nightly_status(request: Request, job_id: str):
+def nightly_status(request: Request, job_id: str, _admin: str = Depends(require_admin)):
     # Same shared-secret protection as the route that creates jobs --
     # job status can reveal campaign pipeline internals, so this isn't
     # left open.
@@ -1012,7 +1084,7 @@ def nightly_status(request: Request, job_id: str):
 
 
 @app.post("/api/admin/refresh-weis-gamma-evidence")
-def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
+def refresh_weis_gamma_evidence(payload: dict = Body(default=None), _admin: str = Depends(require_admin)):
     payload = payload or {}
 
     requested_symbols = (
@@ -1241,7 +1313,7 @@ def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
 
 
 @app.post("/api/admin/run-closure-engine")
-def run_closure_engine_admin():
+def run_closure_engine_admin(_admin: str = Depends(require_admin)):
     from backend.intelligence.campaign_closure_engine import (
         run_campaign_closure_cycle,
     )
@@ -3722,7 +3794,7 @@ def radar_probability_status_lightweight_compat(limit: int = 50):
 
 
 @app.get("/api/admin/divergence-watchlist")
-def divergence_watchlist_compat(limit: int = 50):
+def divergence_watchlist_compat(limit: int = 50, _admin: str = Depends(require_admin)):
     campaigns = _compat_campaigns()
     rows = []
 
@@ -3827,7 +3899,7 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
-    async def d3e5_controlled_append_only_audit_write_route_readiness():
+    async def d3e5_controlled_append_only_audit_write_route_readiness(_admin: str = Depends(require_admin)):
         return build_controlled_append_only_audit_write_route_payload(
             {
                 "request_method": "GET",
@@ -3846,7 +3918,7 @@ except Exception as _d3e5_route_mount_error:
     _D3E5_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e5_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
-    async def d3e5_controlled_append_only_audit_write_route_mount_error():
+    async def d3e5_controlled_append_only_audit_write_route_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.5",
@@ -3878,7 +3950,7 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
-    async def d3e6_controlled_one_row_append_only_audit_insert_readiness():
+    async def d3e6_controlled_one_row_append_only_audit_insert_readiness(_admin: str = Depends(require_admin)):
         return build_d3e6_readiness_payload()
 
     @app.post("/api/alerts/controlled/one-row-append-only-audit-insert")
@@ -3891,7 +3963,7 @@ except Exception as _d3e6_route_mount_error:
     _D3E6_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e6_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
-    async def d3e6_controlled_one_row_append_only_audit_insert_mount_error():
+    async def d3e6_controlled_one_row_append_only_audit_insert_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.6",
@@ -3919,14 +3991,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
-    async def d3e7_controlled_post_write_readback_verification():
+    async def d3e7_controlled_post_write_readback_verification(_admin: str = Depends(require_admin)):
         return build_d3e7_post_write_readback_verification_payload(execute_live_read=True)
 
 except Exception as _d3e7a_route_mount_error:
     _D3E7A_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e7a_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
-    async def d3e7a_controlled_post_write_readback_verification_mount_error():
+    async def d3e7a_controlled_post_write_readback_verification_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.7A",
@@ -3954,14 +4026,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
-    async def d3e8_controlled_persistence_post_write_closure_sweep():
+    async def d3e8_controlled_persistence_post_write_closure_sweep(_admin: str = Depends(require_admin)):
         return build_d3e8_post_persistence_closure_sweep_payload(execute_live_read=True)
 
 except Exception as _d3e8_route_mount_error:
     _D3E8_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e8_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
-    async def d3e8_controlled_persistence_post_write_closure_sweep_mount_error():
+    async def d3e8_controlled_persistence_post_write_closure_sweep_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.8",
@@ -3989,14 +4061,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
-    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep():
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep(_admin: str = Depends(require_admin)):
         return build_d3e9_final_lifecycle_regression_sweep_payload(execute_live_read=True)
 
 except Exception as _d3e9_route_mount_error:
     _D3E9_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e9_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
-    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error():
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.9",

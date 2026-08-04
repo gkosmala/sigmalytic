@@ -598,11 +598,11 @@ def _d3f1b_row(label, value):
     )
 
 
-def _build_d3f1b_controlled_persistence_lifecycle_panel():
+def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
     endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
 
     try:
-        data = _get(endpoint)
+        data = _get(endpoint, headers=_auth_headers(session))
     except Exception as exc:
         data = {
             "ok": False,
@@ -2567,7 +2567,7 @@ def build_heatmap_tab(timeframe: str = "daily"):
     ])
 
 
-def build_reports_tab(selected_date=None):
+def build_reports_tab(selected_date=None, session=None):
     """
     Reports tab -- lets subscribers browse and read the daily
     subscriber intelligence report (backend/reports_engine.py), one
@@ -2585,11 +2585,24 @@ def build_reports_tab(selected_date=None):
     except Exception:
         dates = []
 
+    _generate_control = html.Div([
+        html.Label("Generate report for date:", style={"fontSize": "12px", "color": WHITE, "marginRight": "8px"}),
+        dcc.Input(id="reports-generate-date", type="text", placeholder="YYYY-MM-DD",
+                  style={"width": "130px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                         "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                         "marginRight": "8px"}),
+        html.Button("Generate Report", id="reports-generate-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        html.Div(id="reports-generate-message", style={"fontSize": "12px", "color": TEAL_DIM, "marginTop": "8px"}),
+    ], style={"marginTop": "16px", "padding": "16px", "border": f"1px solid {BORDER}", "borderRadius": "12px"}) if is_admin(session) else None
+
     if not dates:
         return card([
             html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "marginBottom": "8px"}),
             html.P("No daily reports are available yet. The first report is generated once daily; check back after the next scheduled run.",
                    style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
+            _generate_control,
         ])
 
     most_recent = selected_date if selected_date in dates else dates[0]
@@ -2627,6 +2640,7 @@ def build_reports_tab(selected_date=None):
                 ),
             ], style={"display": "flex", "alignItems": "center"}),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
+        _generate_control,
         html.Iframe(
             id="reports-iframe",
             srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
@@ -4423,6 +4437,15 @@ GOLD = "#F5C842"
 # session with no email set would incorrectly be treated as admin.
 ADMIN_EMAIL = os.getenv("SIGMALYTIC_ADMIN_EMAIL") or "no-admin-configured@invalid"
 
+# SECURITY FIX (2026-08-03): user wants staff (not just a single owner) to
+# have admin access. The single ADMIN_EMAIL check above can't support that
+# at all -- extended to also support a comma-separated list, matching the
+# backend's require_admin dependency (backend/main.py) exactly, so both
+# sides agree on who counts as admin/staff.
+def _get_admin_emails() -> set:
+    raw = os.getenv("SIGMALYTIC_ADMIN_EMAILS") or os.getenv("SIGMALYTIC_ADMIN_EMAIL") or ""
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
 
 def _admin_tile(label, value, color=None, sub=None):
     color = color or WHITE
@@ -4482,7 +4505,8 @@ def _admin_card(children, sx=None):
 
 
 def is_admin(session: dict) -> bool:
-    return (session or {}).get("email","") == ADMIN_EMAIL
+    email = (session or {}).get("email", "").strip().lower()
+    return bool(email) and email in _get_admin_emails()
 
 
 def build_cache_diagnostics_panel():
@@ -4550,18 +4574,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     Returns a 403 message if not admin.
     """
     if not is_admin(session):
-        _session_email = (session or {}).get("email", "")
         return html.Div([
             html.Div("", style={"fontSize":"48px","marginBottom":"16px"}),
             html.Div("Admin Access Only", style={"fontSize":"18px","fontWeight":"800","color":WHITE}),
             html.Div("This page is only accessible to the system administrator.",
                      style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
-            html.Div([
-                html.Div(f"DIAGNOSTIC — your session email: '{_session_email}' (length {len(_session_email)})",
-                         style={"color": RED_DIM, "fontSize": "12px", "marginTop": "20px"}),
-                html.Div(f"DIAGNOSTIC — configured ADMIN_EMAIL: '{ADMIN_EMAIL}' (length {len(ADMIN_EMAIL)})",
-                         style={"color": RED_DIM, "fontSize": "12px", "marginTop": "4px"}),
-            ]),
         ], style={"textAlign":"center","padding":"80px 20px"})
 
     # ── Fetch report from backend ─────────────────────────────────────────
@@ -5002,6 +5019,44 @@ def update_report_view(selected_date):
     except Exception:
         pass
     return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name
+
+
+@app.callback(Output("reports-generate-message","children"),
+              Input("reports-generate-btn","n_clicks"),
+              State("reports-generate-date","value"),
+              State("s-session","data"),
+              prevent_initial_call=True)
+def handle_generate_report(n_clicks, date_str, session):
+    """
+    Admin-only 'Generate Report' button. Replaces the direct-URL-visit
+    workflow (visiting /api/admin/generate-report?date=... in a browser)
+    now that that endpoint requires a proper Bearer token -- a plain
+    browser navigation can't attach one, so this needed a real in-app
+    control that sends the auth header via a normal HTTP request instead.
+    """
+    if not date_str:
+        return "Please enter a date in YYYY-MM-DD format."
+
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/admin/generate-report",
+            params={"date": date_str},
+            headers=_auth_headers(session),
+            timeout=90,  # this can genuinely take a while; not stuck
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Generation failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if payload.get("ok"):
+            return f"Report generated successfully for {date_str}. Select it from the date dropdown above."
+        return f"Generation failed: {payload.get('error', 'unknown error')}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
 @app.callback(
     Output("heatmap-treemap", "figure"),
     Output("heatmap-selected-tf", "data"),
@@ -5710,7 +5765,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 # Moved here from a global page-wide mount (was showing on
                 # every tab) since this is an internal diagnostic tool, not
                 # customer-facing content.
-                _build_d3f1b_controlled_persistence_lifecycle_panel(),
+                _build_d3f1b_controlled_persistence_lifecycle_panel(admin_session),
                 # Weis-Gamma Status Center panel intentionally NOT repeated
                 # here -- it already lives on Command Center. Showing it
                 # twice was redundant, not intentional. (Re-applied here --
@@ -5762,7 +5817,7 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
         # a component this same callback creates.
         _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
         if _trigger.startswith("s-tab"):
-            main = build_reports_tab()
+            main = build_reports_tab(session=session)
         else:
             return no_update, no_update, no_update, no_update
     elif tab=="guide":       main = build_guide_tab()
