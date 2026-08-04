@@ -1786,22 +1786,39 @@ def radar_symbol_lookup(symbol: str):
     Real, single-symbol lookup from the radar cache -- built specifically
     to give Command Center a genuine, live volume-expansion check (real
     rel_volume) instead of a static, always-the-same disclaimer text.
-    Reuses get_radar_scores() rather than duplicating its Redis-bridged
-    fallback logic; a targeted, smaller limit keeps this efficient
-    enough to call on every live-price tick without adding real latency.
+
+    FIX (2026-08-04): the original version called get_radar_scores(),
+    but that function hard-caps its limit to 250 internally (a
+    deliberate performance safeguard for its paginated, enriched list
+    view -- confirmed directly in radar_service.py), regardless of what
+    limit is requested. Requesting limit=1500 was silently clamped, so
+    this only ever searched the top 250 symbols by whatever sort order
+    was active at the time -- meaning a real, genuinely-tracked symbol
+    (confirmed: AAPL, via user's direct API check showing 915 total
+    tracked symbols) could still come back "not found" simply because
+    it wasn't in that particular slice. RADAR_CACHE is a plain
+    Dict[str, dict] keyed by symbol, so a direct dictionary lookup is
+    both correct and efficient here -- no need for the same safeguard
+    that a full paginated list response requires.
     """
     sym = (symbol or "").upper().strip()
     if not sym:
         return {"ok": False, "error": "missing_symbol"}
 
     try:
-        from backend.radar_service import get_radar_scores as _real_get_radar_scores
-        payload = _real_get_radar_scores(limit=1500)
-        rows = payload.get("symbols") or []
-        for row in rows:
-            if isinstance(row, dict) and row.get("symbol") == sym:
-                return {"ok": True, "symbol": sym, "data": row}
-        return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+        from backend.radar_service import RADAR_CACHE, _redis_client
+
+        row = RADAR_CACHE.get(sym)
+        if row is None and _redis_client:
+            import json as _radar_json
+            raw = _redis_client.get("radar:cache")
+            if raw:
+                full_cache = _radar_json.loads(raw)
+                row = full_cache.get(sym)
+
+        if row is None:
+            return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+        return {"ok": True, "symbol": sym, "data": row}
     except Exception as e:
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
