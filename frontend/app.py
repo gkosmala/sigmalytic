@@ -5511,9 +5511,18 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
+    # FIX (2026-08-04): shortened aggressively (20s->2s, 30s->2s) per
+    # request, given user confirmed they're currently the only
+    # subscriber. Each of i-alpaca and i-market-wire makes 2 Alpaca API
+    # calls per tick, so at 2s this is ~120 calls/min total from a
+    # single browser tab -- comfortable headroom under Alpaca's typical
+    # ~200 calls/min limit for one user, but this should be revisited
+    # (likely lengthened, or made per-user-aware) once there are
+    # multiple concurrent subscribers, since it multiplies linearly
+    # with active sessions.
+    dcc.Interval(id="i-alpaca", interval=2_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
-    dcc.Interval(id="i-market-wire", interval=30_000, n_intervals=0),
+    dcc.Interval(id="i-market-wire", interval=2_000, n_intervals=0),
     dcc.Store(id="s-market-wire", data=None),
 
     html.Div([html.Div([
