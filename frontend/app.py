@@ -2148,8 +2148,7 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None)
         ),
         html.Div([
             metric_tile("Confidence", confidence, color),
-            metric_tile("Status", status, color),
-            metric_tile("Grade", grade, color),
+            metric_tile("Status - Grade", f"{status} - {grade}", color),
             metric_tile("Mode", mode, BLUE_DIM),
             *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
