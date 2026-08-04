@@ -2083,8 +2083,13 @@ def build_login_page(error=""):
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
 
-def build_direction_panel(decision, score):
-    """Compact, user-readable Direction & Confidence panel."""
+def build_direction_panel(decision, score, symbol=None, price=None, regime=None):
+    """Compact, user-readable Direction & Confidence panel.
+
+    FIX (2026-08-04): merged in the previously-separate Symbol/Live
+    Price/Engine Score/Regime tile per request, so all of this related
+    context lives in one place instead of two side-by-side cards.
+    """
     bias = decision.get("bias", "Neutral")
     status = decision.get("status", "Watching")
     confidence = decision.get("confidence", f"{score}%")
@@ -2100,6 +2105,15 @@ def build_direction_panel(decision, score):
     else:
         color = YELLOW_DIM
         icon = ""
+
+    extra_tiles = []
+    if symbol is not None:
+        extra_tiles.append(metric_tile("Symbol", symbol, WHITE))
+    if price is not None:
+        extra_tiles.append(metric_tile("Live Price", f"${price:.2f}", WHITE))
+    extra_tiles.append(metric_tile("Engine Score", f"{score}%", color))
+    if regime is not None:
+        extra_tiles.append(metric_tile("Regime", regime.replace("_", " ").title(), YELLOW_DIM))
 
     return html.Div([
         slabel("Direction Intelligence"),
@@ -2119,6 +2133,7 @@ def build_direction_panel(decision, score):
             metric_tile("Status", status, color),
             metric_tile("Grade", grade, color),
             metric_tile("Mode", mode, BLUE_DIM),
+            *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
     ])
 
@@ -2299,7 +2314,7 @@ def build_command_tab(live, candles, symbol, tf):
 
             # Column A — Direction & Confidence Panel
             html.Div([
-                build_direction_panel(decision, score),
+                build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
@@ -2415,13 +2430,6 @@ def build_command_tab(live, candles, symbol, tf):
                            "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
             ]),
         ], sx={"flex":"1"}),
-
-        card([html.Div([
-            metric_tile("Symbol",       symbol,                           WHITE),
-            metric_tile("Live Price",   f"${price:.2f}",                 WHITE),
-            metric_tile("Engine Score", f"{score}%",                     sc),
-            metric_tile("Regime",       regime.replace("_"," ").title(), YELLOW_DIM),
-        ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"10px"})], sx={"flex":"1"}),
 
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
