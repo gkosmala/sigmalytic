@@ -4501,11 +4501,18 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     Returns a 403 message if not admin.
     """
     if not is_admin(session):
+        _session_email = (session or {}).get("email", "")
         return html.Div([
             html.Div("", style={"fontSize":"48px","marginBottom":"16px"}),
             html.Div("Admin Access Only", style={"fontSize":"18px","fontWeight":"800","color":WHITE}),
             html.Div("This page is only accessible to the system administrator.",
                      style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
+            html.Div([
+                html.Div(f"DIAGNOSTIC — your session email: '{_session_email}' (length {len(_session_email)})",
+                         style={"color": RED_DIM, "fontSize": "12px", "marginTop": "20px"}),
+                html.Div(f"DIAGNOSTIC — configured ADMIN_EMAIL: '{ADMIN_EMAIL}' (length {len(ADMIN_EMAIL)})",
+                         style={"color": RED_DIM, "fontSize": "12px", "marginTop": "4px"}),
+            ]),
         ], style={"textAlign":"center","padding":"80px 20px"})
 
     # ── Fetch report from backend ─────────────────────────────────────────
