@@ -73,22 +73,33 @@ app = FastAPI(
 
 @app.on_event("startup")
 def _start_radar_scheduler_on_boot():
-    # DISABLED (2026-07-29): user confirmed a real "ran out of memory"
-    # crash exactly 5 minutes after this activation deployed -- suspiciously
-    # close to snapshot_intraday's 300-second interval. Reverting
-    # immediately to stop active risk while this is investigated properly
-    # with real evidence (same protocol as the earlier OOM investigation),
-    # rather than leaving a newly-activated, unverified heavy background
-    # system crash-looping in production. The scheduler code itself is
-    # untouched -- only this call is disabled.
-    print("[STARTUP] Radar scheduler activation disabled pending investigation of a confirmed crash", flush=True)
-    return
-    try:
-        from backend.radar_service import start_radar_scheduler
-        start_radar_scheduler()
-        print("[STARTUP] Radar scheduler started successfully", flush=True)
-    except Exception as e:
-        print(f"[STARTUP] Radar scheduler failed to start: {e}", flush=True)
+    # PERMANENTLY DISABLED (2026-07-29, confirmed resolved 2026-08-04):
+    # the investigation this comment used to describe as "pending" was
+    # actually completed the same day it started. Confirmed via direct
+    # memory instrumentation and production crash logs: running the full
+    # radar scanner (gex_scan/radar_scan/divergence_scan/snapshot_intraday,
+    # scanning ~1000 symbols every 5-8 minutes) inside the same process as
+    # this web-serving backend caused combined memory use to repeatedly
+    # exceed 2GB and crash -- not specifically snapshot_intraday's 300s
+    # interval, which turned out to be a red herring; the real cause was
+    # the scanner's cumulative memory footprint stacking on top of the
+    # backend's own heavy endpoints.
+    #
+    # The real, working fix (same day): the scanner now runs in its own
+    # dedicated Render Background Worker service, sigmalytic-radar-scanner
+    # (see tools/render_radar_scanner_worker.py), with its own separate
+    # memory entirely apart from this web-serving process. It publishes
+    # results to Redis (radar:cache key), which this backend reads via
+    # get_radar_scores()'s and other functions' Redis fallback -- this is
+    # the same live data source confirmed working correctly throughout
+    # 2026-08-04's session (real, current prices and scores for 900+
+    # symbols).
+    #
+    # This function must stay disabled here permanently -- re-enabling it
+    # would start the exact same scanner a second time, in this process,
+    # reintroducing the original crash risk on top of infrastructure that
+    # already works correctly via the separate worker.
+    print("[STARTUP] Radar scheduler intentionally disabled on this service -- runs separately via sigmalytic-radar-scanner worker instead", flush=True)
 
 
 @app.get("/")
