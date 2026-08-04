@@ -1426,6 +1426,178 @@ def _build_clock_inline():
 # The INPUT components (buttons, fields) live in the permanent layout via their IDs.
 # This function only builds the card SHELL — the inputs are defined once in the layout.
 
+# ── Behavioral Analysis Panel ────────────────────────────────────────────────
+def _score_tier(score):
+    """Matches the exact thresholds used in build_direction_panel's Score Tier."""
+    if score < 35:
+        return "Trap Door"
+    elif score < 55:
+        return "Monitoring"
+    elif score < 80:
+        return "Score Tier B"
+    else:
+        return "Score Tier A"
+
+
+def _build_behavioral_analysis(live):
+    """
+    Interprets the app's own current, real data for whatever symbol is
+    loaded -- not generic trading advice, a live reading of this specific
+    tool's own logic (Bias/Confidence/Status/Grade/Mode/Score/Volume),
+    matching the style of a manual walkthrough of these exact metrics.
+    Rule-based and deterministic (no LLM call), so it can run on every
+    live-price tick without added latency or external dependencies.
+    """
+    symbol   = live.get("symbol", "—")
+    price    = live.get("price", 0)
+    decision = live.get("decision", {}) or {}
+    rel_vol  = live.get("rel_volume")
+
+    bias       = str(decision.get("bias", "Neutral"))
+    status     = str(decision.get("status", "Watching"))
+    grade      = str(decision.get("grade", "—"))
+    mode       = str(decision.get("mode", "Standard"))
+    confidence = str(decision.get("confidence", ""))
+    score      = decision.get("score", 0) or 0
+    tier       = _score_tier(score)
+
+    bias_lower = bias.lower()
+    is_directional = bias_lower in ("bullish", "bearish")
+    is_qualified_status = status.upper() not in ("PROBE", "WATCHING")
+    is_qualified_grade = grade.upper() in ("A", "B")
+    is_expanding = rel_vol is not None and rel_vol >= 1.5
+    tier_actionable = tier in ("Score Tier A", "Score Tier B")
+
+    bullets = []
+
+    # Bias/Confidence line
+    if is_directional:
+        bullets.append(
+            f"Bias: {bias.upper()}, Confidence: {confidence or 'n/a'} — the Decision Engine "
+            f"has committed to a {bias_lower} read on {symbol}."
+        )
+    else:
+        bullets.append(
+            f"Bias: {bias.upper()}, Confidence: {confidence or 'LOW'} — the Decision Engine "
+            f"hasn't picked a direction yet for {symbol}."
+        )
+
+    # Status/Grade line
+    if is_qualified_status and is_qualified_grade:
+        bullets.append(
+            f"Status - Grade: {status} - {grade} — a qualified status with a strong grade means "
+            f"the engine sees this as a real, actionable setup, not just an exploratory read."
+        )
+    else:
+        bullets.append(
+            f"Status - Grade: {status} - {grade} — "
+            f"{'a low-conviction status' if not is_qualified_status else 'a weak grade'} means "
+            f"the engine sees this as an exploratory read, not a qualified setup yet."
+        )
+
+    # Mode line
+    bullets.append(
+        f"Mode: {mode} — "
+        + ("the app is explicitly flagging this as a consolidation/absorption phase, not a trending one."
+           if "digestion" in mode.lower() or "caution" in mode.lower()
+           else "the app is reading current conditions as tradeable, not just noise.")
+    )
+
+    # Score/Tier line
+    if tier == "Trap Door":
+        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — a warning-style zone; conditions look deteriorating, not building.")
+    elif tier == "Monitoring":
+        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — sits in the \"watch, don't act\" middle zone (35-54), below the 55+ needed to reach Score Tier B.")
+    else:
+        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — real conviction behind the move, not just noise.")
+
+    # Volume line
+    if rel_vol is None:
+        bullets.append("Volume: data unavailable right now — can't confirm whether real participation is behind this move.")
+    elif is_expanding:
+        bullets.append(
+            f"Volume: {rel_vol:.2f}x average, met — real, elevated participation is happening. "
+            f"But volume alone just means \"something's happening\" — it doesn't tell you which direction."
+        )
+    else:
+        bullets.append(f"Volume: {rel_vol:.2f}x average, not met — no unusual participation behind the current move yet.")
+
+    # Overall verdict + gates
+    fully_actionable = is_directional and is_qualified_status and is_qualified_grade and tier_actionable
+    if fully_actionable:
+        verdict = (
+            f"What the current combination says: {symbol} is showing a qualified, actionable "
+            f"{bias_lower} setup right now — Bias, Status, Grade, and Score Tier are all "
+            f"aligned. This is the kind of alignment a disciplined trader using this framework "
+            f"would treat as a real, engine-confirmed opportunity, not just a possibility."
+        )
+        gates = None
+    else:
+        verdict = (
+            f"What the current combination says: right now, nothing here is actionable yet"
+            + (f", despite {'strong' if is_expanding else 'available'} volume" if rel_vol is not None else "")
+            + f". The honest summary: {'you have fuel but no direction and no conviction' if is_expanding and not is_directional else 'the engine has not yet confirmed a real, qualified setup'}. "
+            f"A disciplined trader using this framework would treat this as \"stand aside, wait "
+            f"for the engine to actually commit\" rather than force a trade off any single signal "
+            f"alone — the whole point of Confidence/Grade/Status existing separately from raw "
+            f"score is to catch exactly this situation."
+        )
+        long_gates = []
+        if bias_lower != "bullish":
+            long_gates.append("Bias shifts from Neutral/Bearish → Bullish")
+        if not tier_actionable or tier == "Trap Door":
+            long_gates.append(f"Engine Score climbs out of {tier} into Score Tier B (55+) or Score Tier A (80+)")
+        if not is_qualified_status:
+            long_gates.append(f"Status upgrades out of \"{status}\" into a qualified state like Armed or Setting Up")
+        if not is_qualified_grade:
+            long_gates.append(f"Grade improves from {grade} to B or A")
+        if not long_gates:
+            long_gates.append("Price clears a defined trigger level, confirming the move is real")
+
+        short_gates = []
+        if bias_lower != "bearish":
+            short_gates.append("Bias shifts from Neutral/Bullish → Bearish")
+        short_gates.append("Score Tier moves toward Trap Door (below 35) rather than up")
+        short_gates.append("Price breaks down through a defined invalidation/support level")
+
+        gates = (long_gates, short_gates)
+
+    return symbol, price, bullets, verdict, gates
+
+
+def _render_behavioral_analysis_panel(live):
+    if not live:
+        return card([html.Div("Behavioral Analysis will appear once live data loads.",
+                               style={"color": MUTED, "fontSize": "13px"})])
+
+    symbol, price, bullets, verdict, gates = _build_behavioral_analysis(live)
+
+    children = [
+        html.Div([
+            html.H2("Behavioral Analysis", style={"fontSize": "16px", "fontWeight": "800", "color": WHITE, "margin": "0"}),
+            html.Span(f"{symbol} · ${price:.2f}", style={"fontSize": "12px", "color": WHITE}),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "12px"}),
+        html.P(verdict, style={"fontSize": "12px", "color": WHITE, "lineHeight": "1.6", "marginBottom": "12px"}),
+        html.Ul([
+            html.Li(b, style={"fontSize": "12px", "color": WHITE, "lineHeight": "1.6", "marginBottom": "6px"})
+            for b in bullets
+        ], style={"paddingLeft": "18px", "marginBottom": "12px"}),
+    ]
+
+    if gates:
+        long_gates, short_gates = gates
+        children.append(html.Div([
+            slabel("Gates for Long"),
+            html.Ul([html.Li(g, style={"fontSize": "11px", "color": TEAL_DIM, "lineHeight": "1.6"}) for g in long_gates],
+                    style={"paddingLeft": "18px", "marginBottom": "10px"}),
+            slabel("Gates for Short"),
+            html.Ul([html.Li(g, style={"fontSize": "11px", "color": RED_DIM, "lineHeight": "1.6"}) for g in short_gates],
+                    style={"paddingLeft": "18px"}),
+        ]))
+
+    return card(children)
+
+
 def _build_trade_plan_contents(live):
     """Only updates the header label — buttons/inputs are permanent in layout."""
     price  = live.get("price", 0)
@@ -5421,6 +5593,11 @@ app.layout = html.Div([
 
             # Active trade panel
             html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
+
+            # Behavioral Analysis panel -- updates on the same live-tick
+            # cycle as the rest of Command Center, independent of the
+            # main tab-switching callback.
+            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"start"}),
 
@@ -5667,6 +5844,13 @@ def update_badges(live):
     return (badge("LIVE","teal"),
             badge("Alpaca IEX","blue"),
             badge(f"Tick #{seq}","yellow"))
+
+@app.callback(
+    Output("behavioral-analysis-panel", "children"),
+    Input("s-live", "data"),
+)
+def update_behavioral_analysis(live):
+    return _render_behavioral_analysis_panel(live)
 
 @app.callback(
     Output("main-content",       "children"),
