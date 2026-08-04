@@ -302,19 +302,13 @@ def _fetch_market_movers(limit: int = 15) -> List[Dict[str, Any]]:
 
     try:
         symbols = list(RADAR_CACHE.values())
-        print(f"[MOVERS_DIAG] local RADAR_CACHE has {len(symbols)} entries", flush=True)
-        if not symbols:
-            print(f"[MOVERS_DIAG] _redis_client is {'available' if _redis_client else 'None'}", flush=True)
-            if _redis_client:
-                import json as _movers_json
-                raw = _redis_client.get("radar:cache")
-                print(f"[MOVERS_DIAG] redis GET radar:cache returned {'data (' + str(len(raw)) + ' bytes)' if raw else 'nothing'}", flush=True)
-                if raw:
-                    full_cache = _movers_json.loads(raw)
-                    symbols = list(full_cache.values())
-                    print(f"[MOVERS_DIAG] parsed {len(symbols)} symbols from redis", flush=True)
-    except Exception as e:
-        print(f"[MOVERS_DIAG] EXCEPTION: {type(e).__name__}: {e}", flush=True)
+        if not symbols and _redis_client:
+            import json as _movers_json
+            raw = _redis_client.get("radar:cache")
+            if raw:
+                full_cache = _movers_json.loads(raw)
+                symbols = list(full_cache.values())
+    except Exception:
         return []
 
     movers = [
