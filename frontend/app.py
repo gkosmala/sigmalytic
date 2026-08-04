@@ -5538,7 +5538,15 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
-        # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
+        # ── Trade plan + Behavioral Analysis — clean 2-column row, exactly
+        # matching row4's Time Engine + Visual/Audio Alerts structure above
+        # (both flex:1, same alignItems:stretch), per explicit request for
+        # matching proportions. Active Trade Panel moved to its own separate
+        # row below -- with 3 siblings sharing this row, no combination of
+        # flex ratios could give Plan Trade and Behavioral Analysis a true,
+        # exact 50/50 split while Active Trade Panel (typically empty) still
+        # took up real space; splitting it out entirely is the only way to
+        # match row4's proportions precisely rather than approximately.
         html.Div([
             # Trade plan card — header updates, inputs are static
             html.Div([
@@ -5588,21 +5596,19 @@ app.layout = html.Div([
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
                 html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
-            ], style={"flex":"2","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
+            ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
-
-            # Active trade panel
-            html.Div(id="active-trade-panel", style={"flex":"0.3","minWidth":"0"}),
 
             # Behavioral Analysis panel -- updates on the same live-tick
             # cycle as the rest of Command Center, independent of the
-            # main tab-switching callback. flex:2 (vs 1 for its
-            # siblings) approximates the 50% row width of Visual +
-            # Audio Alerts above, per request to keep proportions
-            # visually consistent across the page.
-            html.Div(id="behavioral-analysis-panel", style={"flex":"2","minWidth":"0"}),
+            # main tab-switching callback.
+            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"stretch"}),
+
+        # Active trade panel -- separate, full-width row below, only
+        # meaningfully visible when there's an actual open trade
+        html.Div(id="active-trade-panel", style={"marginTop":"16px"}),
 
     ], style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
