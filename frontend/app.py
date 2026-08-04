@@ -2113,7 +2113,7 @@ def _build_volume_expansion_note(price, rel_volume):
     status_text = "met" if is_expanding else "not met"
     return note_box(
         f"Ref: ${price:.2f}  ·  Live volume: {rel_volume:.2f}x average "
-        f"({status_text} — A-grade requires ≥{EXPANSION_THRESHOLD:.1f}x).",
+        f"({status_text} — Score Tier A requires ≥{EXPANSION_THRESHOLD:.1f}x).",
         variant,
     )
 
@@ -2157,10 +2157,10 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
     elif score < 55:
         tier_label, tier_color = "Monitoring", MUTED
     elif score < 80:
-        tier_label, tier_color = "B-Grade — Audio Active", BLUE_DIM
+        tier_label, tier_color = "Score Tier B — Audio Active", BLUE_DIM
     else:
-        tier_label, tier_color = "A-Grade — Audio Active", TEAL_DIM
-    extra_tiles.append(metric_tile("Alert Tier", tier_label, tier_color))
+        tier_label, tier_color = "Score Tier A — Audio Active", TEAL_DIM
+    extra_tiles.append(metric_tile("Score Tier", tier_label, tier_color))
 
     return html.Div([
         slabel("Direction Intelligence"),
@@ -2181,15 +2181,19 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
             metric_tile("Mode", mode, BLUE_DIM),
             *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
+        html.Div(
+            "Score Tier (below) is a separate alert system based on Engine Score -- not the same as Status - Grade above.",
+            style={"fontSize": "9px", "color": MUTED, "marginTop": "10px", "fontStyle": "italic"},
+        ),
         html.Div([
             html.Span("Below 35: ", style={"color": WHITE, "fontWeight": "700"}),
             html.Span("\"Trap Door\" (warning-style zone)", style={"color": RED_DIM}),
             html.Span("  ·  ", style={"color": WHITE}),
             html.Span("55-79: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"B-Grade — Audio Active\"", style={"color": BLUE_DIM}),
+            html.Span("\"Score Tier B — Audio Active\"", style={"color": BLUE_DIM}),
             html.Span("  ·  ", style={"color": WHITE}),
             html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"A-Grade — Audio Active\"", style={"color": TEAL_DIM}),
+            html.Span("\"Score Tier A — Audio Active\"", style={"color": TEAL_DIM}),
         ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
         html.Div(_build_volume_expansion_note(price, rel_volume), style={"marginTop": "10px"}) if price is not None else None,
     ])
@@ -2459,8 +2463,8 @@ def build_command_tab(live, candles, symbol, tf):
                           style={"fontSize":"11px","color":WHITE,"marginTop":"8px","display":"block","fontWeight":"700"}),
                 html.Span(
                     "Trap Door" if score<35 else
-                    ("A-Grade — Audio Active" if score>=80 else
-                     "B-Grade — Audio Active" if score>=55 else "Monitoring"),
+                    ("Score Tier A — Audio Active" if score>=80 else
+                     "Score Tier B — Audio Active" if score>=55 else "Monitoring"),
                     style={"fontSize":"11px","fontWeight":"700","marginTop":"3px","display":"block",
                            "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
             ]),
@@ -5223,10 +5227,10 @@ window.dash_clientside.sigmalytic = {{
         var banner = null;
         if (score >= 80 && prev_score < 80) {{
             sigmaAlert('A');
-            banner = {{level: 'A', text: 'A-Grade — Audio Active', ts: Date.now()}};
+            banner = {{level: 'A', text: 'Score Tier A — Audio Active', ts: Date.now()}};
         }} else if (score >= 55 && score < 80 && prev_score < 55) {{
             sigmaAlert('B');
-            banner = {{level: 'B', text: 'B-Grade — Audio Active', ts: Date.now()}};
+            banner = {{level: 'B', text: 'Score Tier B — Audio Active', ts: Date.now()}};
         }} else if (score < 35 && prev_score >= 35) {{
             sigmaAlert('warn');
             banner = {{level: 'warn', text: 'Trap Door', ts: Date.now()}};
@@ -6146,8 +6150,8 @@ def show_alert_banner(banner):
     index_string) was ever built. A brief, auto-fading toast banner
     now shows the same score-tier labels alongside the sound:
       - Below 35: "Trap Door" (warning-style zone)
-      - 55-79: "B-Grade — Audio Active"
-      - 80+: "A-Grade — Audio Active"
+      - 55-79: "Score Tier B — Audio Active"
+      - 80+: "Score Tier A — Audio Active"
     """
     if not banner:
         return no_update, {"display": "none"}
