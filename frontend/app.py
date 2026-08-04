@@ -92,6 +92,7 @@ from shared.engine import (
 )
 
 BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
+FRONTEND_URL      = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
 SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
@@ -1970,6 +1971,35 @@ def build_login_page(error=""):
                         html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
                             style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
                                    "fontWeight":"700","cursor":"pointer","padding":"0"}),
+                    ], style={"textAlign":"center", "marginBottom": "12px"}),
+                    html.Div([
+                        html.Button("Forgot your password?", id="goto-forgot-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":MUTED,"fontSize":"12px",
+                                   "fontWeight":"600","cursor":"pointer","padding":"0","textDecoration":"underline"}),
+                    ], style={"textAlign":"center"}),
+                ]),
+
+                # Forgot-password section (hidden initially) -- request a reset email
+                html.Div(id="forgot-section", style={"display":"none"}, children=[
+                    html.H2("Reset Password", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"12px","textAlign":"center"}),
+                    html.P("Enter your account email and we'll send you a link to set a new password.",
+                           style={"fontSize":"12px","color":WHITE,"marginBottom":"20px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="forgot-email", type="email", placeholder="you@example.com",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"20px"}),
+                    html.Div(id="forgot-message", style={"color":TEAL_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Send Reset Link", id="forgot-submit-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer","marginBottom":"16px"}),
+                    html.Div([
+                        html.Button("Back to Sign In", id="goto-login-from-forgot-btn", n_clicks=0,
+                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
+                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
                     ], style={"textAlign":"center"}),
                 ]),
 
@@ -2018,6 +2048,25 @@ def build_login_page(error=""):
                             style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
                                    "fontWeight":"700","cursor":"pointer","padding":"0"}),
                     ], style={"textAlign":"center"}),
+                ]),
+
+                # Set-new-password section (hidden initially) -- shown when a
+                # Supabase recovery token is detected in the URL fragment
+                # (see the client-side script in index_string that extracts it).
+                html.Div(id="set-password-section", style={"display":"none"}, children=[
+                    html.H2("Set New Password", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
+                    html.Div([
+                        html.Label("New Password", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
+                        dcc.Input(id="set-password-new", type="password", placeholder="Min 6 characters",
+                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
+                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
+                    ], style={"marginBottom":"24px"}),
+                    html.Div(id="set-password-message", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
+                    html.Button("Set Password", id="set-password-btn", n_clicks=0,
+                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
+                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
+                               "cursor":"pointer"}),
                 ]),
 
             ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
@@ -4911,6 +4960,28 @@ def add_csp_headers(response):
     return response
 
 
+# Extracts a Supabase password-recovery access_token from the URL
+# fragment (e.g. #access_token=...&type=recovery). This MUST run
+# client-side: the fragment is never sent to the server at all, so no
+# Python/server-side code can read it -- only JavaScript in the
+# browser can. Runs once per page load, triggered by the existing
+# dcc.Location component's href updating.
+app.clientside_callback(
+    """
+    function(href) {
+        if (!href) { return null; }
+        var hash = window.location.hash;
+        if (!hash || hash.indexOf('type=recovery') === -1) { return null; }
+        var params = new URLSearchParams(hash.substring(1));
+        var token = params.get('access_token');
+        return token || null;
+    }
+    """,
+    Output("s-recovery-token", "data"),
+    Input("url", "href"),
+)
+
+
 @app.callback(
     Output("reports-iframe", "srcDoc"),
     Output("reports-download-btn", "href"),
@@ -5085,6 +5156,7 @@ app.layout = html.Div([
                     "zIndex":9999,"background":"#0a1628","overflowY":"auto"}),
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-session",    data=None, storage_type="session"),
+    dcc.Store(id="s-recovery-token", data=None),
     dcc.Store(id="s-page",       data="login"), 
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
@@ -5943,16 +6015,111 @@ def route_page(session):
         return hidden
     return overlay_base
 
-@app.callback(Output("login-section","style"), Output("signup-section","style"),
+@app.callback(Output("login-section","style"), Output("signup-section","style"), Output("forgot-section","style"),
               Input("goto-signup-btn","n_clicks"), Input("goto-login-btn","n_clicks"),
+              Input("goto-forgot-btn","n_clicks"), Input("goto-login-from-forgot-btn","n_clicks"),
               prevent_initial_call=True)
-def toggle_auth_section(to_signup, to_login):
+def toggle_auth_section(to_signup, to_login, to_forgot, to_login2):
     ctx = callback_context
-    if not ctx.triggered: return no_update, no_update
+    if not ctx.triggered: return no_update, no_update, no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
     if trigger == "goto-signup-btn":
-        return {"display":"none"}, {"display":"block"}
-    return {"display":"block"}, {"display":"none"}
+        return {"display":"none"}, {"display":"block"}, {"display":"none"}
+    if trigger == "goto-forgot-btn":
+        return {"display":"none"}, {"display":"none"}, {"display":"block"}
+    # goto-login-btn or goto-login-from-forgot-btn -- both go back to Sign In
+    return {"display":"block"}, {"display":"none"}, {"display":"none"}
+
+
+@app.callback(Output("forgot-message","children"),
+              Input("forgot-submit-btn","n_clicks"),
+              State("forgot-email","value"),
+              prevent_initial_call=True)
+def handle_forgot_password(n_clicks, email):
+    if not email:
+        return "Please enter your email address."
+
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return "Password reset is not configured on this server. Contact support."
+
+    import requests as _req
+    try:
+        r = _req.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={"email": email, "options": {"redirect_to": FRONTEND_URL}},
+            timeout=10,
+        )
+        # Supabase returns 200 regardless of whether the email exists, by
+        # design (prevents leaking which emails are registered) -- so a
+        # generic success message here is correct, not a bug.
+        if r.ok:
+            return f"If an account exists for {email}, a reset link has been sent. Check your inbox."
+        return f"Could not send reset email (error {r.status_code}). Please try again."
+    except Exception as exc:
+        return f"Could not reach the reset service: {exc}"
+
+
+@app.callback(Output("login-section","style", allow_duplicate=True),
+              Output("signup-section","style", allow_duplicate=True),
+              Output("forgot-section","style", allow_duplicate=True),
+              Output("set-password-section","style"),
+              Input("s-recovery-token","data"),
+              prevent_initial_call=True)
+def show_set_password_section(recovery_token):
+    if not recovery_token:
+        return no_update, no_update, no_update, no_update
+    # A recovery token was found in the URL -- hide every other auth
+    # section and show only the set-new-password form.
+    return {"display":"none"}, {"display":"none"}, {"display":"none"}, {"display":"block"}
+
+
+@app.callback(Output("set-password-message","children"),
+              Output("s-session","data", allow_duplicate=True),
+              Output("s-page","data", allow_duplicate=True),
+              Input("set-password-btn","n_clicks"),
+              State("set-password-new","value"),
+              State("s-recovery-token","data"),
+              prevent_initial_call=True)
+def handle_set_new_password(n_clicks, new_password, recovery_token):
+    if not new_password or len(new_password) < 6:
+        return "Password must be at least 6 characters.", no_update, no_update
+
+    if not recovery_token:
+        return "Recovery link has expired or is invalid. Please request a new one.", no_update, no_update
+
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return "Password reset is not configured on this server. Contact support.", no_update, no_update
+
+    import requests as _req
+    auth_headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {recovery_token}",
+        "Content-Type": "application/json",
+    }
+    try:
+        r = _req.put(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers=auth_headers,
+            json={"password": new_password},
+            timeout=10,
+        )
+        if not r.ok:
+            return f"Could not set new password (error {r.status_code}). The link may have expired -- request a new one.", no_update, no_update
+
+        # Password updated -- the recovery token is itself a valid access
+        # token, so log the user straight into the app rather than making
+        # them re-enter the password they just set.
+        user = r.json() or {}
+        return ("", {
+            "user_id": user.get("id", ""),
+            "email": user.get("email", ""),
+            "access_token": recovery_token,
+            "is_demo": False,
+        }, "app")
+
+    except Exception as exc:
+        return f"Could not reach the reset service: {exc}", no_update, no_update
 
 @app.callback(Output("s-session","data"),Output("s-page","data"),
               Output("login-error","children"), Output("signup-error","children"),
