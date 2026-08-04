@@ -1595,7 +1595,7 @@ def _render_behavioral_analysis_panel(live):
                     style={"paddingLeft": "18px"}),
         ]))
 
-    return card(children, sx={"height": "100%"})
+    return card(children, sx={"flex": "1", "display": "flex", "flexDirection": "column"})
 
 
 def _build_trade_plan_contents(live):
