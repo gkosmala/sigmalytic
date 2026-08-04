@@ -2089,7 +2089,36 @@ def build_login_page(error=""):
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
 
-def build_direction_panel(decision, score, symbol=None, price=None, regime=None):
+def _build_volume_expansion_note(price, rel_volume):
+    """
+    FIX (2026-08-04): this note used to be a static, always-identical
+    disclaimer ("A-grade requires live-volume expansion.") that never
+    reflected the actual current volume condition for the symbol being
+    viewed. Now shows the real, live relative-volume reading (from the
+    radar engine's own computed rel_volume, via the new
+    /api/radar/symbol/{symbol} endpoint) and whether the expansion
+    condition is genuinely met right now -- 1.5x average volume is a
+    common, standard threshold for "unusual"/expanding volume.
+    """
+    EXPANSION_THRESHOLD = 1.5
+
+    if rel_volume is None:
+        return note_box(
+            f"Ref: ${price:.2f}  ·  Volume data unavailable for this symbol right now.",
+            "yellow",
+        )
+
+    is_expanding = rel_volume >= EXPANSION_THRESHOLD
+    variant = "teal" if is_expanding else "yellow"
+    status_text = "met" if is_expanding else "not met"
+    return note_box(
+        f"Ref: ${price:.2f}  ·  Live volume: {rel_volume:.2f}x average "
+        f"({status_text} — A-grade requires ≥{EXPANSION_THRESHOLD:.1f}x).",
+        variant,
+    )
+
+
+def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None):
     """Compact, user-readable Direction & Confidence panel.
 
     FIX (2026-08-04): merged in the previously-separate Symbol/Live
@@ -2162,8 +2191,7 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None)
             html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
             html.Span("\"A-Grade — Audio Active\"", style={"color": TEAL_DIM}),
         ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
-        html.Div(note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.", "yellow"),
-                 style={"marginTop": "10px"}) if price is not None else None,
+        html.Div(_build_volume_expansion_note(price, rel_volume), style={"marginTop": "10px"}) if price is not None else None,
     ])
 
 
@@ -2343,7 +2371,8 @@ def build_command_tab(live, candles, symbol, tf):
 
             # Column A — Direction & Confidence Panel
             html.Div([
-                build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime),
+                build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime,
+                                       rel_volume=live.get("rel_volume")),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
@@ -5538,6 +5567,22 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     except Exception:
         return no_update, no_update, no_update
 
+    # Real, live relative-volume check -- powers the "A-grade requires
+    # live-volume expansion" indicator on Command Center with actual
+    # data instead of a static, always-the-same disclaimer. Best-effort:
+    # if this fails or the symbol isn't in the radar universe, the
+    # indicator falls back to an honest "data unavailable" state rather
+    # than blocking the whole live-tick update over optional data.
+    rel_volume = None
+    try:
+        rv_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}", timeout=4)
+        if rv_r.ok:
+            rv_payload = rv_r.json()
+            if rv_payload.get("ok"):
+                rel_volume = rv_payload.get("data", {}).get("rel_volume")
+    except Exception:
+        pass
+
     new_seq = (seq or 0) + 1
 
     # Preserve backend decision/confluence if present. Fall back to local engine output.
@@ -5547,6 +5592,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "symbol": clean,
         "price": price,
         "volume": volume,
+        "rel_volume": rel_volume,
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
