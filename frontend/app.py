@@ -2163,6 +2163,8 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None)
             html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
             html.Span("\"A-Grade — Audio Active\"", style={"color": TEAL_DIM}),
         ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
+        html.Div(note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.", "yellow"),
+                 style={"marginTop": "10px"}) if price is not None else None,
     ])
 
 
@@ -2345,29 +2347,6 @@ def build_command_tab(live, candles, symbol, tf):
                 build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
-
-            # Column B — Trade Card
-            html.Div([
-                slabel("Trade Card"),
-                html.Div(style={"height":"6px"}),
-                html.Div([
-                    html.Span("Bias  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
-                                              "textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Span(decision["bias"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
-                ], style={"marginBottom":"8px"}),
-                html.Div([
-                    html.Span("Setup  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
-                                               "textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Span(decision["status"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
-                ], style={"marginBottom":"8px"}),
-                html.Div([
-                    html.Span("Size  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
-                                              "textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
-                ], style={"marginBottom":"10px"}),
-                note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.","yellow"),
-            ], style={"flex":"1","minWidth":"140px",
-                       "borderRight":f"1px solid {BORDER}","padding":"0 16px"}),
 
             # Column C — Probability Ladder
             html.Div([
