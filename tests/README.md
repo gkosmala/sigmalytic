@@ -48,16 +48,22 @@ and pull request to `main`.
   fields, not literal string matches or field names that are never
   actually set anywhere in the backend.
 - `test_reports_engine.py` -- the daily report's "What Happened in the
-  Market Today" section must use the properly Redis-bridged
-  `get_radar_scores()`, never read the raw, always-empty-on-this-
-  service `RADAR_CACHE` dict directly (the exact bug that broke this
-  section on 2026-08-02, after a well-intentioned but ultimately
-  reverted attempt to make it date-specific). Also locks in the
-  simple, working function signatures (guarding against silently
-  reintroducing the more complex, less reliable historical-fetch
-  version), the report's core branding/formatting fixes (SPARK label,
-  centered table headers, readable ODS/cohort text), and a clean
-  "unavailable" message with no leftover internal diagnostic text.
+  Market Today" section. Guards against TWO separate, real bugs found
+  on different dates: the original 2026-08-02 bug (reading the raw
+  RADAR_CACHE dict with no Redis fallback -- always empty on this
+  specific backend service, since the actual scanning runs in a
+  separate worker process) and a second bug found 2026-08-04 (using
+  get_radar_scores(), which silently hard-caps its limit to 250
+  internally, reproduced live as a genuine "Market movers data
+  unavailable" failure despite real radar data existing for ~900+
+  symbols). The actual fix reads RADAR_CACHE directly WITH a Redis
+  fallback -- addressing both bugs at once, more reliable than either
+  prior approach alone. Also locks in the simple, working function
+  signatures (guarding against silently reintroducing the more
+  complex, less reliable historical-fetch version), the report's core
+  branding/formatting fixes (SPARK label, centered table headers,
+  readable ODS/cohort text), and a clean "unavailable" message with no
+  leftover internal diagnostic text.
 - `test_command_center_layout.py` -- Plan Trade and Behavioral
   Analysis must keep matching, fixed pixel heights (not a
   flexbox-stretch/percentage-based approach, which proved unreliable

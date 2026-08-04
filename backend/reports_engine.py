@@ -282,12 +282,32 @@ def _fetch_market_movers(limit: int = 15) -> List[Dict[str, Any]]:
     was attempted and reverted after it introduced significant
     reliability problems; this simpler, honest version is deliberately
     preferred over a more "precise" one that doesn't work reliably.
+
+    FIX (2026-08-04): this used get_radar_scores(limit=1500), but that
+    function silently hard-caps its limit to 250 internally (a
+    deliberate performance safeguard for its own paginated, enriched
+    list view -- confirmed directly in radar_service.py during an
+    earlier, related bug fix that day). That cap wasn't just
+    incomplete data -- it could produce an entirely empty movers list
+    if, at generation time, the top-250 slice by whatever sort order
+    was active happened not to include enough symbols with a
+    change_pct set, triggering the "Market movers data unavailable"
+    fallback despite the radar cache genuinely having live data.
+    Reading directly from RADAR_CACHE (same Redis fallback
+    get_radar_scores() itself uses) is both more reliable and more
+    correct here -- true market movers should consider the FULL
+    tracked universe (~900+ symbols), not an arbitrary 250-symbol cap.
     """
-    from backend.radar_service import get_radar_scores
+    from backend.radar_service import RADAR_CACHE, _redis_client
 
     try:
-        payload = get_radar_scores(limit=1500)
-        symbols = payload.get("symbols") or []
+        symbols = list(RADAR_CACHE.values())
+        if not symbols and _redis_client:
+            import json as _movers_json
+            raw = _redis_client.get("radar:cache")
+            if raw:
+                full_cache = _movers_json.loads(raw)
+                symbols = list(full_cache.values())
     except Exception:
         return []
 

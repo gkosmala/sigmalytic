@@ -41,25 +41,61 @@ from backend.reports_engine import (
 )
 
 
-def test_fetch_market_movers_uses_get_radar_scores_not_raw_cache():
+def test_fetch_market_movers_does_not_use_capped_get_radar_scores():
     """
-    Regression guard for the exact 2026-08-02 bug: this must import and
-    call get_radar_scores() (the properly Redis-bridged function),
-    never the raw RADAR_CACHE dict directly -- reading RADAR_CACHE
-    directly is always empty on this backend service, since the actual
-    radar scanning runs in a separate worker service entirely.
+    Regression guard for a SECOND, separate bug found later on
+    2026-08-04: get_radar_scores() silently hard-caps its limit to 250
+    internally (a deliberate performance safeguard for its own
+    paginated, enriched list view -- confirmed directly in
+    radar_service.py during the /api/radar/symbol/{symbol} bug fix that
+    same day). Using it here could produce an entirely empty movers
+    list if the top-250 slice by whatever sort order was active didn't
+    happen to include enough symbols with change_pct set -- exactly
+    reproduced live: a real "Market movers data unavailable" report
+    despite the radar cache genuinely having live data for ~900+
+    symbols.
     """
     source = inspect.getsource(_fetch_market_movers)
-    assert "get_radar_scores" in source, (
-        "_fetch_market_movers must use get_radar_scores() (Redis-bridged), "
-        "not read RADAR_CACHE directly -- reading it directly is always "
-        "empty on this service and was the exact root cause of the "
-        "'Market movers data unavailable' bug."
+    # Strip the docstring before checking -- it legitimately mentions
+    # get_radar_scores() as historical documentation of the bug, which
+    # would otherwise cause a false failure on a simple substring check
+    # (hit this exact false failure once already tonight while writing
+    # a similar test for radar_symbol_lookup).
+    if '"""' in source:
+        first = source.index('"""')
+        second = source.index('"""', first + 3)
+        source_no_docstring = source[:first] + source[second + 3:]
+    else:
+        source_no_docstring = source
+
+    assert "get_radar_scores(" not in source_no_docstring, (
+        "_fetch_market_movers must not call get_radar_scores() -- that "
+        "function silently hard-caps its limit to 250 internally, which "
+        "was the confirmed root cause of a real, live 'Market movers "
+        "data unavailable' failure on 2026-08-04 despite genuine live "
+        "radar data existing."
     )
-    assert "RADAR_CACHE" not in source, (
-        "_fetch_market_movers must not import or reference the raw "
-        "RADAR_CACHE dict directly -- see get_radar_scores_not_raw_cache "
-        "above for why."
+
+
+def test_fetch_market_movers_falls_back_to_redis_when_local_cache_empty():
+    """
+    Regression guard for the ORIGINAL 2026-08-02 bug: reading the raw
+    RADAR_CACHE dict directly, with NO fallback, is always empty on
+    this specific backend service (the actual radar scanning runs in a
+    separate worker service, sigmalytic-radar-scanner, in its own
+    process with its own separate RADAR_CACHE in memory). The fix is
+    not "never touch RADAR_CACHE" -- it's "always fall back to Redis
+    when the local copy is empty", which is what actually bridges data
+    between the two separate processes.
+    """
+    source = inspect.getsource(_fetch_market_movers)
+    assert "_redis_client" in source, (
+        "_fetch_market_movers must fall back to the Redis-bridged cache "
+        "when the local RADAR_CACHE is empty -- the local copy is ALWAYS "
+        "empty on this backend service, since the actual scanning runs "
+        "in a separate worker process entirely. Reading RADAR_CACHE "
+        "without this fallback was the exact root cause of the original "
+        "2026-08-02 'Market movers data unavailable' bug."
     )
 
 
@@ -102,10 +138,10 @@ def test_fetch_market_movers_returns_plain_list_not_tuple():
     which is at least loud -- but any code that doesn't unpack it would
     misbehave silently instead).
     """
-    fake_radar_payload = {"symbols": [
-        {"symbol": "TEST", "change_pct": 5.0, "price": 100.0, "rel_volume": 1.5, "volume": 1000},
-    ]}
-    with patch("backend.radar_service.get_radar_scores", return_value=fake_radar_payload):
+    fake_radar_cache = {
+        "TEST": {"symbol": "TEST", "change_pct": 5.0, "price": 100.0, "rel_volume": 1.5, "volume": 1000},
+    }
+    with patch("backend.radar_service.RADAR_CACHE", fake_radar_cache):
         result = _fetch_market_movers(limit=15)
     assert isinstance(result, list), (
         f"_fetch_market_movers returned {type(result)}, expected a plain list."
@@ -119,13 +155,13 @@ def test_fetch_market_movers_sorts_by_absolute_change_both_directions():
     against the actual live report output on 2026-08-02 (a healthy mix
     of positive and negative movers, correctly ordered).
     """
-    fake_radar_payload = {"symbols": [
-        {"symbol": "SMALL_GAIN", "change_pct": 1.0, "price": 10.0, "rel_volume": 1.0, "volume": 100},
-        {"symbol": "BIG_LOSS", "change_pct": -8.0, "price": 20.0, "rel_volume": 1.0, "volume": 100},
-        {"symbol": "BIG_GAIN", "change_pct": 6.0, "price": 30.0, "rel_volume": 1.0, "volume": 100},
-        {"symbol": "MISSING_CHANGE", "price": 40.0, "rel_volume": 1.0, "volume": 100},
-    ]}
-    with patch("backend.radar_service.get_radar_scores", return_value=fake_radar_payload):
+    fake_radar_cache = {
+        "SMALL_GAIN": {"symbol": "SMALL_GAIN", "change_pct": 1.0, "price": 10.0, "rel_volume": 1.0, "volume": 100},
+        "BIG_LOSS": {"symbol": "BIG_LOSS", "change_pct": -8.0, "price": 20.0, "rel_volume": 1.0, "volume": 100},
+        "BIG_GAIN": {"symbol": "BIG_GAIN", "change_pct": 6.0, "price": 30.0, "rel_volume": 1.0, "volume": 100},
+        "MISSING_CHANGE": {"symbol": "MISSING_CHANGE", "price": 40.0, "rel_volume": 1.0, "volume": 100},
+    }
+    with patch("backend.radar_service.RADAR_CACHE", fake_radar_cache):
         movers = _fetch_market_movers(limit=15)
 
     symbols_in_order = [m["symbol"] for m in movers]
@@ -188,11 +224,11 @@ def test_build_report_html_contains_core_branding_and_no_leftover_debug_artifact
     diagnostic markers or internal debug text from past investigations.
     """
     fake_campaign_payload = {"rows": [], "market_data_status": {}}
-    fake_radar_payload = {"symbols": [
-        {"symbol": "AAPL", "change_pct": -7.2, "price": 300.68, "rel_volume": 2.33, "volume": 132490000},
-    ]}
+    fake_radar_cache = {
+        "AAPL": {"symbol": "AAPL", "change_pct": -7.2, "price": 300.68, "rel_volume": 2.33, "volume": 132490000},
+    }
     with patch("backend.campaign_full_enrichment_api.full_universe_enriched_campaign_table", return_value=fake_campaign_payload), \
-         patch("backend.radar_service.get_radar_scores", return_value=fake_radar_payload):
+         patch("backend.radar_service.RADAR_CACHE", fake_radar_cache):
         html_doc = build_report_html("2026-07-31")
 
     assert '<span class="sigma">' in html_doc, "Real Sigma-symbol branding must be present"
