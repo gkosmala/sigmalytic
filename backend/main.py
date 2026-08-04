@@ -20,7 +20,7 @@ backend/main.py
 
 # test build filter backend
 from fastapi import FastAPI, Body, Request, HTTPException, Header, Depends
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import json
 import hmac
@@ -184,11 +184,20 @@ def get_market_wire():
     # minute-level bar) for a meaningful 24h change -- the same kind of
     # comparison the equity side gets from prevDailyBar, not a noisy,
     # tiny minute-to-minute figure.
+    #
+    # FIX (2026-08-04): user's real API check showed price succeeding
+    # but change_pct coming back null -- confirmed the cause: Alpaca's
+    # historical bars endpoints often need an explicit start date,
+    # limit alone isn't always sufficient to guarantee multiple bars
+    # are actually returned (without it, this was apparently only
+    # returning a single bar). Added an explicit start (5 days back,
+    # comfortable padding past the 2 bars actually needed).
     try:
+        crypto_start = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         r = requests.get(
             f"{base_url}/v1beta3/crypto/us/bars",
             headers=headers,
-            params={"symbols": "BTC/USD", "timeframe": "1Day", "limit": 2},
+            params={"symbols": "BTC/USD", "timeframe": "1Day", "limit": 5, "start": crypto_start},
             timeout=10,
         )
         if r.ok:
