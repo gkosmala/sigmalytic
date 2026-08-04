@@ -5588,11 +5588,11 @@ app.layout = html.Div([
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
                 html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
-            ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
+            ], style={"flex":"2","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
 
             # Active trade panel
-            html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
+            html.Div(id="active-trade-panel", style={"flex":"0.3","minWidth":"0"}),
 
             # Behavioral Analysis panel -- updates on the same live-tick
             # cycle as the rest of Command Center, independent of the
