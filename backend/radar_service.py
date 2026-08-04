@@ -1926,6 +1926,25 @@ def start_radar_scheduler():
     # Load last night's divergence watchlist from Supabase
     _load_divergence_watchlist_from_db()
 
+    # FIX (2026-08-04): load_memory_from_supabase() existed and worked
+    # correctly, but was never actually called anywhere -- confirmed via
+    # full codebase search. save_memory_to_supabase() (the other half of
+    # this same persistence design) genuinely does run after successful
+    # training, but with nothing ever restoring it, every worker restart
+    # wiped the in-memory bank back to empty regardless of what had
+    # already been learned, forcing every symbol back through "NO_MEMORY"
+    # each time -- the root cause of "Deep engine confirms radar (+0.0)"
+    # and "Strong engine agreement (100.0)" showing identically for every
+    # symbol (bme_score was never anything but its 50.0 neutral default).
+    # Loading here, before training/scanning starts, means a restart only
+    # needs to train genuinely new symbols, not the whole universe again.
+    try:
+        from backend.behavioral_memory import load_memory_from_supabase as _bme_load
+        loaded = _bme_load()
+        log.info(f"BME memory bank restored from Supabase: {loaded} symbols")
+    except Exception as e:
+        log.warning(f"BME Supabase load failed, will train fresh: {e}")
+
     if ALPACA_API_KEY:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
         log.info("Historical bar fetch started in background thread")

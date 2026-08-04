@@ -71,6 +71,24 @@ and pull request to `main`.
   ratios for a true 50/50 split. Also guards against Active Trade
   Panel moving back into the same row as those two, which would break
   the exact 50/50 split it currently has in its own separate row.
+- `test_bme_memory_persistence.py` -- the Behavioral Memory Engine
+  (BME)'s restart-persistence fix. save_memory_to_supabase() genuinely
+  worked (confirmed real, correct code), but load_memory_from_supabase()
+  -- the function that would restore that saved memory on worker
+  restart -- was fully implemented and correct but never called
+  anywhere, confirmed via full codebase search. Every restart wiped the
+  in-memory bank back to empty, forcing every symbol through the
+  NO_MEMORY neutral-default path (bme_score always exactly 50.0) --
+  the real root cause of "Deep engine confirms radar (+0.0)" and
+  "Strong engine agreement (100.0)" showing identically for every
+  symbol in the radar scan's evidence text, since a delta/agreement
+  comparison against a value that's always the same neutral default is
+  structurally guaranteed to always produce the same result. Locks in
+  that load_memory_from_supabase() is now called from
+  start_radar_scheduler(), before historical bar fetch/fresh training
+  begins, and confirms end-to-end that loading genuinely makes a
+  symbol's memory usable (evaluate() no longer falls into the
+  NO_MEMORY path for a loaded symbol).
 - `test_behavioral_analysis.py` -- the full Behavioral Analysis
   feature: exact score-tier thresholds shared with the alert-sound
   system, the narrative generator correctly distinguishes actionable
