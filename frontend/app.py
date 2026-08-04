@@ -349,6 +349,12 @@ PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
 GLOBAL_CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
+@keyframes sigmaAlertToast {{
+    0%   {{ opacity: 0; transform: translateY(-12px); }}
+    8%   {{ opacity: 1; transform: translateY(0); }}
+    88%  {{ opacity: 1; transform: translateY(0); }}
+    100% {{ opacity: 0; transform: translateY(-12px); }}
+}}
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
 body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}}
 ::-webkit-scrollbar{{width:8px;height:4px;}}
@@ -5171,12 +5177,32 @@ function sigmaAlert(level) {{
 // Called by Dash clientside callback
 window.dash_clientside = window.dash_clientside || {{}};
 window.dash_clientside.sigmalytic = {{
-    fireAlert: function(score, prev_score, alerts_on) {{
-        if (!alerts_on) return window.dash_clientside.no_update;
-        if (score >= 80 && prev_score < 80) {{ sigmaAlert('A'); }}
-        else if (score >= 55 && prev_score < 55) {{ sigmaAlert('B'); }}
-        else if (score < 35 && prev_score >= 35) {{ sigmaAlert('warn'); }}
-        return score;
+    fireAlert: function(live_data, prev_score, alerts_on) {{
+        // FIX (2026-08-04): this used to receive the WHOLE live-data
+        // object here (Input("s-live","data") passes the full
+        // {{price, decision: {{score, ...}}, ...}} dict, not a plain
+        // number), then compared that object directly against numbers
+        // like `score >= 80`. In JavaScript that always evaluates to
+        // false (an object coerces to NaN), so this alert logic never
+        // actually fired correctly despite looking fully built. Now
+        // extracts the real numeric score from the object first.
+        var score = (live_data && live_data.decision && typeof live_data.decision.score === 'number')
+            ? live_data.decision.score : null;
+        if (score === null || !alerts_on) {{
+            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
+        }}
+        var banner = null;
+        if (score >= 80 && prev_score < 80) {{
+            sigmaAlert('A');
+            banner = {{level: 'A', text: 'A-Grade — Audio Active', ts: Date.now()}};
+        }} else if (score >= 55 && score < 80 && prev_score < 55) {{
+            sigmaAlert('B');
+            banner = {{level: 'B', text: 'B-Grade — Audio Active', ts: Date.now()}};
+        }} else if (score < 35 && prev_score >= 35) {{
+            sigmaAlert('warn');
+            banner = {{level: 'warn', text: 'Trap Door', ts: Date.now()}};
+        }}
+        return [score, banner || window.dash_clientside.no_update];
     }}
 }};
 if ('serviceWorker' in navigator) {{
@@ -5228,6 +5254,8 @@ app.layout = html.Div([
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="home"),
     dcc.Store(id="s-alert-score",    data=0),
+    dcc.Store(id="s-alert-banner",   data=None),
+    html.Div(id="alert-banner", style={"display": "none"}),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
     dcc.Store(id="s-plan-score",     data=0),
@@ -6026,17 +6054,18 @@ def handle_csv_upload(contents, filename):
         return f"Error: {str(e)[:200]}"
 
 
-# ── Audio alert clientside callback ──────────────────────────────────────────
+# ── Audio + Visual alert clientside callback ─────────────────────────────────
 app.clientside_callback(
     """
     function(score, prev_score, alerts_on) {
         if (window.dash_clientside && window.dash_clientside.sigmalytic) {
             return window.dash_clientside.sigmalytic.fireAlert(score, prev_score, alerts_on);
         }
-        return score;
+        return [score, window.dash_clientside.no_update];
     }
     """,
     Output("s-alert-score", "data"),
+    Output("s-alert-banner", "data"),
     Input("s-live", "data"),
     State("s-alert-score", "data"),
     State("s-alerts-on", "data"),
@@ -6058,6 +6087,52 @@ def toggle_alerts(n, currently_on):
     if not new_on:
         style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":WHITE})
     return new_on, label, style
+
+
+@app.callback(Output("alert-banner", "children"),
+              Output("alert-banner", "style"),
+              Input("s-alert-banner", "data"),
+              prevent_initial_call=True)
+def show_alert_banner(banner):
+    """
+    Renders the visual half of "Visual + Audio Alerts" -- this panel's
+    name implied both existed, but only the audio side (sigmaAlert in
+    index_string) was ever built. A brief, auto-fading toast banner
+    now shows the same score-tier labels alongside the sound:
+      - Below 35: "Trap Door" (warning-style zone)
+      - 55-79: "B-Grade — Audio Active"
+      - 80+: "A-Grade — Audio Active"
+    """
+    if not banner:
+        return no_update, {"display": "none"}
+
+    level = banner.get("level")
+    text = banner.get("text", "")
+    ts = banner.get("ts", 0)
+
+    if level == "A":
+        color, glow = TEAL_DIM, "rgba(45,143,111,.9)"
+    elif level == "B":
+        color, glow = BLUE_DIM, "rgba(59,130,246,.9)"
+    else:  # "warn" / Trap Door
+        color, glow = RED_DIM, "rgba(239,68,68,.9)"
+
+    outer_style = {"position": "fixed", "top": "18px", "left": "0", "width": "100%",
+                   "textAlign": "center", "zIndex": 99999, "pointerEvents": "none"}
+    inner_style = {
+        "display": "inline-block",
+        "background": NAVY_CARD, "border": f"2px solid {color}",
+        "borderRadius": "14px", "padding": "14px 28px", "color": color,
+        "fontSize": "15px", "fontWeight": "900", "letterSpacing": ".04em",
+        "boxShadow": f"0 8px 32px {glow}",
+        "animation": "sigmaAlertToast 4s ease-in-out forwards",
+    }
+    # key forces React to genuinely unmount and remount this specific
+    # inner element on every new alert (even repeats of the same
+    # level within the same window), so the CSS animation applied to
+    # it reliably restarts each time rather than silently no-op'ing
+    # on an element React decides to reuse.
+    return html.Div(text, key=str(ts), style=inner_style), outer_style
 
 
 @app.callback(Output("auth-overlay","style"),
