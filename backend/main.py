@@ -110,6 +110,106 @@ def api_health():
     return {"status": "healthy"}
 
 
+# ── Market Wire ──────────────────────────────────────────────────────────
+# Top-of-page ticker: DJIA, S&P 500, Nasdaq, Russell 2000, Gold, Oil,
+# Bitcoin. VIX deliberately left out per explicit request -- there's no
+# direct way to get the raw VIX index value through Alpaca's standard
+# market data; the common proxy (VIXY) tracks VIX *futures*, not the spot
+# index, and can diverge meaningfully from the headline VIX number people
+# expect, which would be misleading on a ticker with no room to explain
+# the distinction.
+#
+# Indices/commodities use standard, real-world ETF proxies (same
+# instruments most retail platforms use for this exact purpose) since
+# Alpaca's equities API serves tradable securities, not raw index values:
+#   DJIA -> DIA, S&P 500 -> SPY, Nasdaq -> QQQ (Nasdaq-100, the standard
+#   proxy -- not the full Nasdaq Composite), Russell 2000 -> IWM,
+#   Gold -> GLD, Oil -> USO.
+# Bitcoin is genuinely real, not a proxy -- Alpaca has a dedicated crypto
+# data API (confirmed: GET /v1beta3/crypto/us/latest/bars).
+MARKET_WIRE_SYMBOLS = {
+    "DIA": "DJIA",
+    "SPY": "S&P 500",
+    "QQQ": "Nasdaq",
+    "IWM": "Russell 2000",
+    "GLD": "Gold",
+    "USO": "Oil",
+}
+
+
+@app.get("/api/market-wire")
+def get_market_wire():
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+
+    if not key or not secret:
+        return {"ok": False, "error": "missing_alpaca_credentials", "items": []}
+
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    items = []
+
+    # Equity ETF proxies -- one batched snapshot call for all 6, rather
+    # than 6 separate requests. Snapshots bundle the latest trade with
+    # the previous day's daily bar, which is what a clean day-over-day
+    # % change actually needs (a single latest-bar fetch alone doesn't
+    # give a meaningful "change since yesterday's close" figure).
+    try:
+        r = requests.get(
+            f"{base_url}/v2/stocks/snapshots",
+            headers=headers,
+            params={"symbols": ",".join(MARKET_WIRE_SYMBOLS.keys()), "feed": "sip"},
+            timeout=10,
+        )
+        if r.ok:
+            snapshots = r.json() or {}
+            for sym, label in MARKET_WIRE_SYMBOLS.items():
+                snap = snapshots.get(sym) or {}
+                latest_trade = snap.get("latestTrade") or {}
+                prev_daily = snap.get("prevDailyBar") or {}
+                price = latest_trade.get("p")
+                prev_close = prev_daily.get("c")
+                change_pct = None
+                if price is not None and prev_close:
+                    change_pct = round((price - prev_close) / prev_close * 100, 2)
+                items.append({
+                    "symbol": sym, "label": label, "price": price,
+                    "change_pct": change_pct, "asset_class": "equity",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Equity snapshot fetch failed: {e}", flush=True)
+
+    # Bitcoin -- real, not a proxy, via Alpaca's dedicated crypto endpoint.
+    # Uses the last 2 DAILY bars (not latest/bars, which defaults to a
+    # minute-level bar) for a meaningful 24h change -- the same kind of
+    # comparison the equity side gets from prevDailyBar, not a noisy,
+    # tiny minute-to-minute figure.
+    try:
+        r = requests.get(
+            f"{base_url}/v1beta3/crypto/us/bars",
+            headers=headers,
+            params={"symbols": "BTC/USD", "timeframe": "1Day", "limit": 2},
+            timeout=10,
+        )
+        if r.ok:
+            bars = (r.json() or {}).get("bars") or {}
+            btc_bars = bars.get("BTC/USD") or []
+            if btc_bars:
+                latest = btc_bars[-1]
+                price = latest.get("c")
+                change_pct = None
+                if len(btc_bars) >= 2:
+                    prev_close = btc_bars[-2].get("c")
+                    if price is not None and prev_close:
+                        change_pct = round((price - prev_close) / prev_close * 100, 2)
+                items.append({
+                    "symbol": "BTC/USD", "label": "Bitcoin", "price": price,
+                    "change_pct": change_pct, "asset_class": "crypto",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Crypto bar fetch failed: {e}", flush=True)
+
+    return {"ok": True, "items": items}
 
 
 @app.get("/api/stock/{symbol}")
