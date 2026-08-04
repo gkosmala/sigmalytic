@@ -2121,6 +2121,18 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None)
     if regime is not None:
         extra_tiles.append(metric_tile("Regime", regime.replace("_", " ").title(), YELLOW_DIM))
 
+    # Persistent alert-tier indicator -- shows the CURRENT state at all
+    # times (not just a transient banner on a crossing), per request.
+    if score < 35:
+        tier_label, tier_color = "Trap Door", RED_DIM
+    elif score < 55:
+        tier_label, tier_color = "Monitoring", MUTED
+    elif score < 80:
+        tier_label, tier_color = "B-Grade — Audio Active", BLUE_DIM
+    else:
+        tier_label, tier_color = "A-Grade — Audio Active", TEAL_DIM
+    extra_tiles.append(metric_tile("Alert Tier", tier_label, tier_color))
+
     return html.Div([
         slabel("Direction Intelligence"),
         html.Div(
@@ -2141,6 +2153,16 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None)
             metric_tile("Mode", mode, BLUE_DIM),
             *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
+        html.Div([
+            html.Span("Below 35: ", style={"color": WHITE, "fontWeight": "700"}),
+            html.Span("\"Trap Door\" (warning-style zone)", style={"color": RED_DIM}),
+            html.Span("  ·  ", style={"color": WHITE}),
+            html.Span("55-79: ", style={"color": WHITE, "fontWeight": "700"}),
+            html.Span("\"B-Grade — Audio Active\"", style={"color": BLUE_DIM}),
+            html.Span("  ·  ", style={"color": WHITE}),
+            html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
+            html.Span("\"A-Grade — Audio Active\"", style={"color": TEAL_DIM}),
+        ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
     ])
 
 
