@@ -5602,7 +5602,7 @@ app.layout = html.Div([
             # Behavioral Analysis panel -- updates on the same live-tick
             # cycle as the rest of Command Center, independent of the
             # main tab-switching callback.
-            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0"}),
+            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0","display":"flex","flexDirection":"column"}),
         ], id="trade-panels-row",
            style={"display":"none","gap":"16px","alignItems":"stretch"}),
 
