@@ -5638,14 +5638,6 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     "opacity": ".9",
                 },
             ),
-            html.Div("Fast-load shell only. No campaign fetch, no backend write, no Supabase mutation, no D3D, no Stripe.", style={
-                "color": TEAL_DIM,
-                "fontSize": "11px",
-                "fontWeight": "800",
-                "marginTop": "14px",
-                "textTransform": "uppercase",
-                "letterSpacing": ".08em",
-            }),
         ])
         return main, HIDDEN, no_update, no_update
 
