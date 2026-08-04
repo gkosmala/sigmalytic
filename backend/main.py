@@ -1780,6 +1780,32 @@ def _step100r_w2_start_refresh_if_needed():
     thread.start()
 
 
+@app.get("/api/radar/symbol/{symbol}")
+def radar_symbol_lookup(symbol: str):
+    """
+    Real, single-symbol lookup from the radar cache -- built specifically
+    to give Command Center a genuine, live volume-expansion check (real
+    rel_volume) instead of a static, always-the-same disclaimer text.
+    Reuses get_radar_scores() rather than duplicating its Redis-bridged
+    fallback logic; a targeted, smaller limit keeps this efficient
+    enough to call on every live-price tick without adding real latency.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import get_radar_scores as _real_get_radar_scores
+        payload = _real_get_radar_scores(limit=1500)
+        rows = payload.get("symbols") or []
+        for row in rows:
+            if isinstance(row, dict) and row.get("symbol") == sym:
+                return {"ok": True, "symbol": sym, "data": row}
+        return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
