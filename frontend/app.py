@@ -1410,6 +1410,50 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     )
     return fig
 
+def _render_market_wire(items):
+    """
+    Top-of-page ticker: DJIA/S&P/Nasdaq/Russell 2000/Gold/Oil/Bitcoin.
+    VIX intentionally excluded -- see the backend endpoint's own comment
+    for why (no reliable, non-misleading proxy available).
+    """
+    if not items:
+        return html.Div()
+
+    pills = []
+    for item in items:
+        price = item.get("price")
+        change_pct = item.get("change_pct")
+        label = item.get("label", item.get("symbol", "—"))
+
+        if price is None:
+            continue
+
+        if item.get("asset_class") == "crypto":
+            price_text = f"${price:,.0f}"
+        else:
+            price_text = f"${price:,.2f}"
+
+        if change_pct is None:
+            change_text, change_color = "—", MUTED
+        elif change_pct >= 0:
+            change_text, change_color = f"+{change_pct:.2f}%", TEAL_DIM
+        else:
+            change_text, change_color = f"{change_pct:.2f}%", RED_DIM
+
+        pills.append(html.Div([
+            html.Span(label, style={"color": WHITE, "fontSize": "11px", "fontWeight": "700", "marginRight": "6px"}),
+            html.Span(price_text, style={"color": WHITE, "fontSize": "11px", "fontWeight": "800", "marginRight": "6px"}),
+            html.Span(change_text, style={"color": change_color, "fontSize": "11px", "fontWeight": "800"}),
+        ], style={"display": "flex", "alignItems": "center", "padding": "6px 12px",
+                   "background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "10px",
+                   "whiteSpace": "nowrap"}))
+
+    return html.Div(pills, style={
+        "display": "flex", "gap": "8px", "overflowX": "auto",
+        "justifyContent": "center", "flexWrap": "wrap",
+    })
+
+
 def _build_clock_inline():
     EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
     minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
@@ -5469,8 +5513,11 @@ app.layout = html.Div([
     html.Div(id="audio-trigger", style={"display":"none"}),
     dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
+    dcc.Interval(id="i-market-wire", interval=30_000, n_intervals=0),
+    dcc.Store(id="s-market-wire", data=None),
 
     html.Div([html.Div([
+        html.Div(id="market-wire", style={"marginBottom": "10px"}),
         html.Header([
             # ── Compact single-row header ──────────────────────────────────
             html.Div([
@@ -5861,6 +5908,29 @@ def update_badges(live):
 )
 def update_behavioral_analysis(live):
     return _render_behavioral_analysis_panel(live)
+
+@app.callback(
+    Output("s-market-wire", "data"),
+    Input("i-market-wire", "n_intervals"),
+    prevent_initial_call=False,
+)
+def fetch_market_wire(_):
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/market-wire", timeout=15)
+        if r.ok:
+            payload = r.json()
+            if payload.get("ok"):
+                return payload.get("items", [])
+    except Exception:
+        pass
+    return no_update
+
+@app.callback(
+    Output("market-wire", "children"),
+    Input("s-market-wire", "data"),
+)
+def render_market_wire(items):
+    return _render_market_wire(items)
 
 @app.callback(
     Output("main-content",       "children"),
