@@ -58,6 +58,13 @@ and pull request to `main`.
   version), the report's core branding/formatting fixes (SPARK label,
   centered table headers, readable ODS/cohort text), and a clean
   "unavailable" message with no leftover internal diagnostic text.
+- `test_command_center_layout.py` -- Plan Trade and Behavioral
+  Analysis must keep matching, fixed pixel heights (not a
+  flexbox-stretch/percentage-based approach, which proved unreliable
+  across two real attempts on 2026-08-04) and equal flex:1 width
+  ratios for a true 50/50 split. Also guards against Active Trade
+  Panel moving back into the same row as those two, which would break
+  the exact 50/50 split it currently has in its own separate row.
 
 ## What's deliberately NOT covered (yet)
 
