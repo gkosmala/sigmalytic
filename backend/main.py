@@ -2215,6 +2215,35 @@ def campaign_analogs(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/run-state-transition")
+async def admin_run_state_transition(_admin: str = Depends(require_admin)):
+    """
+    Wires the real State Transition Engine -- confirmed via direct
+    search: run_state_transition_cycle() had zero references anywhere
+    in main.py, despite its own docstring calling itself "the
+    entrypoint for backend/main.py scheduler and manual admin trigger".
+
+    This is a real, direct dependency of the Campaign Outcome Engine
+    wired up just before this: it computes transition_advance_prob and
+    transition_failure_prob for every active campaign, blending each
+    state's base expectation with empirical historical rates. Without
+    this running, the outcome engine's expected_return calculation
+    falls back to generic ~35%/35% defaults instead of real, calibrated
+    probabilities -- so this should generally be run before, or
+    alongside, the outcome engine for genuinely meaningful results.
+
+    Admin-only and POST since this is a real, mutating batch operation
+    across the full active-campaign set.
+    """
+    from backend.intelligence.state_transition_engine import run_state_transition_cycle
+
+    try:
+        result = await run_state_transition_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.post("/api/admin/run-campaign-outcome")
 async def admin_run_campaign_outcome(_admin: str = Depends(require_admin)):
     """
