@@ -2142,6 +2142,108 @@ async def admin_run_portfolio_rankings(_admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(e)[:300]}
 
 
+@app.get("/api/radar/symbol/{symbol}/validated-classification")
+def radar_symbol_validated_classification(symbol: str, years: int = 2):
+    """
+    Computes the REAL, validated research dimensions for a live symbol
+    -- obstacle score and behavioral state (SPD/DEI sequence) -- reusing
+    the exact functions from qualified_long_signal_audit.py (the
+    original research script) directly, not the disconnected setup_
+    type/readiness-bucket system currently live everywhere else in the
+    app (confirmed via full codebase audit: OBS_Q4/PROG_Q4/SPD/DEI --
+    the actual validated winning combination, SPD=Y|DEI=N producing
+    51.52% mfe90 at n=504 -- appear ONLY in that research script,
+    nowhere in radar_service.py/historical_probability_engine.py/
+    probability_service.py).
+
+    HONEST LIMITATION: obstacle score is a raw, precisely-computed
+    continuous value (distance from 252-day high + normalized days
+    since high + trading-range width) -- fully correct and real. But
+    quartile assignment (OBS_Q1 through OBS_Q4) in the original
+    research was computed RELATIVE TO THE FULL ~1000-symbol population's
+    distribution at research time -- confirmed directly in the
+    research script's own summarize function. Re-computing that exact
+    population-relative threshold live, for every request, isn't done
+    here (would require scoring the full universe on every call). The
+    raw obstacle_score is returned as-is; behavioral_state (SPD/DEI),
+    which does NOT depend on population quartiles, is the fully
+    complete, directly comparable part of this response.
+    """
+    from backend.qualified_long_signal_audit import (
+        Bar, sma, calc_atr, _detect_trading_range,
+        _compute_wave_variables, _compute_obstacle_score, _classify_behavioral_state,
+        classify_setup,
+    )
+    from backend.multitimeframe_behavioral_backtest import fetch_daily_bars
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))
+
+    try:
+        raw_bars = fetch_daily_bars(sym, years)
+        if len(raw_bars) < 260:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(raw_bars)} bars, need 260+)"}
+
+        bars = [
+            Bar(t=b.get("t", ""), dt=None, date=str(b.get("t", ""))[:10],
+                o=b["o"], h=b["h"], l=b["l"], c=b["c"], v=b["v"])
+            for b in raw_bars
+        ]
+        i = len(bars) - 1  # most recent bar = today's live classification
+
+        high_252 = max(b.h for b in bars[max(0, i - 251): i + 1])
+        distance_from_252_high_pct = ((bars[i].c - high_252) / high_252 * 100) if high_252 > 0 else 0.0
+
+        # Days since the 252-day high
+        window_252 = bars[max(0, i - 251): i + 1]
+        high_idx_in_window = max(range(len(window_252)), key=lambda k: window_252[k].h)
+        p5_days_since_252_high = (len(window_252) - 1) - high_idx_in_window
+
+        trading_range = _detect_trading_range(bars, i)
+
+        avg_vol_20 = sma([b.v for b in bars], i, 20) or 1.0
+        atr = calc_atr(bars, i, 14) or max(bars[i].h - bars[i].l, bars[i].c * 0.01)
+        support = trading_range.get("support_level", 0.0) if trading_range.get("detected") else 0.0
+
+        wave_vars = _compute_wave_variables(
+            bars=bars, idx=i, support_level=support, avg_vol_20=avg_vol_20, atr=atr, lookback=60,
+        )
+
+        row = {
+            "distance_from_252_high_pct": distance_from_252_high_pct,
+            "p5_days_since_252_high": p5_days_since_252_high,
+            "range_width_pct": trading_range.get("range_width_pct", 0.0),
+            "trading_range_detected": trading_range.get("detected", False),
+            "w_selling_pressure_diminishing": wave_vars.get("w_selling_pressure_diminishing", False),
+            "w_demand_efficiency_improving": wave_vars.get("w_demand_efficiency_improving", False),
+            "w_buoyancy_near_support": wave_vars.get("w_buoyancy_near_support", False),
+            "w_up1_price_eff": wave_vars.get("w_up1_price_eff", 0.0),
+        }
+
+        obstacle_score = _compute_obstacle_score(row)
+        state_label, state_num = _classify_behavioral_state(row)
+        setup = classify_setup(bars, i)
+
+        return {
+            "ok": True, "symbol": sym,
+            "price": bars[i].c, "date": bars[i].date,
+            "setup_type": setup,
+            "obstacle_score": obstacle_score,
+            "obstacle_note": "Raw score; population-relative quartile (OBS_Q1-Q4) not computed live -- see docstring.",
+            "behavioral_state": state_label,
+            "spd": row["w_selling_pressure_diminishing"],
+            "dei": row["w_demand_efficiency_improving"],
+            "is_validated_optimal_entry": state_label == "STATE_1_EXHAUSTION",
+            "trading_range_detected": row["trading_range_detected"],
+            "distance_from_252_high_pct": round(distance_from_252_high_pct, 2),
+            "days_since_252_high": p5_days_since_252_high,
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
