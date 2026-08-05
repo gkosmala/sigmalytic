@@ -2153,6 +2153,41 @@ def campaign_operator_dominance(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/run-campaign-outcome")
+async def admin_run_campaign_outcome(_admin: str = Depends(require_admin)):
+    """
+    Wires the real Campaign Outcome Engine for the first time --
+    confirmed via direct search: run_campaign_outcome_cycle() had zero
+    references anywhere in main.py before tonight.
+
+    This is directly relevant to the very first question of tonight's
+    session ("how is Expected Return of +162.60% determined?"). That
+    number came from historical_probability_engine.py: a simple average
+    of a small number (as few as 10-15) of historical matches, from a
+    dataset stale since 2026-06-11 -- confirmed unreliable through
+    extensive investigation earlier tonight.
+
+    This engine computes outcome_expected_return completely differently
+    and far more currently: a live blend of the campaign's actual
+    lifecycle state (BIRTH/CONFIRMED/SURVIVING/etc.) prior, its
+    transition-model projection, real-time operator dominance and decay
+    scores, and the campaign's own current, real evidence (return_pct,
+    P&F progress) -- not a static historical average at all. Writes
+    outcome_expected_return, outcome_risk_reward, outcome_quality, and
+    related fields back to the campaigns table for every active
+    campaign. Admin-only and POST since this is a real, mutating batch
+    operation, matching the same protection as the other admin actions
+    tonight.
+    """
+    from backend.intelligence.campaign_outcome_engine import run_campaign_outcome_cycle
+
+    try:
+        result = await run_campaign_outcome_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.post("/api/admin/run-decay-monitor")
 async def admin_run_decay_monitor(_admin: str = Depends(require_admin)):
     """
