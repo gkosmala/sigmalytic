@@ -6210,6 +6210,17 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 note_box("Preferences loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="admin":
+        # FIX (2026-08-04): same bug class already fixed for Heatmap and
+        # Reports -- this callback rebuilds every tab from scratch on every
+        # live-price tick (now 2s, shortened earlier tonight, making this
+        # especially aggressive), and a fresh rebuild recreates the Symbol
+        # Backtest input with no value, wiping out whatever the user just
+        # typed almost as fast as they can type it. Only rebuild on a
+        # genuine tab switch (s-tab), so a live-tick while already on this
+        # tab doesn't reset form inputs.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if not _trigger.startswith("s-tab"):
+            return no_update, no_update, no_update, no_update
         try:
             admin_session = session if isinstance(session, dict) else {}
             main = html.Div([
