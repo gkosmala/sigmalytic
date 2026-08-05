@@ -4890,6 +4890,40 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                    "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
     ], sx={"marginBottom": "16px"})
 
+    # ── Symbol Backtest -- single-symbol, full-history check against the
+    # production lookup table's own profile definitions, powered by the
+    # new /api/admin/symbol-backtest/{symbol} endpoint. Defined here,
+    # unconditionally appended like setup_deployment_block above, so it's
+    # available regardless of whether the admin report data itself loads.
+    symbol_backtest_block = _admin_card([
+        html.Div("SYMBOL BACKTEST", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Runs a real, single-symbol backtest against the full available "
+            "Alpaca history, using the same production classification logic "
+            "as the live radar scan -- for checking whether a specific "
+            "profile (Compression Breakout Candidate / Compression to "
+            "Expansion Attempt / 90+ Elite readiness) holds up over a longer "
+            "timeframe than the current 2-year production lookup table. Can "
+            "take a minute or more to run.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Div([
+            dcc.Input(id="backtest-symbol", type="text", placeholder="Symbol (e.g. TDY)",
+                      style={"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+            dcc.Input(id="backtest-years", type="number", placeholder="Years", value=5, min=1, max=6,
+                      style={"width": "80px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+            html.Button("Run Backtest", id="backtest-run-btn", n_clicks=0,
+                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        html.Div(id="backtest-result", style={"fontSize": "12px", "color": WHITE}),
+    ], sx={"marginBottom": "16px"})
+
     if not data:
         # FIX: was `_admin_card([...])` -- _card only exists as a local nested
         # function inside build_preferences_tab and is not visible here.
@@ -4901,6 +4935,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             setup_deployment_block,
+            symbol_backtest_block,
         ])
 
     live          = data.get("live_stats", {})
@@ -5198,6 +5233,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         score_table,
         grade_grid,
         setup_deployment_block,
+        symbol_backtest_block,
 
         # Footer
         html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
@@ -5317,6 +5353,68 @@ def handle_generate_report(n_clicks, date_str, session):
         if payload.get("ok"):
             return f"Report generated successfully for {date_str}. Select it from the date dropdown above."
         return f"Generation failed: {payload.get('error', 'unknown error')}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("backtest-result", "children"),
+              Input("backtest-run-btn", "n_clicks"),
+              State("backtest-symbol", "value"),
+              State("backtest-years", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_symbol_backtest(n_clicks, symbol, years, session):
+    """
+    Admin-only 'Run Backtest' button, calling the new
+    /api/admin/symbol-backtest/{symbol} endpoint -- follows the same
+    pattern as handle_generate_report (proper Bearer auth header via a
+    normal callback-driven request, generous timeout since this
+    genuinely takes a while: roughly one classification call per
+    trading day in the lookback window).
+    """
+    if not symbol:
+        return "Please enter a symbol."
+
+    sym = symbol.strip().upper()
+    yrs = years or 5
+
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/admin/symbol-backtest/{sym}",
+            params={"years": yrs},
+            headers=_auth_headers(session),
+            timeout=180,  # genuinely slow -- ~1250 classification calls for 5 years
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Backtest failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Backtest failed: {payload.get('error', 'unknown error')}"
+
+        matches = payload.get("profile_matches_found", 0)
+        if matches == 0:
+            return (
+                f"{sym}: no matches found for this profile across "
+                f"{payload.get('total_daily_bars', 0)} trading days "
+                f"({yrs} years) of history."
+            )
+
+        return html.Div([
+            html.Div(f"{sym} — {yrs} year(s), {payload.get('total_daily_bars', 0)} trading days scanned",
+                     style={"fontWeight": "700", "marginBottom": "8px"}),
+            html.Div(f"Profile matches found: {matches}", style={"marginBottom": "6px"}),
+            html.Div(f"Avg return — 5d: {payload.get('avg_return_5d')}%  ·  "
+                     f"10d: {payload.get('avg_return_10d')}%  ·  "
+                     f"20d: {payload.get('avg_return_20d')}%  ·  "
+                     f"90d: {payload.get('avg_return_90d')}%", style={"marginBottom": "6px"}),
+            html.Div(f"Avg 90d MFE: {payload.get('avg_mfe_90d')}%  ·  "
+                     f"Avg 90d MAE: {payload.get('avg_mae_90d')}%", style={"marginBottom": "6px"}),
+            html.Div(f"Match dates: {', '.join(payload.get('match_dates', [])[:20])}",
+                     style={"fontSize": "10px", "color": MUTED}),
+        ])
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
