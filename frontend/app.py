@@ -4987,6 +4987,50 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
+    # ── Portfolio Rankings + Decay Monitor -- same pattern as Generate
+    # Report and Symbol Backtest above: real, working admin actions that
+    # previously required dev tools/manual fetch() calls to trigger.
+    # No symbol/date inputs needed -- both operate across the full
+    # active-campaign set, not a single symbol.
+    portfolio_rankings_block = _admin_card([
+        html.Div("PORTFOLIO RANKINGS (Layer 4)", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Deduplicates active campaigns down to one current record per "
+            "symbol, scores each on strength/analog/risk, and writes "
+            "priority-banded rankings to the campaigns database. Runs "
+            "across the full active-campaign set.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Run Portfolio Rankings", id="portfolio-rankings-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="portfolio-rankings-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
+    decay_monitor_block = _admin_card([
+        html.Div("DECAY MONITOR (Layer 7)", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Scores every active campaign into HEALTHY/MONITOR/WEAKENING/"
+            "EXIT_CANDIDATE bands per the research's own decay methodology, "
+            "and persists results back to the campaigns database.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Run Decay Monitor", id="decay-monitor-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="decay-monitor-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     if not data:
         # FIX: was `_admin_card([...])` -- _card only exists as a local nested
         # function inside build_preferences_tab and is not visible here.
@@ -4999,6 +5043,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             ], sx={"marginBottom": "16px"}),
             setup_deployment_block,
             symbol_backtest_block,
+            portfolio_rankings_block,
+            decay_monitor_block,
         ])
 
     live          = data.get("live_stats", {})
@@ -5297,6 +5343,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         grade_grid,
         setup_deployment_block,
         symbol_backtest_block,
+        portfolio_rankings_block,
+        decay_monitor_block,
 
         # Footer
         html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
@@ -5478,6 +5526,68 @@ def handle_symbol_backtest(n_clicks, symbol, years, session):
             html.Div(f"Match dates: {', '.join(payload.get('match_dates', [])[:20])}",
                      style={"fontSize": "10px", "color": MUTED}),
         ])
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("portfolio-rankings-result", "children"),
+              Input("portfolio-rankings-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_portfolio_rankings(n_clicks, session):
+    """
+    Admin-only 'Run Portfolio Rankings' button, calling the real
+    POST /api/admin/run-portfolio-rankings endpoint -- same pattern as
+    Generate Report / Run Backtest: proper Bearer auth header via a
+    normal callback-driven request, generous timeout since this scores
+    the full active-campaign set, not a single symbol.
+    """
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/admin/run-portfolio-rankings",
+            headers=_auth_headers(session),
+            timeout=180,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        result = payload.get("result", {})
+        return f"Complete: {result}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("decay-monitor-result", "children"),
+              Input("decay-monitor-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_decay_monitor(n_clicks, session):
+    """
+    Admin-only 'Run Decay Monitor' button, calling the real
+    POST /api/admin/run-decay-monitor endpoint -- same pattern as the
+    other admin action buttons.
+    """
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/admin/run-decay-monitor",
+            headers=_auth_headers(session),
+            timeout=180,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        result = payload.get("result", {})
+        return f"Complete: {result}"
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
