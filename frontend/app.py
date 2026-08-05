@@ -1677,6 +1677,28 @@ def _render_behavioral_analysis_panel(live):
             ),
         ], style={"marginTop": "12px"}))
 
+    # Real, validated research classification (Layer 1/2) -- the ACTUAL
+    # winning formula from the original research (OBS_Q4+PROG_Q4+
+    # SPD=Y|DEI=N), not the different, disconnected setup_type/bucket
+    # system used elsewhere in the app.
+    vc = live.get("validated_classification")
+    if vc:
+        state = vc.get("behavioral_state", "—")
+        is_optimal = vc.get("is_validated_optimal_entry", False)
+        state_color = TEAL_DIM if is_optimal else WHITE
+        state_text = (
+            f"{state} — the validated research's optimal entry window (SPD=Y, DEI=N)"
+            if is_optimal else
+            f"{state} (SPD={'Y' if vc.get('spd') else 'N'}, DEI={'Y' if vc.get('dei') else 'N'})"
+        )
+        children.append(html.Div([
+            slabel("Validated Research Classification"),
+            html.P(state_text, style={"fontSize": "11px", "color": state_color,
+                                        "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700" if is_optimal else "400"}),
+            html.P(f"Obstacle score: {vc.get('obstacle_score', '—')} (raw; population quartile not computed live)",
+                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
+        ], style={"marginTop": "12px"}))
+
     return card(children, sx={"height": "640px", "overflowY": "auto", "boxSizing": "border-box"})
 
 
@@ -5994,6 +6016,23 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     except Exception:
         pass
 
+    # Real, validated obstacle score / SPD-DEI behavioral state (Layer
+    # 1/2) -- meaningfully heavier than the other live-tick fetches
+    # above (fetches 500+ daily bars, runs real wave-variable
+    # computation), so throttled to roughly once a minute rather than
+    # every 2-second tick. Carries forward the previous value from
+    # `current` between refreshes so it doesn't flicker to empty.
+    validated_classification = (current or {}).get("validated_classification")
+    if (seq or 0) % 30 == 0:
+        try:
+            vc_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/validated-classification", timeout=8)
+            if vc_r.ok:
+                vc_payload = vc_r.json()
+                if vc_payload.get("ok"):
+                    validated_classification = vc_payload
+        except Exception:
+            pass
+
     new_seq = (seq or 0) + 1
 
     # Preserve backend decision/confluence if present. Fall back to local engine output.
@@ -6006,6 +6045,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "rel_volume": rel_volume,
         "sizing_data": sizing_data,
         "dominance_data": dominance_data,
+        "validated_classification": validated_classification,
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
