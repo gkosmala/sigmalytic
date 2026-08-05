@@ -1639,6 +1639,44 @@ def _render_behavioral_analysis_panel(live):
                     style={"paddingLeft": "18px"}),
         ]))
 
+    # Real, validated Phase 10 position sizing -- first time this
+    # research output is shown anywhere in the UI, not just the backend
+    # endpoint added earlier tonight.
+    sizing = live.get("sizing_data")
+    if sizing and sizing.get("sized"):
+        result = sizing.get("result", {})
+        if result.get("approved"):
+            children.append(html.Div([
+                slabel("Validated Position Sizing (Phase 10 research)"),
+                html.P(result.get("summary", ""), style={"fontSize": "11px", "color": TEAL_DIM,
+                                                            "lineHeight": "1.6", "marginTop": "6px"}),
+            ], style={"marginTop": "12px"}))
+        else:
+            children.append(html.Div([
+                slabel("Validated Position Sizing (Phase 10 research)"),
+                html.P(f"Not sized — {result.get('blocked_reason', 'blocked')}",
+                       style={"fontSize": "11px", "color": RED_DIM, "lineHeight": "1.6", "marginTop": "6px"}),
+            ], style={"marginTop": "12px"}))
+    elif sizing and not sizing.get("sized"):
+        children.append(html.Div([
+            slabel("Validated Position Sizing (Phase 10 research)"),
+            html.P(sizing.get("reason", "Not enough data to size."),
+                   style={"fontSize": "11px", "color": MUTED, "lineHeight": "1.6", "marginTop": "6px"}),
+        ], style={"marginTop": "12px"}))
+
+    # Real Livermore/ODS-style operator control score -- only present
+    # once an active campaign record exists for this symbol (Layer 5).
+    dominance = live.get("dominance_data")
+    if dominance:
+        score = dominance.get("score", {})
+        children.append(html.Div([
+            slabel("Operator Control Score"),
+            html.P(
+                f"{score.get('livermore_score', '—')}/100 — campaign state: {dominance.get('current_state', 'Unknown')}",
+                style={"fontSize": "11px", "color": BLUE_DIM, "lineHeight": "1.6", "marginTop": "6px"},
+            ),
+        ], style={"marginTop": "12px"}))
+
     return card(children, sx={"height": "640px", "overflowY": "auto", "boxSizing": "border-box"})
 
 
@@ -5931,6 +5969,31 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     except Exception:
         pass
 
+    # Real, validated Phase 10 position sizing -- powers Behavioral
+    # Analysis's sizing guidance with actual research output instead of
+    # nothing at all. Same best-effort pattern as rel_volume above.
+    sizing_data = None
+    try:
+        sz_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/sizing", timeout=4)
+        if sz_r.ok:
+            sz_payload = sz_r.json()
+            if sz_payload.get("ok"):
+                sizing_data = sz_payload
+    except Exception:
+        pass
+
+    # Real Livermore/ODS-style operator control score -- only present
+    # once an active campaign record exists for this symbol (Layer 5).
+    dominance_data = None
+    try:
+        dom_r = req.get(f"{BACKEND_HTTP}/api/campaigns/{clean}/dominance", timeout=4)
+        if dom_r.ok:
+            dom_payload = dom_r.json()
+            if dom_payload.get("ok") and dom_payload.get("has_active_campaign"):
+                dominance_data = dom_payload
+    except Exception:
+        pass
+
     new_seq = (seq or 0) + 1
 
     # Preserve backend decision/confluence if present. Fall back to local engine output.
@@ -5941,6 +6004,8 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "price": price,
         "volume": volume,
         "rel_volume": rel_volume,
+        "sizing_data": sizing_data,
+        "dominance_data": dominance_data,
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
