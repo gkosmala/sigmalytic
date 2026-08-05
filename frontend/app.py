@@ -1699,6 +1699,41 @@ def _render_behavioral_analysis_panel(live):
                    style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
         ], style={"marginTop": "12px"}))
 
+    # Real Wyckoff Verdict Engine -- stopping climax, supply absorption,
+    # spring, sign of strength, survival score, all computed from real
+    # daily bars.
+    wv = live.get("wyckoff_verdict")
+    if wv and wv.get("verdict"):
+        v = wv["verdict"]
+        verdict_color = TEAL_DIM if v.get("birth_eligible") else MUTED
+        children.append(html.Div([
+            slabel("Wyckoff Verdict"),
+            html.P(f"{v.get('verdict', '—')} — {v.get('phase', '—')}"
+                   f"{' (birth eligible)' if v.get('birth_eligible') else ''}",
+                   style={"fontSize": "11px", "color": verdict_color, "lineHeight": "1.6",
+                          "marginTop": "6px", "fontWeight": "700" if v.get("birth_eligible") else "400"}),
+            html.P(f"Score {v.get('wyckoff_score', '—')} · Survival {v.get('survival_score', '—')} · "
+                   f"Spring {v.get('spring_score', '—')} · SOS {v.get('sign_of_strength_score', '—')}",
+                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
+        ], style={"marginTop": "12px"}))
+
+    # Real Historical Analog Engine -- matched against actual closed
+    # campaigns from this app's own database, with honest confidence
+    # labeling and graceful fallback to research benchmarks.
+    an = live.get("campaign_analogs")
+    if an and an.get("analog"):
+        a = an["analog"]
+        source_label = "Live analogs" if a.get("source") == "LIVE_ANALOGS" else "Research benchmark (insufficient live analogs)"
+        children.append(html.Div([
+            slabel("Historical Analogs"),
+            html.P(f"{source_label} — {a.get('confidence_level', '—')} confidence"
+                   f"{(' · n=' + str(a.get('analog_count'))) if a.get('analog_count') else ''}",
+                   style={"fontSize": "11px", "color": WHITE, "lineHeight": "1.6", "marginTop": "6px"}),
+            html.P(f"Success rate {a.get('success_rate', '—')}% · Avg MFE90 {a.get('avg_mfe90', '—')}% · "
+                   f"Median {a.get('median_days', '—')} days",
+                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
+        ], style={"marginTop": "12px"}))
+
     return card(children, sx={"height": "640px", "overflowY": "auto", "boxSizing": "border-box"})
 
 
@@ -6356,6 +6391,33 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         except Exception:
             pass
 
+    # Real Wyckoff Verdict Engine -- also fetches bar data, same
+    # throttle as validated_classification above.
+    wyckoff_verdict = (current or {}).get("wyckoff_verdict")
+    if (seq or 0) % 30 == 0:
+        try:
+            wv_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/wyckoff-verdict", timeout=8)
+            if wv_r.ok:
+                wv_payload = wv_r.json()
+                if wv_payload.get("ok"):
+                    wyckoff_verdict = wv_payload
+        except Exception:
+            pass
+
+    # Real Historical Analog Engine -- lighter than the two above (no
+    # bar fetching, just a database query), but still throttled for
+    # consistency and to avoid an unnecessary query on every tick.
+    campaign_analogs_data = (current or {}).get("campaign_analogs")
+    if (seq or 0) % 30 == 0:
+        try:
+            an_r = req.get(f"{BACKEND_HTTP}/api/campaigns/{clean}/analogs", timeout=8)
+            if an_r.ok:
+                an_payload = an_r.json()
+                if an_payload.get("ok") and an_payload.get("has_active_campaign"):
+                    campaign_analogs_data = an_payload
+        except Exception:
+            pass
+
     new_seq = (seq or 0) + 1
 
     # Preserve backend decision/confluence if present. Fall back to local engine output.
@@ -6369,6 +6431,8 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "sizing_data": sizing_data,
         "dominance_data": dominance_data,
         "validated_classification": validated_classification,
+        "wyckoff_verdict": wyckoff_verdict,
+        "campaign_analogs": campaign_analogs_data,
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
