@@ -1918,26 +1918,6 @@ def _start_memory_heartbeat(scheduler: "BackgroundScheduler") -> None:
     )
 
 
-def _run_campaign_discovery_job():
-    """
-    Runs the real CampaignDiscoveryEngine across the already-loaded
-    universe (SYMBOLS, set at scheduler startup). Feeds the same
-    campaigns table /api/campaigns/active already reads from correctly
-    -- this is what keeps that table's data fresh going forward,
-    rather than only updating when an admin manually triggers a
-    refresh.
-    """
-    try:
-        from backend.campaign_engine.campaign_discovery_engine import run_campaign_discovery
-        result = run_campaign_discovery(symbols=SYMBOLS, timeframe="DAILY")
-        log.info(
-            "Campaign discovery complete: %s campaigns discovered from %s records evaluated",
-            result.get("campaigns_discovered", 0), result.get("records_evaluated", 0),
-        )
-    except Exception as e:
-        log.warning(f"Campaign discovery job failed: {e}")
-
-
 def start_radar_scheduler():
     global SYMBOLS, _scheduler
     SYMBOLS = load_russell1000()
@@ -2011,23 +1991,17 @@ def start_radar_scheduler():
     )
     log.info("EOD audit scheduled at 8:30 PM ET (00:30 UTC)")
 
-    # FIX (2026-08-04): CampaignDiscoveryEngine + CampaignStore are real,
-    # working code -- confirmed directly: /api/campaigns/active already
-    # correctly reads from the real campaigns table all night. But
-    # discovery itself was only ever triggered manually via an admin
-    # "refresh" endpoint -- nothing kept the table fresh automatically.
-    # Scheduled daily (not on the 8-minute cadence of gex/radar/divergence
-    # scans) to match the research's own stated cadence ("updates each
-    # campaign's state daily") and to avoid adding another frequent, heavy
-    # job on top of a worker service with a real, confirmed prior OOM
-    # crash history.
-    _scheduler.add_job(
-        lambda: threading.Thread(target=_instrumented("campaign_discovery", _run_campaign_discovery_job), daemon=True).start(),
-        trigger="cron",
-        hour=1, minute=0,
-        id="campaign_discovery",
-    )
-    log.info("Campaign discovery scheduled daily at 1:00 AM UTC (shortly after EOD audit)")
+    # NOTE (2026-08-04): campaign discovery is intentionally NOT scheduled
+    # here. Confirmed after initially adding a job for this here, then
+    # catching the mistake: a dedicated, separate Render cron service
+    # (sigmalytic-nightly-campaign-refresh, tools/render_nightly_campaign_
+    # refresh.py) already runs the real nightly_campaign_pipeline daily at
+    # 22:15 UTC -- it was deliberately redesigned (2026-07-28) to run as
+    # its own isolated process specifically to avoid memory/worker-
+    # recycling conflicts with shared services like this one. Adding a
+    # second, independent trigger here would duplicate that real,
+    # already-working infrastructure and risk two processes writing to
+    # the same campaigns table at different times.
 
     _scheduler.add_job(
         _instrumented("daily_summary", lambda: send_daily_summary(list(RADAR_CACHE.values()))),
