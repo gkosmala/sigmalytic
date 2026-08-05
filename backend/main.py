@@ -2153,6 +2153,68 @@ def campaign_operator_dominance(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/campaigns/{symbol}/analogs")
+def campaign_analogs(symbol: str):
+    """
+    Wires the real Historical Analog Engine
+    (backend/analog_engine/analog_engine.py) for the first time.
+    Confirmed via direct search: zero references anywhere in main.py.
+
+    A genuinely sounder alternative to the flawed historical-probability
+    approach scrutinized at the very start of tonight's session: matches
+    the active campaign against REAL closed campaigns from this app's
+    own database (growing over time as campaigns actually close), not a
+    static dataset frozen since 2026-06-11. Requires a minimum
+    population (5) of live analogs before trusting them at all --
+    otherwise gracefully falls back to research benchmarks rather than
+    reporting a misleadingly small-sample average. Honestly labels
+    confidence HIGH/MEDIUM/LOW based on real sample size and match
+    quality, and reports its own source (LIVE_ANALOGS vs
+    RESEARCH_BENCHMARKS) so it's clear which one produced the result.
+    """
+    import os as _os
+    from dataclasses import asdict
+    from types import SimpleNamespace
+    from backend.campaign_engine.campaign_store import CampaignStore
+    from backend.analog_engine.analog_engine import find_analogs, _fetch_closed_campaigns
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        store = CampaignStore()
+        if not store.configured():
+            return {"ok": False, "symbol": sym, "error": "campaign_store_not_configured"}
+
+        campaigns = store.get_active_campaigns(symbol=sym)
+        if not campaigns:
+            return {
+                "ok": True, "symbol": sym, "has_active_campaign": False,
+                "reason": "No active campaign record exists yet for this symbol.",
+            }
+        c = campaigns[0]
+
+        campaign_obj = SimpleNamespace(
+            campaign_id=c.get("campaign_id"),
+            symbol=sym,
+            state=c.get("current_state", "BIRTH"),
+            days_open=c.get("campaign_age_days", 0) or 0,
+            tier=c.get("historical_confidence") or "TIER_2",
+            obstacle_score=float(c.get("obstacle_score") or 0.0),
+            duration_days=c.get("campaign_age_days", 0) or 0,
+        )
+
+        supabase_url = _os.environ.get("SUPABASE_URL") or ""
+        supabase_key = _os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+        closed = _fetch_closed_campaigns(supabase_url, supabase_key)
+
+        match = find_analogs(campaign_obj, closed)
+        return {"ok": True, "symbol": sym, "has_active_campaign": True, "analog": asdict(match)}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.post("/api/admin/run-campaign-outcome")
 async def admin_run_campaign_outcome(_admin: str = Depends(require_admin)):
     """
