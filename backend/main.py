@@ -892,29 +892,93 @@ def trigger_eod_audit(_admin: str = Depends(require_admin)):
 
 @app.get("/api/admin/engine-status")
 def engine_status(_admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-05): this endpoint used to return a hardcoded dict
+    with every single engine marked True, regardless of whether it was
+    actually wired to anything -- confirmed directly: several of these
+    (sizing_engine, ods_engine, decay_monitor, portfolio_intelligence)
+    were completely disconnected from the live app until tonight's
+    audit found and fixed them, yet this status endpoint claimed they
+    were already working the whole time. That's false status
+    reporting on exactly the kind of dashboard an admin would trust to
+    know what's real.
+
+    Now performs two genuinely distinct checks per engine:
+      - importable: does the module/function actually import without
+        error right now (a real, live check, not assumed)
+      - wired: is it confirmed connected to an actual endpoint a user
+        or admin can call, based on tonight's direct verification --
+        not just "the file exists and imports cleanly", which several
+        of these entries proved is not the same thing at all.
+    """
+    def _check(label, import_fn, wired):
+        try:
+            import_fn()
+            return {"importable": True, "wired": wired}
+        except Exception as e:
+            return {"importable": False, "wired": False, "error": str(e)[:150]}
+
     return {
-        "signal_birth_engine": True,
-        "wyckoff_verdict_engine": True,
-        "livermore_verdict_engine": True,
-        "weis_verdict_engine": True,
-        "master_campaign_index": True,
-        "campaign_pipeline": True,
-        "ods_engine": True,
-        "analog_engine": True,
-        "decay_monitor": True,
-        "state_transition": True,
-        "campaign_outcome": True,
-        "campaign_closure_engine": True,
-        "portfolio_intelligence": True,
-        "wyckoff_engine": True,
-        "gann_engine": True,
-        "bme_engine": True,
-        "sizing_engine": True,
-        "subscriber_alerts": True,
-        "campaign_api": True,
-        "research_api": True,
-        "portfolio_api": True,
-        "journal_api": True,
+        "signal_birth_engine": _check(
+            "signal_birth_engine",
+            lambda: __import__("backend.campaign_engine.campaign_discovery_engine", fromlist=["CampaignDiscoveryEngine"]),
+            wired=True,  # confirmed: runs nightly via sigmalytic-nightly-campaign-refresh cron
+        ),
+        "wyckoff_verdict_engine": _check(
+            "wyckoff_verdict_engine",
+            lambda: __import__("backend.research_engine.wyckoff_verdict_engine", fromlist=["WyckoffVerdictEngine"]),
+            wired=False,  # not confirmed wired to any live endpoint tonight
+        ),
+        "livermore_verdict_engine": _check(
+            "livermore_verdict_engine",
+            lambda: __import__("backend.operator_dominance.livermore_score_engine", fromlist=["compute_livermore_score"]),
+            wired=True,  # confirmed: GET /api/campaigns/{symbol}/dominance, added and tested tonight
+        ),
+        "weis_verdict_engine": _check(
+            "weis_verdict_engine",
+            lambda: __import__("backend.structural.weis_wave_engine", fromlist=["WeisWaveEngine"]),
+            wired=False,
+        ),
+        "campaign_pipeline": _check(
+            "campaign_pipeline",
+            lambda: __import__("backend.campaign_engine.nightly_campaign_pipeline", fromlist=["run_nightly_campaign_pipeline"]),
+            wired=True,  # confirmed: runs nightly via sigmalytic-nightly-campaign-refresh cron
+        ),
+        "ods_engine": _check(
+            "ods_engine",
+            lambda: __import__("backend.operator_dominance.livermore_score_engine", fromlist=["compute_livermore_score"]),
+            wired=True,
+        ),
+        "decay_monitor": _check(
+            "decay_monitor",
+            lambda: __import__("backend.intelligence.signal_decay_monitor", fromlist=["run_decay_monitoring_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-decay-monitor, added and tested tonight
+        ),
+        "portfolio_intelligence": _check(
+            "portfolio_intelligence",
+            lambda: __import__("backend.intelligence.portfolio_intelligence_engine", fromlist=["run_portfolio_intelligence_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-portfolio-rankings, added and tested tonight
+        ),
+        "sizing_engine": _check(
+            "sizing_engine",
+            lambda: __import__("backend.intelligence.position_sizing_engine", fromlist=["compute_position_size"]),
+            wired=True,  # confirmed: GET /api/radar/symbol/{symbol}/sizing, added and tested tonight
+        ),
+        "subscriber_alerts": _check(
+            "subscriber_alerts",
+            lambda: __import__("backend.intelligence.subscriber_alerts", fromlist=["send_campaign_birth_alerts"]),
+            wired=False,  # confirmed NOT wired: only reference anywhere was this same false status flag
+        ),
+        "campaign_outcome": _check(
+            "campaign_outcome",
+            lambda: __import__("backend.intelligence.campaign_outcome_engine", fromlist=["run_campaign_outcome_cycle"]),
+            wired=False,
+        ),
+        "campaign_closure_engine": _check(
+            "campaign_closure_engine",
+            lambda: __import__("backend.intelligence.campaign_closure_engine", fromlist=[""]),
+            wired=True,  # confirmed: referenced in main.py per earlier audit tonight
+        ),
     }
 
 
