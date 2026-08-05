@@ -5034,6 +5034,27 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # ── Subscriber Alerts -- distinct from the other admin actions above:
     # this genuinely sends real emails to real subscribers, not an
     # internal-only batch operation. Clearly warned in the UI itself.
+    state_transition_block = _admin_card([
+        html.Div("STATE TRANSITION ENGINE", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Computes calibrated advance/failure probabilities for every "
+            "active campaign, blending each lifecycle state's base "
+            "expectation with real historical rates. A direct dependency "
+            "of Campaign Outcome Engine below -- run this first for "
+            "genuinely calibrated results.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Run State Transition Engine", id="state-transition-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="state-transition-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     campaign_outcome_block = _admin_card([
         html.Div("CAMPAIGN OUTCOME ENGINE", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5088,6 +5109,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             symbol_backtest_block,
             portfolio_rankings_block,
             decay_monitor_block,
+            state_transition_block,
             campaign_outcome_block,
             subscriber_alerts_block,
         ])
@@ -5390,6 +5412,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         symbol_backtest_block,
         portfolio_rankings_block,
         decay_monitor_block,
+        state_transition_block,
         campaign_outcome_block,
         subscriber_alerts_block,
 
@@ -5621,6 +5644,36 @@ def handle_campaign_outcome(n_clicks, session):
     try:
         r = req.post(
             f"{BACKEND_HTTP}/api/admin/run-campaign-outcome",
+            headers=_auth_headers(session),
+            timeout=180,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        result = payload.get("result", {})
+        return f"Complete: {result}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("state-transition-result", "children"),
+              Input("state-transition-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_state_transition(n_clicks, session):
+    """
+    Admin-only 'Run State Transition Engine' button, calling the real
+    POST /api/admin/run-state-transition endpoint -- same pattern as
+    the other admin action buttons.
+    """
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/admin/run-state-transition",
             headers=_auth_headers(session),
             timeout=180,
         )
