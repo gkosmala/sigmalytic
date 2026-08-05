@@ -5034,6 +5034,26 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # ── Subscriber Alerts -- distinct from the other admin actions above:
     # this genuinely sends real emails to real subscribers, not an
     # internal-only batch operation. Clearly warned in the UI itself.
+    campaign_outcome_block = _admin_card([
+        html.Div("CAMPAIGN OUTCOME ENGINE", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Computes Expected Return using a live blend of campaign lifecycle "
+            "state, operator dominance, decay, and real current evidence -- "
+            "not the static historical average discussed earlier tonight. "
+            "Writes results back to the campaigns database.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Run Campaign Outcome Engine", id="campaign-outcome-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="campaign-outcome-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     subscriber_alerts_block = _admin_card([
         html.Div("SEND SUBSCRIBER ALERTS", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5068,6 +5088,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             symbol_backtest_block,
             portfolio_rankings_block,
             decay_monitor_block,
+            campaign_outcome_block,
             subscriber_alerts_block,
         ])
 
@@ -5369,6 +5390,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         symbol_backtest_block,
         portfolio_rankings_block,
         decay_monitor_block,
+        campaign_outcome_block,
         subscriber_alerts_block,
 
         # Footer
@@ -5569,6 +5591,36 @@ def handle_portfolio_rankings(n_clicks, session):
     try:
         r = req.post(
             f"{BACKEND_HTTP}/api/admin/run-portfolio-rankings",
+            headers=_auth_headers(session),
+            timeout=180,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        result = payload.get("result", {})
+        return f"Complete: {result}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("campaign-outcome-result", "children"),
+              Input("campaign-outcome-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_campaign_outcome(n_clicks, session):
+    """
+    Admin-only 'Run Campaign Outcome Engine' button, calling the real
+    POST /api/admin/run-campaign-outcome endpoint -- same pattern as
+    the other admin action buttons.
+    """
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/admin/run-campaign-outcome",
             headers=_auth_headers(session),
             timeout=180,
         )
