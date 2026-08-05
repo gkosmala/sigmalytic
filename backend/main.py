@@ -2117,6 +2117,31 @@ async def admin_run_decay_monitor(_admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/run-portfolio-rankings")
+async def admin_run_portfolio_rankings(_admin: str = Depends(require_admin)):
+    """
+    Wires the real Layer 4 (Portfolio Construction, Phase 16) engine
+    for the first time. Confirmed via direct search: zero references
+    to run_portfolio_intelligence_cycle() anywhere in main.py, same
+    disconnection pattern as Layer 7.
+
+    Consolidates duplicate active campaigns down to one current
+    campaign per symbol, scores each on strength/analog/risk, and
+    writes the resulting priority-banded rankings to
+    public.portfolio_rankings -- a real, mutating batch operation
+    across the full active-campaign set (clears and re-inserts
+    rankings), so admin-only and POST, matching the same protection
+    already applied to Layer 7's decay monitor above.
+    """
+    from backend.intelligence.portfolio_intelligence_engine import run_portfolio_intelligence_cycle
+
+    try:
+        result = await run_portfolio_intelligence_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
