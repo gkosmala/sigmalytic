@@ -564,6 +564,25 @@ def _load_radar_cache_for_admin_report():
 
     backend.radar_service is normally already loaded by backend.main.
     Pulling from sys.modules avoids circular/import-path issues.
+
+    FIX (2026-08-05): confirmed a real, pre-existing root cause of the
+    Admin tab's "Only 0 symbols scored -- Alpaca data may be degraded"
+    anomaly, despite the actual radar scanner genuinely working
+    correctly -- confirmed directly from that worker's own logs the
+    same night (920 symbols processed, real composite_score values
+    like EBAY=76.0, EQH=81.1, VRT=73.0). This function only ever read
+    RADAR_CACHE from whichever process's own local Python memory calls
+    it. But the real scanning runs on a completely separate Render
+    service (sigmalytic-radar-scanner, a Background Worker) -- a
+    different process entirely from the web service that serves
+    /api/admin/report. That web process never runs the scan loop
+    itself, so its own local RADAR_CACHE was always empty regardless
+    of how well the real scanner was doing its job. The real, scored
+    data only ever existed in Redis, written by the scanner worker --
+    this never checked there at all. Added the same Redis fallback
+    pattern already proven correct elsewhere in this file tonight
+    (radar_service.py's own RADAR_CACHE + Redis fallback, used by
+    /api/radar/symbol/{symbol} and others).
     """
     import sys
     errors = []
@@ -571,21 +590,39 @@ def _load_radar_cache_for_admin_report():
     for module_name in ("backend.radar_service", "radar_service"):
         mod = sys.modules.get(module_name)
         if mod is not None and hasattr(mod, "RADAR_CACHE"):
-            return getattr(mod, "RADAR_CACHE") or {}
+            cache = getattr(mod, "RADAR_CACHE") or {}
+            if cache:
+                return cache
+            redis_client = getattr(mod, "_redis_client", None)
+            if redis_client:
+                try:
+                    import json as _admin_report_json
+                    raw = redis_client.get("radar:cache")
+                    if raw:
+                        return _admin_report_json.loads(raw)
+                except Exception as exc:
+                    errors.append(f"redis fallback via {module_name}: {exc}")
+            return cache
 
     try:
-        from backend.radar_service import RADAR_CACHE
-        return RADAR_CACHE or {}
+        from backend.radar_service import RADAR_CACHE, _redis_client
+        cache = RADAR_CACHE or {}
+        if cache:
+            return cache
+        if _redis_client:
+            try:
+                import json as _admin_report_json
+                raw = _redis_client.get("radar:cache")
+                if raw:
+                    return _admin_report_json.loads(raw)
+            except Exception as exc:
+                errors.append(f"redis fallback via backend.radar_service import: {exc}")
+        return cache
     except Exception as exc:
         errors.append(f"backend.radar_service: {exc}")
 
-    try:
-        from backend.radar_service import RADAR_CACHE
-        return RADAR_CACHE or {}
-    except Exception as exc:
-        errors.append(f"radar_service: {exc}")
-
     raise RuntimeError("RADAR_CACHE load failed: " + " | ".join(errors))
+
 
 
 
