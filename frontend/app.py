@@ -5131,6 +5131,34 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
+    enriched_campaign_table_block = _admin_card([
+        html.Div("ENRICHED CAMPAIGN TABLE (7-Year ODS Evidence)", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "A real, already-built endpoint (confirmed live but never called "
+            "from the frontend until now) that formally confirms Operator "
+            "Dominance/Control only from direct evidence in 7 years of real "
+            "price/volume history -- supply exhaustion, demand/support "
+            "validation, structural location, absence of contrary failure. "
+            "Fetches real Alpaca bars for each symbol, so this can take a "
+            "while for larger limits.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Div([
+            dcc.Input(id="enriched-table-limit", type="number", placeholder="Limit", value=25, min=1, max=250,
+                      style={"width": "80px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+            html.Button("Load Enriched Table", id="enriched-table-btn", n_clicks=0,
+                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="enriched-table-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     subscriber_alerts_block = _admin_card([
         html.Div("SEND SUBSCRIBER ALERTS", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5168,6 +5196,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             closure_engine_block,
             state_transition_block,
             campaign_outcome_block,
+            enriched_campaign_table_block,
             subscriber_alerts_block,
         ])
 
@@ -5472,6 +5501,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         closure_engine_block,
         state_transition_block,
         campaign_outcome_block,
+        enriched_campaign_table_block,
         subscriber_alerts_block,
 
         # Footer
@@ -5654,6 +5684,67 @@ def handle_symbol_backtest(n_clicks, symbol, years, session):
             html.Div(f"Match dates: {', '.join(payload.get('match_dates', [])[:20])}",
                      style={"fontSize": "10px", "color": MUTED}),
         ])
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("enriched-table-result", "children"),
+              Input("enriched-table-btn", "n_clicks"),
+              State("enriched-table-limit", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_enriched_table(n_clicks, limit, session):
+    """
+    Calls the real, already-live /api/campaigns/read-only/full-universe-
+    enriched-campaign-table endpoint (found via audit -- genuinely
+    mounted and working, but confirmed never called from the frontend
+    at all). Fetches real Alpaca bars per symbol, so kept on-demand
+    with an admin-set limit rather than run automatically.
+    """
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/campaigns/read-only/full-universe-enriched-campaign-table",
+            params={"limit": limit or 25},
+            headers=_auth_headers(session),
+            timeout=120,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        rows = payload.get("rows", [])
+        coverage = payload.get("coverage", {})
+
+        if not rows:
+            return f"No rows returned. Coverage: {coverage}"
+
+        header = html.Tr([
+            html.Th(h, style={"textAlign": "left", "padding": "6px 10px", "fontSize": "10px",
+                               "color": MUTED, "borderBottom": f"1px solid {BORDER}"})
+            for h in ["Symbol", "State", "Score", "ODS Status", "ODS Label", "Price"]
+        ])
+        body_rows = []
+        for row in rows[:100]:
+            body_rows.append(html.Tr([
+                html.Td(row.get("symbol", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+                html.Td(row.get("state", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+                html.Td(str(row.get("score", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+                html.Td(row.get("ods_status", "—"), style={"padding": "6px 10px", "fontSize": "11px",
+                        "color": TEAL_DIM if row.get("ods_status") == "CONFIRMED" else MUTED}),
+                html.Td(row.get("ods_label", "—"), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
+                html.Td(f"${row.get('price', 0):,.2f}" if row.get("price") else "—",
+                        style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+            ]))
+
+        return html.Div([
+            html.Div(f"{coverage.get('enriched_rows', len(rows))} rows · "
+                     f"{coverage.get('coverage_pct', '—')}% coverage",
+                     style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
+            html.Table([html.Thead(header), html.Tbody(body_rows)],
+                       style={"width": "100%", "borderCollapse": "collapse"}),
+        ], style={"maxHeight": "500px", "overflowY": "auto"})
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
