@@ -927,7 +927,7 @@ def engine_status(_admin: str = Depends(require_admin)):
         "wyckoff_verdict_engine": _check(
             "wyckoff_verdict_engine",
             lambda: __import__("backend.research_engine.wyckoff_verdict_engine", fromlist=["WyckoffVerdictEngine"]),
-            wired=False,  # not confirmed wired to any live endpoint tonight
+            wired=True,  # confirmed: GET /api/radar/symbol/{symbol}/wyckoff-verdict, added and tested later tonight
         ),
         "livermore_verdict_engine": _check(
             "livermore_verdict_engine",
@@ -967,19 +967,34 @@ def engine_status(_admin: str = Depends(require_admin)):
         "subscriber_alerts": _check(
             "subscriber_alerts",
             lambda: __import__("backend.intelligence.subscriber_alerts", fromlist=["send_campaign_birth_alerts"]),
-            wired=False,  # confirmed NOT wired: only reference anywhere was this same false status flag
+            wired=True,  # confirmed: POST /api/admin/send-subscriber-alerts, added and tested later tonight
+                         # (the actual email-send bug -- a disabled stub silently claiming success -- was
+                         # also fixed later tonight; see backend/intelligence/subscriber_alerts.py)
         ),
         "campaign_outcome": _check(
             "campaign_outcome",
             lambda: __import__("backend.intelligence.campaign_outcome_engine", fromlist=["run_campaign_outcome_cycle"]),
-            wired=False,
+            wired=True,  # confirmed: POST /api/admin/run-campaign-outcome, added and tested later tonight
+        ),
+        "state_transition_engine": _check(
+            "state_transition_engine",
+            lambda: __import__("backend.intelligence.state_transition_engine", fromlist=["run_state_transition_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-state-transition, added and tested later tonight --
+                         # a real dependency of campaign_outcome (feeds its transition probability inputs)
+        ),
+        "analog_engine": _check(
+            "analog_engine",
+            lambda: __import__("backend.analog_engine.analog_engine", fromlist=["find_analogs"]),
+            wired=True,  # confirmed: GET /api/campaigns/{symbol}/analogs, added and tested later tonight
         ),
         "campaign_closure_engine": _check(
             "campaign_closure_engine",
             lambda: __import__("backend.intelligence.campaign_closure_engine", fromlist=[""]),
-            wired=True,  # confirmed: referenced in main.py per earlier audit tonight
+            wired=True,  # confirmed: POST /api/admin/run-closure-engine, already wired before tonight,
+                         # frontend Admin button added later tonight
         ),
     }
+
 
 
 # SIGMALYTIC_ASYNC_NIGHTLY_JOB_TRACKING
