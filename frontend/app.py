@@ -5984,7 +5984,17 @@ if ('serviceWorker' in navigator) {{
 </body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
-_init_candles = fetch_real_candles("AAPL", "5m")
+# FIX (2026-08-05): was `fetch_real_candles("AAPL", "5m")` here -- a
+# blocking, synchronous HTTP call to the backend made unconditionally
+# at MODULE IMPORT TIME, on every single process start. This runs
+# before the frontend has even finished loading, with no way to skip
+# it if the backend isn't ready yet -- exactly the scenario right
+# after a coordinated hard reset/redeploy of both services. The
+# existing live-tick callback already fetches and populates real
+# candles within seconds of the first page load regardless, so this
+# initial value only needs to be a safe, empty placeholder, not a
+# real network call that can delay or risk startup.
+_init_candles = []
 
 ALL_TABS = [
     ("home",        "Home"),
