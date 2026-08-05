@@ -5034,6 +5034,27 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # ── Subscriber Alerts -- distinct from the other admin actions above:
     # this genuinely sends real emails to real subscribers, not an
     # internal-only batch operation. Clearly warned in the UI itself.
+    closure_engine_block = _admin_card([
+        html.Div("CLOSURE ENGINE", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Evaluates active campaigns for closure (target reached, stop "
+            "hit, operator exit, timeout, or invalidation) and closes them "
+            "in the campaigns database. This endpoint was already correctly "
+            "wired on the backend -- just missing a way to trigger it "
+            "without dev tools.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Run Closure Engine", id="closure-engine-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="closure-engine-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     state_transition_block = _admin_card([
         html.Div("STATE TRANSITION ENGINE", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5109,6 +5130,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             symbol_backtest_block,
             portfolio_rankings_block,
             decay_monitor_block,
+            closure_engine_block,
             state_transition_block,
             campaign_outcome_block,
             subscriber_alerts_block,
@@ -5412,6 +5434,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         symbol_backtest_block,
         portfolio_rankings_block,
         decay_monitor_block,
+        closure_engine_block,
         state_transition_block,
         campaign_outcome_block,
         subscriber_alerts_block,
@@ -5688,6 +5711,34 @@ def handle_state_transition(n_clicks, session):
             return f"Failed: {payload.get('error', 'unknown error')}"
         result = payload.get("result", {})
         return f"Complete: {result}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("closure-engine-result", "children"),
+              Input("closure-engine-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_closure_engine(n_clicks, session):
+    """
+    Admin-only 'Run Closure Engine' button, calling the real
+    POST /api/admin/run-closure-engine endpoint -- this backend
+    endpoint was already correctly wired; this adds the missing
+    frontend trigger, same pattern as the other admin action buttons.
+    """
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/admin/run-closure-engine",
+            headers=_auth_headers(session),
+            timeout=180,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        return f"Complete: {payload}"
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
