@@ -4921,7 +4921,10 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
                        "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
         ], style={"marginBottom": "14px"}),
-        html.Div(id="backtest-result", style={"fontSize": "12px", "color": WHITE}),
+        dcc.Loading(
+            html.Div(id="backtest-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
     ], sx={"marginBottom": "16px"})
 
     if not data:
