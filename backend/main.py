@@ -2089,6 +2089,34 @@ def campaign_operator_dominance(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/run-decay-monitor")
+async def admin_run_decay_monitor(_admin: str = Depends(require_admin)):
+    """
+    Wires the real, working Layer 7 (Signal Decay Monitoring) engine
+    for the first time. Confirmed via direct search: despite its own
+    docstring claiming to be "the main entrypoint used by
+    backend/main.py scheduler and manual full-nightly flow", there was
+    genuinely zero reference to this function anywhere in main.py --
+    the docstring's claim did not match reality.
+
+    Scores every active campaign (HEALTHY/MONITOR/WEAKENING/
+    EXIT_CANDIDATE) against the research's own decay bands, and
+    persists the results back to the campaigns table (via the engine's
+    own internal _patch_campaign/_insert_decay_observation calls) --
+    a real, mutating batch operation across the full active-campaign
+    set, not a simple read, so this is admin-only and POST rather than
+    GET, matching the same protection already applied to other
+    heavy/mutating admin operations tonight.
+    """
+    from backend.intelligence.signal_decay_monitor import run_decay_monitoring_cycle
+
+    try:
+        result = await run_decay_monitoring_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
