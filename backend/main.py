@@ -1943,6 +1943,98 @@ def radar_symbol_lookup(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/radar/symbol/{symbol}/sizing")
+def radar_symbol_sizing(symbol: str, portfolio_value: float = 100000.0):
+    """
+    Wires the REAL, validated Phase 10 position sizing engine
+    (backend/intelligence/position_sizing_engine.py -- genuinely
+    implemented, matching the empirically-derived stop/Half-Kelly
+    parameters from 168,433 observations) directly into live radar
+    data. Confirmed via full codebase audit: this engine existed, was
+    complete and correct, but was never called from anywhere in the
+    live app -- only a separate, disconnected trade-journal API path
+    referenced its constants informally, not this engine itself.
+
+    TIER derivation is an honest, documented BRIDGE, not the true
+    validated Phase 7C definition (OBS_Q4+PROG_Q4+SPD=Y|DEI=N, which
+    depends on inputs -- obstacle/progress quartiles, spring/demand
+    sequencing -- not currently computed anywhere in the live radar
+    scan). Until that reconnection work is done, this uses the live
+    scan's own readiness_score as the closest available proxy:
+    readiness_score >= 90 -> TIER_1, >= 70 -> TIER_2, below that ->
+    not sized (too speculative to size at all under this framework).
+
+    ASYM ratio uses the radar row's own expected_mfe/expected_mae from
+    the historical probability engine when available -- itself subject
+    to the sample-size/staleness caveats already established tonight,
+    so this is a genuine but imperfect estimate, not a guarantee.
+
+    portfolio_value defaults to a theoretical $100,000 reference
+    portfolio with zero existing positions (no real per-user portfolio
+    tracking exists yet -- that is Layer 4, a separate, larger gap) --
+    this gives a real, concrete "what the validated research says to
+    do" reference figure, not a claim about any specific user's actual
+    account.
+    """
+    from decimal import Decimal
+    from datetime import date
+    from backend.intelligence.position_sizing_engine import (
+        compute_position_size, PortfolioContext, sizing_result_to_dict,
+    )
+    from backend.radar_service import RADAR_CACHE, _redis_client
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    row = RADAR_CACHE.get(sym)
+    if row is None and _redis_client:
+        import json as _sizing_json
+        raw = _redis_client.get("radar:cache")
+        if raw:
+            row = _sizing_json.loads(raw).get(sym)
+    if row is None:
+        return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+
+    readiness = row.get("readiness_score") or 0
+    if readiness >= 90:
+        tier = "TIER_1"
+    elif readiness >= 70:
+        tier = "TIER_2"
+    else:
+        return {
+            "ok": True, "symbol": sym, "tier": None, "sized": False,
+            "reason": f"readiness_score {readiness} below the 70+ threshold this "
+                      f"framework requires to size a position at all.",
+        }
+
+    price = row.get("price")
+    mfe = row.get("expected_mfe")
+    mae = row.get("expected_mae")
+    if not price or mfe is None or mae is None or mae == 0:
+        return {
+            "ok": True, "symbol": sym, "tier": tier, "sized": False,
+            "reason": "Missing price or expected_mfe/expected_mae data needed to compute ASYM ratio.",
+        }
+
+    asym_ratio = Decimal(str(abs(mfe))) / Decimal(str(abs(mae)))
+
+    try:
+        portfolio = PortfolioContext(
+            total_value=Decimal(str(portfolio_value)),
+            available_capital=Decimal(str(portfolio_value)),
+            active_positions=0,
+            deployed_capital=Decimal("0"),
+        )
+        result = compute_position_size(
+            symbol=sym, tier=tier, entry_price=Decimal(str(price)),
+            asym_ratio=asym_ratio, portfolio=portfolio, entry_date=date.today(),
+        )
+        return {"ok": True, "symbol": sym, "sized": True, "result": sizing_result_to_dict(result)}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
