@@ -52,13 +52,6 @@ log = logging.getLogger("subscriber_alerts")
 # Safe imports
 # ---------------------------------------------------------------------------
 
-try:
-    import resend as _resend
-    _RESEND_AVAILABLE = True
-except ImportError:
-    _RESEND_AVAILABLE = False
-    log.warning("resend package not available — email alerts disabled")
-
 
 # ---------------------------------------------------------------------------
 # Alert content dataclass
@@ -380,35 +373,56 @@ def _render_email_html(alert: CampaignBirthAlert) -> str:
 # Email sending
 # ---------------------------------------------------------------------------
 
-def _send_alert_email(
+async def _send_alert_email(
     recipient_email: str,
     alert:           CampaignBirthAlert,
 ) -> bool:
-    """Send a single alert email via Resend."""
-    if not _RESEND_AVAILABLE:
-        log.warning("Resend not available — skipping email to %s", recipient_email)
-        return False
+    """
+    Send a single alert email via Resend.
 
+    FIX (2026-08-05): this used to call _disabled_resend_email_send(),
+    a stub that never actually sent anything but returned a fake
+    "safe" status while this function itself still logged "Alert
+    email sent" and returned True -- silently pretending to succeed.
+    User explicitly confirmed intent: "The email system is to send
+    alerts and the nightly report automatically." Now uses the app's
+    own already-proven, working Resend integration pattern (matching
+    backend/email_service.py's _send_via_resend exactly -- direct
+    httpx POST to the Resend API, not the resend SDK package, which
+    was never correctly configured here anyway), rather than a second,
+    different, broken integration attempt.
+    """
     api_key = os.environ.get("RESEND_API_KEY", "")
     if not api_key:
         log.warning("RESEND_API_KEY not set — skipping email")
         return False
 
+    from_address = os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com")
+    subject = (
+        f"[Sigmalytic] {alert.tier} Signal: {alert.symbol} — "
+        f"Entry ${float(alert.entry_price):,.2f} · "
+        f"mfe90 {float(alert.mfe90_expected):.0f}%"
+    )
+
     try:
-        _resend.api_key = api_key
-
-        subject = (
-            f"[Sigmalytic] {alert.tier} Signal: {alert.symbol} — "
-            f"Entry ${float(alert.entry_price):,.2f} · "
-            f"mfe90 {float(alert.mfe90_expected):.0f}%"
-        )
-
-        _disabled_resend_email_send({
-            "from":    "signals@sigmalytic.com",
-            "to":      [recipient_email],
-            "subject": subject,
-            "html":    _render_email_html(alert),
-        })
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": from_address,
+                    "to": [recipient_email],
+                    "subject": subject,
+                    "html": _render_email_html(alert),
+                },
+            )
+        if resp.status_code not in (200, 201):
+            log.error("Alert email failed for %s: %s %s", recipient_email, resp.status_code, resp.text[:200])
+            return False
 
         log.info("Alert email sent to %s for %s %s", recipient_email, alert.symbol, alert.tier)
         return True
@@ -416,6 +430,7 @@ def _send_alert_email(
     except Exception as exc:
         log.error("Email send failed to %s for %s: %s", recipient_email, alert.symbol, exc)
         return False
+
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +490,7 @@ async def send_campaign_birth_alerts(
         for sub in subscribers:
             email = sub.get("email", "")
             if email:
-                success = _send_alert_email(email, alert)
+                success = await _send_alert_email(email, alert)
                 if success:
                     total_sent += 1
                 else:
@@ -545,17 +560,3 @@ def build_alert_from_campaign(
         campaign_id     = campaign.campaign_id,
         birth_date      = campaign.birth_date,
     )
-
-
-# ALERT_EMAIL_SEND_DISABLED_BY_FORBIDDEN_ACTION_LOCK
-def _disabled_resend_email_send(_payload):
-    return {
-        "ok": False,
-        "email_sent": False,
-        "alert_send_disabled": True,
-        "mode": "ALERT_EMAIL_SEND_DISABLED_BY_FORBIDDEN_ACTION_LOCK",
-        "mutates_campaigns": False,
-        "authorizes_d3d": False,
-        "operator_control_confirmed": False,
-        "not_a_trade_signal": True,
-    }
