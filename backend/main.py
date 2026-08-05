@@ -3956,6 +3956,102 @@ def radar_probability_status_lightweight_compat(limit: int = 50):
 # === LIGHTWEIGHT PRODUCT RADAR COMPAT ROUTES END ===
 
 
+@app.get("/api/admin/symbol-backtest/{symbol}")
+def admin_symbol_backtest(symbol: str, years: int = 5, _admin: str = Depends(require_admin)):
+    """
+    Runs a genuine, single-symbol historical backtest against the FULL
+    available Alpaca history (default 5 years -- confirmed via Alpaca's
+    own docs as the realistic upper bound: "over 5 years of historical
+    data... no data prior to 2016"), reusing the real, existing
+    backend/multitimeframe_behavioral_backtest.py functions (the same
+    evaluate_behavioral_transition() production classification logic
+    used live) rather than reimplementing any of that logic.
+
+    Built to answer a direct, real question: does a specific profile
+    (e.g. TDY's "Compression Breakout Candidate" / "Compression to
+    Expansion Attempt" / 90+ Elite readiness combination) hold up over
+    a much longer, more statistically meaningful lookback than the
+    production lookup table's current 2-year/168K-observation dataset
+    (built 2026-06-11, confirmed stale) -- rather than relying on that
+    dataset's small, potentially-noisy 15-match sample for this symbol.
+
+    Deliberately scoped to ONE symbol at a time: running this across
+    the full ~1000-symbol universe would be far too slow for an
+    on-demand API call (this is a heavy, iterative computation -- one
+    evaluate_behavioral_transition() call per trading day in the
+    lookback window, so ~1250 calls for 5 years). Admin-only given the
+    real compute cost.
+    """
+    from backend.multitimeframe_behavioral_backtest import (
+        fetch_daily_bars, resample_weekly, weekly_rows_until,
+        infer_weekly_regime, score_daily_snapshot, forward_outcomes, _parse_dt,
+    )
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))  # 6 as a hard ceiling -- past Alpaca's confirmed realistic availability
+
+    try:
+        daily = fetch_daily_bars(sym, years)
+        if len(daily) < 90:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(daily)} bars)"}
+
+        weekly = resample_weekly(daily)
+        observations = []
+        # Same 90-day window as the production lookup table, for a real
+        # apples-to-apples comparison -- plus the script's own default
+        # shorter windows too, in case those are also useful context.
+        WINDOWS = (5, 10, 20, 90)
+        max_window = max(WINDOWS)
+
+        for i in range(60, len(daily) - max_window):
+            current_dt = _parse_dt(daily[i].get("t"))
+            daily_history = daily[: i + 1]
+            weekly_history = weekly_rows_until(weekly, current_dt)
+            weekly_regime = infer_weekly_regime(weekly_history)
+
+            snap = score_daily_snapshot(sym, daily_history, weekly_regime)
+            if not snap:
+                continue
+
+            snap.update(forward_outcomes(daily, i, snap.get("trade_side", "Long"), windows=WINDOWS))
+            observations.append(snap)
+
+        # Match against the SAME profile fields the live radar scan and
+        # production lookup use, so this is a genuine comparison, not a
+        # different, incompatible definition of "matches this setup".
+        matches = [
+            o for o in observations
+            if o.get("setup_type") == "Compression Breakout Candidate"
+            and o.get("transition_candidate") == "Compression to Expansion Attempt"
+            and (o.get("readiness_score") or 0) >= 90
+        ]
+
+        def _avg(field):
+            vals = [o.get(field) for o in matches if o.get(field) is not None]
+            return round(sum(vals) / len(vals), 2) if vals else None
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "years_requested": years,
+            "total_daily_bars": len(daily),
+            "total_observations_scored": len(observations),
+            "profile_matches_found": len(matches),
+            "profile": "Compression Breakout Candidate | Compression to Expansion Attempt | 90+ Elite readiness",
+            "avg_return_5d": _avg("return_5d"),
+            "avg_return_10d": _avg("return_10d"),
+            "avg_return_20d": _avg("return_20d"),
+            "avg_return_90d": _avg("return_90d"),
+            "avg_mfe_90d": _avg("mfe_90d"),
+            "avg_mae_90d": _avg("mae_90d"),
+            "match_dates": [o.get("date") for o in matches],
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/admin/divergence-watchlist")
 def divergence_watchlist_compat(limit: int = 50, _admin: str = Depends(require_admin)):
     campaigns = _compat_campaigns()
