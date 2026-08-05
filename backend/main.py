@@ -2308,6 +2308,76 @@ def radar_symbol_validated_classification(symbol: str, years: int = 2):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/send-subscriber-alerts")
+async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
+    """
+    Admin-triggered manual send of real subscriber alert emails for
+    currently-active TIER_1/TIER_2 campaigns -- per user's explicit
+    confirmed intent ("the email system is to send alerts and the
+    nightly report automatically"), now that the underlying send
+    function actually sends (fixed earlier tonight: was silently
+    calling a disabled stub while claiming success).
+
+    Builds each CampaignBirthAlert directly from the real, active
+    campaign records (via CampaignStore.get_active_campaigns()) using
+    safe .get() defaults for fields that may not be present on every
+    row, rather than assuming an exact schema match. Admin-only and
+    POST since this sends real emails to real subscribers -- a genuine
+    external, real-world action, not a read.
+    """
+    from decimal import Decimal
+    from datetime import date as _date
+    from backend.campaign_engine.campaign_store import CampaignStore
+    from backend.intelligence.subscriber_alerts import (
+        CampaignBirthAlert, send_campaign_birth_alerts,
+    )
+
+    try:
+        store = CampaignStore()
+        if not store.configured():
+            return {"ok": False, "error": "campaign_store_not_configured"}
+
+        campaigns = store.get_active_campaigns()
+        eligible = [c for c in campaigns if c.get("tier") in ("TIER_1", "TIER_2")]
+
+        def _dec(v, default="0"):
+            try:
+                return Decimal(str(v)) if v is not None else Decimal(default)
+            except Exception:
+                return Decimal(default)
+
+        alerts = []
+        for c in eligible:
+            alerts.append(CampaignBirthAlert(
+                symbol=c.get("symbol", ""),
+                tier=c.get("tier", "TIER_2"),
+                layer=c.get("layer", "B"),
+                entry_price=_dec(c.get("entry_price")),
+                stop_price=_dec(c.get("stop_price")),
+                stop_pct="-10%" if c.get("layer") == "A" else "-20%",
+                pnf_target=_dec(c.get("pnf_target")),
+                mfe90_expected=_dec(c.get("mfe90_expected")),
+                d_score=float(c.get("d_score") or 0.0),
+                obstacle_score=float(c.get("obstacle_score") or 0.0),
+                duration_days=int(c.get("duration_days") or 0),
+                dur_bucket=c.get("dur_bucket", "DUR_60_120"),
+                behavioral_state=c.get("behavioral_state", "ACCUMULATION"),
+                spd=bool(c.get("spd", False)),
+                dei=bool(c.get("dei", False)),
+                wed_count=int(c.get("wed_count") or 0),
+                asym_ratio=_dec(c.get("asym_ratio"), "1"),
+                shares=int(c.get("shares") or 0),
+                position_value=_dec(c.get("position_value")),
+                campaign_id=str(c.get("campaign_id", "")),
+                birth_date=_date.today(),
+            ))
+
+        result = await send_campaign_birth_alerts(alerts)
+        return {"ok": True, "eligible_campaigns": len(eligible), "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
     # FIX (2026-07-29): now that start_radar_scheduler() is actually
