@@ -2343,6 +2343,43 @@ def radar_symbol_validated_classification(symbol: str, years: int = 2):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/radar/symbol/{symbol}/wyckoff-verdict")
+def radar_symbol_wyckoff_verdict(symbol: str, years: int = 1):
+    """
+    Wires the real Wyckoff Emerging Campaign Verdict Engine
+    (backend/research_engine/wyckoff_verdict_engine.py) for the first
+    time. Confirmed via the engine_status audit earlier tonight: this
+    was importable but not wired to any live endpoint.
+
+    Genuine, sophisticated Wyckoff scoring: stopping climax, supply
+    absorption, spring, sign of strength, meaningful resistance,
+    behavioral resolution, and overall survival score -- computed
+    directly from real daily bars, reusing the app's own proven
+    fetch_daily_bars() from earlier tonight's work.
+    """
+    from backend.research_engine.wyckoff_verdict_engine import run_wyckoff_verdict
+    from backend.multitimeframe_behavioral_backtest import fetch_daily_bars
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))
+
+    try:
+        raw_bars = fetch_daily_bars(sym, years)
+        if len(raw_bars) < 60:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(raw_bars)} bars, need 60+)"}
+
+        bars = [
+            {"open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"]}
+            for b in raw_bars
+        ]
+        result = run_wyckoff_verdict({"symbol": sym, "bars": bars})
+        return {"ok": True, "symbol": sym, "verdict": result}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.post("/api/admin/send-subscriber-alerts")
 async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
     """
