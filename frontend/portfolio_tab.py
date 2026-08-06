@@ -266,14 +266,14 @@ def build_portfolio_tab(session=None) -> html.Div:
             _section("Position Performance"),
             html.Div([
                 html.Div([
-                    html.Div("â–² Top Performers", style={"fontSize": "12px", "color": TEAL_DIM,
+                    html.Div("Top Performers", style={"fontSize": "12px", "color": TEAL_DIM,
                                                          "fontWeight": "800", "marginBottom": "10px"}),
                     *[_perf_row(c) for c in sorted(campaigns,
                        key=lambda x: _safe_float(x.get("return_pct")), reverse=True)[:6]],
                 ], style={"flex": "1"}),
                 html.Div(style={"width": "1px", "background": BORDER, "margin": "0 20px"}),
                 html.Div([
-                    html.Div("âš  Watch List", style={"fontSize": "12px", "color": YELLOW_DIM,
+                    html.Div("Watch List", style={"fontSize": "12px", "color": YELLOW_DIM,
                                                       "fontWeight": "800", "marginBottom": "10px"}),
                     *[_perf_row(c) for c in sorted(campaigns,
                        key=lambda x: _safe_float(x.get("return_pct")))[:6]],
