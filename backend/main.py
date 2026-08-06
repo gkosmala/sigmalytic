@@ -4492,6 +4492,34 @@ def phase12_25_controlled_campaign_state_mutation_preflight(payload: dict):
     }
 # === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT END ===
 
+@app.get("/api/scoreboard/real-stats")
+def scoreboard_real_stats():
+    """
+    Wires the real, honest scoreboard statistics engine
+    (backend/scoreboard_service.py's get_scoreboard_stats()) for the
+    first time. Confirmed via audit: /api/scoreboard (already used by
+    the frontend's Scoreboard tab) is a DIFFERENT, campaign-
+    intelligence compatibility endpoint (scoreboard_compat) that does
+    not call this function at all -- the real, honest track-record
+    statistics (win rates, hit rates, average MFE/MAE, direction
+    accuracy, agreement-bucket validation, and a live attribution
+    report of what's actually producing edge) computed from the app's
+    own real, actual logged signal history and outcomes were never
+    surfaced anywhere.
+
+    Confirmed the underlying DATABASE_URL/psycopg2 connection pattern
+    is genuinely working in production: log_signal() (the write side
+    of this same table) is actively called on every real status
+    change via radar_service.py, running successfully all night.
+    """
+    try:
+        from backend.scoreboard_service import get_scoreboard_stats
+        stats = get_scoreboard_stats()
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/campaigns/transition-preview")
 def phase12_17_controlled_transition_preview(limit: int = 50, symbol: str = None):
     rows = []
