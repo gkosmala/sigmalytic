@@ -3254,23 +3254,6 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     return c
 
 
-import threading as _enrichment_threading
-
-_ENRICHMENT_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
-_ENRICHMENT_CACHE_TTL_SECONDS = 600  # 10 minutes
-_ENRICHMENT_CACHE_LOCK = _enrichment_threading.Lock()
-_ENRICHMENT_KEY_LOCKS: Dict[int, _enrichment_threading.Lock] = {}
-_ENRICHMENT_KEY_LOCKS_LOCK = _enrichment_threading.Lock()
-
-
-def _get_enrichment_key_lock(limit: int) -> "_enrichment_threading.Lock":
-    with _ENRICHMENT_KEY_LOCKS_LOCK:
-        lock = _ENRICHMENT_KEY_LOCKS.get(limit)
-        if lock is None:
-            lock = _enrichment_threading.Lock()
-            _ENRICHMENT_KEY_LOCKS[limit] = lock
-        return lock
-
 
 @router.get("/api/campaigns/read-only/full-universe-enriched-campaign-table")
 def full_universe_enriched_campaign_table(
@@ -3282,45 +3265,23 @@ def full_universe_enriched_campaign_table(
     every single call -- no caching at all. Both the automated daily
     report cron (tools/render_daily_report_generator.py) and manual
     retries from the Admin tab were paying this full cost every time,
-    plausibly explaining real timeouts observed tonight (user's manual
-    trigger timed out at 90s; the cron's own timeout was only 120s).
-    Added a simple, short-TTL (10 min) in-memory cache keyed by limit
-    -- retries within that window are now fast, while still refreshing
-    well within a single trading day. Not a substitute for the real
-    computation; genuinely correct data is always what gets served,
-    just not re-fetched from scratch on every retry.
+    plausibly explaining real timeouts observed tonight.
 
     FIX (2026-08-06): confirmed via a real production OOM crash and
-    its root-cause investigation (campaign_api.py's
-    _cached_endpoint_result) that a cache check without a lock has a
-    genuine thundering-herd risk -- two requests for the same limit
-    arriving close together could both see "no fresh cache" and both
-    independently run this same expensive 7-year fetch at once. This
-    cache had exactly that gap. Added the same single-flight, per-key
-    lock pattern already proven correct elsewhere in this codebase: a
-    second concurrent request for the same limit now waits for the
-    first to finish and gets its fresh result, instead of redoing the
-    work itself.
+    its root-cause investigation that a plain, module-level Python
+    dict + threading.Lock only works within a single process -- with
+    multiple gunicorn workers, each has its own independent cache, so
+    two workers could each independently run this same expensive
+    7-year fetch at the same time. Replaced with the same genuinely
+    multi-process-safe, Redis-backed shared_cache already fixed for
+    campaign_api.py and verified with real concurrency tests
+    (including the exact "N callers racing on the same key produce
+    exactly 1 real computation" scenario) -- not a second, separate,
+    manually-reimplemented version of the same pattern.
     """
-    import time as _enrichment_time
+    from backend.shared_cache import shared_cache
 
-    now = _enrichment_time.monotonic()
-    with _ENRICHMENT_CACHE_LOCK:
-        cached = _ENRICHMENT_CACHE.get(limit)
-        if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
-            return cached[1]
-
-    key_lock = _get_enrichment_key_lock(limit)
-    with key_lock:
-        # Re-check after acquiring the lock -- another thread may have
-        # already computed and stored a fresh result while this one
-        # was waiting.
-        now = _enrichment_time.monotonic()
-        with _ENRICHMENT_CACHE_LOCK:
-            cached = _ENRICHMENT_CACHE.get(limit)
-            if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
-                return cached[1]
-
+    def _compute():
         rows, source_status = _fetch_base_universe(limit)
         symbols = [_symbol(r) for r in rows if _symbol(r)]
         bars_by_symbol, market_status = _fetch_alpaca_bars(symbols)
@@ -3340,7 +3301,7 @@ def full_universe_enriched_campaign_table(
             "coverage_pct": round((len(enriched_rows) / len(rows)) * 100, 2) if rows else 0,
         }
 
-        result = {
+        return {
             "status": "PASS",
             "mode": "FULL_UNIVERSE_ENRICHED_CAMPAIGN_TABLE",
             "step90b_marker": STEP90B_MARKER,
@@ -3364,8 +3325,7 @@ def full_universe_enriched_campaign_table(
                 "broker_execution": False,
             },
         }
-        with _ENRICHMENT_CACHE_LOCK:
-            _ENRICHMENT_CACHE[limit] = (now, result)
-        return result
+
+    return shared_cache.get_or_fetch(f"enriched_campaign_table_{limit}", _compute, ttl_seconds=600)
 
 
