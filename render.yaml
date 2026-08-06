@@ -4,23 +4,24 @@ services:
     runtime: python
     region: oregon
     buildCommand: pip install -r requirements.txt
-    # IMPORTANT (2026-08-06): workers MUST stay at 1. Confirmed root
-    # cause of a real production OOM crash after briefly trying
-    # --workers 2: campaign_api.py's _cached_endpoint_result() uses a
-    # module-level, in-process-only cache + per-key threading.Lock to
-    # prevent concurrent requests from each independently running the
-    # same ~400-1000MB active_campaigns/rankings/status computation at
-    # once (a "thundering herd" bug already found and fixed once
-    # before, in an earlier session). That lock is a plain Python
-    # object -- it is NOT shared across separate Gunicorn worker
-    # processes. With 2+ workers, each has its own independent cache
-    # and lock, so two workers can each independently run the same
-    # heavy computation at the same time, defeating the existing
-    # protection entirely and reproducing the exact OOM crash that
-    # protection was built to prevent. A genuine multi-worker fix
-    # would require moving this cache/lock to something shared across
-    # processes (e.g. Redis), not just raising the worker count.
-    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 300
+    # HISTORY (2026-08-06): a production OOM crash was traced to
+    # campaign_api.py's _cached_endpoint_result() using a plain,
+    # module-level, in-process-only Python dict + lock -- with 2+
+    # gunicorn workers, each had its own independent copy, so two
+    # workers could each independently run the same ~400-1000MB
+    # computation at once, defeating the single-flight protection that
+    # function was built to provide. Root-caused and genuinely fixed by
+    # porting the already-proven, Redis-backed, multi-process-safe
+    # cache pattern from frontend/shared_cache.py into a new backend/
+    # shared_cache.py, and rewiring _cached_endpoint_result() to use
+    # it -- verified with real concurrency tests, including the exact
+    # "N callers racing on the same key produce exactly 1 real
+    # computation" scenario. 2 workers re-enabled only after that fix
+    # was confirmed. If this is ever suspected of causing memory
+    # issues again, verify the shared_cache fix itself first --
+    # reverting to 1 worker should be a last resort, not the default
+    # response to any future memory concern.
+    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 300
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
