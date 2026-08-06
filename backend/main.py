@@ -150,6 +150,23 @@ MARKET_WIRE_SYMBOLS = {
 
 @app.get("/api/market-wire")
 def get_market_wire():
+    # FIX (2026-08-06): confirmed this had zero caching despite being
+    # genuinely shared data (identical for every user, not per-symbol
+    # or per-user) -- called every ~2s per active user via the
+    # frontend's live-tick cycle, making a real, live Alpaca API call
+    # every single time. An explicit, known risk was already flagged
+    # in earlier session notes ("multiplies with concurrent
+    # subscribers") but never actually fixed. Wrapped in the same
+    # proven, Redis-backed shared_cache pattern already fixed for
+    # campaign_api.py tonight -- a short TTL keeps data reasonably
+    # fresh while collapsing what could be many real Alpaca calls per
+    # second (across all active users) down to roughly one every 10s,
+    # shared across all of them and all worker processes.
+    from backend.shared_cache import shared_cache
+    return shared_cache.get_or_fetch("market_wire", _get_market_wire_uncached, ttl_seconds=10)
+
+
+def _get_market_wire_uncached():
     key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
     secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
     base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
