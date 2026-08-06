@@ -729,14 +729,31 @@ def heatmap_data(timeframe: str = "daily"):
     classification (sourced directly from iShares' own official fund
     holdings export) grouped and colored by real price performance at
     the requested time frame (hourly, daily, weekly, monthly).
+
+    FIX (2026-08-06): confirmed this had zero caching (the response
+    headers even explicitly disabled browser-level caching too),
+    despite computing genuinely shared, identical data per timeframe
+    for every user -- and taking up to 90 seconds per the frontend's
+    own timeout. If multiple users switch to this tab around the same
+    time, this could trigger multiple redundant, expensive
+    computations simultaneously (more likely now with 2 worker
+    processes able to genuinely serve concurrent users). Wrapped in
+    the same proven shared_cache pattern, keyed per timeframe since
+    different timeframes have different data. Longer TTL (90s) than
+    market-wire since sector/industry price performance doesn't need
+    second-level freshness the way live quotes do.
     """
     from fastapi.responses import JSONResponse as _JSONResponse
+    from backend.shared_cache import shared_cache
 
-    try:
-        from backend.heatmap_engine import build_heatmap_data
-        result = build_heatmap_data(timeframe)
-    except Exception as exc:
-        result = {"ok": False, "error": str(exc)[:500], "symbols": []}
+    def _compute():
+        try:
+            from backend.heatmap_engine import build_heatmap_data
+            return build_heatmap_data(timeframe)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:500], "symbols": []}
+
+    result = shared_cache.get_or_fetch(f"heatmap_data_{timeframe}", _compute, ttl_seconds=90)
 
     return _JSONResponse(
         content=result,
