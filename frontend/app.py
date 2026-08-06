@@ -1677,6 +1677,28 @@ def _render_behavioral_analysis_panel(live):
             ),
         ], style={"marginTop": "12px"}))
 
+    # Real, read-only transition preview -- what state this campaign
+    # is likely to move to next, with a specific rationale, without
+    # mutating anything.
+    tp = live.get("transition_preview_data")
+    if tp:
+        current = tp.get("current_state", "—")
+        proposed = tp.get("proposed_next_state")
+        rationale_list = tp.get("rationale") or []
+        rationale_text = rationale_list[0] if rationale_list else ""
+        if proposed and proposed != current:
+            preview_text = f"{current} → {proposed}"
+            preview_color = TEAL_DIM
+        else:
+            preview_text = f"{current} (no transition previewed)"
+            preview_color = MUTED
+        children.append(html.Div([
+            slabel("Transition Preview"),
+            html.P(preview_text, style={"fontSize": "11px", "color": preview_color,
+                                          "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700"}),
+            html.P(rationale_text, style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
+        ], style={"marginTop": "12px"}))
+
     # Real, validated research classification (Layer 1/2) -- the ACTUAL
     # winning formula from the original research (OBS_Q4+PROG_Q4+
     # SPD=Y|DEI=N), not the different, disconnected setup_type/bucket
@@ -6478,6 +6500,20 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     except Exception:
         pass
 
+    # Real, read-only transition preview -- lightweight (computation
+    # only on already-fetched campaign data, no external API calls),
+    # so kept in the fast tier rather than throttled.
+    transition_preview_data = None
+    try:
+        tp_r = req.get(f"{BACKEND_HTTP}/api/campaigns/transition-preview",
+                        params={"symbol": clean, "limit": 50}, timeout=6)
+        if tp_r.ok:
+            tp_payload = tp_r.json()
+            if tp_payload.get("ok") and tp_payload.get("transitions"):
+                transition_preview_data = tp_payload["transitions"][0]
+    except Exception:
+        pass
+
     # Real, validated obstacle score / SPD-DEI behavioral state (Layer
     # 1/2) -- meaningfully heavier than the other live-tick fetches
     # above (fetches 500+ daily bars, runs real wave-variable
@@ -6534,6 +6570,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "rel_volume": rel_volume,
         "sizing_data": sizing_data,
         "dominance_data": dominance_data,
+        "transition_preview_data": transition_preview_data,
         "validated_classification": validated_classification,
         "wyckoff_verdict": wyckoff_verdict,
         "campaign_analogs": campaign_analogs_data,
