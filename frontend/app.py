@@ -7568,7 +7568,19 @@ def logout(n):
 
 
 if __name__ == "__main__":
-    app.run(debug=False, host="0.0.0.0", port=8050)
+    # FIX (2026-08-06): confirmed via Flask's own documented behavior --
+    # app.run() uses Flask/Werkzeug's built-in development server, which
+    # is SINGLE-THREADED BY DEFAULT unless threaded=True is set. Without
+    # it, this entire service could only handle one request at a time,
+    # across every user, every ~2s live-price tick, and every button
+    # click -- a serious, well-documented production anti-pattern, and a
+    # more severe version of the single-Gunicorn-worker issue already
+    # found and fixed for the backend service tonight. Added threaded=True
+    # as the standard, low-risk fix (not migrating to a separate WSGI
+    # server like Gunicorn, since Dash apps can have quirks with
+    # multi-process servers due to in-memory state -- this stays
+    # single-process but now handles requests concurrently via threads).
+    app.run(debug=False, host="0.0.0.0", port=8050, threaded=True)
 
 # SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
 # Note: Opportunity Dashboard inline styles already force descriptive text to WHITE.
