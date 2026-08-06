@@ -4492,6 +4492,40 @@ def phase12_25_controlled_campaign_state_mutation_preflight(payload: dict):
     }
 # === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT END ===
 
+@app.post("/api/admin/repair-scoreboard-history")
+def admin_repair_scoreboard_history(limit: int = 500, _admin: str = Depends(require_admin)):
+    """
+    Wires the real, working repair_scoreboard_history() maintenance
+    utility -- explicitly documented in its own docstring as "safe to
+    run repeatedly", backfilling missing confidence grades and path
+    metrics on older scoreboard rows. Directly supports the real
+    track-record statistics feature. Admin-only and POST since this
+    is a real, mutating write operation.
+    """
+    try:
+        from backend.scoreboard_service import repair_scoreboard_history
+        result = repair_scoreboard_history(limit=limit)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/clear-duplicate-signals")
+def admin_clear_duplicate_signals(_admin: str = Depends(require_admin)):
+    """
+    Wires the real, working clear_duplicate_signals() maintenance
+    utility -- removes duplicate scoreboard rows, keeping only the
+    most recent per symbol+signal_type per day. Admin-only and POST
+    since this deletes rows.
+    """
+    try:
+        from backend.scoreboard_service import clear_duplicate_signals
+        removed = clear_duplicate_signals()
+        return {"ok": True, "removed": removed}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/scoreboard/real-stats")
 def scoreboard_real_stats():
     """
