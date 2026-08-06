@@ -6705,6 +6705,21 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     - Updates only the active candle's high/low/close while the selected timeframe is still open.
     - Appends a new candle only when the selected timeframe rolls over.
     """
+    # DIAGNOSTIC (2026-08-06): confirmed real, recurring (~hourly) OOM
+    # crashes on this service; root cause not yet definitively proven
+    # from static code reading alone. Logs actual process RSS every 30
+    # ticks (~5 min at the current 10s interval) so the next crash's
+    # logs show the real memory trajectory over time -- the same
+    # approach that directly revealed the actual backend OOM cause
+    # earlier tonight, rather than continuing to infer from code alone.
+    try:
+        if (seq or 0) % 30 == 0:
+            import psutil as _psutil, os as _os_mem
+            rss_mb = _psutil.Process(_os_mem.getpid()).memory_info().rss / (1024 * 1024)
+            print(f"[MEM] on_tick seq={seq}: {rss_mb:.1f} MB RSS", flush=True)
+    except Exception as _mem_exc:
+        print(f"[MEM] on_tick: failed to read memory ({_mem_exc})", flush=True)
+
     clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
 
     try:
@@ -7745,6 +7760,12 @@ if __name__ == "__main__":
     # worse than a slow one. See the follow-up investigation for
     # whether this was the genuine cause or a coincidence, before
     # re-attempting any concurrency fix here.
+    try:
+        import psutil as _psutil_startup, os as _os_startup
+        _startup_rss_mb = _psutil_startup.Process(_os_startup.getpid()).memory_info().rss / (1024 * 1024)
+        print(f"[MEM] STARTUP baseline: {_startup_rss_mb:.1f} MB RSS", flush=True)
+    except Exception as _startup_mem_exc:
+        print(f"[MEM] STARTUP: failed to read memory ({_startup_mem_exc})", flush=True)
     app.run(debug=False, host="0.0.0.0", port=8050)
 
 # SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
