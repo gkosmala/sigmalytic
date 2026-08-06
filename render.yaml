@@ -84,18 +84,24 @@ services:
         value: 3.11
       - key: BACKEND_URL
         value: "https://sigmalytic-backend.onrender.com"
-      - key: SIGMALYTIC_NIGHTLY_CRON_ENABLED
-        value: "true"
-      - key: SIGMALYTIC_NIGHTLY_CRON_TOKEN
-        sync: false
       - key: SIGMALYTIC_NIGHTLY_CRON_MAX_SYMBOLS
         value: "1500"
       - key: SIGMALYTIC_NIGHTLY_CRON_BAR_LIMIT
         value: "252"
       - key: SIGMALYTIC_NIGHTLY_CRON_TIMEFRAME
         value: "DAILY"
-      - key: SIGMALYTIC_NIGHTLY_CRON_TIMEOUT_SECONDS
-        value: "900"
+      # NOTE (2026-08-06): SIGMALYTIC_NIGHTLY_CRON_ENABLED, _TOKEN, and
+      # _TIMEOUT_SECONDS were removed from here -- confirmed via direct
+      # search that tools/render_nightly_campaign_refresh.py (this
+      # service's actual script) never reads any of them. All three
+      # were leftover from the old, replaced HTTP-based design
+      # described in that script's own docstring (it used to POST to
+      # backend's /api/admin/run-full-nightly and poll for completion;
+      # this service now runs the pipeline directly in its own process
+      # instead). The backend service's own copies of ENABLED/TOKEN are
+      # NOT removed -- that old endpoint still genuinely exists in
+      # main.py and still reads them, even though this cron no longer
+      # calls it.
 
   - type: cron
     name: sigmalytic-daily-report
