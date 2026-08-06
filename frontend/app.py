@@ -2952,7 +2952,10 @@ def build_reports_tab(selected_date=None, session=None):
         html.Button("Generate Report", id="reports-generate-btn", n_clicks=0,
             style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
                    "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        html.Div(id="reports-generate-message", style={"fontSize": "12px", "color": TEAL_DIM, "marginTop": "8px"}),
+        dcc.Loading(
+            html.Div(id="reports-generate-message", style={"fontSize": "12px", "color": TEAL_DIM, "marginTop": "8px"}),
+            type="dot", color=TEAL,
+        ),
     ], style={"marginTop": "16px", "padding": "16px", "border": f"1px solid {BORDER}", "borderRadius": "12px"}) if is_admin(session) else None
 
     if not dates:
@@ -5610,7 +5613,7 @@ def handle_generate_report(n_clicks, date_str, session):
             f"{BACKEND_HTTP}/api/admin/generate-report",
             params={"date": date_str},
             headers=_auth_headers(session),
-            timeout=90,  # this can genuinely take a while; not stuck
+            timeout=180,  # fetches 7 years of history for up to 100 symbols; can genuinely take a while
         )
         if r.status_code == 401:
             return "Not signed in, or session expired. Please sign in again."
