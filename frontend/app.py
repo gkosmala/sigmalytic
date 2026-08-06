@@ -1699,6 +1699,23 @@ def _render_behavioral_analysis_panel(live):
             html.P(rationale_text, style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
         ], style={"marginTop": "12px"}))
 
+    # Real, per-symbol evidence diagnostics -- confirmed genuine,
+    # database-only diagnostic (found via full audit of campaign_api.py,
+    # confirmed never called from the frontend at all).
+    ed = live.get("evidence_diagnostics_data")
+    if ed:
+        summary = ed.get("single_symbol_summary", {})
+        tier = summary.get("diagnostic_priority_tier", "—")
+        tier_color = TEAL_DIM if str(tier).startswith("A_") else (BLUE_DIM if str(tier).startswith("B_") else MUTED)
+        children.append(html.Div([
+            slabel("Evidence Diagnostics"),
+            html.P(f"{tier} — score {summary.get('diagnostic_priority_score', '—')}",
+                   style={"fontSize": "11px", "color": tier_color, "lineHeight": "1.6",
+                          "marginTop": "6px", "fontWeight": "700"}),
+            html.P(summary.get("campaign_explanation", ""),
+                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
+        ], style={"marginTop": "12px"}))
+
     # Real, validated research classification (Layer 1/2) -- the ACTUAL
     # winning formula from the original research (OBS_Q4+PROG_Q4+
     # SPD=Y|DEI=N), not the different, disconnected setup_type/bucket
@@ -6514,6 +6531,19 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     except Exception:
         pass
 
+    # Real, per-symbol evidence diagnostics -- confirmed database-only
+    # (no live Alpaca calls anywhere in this chain), so kept in the
+    # fast tier too.
+    evidence_diagnostics_data = None
+    try:
+        ed_r = req.get(f"{BACKEND_HTTP}/api/campaign/evidence-diagnostics/{clean}", timeout=6)
+        if ed_r.ok:
+            ed_payload = ed_r.json()
+            if ed_payload.get("found"):
+                evidence_diagnostics_data = ed_payload
+    except Exception:
+        pass
+
     # Real, validated obstacle score / SPD-DEI behavioral state (Layer
     # 1/2) -- meaningfully heavier than the other live-tick fetches
     # above (fetches 500+ daily bars, runs real wave-variable
@@ -6571,6 +6601,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "sizing_data": sizing_data,
         "dominance_data": dominance_data,
         "transition_preview_data": transition_preview_data,
+        "evidence_diagnostics_data": evidence_diagnostics_data,
         "validated_classification": validated_classification,
         "wyckoff_verdict": wyckoff_verdict,
         "campaign_analogs": campaign_analogs_data,
