@@ -215,7 +215,7 @@ def _log_trade_form() -> html.Div:
                 inp("jrn-notes", "Optional notes"),
             ], style={"flex": "2"}),
         ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "14px"}),
-        html.Div(id="jrn-submit-result"),
+        dcc.Loading(html.Div(id="jrn-submit-result"), type="dot", color=TEAL_DIM),
         html.Button("Log Trade Entry", id="jrn-submit", n_clicks=0, style={
             "background": TEAL_DIM, "color": NAVY, "border": "none",
             "borderRadius": "8px", "padding": "10px 24px", "fontWeight": "800",

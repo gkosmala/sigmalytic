@@ -1850,7 +1850,10 @@ def build_active_trade_panel(trade: dict, current_price: float):
 
         _btn("Exit Trade", "btn-exit-trade",
              color=RED_DIM, bg=RED_GLOW, border="rgba(239,68,68,.35)"),
-        html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
+        dcc.Loading(
+            html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
+            type="dot", color=RED_DIM,
+        ),
 
         dcc.Store(id="s-active-trade-id", data=trade.get("trade_id")),
     ])
@@ -1989,8 +1992,11 @@ def build_import_tab():
                 accept=".csv",
                 multiple=False,
             ),
-            html.Div(id="csv-upload-status",
-                     style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
+            dcc.Loading(
+                html.Div(id="csv-upload-status",
+                         style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
+                type="dot", color=TEAL,
+            ),
         ]),
     ])
 
@@ -4568,8 +4574,11 @@ def build_preferences_tab(user_id="", session=None):
         ], style={"marginBottom":"24px"}),
 
         # Status message
-        html.Div(id="prefs-status", style={"textAlign":"center","fontSize":"13px",
-                 "minHeight":"24px","marginBottom":"8px","color":TEAL_DIM}),
+        dcc.Loading(
+            html.Div(id="prefs-status", style={"textAlign":"center","fontSize":"13px",
+                     "minHeight":"24px","marginBottom":"8px","color":TEAL_DIM}),
+            type="dot", color=TEAL,
+        ),
 
         # Delivery Mode
         _card([_stitle("Delivery Mode"), _label("How often do you want alerts?"),
@@ -6532,7 +6541,10 @@ app.layout = html.Div([
                     _btn("Enter Trade", "btn-enter-trade",
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
-                html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
+                dcc.Loading(
+                    html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
+                    type="dot", color=TEAL,
+                ),
             ], style={"flex":"1","minWidth":"0","height":"640px","overflowY":"auto",
                        "background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
