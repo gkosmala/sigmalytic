@@ -6799,6 +6799,17 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     note_box("Portfolio tab error: " + str(e), "blue"),
                 ])
     elif tab=="journal":
+        # FIX (2026-08-06): same bug class already fixed for Heatmap,
+        # Reports, and Admin tonight -- this callback rebuilds every tab
+        # from scratch on every ~2s live-price tick, and
+        # build_trade_journal_tab() has real trade-entry form fields
+        # (symbol, entry date/price, shares, notes) with no memory of
+        # what the user had typed. A user actively logging a new trade
+        # could have their input wiped mid-keystroke. Only rebuild on a
+        # genuine tab switch.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if not _trigger.startswith("s-tab"):
+            return no_update, no_update, no_update, no_update
         if build_trade_journal_tab is None:
             main = card([
                 html.H2("Journal", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
