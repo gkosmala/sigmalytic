@@ -6410,9 +6410,19 @@ app.layout = html.Div([
     # (likely lengthened, or made per-user-aware) once there are
     # multiple concurrent subscribers, since it multiplies linearly
     # with active sessions.
-    dcc.Interval(id="i-alpaca", interval=2_000, n_intervals=0),
+    # URGENT (2026-08-06): reduced from 2000ms back toward a safer
+    # interval as an immediate, protective measure given a confirmed,
+    # recurring (roughly hourly) production OOM crash on this service.
+    # The 2s interval was a 10x increase from the original 20s, with
+    # several new backend calls added to every tick since -- a real,
+    # plausible driver of accumulating memory pressure over time even
+    # without a classic, single-object leak. Root cause not yet fully,
+    # definitively confirmed -- this is a direct, conservative lever to
+    # reduce load while investigation continues, not a claim that this
+    # alone fully explains the crash.
+    dcc.Interval(id="i-alpaca", interval=10_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
-    dcc.Interval(id="i-market-wire", interval=2_000, n_intervals=0),
+    dcc.Interval(id="i-market-wire", interval=15_000, n_intervals=0),
     dcc.Store(id="s-market-wire", data=None),
 
     html.Div([html.Div([
