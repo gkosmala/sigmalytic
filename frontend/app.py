@@ -781,8 +781,12 @@ def _cached_campaign_summary(ttl_seconds: int = 30):
         data = _get("/api/campaign/status")
 
     if isinstance(data, dict):
-        _WEIS_GAMMA_STATUS_CACHE["as_of"] = now
-        _WEIS_GAMMA_STATUS_CACHE["data"] = data
+        # FIX (2026-08-06): now that threaded=True enables genuine
+        # concurrent request handling, two separate key writes here
+        # created a brief window where a concurrent read could see an
+        # updated as_of paired with stale data. A single, atomic dict
+        # reassignment removes that window entirely.
+        _WEIS_GAMMA_STATUS_CACHE.update({"as_of": now, "data": data})
         return data
 
     return {}
