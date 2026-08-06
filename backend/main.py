@@ -4493,7 +4493,7 @@ def phase12_25_controlled_campaign_state_mutation_preflight(payload: dict):
 # === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT END ===
 
 @app.get("/api/campaigns/transition-preview")
-def phase12_17_controlled_transition_preview(limit: int = 50):
+def phase12_17_controlled_transition_preview(limit: int = 50, symbol: str = None):
     rows = []
     source_error = None
 
@@ -4505,6 +4505,10 @@ def phase12_17_controlled_transition_preview(limit: int = 50):
                 rows.append(row)
     except Exception as exc:
         source_error = str(exc)
+
+    if symbol:
+        sym = symbol.upper().strip()
+        rows = [r for r in rows if str(r.get("symbol", "")).upper() == sym]
 
     previews = [_phase12_17_transition_preview_for_row(row) for row in rows[:limit]]
 
