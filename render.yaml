@@ -60,7 +60,16 @@ services:
     # real, working safety net already proven on the backend tonight.
     # Real memory diagnostic logging (added moments ago) remains in
     # place to find the actual, definitive root cause in parallel.
-    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 150 --max-requests-jitter 30 --bind 0.0.0.0:$PORT --timeout 120
+    # FIX (2026-08-06): --timeout 120 was a real bug I introduced with
+    # this migration -- confirmed 7 different frontend callbacks
+    # (Generate Report, Symbol Backtest, and others) have their own
+    # internal timeout=180 for waiting on backend calls. With gunicorn
+    # at 120, any of these genuinely taking 120-180s would get its
+    # worker killed mid-request by gunicorn itself, causing a 502 --
+    # the exact same bug class already found and fixed for the
+    # backend's own gunicorn timeout earlier tonight. Raised to 240s
+    # to safely exceed all seven of these callbacks' own timeouts.
+    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 150 --max-requests-jitter 30 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
