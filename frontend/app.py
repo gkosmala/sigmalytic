@@ -5173,6 +5173,27 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
+    operator_footprint_block = _admin_card([
+        html.Div("EARLY OPERATOR FOOTPRINT REVIEW", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Real, read-only diagnostic (confirmed database-only, never "
+            "called from the frontend until now) showing early Composite "
+            "Operator footprint evidence across all active campaigns -- "
+            "distributions by archetype, risk context, and footprint "
+            "count, sorted by footprint strength.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Load Footprint Review", id="operator-footprint-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="operator-footprint-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     enriched_campaign_table_block = _admin_card([
         html.Div("ENRICHED CAMPAIGN TABLE (7-Year ODS Evidence)", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5238,6 +5259,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             closure_engine_block,
             state_transition_block,
             campaign_outcome_block,
+            operator_footprint_block,
             enriched_campaign_table_block,
             subscriber_alerts_block,
         ])
@@ -5543,6 +5565,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         closure_engine_block,
         state_transition_block,
         campaign_outcome_block,
+        operator_footprint_block,
         enriched_campaign_table_block,
         subscriber_alerts_block,
 
@@ -5783,6 +5806,61 @@ def handle_enriched_table(n_clicks, limit, session):
         return html.Div([
             html.Div(f"{coverage.get('enriched_rows', len(rows))} rows · "
                      f"{coverage.get('coverage_pct', '—')}% coverage",
+                     style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
+            html.Table([html.Thead(header), html.Tbody(body_rows)],
+                       style={"width": "100%", "borderCollapse": "collapse"}),
+        ], style={"maxHeight": "500px", "overflowY": "auto"})
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("operator-footprint-result", "children"),
+              Input("operator-footprint-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_operator_footprint(n_clicks, session):
+    """
+    Calls the real, already-mounted /api/campaign/early-operator-
+    footprint-review endpoint (found via full audit of campaign_api.py
+    -- confirmed database-only, genuinely mounted, but never called
+    from the frontend at all).
+    """
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/campaign/early-operator-footprint-review",
+            headers=_auth_headers(session),
+            timeout=30,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+
+        rows = payload.get("review_rows", [])[:20]
+        if not rows:
+            return f"No footprint rows found. {payload.get('total_campaigns', 0)} total campaigns reviewed."
+
+        header = html.Tr([
+            html.Th(h, style={"textAlign": "left", "padding": "6px 10px", "fontSize": "10px",
+                               "color": MUTED, "borderBottom": f"1px solid {BORDER}"})
+            for h in ["Symbol", "Footprint Count", "Archetype", "Risk Context", "State"]
+        ])
+        body_rows = [
+            html.Tr([
+                html.Td(row.get("symbol", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+                html.Td(str(row.get("footprint_count", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": TEAL_DIM}),
+                html.Td(str(row.get("archetype", "—")), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
+                html.Td(str(row.get("risk_context", "—")), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
+                html.Td(str(row.get("campaign_state", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
+            ])
+            for row in rows
+        ]
+
+        return html.Div([
+            html.Div(f"{payload.get('total_campaigns', 0)} campaigns reviewed · "
+                     f"{payload.get('review_rows_count', 0)} with footprint evidence",
                      style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
             html.Table([html.Thead(header), html.Tbody(body_rows)],
                        style={"width": "100%", "borderCollapse": "collapse"}),
