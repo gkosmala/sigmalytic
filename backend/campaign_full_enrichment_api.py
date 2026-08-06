@@ -3254,8 +3254,22 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     return c
 
 
+import threading as _enrichment_threading
+
 _ENRICHMENT_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
 _ENRICHMENT_CACHE_TTL_SECONDS = 600  # 10 minutes
+_ENRICHMENT_CACHE_LOCK = _enrichment_threading.Lock()
+_ENRICHMENT_KEY_LOCKS: Dict[int, _enrichment_threading.Lock] = {}
+_ENRICHMENT_KEY_LOCKS_LOCK = _enrichment_threading.Lock()
+
+
+def _get_enrichment_key_lock(limit: int) -> "_enrichment_threading.Lock":
+    with _ENRICHMENT_KEY_LOCKS_LOCK:
+        lock = _ENRICHMENT_KEY_LOCKS.get(limit)
+        if lock is None:
+            lock = _enrichment_threading.Lock()
+            _ENRICHMENT_KEY_LOCKS[limit] = lock
+        return lock
 
 
 @router.get("/api/campaigns/read-only/full-universe-enriched-campaign-table")
@@ -3275,58 +3289,83 @@ def full_universe_enriched_campaign_table(
     well within a single trading day. Not a substitute for the real
     computation; genuinely correct data is always what gets served,
     just not re-fetched from scratch on every retry.
+
+    FIX (2026-08-06): confirmed via a real production OOM crash and
+    its root-cause investigation (campaign_api.py's
+    _cached_endpoint_result) that a cache check without a lock has a
+    genuine thundering-herd risk -- two requests for the same limit
+    arriving close together could both see "no fresh cache" and both
+    independently run this same expensive 7-year fetch at once. This
+    cache had exactly that gap. Added the same single-flight, per-key
+    lock pattern already proven correct elsewhere in this codebase: a
+    second concurrent request for the same limit now waits for the
+    first to finish and gets its fresh result, instead of redoing the
+    work itself.
     """
     import time as _enrichment_time
 
     now = _enrichment_time.monotonic()
-    cached = _ENRICHMENT_CACHE.get(limit)
-    if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
-        return cached[1]
+    with _ENRICHMENT_CACHE_LOCK:
+        cached = _ENRICHMENT_CACHE.get(limit)
+        if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
+            return cached[1]
 
-    rows, source_status = _fetch_base_universe(limit)
-    symbols = [_symbol(r) for r in rows if _symbol(r)]
-    bars_by_symbol, market_status = _fetch_alpaca_bars(symbols)
+    key_lock = _get_enrichment_key_lock(limit)
+    with key_lock:
+        # Re-check after acquiring the lock -- another thread may have
+        # already computed and stored a fresh result while this one
+        # was waiting.
+        now = _enrichment_time.monotonic()
+        with _ENRICHMENT_CACHE_LOCK:
+            cached = _ENRICHMENT_CACHE.get(limit)
+            if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
+                return cached[1]
 
-    enriched_rows = []
-    for row in rows:
-        sym = _symbol(row)
-        bars = bars_by_symbol.get(sym, [])
-        enriched_rows.append(_enrich_row(row, bars))
+        rows, source_status = _fetch_base_universe(limit)
+        symbols = [_symbol(r) for r in rows if _symbol(r)]
+        bars_by_symbol, market_status = _fetch_alpaca_bars(symbols)
 
-    coverage = {
-        "requested_limit": limit,
-        "base_rows": len(rows),
-        "enriched_rows": len(enriched_rows),
-        "symbols_requested": len(symbols),
-        "symbols_with_bars": market_status.get("symbols_with_bars"),
-        "coverage_pct": round((len(enriched_rows) / len(rows)) * 100, 2) if rows else 0,
-    }
+        enriched_rows = []
+        for row in rows:
+            sym = _symbol(row)
+            bars = bars_by_symbol.get(sym, [])
+            enriched_rows.append(_enrich_row(row, bars))
 
-    result = {
-        "status": "PASS",
-        "mode": "FULL_UNIVERSE_ENRICHED_CAMPAIGN_TABLE",
-        "step90b_marker": STEP90B_MARKER,
-        "created_utc": _now(),
-        "row_count": len(enriched_rows),
-        "coverage": coverage,
-        "source_status": source_status,
-        "market_data_status": market_status,
-        "rows": enriched_rows,
-        "safety": {
-            "read_only": True,
-            "database_write": False,
-            "supabase_write": False,
-            "campaign_mutation": False,
-            "daily_bars_mutation": False,
-            "d3d": False,
-            "operator_control_confirmation_from_score": False,
-            "operator_control_confirmation_requires_direct_evidence": True,
-            "trade_signal": False,
-            "stripe": False,
-            "broker_execution": False,
-        },
-    }
-    _ENRICHMENT_CACHE[limit] = (now, result)
-    return result
+        coverage = {
+            "requested_limit": limit,
+            "base_rows": len(rows),
+            "enriched_rows": len(enriched_rows),
+            "symbols_requested": len(symbols),
+            "symbols_with_bars": market_status.get("symbols_with_bars"),
+            "coverage_pct": round((len(enriched_rows) / len(rows)) * 100, 2) if rows else 0,
+        }
+
+        result = {
+            "status": "PASS",
+            "mode": "FULL_UNIVERSE_ENRICHED_CAMPAIGN_TABLE",
+            "step90b_marker": STEP90B_MARKER,
+            "created_utc": _now(),
+            "row_count": len(enriched_rows),
+            "coverage": coverage,
+            "source_status": source_status,
+            "market_data_status": market_status,
+            "rows": enriched_rows,
+            "safety": {
+                "read_only": True,
+                "database_write": False,
+                "supabase_write": False,
+                "campaign_mutation": False,
+                "daily_bars_mutation": False,
+                "d3d": False,
+                "operator_control_confirmation_from_score": False,
+                "operator_control_confirmation_requires_direct_evidence": True,
+                "trade_signal": False,
+                "stripe": False,
+                "broker_execution": False,
+            },
+        }
+        with _ENRICHMENT_CACHE_LOCK:
+            _ENRICHMENT_CACHE[limit] = (now, result)
+        return result
 
 
