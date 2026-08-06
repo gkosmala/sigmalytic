@@ -6846,6 +6846,14 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 note_box(f"Billing module loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="preferences":
+        # FIX (2026-08-06): same bug class already fixed for Heatmap,
+        # Reports, Admin, and Journal tonight -- build_preferences_tab()
+        # has a real watchlist symbol input field (prefs-sym-input) with
+        # no guard against this callback's every-~2s live-tick rebuild.
+        # Only rebuild on a genuine tab switch.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if not _trigger.startswith("s-tab"):
+            return no_update, no_update, no_update, no_update
         try:
             main = build_preferences_tab(user_id="", session=None)
         except Exception as e:
