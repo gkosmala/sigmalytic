@@ -4,6 +4,22 @@ services:
     runtime: python
     region: oregon
     buildCommand: pip install -r requirements.txt
+    # IMPORTANT (2026-08-06): workers MUST stay at 1. Confirmed root
+    # cause of a real production OOM crash after briefly trying
+    # --workers 2: campaign_api.py's _cached_endpoint_result() uses a
+    # module-level, in-process-only cache + per-key threading.Lock to
+    # prevent concurrent requests from each independently running the
+    # same ~400-1000MB active_campaigns/rankings/status computation at
+    # once (a "thundering herd" bug already found and fixed once
+    # before, in an earlier session). That lock is a plain Python
+    # object -- it is NOT shared across separate Gunicorn worker
+    # processes. With 2+ workers, each has its own independent cache
+    # and lock, so two workers can each independently run the same
+    # heavy computation at the same time, defeating the existing
+    # protection entirely and reproducing the exact OOM crash that
+    # protection was built to prevent. A genuine multi-worker fix
+    # would require moving this cache/lock to something shared across
+    # processes (e.g. Redis), not just raising the worker count.
     startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 300
     envVars:
       - key: PYTHON_VERSION
