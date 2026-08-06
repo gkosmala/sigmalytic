@@ -314,9 +314,26 @@ def _evidence_presence_counts(campaigns: List[Dict[str, Any]]) -> Dict[str, int]
 
 @router.get("/evidence-diagnostics")
 def evidence_diagnostics():
-    campaigns = _store().get_active_campaigns()
-    campaigns = _attach_weis_gamma_summaries(campaigns)
+    # FIX (2026-08-06): confirmed this had zero caching, unlike
+    # active_campaigns/rankings/status (which all funnel through
+    # _cached_endpoint_result()). Given evidence-diagnostics/{symbol}
+    # and the transition-preview endpoint (both wired into the
+    # frontend's fast, ~2s live-tick cycle tonight) ultimately call
+    # this, it was being fully re-computed -- re-fetching and
+    # re-processing the entire active campaigns list from Supabase --
+    # every ~2 seconds per active user, with no caching at all. A real,
+    # ongoing source of unnecessary load discovered while investigating
+    # tonight's confirmed OOM crash. Same 15s TTL as the other cached
+    # endpoints for consistency.
+    def _compute():
+        campaigns = _store().get_active_campaigns()
+        campaigns = _attach_weis_gamma_summaries(campaigns)
+        return _evidence_diagnostics_uncached(campaigns)
 
+    return _cached_endpoint_result("evidence_diagnostics", 15, _compute)
+
+
+def _evidence_diagnostics_uncached(campaigns):
     full_depth_rows = []
 
     for campaign in campaigns:
@@ -2865,7 +2882,20 @@ def early_operator_footprint_review():
     This endpoint does not mutate campaigns.
     This endpoint does not change scores, ranks, campaign states, transitions,
     or operator-control confirmation.
+
+    FIX (2026-08-06): thin wrapper added so repeated calls within 15s
+    hit the same cache pattern already used for active_campaigns/
+    rankings/status/evidence_diagnostics, rather than each independently
+    re-fetching and re-processing the full active campaigns list --
+    found while investigating tonight's confirmed OOM crash. Lower
+    urgency than evidence_diagnostics (this one is only on-demand via
+    an admin button, not the fast live-tick cycle), but fixed for
+    consistency and safety.
     """
+    return _cached_endpoint_result("early_operator_footprint_review", 15, _early_operator_footprint_review_uncached)
+
+
+def _early_operator_footprint_review_uncached():
     from collections import Counter
 
     def _as_dict(value):
