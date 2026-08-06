@@ -3541,24 +3541,6 @@ def health():
     }
 
 
-# FIX (2026-07-29): user-reported backend OOM crashes (>2GB), traced to
-# these three functions (active_campaigns, rankings, status) each doing a
-# full Supabase fetch + weis-gamma-summary attachment across all active
-# campaigns (up to ~280), from scratch, with zero caching, on every call.
-# Multiple frontend endpoints funnel into these same three functions
-# independently within the same ~20s poll cycle (backend/intelligence_api.py's
-# /rankings, /status-center, /opportunities, /dashboard, plus these routes
-# directly) -- meaning a single frontend refresh cycle could trigger this
-# expensive work being redone many times over in a single-worker process,
-# with no coordination between callers. A short shared cache collapses
-# all of those into one real computation per TTL window, regardless of
-# how many different endpoints/callers hit it in that window.
-_CAMPAIGN_ENDPOINT_CACHE_LOCK = threading.Lock()
-_CAMPAIGN_ENDPOINT_CACHE: Dict[str, tuple] = {}
-_CAMPAIGN_ENDPOINT_KEY_LOCKS: Dict[str, threading.Lock] = {}
-_CAMPAIGN_ENDPOINT_KEY_LOCKS_LOCK = threading.Lock()
-
-
 def _log_mem(tag: str) -> None:
     """
     DIAGNOSTIC INSTRUMENTATION (2026-07-29): added to get certainty about
@@ -3577,56 +3559,36 @@ def _log_mem(tag: str) -> None:
         log.warning(f"[MEM] {tag}: failed to read memory ({e})")
 
 
-def _get_key_lock(cache_key: str) -> threading.Lock:
-    with _CAMPAIGN_ENDPOINT_KEY_LOCKS_LOCK:
-        lock = _CAMPAIGN_ENDPOINT_KEY_LOCKS.get(cache_key)
-        if lock is None:
-            lock = threading.Lock()
-            _CAMPAIGN_ENDPOINT_KEY_LOCKS[cache_key] = lock
-        return lock
-
-
 def _cached_endpoint_result(cache_key: str, ttl_seconds: float, compute_fn):
-    now = time.time()
-    with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
-        cached = _CAMPAIGN_ENDPOINT_CACHE.get(cache_key)
-        if cached and (now - cached[0]) < ttl_seconds:
-            return cached[1]
+    """
+    FIX (2026-08-06): confirmed real root cause of a production OOM
+    crash -- the previous implementation's single-flight lock (see git
+    history) was a plain, module-level Python dict + threading.Lock,
+    which only works within a single process. With gunicorn workers > 1,
+    each worker had its own independent copy, so two workers could each
+    independently run the same ~400-1000MB computation at the same
+    time, completely defeating the protection this function's own prior
+    docstring describes. That's the actual, confirmed cause of the
+    crash that forced reverting back to 1 worker.
 
-    # SINGLE-FLIGHT FIX (2026-07-29): confirmed via live memory
-    # instrumentation that the previous version of this function had a
-    # real thundering-herd bug -- the lock only protected the cache
-    # dict's *check*, not the compute itself, so two requests arriving
-    # close together could both see "no fresh cache" and both
-    # independently run the same ~400-500MB computation at the same
-    # time, compounding instead of one being prevented (observed
-    # directly: two concurrent active_campaigns computations both
-    # starting from the same baseline RSS reading). Holding a per-key
-    # lock for the entire check+compute+store means a second concurrent
-    # request for the SAME key now blocks and waits for the first to
-    # finish, then gets its now-fresh cached result, instead of
-    # redoing the work itself. Per-key (not one global lock) so
-    # different keys (active_campaigns/rankings/status) can still
-    # compute concurrently with each other.
-    key_lock = _get_key_lock(cache_key)
-    with key_lock:
-        # Re-check the cache after acquiring the lock -- another thread
-        # may have already computed and stored a fresh result while this
-        # one was waiting.
-        now = time.time()
-        with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
-            cached = _CAMPAIGN_ENDPOINT_CACHE.get(cache_key)
-            if cached and (now - cached[0]) < ttl_seconds:
-                return cached[1]
+    Now delegates to backend.shared_cache.shared_cache, a port of the
+    already-proven, already-tested (with genuinely separate OS
+    processes) Redis-backed pattern already used on the frontend for
+    exactly this problem. Genuinely safe across multiple worker
+    processes -- the real, correct fix for "one slow request blocks
+    the entire single-worker backend", not just staying at 1 worker
+    forever. Kept the exact same function signature so no caller here
+    needs to change.
+    """
+    from backend.shared_cache import shared_cache
 
+    def _compute_with_logging():
         _log_mem(f"BEFORE compute {cache_key}")
         result = compute_fn()
         _log_mem(f"AFTER compute {cache_key}")
-
-        with _CAMPAIGN_ENDPOINT_CACHE_LOCK:
-            _CAMPAIGN_ENDPOINT_CACHE[cache_key] = (now, result)
-
         return result
+
+    return shared_cache.get_or_fetch(cache_key, _compute_with_logging, ttl_seconds=ttl_seconds)
 
 
 @router.get("/active")

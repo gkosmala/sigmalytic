@@ -22,7 +22,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.campaign_api import _cached_endpoint_result, _CAMPAIGN_ENDPOINT_CACHE
+from backend.campaign_api import _cached_endpoint_result
 
 
 def _fresh_key(prefix: str) -> str:
