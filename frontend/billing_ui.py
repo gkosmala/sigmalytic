@@ -166,8 +166,11 @@ def build_billing_tab(session=None, perms=None):
                     "display": "none"
                 }
             ),
-            html.Div(id="billing-portal-status", style={"fontSize": "12px",
-                     "color": MUTED, "marginTop": "8px"}),
+            dcc.Loading(
+                html.Div(id="billing-portal-status", style={"fontSize": "12px",
+                         "color": MUTED, "marginTop": "8px"}),
+                type="dot", color=TEAL_DIM,
+            ),
         ]) if tier != "free" else html.Div(),
     ]) if user_id else html.Div()
 
