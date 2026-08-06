@@ -43,7 +43,24 @@ services:
     runtime: python
     region: oregon
     buildCommand: pip install -r requirements.txt
-    startCommand: python frontend/app.py
+    # UPDATE (2026-08-06): migrated from a direct `python frontend/
+    # app.py` invocation (Flask/Werkzeug's built-in dev server, with
+    # no periodic recycling at all) to gunicorn, given a confirmed,
+    # recurring (~hourly) OOM crash whose exact root cause has not
+    # been definitively proven from static code analysis alone.
+    # `server = app.server` already existed in app.py (the standard
+    # Dash pattern exposing the real underlying Flask app), making
+    # this a clean migration with no changes needed to app.py's own
+    # logic. Deliberately conservative: workers=1 (not reintroducing
+    # the multi-process risk that caused the backend's earlier OOM
+    # crash tonight, without first understanding this app's own
+    # thread/process-safety). The real, valuable protection here is
+    # --max-requests: periodic worker recycling clears any
+    # accumulated memory regardless of the exact leak cause, the same
+    # real, working safety net already proven on the backend tonight.
+    # Real memory diagnostic logging (added moments ago) remains in
+    # place to find the actual, definitive root cause in parallel.
+    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 150 --max-requests-jitter 30 --bind 0.0.0.0:$PORT --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
