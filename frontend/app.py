@@ -7721,19 +7721,21 @@ def logout(n):
 
 
 if __name__ == "__main__":
-    # FIX (2026-08-06): confirmed via Flask's own documented behavior --
-    # app.run() uses Flask/Werkzeug's built-in development server, which
-    # is SINGLE-THREADED BY DEFAULT unless threaded=True is set. Without
-    # it, this entire service could only handle one request at a time,
-    # across every user, every ~2s live-price tick, and every button
-    # click -- a serious, well-documented production anti-pattern, and a
-    # more severe version of the single-Gunicorn-worker issue already
-    # found and fixed for the backend service tonight. Added threaded=True
-    # as the standard, low-risk fix (not migrating to a separate WSGI
-    # server like Gunicorn, since Dash apps can have quirks with
-    # multi-process servers due to in-memory state -- this stays
-    # single-process but now handles requests concurrently via threads).
-    app.run(debug=False, host="0.0.0.0", port=8050, threaded=True)
+    # URGENT REVERT (2026-08-06): threaded=True was added earlier
+    # tonight as a "standard, low-risk fix" for the frontend being
+    # single-threaded by default. A real OOM crash was then reported
+    # on this exact service, timed directly after that change went
+    # live. Reverting immediately -- same lesson as the backend's
+    # earlier OOM crash tonight: stop a confirmed, active production
+    # risk first, investigate the actual root cause properly second,
+    # rather than assume a change was safe just because it's a
+    # commonly-recommended pattern in general. The real, underlying
+    # "one request blocks everyone" problem this was meant to fix is
+    # real and still unsolved -- but a crashing service is strictly
+    # worse than a slow one. See the follow-up investigation for
+    # whether this was the genuine cause or a coincidence, before
+    # re-attempting any concurrency fix here.
+    app.run(debug=False, host="0.0.0.0", port=8050)
 
 # SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
 # Note: Opportunity Dashboard inline styles already force descriptive text to WHITE.
