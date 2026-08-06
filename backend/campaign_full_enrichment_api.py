@@ -3254,10 +3254,35 @@ def _enrich_row(row: Dict[str, Any], bars: List[Dict[str, Any]]) -> Dict[str, An
     return c
 
 
+_ENRICHMENT_CACHE: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_ENRICHMENT_CACHE_TTL_SECONDS = 600  # 10 minutes
+
+
 @router.get("/api/campaigns/read-only/full-universe-enriched-campaign-table")
 def full_universe_enriched_campaign_table(
     limit: int = Query(100, ge=1, le=250),
 ) -> Dict[str, Any]:
+    """
+    FIX (2026-08-05): confirmed this endpoint fetches 7 years of real
+    Alpaca daily bars for every requested symbol, from scratch, on
+    every single call -- no caching at all. Both the automated daily
+    report cron (tools/render_daily_report_generator.py) and manual
+    retries from the Admin tab were paying this full cost every time,
+    plausibly explaining real timeouts observed tonight (user's manual
+    trigger timed out at 90s; the cron's own timeout was only 120s).
+    Added a simple, short-TTL (10 min) in-memory cache keyed by limit
+    -- retries within that window are now fast, while still refreshing
+    well within a single trading day. Not a substitute for the real
+    computation; genuinely correct data is always what gets served,
+    just not re-fetched from scratch on every retry.
+    """
+    import time as _enrichment_time
+
+    now = _enrichment_time.monotonic()
+    cached = _ENRICHMENT_CACHE.get(limit)
+    if cached and (now - cached[0]) < _ENRICHMENT_CACHE_TTL_SECONDS:
+        return cached[1]
+
     rows, source_status = _fetch_base_universe(limit)
     symbols = [_symbol(r) for r in rows if _symbol(r)]
     bars_by_symbol, market_status = _fetch_alpaca_bars(symbols)
@@ -3277,7 +3302,7 @@ def full_universe_enriched_campaign_table(
         "coverage_pct": round((len(enriched_rows) / len(rows)) * 100, 2) if rows else 0,
     }
 
-    return {
+    result = {
         "status": "PASS",
         "mode": "FULL_UNIVERSE_ENRICHED_CAMPAIGN_TABLE",
         "step90b_marker": STEP90B_MARKER,
@@ -3301,5 +3326,7 @@ def full_universe_enriched_campaign_table(
             "broker_execution": False,
         },
     }
+    _ENRICHMENT_CACHE[limit] = (now, result)
+    return result
 
 

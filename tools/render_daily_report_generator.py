@@ -31,7 +31,7 @@ def main() -> int:
 
     print(f"[REPORT_CRON] Requesting report generation: {url}", flush=True)
     try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
+        with urllib.request.urlopen(url, timeout=240) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         print(f"[REPORT_CRON] Failed: {exc}", flush=True)
