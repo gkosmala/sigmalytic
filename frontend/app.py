@@ -6810,9 +6810,10 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # Real, validated obstacle score / SPD-DEI behavioral state (Layer
     # 1/2) -- meaningfully heavier than the other live-tick fetches
     # above (fetches 500+ daily bars, runs real wave-variable
-    # computation), so throttled to roughly once a minute rather than
-    # every 2-second tick. Carries forward the previous value from
-    # `current` between refreshes so it doesn't flicker to empty.
+    # computation), so throttled to roughly once every 5 minutes
+    # (30 ticks at the current 10s interval) rather than every tick.
+    # Carries forward the previous value from `current` between
+    # refreshes so it doesn't flicker to empty.
     validated_classification = (current or {}).get("validated_classification")
     if (seq or 0) % 30 == 0:
         try:
