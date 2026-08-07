@@ -69,7 +69,18 @@ services:
     # the exact same bug class already found and fixed for the
     # backend's own gunicorn timeout earlier tonight. Raised to 240s
     # to safely exceed all seven of these callbacks' own timeouts.
-    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 150 --max-requests-jitter 30 --bind 0.0.0.0:$PORT --timeout 240
+    # URGENT (2026-08-06): --max-requests 150 did NOT stop the crash --
+    # confirmed via a full day's deploy log showing continued OOM
+    # every ~15-40 min for 12+ hours even with this recycling active.
+    # This means the leak is severe enough to hit the 2GB ceiling
+    # BEFORE a worker completes 150 requests -- the OOM kill happens
+    # before recycling ever gets a chance to help at all. Lowered
+    # drastically to force much more frequent recycling as an
+    # immediate stopgap. This is not a fix for the actual root cause,
+    # which is still not identified -- it's damage control while real
+    # evidence (the [MEM] diagnostic logs already in place) is used to
+    # find it directly.
+    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 20 --max-requests-jitter 5 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
