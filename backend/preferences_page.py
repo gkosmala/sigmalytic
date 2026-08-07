@@ -5,6 +5,22 @@ Standalone FastAPI route serving a full HTML preferences page.
 Mount in main.py:
     from preferences_page import router as prefs_page_router
     app.include_router(prefs_page_router)
+
+NOTE (2026-08-07): confirmed via full-codebase search this router is
+genuinely never mounted anywhere -- the include_router() call shown
+above was never actually added to main.py. The live, actual
+preferences UI is frontend/app.py's own inline build_preferences_tab()
+function inside the main Dash app (frontend/preferences_tab.py is
+ALSO unused, for the same reason -- app.py never imports it either).
+This file is intentionally left as dead code rather than deleted,
+since it's a real, complete, working standalone page that could be
+revived (e.g. for an email 'manage your preferences' link) -- but as
+of this note, it is not live, not reachable, and not a bug. If ever
+mounted, note the alert type options (wyckoff/gann/ab_score/elliott/
+fibonacci) reference several methods (Gann, Elliott) already
+deliberately excluded from the live scoring system's doctrine -- see
+doctrine_deep_engine.py's own docstring -- and would need updating
+first to avoid offering toggles for signals that no longer exist.
 """
 
 from fastapi import APIRouter
