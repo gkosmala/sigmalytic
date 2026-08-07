@@ -6707,13 +6707,20 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     """
     # DIAGNOSTIC (2026-08-06): confirmed real, recurring (~hourly) OOM
     # crashes on this service; root cause not yet definitively proven
-    # from static code reading alone. Logs actual process RSS every 30
-    # ticks (~5 min at the current 10s interval) so the next crash's
-    # logs show the real memory trajectory over time -- the same
-    # approach that directly revealed the actual backend OOM cause
-    # earlier tonight, rather than continuing to infer from code alone.
+    # from static code reading alone. Logs actual process RSS so the
+    # next crash's logs show the real memory trajectory over time --
+    # the same approach that directly revealed the actual backend OOM
+    # cause earlier tonight, rather than continuing to infer from code
+    # alone.
+    # FIX: lowered from every 30 ticks (~5 min) to every 5 ticks
+    # (~50s) -- confirmed the worker now recycles roughly every 20
+    # requests (~3.3 min) given the aggressive max-requests=20
+    # stopgap, meaning the original 30-tick interval could rarely or
+    # never fire within a single worker's actual lifespan. This gives
+    # several real readings across a worker's life instead of
+    # possibly none.
     try:
-        if (seq or 0) % 30 == 0:
+        if (seq or 0) % 5 == 0:
             import psutil as _psutil, os as _os_mem
             rss_mb = _psutil.Process(_os_mem.getpid()).memory_info().rss / (1024 * 1024)
             print(f"[MEM] on_tick seq={seq}: {rss_mb:.1f} MB RSS", flush=True)
