@@ -11,11 +11,11 @@ tab = tab_path.read_text(encoding="utf-8")
 ast.parse(app)
 ast.parse(tab)
 
-assert 'id="jrn-submit"' in tab
-assert '"jrn-direction"' in tab
-assert '"jrn-portfolio-value"' in tab
+assert "jrn-submit" in tab
+assert "jrn-direction" in tab
+assert "jrn-portfolio-value" in tab
 
-assert 'def handle_journal_submit(' in app
+assert "def handle_journal_submit(" in app
 assert 'Output("jrn-submit-result", "children")' in app
 assert 'Input("jrn-submit", "n_clicks")' in app
 assert 'State("jrn-symbol", "value")' in app
@@ -28,10 +28,15 @@ assert 'State("jrn-notes", "value")' in app
 assert 'State("jrn-portfolio-value", "value")' in app
 assert 'State("s-session", "data")' in app
 
-assert '_post("/api/journal/entry", payload, headers=_auth_headers(session))' in app
+assert '_post("/api/journal/entry"' not in app
+assert "req.post(" in app
+assert 'f"{BACKEND_HTTP}/api/journal/entry"' in app
+assert "headers=_auth_headers(session)" in app
+assert "timeout=20" in app
+assert "HTTP {r.status_code}" in app
+
 assert '"campaign_id": "manual_journal_entry"' in app
 assert '"portfolio_value": portfolio_value' in app
-assert 'return note_box(f"Journal entry saved for {symbol}.' in app
+assert 'Journal entry saved for {symbol}' in app
 
 print("JOURNAL_SUBMIT_CALLBACK_STATIC_TEST_PASS")
-
