@@ -7790,6 +7790,86 @@ def logout(n):
     return no_update, no_update
 
 
+
+@app.callback(
+    Output("jrn-submit-result", "children"),
+    Input("jrn-submit", "n_clicks"),
+    State("jrn-symbol", "value"),
+    State("jrn-entry-date", "value"),
+    State("jrn-entry-price", "value"),
+    State("jrn-shares", "value"),
+    State("jrn-direction", "value"),
+    State("jrn-tier", "value"),
+    State("jrn-notes", "value"),
+    State("jrn-portfolio-value", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def handle_journal_submit(
+    n_clicks,
+    symbol,
+    entry_date,
+    entry_price,
+    shares,
+    direction,
+    tier,
+    notes,
+    portfolio_value,
+    session,
+):
+    if not n_clicks:
+        return no_update
+
+    symbol = (symbol or "").strip().upper()
+    direction = (direction or "LONG").strip().upper()
+    tier = tier or "MANUAL"
+    notes = (notes or "").strip()
+
+    if not symbol:
+        return note_box("Journal entry blocked: symbol is required.", "yellow")
+
+    if direction not in {"LONG", "SHORT"}:
+        return note_box("Journal entry blocked: direction must be LONG or SHORT.", "yellow")
+
+    if not entry_date:
+        return note_box("Journal entry blocked: entry date is required.", "yellow")
+
+    try:
+        entry_price = float(entry_price)
+        shares = float(shares)
+        portfolio_value = float(portfolio_value or 0)
+    except Exception:
+        return note_box("Journal entry blocked: entry price, shares, and portfolio value must be numeric.", "yellow")
+
+    if entry_price <= 0:
+        return note_box("Journal entry blocked: entry price must be greater than zero.", "yellow")
+
+    if shares <= 0:
+        return note_box("Journal entry blocked: shares must be greater than zero.", "yellow")
+
+    payload = {
+        "symbol": symbol,
+        "entry_date": entry_date,
+        "entry_price": entry_price,
+        "shares": shares,
+        "direction": direction,
+        "signal_id": None,
+        "campaign_id": "manual_journal_entry",
+        "tier": tier,
+        "notes": notes,
+        "portfolio_value": portfolio_value,
+    }
+
+    resp = _post("/api/journal/entry", payload, headers=_auth_headers(session))
+
+    if isinstance(resp, dict) and resp.get("ok"):
+        journal_id = resp.get("journal_id", "")
+        return note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Refresh the Journal tab to reload the table.", "green")
+
+    detail = resp.get("detail") if isinstance(resp, dict) else None
+    error = resp.get("error") if isinstance(resp, dict) else None
+    return note_box("Journal entry failed: " + str(detail or error or resp), "yellow")
+
 if __name__ == "__main__":
     # URGENT REVERT (2026-08-06): threaded=True was added earlier
     # tonight as a "standard, low-risk fix" for the frontend being

@@ -225,6 +225,23 @@ def _log_trade_form() -> html.Div:
                 inp("jrn-shares", "100", "number"),
             ], style={"flex": "1"}),
             html.Div([
+                html.Div("Direction", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                dcc.Dropdown(
+                    id="jrn-direction",
+                    options=[
+                        {"label": "LONG", "value": "LONG"},
+                        {"label": "SHORT", "value": "SHORT"},
+                    ],
+                    value="LONG",
+                    clearable=False,
+                    style={"background": NAVY_MID, "color": WHITE, "fontSize": "13px"},
+                ),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Portfolio Value", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-portfolio-value", "10000", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
                 html.Div("Tier", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
                 dcc.Dropdown(
                     id="jrn-tier",
