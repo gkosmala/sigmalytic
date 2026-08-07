@@ -7860,15 +7860,31 @@ def handle_journal_submit(
         "portfolio_value": portfolio_value,
     }
 
-    resp = _post("/api/journal/entry", payload, headers=_auth_headers(session))
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/journal/entry",
+            json=payload,
+            headers=_auth_headers(session),
+            timeout=20,
+        )
+        try:
+            resp = r.json()
+        except Exception:
+            resp = {"raw": r.text}
+    except Exception as exc:
+        return note_box(
+            f"Journal entry failed: request exception: {type(exc).__name__}: {exc}",
+            "yellow",
+        )
 
-    if isinstance(resp, dict) and resp.get("ok"):
+    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
         journal_id = resp.get("journal_id", "")
         return note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Refresh the Journal tab to reload the table.", "green")
 
     detail = resp.get("detail") if isinstance(resp, dict) else None
     error = resp.get("error") if isinstance(resp, dict) else None
-    return note_box("Journal entry failed: " + str(detail or error or resp), "yellow")
+    raw = resp.get("raw") if isinstance(resp, dict) else None
+    return note_box(f"Journal entry failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
 
 if __name__ == "__main__":
     # URGENT REVERT (2026-08-06): threaded=True was added earlier
