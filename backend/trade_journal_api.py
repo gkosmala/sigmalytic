@@ -14,6 +14,30 @@ Endpoints:
     GET  /api/journal/trades         — get all trades for a user
     GET  /api/journal/profile        — get trader behavioral profile
     GET  /api/journal/open           — get open trades only
+
+NOTE (2026-08-07): confirmed journal_router is genuinely never
+mounted in main.py -- only a comment references it (see main.py's
+"FIX (2026-07-28)" note), which added GET-only compatibility routes
+for /trades and /profile, but never added an equivalent for the real
+POST /entry and /exit/{id} endpoints here.
+
+Confirmed this is NOT the same system the live "Log Trade Entry" /
+"Exit Trade" UI buttons actually call -- those call behavior_router.py's
+POST /api/behavior/trade-entry and /trade-exit, which IS genuinely
+mounted and working. This file is a separate, parallel, more
+sophisticated system: log_trade_entry()/log_trade_exit() in
+trade_journal_service.py compute real signal-relative grading
+(entry FOMO score based on how late the entry was relative to when
+the original signal fired, sizing-quality grade against recommended
+tier sizing) that behavior_router.py's simpler flow does not.
+
+Not wired up here deliberately -- this uses raw psycopg2/DATABASE_URL
+access directly (the same pattern flagged elsewhere in this codebase
+as having caused real, historical production trouble), and mounting
+it would create two parallel "log a trade" systems rather than one.
+A genuine, valuable feature worth a deliberate integration decision
+later (e.g. merging its grading logic into the already-working
+behavior_router.py flow), not something to wire up casually.
 """
 
 from __future__ import annotations
