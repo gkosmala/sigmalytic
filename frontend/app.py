@@ -6341,6 +6341,43 @@ if ('serviceWorker' in navigator) {{
         }});
     }});
 }}
+// FIX (2026-08-07): confirmed, precisely-diagnosed root cause of a
+// long-standing (predates this entire session, confirmed present as
+// early as midnight) "Inputs do not match callback definition" error.
+// Traced to Dash's own source (_validate.py's
+// validate_and_group_input_args): it raises this exact error whenever
+// the number of values a client sends doesn't match what the server's
+// callback map currently expects for that callback. Since Dash's
+// callback map is fixed once at server startup, any browser tab whose
+// page load predates the server's current process (e.g. left open
+// across a deploy or a worker restart) can carry a stale, mismatched
+// count and will keep failing this exact way on every tick until
+// manually refreshed. Rather than leaving affected users stuck
+// silently failing, this intercepts fetch() specifically on Dash's
+// own callback endpoint, detects this exact failure, and forces a
+// clean, automatic reload -- the browser then loads fresh markup
+// that genuinely matches the current server, resolving it immediately
+// instead of requiring the user to notice and refresh manually.
+(function() {{
+    var _origFetch = window.fetch;
+    var _reloading = false;
+    window.fetch = function() {{
+        return _origFetch.apply(this, arguments).then(function(response) {{
+            if (!_reloading && response && response.status === 500
+                && typeof response.url === 'string'
+                && response.url.indexOf('_dash-update-component') !== -1) {{
+                response.clone().text().then(function(body) {{
+                    if (!_reloading && body && body.indexOf('Inputs do not match callback definition') !== -1) {{
+                        _reloading = true;
+                        console.warn('Sigmalytic: stale session detected (server restarted since this page loaded) -- reloading automatically.');
+                        window.location.reload();
+                    }}
+                }}).catch(function() {{}});
+            }}
+            return response;
+        }});
+    }};
+}})();
 </script>
 </body></html>"""
 
