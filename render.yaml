@@ -80,7 +80,18 @@ services:
     # which is still not identified -- it's damage control while real
     # evidence (the [MEM] diagnostic logs already in place) is used to
     # find it directly.
-    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 20 --max-requests-jitter 5 --bind 0.0.0.0:$PORT --timeout 240
+    # UPDATE (2026-08-07): incremental increase from the emergency
+    # stopgap (20) to 50 -- deliberately NOT a full revert to the
+    # previously-failed 150. Two things changed since 20 was set: real
+    # [MEM] evidence confirmed genuine stability (84-96 MB, flat) at
+    # the aggressive setting, and the CallbackException this frequent
+    # recycling was partly aggravating now has a real auto-reload fix.
+    # 50 requests (~8.3 min per worker at the current 10s tick
+    # interval) gives roughly 10 [MEM] readings per worker lifespan
+    # instead of ~4, enough to actually observe a trend rather than a
+    # brief snapshot, while staying well clear of the range already
+    # confirmed insufficient.
+    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 50 --max-requests-jitter 10 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
