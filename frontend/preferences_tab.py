@@ -4,6 +4,21 @@ preferences_tab.py - Sigmalytic Quant
 Clean ASCII-safe Preferences tab.
 
 This file only controls the Preferences tab.
+
+NOTE (2026-08-07): confirmed via full-frontend search this module is
+genuinely never imported anywhere -- app.py has its own separate,
+earlier, inline build_preferences_tab() function, which is the one
+actually used by the live "preferences" tab dispatch. This file
+appears to be an incomplete or abandoned rewrite attempt.
+
+Initially suspected this rewrite existed specifically to fix a real
+mojibake/encoding bug in app.py's inline version (given this file's
+own "ASCII-safe" framing) -- checked directly and that was wrong: the
+live version's few non-ASCII characters (an em/en dash, and a
+correctly-encoded "wavy dash" emoji for "Weis Wave Sensitivity") are
+all genuinely, properly encoded. No mojibake bug exists in the live
+version this file needed to fix. This is simply unused, duplicate
+code, not an urgent, never-shipped bugfix.
 """
 
 from __future__ import annotations
