@@ -7886,6 +7886,80 @@ def handle_journal_submit(
     raw = resp.get("raw") if isinstance(resp, dict) else None
     return note_box(f"Journal entry failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
 
+
+@app.callback(
+    Output("jrn-exit-result", "children"),
+    Input("jrn-exit-submit", "n_clicks"),
+    State("jrn-exit-id", "value"),
+    State("jrn-exit-date", "value"),
+    State("jrn-exit-price", "value"),
+    State("jrn-exit-reason", "value"),
+    State("jrn-exit-notes", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def handle_journal_exit(
+    n_clicks,
+    journal_id,
+    exit_date,
+    exit_price,
+    exit_reason,
+    notes,
+    session,
+):
+    if not n_clicks:
+        return no_update
+
+    journal_id = (journal_id or "").strip()
+    exit_reason = (exit_reason or "MANUAL").strip().upper()
+    notes = (notes or "").strip()
+
+    if not journal_id:
+        return note_box("Journal exit blocked: select an open journal trade.", "yellow")
+
+    if not exit_date:
+        return note_box("Journal exit blocked: exit date is required.", "yellow")
+
+    try:
+        exit_price = float(exit_price)
+    except Exception:
+        return note_box("Journal exit blocked: exit price must be numeric.", "yellow")
+
+    if exit_price <= 0:
+        return note_box("Journal exit blocked: exit price must be greater than zero.", "yellow")
+
+    payload = {
+        "exit_date": exit_date,
+        "exit_price": exit_price,
+        "exit_reason": exit_reason,
+        "notes": notes,
+    }
+
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/journal/exit/{journal_id}",
+            json=payload,
+            headers=_auth_headers(session),
+            timeout=20,
+        )
+        try:
+            resp = r.json()
+        except Exception:
+            resp = {"raw": r.text}
+    except Exception as exc:
+        return note_box(
+            f"Journal exit failed: request exception: {type(exc).__name__}: {exc}",
+            "yellow",
+        )
+
+    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
+        return note_box(f"Journal exit saved for {journal_id}. Refresh the Journal tab to reload the table.", "green")
+
+    detail = resp.get("detail") if isinstance(resp, dict) else None
+    error = resp.get("error") if isinstance(resp, dict) else None
+    raw = resp.get("raw") if isinstance(resp, dict) else None
+    return note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+
 if __name__ == "__main__":
     # URGENT REVERT (2026-08-06): threaded=True was added earlier
     # tonight as a "standard, low-risk fix" for the frontend being

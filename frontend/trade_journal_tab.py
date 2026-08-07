@@ -269,6 +269,79 @@ def _log_trade_form() -> html.Div:
     ])
 
 
+def _exit_trade_form(open_trades=None) -> html.Div:
+    """Simple form to close an open journal trade."""
+    open_trades = open_trades or []
+
+    inp = lambda id_, ph, typ="text": dcc.Input(
+        id=id_, type=typ, placeholder=ph,
+        style={"background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "8px",
+               "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+               "width": "100%", "outline": "none"},
+    )
+
+    options = []
+    for t in open_trades:
+        jid = t.get("journal_id")
+        if not jid:
+            continue
+        sym = t.get("symbol", "UNKNOWN")
+        entry = t.get("entry_price", 0)
+        entry_date = t.get("entry_date", "OPEN")
+        options.append({
+            "label": f"{sym} | {jid} | entry ${float(entry or 0):,.2f} | {entry_date}",
+            "value": jid,
+        })
+
+    return html.Div([
+        _section("Close / Exit Open Trade"),
+        html.Div([
+            html.Div([
+                html.Div("Open Journal Trade", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                dcc.Dropdown(
+                    id="jrn-exit-id",
+                    options=options,
+                    placeholder="Select open journal trade",
+                    style={"background": NAVY_MID, "color": WHITE, "fontSize": "13px"},
+                ),
+            ], style={"flex": "2"}),
+            html.Div([
+                html.Div("Exit Date", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-exit-date", "2026-08-07", "date"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Exit Price", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-exit-price", "101.00", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Exit Reason", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                dcc.Dropdown(
+                    id="jrn-exit-reason",
+                    options=[
+                        {"label": "MANUAL", "value": "MANUAL"},
+                        {"label": "TARGET HIT", "value": "TARGET_HIT"},
+                        {"label": "STOP LOSS", "value": "STOP_LOSS"},
+                        {"label": "THESIS INVALIDATED", "value": "THESIS_INVALIDATED"},
+                    ],
+                    value="MANUAL",
+                    clearable=False,
+                    style={"background": NAVY_MID, "color": WHITE, "fontSize": "13px"},
+                ),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Exit Notes", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-exit-notes", "Optional exit notes"),
+            ], style={"flex": "2"}),
+        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="jrn-exit-result"), type="dot", color=TEAL_DIM),
+        html.Button("Close / Exit Trade", id="jrn-exit-submit", n_clicks=0, style={
+            "background": RED_DIM, "color": NAVY, "border": "none",
+            "borderRadius": "8px", "padding": "10px 24px", "fontWeight": "800",
+            "fontSize": "13px", "cursor": "pointer",
+        }),
+    ])
+
+
 def build_trade_journal_tab(session=None) -> html.Div:
     """Build the Trade Journal tab."""
     user_id = _current_user_id(session)
@@ -374,6 +447,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
         # ── Log new trade ─────────────────────────────────────────────────
         _card([_log_trade_form()]),
+        _card([_exit_trade_form(open_trades)]),
 
         # ── Open trades ───────────────────────────────────────────────────
         _card([
