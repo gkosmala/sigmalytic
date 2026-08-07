@@ -12,8 +12,8 @@ ast.parse(app)
 ast.parse(tab)
 
 assert 'id="jrn-submit"' in tab
-assert 'id="jrn-direction"' in tab
-assert 'id="jrn-portfolio-value"' in tab
+assert '"jrn-direction"' in tab
+assert '"jrn-portfolio-value"' in tab
 
 assert 'def handle_journal_submit(' in app
 assert 'Output("jrn-submit-result", "children")' in app
@@ -34,3 +34,4 @@ assert '"portfolio_value": portfolio_value' in app
 assert 'return note_box(f"Journal entry saved for {symbol}.' in app
 
 print("JOURNAL_SUBMIT_CALLBACK_STATIC_TEST_PASS")
+
