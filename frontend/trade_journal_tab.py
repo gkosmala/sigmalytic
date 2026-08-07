@@ -29,6 +29,34 @@ except Exception:
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
+
+def _current_user_id(session=None) -> str:
+    """Resolve the active frontend session user without falling back inside callbacks."""
+    if isinstance(session, dict):
+        return (
+            session.get("user_id")
+            or session.get("id")
+            or session.get("sub")
+            or "demo_user_001"
+        )
+    return "demo_user_001"
+
+
+def _auth_headers(session=None) -> dict:
+    """Forward the active session bearer token when present; preserve demo fallback."""
+    token = ""
+    if isinstance(session, dict):
+        token = (
+            session.get("access_token")
+            or session.get("supabase_access_token")
+            or session.get("token")
+            or session.get("auth_token")
+            or ""
+        )
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": "Bearer demo"}
+
 NAVY      = "#0d1b2e"; NAVY_CARD = "#111f35"; NAVY_MID = "#0f172a"
 TEAL_DIM  = "#34d399"; RED_DIM   = "#f87171"; YELLOW_DIM = "#fde68a"
 BLUE_DIM  = "#93c5fd"; MUTED     = "#ffffff"; TEXT = "#ffffff"
@@ -226,16 +254,16 @@ def _log_trade_form() -> html.Div:
 
 def build_trade_journal_tab(session=None) -> html.Div:
     """Build the Trade Journal tab."""
-    user_id = "demo_user_001"  # replaced with real user_id when auth is wired
+    user_id = _current_user_id(session)
 
     def _do_fetch_trades():
         r = _rq.get(f"{BACKEND_HTTP}/api/journal/trades", timeout=15,
-                    headers={"Authorization": "Bearer demo"})
+                    headers=_auth_headers(session))
         return r.json() if r.ok else {}
 
     try:
         data = (
-            shared_cache.get_or_fetch("/api/journal/trades", _do_fetch_trades, ttl_seconds=15)
+            shared_cache.get_or_fetch(f"/api/journal/trades:{user_id}", _do_fetch_trades, ttl_seconds=15)
             if shared_cache is not None
             else _do_fetch_trades()
         )
@@ -245,12 +273,12 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
     def _do_fetch_profile():
         r2 = _rq.get(f"{BACKEND_HTTP}/api/journal/profile", timeout=15,
-                     headers={"Authorization": "Bearer demo"})
+                     headers=_auth_headers(session))
         return r2.json() if r2.ok else {}
 
     try:
         profile = (
-            shared_cache.get_or_fetch("/api/journal/profile", _do_fetch_profile, ttl_seconds=15)
+            shared_cache.get_or_fetch(f"/api/journal/profile:{user_id}", _do_fetch_profile, ttl_seconds=15)
             if shared_cache is not None
             else _do_fetch_profile()
         )
