@@ -53,6 +53,7 @@ from pydantic import BaseModel
 from backend.trade_journal_service import (
     log_trade_entry,
     log_trade_exit,
+    clear_journal_history,
     get_journal_entries,
     get_trader_profile,
 )
@@ -144,6 +145,21 @@ async def create_trade_exit(
         raise HTTPException(status_code=404, detail=f"Journal entry {journal_id} not found.")
 
     return {"ok": True, "journal_id": journal_id}
+
+
+@journal_router.post("/clear")
+async def clear_history(request: Request) -> dict:
+    """Clear all journal history for the current authenticated/demo journal user."""
+    user_id = get_user_id_from_request(request)
+    result = clear_journal_history(user_id)
+
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("error") or "Failed to clear journal history.",
+        )
+
+    return result
 
 
 @journal_router.get("/trades")

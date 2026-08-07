@@ -342,6 +342,23 @@ def _exit_trade_form(open_trades=None) -> html.Div:
     ])
 
 
+def _clear_history_form() -> html.Div:
+    """Danger-zone form to clear the current user's journal history."""
+    return html.Div([
+        _section("Clear Journal History"),
+        html.Div(
+            "This clears the current journal user's open positions, closed trades, and derived journal profile.",
+            style={"fontSize": "12px", "color": YELLOW_DIM, "marginBottom": "12px", "lineHeight": "1.5"},
+        ),
+        dcc.Loading(html.Div(id="jrn-clear-history-result"), type="dot", color=YELLOW_DIM),
+        html.Button("Clear Journal History", id="jrn-clear-history-submit", n_clicks=0, style={
+            "background": "transparent", "color": RED_DIM, "border": f"1px solid {RED_DIM}",
+            "borderRadius": "8px", "padding": "10px 24px", "fontWeight": "800",
+            "fontSize": "13px", "cursor": "pointer",
+        }),
+    ])
+
+
 def build_trade_journal_tab(session=None) -> html.Div:
     """Build the Trade Journal tab."""
     user_id = _current_user_id(session)
@@ -449,6 +466,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
         # ── Log new trade ─────────────────────────────────────────────────
         _card([_log_trade_form()]),
         _card([_exit_trade_form(open_trades)]),
+        _card([_clear_history_form()]),
 
         # ── Open trades ───────────────────────────────────────────────────
         _card([

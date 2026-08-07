@@ -7842,7 +7842,7 @@ def handle_journal_submit(
     session,
 ):
     if not n_clicks:
-        return _journal_exit_no_reset(no_update)
+        return _journal_entry_no_reset(no_update)
 
     symbol = (symbol or "").strip().upper()
     direction = (direction or "LONG").strip().upper()
@@ -7853,7 +7853,7 @@ def handle_journal_submit(
         return _journal_entry_no_reset(note_box("Journal entry blocked: symbol is required.", "yellow"))
 
     if direction not in {"LONG", "SHORT"}:
-        return note_box("Journal entry blocked: direction must be LONG or SHORT.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: direction must be LONG or SHORT.", "yellow"))
 
     if not entry_date:
         return _journal_entry_no_reset(note_box("Journal entry blocked: entry date is required.", "yellow"))
@@ -7866,10 +7866,10 @@ def handle_journal_submit(
         return _journal_entry_no_reset(note_box("Journal entry blocked: entry price, shares, and portfolio value must be numeric.", "yellow"))
 
     if entry_price <= 0:
-        return note_box("Journal entry blocked: entry price must be greater than zero.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: entry price must be greater than zero.", "yellow"))
 
     if shares <= 0:
-        return note_box("Journal entry blocked: shares must be greater than zero.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: shares must be greater than zero.", "yellow"))
 
     payload = {
         "symbol": symbol,
@@ -7896,10 +7896,10 @@ def handle_journal_submit(
         except Exception:
             resp = {"raw": r.text}
     except Exception as exc:
-        return note_box(
+        return _journal_entry_no_reset(note_box(
             f"Journal entry failed: request exception: {type(exc).__name__}: {exc}",
             "yellow",
-        )
+        ))
 
     if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
         journal_id = resp.get("journal_id", "")
@@ -7940,7 +7940,7 @@ def handle_journal_exit(
     session,
 ):
     if not n_clicks:
-        return no_update
+        return _journal_exit_no_reset(no_update)
 
     journal_id = (journal_id or "").strip()
     exit_reason = (exit_reason or "MANUAL").strip().upper()
@@ -7996,13 +7996,53 @@ def handle_journal_exit(
     return _journal_exit_no_reset(note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow"))
 
 
+
+@app.callback(
+    Output("jrn-clear-history-result", "children"),
+    Input("jrn-clear-history-submit", "n_clicks"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def handle_journal_clear_history(n_clicks, session):
+    if not n_clicks:
+        return no_update
+
+    try:
+        r = req.post(
+            f"{BACKEND_HTTP}/api/journal/clear",
+            headers=_auth_headers(session),
+            timeout=20,
+        )
+        try:
+            resp = r.json()
+        except Exception:
+            resp = {"raw": r.text}
+    except Exception as exc:
+        return note_box(
+            f"Journal clear failed: request exception: {type(exc).__name__}: {exc}",
+            "yellow",
+        )
+
+    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
+        deleted = resp.get("deleted", 0)
+        return html.Div([
+            note_box(f"Journal history cleared. Deleted {deleted} rows. Auto-refreshing journal table.", "green"),
+            dcc.Interval(id="jrn-clear-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
+        ])
+
+    detail = resp.get("detail") if isinstance(resp, dict) else None
+    error = resp.get("error") if isinstance(resp, dict) else None
+    raw = resp.get("raw") if isinstance(resp, dict) else None
+    return note_box(f"Journal clear failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+
 # JOURNAL_AUTO_REFRESH_CLIENTSIDE_CALLBACK
 app.clientside_callback(
     """
-    function(entry_ticks, exit_ticks) {
+    function(entry_ticks, exit_ticks, clear_ticks) {
         const entry = entry_ticks || 0;
         const exit = exit_ticks || 0;
-        if (entry > 0 || exit > 0) {
+        const clear = clear_ticks || 0;
+        if (entry > 0 || exit > 0 || clear > 0) {
             window.location.reload();
         }
         return "";
@@ -8011,6 +8051,7 @@ app.clientside_callback(
     Output("jrn-auto-refresh-dummy", "children"),
     Input("jrn-entry-auto-refresh", "n_intervals"),
     Input("jrn-exit-auto-refresh", "n_intervals"),
+    Input("jrn-clear-auto-refresh", "n_intervals"),
     prevent_initial_call=True,
 )
 

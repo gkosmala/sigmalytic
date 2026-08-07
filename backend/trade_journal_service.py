@@ -629,6 +629,35 @@ def log_trade_exit(
         return False
 
 
+def clear_journal_history(user_id: str) -> dict:
+    """Delete all trade journal rows and the derived profile for one user only."""
+    try:
+        sb = _supabase()
+
+        existing_res = (
+            sb.table("trade_journal")
+            .select("journal_id")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        existing_rows = _sb_rows(existing_res)
+        deleted_count = len(existing_rows)
+
+        sb.table("trade_journal").delete().eq("user_id", user_id).execute()
+
+        try:
+            sb.table("trader_profile").delete().eq("user_id", user_id).execute()
+        except Exception as profile_exc:
+            log.warning("Trader profile clear failed for %s: %s", user_id, profile_exc)
+
+        log.info("Journal history cleared for %s | deleted=%s", user_id, deleted_count)
+        return {"ok": True, "user_id": user_id, "deleted": deleted_count}
+
+    except Exception as exc:
+        log.error("Clear journal history error for %s: %s", user_id, exc)
+        return {"ok": False, "user_id": user_id, "deleted": 0, "error": str(exc)}
+
+
 def get_journal_entries(
     user_id: str,
     status:  Optional[str] = None,
