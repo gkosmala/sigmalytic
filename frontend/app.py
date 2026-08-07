@@ -5706,7 +5706,7 @@ app.clientside_callback(
 )
 def update_report_view(selected_date):
     if not selected_date:
-        return no_update, no_update, no_update
+        return _journal_entry_no_reset(no_update), no_update, no_update
     download_href = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf?download=true"
     download_name = f"Sigmalytic_Daily_Report_{selected_date}.pdf"
     try:
@@ -7791,8 +7791,32 @@ def logout(n):
 
 
 
+
+def _journal_entry_no_reset(message):
+    return (message, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update)
+
+
+def _journal_entry_reset(message):
+    return (message, "", None, None, None, "LONG", None, "", 10000)
+
+
+def _journal_exit_no_reset(message):
+    return (message, no_update, no_update, no_update, no_update, no_update)
+
+
+def _journal_exit_reset(message):
+    return (message, None, None, None, "MANUAL", "")
+
 @app.callback(
     Output("jrn-submit-result", "children"),
+    Output("jrn-symbol", "value"),
+    Output("jrn-entry-date", "value"),
+    Output("jrn-entry-price", "value"),
+    Output("jrn-shares", "value"),
+    Output("jrn-direction", "value"),
+    Output("jrn-tier", "value"),
+    Output("jrn-notes", "value"),
+    Output("jrn-portfolio-value", "value"),
     Input("jrn-submit", "n_clicks"),
     State("jrn-symbol", "value"),
     State("jrn-entry-date", "value"),
@@ -7818,7 +7842,7 @@ def handle_journal_submit(
     session,
 ):
     if not n_clicks:
-        return no_update
+        return _journal_exit_no_reset(no_update)
 
     symbol = (symbol or "").strip().upper()
     direction = (direction or "LONG").strip().upper()
@@ -7826,20 +7850,20 @@ def handle_journal_submit(
     notes = (notes or "").strip()
 
     if not symbol:
-        return note_box("Journal entry blocked: symbol is required.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: symbol is required.", "yellow"))
 
     if direction not in {"LONG", "SHORT"}:
         return note_box("Journal entry blocked: direction must be LONG or SHORT.", "yellow")
 
     if not entry_date:
-        return note_box("Journal entry blocked: entry date is required.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: entry date is required.", "yellow"))
 
     try:
         entry_price = float(entry_price)
         shares = float(shares)
         portfolio_value = float(portfolio_value or 0)
     except Exception:
-        return note_box("Journal entry blocked: entry price, shares, and portfolio value must be numeric.", "yellow")
+        return _journal_entry_no_reset(note_box("Journal entry blocked: entry price, shares, and portfolio value must be numeric.", "yellow"))
 
     if entry_price <= 0:
         return note_box("Journal entry blocked: entry price must be greater than zero.", "yellow")
@@ -7879,19 +7903,24 @@ def handle_journal_submit(
 
     if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
         journal_id = resp.get("journal_id", "")
-        return html.Div([
-            note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Auto-refreshing journal table.", "green"),
+        return _journal_entry_reset(html.Div([
+            note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Form reset. Auto-refreshing journal table.", "green"),
             dcc.Interval(id="jrn-entry-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
-        ])
+        ]))
 
     detail = resp.get("detail") if isinstance(resp, dict) else None
     error = resp.get("error") if isinstance(resp, dict) else None
     raw = resp.get("raw") if isinstance(resp, dict) else None
-    return note_box(f"Journal entry failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+    return _journal_entry_no_reset(note_box(f"Journal entry failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow"))
 
 
 @app.callback(
     Output("jrn-exit-result", "children"),
+    Output("jrn-exit-id", "value"),
+    Output("jrn-exit-date", "value"),
+    Output("jrn-exit-price", "value"),
+    Output("jrn-exit-reason", "value"),
+    Output("jrn-exit-notes", "value"),
     Input("jrn-exit-submit", "n_clicks"),
     State("jrn-exit-id", "value"),
     State("jrn-exit-date", "value"),
@@ -7918,18 +7947,18 @@ def handle_journal_exit(
     notes = (notes or "").strip()
 
     if not journal_id:
-        return note_box("Journal exit blocked: select an open journal trade.", "yellow")
+        return _journal_exit_no_reset(note_box("Journal exit blocked: select an open journal trade.", "yellow"))
 
     if not exit_date:
-        return note_box("Journal exit blocked: exit date is required.", "yellow")
+        return _journal_exit_no_reset(note_box("Journal exit blocked: exit date is required.", "yellow"))
 
     try:
         exit_price = float(exit_price)
     except Exception:
-        return note_box("Journal exit blocked: exit price must be numeric.", "yellow")
+        return _journal_exit_no_reset(note_box("Journal exit blocked: exit price must be numeric.", "yellow"))
 
     if exit_price <= 0:
-        return note_box("Journal exit blocked: exit price must be greater than zero.", "yellow")
+        return _journal_exit_no_reset(note_box("Journal exit blocked: exit price must be greater than zero.", "yellow"))
 
     payload = {
         "exit_date": exit_date,
@@ -7950,21 +7979,21 @@ def handle_journal_exit(
         except Exception:
             resp = {"raw": r.text}
     except Exception as exc:
-        return note_box(
+        return _journal_exit_no_reset(note_box(
             f"Journal exit failed: request exception: {type(exc).__name__}: {exc}",
             "yellow",
-        )
+        ))
 
     if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
-        return html.Div([
-            note_box(f"Journal exit saved for {journal_id}. Auto-refreshing journal table.", "green"),
+        return _journal_exit_reset(html.Div([
+            note_box(f"Journal exit saved for {journal_id}. Form reset. Auto-refreshing journal table.", "green"),
             dcc.Interval(id="jrn-exit-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
-        ])
+        ]))
 
     detail = resp.get("detail") if isinstance(resp, dict) else None
     error = resp.get("error") if isinstance(resp, dict) else None
     raw = resp.get("raw") if isinstance(resp, dict) else None
-    return note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+    return _journal_exit_no_reset(note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow"))
 
 
 # JOURNAL_AUTO_REFRESH_CLIENTSIDE_CALLBACK
