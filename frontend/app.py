@@ -7879,7 +7879,10 @@ def handle_journal_submit(
 
     if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
         journal_id = resp.get("journal_id", "")
-        return note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Refresh the Journal tab to reload the table.", "green")
+        return html.Div([
+            note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Auto-refreshing journal table.", "green"),
+            dcc.Interval(id="jrn-entry-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
+        ])
 
     detail = resp.get("detail") if isinstance(resp, dict) else None
     error = resp.get("error") if isinstance(resp, dict) else None
@@ -7953,12 +7956,34 @@ def handle_journal_exit(
         )
 
     if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
-        return note_box(f"Journal exit saved for {journal_id}. Refresh the Journal tab to reload the table.", "green")
+        return html.Div([
+            note_box(f"Journal exit saved for {journal_id}. Auto-refreshing journal table.", "green"),
+            dcc.Interval(id="jrn-exit-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
+        ])
 
     detail = resp.get("detail") if isinstance(resp, dict) else None
     error = resp.get("error") if isinstance(resp, dict) else None
     raw = resp.get("raw") if isinstance(resp, dict) else None
     return note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+
+
+# JOURNAL_AUTO_REFRESH_CLIENTSIDE_CALLBACK
+app.clientside_callback(
+    """
+    function(entry_ticks, exit_ticks) {
+        const entry = entry_ticks || 0;
+        const exit = exit_ticks || 0;
+        if (entry > 0 || exit > 0) {
+            window.location.reload();
+        }
+        return "";
+    }
+    """,
+    Output("jrn-auto-refresh-dummy", "children"),
+    Input("jrn-entry-auto-refresh", "n_intervals"),
+    Input("jrn-exit-auto-refresh", "n_intervals"),
+    prevent_initial_call=True,
+)
 
 if __name__ == "__main__":
     # URGENT REVERT (2026-08-06): threaded=True was added earlier

@@ -353,7 +353,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
     try:
         data = (
-            shared_cache.get_or_fetch(f"/api/journal/trades:{user_id}", _do_fetch_trades, ttl_seconds=15)
+            shared_cache.get_or_fetch(f"/api/journal/trades:{user_id}", _do_fetch_trades, ttl_seconds=1)
             if shared_cache is not None
             else _do_fetch_trades()
         )
@@ -368,7 +368,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
 
     try:
         profile = (
-            shared_cache.get_or_fetch(f"/api/journal/profile:{user_id}", _do_fetch_profile, ttl_seconds=15)
+            shared_cache.get_or_fetch(f"/api/journal/profile:{user_id}", _do_fetch_profile, ttl_seconds=1)
             if shared_cache is not None
             else _do_fetch_profile()
         )
@@ -396,6 +396,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
               "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px"})
 
     return html.Div([
+        html.Div(id="jrn-auto-refresh-dummy", style={"display": "none"}),
 
         # ── Behavioral Profile ────────────────────────────────────────────
         _card([
