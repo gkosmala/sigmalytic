@@ -72,6 +72,93 @@ log = logging.getLogger("trade_journal")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    or os.getenv("SUPABASE_SERVICE_KEY", "")
+    or os.getenv("SUPABASE_KEY", "")
+    or os.getenv("SUPABASE_ANON_KEY", "")
+)
+_SUPABASE_CLIENT = None
+
+
+def _supabase():
+    """
+    Return a cached Supabase client for active journal persistence.
+    """
+    global _SUPABASE_CLIENT
+    if _SUPABASE_CLIENT is not None:
+        return _SUPABASE_CLIENT
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("SUPABASE_URL and SUPABASE key are required for journal persistence")
+
+    try:
+        from supabase import create_client
+    except Exception as exc:
+        raise RuntimeError(f"Supabase client import failed: {exc}") from exc
+
+    _SUPABASE_CLIENT = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _SUPABASE_CLIENT
+
+
+def _sb_rows(result: Any) -> list[dict]:
+    data = getattr(result, "data", None)
+    if data is None:
+        return []
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        return [data]
+    return []
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def _date_or_none(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except Exception:
+        try:
+            return date.fromisoformat(raw[:10])
+        except Exception:
+            return None
+
+
+def _iso_date(value: Any) -> Optional[str]:
+    parsed = _date_or_none(value)
+    return parsed.isoformat() if parsed else None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 
 # ---------------------------------------------------------------------------
 # DB connection
@@ -364,76 +451,75 @@ def log_trade_entry(
     portfolio_value: float         = 0.0,
 ) -> Optional[str]:
     """
-    Log a new trade entry to the journal.
+    Log a new trade entry through Supabase.
     Returns journal_id if successful, None if failed.
     """
-    _ensure_tables()
-
     journal_id     = "jrn_" + uuid.uuid4().hex[:14]
-    position_value = float(entry_price) * shares
-
-    # Look up signal entry price for quality grading
-    signal_entry = None
-    signal_date  = None
-    if signal_id:
-        try:
-            conn = _db()
-            cur  = conn.cursor()
-            cur.execute(
-                "SELECT entry_price, signal_date FROM scoreboard_signals WHERE signal_id = %s",
-                (signal_id,)
-            )
-            row = cur.fetchone()
-            if row:
-                signal_entry = float(row[0]) if row[0] else None
-                signal_date  = row[1].date() if row[1] else None
-            cur.close()
-            conn.close()
-        except Exception as exc:
-            log.warning("Signal lookup failed: %s", exc)
-
-    days_after = (entry_date - signal_date).days if signal_date else 0
-    entry_grade = _grade_entry_quality(
-        float(entry_price), signal_entry, signal_date, entry_date
-    )
-    fomo_score = _compute_fomo_score(
-        float(entry_price), signal_entry, signal_entry, days_after
-    )
-
-    # Recommended sizing
-    recommended_pct = 21.2 if tier == "TIER_1" else (19.9 if tier == "TIER_2" else 0)
-    sizing_grade = _grade_sizing(position_value, portfolio_value, recommended_pct)
+    entry_price_f  = float(entry_price)
+    shares_i       = int(shares or 0)
+    position_value = entry_price_f * shares_i
 
     try:
-        conn = _db()
-        cur  = conn.cursor()
-        cur.execute("""
-            INSERT INTO trade_journal (
-                journal_id, user_id, symbol, direction,
-                entry_date, entry_price, shares, position_value,
-                signal_id, campaign_id, tier,
-                entry_quality_grade, fomo_score, sizing_grade,
-                notes, status, created_at, updated_at
-            ) VALUES (
-                %s,%s,%s,%s,
-                %s,%s,%s,%s,
-                %s,%s,%s,
-                %s,%s,%s,
-                %s,'OPEN',NOW(),NOW()
-            )
-        """, (
-            journal_id, user_id, symbol, direction,
-            entry_date, float(entry_price), shares, position_value,
-            signal_id, campaign_id, tier,
-            entry_grade, fomo_score, sizing_grade,
-            notes,
-        ))
-        conn.commit()
-        cur.close()
-        conn.close()
+        sb = _supabase()
 
-        log.info("Trade logged: %s %s @ $%s | grade=%s fomo=%.0f",
-                 symbol, direction, entry_price, entry_grade, fomo_score)
+        signal_entry = None
+        signal_date  = None
+
+        if signal_id:
+            try:
+                sig_res = (
+                    sb.table("scoreboard_signals")
+                    .select("entry_price, signal_date")
+                    .eq("signal_id", signal_id)
+                    .limit(1)
+                    .execute()
+                )
+                sig_rows = _sb_rows(sig_res)
+                if sig_rows:
+                    sig = sig_rows[0]
+                    signal_entry = _safe_float(sig.get("entry_price"), 0.0) or None
+                    signal_date = _date_or_none(sig.get("signal_date"))
+            except Exception as exc:
+                log.warning("Signal lookup failed: %s", exc)
+
+        days_after = (entry_date - signal_date).days if signal_date else 0
+        entry_grade = _grade_entry_quality(entry_price_f, signal_entry, signal_date, entry_date)
+        fomo_score = _compute_fomo_score(entry_price_f, signal_entry, signal_entry, days_after)
+
+        recommended_pct = 21.2 if tier == "TIER_1" else (19.9 if tier == "TIER_2" else 0)
+        sizing_grade = _grade_sizing(position_value, portfolio_value, recommended_pct)
+
+        payload = {
+            "journal_id": journal_id,
+            "user_id": user_id,
+            "symbol": str(symbol or "").upper().strip(),
+            "direction": str(direction or "LONG").upper().strip(),
+            "entry_date": _iso_date(entry_date),
+            "entry_price": entry_price_f,
+            "shares": shares_i,
+            "position_value": round(position_value, 2),
+            "signal_id": signal_id,
+            "campaign_id": campaign_id,
+            "tier": tier,
+            "entry_quality_grade": entry_grade,
+            "fomo_score": round(float(fomo_score or 0), 2),
+            "sizing_grade": sizing_grade,
+            "notes": notes,
+            "status": "OPEN",
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+        }
+
+        sb.table("trade_journal").insert(payload).execute()
+
+        log.info(
+            "Trade logged: %s %s @ $%s | grade=%s fomo=%.0f",
+            payload["symbol"],
+            payload["direction"],
+            entry_price,
+            entry_grade,
+            fomo_score,
+        )
         return journal_id
 
     except Exception as exc:
@@ -449,81 +535,93 @@ def log_trade_exit(
     notes:           Optional[str] = None,
 ) -> bool:
     """
-    Record the exit for an open trade and compute final grades.
+    Record the exit for an open trade through Supabase.
     Returns True if successful.
     """
     try:
-        conn = _db()
-        cur  = conn.cursor()
+        sb = _supabase()
 
-        # Fetch existing trade
-        cur.execute("""
-            SELECT entry_price, entry_date, shares, campaign_id,
-                   signal_id, tier, position_value
-            FROM trade_journal WHERE journal_id = %s
-        """, (journal_id,))
-        row = cur.fetchone()
-        if not row:
+        trade_res = (
+            sb.table("trade_journal")
+            .select(
+                "journal_id, user_id, entry_price, entry_date, shares, campaign_id, "
+                "signal_id, tier, position_value, notes"
+            )
+            .eq("journal_id", journal_id)
+            .limit(1)
+            .execute()
+        )
+        trade_rows = _sb_rows(trade_res)
+        if not trade_rows:
             log.warning("Journal entry not found: %s", journal_id)
-            cur.close()
-            conn.close()
             return False
 
-        entry_price, entry_date, shares, campaign_id, signal_id, tier, pos_val = row
-        entry_price  = float(entry_price)
+        row = trade_rows[0]
+
+        entry_price = _safe_float(row.get("entry_price"), 0.0)
+        entry_dt    = _date_or_none(row.get("entry_date"))
+        shares_i    = _safe_int(row.get("shares"), 0)
+        signal_id   = row.get("signal_id")
+        old_notes   = row.get("notes")
+
         exit_price_f = float(exit_price)
-        hold_days    = (exit_date - entry_date).days if entry_date else 0
-        pnl          = (exit_price_f - entry_price) * (shares or 0)
+        hold_days    = (exit_date - entry_dt).days if entry_dt else 0
+        pnl          = (exit_price_f - entry_price) * shares_i
         pnl_pct      = (exit_price_f - entry_price) / entry_price * 100 if entry_price > 0 else 0
 
-        # Look up target from signal
         target_price = None
         stop_price   = None
         campaign_age = hold_days
+
         if signal_id:
             try:
-                cur.execute(
-                    "SELECT target1, invalidation FROM scoreboard_signals WHERE signal_id = %s",
-                    (signal_id,)
+                sig_res = (
+                    sb.table("scoreboard_signals")
+                    .select("target1, invalidation")
+                    .eq("signal_id", signal_id)
+                    .limit(1)
+                    .execute()
                 )
-                sig = cur.fetchone()
-                if sig:
-                    target_price = float(sig[0]) if sig[0] else None
-                    stop_price   = float(sig[1]) if sig[1] else None
-            except Exception:
-                pass
+                sig_rows = _sb_rows(sig_res)
+                if sig_rows:
+                    sig = sig_rows[0]
+                    target_price = _safe_float(sig.get("target1"), 0.0) or None
+                    stop_price = _safe_float(sig.get("invalidation"), 0.0) or None
+            except Exception as exc:
+                log.warning("Signal target lookup failed for %s: %s", journal_id, exc)
 
         exit_grade     = _grade_exit_quality(exit_price_f, entry_price, target_price, stop_price, hold_days)
         patience_score = _compute_patience_score(hold_days, campaign_age, exit_reason)
 
-        cur.execute("""
-            UPDATE trade_journal SET
-                exit_date          = %s,
-                exit_price         = %s,
-                pnl                = %s,
-                pnl_pct            = %s,
-                hold_days          = %s,
-                exit_quality_grade = %s,
-                patience_score     = %s,
-                status             = 'CLOSED',
-                notes              = COALESCE(notes || ' | ' || %s, notes, %s),
-                updated_at         = NOW()
-            WHERE journal_id = %s
-        """, (
-            exit_date, float(exit_price), round(pnl, 2), round(pnl_pct, 4),
-            hold_days, exit_grade, patience_score,
-            f"Exit: {exit_reason}", f"Exit: {exit_reason}",
+        exit_note = f"Exit: {exit_reason}"
+        if notes:
+            exit_note = f"{exit_note} | {notes}"
+        combined_notes = exit_note if not old_notes else f"{old_notes} | {exit_note}"
+
+        update_payload = {
+            "exit_date": _iso_date(exit_date),
+            "exit_price": exit_price_f,
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(pnl_pct, 4),
+            "hold_days": hold_days,
+            "exit_quality_grade": exit_grade,
+            "patience_score": round(float(patience_score or 0), 2),
+            "status": "CLOSED",
+            "notes": combined_notes,
+            "updated_at": _now_iso(),
+        }
+
+        sb.table("trade_journal").update(update_payload).eq("journal_id", journal_id).execute()
+
+        log.info(
+            "Trade exit logged: %s | pnl=%.1f%% | exit_grade=%s | patience=%.0f",
             journal_id,
-        ))
-        conn.commit()
-        cur.close()
-        conn.close()
+            pnl_pct,
+            exit_grade,
+            patience_score,
+        )
 
-        log.info("Trade exit logged: %s | pnl=%.1f%% | exit_grade=%s | patience=%.0f",
-                 journal_id, pnl_pct, exit_grade, patience_score)
-
-        # Update trader profile
-        _update_trader_profile(row[0] if row else None, journal_id)
+        _update_trader_profile(None, journal_id)
         return True
 
     except Exception as exc:
@@ -536,73 +634,72 @@ def get_journal_entries(
     status:  Optional[str] = None,
     limit:   int            = 100,
 ) -> list[dict]:
-    """Fetch journal entries for a user."""
+    """Fetch journal entries for a user through Supabase."""
     try:
-        columns = (
-            "journal_id, symbol, direction, entry_date, entry_price, "
-            "exit_date, exit_price, shares, position_value, pnl, pnl_pct, "
-            "hold_days, tier, entry_quality_grade, exit_quality_grade, "
-            "patience_score, fomo_score, sizing_grade, status, notes, "
-            "signal_id, campaign_id, created_at"
-        )
-
+        sb = _supabase()
         query = (
-            _supabase()
-            .table("trade_journal")
-            .select(columns)
+            sb.table("trade_journal")
+            .select(
+                "journal_id, symbol, direction, entry_date, entry_price, exit_date, exit_price, "
+                "shares, position_value, pnl, pnl_pct, hold_days, tier, entry_quality_grade, "
+                "exit_quality_grade, patience_score, fomo_score, sizing_grade, status, notes, "
+                "signal_id, campaign_id, created_at"
+            )
             .eq("user_id", user_id)
         )
+
         if status:
             query = query.eq("status", status)
 
-        response = query.order("created_at", desc=True).limit(limit).execute()
-        rows = response.data or []
+        result = query.order("created_at", desc=True).limit(int(limit or 100)).execute()
+        rows = _sb_rows(result)
 
         return [
             {
                 "journal_id":          r.get("journal_id"),
                 "symbol":              r.get("symbol"),
                 "direction":           r.get("direction"),
-                "entry_date":          str(r["entry_date"]) if r.get("entry_date") else None,
-                "entry_price":         float(r["entry_price"]) if r.get("entry_price") else 0,
-                "exit_date":           str(r["exit_date"]) if r.get("exit_date") else None,
-                "exit_price":          float(r["exit_price"]) if r.get("exit_price") else 0,
-                "shares":              r.get("shares") or 0,
-                "position_value":      float(r["position_value"]) if r.get("position_value") else 0,
-                "pnl":                 float(r["pnl"]) if r.get("pnl") else 0,
-                "pnl_pct":             float(r["pnl_pct"]) if r.get("pnl_pct") else 0,
-                "hold_days":           r.get("hold_days") or 0,
+                "entry_date":          str(r.get("entry_date")) if r.get("entry_date") else None,
+                "entry_price":         _safe_float(r.get("entry_price"), 0.0),
+                "exit_date":           str(r.get("exit_date")) if r.get("exit_date") else None,
+                "exit_price":          _safe_float(r.get("exit_price"), 0.0),
+                "shares":              _safe_int(r.get("shares"), 0),
+                "position_value":      _safe_float(r.get("position_value"), 0.0),
+                "pnl":                 _safe_float(r.get("pnl"), 0.0),
+                "pnl_pct":             _safe_float(r.get("pnl_pct"), 0.0),
+                "hold_days":           _safe_int(r.get("hold_days"), 0),
                 "tier":                r.get("tier"),
                 "entry_quality_grade": r.get("entry_quality_grade"),
                 "exit_quality_grade":  r.get("exit_quality_grade"),
-                "patience_score":      float(r["patience_score"]) if r.get("patience_score") else 0,
-                "fomo_score":          float(r["fomo_score"]) if r.get("fomo_score") else 0,
+                "patience_score":      _safe_float(r.get("patience_score"), 0.0),
+                "fomo_score":          _safe_float(r.get("fomo_score"), 0.0),
                 "sizing_grade":        r.get("sizing_grade"),
                 "status":              r.get("status"),
                 "notes":               r.get("notes"),
                 "signal_id":           r.get("signal_id"),
                 "campaign_id":         r.get("campaign_id"),
-                "created_at":          str(r["created_at"]) if r.get("created_at") else None,
+                "created_at":          str(r.get("created_at")) if r.get("created_at") else None,
             }
             for r in rows
         ]
+
     except Exception as exc:
         log.error("Get journal error for %s: %s", user_id, exc)
         return []
 
 
 def get_trader_profile(user_id: str) -> dict:
-    """Get the behavioral profile for a trader."""
+    """Get the behavioral profile for a trader through Supabase."""
     try:
-        response = (
-            _supabase()
-            .table("trader_profile")
+        sb = _supabase()
+        result = (
+            sb.table("trader_profile")
             .select("*")
             .eq("user_id", user_id)
             .limit(1)
             .execute()
         )
-        rows = response.data or []
+        rows = _sb_rows(result)
 
         if not rows:
             return {"user_id": user_id, "total_trades": 0, "message": "No trades logged yet."}
@@ -615,88 +712,110 @@ def get_trader_profile(user_id: str) -> dict:
 
 
 def _update_trader_profile(entry_price_unused: Any, journal_id: str) -> None:
-    """Recompute the trader profile from all closed trades."""
+    """Recompute the trader profile from all closed trades through Supabase."""
     try:
-        conn = _db()
-        cur  = conn.cursor()
+        sb = _supabase()
 
-        # Get user_id from the journal entry
-        cur.execute("SELECT user_id FROM trade_journal WHERE journal_id = %s", (journal_id,))
-        row = cur.fetchone()
-        if not row:
-            cur.close()
-            conn.close()
-            return
-        user_id = row[0]
-
-        # Aggregate stats from all closed trades
-        cur.execute("""
-            SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE pnl > 0) as wins,
-                AVG(pnl_pct) as avg_pnl,
-                AVG(hold_days) as avg_hold,
-                AVG(patience_score) as avg_patience,
-                AVG(fomo_score) as avg_fomo
-            FROM trade_journal
-            WHERE user_id = %s AND status = 'CLOSED'
-        """, (user_id,))
-        stats = cur.fetchone()
-
-        cur.execute(
-            "SELECT COUNT(*) FROM trade_journal WHERE user_id = %s AND status = 'OPEN'",
-            (user_id,)
+        entry_res = (
+            sb.table("trade_journal")
+            .select("user_id")
+            .eq("journal_id", journal_id)
+            .limit(1)
+            .execute()
         )
-        open_count = cur.fetchone()[0]
+        entry_rows = _sb_rows(entry_res)
+        if not entry_rows:
+            return
 
-        if stats and stats[0] > 0:
-            total, wins, avg_pnl, avg_hold, avg_patience, avg_fomo = stats
-            win_rate = wins / total * 100
+        user_id = entry_rows[0].get("user_id")
+        if not user_id:
+            return
 
-            # Grade distributions
-            import json
-            for grade_col, dist_col in [
-                ("entry_quality_grade", "entry_grade_dist"),
-                ("exit_quality_grade", "exit_grade_dist"),
-            ]:
-                cur.execute(f"""
-                    SELECT {grade_col}, COUNT(*) FROM trade_journal
-                    WHERE user_id = %s AND status = 'CLOSED' AND {grade_col} IS NOT NULL
-                    GROUP BY {grade_col}
-                """, (user_id,))
-                dist = {r[0]: r[1] for r in cur.fetchall()}
-
-            # Behavioral trend
-            trend = "IMPROVING" if (avg_patience or 0) > 65 and (avg_fomo or 0) < 30 else (
-                "NEEDS_WORK" if (avg_fomo or 0) > 50 else "STABLE"
+        all_res = (
+            sb.table("trade_journal")
+            .select(
+                "status, pnl, pnl_pct, hold_days, patience_score, fomo_score, "
+                "entry_quality_grade, exit_quality_grade"
             )
+            .eq("user_id", user_id)
+            .execute()
+        )
+        all_rows = _sb_rows(all_res)
 
-            cur.execute("""
-                INSERT INTO trader_profile (
-                    user_id, total_trades, open_trades, win_rate, avg_pnl_pct,
-                    avg_hold_days, avg_patience_score, avg_fomo_score,
-                    behavioral_trend, updated_at
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
-                ON CONFLICT (user_id) DO UPDATE SET
-                    total_trades      = EXCLUDED.total_trades,
-                    open_trades       = EXCLUDED.open_trades,
-                    win_rate          = EXCLUDED.win_rate,
-                    avg_pnl_pct       = EXCLUDED.avg_pnl_pct,
-                    avg_hold_days     = EXCLUDED.avg_hold_days,
-                    avg_patience_score = EXCLUDED.avg_patience_score,
-                    avg_fomo_score    = EXCLUDED.avg_fomo_score,
-                    behavioral_trend  = EXCLUDED.behavioral_trend,
-                    updated_at        = EXCLUDED.updated_at
-            """, (
-                user_id, total, open_count, round(win_rate, 1),
-                round(float(avg_pnl or 0), 2), round(float(avg_hold or 0), 1),
-                round(float(avg_patience or 0), 1), round(float(avg_fomo or 0), 1),
-                trend,
-            ))
-            conn.commit()
+        closed = [r for r in all_rows if str(r.get("status") or "").upper() == "CLOSED"]
+        open_count = len([r for r in all_rows if str(r.get("status") or "").upper() == "OPEN"])
 
-        cur.close()
-        conn.close()
+        total = len(closed)
+        wins = len([r for r in closed if _safe_float(r.get("pnl"), 0.0) > 0])
+        win_rate = wins / total * 100 if total else 0.0
+
+        def avg(key: str) -> float:
+            vals = [_safe_float(r.get(key), 0.0) for r in closed if r.get(key) is not None]
+            return sum(vals) / len(vals) if vals else 0.0
+
+        def dist(key: str) -> dict:
+            out: dict[str, int] = {}
+            for r in closed:
+                grade = r.get(key)
+                if grade:
+                    out[str(grade)] = out.get(str(grade), 0) + 1
+            return out
+
+        avg_pnl = avg("pnl_pct")
+        avg_hold = avg("hold_days")
+        avg_patience = avg("patience_score")
+        avg_fomo = avg("fomo_score")
+
+        def grade_avg(key: str) -> float:
+            grade_points = {"A": 95.0, "B": 85.0, "C": 75.0, "D": 65.0, "F": 40.0}
+            vals = [
+                grade_points[str(r.get(key)).upper()]
+                for r in closed
+                if str(r.get(key)).upper() in grade_points
+            ]
+            return sum(vals) / len(vals) if vals else 0.0
+
+        avg_entry_quality = grade_avg("entry_quality_grade")
+        avg_exit_quality = grade_avg("exit_quality_grade")
+
+        trend = "IMPROVING" if avg_patience > 65 and avg_fomo < 30 else (
+            "NEEDS_WORK" if avg_fomo > 50 else "STABLE"
+        )
+
+        strongest_pattern = "PATIENCE" if avg_patience >= 70 else (
+            "ENTRY_DISCIPLINE" if avg_entry_quality >= 85 else (
+                "EXIT_DISCIPLINE" if avg_exit_quality >= 85 else "CONSISTENCY"
+            )
+        )
+
+        weakest_pattern = "FOMO_CONTROL" if avg_fomo > 50 else (
+            "PATIENCE" if avg_patience < 40 else (
+                "ENTRY_DISCIPLINE" if avg_entry_quality < 70 else (
+                    "EXIT_DISCIPLINE" if avg_exit_quality < 70 else "NONE"
+                )
+            )
+        )
+
+        profile_payload = {
+            "user_id": user_id,
+            "total_trades": total,
+            "open_trades": open_count,
+            "win_rate": round(win_rate, 1),
+            "avg_pnl_pct": round(avg_pnl, 2),
+            "avg_hold_days": round(avg_hold, 1),
+            "avg_entry_quality": round(avg_entry_quality, 1),
+            "avg_exit_quality": round(avg_exit_quality, 1),
+            "avg_patience_score": round(avg_patience, 1),
+            "avg_fomo_score": round(avg_fomo, 1),
+            "entry_grade_dist": dist("entry_quality_grade"),
+            "exit_grade_dist": dist("exit_quality_grade"),
+            "behavioral_trend": trend,
+            "strongest_pattern": strongest_pattern,
+            "weakest_pattern": weakest_pattern,
+            "updated_at": _now_iso(),
+        }
+
+        sb.table("trader_profile").upsert(profile_payload, on_conflict="user_id").execute()
 
     except Exception as exc:
         log.error("Profile update error: %s", exc)

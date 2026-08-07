@@ -4857,6 +4857,32 @@ app.include_router(preferences_router)
 # trade-plan/entry/exit workflow actually work end-to-end for the first
 # time, rather than always falling back to their empty states.
 app.include_router(behavior_router)
+
+
+# === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
+try:
+    try:
+        from backend.trade_journal_api import journal_router
+    except Exception:
+        from trade_journal_api import journal_router
+
+    app.include_router(journal_router)
+except Exception as _journal_router_mount_error:
+    _JOURNAL_ROUTER_MOUNT_ERROR_EXCERPT = str(_journal_router_mount_error)[:500]
+
+    @app.get("/api/journal/mount-status")
+    async def journal_router_mount_status():
+        return {
+            "ok": False,
+            "route_status": "JOURNAL_ROUTER_MOUNT_ERROR",
+            "mount_error_excerpt": _JOURNAL_ROUTER_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
+# === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT END ===
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
 
 # ============================================================
