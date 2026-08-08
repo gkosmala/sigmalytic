@@ -488,12 +488,24 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
         _caller_frames = [
             f"{fr.name}:{fr.lineno}" for fr in _srr_tb.extract_stack()[-6:-1]
         ]
-        print(f"[SETUP_RR_DIAG] {symbol}: result=None side={side!r} "
-              f"raw_trigger={trigger!r} raw_invalidation={invalidation!r} raw_target1={target1!r} "
-              f"parsed_t={_f(trigger)} parsed_inv={_f(invalidation)} parsed_tgt={_f(target1)} "
-              f"call_stack={_caller_frames} "
-              f"data_keys={sorted(data.keys())}",
-              flush=True)
+        # UPDATE (2026-08-08): confirmed via real log evidence that the
+        # overwhelming majority of these None cases come from
+        # get_divergence_watchlist/radar_divergence_compat -- a
+        # genuinely different, separate endpoint whose underlying data
+        # (from run_eod_audit's narrow divergence record) structurally
+        # never has trigger/invalidation/target1 by design, not a bug.
+        # That endpoint's high volume was completely burying the real
+        # signal (the actual Top Opportunities / get_radar_scores calls
+        # this diagnostic is meant to catch). Filtering it out here.
+        if any("divergence" in f.lower() for f in _caller_frames):
+            pass
+        else:
+            print(f"[SETUP_RR_DIAG] {symbol}: result=None side={side!r} "
+                  f"raw_trigger={trigger!r} raw_invalidation={invalidation!r} raw_target1={target1!r} "
+                  f"parsed_t={_f(trigger)} parsed_inv={_f(invalidation)} parsed_tgt={_f(target1)} "
+                  f"call_stack={_caller_frames} "
+                  f"data_keys={sorted(data.keys())}",
+                  flush=True)
 
     why = "; ".join(evidence[:4]) if evidence else "Insufficient evidence for a high-quality setup."
     invalidation_reason = "; ".join(risk_notes[:3]) if risk_notes else "Invalidation is defined by current setup structure."
