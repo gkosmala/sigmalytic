@@ -1339,7 +1339,17 @@ def run_radar_scan():
 
 def run_eod_audit():
     """
-    Runs nightly at 8:30 PM ET.
+    UPDATE (2026-08-07): despite the name (kept unchanged to avoid
+    touching other references to this job id), this no longer runs
+    only nightly -- it's now scheduled every 30 minutes (see
+    start_radar_scheduler()). Also fixed to persist the real
+    intelligence_score/status/regime/delta for every symbol processed,
+    not just the ones exceeding DIVERGENCE_THRESHOLD -- previously the
+    real computed value was thrown away for any symbol where the
+    engines genuinely agreed, which was the direct cause of "Deep
+    engine confirms radar (+0.0)" showing for virtually every symbol
+    regardless of what the real comparison actually found.
+
     Scores all symbols with the doctrine-aligned deep engine (Wyckoff/Weis/
     Livermore-based, see doctrine_deep_engine.py), computes delta vs composite_score.
     Symbols with |delta| >= 15 written to divergence_watchlist in Supabase.
@@ -1387,6 +1397,30 @@ def run_eod_audit():
             if new_score is None:
                 continue
             delta = round(new_score - composite, 2)
+
+            # FIX (2026-08-07): confirmed the real, direct root cause of
+            # "Deep engine confirms radar (+0.0)" showing for virtually
+            # every symbol on the Radar Screen -- this loop genuinely
+            # computes the real per-symbol deep-engine comparison for
+            # every symbol here, but previously only ever persisted the
+            # result (below, into DIVERGENCE_WATCHLIST) when it exceeded
+            # DIVERGENCE_THRESHOLD. For every symbol where the engines
+            # genuinely agree (delta small -- precisely the case this
+            # evidence line is meant to describe), the real computed
+            # value was thrown away immediately after being computed,
+            # so behavioral_transition_engine.py's fallback
+            # (deep_score = composite, i.e. delta forced to exactly 0)
+            # fired instead -- manufacturing a fake "perfect agreement"
+            # regardless of what the real engine actually found. Now
+            # persists the real value for every symbol processed, using
+            # the same "intelligence_score" key radar_service.py's own
+            # existing fallback logic (~line 2164) already checks for
+            # first, before falling back.
+            if symbol in RADAR_CACHE:
+                RADAR_CACHE[symbol]["intelligence_score"]  = new_score
+                RADAR_CACHE[symbol]["intelligence_status"] = result.get("new_status") or result.get("status")
+                RADAR_CACHE[symbol]["intelligence_regime"] = result.get("new_regime") or result.get("regime")
+                RADAR_CACHE[symbol]["intelligence_delta"]  = delta
 
             if abs(delta) >= DIVERGENCE_THRESHOLD:
                 direction = "BULLISH" if delta > 0 else "BEARISH"
@@ -1982,14 +2016,27 @@ def start_radar_scheduler():
         )
         log.info("Divergence watchlist scan scheduled every 8 minutes")
 
-    # EOD audit — 8:30 PM ET = 00:30 UTC
+    # UPDATE (2026-08-07): changed from a once-daily cron (8:30 PM ET)
+    # to a regular 30-minute interval. Root cause found: this function
+    # is the ONLY place that computes the real, per-symbol deep-engine
+    # comparison across the full universe, but at once-daily frequency,
+    # "Deep engine confirms radar" was showing up to 24 hours stale for
+    # the entire trading day. Kept the function/job id unchanged (still
+    # "eod_audit") to avoid touching the separate manual-trigger logic
+    # and Redis key naming elsewhere that reference this same id --
+    # only the schedule itself changes. 30 minutes chosen as a real,
+    # moderate improvement (48x more frequent) rather than the most
+    # aggressive possible interval, given this processes the full
+    # ~900+ symbol universe and given real OOM history on this exact
+    # worker service earlier tonight.
     _scheduler.add_job(
         lambda: threading.Thread(target=_instrumented("eod_audit", run_eod_audit), daemon=True).start(),
-        trigger="cron",
-        hour=0, minute=30,
+        trigger="interval",
+        minutes=30,
         id="eod_audit",
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=120),
     )
-    log.info("EOD audit scheduled at 8:30 PM ET (00:30 UTC)")
+    log.info("EOD audit (deep-engine universe comparison) scheduled every 30 minutes")
 
     # NOTE (2026-08-04): campaign discovery is intentionally NOT scheduled
     # here. Confirmed after initially adding a job for this here, then
