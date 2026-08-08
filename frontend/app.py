@@ -3260,6 +3260,7 @@ def build_radar_tab(session=None):
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
         prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
         prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
+        setup_risk_reward = s.get("setup_risk_reward")
         prob_score = _safe_float(s.get("expected_opportunity_score"))
         edge_score = _safe_float(s.get("edge_score", prob_score))
         prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
@@ -3342,6 +3343,14 @@ def build_radar_tab(session=None):
                 html.Div([
                     html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Risk/Reward", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(
+                        f"{setup_risk_reward:.2f}" if isinstance(setup_risk_reward, (int, float)) else "—",
+                        style={"fontSize":"18px","fontWeight":"950",
+                               "color": (TEAL_DIM if setup_risk_reward >= 2.0 else YELLOW_DIM) if isinstance(setup_risk_reward, (int, float)) else MUTED},
+                    ),
                 ], style={"flex":"1"}),
                 html.Div([
                     html.Div("Grade", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
