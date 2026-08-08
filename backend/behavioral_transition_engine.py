@@ -484,9 +484,15 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
     # whenever this ends up None, to get direct evidence of the actual
     # cause instead of continuing to guess.
     if setup_risk_reward is None:
+        import traceback as _srr_tb
+        _caller_frames = [
+            f"{fr.name}:{fr.lineno}" for fr in _srr_tb.extract_stack()[-6:-1]
+        ]
         print(f"[SETUP_RR_DIAG] {symbol}: result=None side={side!r} "
               f"raw_trigger={trigger!r} raw_invalidation={invalidation!r} raw_target1={target1!r} "
-              f"parsed_t={_f(trigger)} parsed_inv={_f(invalidation)} parsed_tgt={_f(target1)}",
+              f"parsed_t={_f(trigger)} parsed_inv={_f(invalidation)} parsed_tgt={_f(target1)} "
+              f"call_stack={_caller_frames} "
+              f"data_keys={sorted(data.keys())}",
               flush=True)
 
     why = "; ".join(evidence[:4]) if evidence else "Insufficient evidence for a high-quality setup."
