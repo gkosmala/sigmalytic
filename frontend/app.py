@@ -5749,6 +5749,8 @@ def update_report_view(selected_date):
 
 
 @app.callback(Output("reports-generate-message","children"),
+              Output("reports-date-picker","options"),
+              Output("reports-date-picker","value"),
               Input("reports-generate-btn","n_clicks"),
               State("reports-generate-date","value"),
               State("s-session","data"),
@@ -5760,9 +5762,21 @@ def handle_generate_report(n_clicks, date_str, session):
     now that that endpoint requires a proper Bearer token -- a plain
     browser navigation can't attach one, so this needed a real in-app
     control that sends the auth header via a normal HTTP request instead.
+
+    FIX (2026-08-07): confirmed a real bug -- a successful generation
+    said 'Select it from the date dropdown above', but the dropdown
+    itself lives inside build_reports_tab(), which only rebuilds on a
+    genuine tab switch (a deliberate 2026-07-31 fix to stop the date
+    picker resetting while a user reads an older report). This
+    separate callback never touched the dropdown at all, so the newly
+    generated date genuinely never appeared until the user manually
+    switched tabs away and back. Now directly re-fetches the real,
+    current list and updates the dropdown's options/value after a
+    successful generation, without needing to rebuild the whole tab
+    (so the original 2026-07-31 fix stays intact).
     """
     if not date_str:
-        return "Please enter a date in YYYY-MM-DD format."
+        return "Please enter a date in YYYY-MM-DD format.", no_update, no_update
 
     try:
         r = req.get(
@@ -5772,17 +5786,32 @@ def handle_generate_report(n_clicks, date_str, session):
             timeout=180,  # fetches 7 years of history for up to 100 symbols; can genuinely take a while
         )
         if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
+            return "Not signed in, or session expired. Please sign in again.", no_update, no_update
         if r.status_code == 403:
-            return "Admin access only."
+            return "Admin access only.", no_update, no_update
         if not r.ok:
-            return f"Generation failed (error {r.status_code}): {r.text[:200]}"
+            return f"Generation failed (error {r.status_code}): {r.text[:200]}", no_update, no_update
         payload = r.json()
-        if payload.get("ok"):
-            return f"Report generated successfully for {date_str}. Select it from the date dropdown above."
-        return f"Generation failed: {payload.get('error', 'unknown error')}"
+        if not payload.get("ok"):
+            return f"Generation failed: {payload.get('error', 'unknown error')}", no_update, no_update
+
+        try:
+            list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
+            dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
+        except Exception:
+            dates = []
+
+        if date_str not in dates:
+            dates = [date_str] + dates
+
+        options = [{"label": d, "value": d} for d in dates]
+        return (
+            f"Report generated successfully for {date_str}.",
+            options,
+            date_str,
+        )
     except Exception as exc:
-        return f"Could not reach the backend: {exc}"
+        return f"Could not reach the backend: {exc}", no_update, no_update
 
 @app.callback(Output("backtest-result", "children"),
               Input("backtest-run-btn", "n_clicks"),
