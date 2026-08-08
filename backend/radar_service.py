@@ -2261,6 +2261,7 @@ def _attach_behavioral_transition(row: dict) -> dict:
         enriched["evidence"] = bt.get("evidence")
         enriched["risk_notes"] = bt.get("risk_notes")
         enriched["trader_summary"] = bt.get("trader_summary")
+        enriched["setup_risk_reward"] = bt.get("setup_risk_reward")
 
         # Historical Probability Engine
         try:
