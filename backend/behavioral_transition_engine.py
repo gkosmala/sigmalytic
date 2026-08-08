@@ -99,6 +99,7 @@ class BehavioralTransition:
     invalidation_reason: str
     trader_summary: str
     raw_components: Dict[str, Any]
+    setup_risk_reward: Optional[float] = None
 
 
 def classify_behavioral_state(data: Dict[str, Any]) -> str:
@@ -448,6 +449,31 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
     target1 = data.get("target1")
     target2 = data.get("target2")
 
+    # Genuine, symbol-specific risk/reward -- computed directly from
+    # this setup's own real trigger/invalidation/target1 levels, not
+    # a shared historical average across unrelated symbols (see
+    # probability_service.py's expected_return, which several sessions
+    # of investigation confirmed is a mean over a small, coarsely-
+    # bucketed sample shared across many unrelated stocks). This is a
+    # different, complementary number from campaign_outcome_engine.py's
+    # separate, model-derived outcome_risk_reward.
+    setup_risk_reward = None
+    try:
+        t  = _f(trigger)
+        inv = _f(invalidation)
+        tgt = _f(target1)
+        if t and inv and tgt:
+            if side == "Short":
+                risk   = inv - t
+                reward = t - tgt
+            else:
+                risk   = t - inv
+                reward = tgt - t
+            if risk > 0 and reward > 0:
+                setup_risk_reward = round(reward / risk, 2)
+    except Exception:
+        pass
+
     why = "; ".join(evidence[:4]) if evidence else "Insufficient evidence for a high-quality setup."
     invalidation_reason = "; ".join(risk_notes[:3]) if risk_notes else "Invalidation is defined by current setup structure."
 
@@ -475,6 +501,7 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
         risk_notes=risk_notes,
         invalidation_reason=invalidation_reason,
         trader_summary=trader_summary,
+        setup_risk_reward=setup_risk_reward,
         raw_components={
             "composite_score": composite,
             "deep_score": deep,
