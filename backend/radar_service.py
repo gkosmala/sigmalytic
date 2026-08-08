@@ -2650,20 +2650,6 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
 
     page = results[offset:offset + limit]
 
-    # DIAGNOSTIC (2026-08-08): direct, targeted check of the raw,
-    # pre-enrichment data for the exact symbols the user reported
-    # (WBS/LECO/FLS), right here in get_radar_scores() itself -- the
-    # actual function powering Top Opportunities. Bypasses the shared,
-    # much noisier evaluate_behavioral_transition() diagnostic (which
-    # was mostly capturing an unrelated, structurally-different
-    # endpoint) to give an unambiguous answer for this exact call path.
-    for _diag_row in page:
-        if _diag_row.get("symbol") in ("WBS", "LECO", "FLS"):
-            print(f"[RADAR_SCORES_RAW_DIAG] {_diag_row.get('symbol')}: "
-                  f"trigger={_diag_row.get('trigger')!r} invalidation={_diag_row.get('invalidation')!r} "
-                  f"target1={_diag_row.get('target1')!r} keys={sorted(_diag_row.keys())}",
-                  flush=True)
-
     # Attach heavier transition/probability display information only to the page.
     try:
         page = _attach_behavioral_transition_many(page)
