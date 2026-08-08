@@ -3461,6 +3461,7 @@ def build_radar_tab(session=None):
         exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
         prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
+        setup_risk_reward = s.get("setup_risk_reward")
         color = _state_color(state, readiness)
         side_color = _side_color(side)
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -3531,10 +3532,18 @@ def build_radar_tab(session=None):
                 "flex":"0 0 86px","fontSize":"10px","fontWeight":"900",
                 "color":RED_DIM,"textAlign":"right"
             }),
+            html.Span(
+                f"{setup_risk_reward:.2f}" if isinstance(setup_risk_reward, (int, float)) else "—",
+                style={
+                    "flex":"0 0 66px","fontSize":"12px","fontWeight":"900",
+                    "color": (TEAL_DIM if setup_risk_reward >= 2.0 else YELLOW_DIM) if isinstance(setup_risk_reward, (int, float)) else MUTED,
+                    "textAlign":"center"
+                },
+            ),
         ], style={
             "display":"flex","alignItems":"center","gap":"10px",
             "padding":"11px 0","borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1630px"
+            "minWidth":"1710px"
         })
 
     header = html.Div([
@@ -3555,10 +3564,11 @@ def build_radar_tab(session=None):
         html.Span("Status", style={"flex":"0 0 82px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
         html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
+        html.Span("R:R", style={"flex":"0 0 66px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
     ], style={
         "display":"flex","gap":"10px","paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
-        "minWidth":"1630px"
+        "minWidth":"1710px"
     })
 
     # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
