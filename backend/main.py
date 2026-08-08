@@ -924,6 +924,26 @@ def trigger_eod_audit(_admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.get("/api/admin/bme-memory-status")
+def bme_memory_status(_admin: str = Depends(require_admin)):
+    """
+    Real, direct diagnostic for the BME (Behavioral Memory Engine)
+    bank's actual current state -- confirmed get_memory_status()
+    (backend/behavioral_memory.py) existed but was never exposed
+    anywhere, meaning there was no direct way to verify whether
+    "Deep engine confirms radar (+0.0)" for a given symbol reflects
+    genuine NO_MEMORY (the symbol simply hasn't been trained yet --
+    expected, temporary) versus a deeper, persistent bug in the
+    memory persistence fix itself.
+    """
+    try:
+        from backend.behavioral_memory import get_memory_status
+        status = get_memory_status()
+        return {"ok": True, **status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/admin/engine-status")
 def engine_status(_admin: str = Depends(require_admin)):
     """
