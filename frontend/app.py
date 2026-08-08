@@ -3619,7 +3619,9 @@ def build_radar_tab(session=None):
                     "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
                 }),
                 html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
-                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
+                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"4px"}),
+                html.Div("⟷ Scroll right for more columns, including Trigger, Invalid, and R:R",
+                         style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800","marginBottom":"12px"}),
                 html.Div([
                     header,
                     html.Div([_row(s) for s in signals] if signals else [
