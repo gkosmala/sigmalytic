@@ -5261,6 +5261,29 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
+    bme_memory_status_block = _admin_card([
+        html.Div("BME MEMORY BANK STATUS", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Real, direct check of the Behavioral Memory Engine's "
+            "actual current state -- how many symbols have genuinely "
+            "been trained. If a symbol shows 'Deep engine confirms "
+            "radar (+0.0)' on the Radar Screen, this tells you whether "
+            "that's expected (the symbol simply isn't trained yet) or "
+            "a real, ongoing problem (it's trained but still showing "
+            "the neutral default).",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Check Memory Status", id="bme-status-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="bme-status-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     operator_footprint_block = _admin_card([
         html.Div("EARLY OPERATOR FOOTPRINT REVIEW", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5350,6 +5373,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             real_scoreboard_stats_block,
             scoreboard_maintenance_block,
             journal_correction_block,
+            bme_memory_status_block,
             operator_footprint_block,
             enriched_campaign_table_block,
             subscriber_alerts_block,
@@ -5659,6 +5683,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         real_scoreboard_stats_block,
         scoreboard_maintenance_block,
         journal_correction_block,
+        bme_memory_status_block,
         operator_footprint_block,
         enriched_campaign_table_block,
         subscriber_alerts_block,
@@ -6110,6 +6135,42 @@ def handle_journal_delete_entry(n_clicks, journal_id, session):
         deleted = payload.get("deleted", {})
         return (f"Deleted: {deleted.get('symbol', '—')} entry "
                 f"(entered {deleted.get('entry_date', '—')}, journal_id={journal_id})")
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("bme-status-result", "children"),
+              Input("bme-status-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_bme_status(n_clicks, session):
+    """
+    Real, authenticated call to the BME memory status diagnostic --
+    a plain browser URL visit can't attach the required admin auth
+    token, so this button provides the actual way to check it.
+    """
+    if not n_clicks:
+        return no_update
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/admin/bme-memory-status",
+            headers=_auth_headers(session), timeout=15,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        trained = payload.get("symbols_trained", 0)
+        symbols = payload.get("symbols", [])
+        if trained == 0:
+            return "0 symbols trained. Every symbol will show the neutral (+0.0) default until training accumulates."
+        preview = ", ".join(symbols[:20])
+        more = f" (+{len(symbols) - 20} more)" if len(symbols) > 20 else ""
+        return f"{trained} symbols trained: {preview}{more}"
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
