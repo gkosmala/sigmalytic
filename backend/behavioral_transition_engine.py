@@ -471,8 +471,23 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
                 reward = tgt - t
             if risk > 0 and reward > 0:
                 setup_risk_reward = round(reward / risk, 2)
-    except Exception:
-        pass
+    except Exception as _srr_exc:
+        print(f"[SETUP_RR_DIAG] {symbol}: exception={_srr_exc!r} "
+              f"raw_trigger={trigger!r} raw_invalidation={invalidation!r} raw_target1={target1!r}",
+              flush=True)
+
+    # DIAGNOSTIC (2026-08-08): user reported setup_risk_reward showing
+    # empty for every symbol despite the underlying formula already
+    # being tested and confirmed correct against real numbers, and
+    # despite all three services (frontend/backend/scanner) confirmed
+    # redeployed with this code live. Logging the real, raw inputs
+    # whenever this ends up None, to get direct evidence of the actual
+    # cause instead of continuing to guess.
+    if setup_risk_reward is None:
+        print(f"[SETUP_RR_DIAG] {symbol}: result=None side={side!r} "
+              f"raw_trigger={trigger!r} raw_invalidation={invalidation!r} raw_target1={target1!r} "
+              f"parsed_t={_f(trigger)} parsed_inv={_f(invalidation)} parsed_tgt={_f(target1)}",
+              flush=True)
 
     why = "; ".join(evidence[:4]) if evidence else "Insufficient evidence for a high-quality setup."
     invalidation_reason = "; ".join(risk_notes[:3]) if risk_notes else "Invalidation is defined by current setup structure."
