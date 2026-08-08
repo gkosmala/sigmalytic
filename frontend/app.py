@@ -5234,6 +5234,33 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
+    journal_correction_block = _admin_card([
+        html.Div("JOURNAL ENTRY CORRECTION", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "For support use when a subscriber reports a mistake in "
+            "their journal entry (wrong symbol, price, or shares "
+            "typed in). Deletes the specified entry so the subscriber "
+            "can simply re-log a corrected one. Requires the exact "
+            "journal_id -- ask the subscriber for it, or look it up "
+            "via their trade history.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Div([
+            dcc.Input(id="journal-delete-id", type="text", placeholder="journal_id (e.g. jrn_...)",
+                      style={"width": "260px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+            html.Button("Delete Entry", id="journal-delete-btn", n_clicks=0,
+                style={"background": RED_DIM, "color": NAVY, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="journal-delete-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=RED_DIM,
+        ),
+    ], sx={"marginBottom": "16px"})
+
     operator_footprint_block = _admin_card([
         html.Div("EARLY OPERATOR FOOTPRINT REVIEW", style={"fontSize": "12px", "fontWeight": "800",
                   "color": WHITE, "marginBottom": "6px"}),
@@ -5322,6 +5349,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             campaign_outcome_block,
             real_scoreboard_stats_block,
             scoreboard_maintenance_block,
+            journal_correction_block,
             operator_footprint_block,
             enriched_campaign_table_block,
             subscriber_alerts_block,
@@ -5630,6 +5658,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         campaign_outcome_block,
         real_scoreboard_stats_block,
         scoreboard_maintenance_block,
+        journal_correction_block,
         operator_footprint_block,
         enriched_campaign_table_block,
         subscriber_alerts_block,
@@ -6015,6 +6044,43 @@ def handle_scoreboard_maintenance(repair_clicks, clear_clicks, session):
         if not payload.get("ok"):
             return f"Failed: {payload.get('error', 'unknown error')}"
         return f"Complete: {payload}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("journal-delete-result", "children"),
+              Input("journal-delete-btn", "n_clicks"),
+              State("journal-delete-id", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_journal_delete_entry(n_clicks, journal_id, session):
+    """
+    For support use when a subscriber reports a mistake in their
+    journal entry. Calls the new, admin-only
+    DELETE /api/journal/entry/{journal_id} endpoint.
+    """
+    if not n_clicks:
+        return no_update
+    if not journal_id or not str(journal_id).strip():
+        return "Please enter a journal_id."
+    try:
+        r = req.delete(
+            f"{BACKEND_HTTP}/api/journal/entry/{journal_id.strip()}",
+            headers=_auth_headers(session), timeout=15,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if r.status_code == 404:
+            return f"No journal entry found with id: {journal_id}"
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        deleted = payload.get("deleted", {})
+        return (f"Deleted: {deleted.get('symbol', '—')} entry "
+                f"(entered {deleted.get('entry_date', '—')}, journal_id={journal_id})")
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 

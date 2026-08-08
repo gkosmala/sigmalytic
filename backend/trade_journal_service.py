@@ -688,6 +688,33 @@ def get_journal_entries(
         return []
 
 
+def delete_trade_entry(journal_id: str) -> Optional[dict]:
+    """
+    Delete a journal entry -- for a subscriber's mistaken entry that
+    needs to be cleared (e.g. wrong symbol, price, or shares typed
+    in). The subscriber can simply re-log a corrected entry after.
+
+    Returns the deleted row (so callers can confirm what was actually
+    removed, e.g. show 'Deleted AAPL entry from 2026-08-01' rather
+    than a bare success flag) or None if no matching entry existed.
+    """
+    try:
+        sb = _supabase()
+        result = (
+            sb.table("trade_journal")
+            .delete()
+            .eq("journal_id", journal_id)
+            .execute()
+        )
+        rows = _sb_rows(result)
+        if not rows:
+            return None
+        return rows[0]
+    except Exception as exc:
+        log.error("Delete journal entry error for %s: %s", journal_id, exc)
+        return None
+
+
 def get_trader_profile(user_id: str) -> dict:
     """Get the behavioral profile for a trader through Supabase."""
     try:

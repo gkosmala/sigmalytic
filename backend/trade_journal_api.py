@@ -4,40 +4,22 @@ backend/trade_journal_api.py
 -----------------------------
 FastAPI router for the Trade Journal.
 
-Mount in main.py:
-    from trade_journal_api import journal_router
-    app.include_router(journal_router)
+Mounted in main.py via app.include_router(journal_router).
 
 Endpoints:
-    POST /api/journal/entry          — log a new trade entry
-    POST /api/journal/exit/{id}      — log a trade exit
-    GET  /api/journal/trades         — get all trades for a user
-    GET  /api/journal/profile        — get trader behavioral profile
-    GET  /api/journal/open           — get open trades only
+    POST   /api/journal/entry          — log a new trade entry
+    POST   /api/journal/exit/{id}      — log a trade exit
+    DELETE /api/journal/entry/{id}     — admin-only: clear a mistaken entry
+    GET    /api/journal/trades         — get all trades for a user
+    GET    /api/journal/profile        — get trader behavioral profile
+    GET    /api/journal/open           — get open trades only
 
-NOTE (2026-08-07): confirmed journal_router is genuinely never
-mounted in main.py -- only a comment references it (see main.py's
-"FIX (2026-07-28)" note), which added GET-only compatibility routes
-for /trades and /profile, but never added an equivalent for the real
-POST /entry and /exit/{id} endpoints here.
-
-Confirmed this is NOT the same system the live "Log Trade Entry" /
-"Exit Trade" UI buttons actually call -- those call behavior_router.py's
-POST /api/behavior/trade-entry and /trade-exit, which IS genuinely
-mounted and working. This file is a separate, parallel, more
-sophisticated system: log_trade_entry()/log_trade_exit() in
-trade_journal_service.py compute real signal-relative grading
-(entry FOMO score based on how late the entry was relative to when
-the original signal fired, sizing-quality grade against recommended
-tier sizing) that behavior_router.py's simpler flow does not.
-
-Not wired up here deliberately -- this uses raw psycopg2/DATABASE_URL
-access directly (the same pattern flagged elsewhere in this codebase
-as having caused real, historical production trouble), and mounting
-it would create two parallel "log a trade" systems rather than one.
-A genuine, valuable feature worth a deliberate integration decision
-later (e.g. merging its grading logic into the already-working
-behavior_router.py flow), not something to wire up casually.
+UPDATE (2026-08-07): this router is now genuinely, actively mounted
+in main.py (confirmed) -- an earlier note here claiming it was never
+mounted is now stale/incorrect and has been removed. log_trade_entry()/
+log_trade_exit() have also since been migrated off the previously-
+broken raw psycopg2/DATABASE_URL access to the same Supabase client
+used elsewhere in this codebase.
 """
 
 from __future__ import annotations
@@ -47,12 +29,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends, Header
 from pydantic import BaseModel
 
 from backend.trade_journal_service import (
     log_trade_entry,
     log_trade_exit,
+    delete_trade_entry,
     get_journal_entries,
     get_trader_profile,
 )
@@ -61,6 +44,19 @@ from backend.supabase_isolation import get_user_id_from_request
 log = logging.getLogger("trade_journal_api")
 
 journal_router = APIRouter(prefix="/api/journal", tags=["journal"])
+
+
+def _require_admin_lazy(authorization: str = Header(default="")):
+    """
+    Lazy import of require_admin from backend.main -- avoids a
+    circular import (main.py mounts this router, so importing
+    require_admin at this file's top level would import main.py
+    before it has finished loading). Mirrors require_admin's own
+    Header(...) signature so FastAPI's dependency injection actually
+    pulls the real Authorization header at request time.
+    """
+    from backend.main import require_admin as _real_require_admin
+    return _real_require_admin(authorization)
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -144,6 +140,23 @@ async def create_trade_exit(
         raise HTTPException(status_code=404, detail=f"Journal entry {journal_id} not found.")
 
     return {"ok": True, "journal_id": journal_id}
+
+
+@journal_router.delete("/entry/{journal_id}")
+async def delete_journal_entry(
+    journal_id: str,
+    _admin: str = Depends(_require_admin_lazy),
+) -> dict:
+    """
+    Clear a subscriber's mistaken journal entry. Admin-only -- meant
+    for support use when a subscriber reports a mistake in their
+    journal (wrong symbol, price, shares, etc.) and needs it cleared
+    so they can re-log a corrected entry.
+    """
+    deleted = delete_trade_entry(journal_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Journal entry {journal_id} not found.")
+    return {"ok": True, "deleted": deleted}
 
 
 @journal_router.get("/trades")
