@@ -2543,6 +2543,55 @@ def get_probability_engine_status():
 
 
 @radar_router.get("/scores")
+def _attach_methodology_verdicts(rows: list) -> None:
+    """
+    Attach genuine, separate Wyckoff/Livermore/Weis verdict scores to
+    each row, in place. Uses the three already-built, real engines in
+    backend/research_engine/ -- each produces its own distinct 0-100
+    score and verdict from real price/volume structure, with no
+    blending between methodologies.
+
+    Deliberately scoped to a small number of rows (see caller) since
+    this requires a real bar fetch per symbol.
+    """
+    if not rows:
+        return
+
+    import pandas as pd
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.research_engine.livermore_verdict_engine import LivermoreVerdictEngine
+    from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+
+    symbols = [r.get("symbol") for r in rows if r.get("symbol")]
+    bars_by_symbol = fetch_bars_batch(symbols, timeframe="1Day", limit=252)
+
+    wyckoff_engine = WyckoffVerdictEngine()
+    livermore_engine = LivermoreVerdictEngine()
+    weis_engine = WeisVerdictEngine()
+
+    for row in rows:
+        symbol = row.get("symbol")
+        bars = bars_by_symbol.get(symbol) if isinstance(bars_by_symbol, dict) else None
+        if not bars:
+            continue
+        try:
+            df = pd.DataFrame(bars)
+            # FIX (2026-08-09): caught before shipping -- Alpaca's raw
+            # bars use short keys (o/h/l/c/v/t), but all three engines
+            # require full column names (open/high/low/close/volume),
+            # confirmed directly from each engine's REQUIRED_COLUMNS.
+            # Without this rename, evaluate()/evaluate_bars() would
+            # raise "Missing required OHLCV column" every single time.
+            df = df.rename(columns={
+                "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume",
+            })
+            row["wyckoff_verdict"]   = wyckoff_engine.evaluate_bars(df, symbol=symbol)
+            row["livermore_verdict"] = livermore_engine.evaluate(df, symbol=symbol)
+            row["weis_verdict"]      = weis_engine.evaluate(df, symbol=symbol)
+        except Exception as e:
+            log.warning(f"Methodology verdict failed for {symbol} (non-fatal): {e}")
+
+
 def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_score: float = 0):
     """
     Fast radar scores endpoint.
@@ -2635,14 +2684,21 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
             return default
 
     def _rank_key(x):
+        # FIX (2026-08-08): removed expected_opportunity_score,
+        # historical_success, and edge_score -- all three confirmed
+        # to come from probability_service.py's profile-lookup system,
+        # which pools historical outcomes across a small, fixed set of
+        # unrelated stocks (built from a 50-symbol backtest, no
+        # traceability back to any individual symbol), not this
+        # specific symbol's own price/volume history. Ranking now
+        # based only on the genuine, symbol-specific Wyckoff/Weis/
+        # Livermore-derived scores: opportunity_state, readiness_score,
+        # and composite_score.
         opportunity_state = str(x.get("opportunity_state", ""))
         return (
             opportunity_state == "Armed",
             opportunity_state == "Setting Up",
-            _safe_float(x, "expected_opportunity_score"),
-            _safe_float(x, "historical_success"),
             _safe_float(x, "readiness_score"),
-            _safe_float(x, "edge_score"),
             _safe_float(x, "composite_score"),
         )
 
@@ -2655,6 +2711,21 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
         page = _attach_behavioral_transition_many(page)
     except Exception as e:
         log.warning(f"Radar score enrichment failed; returning lightweight page: {e}")
+
+    # FIX (2026-08-09): user's critique -- composite_score blends Wyckoff/
+    # Weis/Livermore-derived signals together into weighted percentages,
+    # diluting each individual methodology's own signal. Confirmed three
+    # genuine, separate, already-built engines exist for exactly this
+    # (WyckoffVerdictEngine, LivermoreVerdictEngine, WeisVerdictEngine,
+    # in backend/research_engine/) but were never connected anywhere on
+    # the Radar Screen. Wired in here, scoped to only the top 3 "hero"
+    # cards (Top Opportunities) -- fetch_bars_batch() makes one
+    # sequential API call per symbol, safe for 3, too slow for the full
+    # ~50-row table.
+    try:
+        _attach_methodology_verdicts(page[:3])
+    except Exception as e:
+        log.warning(f"Methodology verdict enrichment failed (non-fatal): {e}")
 
     return {
         "count":      len(page),
