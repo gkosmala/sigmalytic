@@ -2543,6 +2543,32 @@ def get_probability_engine_status():
 
 
 @radar_router.get("/scores")
+def _sanitize_numpy(obj):
+    """
+    Recursively convert numpy scalar types to plain Python types.
+
+    FIX (2026-08-09): defensive, second-layer protection -- a raw
+    numpy.int64 (from pandas' .sum() on a boolean Series, inside
+    LivermoreVerdictEngine) already caused a real, complete production
+    outage of /api/radar/scores once, since FastAPI's jsonable_encoder
+    cannot serialize numpy types. Fixed at the source too, but this
+    guards against the same class of bug if these engines (or others
+    attached here later) are modified again and reintroduce a leak.
+    """
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_numpy(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    return obj
+
+
 def _attach_methodology_verdicts(rows: list) -> None:
     """
     Attach genuine, separate Wyckoff/Livermore/Weis verdict scores to
@@ -2585,9 +2611,9 @@ def _attach_methodology_verdicts(rows: list) -> None:
             df = df.rename(columns={
                 "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume",
             })
-            row["wyckoff_verdict"]   = wyckoff_engine.evaluate_bars(df, symbol=symbol)
-            row["livermore_verdict"] = livermore_engine.evaluate(df, symbol=symbol)
-            row["weis_verdict"]      = weis_engine.evaluate(df, symbol=symbol)
+            row["wyckoff_verdict"]   = _sanitize_numpy(wyckoff_engine.evaluate_bars(df, symbol=symbol))
+            row["livermore_verdict"] = _sanitize_numpy(livermore_engine.evaluate(df, symbol=symbol))
+            row["weis_verdict"]      = _sanitize_numpy(weis_engine.evaluate(df, symbol=symbol))
         except Exception as e:
             log.warning(f"Methodology verdict failed for {symbol} (non-fatal): {e}")
 

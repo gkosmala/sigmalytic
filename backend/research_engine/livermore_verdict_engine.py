@@ -124,7 +124,15 @@ class LivermoreVerdictEngine:
             (recent["close"] > support)
         ).sum()
 
-        return min(100, failures * 20)
+        # FIX (2026-08-09): confirmed the exact, direct root cause of a
+        # live production 500 error on /api/radar/scores -- .sum() on
+        # a pandas boolean Series returns numpy.int64, not a plain
+        # Python int. This value flowed unconverted through min() and
+        # then through the weighted score calculation into the final
+        # dataclass, which FastAPI's jsonable_encoder cannot serialize
+        # (numpy types aren't natively JSON-serializable), breaking
+        # the entire endpoint -- not just this new feature.
+        return int(min(100, failures * 20))
 
     def campaign_continuity_score(self,
                                   df: pd.DataFrame,
