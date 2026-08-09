@@ -47,10 +47,54 @@ class WeisVerdictEngine:
 
     def __init__(self,
                  vol_period: int = 20,
+                 atr_period: int = 14,
+                 atr_multiplier: float = 1.75,
                  zigzag_percent: float = 1.5):
 
         self.vol_period = vol_period
+        self.atr_period = atr_period
+        self.atr_multiplier = atr_multiplier
+        # FIX (2026-08-09): the fixed 1.5% threshold treated every
+        # stock identically, so lower-volatility symbols could go an
+        # entire 252-day lookback without ever registering a single
+        # wave, producing a hollow, uninformative NO_WEIS_SIGNAL/0
+        # result even when the underlying price data was perfectly
+        # valid (confirmed directly -- Wyckoff/Livermore both produced
+        # real, distinct scores from the exact same bars). Per David
+        # Weis's own original methodology (his 2013 book, "Trades
+        # About to Happen"), the reversal filter should be calibrated
+        # to each market's own volatility, with ATR as his recommended
+        # method for dynamic assets -- roughly 1.5x-2x the stock's own
+        # 20-day ATR for daily/swing charts, which matches this
+        # engine's existing 252-day daily bar lookback. Kept as an
+        # explicit, named fallback default (not silently unused) only
+        # if ATR can't be computed at all (e.g., too few bars).
         self.zigzag_percent = zigzag_percent
+
+    def _compute_atr_threshold_pct(self, df: pd.DataFrame) -> float:
+        """
+        Real, per-symbol ATR-based reversal threshold, expressed as a
+        percentage of recent price (to match build_waves()'s existing
+        percentage-move comparison). Returns self.zigzag_percent as an
+        explicit fallback if there isn't enough data for a genuine ATR.
+        """
+        if len(df) < self.atr_period + 1:
+            return self.zigzag_percent
+
+        high, low, close = df["high"], df["low"], df["close"]
+        prev_close = close.shift(1)
+        true_range = pd.concat([
+            (high - low),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+
+        atr = true_range.rolling(self.atr_period).mean().iloc[-1]
+        recent_price = float(close.iloc[-1])
+        if pd.isna(atr) or recent_price <= 0:
+            return self.zigzag_percent
+
+        return float(atr) * self.atr_multiplier / recent_price * 100
 
     def _prepare(self, df: pd.DataFrame):
 
@@ -68,6 +112,12 @@ class WeisVerdictEngine:
 
         waves = []
 
+        # FIX (2026-08-09): compute the real, per-symbol ATR-based
+        # threshold once per call, instead of the fixed 1.5% that
+        # applied identically to every stock regardless of its own
+        # actual volatility.
+        threshold_pct = self._compute_atr_threshold_pct(df)
+
         current_dir = (
             -1 if df["close"].iloc[1] <= df["close"].iloc[0]
             else 1
@@ -75,6 +125,17 @@ class WeisVerdictEngine:
 
         current_volume = df["volume"].iloc[0]
         current_start = df["close"].iloc[0]
+        # FIX (2026-08-09): a running extreme (lowest close reached
+        # during a down-wave, highest during an up-wave), separate
+        # from current_start. Found while testing the earlier fix
+        # above: comparing new bars against the wave's static
+        # starting point meant a genuine reversal would never
+        # register until price retraced all the way back past where
+        # the wave began, not just a meaningful bounce off the actual
+        # recent low/high -- itself incorrect zigzag behavior. Real
+        # wave/zigzag logic tracks the running extreme and reacts to
+        # movement away from *that*, not the original start.
+        running_extreme = current_start
 
         wave_volume = np.zeros(len(df))
         wave_direction = np.zeros(len(df))
@@ -82,19 +143,27 @@ class WeisVerdictEngine:
         for i in range(1, len(df)):
 
             prev_close = df["close"].iloc[i - 1]
+            close = df["close"].iloc[i]
 
-            if prev_close == 0:
+            if prev_close == 0 or running_extreme == 0:
                 continue
 
-            diff = df["close"].iloc[i] - prev_close
+            # Extend the running extreme if this bar continues the
+            # current wave's direction further.
+            if current_dir == -1 and close < running_extreme:
+                running_extreme = close
+            elif current_dir == 1 and close > running_extreme:
+                running_extreme = close
+
+            diff = close - running_extreme
 
             pct = (
                 abs(diff)
-                / prev_close
+                / running_extreme
                 * 100
             )
 
-            if pct >= self.zigzag_percent:
+            if pct >= threshold_pct:
 
                 new_dir = 1 if diff > 0 else -1
 
@@ -104,14 +173,15 @@ class WeisVerdictEngine:
                         "dir": current_dir,
                         "vol": current_volume,
                         "delta": abs(
-                            df["close"].iloc[i - 1]
+                            running_extreme
                             - current_start
                         )
                     })
 
                     current_dir = new_dir
                     current_volume = 0
-                    current_start = df["close"].iloc[i - 1]
+                    current_start = running_extreme
+                    running_extreme = close
 
             current_volume += df["volume"].iloc[i]
 
