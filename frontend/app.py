@@ -3233,6 +3233,25 @@ def build_radar_tab(session=None):
         t = _safe_text(text)
         return t.replace(" to ", " → ").replace(" / ", " / ")
 
+    def _score_grade(score):
+        """
+        Genuine composite_score-based letter grade -- matches the
+        exact same established thresholds already used in backend/
+        main.py's _compat_grade() and backend/intelligence_api.py's
+        _grade(), a real, in-production convention. Applied here to
+        the genuine, symbol-specific composite_score, not the removed,
+        probability-engine-derived probability_grade.
+        """
+        if score >= 85:
+            return "A+"
+        if score >= 75:
+            return "A"
+        if score >= 65:
+            return "B"
+        if score >= 50:
+            return "C"
+        return "W"
+
     def _opportunity_card(s, rank):
         symbol = _safe_text(s.get("symbol"), "")
         price = s.get("price")
@@ -3252,20 +3271,11 @@ def build_radar_tab(session=None):
         regime = _safe_text(s.get("regime"), "—")
         status = _safe_text(s.get("status"), "—")
         alert_type = _safe_text(s.get("alert_type"), "—")
-
-        # Historical probability / edge fields from backend probability engine
-        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
-        hist_matches = _safe_float(s.get("historical_matches"))
-        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
-        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
-        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
-        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
         setup_risk_reward = s.get("setup_risk_reward")
-        prob_score = _safe_float(s.get("expected_opportunity_score"))
-        edge_score = _safe_float(s.get("edge_score", prob_score))
-        prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
-        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
-        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
+        wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
+        livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
+        weis_verdict = s.get("weis_verdict") if isinstance(s.get("weis_verdict"), dict) else None
+        score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
 
         color = _state_color(state, readiness)
         side_color = _side_color(side)
@@ -3289,11 +3299,11 @@ def build_radar_tab(session=None):
                 ], style={"flex":"1"}),
 
                 html.Div([
-                    html.Div(prob_grade, style={
-                        "fontSize":"30px","fontWeight":"950","color":grade_color,
+                    html.Div(f"{score:.0f}", style={
+                        "fontSize":"30px","fontWeight":"950","color":score_color,
                         "lineHeight":"1","textAlign":"right"
                     }),
-                    html.Div("Opportunity", style={
+                    html.Div("Score", style={
                         "fontSize":"10px","fontWeight":"950","color":WHITE,
                         "textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"
                     }),
@@ -3333,18 +3343,6 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.Div("Probability", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if hist_success >= 55 else YELLOW_DIM}),
-                ], style={"flex":"1"}),
-                html.Div([
-                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM}),
-                ], style={"flex":"1"}),
-                html.Div([
-                    html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
-                ], style={"flex":"1"}),
-                html.Div([
                     html.Div("Risk/Reward", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
                     html.Div(
                         f"{setup_risk_reward:.2f}" if isinstance(setup_risk_reward, (int, float)) else "—",
@@ -3352,17 +3350,39 @@ def build_radar_tab(session=None):
                                "color": (TEAL_DIM if setup_risk_reward >= 2.0 else YELLOW_DIM) if isinstance(setup_risk_reward, (int, float)) else MUTED},
                     ),
                 ], style={"flex":"1"}),
-                html.Div([
-                    html.Div("Grade", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(prob_grade, style={"fontSize":"18px","fontWeight":"950","color":grade_color}),
-                ], style={"flex":"1"}),
             ], style={"display":"flex","gap":"10px","padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.035)"}),
 
+            html.Div(style={"height":"12px"}) if (wyckoff_verdict or livermore_verdict or weis_verdict) else None,
+
             html.Div([
-                html.Span(f"Matches {hist_matches:,.0f}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
-                html.Span(f"Confidence {prob_conf}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
-                html.Span(prob_weekly, style={"fontSize":"11px","fontWeight":"850","color":WHITE}),
-            ], style={"marginTop":"7px"}),
+                html.Div("Methodology Breakdown", style={
+                    "fontSize":"10px","fontWeight":"950","color":WHITE,
+                    "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"6px"
+                }),
+                html.Div([
+                    html.Div([
+                        html.Div("Wyckoff", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
+                        html.Div(f"{wyckoff_verdict.get('wyckoff_score', 0):.0f}" if wyckoff_verdict else "—",
+                                 style={"fontSize":"16px","fontWeight":"950","color":TEAL_DIM}),
+                        html.Div(_safe_text(wyckoff_verdict.get("verdict") if wyckoff_verdict else None, "—"),
+                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
+                    ], style={"flex":"1"}),
+                    html.Div([
+                        html.Div("Livermore", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
+                        html.Div(f"{livermore_verdict.get('livermore_score', 0):.0f}" if livermore_verdict else "—",
+                                 style={"fontSize":"16px","fontWeight":"950","color":BLUE_DIM}),
+                        html.Div(_safe_text(livermore_verdict.get("verdict") if livermore_verdict else None, "—"),
+                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
+                    ], style={"flex":"1"}),
+                    html.Div([
+                        html.Div("Weis", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
+                        html.Div(f"{weis_verdict.get('weis_score', 0):.0f}" if weis_verdict else "—",
+                                 style={"fontSize":"16px","fontWeight":"950","color":YELLOW_DIM}),
+                        html.Div(_safe_text(weis_verdict.get("verdict") if weis_verdict else None, "—"),
+                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
+                    ], style={"flex":"1"}),
+                ], style={"display":"flex","gap":"10px"}),
+            ], style={"padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.02)"}) if (wyckoff_verdict or livermore_verdict or weis_verdict) else html.Div(),
 
             html.Div(style={"height":"12px"}),
 
@@ -3411,7 +3431,7 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                html.Div(prob_setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
+                html.Div(setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
                 html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
             ]),
 
