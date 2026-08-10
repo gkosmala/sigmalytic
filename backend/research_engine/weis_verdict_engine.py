@@ -24,6 +24,8 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
+from backend.research_engine.wyckoff_range_validator import WyckoffRangeValidator
+
 
 @dataclass
 class WeisVerdict:
@@ -36,8 +38,19 @@ class WeisVerdict:
     volume_exhaustion: float
     upwave_confirmation: float
 
-    explanation: str
-    as_of: str
+    # FIX (2026-08-09): range maturity, per David Weis's own framework
+    # -- a genuine "A" setup requires the sweep/exhaustion/reclaim
+    # sequence to occur at the edge of an already-mature range (real,
+    # multiple, time-separated touches of the same level over weeks),
+    # not just the sequence in isolation.
+    range_is_mature: bool = False
+    range_support: float = None
+    range_resistance: float = None
+    range_support_touches: int = 0
+    range_resistance_touches: int = 0
+
+    explanation: str = ""
+    as_of: str = ""
 
     def to_dict(self):
         return asdict(self)
@@ -310,6 +323,13 @@ class WeisVerdictEngine:
             )
         )
 
+        # FIX (2026-08-09): range maturity check, per David Weis's own
+        # framework -- reuses the same ATR series already computed for
+        # wave-threshold detection, so this doesn't duplicate the
+        # calculation.
+        atr_series = self._compute_atr_series(df)
+        range_result = WyckoffRangeValidator().evaluate(df, atr_series)
+
         score = (
             sot * 0.30
             +
@@ -347,10 +367,17 @@ class WeisVerdictEngine:
                 confirmation,
                 2
             ),
+            range_is_mature=range_result.is_mature,
+            range_support=round(range_result.support, 2) if range_result.support is not None else None,
+            range_resistance=round(range_result.resistance, 2) if range_result.resistance is not None else None,
+            range_support_touches=range_result.support_touches,
+            range_resistance_touches=range_result.resistance_touches,
             explanation=(
                 f"SOT={sot:.1f}, "
                 f"Exhaustion={exhaustion:.1f}, "
-                f"Confirmation={confirmation:.1f}"
+                f"Confirmation={confirmation:.1f}, "
+                f"RangeMature={range_result.is_mature} "
+                f"(S:{range_result.support_touches} touches, R:{range_result.resistance_touches} touches)"
             ),
             as_of=datetime.now(
                 timezone.utc
