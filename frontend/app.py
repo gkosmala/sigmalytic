@@ -372,6 +372,19 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 .Select-control{{border:1px solid {BORDER} !important;border-radius:10px !important;min-height:40px !important;}}
 .Select-control:hover{{border-color:{BORDER_T} !important;}}
 .is-open .Select-control{{border-color:{BORDER_T} !important;border-radius:10px 10px 0 0 !important;}}
+.sig-tooltip{{position:relative;display:inline-block;}}
+.sig-tooltip .sig-tooltip-text{{
+    visibility:hidden;opacity:0;position:absolute;z-index:1000;
+    bottom:125%;left:50%;transform:translateX(-50%);
+    background:{NAVY_MID};
+    border:1px solid {BORDER_T};color:{WHITE};
+    font-size:11px;font-weight:700;line-height:1.5;
+    white-space:pre-line;text-align:left;
+    padding:8px 10px;border-radius:8px;width:max-content;max-width:280px;
+    box-shadow:0 6px 20px rgba(0,0,0,.4);
+    transition:opacity .1s ease;pointer-events:none;
+}}
+.sig-tooltip:hover .sig-tooltip-text{{visibility:visible;opacity:1;}}
 """
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -3514,7 +3527,10 @@ def build_radar_tab(session=None):
                 "flex":"0 0 74px","fontSize":"12px","fontWeight":"900",
                 "color":TEAL_DIM if chg >= 0 else RED_DIM
             }),
-            html.Span(f"{readiness:.0f}", title=readiness_tooltip, style={
+            html.Span([
+                html.Span(f"{readiness:.0f}"),
+                html.Span(readiness_tooltip, className="sig-tooltip-text"),
+            ], className="sig-tooltip", style={
                 "flex":"0 0 72px","fontSize":"14px","fontWeight":"950",
                 "color":color,"textAlign":"center","cursor":"help",
                 "borderBottom":"1px dotted currentColor"
@@ -3523,7 +3539,10 @@ def build_radar_tab(session=None):
                 "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
                 "color":YELLOW_DIM,"textAlign":"center"
             }),
-            html.Span(prob_grade, title=grade_tooltip, style={
+            html.Span([
+                html.Span(prob_grade),
+                html.Span(grade_tooltip, className="sig-tooltip-text"),
+            ], className="sig-tooltip", style={
                 "flex":"0 0 62px","fontSize":"12px","fontWeight":"950",
                 "color":grade_color,"textAlign":"center","cursor":"help",
                 "borderBottom":"1px dotted currentColor"
