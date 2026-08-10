@@ -54,6 +54,17 @@ class WeisVerdict:
     # volume, separate from genuine exhaustion (SOT + weak volume).
     effort_without_reward: float = 0.0
 
+    # FIX (2026-08-09): genuine Upthrust/short-side mirror of the
+    # sot_downwaves/volume_exhaustion/upwave_confirmation trio above --
+    # kept as fully separate fields, not blended into the long-side
+    # score/verdict.
+    sot_upwaves: float = 0.0
+    buying_exhaustion: float = 0.0
+    buying_effort_without_reward: float = 0.0
+    downwave_confirmation: float = 0.0
+    weis_score_bearish: float = 0.0
+    verdict_bearish: str = "NO_WEIS_SIGNAL"
+
     explanation: str = ""
     as_of: str = ""
 
@@ -348,6 +359,107 @@ class WeisVerdictEngine:
 
         return 0.0
 
+    def shortening_of_thrust_score_bearish(self, waves) -> float:
+        """
+        FIX (2026-08-09): mirror of shortening_of_thrust_score() for
+        the Upthrust/short side -- shortening price advancement on
+        the way UP into an Upthrust, using up-waves instead of
+        down-waves. Same three-push minimum David Weis's own text
+        requires ("requires a minimum of three pushes").
+        """
+        up = [w for w in waves if w["dir"] == 1]
+
+        if len(up) < 3:
+            return 0.0
+
+        w1, w2, w3 = up[-3:]
+
+        if w3["delta"] < w2["delta"] < w1["delta"]:
+            return 100.0
+
+        return 0.0
+
+    def buying_exhaustion_score(self, waves, sot_confirmed: bool = False) -> float:
+        """
+        FIX (2026-08-09): mirror of volume_exhaustion_score() for the
+        Upthrust/short side -- genuine buying exhaustion requires the
+        same SOT (shortening, on up-waves) AND weak volume together,
+        per David Weis's own words, applied to the bearish case.
+        """
+        if not sot_confirmed:
+            return 0.0
+
+        up = [w for w in waves if w["dir"] == 1]
+
+        if len(up) < 2:
+            return 0.0
+
+        w2 = up[-2]
+        w3 = up[-1]
+
+        if w3["vol"] < (0.60 * w2["vol"]):
+            return 100.0
+
+        return 0.0
+
+    def buying_effort_without_reward_score(self, waves, sot_confirmed: bool = False) -> float:
+        """
+        FIX (2026-08-09): mirror of effort_without_reward_score() for
+        the Upthrust/short side.
+        """
+        if not sot_confirmed:
+            return 0.0
+
+        up = [w for w in waves if w["dir"] == 1]
+
+        if len(up) < 2:
+            return 0.0
+
+        w2 = up[-2]
+        w3 = up[-1]
+
+        if w3["vol"] >= w2["vol"]:
+            return 100.0
+
+        return 0.0
+
+    def downwave_confirmation_score(
+        self,
+        waves,
+        wave_volume,
+        wave_direction
+    ) -> float:
+        """
+        FIX (2026-08-09): mirror of upwave_confirmation_score() for
+        the Upthrust/short side -- confirms the breakdown after an
+        Upthrust via a genuinely strong down-wave (volume
+        overwhelming the last two up-waves combined), not price
+        alone.
+        """
+        up = [w for w in waves if w["dir"] == 1]
+
+        if len(up) < 2:
+            return 0.0
+
+        last_two = (
+            up[-1]["vol"]
+            +
+            up[-2]["vol"]
+        )
+
+        current_red = wave_volume[-1]
+
+        current_dir = wave_direction[-1]
+
+        if (
+            current_dir == -1
+            and
+            current_red > (1.25 * last_two)
+        ):
+            return 100.0
+
+        return 0.0
+
     def evaluate(
         self,
         df: pd.DataFrame,
@@ -377,6 +489,15 @@ class WeisVerdictEngine:
             )
         )
 
+        # FIX (2026-08-09): mirror computation for the Upthrust/short
+        # side, kept in its own separate score below rather than
+        # blended into the existing (bullish-oriented) score/verdict.
+        sot_bearish = self.shortening_of_thrust_score_bearish(waves)
+        sot_bearish_confirmed = sot_bearish >= 100
+        buying_exhaustion = self.buying_exhaustion_score(waves, sot_confirmed=sot_bearish_confirmed)
+        buying_effort_without_reward = self.buying_effort_without_reward_score(waves, sot_confirmed=sot_bearish_confirmed)
+        downwave_confirmation = self.downwave_confirmation_score(waves, wave_volume, wave_direction)
+
         # FIX (2026-08-09): range maturity check, per David Weis's own
         # framework -- reuses the same ATR series already computed for
         # wave-threshold detection, so this doesn't duplicate the
@@ -404,6 +525,26 @@ class WeisVerdictEngine:
         else:
             verdict = "NO_WEIS_SIGNAL"
 
+        # FIX (2026-08-09): mirrored score/verdict for the Upthrust/
+        # short side, kept genuinely separate from the long-side score
+        # and verdict above -- not blended into weis_score.
+        score_bearish = (
+            sot_bearish * 0.30
+            +
+            buying_exhaustion * 0.30
+            +
+            downwave_confirmation * 0.40
+        )
+
+        if score_bearish >= 90:
+            verdict_bearish = "PRIMARY_DISTRIBUTION_LAUNCH"
+        elif score_bearish >= 60:
+            verdict_bearish = "SUPPLY_WARNING"
+        elif score_bearish >= 30:
+            verdict_bearish = "WATCH"
+        else:
+            verdict_bearish = "NO_WEIS_SIGNAL"
+
         return WeisVerdict(
             symbol=symbol,
             weis_score=round(score, 2),
@@ -427,6 +568,12 @@ class WeisVerdictEngine:
             range_support_touches=range_result.support_touches,
             range_resistance_touches=range_result.resistance_touches,
             effort_without_reward=round(effort_without_reward, 2),
+            sot_upwaves=round(sot_bearish, 2),
+            buying_exhaustion=round(buying_exhaustion, 2),
+            buying_effort_without_reward=round(buying_effort_without_reward, 2),
+            downwave_confirmation=round(downwave_confirmation, 2),
+            weis_score_bearish=round(score_bearish, 2),
+            verdict_bearish=verdict_bearish,
             explanation=(
                 f"SOT={sot:.1f}, "
                 f"Exhaustion={exhaustion:.1f}, "
