@@ -532,6 +532,56 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     return results
 
 
+def fetch_bars_multi(symbols: List[str], timeframe: str = "1Day", lookback_days: int = 280) -> dict:
+    """
+    Genuinely batched multi-symbol bars fetch, using Alpaca's real
+    /v2/stocks/bars endpoint (distinct from fetch_bars_batch()'s
+    /v2/stocks/{symbol}/bars, which makes one sequential request per
+    symbol). Modeled directly on the proven, already-working pattern
+    in campaign_enriched_table_api.py's _bars() -- comma-separated
+    symbols, batched 40 per request. This is what makes it safe to run
+    across an entire page of results (a ~50-100 row page needs only
+    2-3 requests total this way, not one call per symbol).
+    """
+    out: Dict[str, list] = {s: [] for s in symbols}
+    if not symbols:
+        return out
+
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=lookback_days)
+
+    for i in range(0, len(symbols), 40):
+        batch = symbols[i:i + 40]
+        try:
+            r = _req.get(
+                f"{ALPACA_BASE_URL}/v2/stocks/bars",
+                headers=_alpaca_headers(),
+                params={
+                    "symbols": ",".join(batch),
+                    "timeframe": timeframe,
+                    "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "end": end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "adjustment": "split",
+                    "feed": ALPACA_FEED,
+                    "limit": "10000",
+                    "sort": "asc",
+                },
+                timeout=20,
+            )
+            if r.status_code == 200:
+                raw = r.json().get("bars", {})
+                if isinstance(raw, dict):
+                    for s in batch:
+                        if isinstance(raw.get(s), list):
+                            out[s] = raw[s]
+            else:
+                log.warning(f"fetch_bars_multi batch error {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            log.warning(f"fetch_bars_multi batch failed (non-fatal): {e}")
+
+    return out
+
+
 def fetch_intraday_bars(symbol: str, timeframe: str = "5Min",
                         limit: int = 78) -> List[dict]:
     try:
@@ -2577,8 +2627,9 @@ def _attach_methodology_verdicts(rows: list) -> None:
     score and verdict from real price/volume structure, with no
     blending between methodologies.
 
-    Deliberately scoped to a small number of rows (see caller) since
-    this requires a real bar fetch per symbol.
+    Uses fetch_bars_multi() (genuine multi-symbol batching, ~40 per
+    request) rather than fetching bars one symbol at a time, so it's
+    safe to call across an entire page of results.
     """
     if not rows:
         return
@@ -2589,7 +2640,7 @@ def _attach_methodology_verdicts(rows: list) -> None:
     from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
 
     symbols = [r.get("symbol") for r in rows if r.get("symbol")]
-    bars_by_symbol = fetch_bars_batch(symbols, timeframe="1Day", limit=252)
+    bars_by_symbol = fetch_bars_multi(symbols, timeframe="1Day", lookback_days=280)
 
     wyckoff_engine = WyckoffVerdictEngine()
     livermore_engine = LivermoreVerdictEngine()
@@ -2744,12 +2795,20 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
     # genuine, separate, already-built engines exist for exactly this
     # (WyckoffVerdictEngine, LivermoreVerdictEngine, WeisVerdictEngine,
     # in backend/research_engine/) but were never connected anywhere on
-    # the Radar Screen. Wired in here, scoped to only the top 3 "hero"
-    # cards (Top Opportunities) -- fetch_bars_batch() makes one
-    # sequential API call per symbol, safe for 3, too slow for the full
-    # ~50-row table.
+    # the Radar Screen. Originally scoped to only the top 3 "hero" cards,
+    # since fetch_bars_batch() made one sequential API call per symbol --
+    # safe for 3, too slow for the full table.
+    #
+    # UPDATE (2026-08-09): extended to the full page. Found and reused a
+    # genuine, already-proven multi-symbol batch pattern elsewhere in
+    # this codebase (campaign_enriched_table_api.py's _bars(), using
+    # Alpaca's real /v2/stocks/bars endpoint with comma-separated
+    # symbols) -- built fetch_bars_multi() on the same pattern, batching
+    # 40 symbols per request. A full ~50-100 row page now needs only 2-3
+    # requests total, not one sequential call per row, making it safe to
+    # cover every row rather than just the top 3.
     try:
-        _attach_methodology_verdicts(page[:3])
+        _attach_methodology_verdicts(page)
     except Exception as e:
         log.warning(f"Methodology verdict enrichment failed (non-fatal): {e}")
 
