@@ -3480,7 +3480,18 @@ def build_radar_tab(session=None):
         hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
         exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
-        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
+        # FIX (2026-08-09): replaced the pooled-history probability_grade
+        # (confirmed to leave most real symbols "Unrated" -- matched
+        # against a fixed, unrelated 50-symbol historical backtest, not
+        # this specific symbol) with the new, genuine, per-symbol
+        # setup_grade -- built from the real sweep/exhaustion/reclaim
+        # sequence plus range maturity for this exact symbol. Falls
+        # back to the old value only if setup_grade wasn't computed at
+        # all for this row (e.g. bar fetch failed for this symbol).
+        setup_grade = s.get("setup_grade")
+        setup_grade_reason = _safe_text(s.get("setup_grade_reason"), "")
+        prob_grade = _safe_text(setup_grade or s.get("probability_grade", s.get("historical_grade")), "—")
+        grade_tooltip = setup_grade_reason if setup_grade else "Legacy pooled-history grade (no setup-specific data available for this symbol)."
         setup_risk_reward = s.get("setup_risk_reward")
         wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
         livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
@@ -3512,9 +3523,10 @@ def build_radar_tab(session=None):
                 "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
                 "color":YELLOW_DIM,"textAlign":"center"
             }),
-            html.Span(prob_grade, style={
+            html.Span(prob_grade, title=grade_tooltip, style={
                 "flex":"0 0 62px","fontSize":"12px","fontWeight":"950",
-                "color":grade_color,"textAlign":"center"
+                "color":grade_color,"textAlign":"center","cursor":"help",
+                "borderBottom":"1px dotted currentColor"
             }),
             html.Span(_fmt_pct(hist_success, 1), style={
                 "flex":"0 0 86px","fontSize":"12px","fontWeight":"900",
