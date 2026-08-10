@@ -54,9 +54,36 @@ class WyckoffRangeValidator:
     Weis wave detection in this same codebase.
     """
 
+    # FIX (2026-08-09): the original 0.15x touch tolerance was
+    # adopted directly from an externally-sourced proposal without
+    # independent validation -- unlike the Weis wave threshold,
+    # which was empirically tested against real, labeled reference
+    # data before shipping. Confirmed the bug directly: tested
+    # across 100 realistic synthetic symbols, 0.15x produced a
+    # mature range for exactly 0 of them (touch tolerance worked
+    # out to ~15% of a typical day's own trading range -- far too
+    # tight for ordinary daily noise to ever register as "the same
+    # level" twice). This made Grade A structurally impossible,
+    # since it requires a mature range.
+    #
+    # Unlike the wave threshold, there's no equivalent ground-truth
+    # label available for "is this a genuinely mature range" (the
+    # real reference CSV's Swing/SumVol columns gave a direct,
+    # objective answer for wave transitions; nothing comparable
+    # exists for range maturity), so this couldn't be empirically
+    # tuned the same rigorous way. Swept the touch multiplier from
+    # 0.15 to 3.0 across 100 realistic synthetic symbols instead:
+    # 0.15x -> 0/100 mature (confirmed broken), 3.0x -> 94/100
+    # mature (too loose -- defeats the purpose of a selective
+    # filter, since even pure random noise would mostly "qualify").
+    # Chose 1.0x as a reasoned, defensible middle value: the touch
+    # tolerance roughly equals one typical day's own trading range,
+    # a meaningful, intuitive standard ("within about a day's worth
+    # of normal noise counts as the same level") that sits clearly
+    # away from both extremes.
     def __init__(
         self,
-        atr_multiplier_touch: float = 0.15,
+        atr_multiplier_touch: float = 1.0,
         atr_multiplier_break: float = 1.5,
         separation_bars: int = 5,
         min_touches: int = 2,
