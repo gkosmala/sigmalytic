@@ -95,6 +95,24 @@ class WeisVerdictEngine:
         # (e.g. too few bars).
         self.zigzag_percent = zigzag_percent
 
+    def _compute_atr_series(self, df: pd.DataFrame) -> pd.Series:
+        """
+        Real, per-bar rolling ATR series (True Range averaged over
+        self.atr_period). Shared helper reused by both
+        _compute_atr_threshold_pct() (wave-detection threshold) and
+        WyckoffRangeValidator (range-maturity touch/breakout tolerance),
+        so both use the exact same underlying ATR calculation rather
+        than two separate, potentially-inconsistent implementations.
+        """
+        high, low, close = df["high"], df["low"], df["close"]
+        prev_close = close.shift(1)
+        true_range = pd.concat([
+            (high - low),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        return true_range.rolling(self.atr_period).mean()
+
     def _compute_atr_threshold_pct(self, df: pd.DataFrame) -> float:
         """
         Real, per-symbol ATR-based reversal threshold, expressed as a
@@ -105,16 +123,8 @@ class WeisVerdictEngine:
         if len(df) < self.atr_period + 1:
             return self.zigzag_percent
 
-        high, low, close = df["high"], df["low"], df["close"]
-        prev_close = close.shift(1)
-        true_range = pd.concat([
-            (high - low),
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ], axis=1).max(axis=1)
-
-        atr = true_range.rolling(self.atr_period).mean().iloc[-1]
-        recent_price = float(close.iloc[-1])
+        atr = self._compute_atr_series(df).iloc[-1]
+        recent_price = float(df["close"].iloc[-1])
         if pd.isna(atr) or recent_price <= 0:
             return self.zigzag_percent
 
