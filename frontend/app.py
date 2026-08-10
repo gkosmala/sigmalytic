@@ -6641,6 +6641,51 @@ if ('serviceWorker' in navigator) {{
         }});
     }};
 }})();
+
+// FIX (2026-08-09): user reported the hover tooltip (Ready/Grade
+// cells in the Full Opportunity Radar table) "bleeds out of the
+// frame" -- confirmed root cause: the tooltip uses position:absolute,
+// but it's nested inside the table's horizontally-scrolling container
+// (overflowX:auto), which clips any absolutely-positioned child at
+// its own boundary regardless of z-index. A pure CSS fix isn't
+// possible without escaping that container. Solution: on click of any
+// .sig-tooltip element, show its .sig-tooltip-text content in a
+// fixed, screen-centered modal appended directly to document.body --
+// entirely outside the scrolling table, so it can't be clipped.
+(function() {{
+    var modalEl = null;
+    function closeSigModal() {{
+        if (modalEl) {{ modalEl.remove(); modalEl = null; }}
+    }}
+    document.addEventListener('click', function(e) {{
+        var trigger = e.target.closest ? e.target.closest('.sig-tooltip') : null;
+        if (trigger) {{
+            var textEl = trigger.querySelector('.sig-tooltip-text');
+            var text = textEl ? textEl.textContent : '';
+            closeSigModal();
+            modalEl = document.createElement('div');
+            modalEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;' +
+                'background:rgba(0,0,0,.6);z-index:100000;display:flex;' +
+                'align-items:center;justify-content:center;padding:24px;';
+            var box = document.createElement('div');
+            box.style.cssText = 'background:{NAVY_MID};border:1px solid {BORDER_T};' +
+                'border-radius:12px;padding:20px;max-width:420px;max-height:70vh;' +
+                'overflow-y:auto;color:{WHITE};font-size:13px;font-weight:700;' +
+                'line-height:1.6;white-space:pre-line;box-shadow:0 12px 40px rgba(0,0,0,.5);';
+            box.textContent = text;
+            box.addEventListener('click', function(e) {{ e.stopPropagation(); }});
+            modalEl.appendChild(box);
+            modalEl.addEventListener('click', closeSigModal);
+            document.body.appendChild(modalEl);
+            e.stopPropagation();
+        }} else if (modalEl) {{
+            closeSigModal();
+        }}
+    }});
+    document.addEventListener('keydown', function(e) {{
+        if (e.key === 'Escape') closeSigModal();
+    }});
+}})();
 </script>
 </body></html>"""
 
