@@ -601,12 +601,19 @@ def _d3f1b_guardrail_clean(data):
 
 
 def _d3f1b_row(label, value):
+    # FIX (2026-08-09): overflowWrap:"anywhere" broke long identifier
+    # strings at literally any character, splitting whole words like
+    # "SWEEP" into "S" on one line and "WEEP" on the next. Underscores
+    # in these values are the real, logical word boundaries -- insert
+    # an actual break opportunity (a zero-width space) only there, so
+    # wrapping only ever happens between words, never inside one.
+    value_text = str(value).replace("_", "_\u200b")
     return html.Div(
         [
             html.Span(label, style={"color": "#94a3b8", "flexShrink": "0"}),
-            html.Span(str(value), style={
+            html.Span(value_text, style={
                 "fontWeight": "700", "textAlign": "right",
-                "overflowWrap": "anywhere", "wordBreak": "break-word",
+                "overflowWrap": "break-word", "wordBreak": "normal",
                 "minWidth": "0",
             }),
         ],
