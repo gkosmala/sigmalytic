@@ -2547,17 +2547,30 @@ def _build_eligible_campaign_alerts():
     send endpoint and the (genuinely read-only) preview endpoint --
     extracted so both use the exact same eligibility/field-building
     logic rather than two separately-maintained copies.
+
+    FIX (2026-08-09): also returns real diagnostics (total active
+    campaigns before tier filtering, and a genuine count of tier
+    values actually seen) -- after fixing the tier-string bug, user
+    still saw "no eligible campaigns," and there was no way to tell
+    whether that's genuinely accurate (zero active campaigns right
+    now, or active campaigns that are all TIER_3) versus a different,
+    still-unresolved issue.
     """
     from decimal import Decimal
     from datetime import date as _date
+    from collections import Counter
     from backend.campaign_engine.campaign_store import CampaignStore
     from backend.intelligence.subscriber_alerts import CampaignBirthAlert
 
     store = CampaignStore()
     if not store.configured():
-        return None, {"ok": False, "error": "campaign_store_not_configured"}
+        return None, {"ok": False, "error": "campaign_store_not_configured"}, None
 
     campaigns = store.get_active_campaigns()
+    diagnostics = {
+        "total_active_campaigns": len(campaigns),
+        "tier_breakdown": dict(Counter(c.get("tier") or "(none)" for c in campaigns)),
+    }
     # FIX (2026-08-09): the actual tier values (confirmed directly
     # from the CampaignTier enum in campaign_models.py, and all three
     # places tier gets set) are the full "TIER_1_INSTITUTIONAL_ALPHA"/
@@ -2599,7 +2612,7 @@ def _build_eligible_campaign_alerts():
             campaign_id=str(c.get("campaign_id", "")),
             birth_date=_date.today(),
         ))
-    return alerts, None
+    return alerts, None, diagnostics
 
 
 @app.post("/api/admin/send-subscriber-alerts")
@@ -2622,12 +2635,12 @@ async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
     from backend.intelligence.subscriber_alerts import send_campaign_birth_alerts
 
     try:
-        alerts, error = _build_eligible_campaign_alerts()
+        alerts, error, diagnostics = _build_eligible_campaign_alerts()
         if error:
             return error
 
         result = await send_campaign_birth_alerts(alerts)
-        return {"ok": True, "eligible_campaigns": len(alerts), "result": result}
+        return {"ok": True, "eligible_campaigns": len(alerts), "diagnostics": diagnostics, "result": result}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
@@ -2649,7 +2662,7 @@ async def admin_preview_subscriber_alerts(_admin: str = Depends(require_admin)):
     from backend.intelligence.subscriber_alerts import _render_email_html
 
     try:
-        alerts, error = _build_eligible_campaign_alerts()
+        alerts, error, diagnostics = _build_eligible_campaign_alerts()
         if error:
             return error
 
@@ -2667,7 +2680,7 @@ async def admin_preview_subscriber_alerts(_admin: str = Depends(require_admin)):
                 "html": html,
             })
 
-        return {"ok": True, "eligible_campaigns": len(alerts), "drafts": drafts}
+        return {"ok": True, "eligible_campaigns": len(alerts), "diagnostics": diagnostics, "drafts": drafts}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 

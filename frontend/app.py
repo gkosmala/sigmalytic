@@ -6503,8 +6503,19 @@ def handle_subscriber_alerts_preview(n_clicks, session):
             return f"Failed: {payload.get('error', 'unknown error')}"
         drafts = payload.get("drafts", [])
         if not drafts:
-            return html.Div("No TIER_1/TIER_2 campaigns currently eligible for an alert.",
-                             style={"fontSize": "12px", "color": WHITE, "opacity": ".8"})
+            diag = payload.get("diagnostics") or {}
+            total = diag.get("total_active_campaigns", 0)
+            breakdown = diag.get("tier_breakdown", {})
+            if total == 0:
+                detail = "There are currently zero active campaigns of any tier."
+            else:
+                breakdown_text = ", ".join(f"{v} {k}" for k, v in breakdown.items())
+                detail = f"{total} active campaign(s) exist, but none are TIER_1/TIER_2 right now: {breakdown_text}."
+            return html.Div([
+                html.Div("No TIER_1/TIER_2 campaigns currently eligible for an alert.",
+                         style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"}),
+                html.Div(detail, style={"fontSize": "11px", "color": WHITE, "opacity": ".7"}),
+            ])
         return html.Div([
             html.Div(f"{len(drafts)} draft(s) -- exactly what \"Send Subscriber Alerts\" would email out, not sent:",
                       style={"fontSize": "12px", "color": WHITE, "fontWeight": "800", "marginBottom": "10px"}),
