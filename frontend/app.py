@@ -3482,6 +3482,9 @@ def build_radar_tab(session=None):
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
         prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
         setup_risk_reward = s.get("setup_risk_reward")
+        wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
+        livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
+        weis_verdict = s.get("weis_verdict") if isinstance(s.get("weis_verdict"), dict) else None
         color = _state_color(state, readiness)
         side_color = _side_color(side)
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -3560,10 +3563,34 @@ def build_radar_tab(session=None):
                     "textAlign":"center"
                 },
             ),
+            html.Span(
+                f"{wyckoff_verdict.get('wyckoff_score', 0):.0f}" if wyckoff_verdict else "—",
+                style={
+                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
+                    "color": TEAL_DIM if wyckoff_verdict else MUTED,
+                    "textAlign":"center"
+                },
+            ),
+            html.Span(
+                f"{livermore_verdict.get('livermore_score', 0):.0f}" if livermore_verdict else "—",
+                style={
+                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
+                    "color": BLUE_DIM if livermore_verdict else MUTED,
+                    "textAlign":"center"
+                },
+            ),
+            html.Span(
+                f"{weis_verdict.get('weis_score', 0):.0f}" if weis_verdict else "—",
+                style={
+                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
+                    "color": YELLOW_DIM if weis_verdict else MUTED,
+                    "textAlign":"center"
+                },
+            ),
         ], style={
             "display":"flex","alignItems":"center","gap":"10px",
             "padding":"11px 0","borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1710px"
+            "minWidth":"1900px"
         })
 
     header = html.Div([
@@ -3585,10 +3612,13 @@ def build_radar_tab(session=None):
         html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
         html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
         html.Span("R:R", style={"flex":"0 0 66px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Wyckoff", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Livermore", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
+        html.Span("Weis", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
     ], style={
         "display":"flex","gap":"10px","paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
-        "minWidth":"1710px"
+        "minWidth":"1900px"
     })
 
     # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
@@ -3640,7 +3670,7 @@ def build_radar_tab(session=None):
                 }),
                 html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
                          style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"4px"}),
-                html.Div("⟷ Scroll right for more columns, including Trigger, Invalid, and R:R",
+                html.Div("⟷ Scroll right for more columns, including Trigger, Invalid, R:R, Wyckoff, Livermore, and Weis",
                          style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800","marginBottom":"12px"}),
                 html.Div([
                     header,
