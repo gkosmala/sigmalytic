@@ -603,16 +603,22 @@ def _d3f1b_guardrail_clean(data):
 def _d3f1b_row(label, value):
     return html.Div(
         [
-            html.Span(label, style={"color": "#94a3b8"}),
-            html.Span(str(value), style={"fontWeight": "700", "textAlign": "right"}),
+            html.Span(label, style={"color": "#94a3b8", "flexShrink": "0"}),
+            html.Span(str(value), style={
+                "fontWeight": "700", "textAlign": "right",
+                "overflowWrap": "anywhere", "wordBreak": "break-word",
+                "minWidth": "0",
+            }),
         ],
         style={
             "display": "flex",
             "justifyContent": "space-between",
+            "alignItems": "flex-start",
             "gap": "14px",
             "padding": "6px 0",
             "borderTop": "1px solid rgba(148,163,184,0.14)",
             "fontSize": "13px",
+            "minWidth": "0",
         },
     )
 
@@ -725,6 +731,7 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
                             "border": "1px solid rgba(148,163,184,0.22)",
                             "borderRadius": "12px",
                             "padding": "14px",
+                            "minWidth": "0",
                         },
                     ),
                     html.Div(
@@ -744,6 +751,7 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
                             "border": "1px solid rgba(148,163,184,0.22)",
                             "borderRadius": "12px",
                             "padding": "14px",
+                            "minWidth": "0",
                         },
                     ),
                 ],
