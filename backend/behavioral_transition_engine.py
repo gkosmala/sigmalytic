@@ -248,6 +248,22 @@ def calculate_readiness_score(data: Dict[str, Any], state: str, transition: str,
     risk_notes: List[str] = []
 
     composite = _f(data.get("composite_score", data.get("score")))
+    # FIX (2026-08-09): distinguish "the real deep-engine comparison
+    # hasn't been computed for this symbol yet" from "it was computed
+    # and genuinely came out to zero" -- these previously produced
+    # identical text ("Deep engine confirms radar (+0.0)"), which is
+    # exactly what showed up identically across multiple symbols right
+    # after a backend restart, before run_eod_audit()'s ~900-symbol
+    # pass (2 minutes after startup, then every 30 minutes) had reached
+    # every symbol yet. intelligence_score/intelligence_delta are only
+    # ever set by that same audit -- their absence means "not yet
+    # computed", not "computed as zero".
+    intelligence_not_yet_computed = (
+        data.get("deep_score") is None
+        and data.get("intelligence_score") is None
+        and data.get("intelligence_delta") is None
+        and data.get("delta") is None
+    )
     deep = _f(data.get("deep_score", data.get("intelligence_score", composite)))
     delta = _f(data.get("intelligence_delta", data.get("delta", deep - composite)))
     agreement = _f(data.get("agreement_score"), 100 - abs(delta))
@@ -280,7 +296,10 @@ def calculate_readiness_score(data: Dict[str, Any], state: str, transition: str,
         evidence.append(f"Positive intelligence upgrade ({delta:+.1f})")
     elif delta >= 0:
         score += 8
-        evidence.append(f"Deep engine confirms radar ({delta:+.1f})")
+        if intelligence_not_yet_computed:
+            evidence.append("Deep engine comparison not yet computed for this symbol")
+        else:
+            evidence.append(f"Deep engine confirms radar ({delta:+.1f})")
     elif delta <= -20:
         score -= 18
         risk_notes.append(f"Major intelligence downgrade ({delta:+.1f})")
