@@ -5453,10 +5453,18 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Button("Send Subscriber Alerts", id="subscriber-alerts-btn", n_clicks=0,
             style={"background": RED_DIM, "color": WHITE, "border": "none", "borderRadius": "8px",
                    "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
+                   "marginBottom": "14px", "marginRight": "8px"}),
+        html.Button("Review Drafts", id="subscriber-alerts-preview-btn", n_clicks=0,
+            style={"background": "transparent", "color": BLUE_DIM, "border": f"1px solid {BLUE_DIM}",
+                   "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700",
+                   "cursor": "pointer", "marginBottom": "14px"}),
         dcc.Loading(
             html.Div(id="subscriber-alerts-result", style={"fontSize": "12px", "color": WHITE}),
             type="dot", color=TEAL,
+        ),
+        dcc.Loading(
+            html.Div(id="subscriber-alerts-preview-result", style={"marginTop": "12px"}),
+            type="dot", color=BLUE_DIM,
         ),
     ], sx={"marginBottom": "16px"})
 
@@ -6462,6 +6470,60 @@ def handle_subscriber_alerts(n_clicks, session):
         return f"{eligible} eligible campaign(s). Result: {result}"
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
+
+@app.callback(Output("subscriber-alerts-preview-result", "children"),
+              Input("subscriber-alerts-preview-btn", "n_clicks"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_subscriber_alerts_preview(n_clicks, session):
+    """
+    FIX (2026-08-09): user asked whether a way to review drafts before
+    the real send exists. Admin-only 'Review Drafts' button, calling
+    the new, genuinely read-only GET /api/admin/preview-subscriber-alerts
+    endpoint -- builds the exact same real email content the send
+    button would actually email out, without sending or touching any
+    subscriber data. Each draft's real HTML is rendered in its own
+    isolated iframe (via srcDoc) so the email's own inline styles and
+    table-based layout can't conflict with the app's own CSS.
+    """
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/admin/preview-subscriber-alerts",
+            headers=_auth_headers(session),
+            timeout=60,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Failed (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Failed: {payload.get('error', 'unknown error')}"
+        drafts = payload.get("drafts", [])
+        if not drafts:
+            return html.Div("No TIER_1/TIER_2 campaigns currently eligible for an alert.",
+                             style={"fontSize": "12px", "color": WHITE, "opacity": ".8"})
+        return html.Div([
+            html.Div(f"{len(drafts)} draft(s) -- exactly what \"Send Subscriber Alerts\" would email out, not sent:",
+                      style={"fontSize": "12px", "color": WHITE, "fontWeight": "800", "marginBottom": "10px"}),
+            *[
+                html.Div([
+                    html.Div(f"{d['symbol']} — {d['tier']} (Layer {d['layer']})",
+                              style={"fontSize": "12px", "color": WHITE, "fontWeight": "800",
+                                     "marginBottom": "6px"}),
+                    html.Iframe(srcDoc=d["html"], style={
+                        "width": "100%", "height": "480px", "border": f"1px solid {BORDER}",
+                        "borderRadius": "10px", "background": WHITE,
+                    }),
+                ], style={"marginBottom": "20px"})
+                for d in drafts
+            ],
+        ])
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
 
 @app.callback(
     Output("heatmap-treemap", "figure"),

@@ -2540,6 +2540,60 @@ def radar_symbol_wyckoff_verdict(symbol: str, years: int = 1):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+def _build_eligible_campaign_alerts():
+    """
+    Shared helper: fetches currently-active TIER_1/TIER_2 campaigns and
+    builds the same CampaignBirthAlert objects used by both the real
+    send endpoint and the (genuinely read-only) preview endpoint --
+    extracted so both use the exact same eligibility/field-building
+    logic rather than two separately-maintained copies.
+    """
+    from decimal import Decimal
+    from datetime import date as _date
+    from backend.campaign_engine.campaign_store import CampaignStore
+    from backend.intelligence.subscriber_alerts import CampaignBirthAlert
+
+    store = CampaignStore()
+    if not store.configured():
+        return None, {"ok": False, "error": "campaign_store_not_configured"}
+
+    campaigns = store.get_active_campaigns()
+    eligible = [c for c in campaigns if c.get("tier") in ("TIER_1", "TIER_2")]
+
+    def _dec(v, default="0"):
+        try:
+            return Decimal(str(v)) if v is not None else Decimal(default)
+        except Exception:
+            return Decimal(default)
+
+    alerts = []
+    for c in eligible:
+        alerts.append(CampaignBirthAlert(
+            symbol=c.get("symbol", ""),
+            tier=c.get("tier", "TIER_2"),
+            layer=c.get("layer", "B"),
+            entry_price=_dec(c.get("entry_price")),
+            stop_price=_dec(c.get("stop_price")),
+            stop_pct="-10%" if c.get("layer") == "A" else "-20%",
+            pnf_target=_dec(c.get("pnf_target")),
+            mfe90_expected=_dec(c.get("mfe90_expected")),
+            d_score=float(c.get("d_score") or 0.0),
+            obstacle_score=float(c.get("obstacle_score") or 0.0),
+            duration_days=int(c.get("duration_days") or 0),
+            dur_bucket=c.get("dur_bucket", "DUR_60_120"),
+            behavioral_state=c.get("behavioral_state", "ACCUMULATION"),
+            spd=bool(c.get("spd", False)),
+            dei=bool(c.get("dei", False)),
+            wed_count=int(c.get("wed_count") or 0),
+            asym_ratio=_dec(c.get("asym_ratio"), "1"),
+            shares=int(c.get("shares") or 0),
+            position_value=_dec(c.get("position_value")),
+            campaign_id=str(c.get("campaign_id", "")),
+            birth_date=_date.today(),
+        ))
+    return alerts, None
+
+
 @app.post("/api/admin/send-subscriber-alerts")
 async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
     """
@@ -2557,55 +2611,55 @@ async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
     POST since this sends real emails to real subscribers -- a genuine
     external, real-world action, not a read.
     """
-    from decimal import Decimal
-    from datetime import date as _date
-    from backend.campaign_engine.campaign_store import CampaignStore
-    from backend.intelligence.subscriber_alerts import (
-        CampaignBirthAlert, send_campaign_birth_alerts,
-    )
+    from backend.intelligence.subscriber_alerts import send_campaign_birth_alerts
 
     try:
-        store = CampaignStore()
-        if not store.configured():
-            return {"ok": False, "error": "campaign_store_not_configured"}
-
-        campaigns = store.get_active_campaigns()
-        eligible = [c for c in campaigns if c.get("tier") in ("TIER_1", "TIER_2")]
-
-        def _dec(v, default="0"):
-            try:
-                return Decimal(str(v)) if v is not None else Decimal(default)
-            except Exception:
-                return Decimal(default)
-
-        alerts = []
-        for c in eligible:
-            alerts.append(CampaignBirthAlert(
-                symbol=c.get("symbol", ""),
-                tier=c.get("tier", "TIER_2"),
-                layer=c.get("layer", "B"),
-                entry_price=_dec(c.get("entry_price")),
-                stop_price=_dec(c.get("stop_price")),
-                stop_pct="-10%" if c.get("layer") == "A" else "-20%",
-                pnf_target=_dec(c.get("pnf_target")),
-                mfe90_expected=_dec(c.get("mfe90_expected")),
-                d_score=float(c.get("d_score") or 0.0),
-                obstacle_score=float(c.get("obstacle_score") or 0.0),
-                duration_days=int(c.get("duration_days") or 0),
-                dur_bucket=c.get("dur_bucket", "DUR_60_120"),
-                behavioral_state=c.get("behavioral_state", "ACCUMULATION"),
-                spd=bool(c.get("spd", False)),
-                dei=bool(c.get("dei", False)),
-                wed_count=int(c.get("wed_count") or 0),
-                asym_ratio=_dec(c.get("asym_ratio"), "1"),
-                shares=int(c.get("shares") or 0),
-                position_value=_dec(c.get("position_value")),
-                campaign_id=str(c.get("campaign_id", "")),
-                birth_date=_date.today(),
-            ))
+        alerts, error = _build_eligible_campaign_alerts()
+        if error:
+            return error
 
         result = await send_campaign_birth_alerts(alerts)
-        return {"ok": True, "eligible_campaigns": len(eligible), "result": result}
+        return {"ok": True, "eligible_campaigns": len(alerts), "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/admin/preview-subscriber-alerts")
+async def admin_preview_subscriber_alerts(_admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-09): user asked whether a way to review drafts before
+    the real send exists -- it didn't; added this as a genuinely
+    read-only companion to the send endpoint above. Builds the exact
+    same eligible-campaign list and CampaignBirthAlert objects (via the
+    shared helper), but renders each one's real email HTML directly
+    (reusing the existing, separate _render_email_html() -- the same
+    function the real send path uses to build what actually gets
+    emailed) without calling send_campaign_birth_alerts() or fetching
+    any subscriber records at all. GET, not POST, since this sends
+    nothing and has no side effects.
+    """
+    from backend.intelligence.subscriber_alerts import _render_email_html
+
+    try:
+        alerts, error = _build_eligible_campaign_alerts()
+        if error:
+            return error
+
+        drafts = []
+        for alert in alerts:
+            try:
+                html = _render_email_html(alert)
+            except Exception as e:
+                html = f"<p>Error rendering preview: {str(e)[:200]}</p>"
+            drafts.append({
+                "symbol": alert.symbol,
+                "tier": alert.tier,
+                "layer": alert.layer,
+                "campaign_id": alert.campaign_id,
+                "html": html,
+            })
+
+        return {"ok": True, "eligible_campaigns": len(alerts), "drafts": drafts}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
