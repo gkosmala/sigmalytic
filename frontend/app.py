@@ -3485,6 +3485,10 @@ def build_radar_tab(session=None):
         wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
         livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
         weis_verdict = s.get("weis_verdict") if isinstance(s.get("weis_verdict"), dict) else None
+        row_evidence = s.get("evidence") if isinstance(s.get("evidence"), list) else []
+        row_risk_notes = s.get("risk_notes") if isinstance(s.get("risk_notes"), list) else []
+        readiness_tooltip_lines = [f"+ {e}" for e in row_evidence] + [f"- {r}" for r in row_risk_notes]
+        readiness_tooltip = "\n".join(readiness_tooltip_lines) if readiness_tooltip_lines else "No readiness evidence available yet."
         color = _state_color(state, readiness)
         side_color = _side_color(side)
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -3499,9 +3503,10 @@ def build_radar_tab(session=None):
                 "flex":"0 0 74px","fontSize":"12px","fontWeight":"900",
                 "color":TEAL_DIM if chg >= 0 else RED_DIM
             }),
-            html.Span(f"{readiness:.0f}", style={
+            html.Span(f"{readiness:.0f}", title=readiness_tooltip, style={
                 "flex":"0 0 72px","fontSize":"14px","fontWeight":"950",
-                "color":color,"textAlign":"center"
+                "color":color,"textAlign":"center","cursor":"help",
+                "borderBottom":"1px dotted currentColor"
             }),
             html.Span(f"{score:.0f}", style={
                 "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
