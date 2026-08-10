@@ -431,7 +431,20 @@ def calculate_readiness_score(data: Dict[str, Any], state: str, transition: str,
         score -= 6
         risk_notes.append(f"Behavioral pressure weak ({behavioral:.1f})")
 
-    return round(_clamp(score), 1), evidence[:8], risk_notes[:6]
+    # FIX (2026-08-09): PRODUCT DECISION -- removed the upper 100 cap
+    # on readiness_score (kept the floor at 0; a negative readiness
+    # has no clear meaning, unlike genuinely very-high readiness).
+    # Previously every setup that cleared the ceiling collapsed to an
+    # identical "100" regardless of how far past the bar it actually
+    # was -- a setup that barely qualified and one where every single
+    # factor maxed out simultaneously were indistinguishable. This
+    # traded away real precision among the strongest setups for a
+    # familiar, percentage-like 0-100 feel. Confirmed all downstream
+    # consumers (classify_opportunity_state(), _confidence_label(),
+    # the frontend's color logic, the Elite 90+ count, and the
+    # min_readiness filter) use only lower-bound (>=) checks, so none
+    # of them break with values above 100.
+    return round(max(0.0, score), 1), evidence[:8], risk_notes[:6]
 
 
 def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -499,7 +512,7 @@ def evaluate_behavioral_transition(data: Dict[str, Any]) -> Dict[str, Any]:
     trader_summary = (
         f"{symbol} is classified as {opportunity_state} for a {side} setup. "
         f"Behavioral transition: {transition}. "
-        f"Readiness score: {readiness:.1f}/100."
+        f"Readiness score: {readiness:.1f}."
     )
 
     result = BehavioralTransition(
