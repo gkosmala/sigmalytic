@@ -49,6 +49,11 @@ class WeisVerdict:
     range_support_touches: int = 0
     range_resistance_touches: int = 0
 
+    # FIX (2026-08-09): "effort without reward" -- David Weis's own
+    # distinct signal for SOT occurring with strong (not shrinking)
+    # volume, separate from genuine exhaustion (SOT + weak volume).
+    effort_without_reward: float = 0.0
+
     explanation: str = ""
     as_of: str = ""
 
@@ -251,7 +256,25 @@ class WeisVerdictEngine:
 
         return 0.0
 
-    def volume_exhaustion_score(self, waves):
+    def volume_exhaustion_score(self, waves, sot_confirmed: bool = False):
+        """
+        FIX (2026-08-09): per David Weis's own direct words (Trades
+        About to Happen): "When price advancement shortens but there
+        is strong volume, it means that the great effort obtained
+        little reward... When the price advance shortens and there is
+        also weak volume, it means exhaustion." These are two
+        genuinely different signals, not one -- exhaustion specifically
+        requires the shortening (SOT) AND weak volume to occur
+        together on the same waves, not weak volume computed on its
+        own regardless of whether SOT even fired. Now requires
+        sot_confirmed=True before genuine exhaustion can register at
+        all; the strong-volume case is handled separately as
+        effort_without_reward_score(), per the book's own description
+        of it as a distinct, meaningful state -- not simply "no
+        exhaustion".
+        """
+        if not sot_confirmed:
+            return 0.0
 
         down = [w for w in waves if w["dir"] == -1]
 
@@ -262,6 +285,34 @@ class WeisVerdictEngine:
         w3 = down[-1]
 
         if w3["vol"] < (0.60 * w2["vol"]):
+            return 100.0
+
+        return 0.0
+
+    def effort_without_reward_score(self, waves, sot_confirmed: bool = False) -> float:
+        """
+        FIX (2026-08-09): the "great effort, little reward" case from
+        David Weis's own description -- shortening (SOT) occurring
+        WITH strong (not shrinking) volume. Per the book, this is not
+        the same as exhaustion and does not imply supply/demand is
+        withdrawing; it's a real, separate divergence signal in its
+        own right (demand appearing to absorb, in a bearish example).
+        """
+        if not sot_confirmed:
+            return 0.0
+
+        down = [w for w in waves if w["dir"] == -1]
+
+        if len(down) < 2:
+            return 0.0
+
+        w2 = down[-2]
+        w3 = down[-1]
+
+        # The mirror condition of volume_exhaustion_score(): the final
+        # wave's volume is NOT meaningfully shrinking (>= the prior
+        # wave's volume), despite the price shortening.
+        if w3["vol"] >= w2["vol"]:
             return 100.0
 
         return 0.0
@@ -310,10 +361,13 @@ class WeisVerdictEngine:
         )
 
         sot = self.shortening_of_thrust_score(waves)
+        sot_confirmed = sot >= 100
 
         exhaustion = (
-            self.volume_exhaustion_score(waves)
+            self.volume_exhaustion_score(waves, sot_confirmed=sot_confirmed)
         )
+
+        effort_without_reward = self.effort_without_reward_score(waves, sot_confirmed=sot_confirmed)
 
         confirmation = (
             self.upwave_confirmation_score(
@@ -372,9 +426,11 @@ class WeisVerdictEngine:
             range_resistance=round(range_result.resistance, 2) if range_result.resistance is not None else None,
             range_support_touches=range_result.support_touches,
             range_resistance_touches=range_result.resistance_touches,
+            effort_without_reward=round(effort_without_reward, 2),
             explanation=(
                 f"SOT={sot:.1f}, "
                 f"Exhaustion={exhaustion:.1f}, "
+                f"EffortWithoutReward={effort_without_reward:.1f}, "
                 f"Confirmation={confirmation:.1f}, "
                 f"RangeMature={range_result.is_mature} "
                 f"(S:{range_result.support_touches} touches, R:{range_result.resistance_touches} touches)"
