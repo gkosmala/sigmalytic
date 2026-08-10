@@ -37,6 +37,17 @@ class WyckoffVerdict:
     explanation: str
     as_of: str
 
+    # FIX (2026-08-09): per David Weis's own direct words, Upthrusts
+    # are NOT a mirror image of Springs -- "generally more difficult
+    # to operate than the Springs... supposed Upthrusts in a bullish
+    # trend rarely succeed; however, in a downtrend the Upthrusts
+    # above a correction[ive] previous[ly] bullish [bounce] have a
+    # higher likelihood of working." Added as a genuinely new,
+    # separate signal (this engine previously had no Upthrust
+    # detection of any kind), with its own trend-context asymmetry.
+    upthrust_score: float = 0.0
+    trend_context: str = "unknown"
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -145,6 +156,76 @@ class WyckoffVerdictEngine:
             score += 15
         return self._clamp(score)
 
+    def _detect_trend_context(self, df: pd.DataFrame, idx: int, trend_period: int = 100) -> str:
+        """
+        FIX (2026-08-09): per David Weis's own direct words, Upthrust
+        success depends heavily on the broader trend, unlike Springs:
+        "supposed Upthrusts in a bullish trend rarely succeed;
+        however, in a downtrend the Upthrusts above a correction[ive]
+        previous[ly] bullish [bounce] have a higher likelihood of
+        working." Approximates the broader (not local-range) trend by
+        comparing current price to a longer-term moving average
+        (deliberately longer than structure_lookback, which only
+        looks at the local range) -- price above it suggests the
+        primary trend is bullish (Upthrusts here are the harder,
+        lower-probability case); price below it suggests the primary
+        trend is bearish, with the current test of resistance more
+        likely being a corrective bounce within that larger downtrend
+        (the higher-probability case per the book).
+        """
+        window = df.iloc[max(0, idx - trend_period + 1):idx + 1]
+        if len(window) < trend_period // 2:
+            return "unknown"
+        long_ma = window["close"].mean()
+        current_close = float(df["close"].iloc[idx])
+        if current_close > long_ma:
+            return "bullish"
+        return "bearish"
+
+    def _score_upthrust(self, df: pd.DataFrame, idx: int, resistance: float, trend_context: str) -> float:
+        """
+        Genuine Upthrust detection -- this engine previously had none
+        at all. Mirrors _score_spring()'s structure (sweep, reclaim,
+        volume, close position) but is NOT simply spring_score's
+        mirror image, per the book's own explicit statements:
+
+        - Size guidance is asymmetric: the book gives Upthrust an
+          explicit numeric limit ("a new maximum by 10 to 15% seems
+          like a reasonable limitation") that Springs are never given
+          in the source material -- enforced here as an upper bound,
+          not just a minimum sweep depth.
+        - Trend-context asymmetry: rather than a fixed weight, the
+          book states Upthrusts in a bullish trend "rarely succeed"
+          while Upthrusts in a downtrend (testing a corrective bounce)
+          have "a higher likelihood of working" -- modeled as a
+          genuine penalty/bonus, not a cosmetic label.
+        """
+        row = df.iloc[idx]
+        score = 0
+
+        sweep_pct = (row["high"] / resistance - 1.0) if resistance else 0.0
+        # The sweep must be genuine (above resistance) but not so
+        # large it's a real breakout rather than a trap -- the book's
+        # own explicit 10-15% ceiling.
+        if 0.0 < sweep_pct <= 0.15:
+            score += 30
+        if row["close"] < resistance:
+            score += 35
+        if row["volume"] >= 1.5 * row["vol_sma"]:
+            score += 20
+        if row["close_pct_of_range"] <= 0.50:
+            score += 15
+
+        score = self._clamp(score)
+
+        # Trend-context asymmetry -- a real penalty/bonus, not cosmetic.
+        if trend_context == "bullish":
+            score *= 0.5
+        elif trend_context == "bearish":
+            score = min(100.0, score * 1.15)
+
+        return self._clamp(score)
+
     def _score_sign_of_strength(self, df: pd.DataFrame, idx: int, resistance: float) -> float:
         row = df.iloc[idx]
         atr = row["atr"] if pd.notna(row["atr"]) else 0
@@ -230,6 +311,13 @@ class WyckoffVerdictEngine:
         resolution_result = self._score_behavioral_resolution(df, idx, resistance)
         survival = self._score_survival(df, idx)
 
+        # FIX (2026-08-09): genuinely separate from wyckoff_score --
+        # that score's own verdict tiers (STRONG_ACCUMULATION, etc.)
+        # are all bullish-framed, so a strong Upthrust (a distribution
+        # signal) must not blend into and inflate it.
+        trend_context = self._detect_trend_context(df, idx)
+        upthrust = self._score_upthrust(df, idx, resistance, trend_context)
+
         raw_phase_score = stopping * 0.20 + absorption * 0.20 + spring * 0.35 + sos * 0.25
         wyckoff_score = self._clamp(raw_phase_score * 0.70 + resistance_result["score"] * 0.10 + resolution_result["score"] * 0.10 + survival * 0.10)
 
@@ -278,6 +366,8 @@ class WyckoffVerdictEngine:
             progress_against_resistance=resolution_result["progress_against_resistance"],
             explanation=explanation,
             as_of=datetime.now(timezone.utc).isoformat(),
+            upthrust_score=upthrust,
+            trend_context=trend_context,
         ).to_dict()
 
     def evaluate_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
