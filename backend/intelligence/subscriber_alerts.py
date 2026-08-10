@@ -178,8 +178,11 @@ def _fetch_alert_subscribers(symbol: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def _tier_color(tier: str) -> str:
-    return {"TIER_1": "#34d399", "TIER_2": "#93c5fd",
-            "TIER_3": "#fde68a", "TIER_4": "#64748b"}.get(tier, "#94a3b8")
+    # FIX (2026-08-09): same bug as the eligibility filters -- real
+    # tier values are the full "TIER_1_INSTITUTIONAL_ALPHA"/etc.
+    # strings, never the bare "TIER_1"/"TIER_2" this was checking.
+    return {"TIER_1_INSTITUTIONAL_ALPHA": "#34d399", "TIER_2_STABLE_RETENTION": "#93c5fd",
+            "TIER_3_LIQUIDATION_VOID": "#fde68a"}.get(tier, "#94a3b8")
 
 
 def _render_email_html(alert: CampaignBirthAlert) -> str:
@@ -481,8 +484,11 @@ async def send_campaign_birth_alerts(
     log.info("SUBSCRIBER ALERTS dispatching %d campaign alerts", len(alerts))
 
     for alert in alerts:
-        # Only alert on TIER_1 and TIER_2
-        if alert.tier not in {"TIER_1", "TIER_2"}:
+        # FIX (2026-08-09): same bug as main.py's eligibility filter --
+        # the real tier values are the full "TIER_1_INSTITUTIONAL_ALPHA"/
+        # "TIER_2_STABLE_RETENTION" strings, never the bare "TIER_1"/
+        # "TIER_2" this check was comparing against.
+        if alert.tier not in {"TIER_1_INSTITUTIONAL_ALPHA", "TIER_2_STABLE_RETENTION"}:
             continue
 
         subscribers = _fetch_alert_subscribers(alert.symbol)

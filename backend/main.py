@@ -2558,7 +2558,15 @@ def _build_eligible_campaign_alerts():
         return None, {"ok": False, "error": "campaign_store_not_configured"}
 
     campaigns = store.get_active_campaigns()
-    eligible = [c for c in campaigns if c.get("tier") in ("TIER_1", "TIER_2")]
+    # FIX (2026-08-09): the actual tier values (confirmed directly
+    # from the CampaignTier enum in campaign_models.py, and all three
+    # places tier gets set) are the full "TIER_1_INSTITUTIONAL_ALPHA"/
+    # "TIER_2_STABLE_RETENTION" strings -- never the bare "TIER_1"/
+    # "TIER_2" this filter was checking against, meaning it could
+    # never match any real campaign at all. Discovered via the new,
+    # safe "Review Drafts" preview feature -- the real send button
+    # used this exact same filter, so this predates tonight's work.
+    eligible = [c for c in campaigns if c.get("tier") in ("TIER_1_INSTITUTIONAL_ALPHA", "TIER_2_STABLE_RETENTION")]
 
     def _dec(v, default="0"):
         try:
@@ -2570,7 +2578,7 @@ def _build_eligible_campaign_alerts():
     for c in eligible:
         alerts.append(CampaignBirthAlert(
             symbol=c.get("symbol", ""),
-            tier=c.get("tier", "TIER_2"),
+            tier=c.get("tier", "TIER_2_STABLE_RETENTION"),
             layer=c.get("layer", "B"),
             entry_price=_dec(c.get("entry_price")),
             stop_price=_dec(c.get("stop_price")),
