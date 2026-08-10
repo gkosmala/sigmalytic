@@ -2619,6 +2619,74 @@ def _sanitize_numpy(obj):
     return obj
 
 
+def _f(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _compute_setup_grade(wyckoff_verdict: dict, weis_verdict: dict) -> dict:
+    """
+    Genuine, per-symbol Setup Grade -- replaces the old probability_grade,
+    which was pooled across an unrelated, fixed 50-symbol historical
+    backtest (confirmed to leave most real symbols "Unrated" and to
+    treat unrelated stocks as identical whenever they landed in the
+    same coarse bucket).
+
+    Built directly from David Weis's own grading framework (discussed
+    and confirmed with the user): a genuine "A" setup requires the full
+    sweep -> exhaustion -> reclaim sequence AND a genuinely mature
+    prior range (multiple, time-separated touches over weeks) -- the
+    same sequence without a mature range is a "B" at best, since
+    without real pooled stop-loss liquidity behind the level, the
+    sweep doesn't trap anyone and the snap-back lacks the structural
+    "Cause" to sustain a real move. No sequence at all is a "C".
+
+    Thresholds: spring_score >= 65 requires the sweep (30) AND reclaim
+    (35) components of that score to both genuinely be present (its
+    own confirmed minimum, not an arbitrary round number). Weis's
+    exhaustion and reclaim sub-scores are binary (0 or 100 -- an exact
+    pattern match, not a gradual scale), so >= 100 is the only
+    meaningful "confirmed" threshold for those two.
+    """
+    spring_score = _f(wyckoff_verdict.get("spring_score")) if wyckoff_verdict else 0
+    volume_exhaustion = _f(weis_verdict.get("volume_exhaustion")) if weis_verdict else 0
+    upwave_confirmation = _f(weis_verdict.get("upwave_confirmation")) if weis_verdict else 0
+    range_is_mature = bool(weis_verdict.get("range_is_mature")) if weis_verdict else False
+
+    sweep_confirmed = spring_score >= 65
+    exhaustion_confirmed = volume_exhaustion >= 100
+    reclaim_confirmed = upwave_confirmation >= 100
+    sequence_confirmed = sweep_confirmed and exhaustion_confirmed and reclaim_confirmed
+
+    if sequence_confirmed and range_is_mature:
+        grade = "A"
+        reason = "Sweep, exhaustion, and reclaim confirmed at a mature range boundary."
+    elif sequence_confirmed:
+        grade = "B"
+        reason = "Sweep, exhaustion, and reclaim confirmed, but the prior range is not yet mature."
+    else:
+        grade = "C"
+        missing = []
+        if not sweep_confirmed:
+            missing.append("sweep")
+        if not exhaustion_confirmed:
+            missing.append("exhaustion")
+        if not reclaim_confirmed:
+            missing.append("reclaim")
+        reason = f"Sequence not confirmed (missing: {', '.join(missing)})."
+
+    return {
+        "setup_grade": grade,
+        "setup_grade_reason": reason,
+        "setup_sweep_confirmed": sweep_confirmed,
+        "setup_exhaustion_confirmed": exhaustion_confirmed,
+        "setup_reclaim_confirmed": reclaim_confirmed,
+        "setup_range_mature": range_is_mature,
+    }
+
+
 def _attach_methodology_verdicts(rows: list) -> None:
     """
     Attach genuine, separate Wyckoff/Livermore/Weis verdict scores to
@@ -2665,6 +2733,7 @@ def _attach_methodology_verdicts(rows: list) -> None:
             row["wyckoff_verdict"]   = _sanitize_numpy(wyckoff_engine.evaluate_bars(df, symbol=symbol))
             row["livermore_verdict"] = _sanitize_numpy(livermore_engine.evaluate(df, symbol=symbol))
             row["weis_verdict"]      = _sanitize_numpy(weis_engine.evaluate(df, symbol=symbol))
+            row.update(_compute_setup_grade(row["wyckoff_verdict"], row["weis_verdict"]))
         except Exception as e:
             log.warning(f"Methodology verdict failed for {symbol} (non-fatal): {e}")
 
