@@ -3118,8 +3118,18 @@ def build_reports_tab(selected_date=None, session=None):
                            "padding": "10px 18px", "textDecoration": "none", "whiteSpace": "nowrap",
                            "marginLeft": "10px"},
                 ),
+                html.Button("🗑 Delete Report", id="reports-delete-btn", n_clicks=0,
+                    style={"background": "transparent", "border": f"1px solid {RED_DIM}", "borderRadius": "10px",
+                           "color": RED_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
+                           "padding": "10px 18px", "whiteSpace": "nowrap", "marginLeft": "10px"},
+                ) if is_admin(session) else None,
+                dcc.ConfirmDialog(
+                    id="reports-delete-confirm",
+                    message="",
+                ) if is_admin(session) else None,
             ], style={"display": "flex", "alignItems": "center"}),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
+        html.Div(id="reports-delete-message", style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}) if is_admin(session) else None,
         _generate_control,
         html.Iframe(
             id="reports-iframe",
@@ -6006,6 +6016,75 @@ def handle_generate_report(n_clicks, date_str, session):
             f"Report generated successfully for {date_str}.",
             options,
             date_str,
+        )
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}", no_update, no_update
+
+@app.callback(Output("reports-delete-confirm", "message"),
+              Output("reports-delete-confirm", "displayed"),
+              Input("reports-delete-btn", "n_clicks"),
+              State("reports-date-picker", "value"),
+              prevent_initial_call=True)
+def handle_delete_report_confirm(n_clicks, selected_date):
+    """
+    FIX (2026-08-09): user asked how to remove a report -- there was
+    no way to at all. First step of the delete flow: shows a real
+    confirmation dialog naming the specific, currently-selected date,
+    since this is a permanent, irreversible action.
+    """
+    if not selected_date:
+        return "No report is currently selected.", True
+    return (
+        f"Permanently delete the report for {selected_date}? This cannot be undone.",
+        True,
+    )
+
+@app.callback(Output("reports-delete-message", "children"),
+              Output("reports-date-picker", "options", allow_duplicate=True),
+              Output("reports-date-picker", "value", allow_duplicate=True),
+              Input("reports-delete-confirm", "submit_n_clicks"),
+              State("reports-date-picker", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_delete_report(submit_n_clicks, selected_date, session):
+    """
+    Second step of the delete flow -- fires only after the user
+    actually confirms the dialog above (submit_n_clicks, not the
+    button's own n_clicks). Calls the real DELETE endpoint, then
+    re-fetches the current date list and updates the dropdown, same
+    pattern as handle_generate_report()'s post-action refresh.
+    """
+    if not selected_date:
+        return "No report is currently selected.", no_update, no_update
+
+    try:
+        r = req.delete(
+            f"{BACKEND_HTTP}/api/admin/reports/{selected_date}",
+            headers=_auth_headers(session),
+            timeout=30,
+        )
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again.", no_update, no_update
+        if r.status_code == 403:
+            return "Admin access only.", no_update, no_update
+        if not r.ok:
+            return f"Delete failed (error {r.status_code}): {r.text[:200]}", no_update, no_update
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Delete failed: {payload.get('error', 'unknown error')}", no_update, no_update
+
+        try:
+            list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
+            dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
+        except Exception:
+            dates = []
+
+        options = [{"label": d, "value": d} for d in dates]
+        new_value = dates[0] if dates else None
+        return (
+            f"Deleted the report for {selected_date}.",
+            options,
+            new_value,
         )
     except Exception as exc:
         return f"Could not reach the backend: {exc}", no_update, no_update

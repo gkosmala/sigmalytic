@@ -547,3 +547,27 @@ def get_report_html(report_date_str: str) -> Optional[str]:
         return _redis_client.get(f"report:{report_date_str}")
     except Exception:
         return None
+
+
+def delete_report(report_date_str: str) -> Dict[str, Any]:
+    """
+    Removes a stored report: both the actual HTML content (report:{date})
+    and the date's entry in the index set (reports:index) -- without
+    also removing it from the index, list_available_reports() would
+    keep showing the date even after its content was gone, and
+    get_report_html() would then return None for a date the UI still
+    listed as available.
+    """
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured", "date": report_date_str}
+
+    try:
+        existed = _redis_client.exists(f"report:{report_date_str}") or \
+            _redis_client.sismember(REDIS_REPORT_INDEX_KEY, report_date_str)
+        _redis_client.delete(f"report:{report_date_str}")
+        _redis_client.srem(REDIS_REPORT_INDEX_KEY, report_date_str)
+        return {"ok": True, "date": report_date_str, "existed": bool(existed)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "date": report_date_str}

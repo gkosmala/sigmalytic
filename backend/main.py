@@ -899,6 +899,24 @@ def reports_get_pdf(report_date: str, download: bool = False):
         return _FastAPIResponse(content=str(exc)[:500], status_code=500)
 
 
+@app.delete("/api/admin/reports/{report_date}")
+async def admin_delete_report(report_date: str, _admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-09): user asked how to remove a report from the
+    Reports tab -- there was no way to at all. Admin-only (this
+    permanently removes a report, an irreversible, destructive
+    action) and DELETE, not GET/POST, matching the actual HTTP
+    semantics of what this does.
+    """
+    from backend.reports_engine import delete_report
+
+    try:
+        result = delete_report(report_date)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/admin/trigger-eod-audit")
 def trigger_eod_audit(_admin: str = Depends(require_admin)):
     # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()
