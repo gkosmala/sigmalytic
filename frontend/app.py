@@ -633,8 +633,50 @@ def _d3f1b_row(label, value):
 def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
     endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
 
+    # FIX (2026-08-09): _get() silently swallows any non-OK HTTP status
+    # (401/403/500/etc) into an empty {} -- confirmed directly as the
+    # root cause of every field on this panel showing "Unknown" with
+    # zero indication of why. Bypassed here with a direct request so
+    # this panel (whose entire purpose is showing accurate diagnostic
+    # status) can surface the real status code and response instead of
+    # silently looking like empty/missing data.
     try:
-        data = _get(endpoint, headers=_auth_headers(session))
+        r = req.get(f"{BACKEND_HTTP}{endpoint}", headers=_auth_headers(session), timeout=15)
+        if r.status_code == 401:
+            data = {
+                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
+                "final_lifecycle_status": "D3F1B_NOT_SIGNED_IN",
+                "error": "Not signed in, or session expired. Please sign in again.",
+                "writes_to_supabase": False, "supabase_write_authorized": False,
+                "persistence_write_authorized": False, "mutates_campaigns": False,
+                "executes_d3d": False, "authorizes_d3d": False,
+                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
+                "not_a_trade_signal": True, "touches_stripe": False,
+            }
+        elif r.status_code == 403:
+            data = {
+                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
+                "final_lifecycle_status": "D3F1B_ADMIN_ACCESS_ONLY",
+                "error": "Admin access only.",
+                "writes_to_supabase": False, "supabase_write_authorized": False,
+                "persistence_write_authorized": False, "mutates_campaigns": False,
+                "executes_d3d": False, "authorizes_d3d": False,
+                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
+                "not_a_trade_signal": True, "touches_stripe": False,
+            }
+        elif not r.ok:
+            data = {
+                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
+                "final_lifecycle_status": "D3F1B_BACKEND_ERROR",
+                "error": f"Backend returned {r.status_code}: {r.text[:200]}",
+                "writes_to_supabase": False, "supabase_write_authorized": False,
+                "persistence_write_authorized": False, "mutates_campaigns": False,
+                "executes_d3d": False, "authorizes_d3d": False,
+                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
+                "not_a_trade_signal": True, "touches_stripe": False,
+            }
+        else:
+            data = r.json()
     except Exception as exc:
         data = {
             "ok": False,
@@ -663,8 +705,8 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
 
     lifecycle_rows = [
         ("Phase", data.get("d3e_phase", "D3E.9")),
-        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified"))),
-        ("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
+        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified", data.get("lifecycle_verified")))),
+        ("Lifecycle status", data.get("final_lifecycle_status", data.get("lifecycle_status", "Unknown"))),
         ("Inserted audit row id", data.get("inserted_row_id", "Unknown")),
         ("Audit symbol", data.get("lifecycle_symbol", "Unknown")),
         ("Audit version", data.get("lifecycle_audit_version", "Unknown")),
