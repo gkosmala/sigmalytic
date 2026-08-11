@@ -2654,6 +2654,13 @@ def build_command_tab(live, candles, symbol, tf):
     real_call_walls = real_gamma.get("top_call_walls") or []
     real_put_walls  = real_gamma.get("top_put_walls") or []
 
+    # First wiring of the new, parallel "pure Weis" engine (non-
+    # repainting Renko brick generation -> wave grouping -> scoring)
+    # into a live tab. Own daily-bar fetch inside the endpoint, not
+    # tied to this chart's own (5-minute default) candles timeframe.
+    renko_weis = _get(f"/api/research/renko-weis/{symbol}")
+    renko_weis_status = renko_weis.get("status", "UNKNOWN")
+
     _REGIME_LABELS = {
         "DEEP_POSITIVE": "Deep positive gamma — strong pinning",
         "POSITIVE":      "Positive gamma — pinning likely",
@@ -2902,7 +2909,50 @@ def build_command_tab(live, candles, symbol, tf):
 
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
-    return html.Div([row1, row2, row3, row4],
+    # First live display of the new, parallel "pure Weis" engine
+    # (non-repainting Renko structure -> waves -> scoring), built and
+    # verified earlier tonight. Genuinely separate from the existing
+    # Weis-Gamma panel above (different engine, different methodology).
+    if renko_weis_status == "OK":
+        rw_score = renko_weis.get("weis_score", 0)
+        rw_verdict = renko_weis.get("verdict", "NO_WEIS_SIGNAL")
+        rw_score_b = renko_weis.get("weis_score_bearish", 0)
+        rw_verdict_b = renko_weis.get("verdict_bearish", "NO_WEIS_SIGNAL")
+        rw_waves = renko_weis.get("wave_count", 0)
+        rw_body = html.Div([
+            html.Div([
+                html.Span("Long (Spring-side): ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                html.Span(f"{rw_score:.0f} — {rw_verdict.replace('_',' ').title()}",
+                          style={"fontSize":"12px","color":TEAL_DIM if rw_score>=60 else WHITE,"fontWeight":"800"}),
+            ], style={"marginBottom":"4px"}),
+            html.Div([
+                html.Span("Short (Upthrust-side): ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                html.Span(f"{rw_score_b:.0f} — {rw_verdict_b.replace('_',' ').title()}",
+                          style={"fontSize":"12px","color":RED_DIM if rw_score_b>=60 else WHITE,"fontWeight":"800"}),
+            ], style={"marginBottom":"4px"}),
+            html.Div(f"{rw_waves} Renko waves detected (non-repainting, daily bars)",
+                      style={"fontSize":"11px","color":MUTED}),
+        ])
+    elif renko_weis_status == "INSUFFICIENT_HISTORY":
+        rw_body = html.Div(
+            f"Not enough daily history yet ({renko_weis.get('bars_available', 0)} bars available, 20+ needed).",
+            style={"fontSize":"12px","color":MUTED})
+    else:
+        rw_body = html.Div(
+            renko_weis.get("error") or "Renko-Weis data not available for this symbol right now.",
+            style={"fontSize":"12px","color":MUTED})
+
+    row5 = html.Div([
+        html.Div("Renko-Weis Wave (Non-Repainting)", style={
+            "fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"8px",
+        }),
+        rw_body,
+    ], style={
+        "border": f"1px solid {BORDER}", "borderRadius": "14px", "padding": "14px",
+        "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
+    })
+
+    return html.Div([row1, row2, row3, row4, row5],
                     style={"display":"flex","flexDirection":"column"})
 
 

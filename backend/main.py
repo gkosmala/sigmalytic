@@ -421,6 +421,51 @@ CANDLE_CALENDAR_DAYS_PER_BAR = {
 }
 
 
+@app.get("/api/research/renko-weis/{symbol}")
+def get_renko_weis_verdict(symbol: str):
+    """
+    FIX (2026-08-09): first wiring of the new, parallel "pure Weis"
+    engine (non-repainting Renko brick generation -> wave grouping ->
+    scoring, all built and verified earlier tonight) into a real,
+    callable endpoint. Command Center is the first tab to use this.
+
+    Deliberately fetches its own DAILY bars here (via the same
+    fetch_bars_batch() the Radar scan already uses) rather than
+    reusing Command Center's existing `candles`, which are 5-minute
+    intraday bars by default -- the engine's ATR-based sizing was
+    calibrated for daily volatility (same as the existing, live Renko
+    overlay and WeisVerdictEngine), and this platform was explicitly
+    scoped to swing trading, not day trading, earlier tonight.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.renko_weis_wave_engine import RenkoWeisWaveEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        engine = RenkoWeisWaveEngine()
+        verdict = engine.evaluate(bars, symbol=sym)
+        result = verdict.to_dict()
+        result["ok"] = True
+        result["status"] = "OK"
+        result["bars_used"] = len(bars)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/candles/{symbol}")
 def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     sym = (symbol or "").upper().strip()
