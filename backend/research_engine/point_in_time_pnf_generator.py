@@ -49,6 +49,16 @@ columns matched exactly on both direction and precise open/close
 values (the 47th real row was a genuinely incomplete, non-box-aligned
 end-of-session partial column, correctly not reproduced). No changes
 were needed to this file as a result.
+
+Re-validated with a second, ~5x larger real reference export (244
+rows, spanning six weeks rather than one) after the Climax Variant
+change: 243 out of 243 real, complete columns matched exactly (same
+single-incomplete-final-row pattern as before, correctly not
+reproduced). Also checked this second file's SumVol column directly:
+192 of 193 nonzero values matched max(Up,Down) exactly (the box
+count) -- confirmed this column is not independent volume data, just
+a restatement of the box count already used above, not a new
+validation signal.
 """
 
 from __future__ import annotations
