@@ -16,7 +16,7 @@ correct and is reused here unmodified rather than rewritten.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, List
 
 from backend.research_engine.point_in_time_renko_generator import (
@@ -35,6 +35,7 @@ class RenkoWeisWave:
     start_index: int  # bar index of the first brick in this wave
     end_index: int  # bar index of the last brick in this wave
     avg_volume_per_brick: float = 0.0  # structural pace: volume required per brick, NOT time-based
+    brick_volumes: List[float] = field(default_factory=list)  # individual brick volumes, in order, for Climax detection
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -126,6 +127,7 @@ class RenkoWeisWaveEngine:
                 start_index=start_index,
                 end_index=end_index,
                 avg_volume_per_brick=avg_vol_per_brick,
+                brick_volumes=[b["volume"] for b in span],
             ))
             brick_cursor += brick_count
 
@@ -217,6 +219,55 @@ class RenkoWeisWaveEngine:
             return 100.0
         return 0.0
 
+    def detect_climax(self, wave: RenkoWeisWave, multiplier: float = 2.0) -> Dict[str, Any]:
+        """
+        The "Climax Variant" from the shared research: a single brick
+        whose volume diverges aggressively from the running average of
+        the OTHER bricks within the SAME, current wave -- genuinely
+        distinct from Structural Pace above (which compares one
+        wave's average against a DIFFERENT, prior wave). This is a
+        within-wave, single-event signal: effort concentrated in one
+        brick while the rest of the same wave looked normal,
+        signaling an immediate structural roadblock per the research
+        ("huge volume spent, but price could no longer advance more
+        than one brick size").
+
+        Requires at least 3 bricks in the wave (2 to form a
+        meaningful running-average baseline, plus the final brick
+        being checked). The 2.0x multiplier is a reasoned default, not
+        independently empirically validated against real reference
+        data the way the reversal conventions were -- same honesty
+        standard applied to the Structural Pace thresholds earlier.
+        """
+        if len(wave.brick_volumes) < 3:
+            return {"detected": False, "reason": "Needs at least 3 bricks in the current wave to assess."}
+
+        baseline_bricks = wave.brick_volumes[:-1]
+        final_brick_volume = wave.brick_volumes[-1]
+        running_avg = sum(baseline_bricks) / len(baseline_bricks)
+
+        if running_avg <= 0:
+            return {"detected": False, "reason": "Baseline volume unavailable."}
+
+        ratio = final_brick_volume / running_avg
+        detected = ratio >= multiplier
+
+        return {
+            "detected": detected,
+            "final_brick_volume": round(final_brick_volume, 0),
+            "running_avg_volume": round(running_avg, 0),
+            "climax_ratio": round(ratio, 2),
+            "reading": (
+                f"Climax brick detected: the final brick in this wave carried {ratio:.1f}x the "
+                f"volume of the {len(baseline_bricks)} bricks before it ({final_brick_volume:,.0f} vs. "
+                f"a {running_avg:,.0f} running average) -- a sudden, concentrated effort spike, "
+                f"signaling an immediate structural roadblock."
+                if detected else
+                f"No climax brick -- the final brick's volume ({final_brick_volume:,.0f}) is in line "
+                f"with the wave's own running average ({running_avg:,.0f})."
+            ),
+        }
+
     def current_wave_reading(self, waves: List[RenkoWeisWave]) -> Dict[str, Any]:
         """
         FIX (2026-08-09): user pointed out the score/verdict alone
@@ -257,6 +308,7 @@ class RenkoWeisWaveEngine:
                     f"to compare effort against."
                 ),
                 "pace_reading": "No prior same-direction wave yet to compare structural pace against.",
+                "climax": self.detect_climax(current),
             }
 
         prior = same_direction_prior[-1]
@@ -324,6 +376,7 @@ class RenkoWeisWaveEngine:
                 f"printing {reading_verb} ({prior.cumulative_volume:,.0f})."
             ),
             "pace_reading": pace_reading,
+            "climax": self.detect_climax(current),
         }
 
     def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> RenkoWeisVerdict:

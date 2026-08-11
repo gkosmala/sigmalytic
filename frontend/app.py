@@ -2948,7 +2948,10 @@ def build_command_tab(live, candles, symbol, tf):
                     html.Span(mc_label, style={"fontSize":"12px","fontWeight":"900","color":mc_color}),
                 ], style={"marginBottom":"6px"}),
                 html.Div(cw.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px"}),
-                html.Div(cw.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"10px"}),
+                html.Div(cw.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px" if (cw.get("climax") or {}).get("detected") else "10px"}),
+                html.Div(f"⚡ {(cw.get('climax') or {}).get('reading', '')}", style={
+                    "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"800","lineHeight":"1.5","marginBottom":"10px",
+                }) if (cw.get("climax") or {}).get("detected") else None,
             ])
         else:
             current_wave_block = html.Div(cw.get("reason", "No wave data available yet."),
@@ -3021,7 +3024,10 @@ def build_command_tab(live, candles, symbol, tf):
                     html.Span(mc2_label, style={"fontSize":"12px","fontWeight":"900","color":mc2_color}),
                 ], style={"marginBottom":"6px"}),
                 html.Div(cc.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px"}),
-                html.Div(cc.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"10px"}),
+                html.Div(cc.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px" if (cc.get("climax") or {}).get("detected") else "10px"}),
+                html.Div(f"⚡ {(cc.get('climax') or {}).get('reading', '')}", style={
+                    "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"800","lineHeight":"1.5","marginBottom":"10px",
+                }) if (cc.get("climax") or {}).get("detected") else None,
             ])
         else:
             current_column_block = html.Div(cc.get("reason", "No column data available yet."),

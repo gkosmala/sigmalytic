@@ -157,6 +157,49 @@ class PnFWeisEngine:
             return 100.0
         return 0.0
 
+    def detect_climax(self, column: PnFColumn, multiplier: float = 2.0) -> Dict[str, Any]:
+        """
+        Mirrors RenkoWeisWaveEngine.detect_climax() -- the "Climax
+        Variant" from the shared research, adapted honestly for PnF's
+        genuinely different structure: unlike Renko bricks, a PnF
+        column doesn't have discrete, individually-tracked box
+        boundaries (a column can extend by more than one box in a
+        single price step, and the underlying state machine -- already
+        empirically validated against real reference data -- was
+        deliberately left untouched here rather than risk it). So this
+        checks each CONTRIBUTING BAR's volume within the column,
+        rather than each individual box, against the running average
+        of the other contributing bars in that same column.
+        """
+        if len(column.bar_volumes) < 3:
+            return {"detected": False, "reason": "Needs at least 3 contributing bars in the current column to assess."}
+
+        baseline_bars = column.bar_volumes[:-1]
+        final_bar_volume = column.bar_volumes[-1]
+        running_avg = sum(baseline_bars) / len(baseline_bars)
+
+        if running_avg <= 0:
+            return {"detected": False, "reason": "Baseline volume unavailable."}
+
+        ratio = final_bar_volume / running_avg
+        detected = ratio >= multiplier
+
+        return {
+            "detected": detected,
+            "final_bar_volume": round(final_bar_volume, 0),
+            "running_avg_volume": round(running_avg, 0),
+            "climax_ratio": round(ratio, 2),
+            "reading": (
+                f"Climax bar detected: the most recent contributing bar in this column carried "
+                f"{ratio:.1f}x the volume of the {len(baseline_bars)} bars before it "
+                f"({final_bar_volume:,.0f} vs. a {running_avg:,.0f} running average) -- a sudden, "
+                f"concentrated effort spike, signaling an immediate structural roadblock."
+                if detected else
+                f"No climax bar -- the most recent contributing bar's volume ({final_bar_volume:,.0f}) "
+                f"is in line with the column's own running average ({running_avg:,.0f})."
+            ),
+        }
+
     def current_column_reading(self, columns: List[PnFColumn]) -> Dict[str, Any]:
         """
         Mirrors RenkoWeisWaveEngine.current_wave_reading() -- the
@@ -191,6 +234,7 @@ class PnFWeisEngine:
                     f"to compare effort against."
                 ),
                 "pace_reading": "No prior same-type column yet to compare structural pace against.",
+                "climax": self.detect_climax(current),
             }
 
         prior = same_type_prior[-1]
@@ -246,6 +290,7 @@ class PnFWeisEngine:
                 f"{current.volume:,.0f} volume) -- printing {reading_verb} ({prior.volume:,.0f})."
             ),
             "pace_reading": pace_reading,
+            "climax": self.detect_climax(current),
         }
 
     def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> PnFWeisVerdict:

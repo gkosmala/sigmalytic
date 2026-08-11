@@ -53,7 +53,7 @@ were needed to this file as a result.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any, Dict, List, Optional
 
 
@@ -67,6 +67,7 @@ class PnFColumn:
     volume: float
     start_index: int
     end_index: int
+    bar_volumes: List[float] = field(default_factory=list)  # each contributing bar's own volume, in order, for Climax detection
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -142,10 +143,12 @@ class PointInTimePnFGenerator:
         col_low = base
         col_start_index = 0
         pending_volume = volumes[0]
+        pending_bar_volumes: List[float] = [volumes[0]]
 
         for i in range(1, len(closes)):
             price = closes[i]
             pending_volume += volumes[i]
+            pending_bar_volumes.append(volumes[i])
             box_size = self._point_in_time_box_size(closes[: i + 1])
             if box_size is None or box_size <= 0:
                 continue
@@ -157,11 +160,13 @@ class PointInTimePnFGenerator:
                     col_low, col_high = base, price
                     col_start_index = i
                     pending_volume = 0.0
+                    pending_bar_volumes = []
                 elif price <= base - box_size:
                     current_type = "O"
                     col_high, col_low = base, price
                     col_start_index = i
                     pending_volume = 0.0
+                    pending_bar_volumes = []
                 continue
 
             if current_type == "X":
@@ -173,12 +178,14 @@ class PointInTimePnFGenerator:
                         column_type="X", high=col_high, low=col_low, boxes=boxes,
                         box_size=box_size, volume=pending_volume,
                         start_index=col_start_index, end_index=i,
+                        bar_volumes=list(pending_bar_volumes),
                     ))
                     current_type = "O"
                     col_high = col_high - box_size
                     col_low = price
                     col_start_index = i
                     pending_volume = 0.0
+                    pending_bar_volumes = []
             else:
                 if price <= col_low - box_size:
                     col_low = price
@@ -188,12 +195,14 @@ class PointInTimePnFGenerator:
                         column_type="O", high=col_high, low=col_low, boxes=boxes,
                         box_size=box_size, volume=pending_volume,
                         start_index=col_start_index, end_index=i,
+                        bar_volumes=list(pending_bar_volumes),
                     ))
                     current_type = "X"
                     col_low = col_low + box_size
                     col_high = price
                     col_start_index = i
                     pending_volume = 0.0
+                    pending_bar_volumes = []
 
         return columns
 
