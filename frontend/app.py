@@ -2919,17 +2919,41 @@ def build_command_tab(live, candles, symbol, tf):
         rw_score_b = renko_weis.get("weis_score_bearish", 0)
         rw_verdict_b = renko_weis.get("verdict_bearish", "NO_WEIS_SIGNAL")
         rw_waves = renko_weis.get("wave_count", 0)
+        cw = renko_weis.get("current_wave") or {}
+
+        if cw.get("available"):
+            evr = cw.get("effort_vs_result", "INSUFFICIENT_HISTORY")
+            evr_color = TEAL_DIM if evr == "BUILDING" else (RED_DIM if evr == "EXHAUSTING" else MUTED)
+            evr_label = {"BUILDING": "Building", "EXHAUSTING": "Exhausting",
+                         "UNCHANGED": "Unchanged", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(evr, evr)
+            current_wave_block = html.Div([
+                html.Div([
+                    html.Span(f"Current swing: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                    html.Span(cw.get("direction", "—"), style={
+                        "fontSize":"12px","fontWeight":"900",
+                        "color": TEAL_DIM if cw.get("direction") == "UP" else RED_DIM,
+                    }),
+                    html.Span(f"  ·  Effort vs. Result: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                    html.Span(evr_label, style={"fontSize":"12px","fontWeight":"900","color":evr_color}),
+                ], style={"marginBottom":"6px"}),
+                html.Div(cw.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"10px"}),
+            ])
+        else:
+            current_wave_block = html.Div(cw.get("reason", "No wave data available yet."),
+                                            style={"fontSize":"12px","color":MUTED,"marginBottom":"10px"})
+
         rw_body = html.Div([
+            current_wave_block,
             html.Div([
-                html.Span("Long (Spring-side): ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                html.Span("Confirmed setup (Long): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
                 html.Span(f"{rw_score:.0f} — {rw_verdict.replace('_',' ').title()}",
-                          style={"fontSize":"12px","color":TEAL_DIM if rw_score>=60 else WHITE,"fontWeight":"800"}),
-            ], style={"marginBottom":"4px"}),
+                          style={"fontSize":"11px","color":TEAL_DIM if rw_score>=60 else MUTED,"fontWeight":"800"}),
+            ], style={"marginBottom":"3px"}),
             html.Div([
-                html.Span("Short (Upthrust-side): ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                html.Span("Confirmed setup (Short): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
                 html.Span(f"{rw_score_b:.0f} — {rw_verdict_b.replace('_',' ').title()}",
-                          style={"fontSize":"12px","color":RED_DIM if rw_score_b>=60 else WHITE,"fontWeight":"800"}),
-            ], style={"marginBottom":"4px"}),
+                          style={"fontSize":"11px","color":RED_DIM if rw_score_b>=60 else MUTED,"fontWeight":"800"}),
+            ], style={"marginBottom":"3px"}),
             html.Div(f"{rw_waves} Renko waves detected (non-repainting, daily bars)",
                       style={"fontSize":"11px","color":MUTED}),
         ])

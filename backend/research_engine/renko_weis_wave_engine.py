@@ -213,6 +213,70 @@ class RenkoWeisWaveEngine:
             return 100.0
         return 0.0
 
+    def current_wave_reading(self, waves: List[RenkoWeisWave]) -> Dict[str, Any]:
+        """
+        FIX (2026-08-09): user pointed out the score/verdict alone
+        ("0 -- No Weis Signal") throws away exactly the step-by-step
+        reading David Weis's own workflow describes -- what the
+        current directional swing actually looks like right now, and
+        whether its volume is shrinking or growing versus the prior
+        same-direction wave (Effort vs. Result), independent of
+        whether the full, strict 3-wave SOT gate has fired. This is
+        genuinely informative on its own, and true for every symbol
+        with at least two same-direction waves -- not gated behind the
+        much rarer, stricter conditions the score/verdict require.
+        """
+        if not waves:
+            return {"available": False, "reason": "No waves detected yet."}
+
+        current = waves[-1]
+        same_direction_prior = [
+            w for w in waves[:-1] if w.direction == current.direction
+        ]
+
+        if not same_direction_prior:
+            return {
+                "available": True,
+                "direction": "UP" if current.direction == 1 else "DOWN",
+                "current_wave_volume": round(current.cumulative_volume, 0),
+                "current_wave_price_progress": round(current.price_progress, 4),
+                "current_wave_brick_count": current.brick_count,
+                "prior_same_direction_volume": None,
+                "effort_vs_result": "INSUFFICIENT_HISTORY",
+                "reading": (
+                    f"Current swing is {'UP' if current.direction == 1 else 'DOWN'} "
+                    f"({current.brick_count} bricks, {current.price_progress:.2f} price progress, "
+                    f"{current.cumulative_volume:,.0f} volume) -- no prior same-direction wave yet "
+                    f"to compare effort against."
+                ),
+            }
+
+        prior = same_direction_prior[-1]
+        if current.cumulative_volume < prior.cumulative_volume:
+            effort_vs_result = "EXHAUSTING"
+            reading_verb = "less volume than the prior swing -- effort is fading"
+        elif current.cumulative_volume > prior.cumulative_volume:
+            effort_vs_result = "BUILDING"
+            reading_verb = "more volume than the prior swing -- fresh participation, trend building"
+        else:
+            effort_vs_result = "UNCHANGED"
+            reading_verb = "about the same volume as the prior swing"
+
+        return {
+            "available": True,
+            "direction": "UP" if current.direction == 1 else "DOWN",
+            "current_wave_volume": round(current.cumulative_volume, 0),
+            "current_wave_price_progress": round(current.price_progress, 4),
+            "current_wave_brick_count": current.brick_count,
+            "prior_same_direction_volume": round(prior.cumulative_volume, 0),
+            "effort_vs_result": effort_vs_result,
+            "reading": (
+                f"Current swing is {'UP' if current.direction == 1 else 'DOWN'} "
+                f"({current.brick_count} bricks, {current.cumulative_volume:,.0f} volume) -- "
+                f"printing {reading_verb} ({prior.cumulative_volume:,.0f})."
+            ),
+        }
+
     def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> RenkoWeisVerdict:
         waves = self.build_waves(bars)
 

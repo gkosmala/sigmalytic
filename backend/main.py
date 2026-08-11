@@ -456,11 +456,13 @@ def get_renko_weis_verdict(symbol: str):
             }
 
         engine = RenkoWeisWaveEngine()
+        waves = engine.build_waves(bars)
         verdict = engine.evaluate(bars, symbol=sym)
         result = verdict.to_dict()
         result["ok"] = True
         result["status"] = "OK"
         result["bars_used"] = len(bars)
+        result["current_wave"] = engine.current_wave_reading(waves)
         return result
     except Exception as e:
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
