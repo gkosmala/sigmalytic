@@ -39,11 +39,43 @@ class RenkoWeisWave:
         return asdict(self)
 
 
+@dataclass
+class RenkoWeisVerdict:
+    symbol: str
+    weis_score: float
+    verdict: str
+    sot_downwaves: float
+    volume_exhaustion: float
+    effort_without_reward: float
+    upwave_confirmation: float
+
+    weis_score_bearish: float
+    verdict_bearish: str
+    sot_upwaves: float
+    buying_exhaustion: float
+    buying_effort_without_reward: float
+    downwave_confirmation: float
+
+    wave_count: int
+    explanation: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 class RenkoWeisWaveEngine:
     """
     Produces Weis Waves built on non-repainting Renko brick structure,
     genuinely separate from (not a replacement for) the existing,
     validated time-bar-based WeisVerdictEngine.
+
+    Scoring logic below mirrors WeisVerdictEngine's exact structure
+    and thresholds (SOT requires 3 same-direction waves with strictly
+    decreasing price_progress; exhaustion requires SOT confirmed AND
+    the final wave's volume under 60% of the prior same-direction
+    wave's; confirmation requires the current wave's volume exceeding
+    1.25x the combined volume of the last two opposite-direction
+    waves) -- applied to brick-based waves instead of time-bar waves.
     """
 
     def __init__(self, renko_generator: PointInTimeRenkoGenerator = None):
@@ -94,3 +126,148 @@ class RenkoWeisWaveEngine:
             brick_cursor += w["brick_count"]
 
         return waves
+
+    def shortening_of_thrust_score(self, waves: List[RenkoWeisWave]) -> float:
+        down = [w for w in waves if w.direction == -1]
+        if len(down) < 3:
+            return 0.0
+        w1, w2, w3 = down[-3:]
+        if w3.price_progress < w2.price_progress < w1.price_progress:
+            return 100.0
+        return 0.0
+
+    def shortening_of_thrust_score_bearish(self, waves: List[RenkoWeisWave]) -> float:
+        up = [w for w in waves if w.direction == 1]
+        if len(up) < 3:
+            return 0.0
+        w1, w2, w3 = up[-3:]
+        if w3.price_progress < w2.price_progress < w1.price_progress:
+            return 100.0
+        return 0.0
+
+    def volume_exhaustion_score(self, waves: List[RenkoWeisWave], sot_confirmed: bool = False) -> float:
+        if not sot_confirmed:
+            return 0.0
+        down = [w for w in waves if w.direction == -1]
+        if len(down) < 2:
+            return 0.0
+        w2, w3 = down[-2], down[-1]
+        if w3.cumulative_volume < (0.60 * w2.cumulative_volume):
+            return 100.0
+        return 0.0
+
+    def buying_exhaustion_score(self, waves: List[RenkoWeisWave], sot_confirmed: bool = False) -> float:
+        if not sot_confirmed:
+            return 0.0
+        up = [w for w in waves if w.direction == 1]
+        if len(up) < 2:
+            return 0.0
+        w2, w3 = up[-2], up[-1]
+        if w3.cumulative_volume < (0.60 * w2.cumulative_volume):
+            return 100.0
+        return 0.0
+
+    def effort_without_reward_score(self, waves: List[RenkoWeisWave], sot_confirmed: bool = False) -> float:
+        if not sot_confirmed:
+            return 0.0
+        down = [w for w in waves if w.direction == -1]
+        if len(down) < 2:
+            return 0.0
+        w2, w3 = down[-2], down[-1]
+        if w3.cumulative_volume >= w2.cumulative_volume:
+            return 100.0
+        return 0.0
+
+    def buying_effort_without_reward_score(self, waves: List[RenkoWeisWave], sot_confirmed: bool = False) -> float:
+        if not sot_confirmed:
+            return 0.0
+        up = [w for w in waves if w.direction == 1]
+        if len(up) < 2:
+            return 0.0
+        w2, w3 = up[-2], up[-1]
+        if w3.cumulative_volume >= w2.cumulative_volume:
+            return 100.0
+        return 0.0
+
+    def upwave_confirmation_score(self, waves: List[RenkoWeisWave]) -> float:
+        if not waves:
+            return 0.0
+        down = [w for w in waves if w.direction == -1]
+        if len(down) < 2:
+            return 0.0
+        last_two = down[-1].cumulative_volume + down[-2].cumulative_volume
+        current = waves[-1]
+        if current.direction == 1 and current.cumulative_volume > (1.25 * last_two):
+            return 100.0
+        return 0.0
+
+    def downwave_confirmation_score(self, waves: List[RenkoWeisWave]) -> float:
+        if not waves:
+            return 0.0
+        up = [w for w in waves if w.direction == 1]
+        if len(up) < 2:
+            return 0.0
+        last_two = up[-1].cumulative_volume + up[-2].cumulative_volume
+        current = waves[-1]
+        if current.direction == -1 and current.cumulative_volume > (1.25 * last_two):
+            return 100.0
+        return 0.0
+
+    def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> RenkoWeisVerdict:
+        waves = self.build_waves(bars)
+
+        sot = self.shortening_of_thrust_score(waves)
+        sot_confirmed = sot >= 100
+        exhaustion = self.volume_exhaustion_score(waves, sot_confirmed=sot_confirmed)
+        effort_without_reward = self.effort_without_reward_score(waves, sot_confirmed=sot_confirmed)
+        confirmation = self.upwave_confirmation_score(waves)
+
+        score = sot * 0.30 + exhaustion * 0.30 + confirmation * 0.40
+        if score >= 90:
+            verdict = "PRIMARY_CAMPAIGN_LAUNCH"
+        elif score >= 60:
+            verdict = "ABSORPTION_WARNING"
+        elif score >= 30:
+            verdict = "WATCH"
+        else:
+            verdict = "NO_WEIS_SIGNAL"
+
+        sot_bearish = self.shortening_of_thrust_score_bearish(waves)
+        sot_bearish_confirmed = sot_bearish >= 100
+        buying_exhaustion = self.buying_exhaustion_score(waves, sot_confirmed=sot_bearish_confirmed)
+        buying_effort_without_reward = self.buying_effort_without_reward_score(waves, sot_confirmed=sot_bearish_confirmed)
+        downwave_confirmation = self.downwave_confirmation_score(waves)
+
+        score_bearish = sot_bearish * 0.30 + buying_exhaustion * 0.30 + downwave_confirmation * 0.40
+        if score_bearish >= 90:
+            verdict_bearish = "PRIMARY_DISTRIBUTION_LAUNCH"
+        elif score_bearish >= 60:
+            verdict_bearish = "SUPPLY_WARNING"
+        elif score_bearish >= 30:
+            verdict_bearish = "WATCH"
+        else:
+            verdict_bearish = "NO_WEIS_SIGNAL"
+
+        return RenkoWeisVerdict(
+            symbol=symbol,
+            weis_score=round(score, 2),
+            verdict=verdict,
+            sot_downwaves=round(sot, 2),
+            volume_exhaustion=round(exhaustion, 2),
+            effort_without_reward=round(effort_without_reward, 2),
+            upwave_confirmation=round(confirmation, 2),
+            weis_score_bearish=round(score_bearish, 2),
+            verdict_bearish=verdict_bearish,
+            sot_upwaves=round(sot_bearish, 2),
+            buying_exhaustion=round(buying_exhaustion, 2),
+            buying_effort_without_reward=round(buying_effort_without_reward, 2),
+            downwave_confirmation=round(downwave_confirmation, 2),
+            wave_count=len(waves),
+            explanation=(
+                f"[Renko-based] SOT={sot:.1f}, Exhaustion={exhaustion:.1f}, "
+                f"Confirmation={confirmation:.1f}, Bearish SOT={sot_bearish:.1f}, "
+                f"BuyingExhaustion={buying_exhaustion:.1f}, DownwaveConfirmation={downwave_confirmation:.1f}, "
+                f"waves={len(waves)}"
+            ),
+        )
+
