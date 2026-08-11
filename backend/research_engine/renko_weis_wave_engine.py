@@ -34,6 +34,7 @@ class RenkoWeisWave:
     cumulative_volume: float
     start_index: int  # bar index of the first brick in this wave
     end_index: int  # bar index of the last brick in this wave
+    avg_volume_per_brick: float = 0.0  # structural pace: volume required per brick, NOT time-based
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -115,15 +116,18 @@ class RenkoWeisWaveEngine:
             span = brick_dicts[brick_cursor: brick_cursor + w["brick_count"]]
             start_index = span[0]["index"] if span else None
             end_index = span[-1]["index"] if span else None
+            brick_count = w["brick_count"]
+            avg_vol_per_brick = (w["cumulative_volume"] / brick_count) if brick_count > 0 else 0.0
             waves.append(RenkoWeisWave(
                 direction=w["direction"],
-                brick_count=w["brick_count"],
+                brick_count=brick_count,
                 price_progress=w["price_progress"],
                 cumulative_volume=w["cumulative_volume"],
                 start_index=start_index,
                 end_index=end_index,
+                avg_volume_per_brick=avg_vol_per_brick,
             ))
-            brick_cursor += w["brick_count"]
+            brick_cursor += brick_count
 
         return waves
 
@@ -243,12 +247,16 @@ class RenkoWeisWaveEngine:
                 "current_wave_brick_count": current.brick_count,
                 "prior_same_direction_volume": None,
                 "effort_vs_result": "INSUFFICIENT_HISTORY",
+                "avg_volume_per_brick": round(current.avg_volume_per_brick, 0),
+                "relative_pace_ratio": None,
+                "market_condition": "INSUFFICIENT_HISTORY",
                 "reading": (
                     f"Current swing is {'UP' if current.direction == 1 else 'DOWN'} "
                     f"({current.brick_count} bricks, {current.price_progress:.2f} price progress, "
                     f"{current.cumulative_volume:,.0f} volume) -- no prior same-direction wave yet "
                     f"to compare effort against."
                 ),
+                "pace_reading": "No prior same-direction wave yet to compare structural pace against.",
             }
 
         prior = same_direction_prior[-1]
@@ -262,6 +270,43 @@ class RenkoWeisWaveEngine:
             effort_vs_result = "UNCHANGED"
             reading_verb = "about the same volume as the prior swing"
 
+        # FIX (2026-08-09): structural pace -- volume required per
+        # brick, deliberately NOT time-based (bars per brick would
+        # reintroduce the exact temporal distortion Weis's own
+        # framework is built to eliminate). Genuinely distinct from
+        # effort_vs_result above: a longer wave can carry more total
+        # volume while still moving with LESS volume per unit of
+        # price progress -- this metric isolates that, normalized for
+        # wave length. Thresholds (1.40 / 0.74) are carried over from
+        # shared research, not independently empirically validated
+        # against real reference data the way the wave-detection
+        # threshold was earlier tonight.
+        pace_ratio = None
+        if prior.avg_volume_per_brick > 0:
+            pace_ratio = current.avg_volume_per_brick / prior.avg_volume_per_brick
+
+        if pace_ratio is None:
+            market_condition = "INSUFFICIENT_HISTORY"
+            pace_reading = "Prior wave's per-brick volume unavailable -- cannot assess structural pace."
+        elif pace_ratio >= 1.40:
+            market_condition = "ABSORPTION"
+            pace_reading = (
+                f"Structural pace is slowing ({pace_ratio:.1f}x more volume per brick than the prior "
+                f"same-direction swing) -- heavy absorption forming, a possible roadblock ahead."
+            )
+        elif pace_ratio <= 0.74:
+            market_condition = "EASE_OF_MOVEMENT"
+            pace_reading = (
+                f"Structural pace is fast ({pace_ratio:.2f}x the volume per brick of the prior "
+                f"same-direction swing) -- little resistance, price moving with ease."
+            )
+        else:
+            market_condition = "SYMMETRICAL"
+            pace_reading = (
+                f"Structural pace is steady ({pace_ratio:.1f}x the prior same-direction swing's "
+                f"volume per brick) -- effort matches historical norms."
+            )
+
         return {
             "available": True,
             "direction": "UP" if current.direction == 1 else "DOWN",
@@ -270,11 +315,15 @@ class RenkoWeisWaveEngine:
             "current_wave_brick_count": current.brick_count,
             "prior_same_direction_volume": round(prior.cumulative_volume, 0),
             "effort_vs_result": effort_vs_result,
+            "avg_volume_per_brick": round(current.avg_volume_per_brick, 0),
+            "relative_pace_ratio": round(pace_ratio, 3) if pace_ratio is not None else None,
+            "market_condition": market_condition,
             "reading": (
                 f"Current swing is {'UP' if current.direction == 1 else 'DOWN'} "
                 f"({current.brick_count} bricks, {current.cumulative_volume:,.0f} volume) -- "
                 f"printing {reading_verb} ({prior.cumulative_volume:,.0f})."
             ),
+            "pace_reading": pace_reading,
         }
 
     def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> RenkoWeisVerdict:
