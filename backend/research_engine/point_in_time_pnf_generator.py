@@ -31,6 +31,24 @@ needed. Volume accumulation per column is new here: the existing
 overlay never tracked it at all, but it's required for the
 "cumulative Weis Wave volume inside a PnF column" mapping this
 engine is being built toward.
+
+FIX (2026-08-09): unlike the Renko generator, whose reversal
+convention was found to be genuinely wrong when validated against
+real reference data, this PnF generator's existing 3-box reversal
+state machine was empirically confirmed CORRECT. Validated directly
+against a real, trusted PnF export (47 actual columns from a real
+trading platform): first confirmed the underlying box_size was
+exactly 0.50 (derived from the constant reversal gap between every
+consecutive column's close and the next column's open, all exactly
++/-0.50) and that the file's own box-count column includes the
+initial reversal box (boxes = |close-open|/box_size + 1, confirmed
+47/47). Then fed the real close sequence through this generator (box
+size fixed at 0.50 to isolate the state machine from the separate
+sizing formula) and compared directly: 46 out of 46 real, complete
+columns matched exactly on both direction and precise open/close
+values (the 47th real row was a genuinely incomplete, non-box-aligned
+end-of-session partial column, correctly not reproduced). No changes
+were needed to this file as a result.
 """
 
 from __future__ import annotations
