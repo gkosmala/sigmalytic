@@ -468,6 +468,50 @@ def get_renko_weis_verdict(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/research/pnf-weis/{symbol}")
+def get_pnf_weis_verdict(symbol: str):
+    """
+    Sixth piece of the new, parallel "pure Weis" engine: the PnF
+    counterpart to get_renko_weis_verdict() above, following the same
+    pattern exactly (own daily-bar fetch, same error/status shape).
+
+    The underlying PointInTimePnFGenerator was empirically validated
+    against a real, trusted PnF reference dataset and confirmed
+    already correct (46/46 real, complete columns matched exactly) --
+    unlike Renko, no fix was needed before building this scoring layer
+    on top of it.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        engine = PnFWeisEngine()
+        columns = engine.build_columns(bars)
+        verdict = engine.evaluate(bars, symbol=sym)
+        result = verdict.to_dict()
+        result["ok"] = True
+        result["status"] = "OK"
+        result["bars_used"] = len(bars)
+        result["current_column"] = engine.current_column_reading(columns)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/candles/{symbol}")
 def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     sym = (symbol or "").upper().strip()

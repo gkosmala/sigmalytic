@@ -2661,6 +2661,9 @@ def build_command_tab(live, candles, symbol, tf):
     renko_weis = _get(f"/api/research/renko-weis/{symbol}")
     renko_weis_status = renko_weis.get("status", "UNKNOWN")
 
+    pnf_weis = _get(f"/api/research/pnf-weis/{symbol}")
+    pnf_weis_status = pnf_weis.get("status", "UNKNOWN")
+
     _REGIME_LABELS = {
         "DEEP_POSITIVE": "Deep positive gamma — strong pinning",
         "POSITIVE":      "Positive gamma — pinning likely",
@@ -2985,7 +2988,80 @@ def build_command_tab(live, candles, symbol, tf):
         "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
     })
 
-    return html.Div([row1, row2, row3, row4, row5],
+    # PnF counterpart to row5 above, mirroring its structure exactly.
+    if pnf_weis_status == "OK":
+        pw_score = pnf_weis.get("weis_score", 0)
+        pw_verdict = pnf_weis.get("verdict", "NO_WEIS_SIGNAL")
+        pw_score_b = pnf_weis.get("weis_score_bearish", 0)
+        pw_verdict_b = pnf_weis.get("verdict_bearish", "NO_WEIS_SIGNAL")
+        pw_columns = pnf_weis.get("column_count", 0)
+        cc = pnf_weis.get("current_column") or {}
+
+        if cc.get("available"):
+            evr2 = cc.get("effort_vs_result", "INSUFFICIENT_HISTORY")
+            evr2_color = TEAL_DIM if evr2 == "BUILDING" else (RED_DIM if evr2 == "EXHAUSTING" else MUTED)
+            evr2_label = {"BUILDING": "Building", "EXHAUSTING": "Exhausting",
+                          "UNCHANGED": "Unchanged", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(evr2, evr2)
+
+            mc2 = cc.get("market_condition", "INSUFFICIENT_HISTORY")
+            mc2_color = RED_DIM if mc2 == "ABSORPTION" else (TEAL_DIM if mc2 == "EASE_OF_MOVEMENT" else MUTED)
+            mc2_label = {"ABSORPTION": "Absorption", "EASE_OF_MOVEMENT": "Ease of Movement",
+                         "SYMMETRICAL": "Symmetrical", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(mc2, mc2)
+
+            current_column_block = html.Div([
+                html.Div([
+                    html.Span(f"Current column: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                    html.Span(cc.get("direction", "—"), style={
+                        "fontSize":"12px","fontWeight":"900",
+                        "color": TEAL_DIM if cc.get("direction") == "UP" else RED_DIM,
+                    }),
+                    html.Span(f"  ·  Effort vs. Result: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                    html.Span(evr2_label, style={"fontSize":"12px","fontWeight":"900","color":evr2_color}),
+                    html.Span(f"  ·  Structural Pace: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
+                    html.Span(mc2_label, style={"fontSize":"12px","fontWeight":"900","color":mc2_color}),
+                ], style={"marginBottom":"6px"}),
+                html.Div(cc.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px"}),
+                html.Div(cc.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"10px"}),
+            ])
+        else:
+            current_column_block = html.Div(cc.get("reason", "No column data available yet."),
+                                              style={"fontSize":"12px","color":MUTED,"marginBottom":"10px"})
+
+        pw_body = html.Div([
+            current_column_block,
+            html.Div([
+                html.Span("Confirmed setup (Long): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
+                html.Span(f"{pw_score:.0f} — {pw_verdict.replace('_',' ').title()}",
+                          style={"fontSize":"11px","color":TEAL_DIM if pw_score>=60 else MUTED,"fontWeight":"800"}),
+            ], style={"marginBottom":"3px"}),
+            html.Div([
+                html.Span("Confirmed setup (Short): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
+                html.Span(f"{pw_score_b:.0f} — {pw_verdict_b.replace('_',' ').title()}",
+                          style={"fontSize":"11px","color":RED_DIM if pw_score_b>=60 else MUTED,"fontWeight":"800"}),
+            ], style={"marginBottom":"3px"}),
+            html.Div(f"{pw_columns} PnF columns detected (non-repainting, daily bars)",
+                      style={"fontSize":"11px","color":MUTED}),
+        ])
+    elif pnf_weis_status == "INSUFFICIENT_HISTORY":
+        pw_body = html.Div(
+            f"Not enough daily history yet ({pnf_weis.get('bars_available', 0)} bars available, 20+ needed).",
+            style={"fontSize":"12px","color":MUTED})
+    else:
+        pw_body = html.Div(
+            pnf_weis.get("error") or "PnF-Weis data not available for this symbol right now.",
+            style={"fontSize":"12px","color":MUTED})
+
+    row6 = html.Div([
+        html.Div("PnF-Weis Column (Non-Repainting)", style={
+            "fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"8px",
+        }),
+        pw_body,
+    ], style={
+        "border": f"1px solid {BORDER}", "borderRadius": "14px", "padding": "14px",
+        "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
+    })
+
+    return html.Div([row1, row2, row3, row4, row5, row6],
                     style={"display":"flex","flexDirection":"column"})
 
 
