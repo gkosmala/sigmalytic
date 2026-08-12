@@ -1473,6 +1473,20 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
             showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
             color=WHITE, side="right", tickformat=".2f",
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
+            # FIX (2026-08-09): without an explicit range, Plotly
+            # auto-expands the y-axis to fit every add_hline() on the
+            # figure -- including kl.breakout/kl.fail, which are now
+            # real, PnF-derived Count Guide targets that can sit far
+            # from the actual candles (e.g. 355/264 vs. candles
+            # clustered around 300-310). That stretched the axis
+            # dramatically, squeezing the candles and the Call
+            # Wall/Put Wall lines into an unreadable sliver. Pinning
+            # the range to the candles' own high/low (_y_top/_y_bot,
+            # already computed above with a small buffer) keeps the
+            # chart focused on actual price action; distant structural
+            # lines simply extend beyond the visible range instead of
+            # dictating it.
+            range=[_y_bot, _y_top],
         ),
         # Enough right margin for y-axis labels, bottom for x-axis labels
         margin=dict(l=0, r=60, t=8, b=24),
