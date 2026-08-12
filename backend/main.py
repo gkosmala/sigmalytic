@@ -370,7 +370,7 @@ def get_stock_quote(symbol: str):
 # put walls) for a single live symbol, on demand, so the Command Center
 # can show genuinely live options data instead of synthetic math.
 @app.get("/api/options/gamma-matrix/{symbol}")
-def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
+def get_gamma_matrix(symbol: str, spot_price: float = 0.0, feed: str = ""):
     sym = (symbol or "").upper().strip()
 
     if not sym:
@@ -385,7 +385,10 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
     except Exception as e:
         return {"ok": False, "symbol": sym, "error": f"gamma_engine_import_failed: {e}"}
 
-    chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=spot_price)
+    # FIX (2026-08-12): feed query param added specifically to directly
+    # test whether explicitly forcing ?feed=opra changes anything --
+    # rather than always letting Alpaca apply its own default silently.
+    chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=spot_price, feed=(feed or None))
 
     if chain.get("status") == "MISSING_ALPACA_CREDENTIALS":
         return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
@@ -420,10 +423,28 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
         1 for row in options_data
         if row.get("implied_volatility") is not None and row.get("implied_volatility") > 0
     )
+    contracts_with_real_bid_ask = sum(
+        1 for row in options_data
+        if row.get("bid") is not None and row.get("bid") > 0
+        and row.get("ask") is not None and row.get("ask") > 0
+    )
+    # A few of the highest-volume (most liquid, least likely to be a
+    # genuine zero-quote edge case) contracts' actual bid/ask/IV, for
+    # direct inspection rather than just an aggregate count.
+    sample_liquid = sorted(options_data, key=lambda r: r.get("volume") or 0, reverse=True)[:5]
     result["feed_diagnostics"] = {
         "explicitly_requested_feed": chain.get("feed"),  # None means we let Alpaca choose its own default
         "contracts_total": len(options_data),
         "contracts_with_real_iv": contracts_with_iv,
+        "contracts_with_real_bid_ask": contracts_with_real_bid_ask,
+        "sample_liquid_contracts": [
+            {
+                "contract_symbol": r.get("contract_symbol"), "strike": r.get("strike"),
+                "volume": r.get("volume"), "bid": r.get("bid"), "ask": r.get("ask"),
+                "implied_volatility": r.get("implied_volatility"),
+            }
+            for r in sample_liquid
+        ],
     }
 
     # Real, market-derived inputs for the Probability Ladder's touch-
