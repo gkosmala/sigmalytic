@@ -2763,7 +2763,14 @@ def build_command_tab(live, candles, symbol, tf):
     # ── LEFT: Price Ladder ────────────────────────────────────────────────────
     price_ladder = html.Div([
         card([
-            slabel("Price Ladder"),
+            html.Div([
+                slabel("Price Ladder"),
+                html.Button("↻ Refresh", id="btn-refresh-count-guide", n_clicks=0, style={
+                    "fontSize":"10px","fontWeight":"800","color":TEAL_DIM,
+                    "background":"transparent","border":f"1px solid {TEAL_DIM}",
+                    "borderRadius":"6px","padding":"3px 8px","cursor":"pointer",
+                }),
+            ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"6px"}),
             level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
             level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
             level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
@@ -7442,11 +7449,12 @@ def sync_active_tab_styles(active_tab):
     Output("s-seq","data",allow_duplicate=True),
     Output("s-candles","data",allow_duplicate=True),
     Input("i-alpaca","n_intervals"),
+    Input("btn-refresh-count-guide","n_clicks"),
     State("s-live","data"), State("s-seq","data"), State("s-candles","data"),
     State("s-live-mode","data"), State("s-symbol","data"), State("s-tf","data"),
     prevent_initial_call=True,
 )
-def on_tick(_, current, seq, candles, live_mode, symbol, tf):
+def on_tick(_, __, current, seq, candles, live_mode, symbol, tf):
     """
     Live price refresh + real candle bucket behavior.
 
@@ -7618,6 +7626,18 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # this file's other caches (90-120s), since this data is derived
     # from daily bars and doesn't change intraday, but a smaller
     # window to notice next time something like this happens.
+    #
+    # Manual refresh button (2026-08-12): user noticed the 5-minute
+    # window still meant a few minutes of visible staleness. Detects
+    # the button as this callback's trigger (same callback_context
+    # pattern already used elsewhere in this file) and invalidates
+    # just this one cache key before fetching, using shared_cache's
+    # existing invalidate() rather than adding a new bypass mechanism.
+    count_guide_key = f"/api/research/pnf-weis/{clean}"
+    triggered_id = callback_context.triggered_id if callback_context.triggered else None
+    if triggered_id == "btn-refresh-count-guide" and shared_cache:
+        shared_cache.invalidate(count_guide_key)
+
     count_guide = None
     try:
         def _fetch_count_guide():
@@ -7625,7 +7645,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
             return resp.get("count_guide") if resp.get("status") == "OK" else None
         if shared_cache:
             count_guide = shared_cache.get_or_fetch(
-                f"/api/research/pnf-weis/{clean}", _fetch_count_guide, ttl_seconds=300)
+                count_guide_key, _fetch_count_guide, ttl_seconds=300)
         else:
             count_guide = _fetch_count_guide()
     except Exception:
