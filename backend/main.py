@@ -428,23 +428,42 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0, feed: str = ""):
         if row.get("bid") is not None and row.get("bid") > 0
         and row.get("ask") is not None and row.get("ask") > 0
     )
-    # A few of the highest-volume (most liquid, least likely to be a
-    # genuine zero-quote edge case) contracts' actual bid/ask/IV, for
-    # direct inspection rather than just an aggregate count.
+    # FIX (2026-08-12): the naive top-volume sample was systematically
+    # biased toward 0DTE contracts -- 0DTE options always carry the
+    # highest volume on their own expiration day, and Alpaca has a
+    # documented, genuine limitation of not providing greeks for 0DTE
+    # contracts at all, separate from any extraction bug. Sampling only
+    # by volume meant every "liquid" sample happened to be exactly the
+    # kind of contract that was never going to have greeks regardless
+    # of whether the code itself was correct. Added a same-style sample
+    # restricted to non-0DTE (dte > 0) contracts, plus an aggregate
+    # breakdown by DTE bucket, so the two populations aren't conflated.
     sample_liquid = sorted(options_data, key=lambda r: r.get("volume") or 0, reverse=True)[:5]
+    non_0dte = [r for r in options_data if (r.get("dte") or 0) > 0]
+    sample_liquid_non_0dte = sorted(non_0dte, key=lambda r: r.get("volume") or 0, reverse=True)[:5]
+    contracts_0dte = len(options_data) - len(non_0dte)
+    contracts_with_iv_non_0dte = sum(
+        1 for row in non_0dte
+        if row.get("implied_volatility") is not None and row.get("implied_volatility") > 0
+    )
+
+    def _sample_row(r):
+        return {
+            "contract_symbol": r.get("contract_symbol"), "strike": r.get("strike"),
+            "dte": r.get("dte"), "volume": r.get("volume"),
+            "bid": r.get("bid"), "ask": r.get("ask"),
+            "implied_volatility": r.get("implied_volatility"),
+        }
+
     result["feed_diagnostics"] = {
         "explicitly_requested_feed": chain.get("feed"),  # None means we let Alpaca choose its own default
         "contracts_total": len(options_data),
+        "contracts_0dte": contracts_0dte,
         "contracts_with_real_iv": contracts_with_iv,
+        "contracts_with_real_iv_non_0dte": contracts_with_iv_non_0dte,
         "contracts_with_real_bid_ask": contracts_with_real_bid_ask,
-        "sample_liquid_contracts": [
-            {
-                "contract_symbol": r.get("contract_symbol"), "strike": r.get("strike"),
-                "volume": r.get("volume"), "bid": r.get("bid"), "ask": r.get("ask"),
-                "implied_volatility": r.get("implied_volatility"),
-            }
-            for r in sample_liquid
-        ],
+        "sample_liquid_contracts": [_sample_row(r) for r in sample_liquid],
+        "sample_liquid_non_0dte_contracts": [_sample_row(r) for r in sample_liquid_non_0dte],
     }
 
     # Real, market-derived inputs for the Probability Ladder's touch-
