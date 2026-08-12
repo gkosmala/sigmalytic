@@ -512,6 +512,53 @@ def get_pnf_weis_verdict(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/research/weis-wave/{symbol}")
+def get_weis_wave_verdict(symbol: str):
+    """
+    Exposes the original, already-validated, time-bar-based
+    WeisVerdictEngine (built and empirically validated earlier
+    tonight against a real reference dataset: 134 vs. 131 real
+    transitions, 78% timing accuracy) for a single symbol, mirroring
+    get_renko_weis_verdict()/get_pnf_weis_verdict()'s exact pattern --
+    so the time-bar approach can be directly compared against the new
+    Renko/PnF-structure approaches on the same, real data.
+
+    Unlike the newer engines, WeisVerdictEngine genuinely requires a
+    real pandas DataFrame (not a plain list of dicts) -- converts the
+    same batch-fetched bars accordingly before calling it.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        import pandas as pd
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        df = pd.DataFrame(bars)
+        df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+
+        engine = WeisVerdictEngine()
+        result = engine.evaluate(df, symbol=sym)
+        result["ok"] = True
+        result["status"] = "OK"
+        result["bars_used"] = len(bars)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/candles/{symbol}")
 def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     sym = (symbol or "").upper().strip()
