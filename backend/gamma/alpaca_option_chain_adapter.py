@@ -208,9 +208,21 @@ class AlpacaOptionChainAdapter:
             except Exception:
                 pass
 
+        # FIX (2026-08-12): extends the camelCase fix below (originally
+        # applied only to volume on 2026-07-30) to greeks, latest_trade,
+        # and latest_quote -- these three were still checking the old,
+        # wrong snake_case/generic keys ("latest_quote", "quote") that
+        # were never actually present in Alpaca's real response, exactly
+        # the same root cause already confirmed for volume. This meant
+        # bid/ask/trade/greeks silently defaulted to empty/None for
+        # every single contract, regardless of account entitlement --
+        # confirmed directly: even the chain's highest-volume contracts
+        # (100k+ volume, actively quoted) showed null bid/ask, which a
+        # genuine account/entitlement issue would not produce uniformly
+        # across contracts of wildly different liquidity.
         greeks = snapshot.get("greeks") or {}
-        latest_trade = snapshot.get("latest_trade") or snapshot.get("trade") or {}
-        latest_quote = snapshot.get("latest_quote") or snapshot.get("quote") or {}
+        latest_trade = snapshot.get("latestTrade") or snapshot.get("latest_trade") or snapshot.get("trade") or {}
+        latest_quote = snapshot.get("latestQuote") or snapshot.get("latest_quote") or snapshot.get("quote") or {}
 
         # FIX (2026-07-30): confirmed via direct inspection of Alpaca's
         # actual raw response that this endpoint uses camelCase keys with
