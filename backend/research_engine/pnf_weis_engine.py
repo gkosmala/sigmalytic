@@ -201,7 +201,8 @@ class PnFWeisEngine:
             ),
         }
 
-    def identify_current_range(self, columns: List[PnFColumn], max_lookback: int = 30) -> Dict[str, Any]:
+    def identify_current_range(self, columns: List[PnFColumn], max_lookback: int = 30,
+                                 max_range_pct: float = 0.20) -> Dict[str, Any]:
         """
         Identifies the genuine, currently-relevant consolidation range
         by working backward from the most recent column, expanding the
@@ -210,12 +211,30 @@ class PnFWeisEngine:
         outside the accumulated range, since that signals the edge of
         the current base rather than part of it. Capped at
         max_lookback columns as a sanity bound.
+
+        FIX (2026-08-12): confirmed a genuine, serious bug live in
+        production -- consecutive PnF columns structurally overlap by
+        design (the reversal rule guarantees a new column's open sits
+        within 1 box of the prior column's own extreme), so the
+        "entirely outside" stopping criterion above rarely fires
+        during a sustained trend. On a full year of real AAPL bars,
+        this let the range walk back through nearly the entire
+        uptrend, producing a downside target of -172.58 -- a
+        mathematically impossible negative price shown live in the
+        Price Ladder. Added a second, principled bound: stop expanding
+        the moment doing so would push the range width beyond
+        max_range_pct of the current reference price. A genuine,
+        tradeable consolidation shouldn't span that much of the price
+        level; anything wider is a trend, not a base, regardless of
+        whether individual columns technically overlap.
         """
         if not columns:
             return {"available": False, "reason": "No columns detected yet."}
 
         range_high = columns[-1].high
         range_low = columns[-1].low
+        reference_price = columns[-1].high  # anchor the % bound to the current, real price level
+        max_width = reference_price * max_range_pct
         column_count = 1
 
         for col in reversed(columns[:-1]):
@@ -225,8 +244,16 @@ class PnFWeisEngine:
             # marks the edge of this base -- stop expanding.
             if col.high < range_low or col.low > range_high:
                 break
-            range_high = max(range_high, col.high)
-            range_low = min(range_low, col.low)
+            candidate_high = max(range_high, col.high)
+            candidate_low = min(range_low, col.low)
+            # A genuine consolidation shouldn't span more than
+            # max_range_pct of the current price -- stop before
+            # including a column that would blow past that, even if
+            # it technically overlaps.
+            if (candidate_high - candidate_low) > max_width:
+                break
+            range_high = candidate_high
+            range_low = candidate_low
             column_count += 1
 
         return {
@@ -269,6 +296,17 @@ class PnFWeisEngine:
         # (always-additive) formula for a downside projection -- negate back.
         down_conservative = -down_targets["conservative_target"]
         down_aggressive = -down_targets["aggressive_target"]
+
+        # FIX (2026-08-12): defensive floor, independent of the
+        # identify_current_range() width-bound fix above -- a price
+        # target can never be at or below zero. Given the severity of
+        # the bug this addresses (a real, negative price shown live in
+        # production), this is a deliberate second, independent
+        # safeguard rather than relying on the range fix alone to
+        # prevent every possible broken output.
+        min_floor = range_low * 0.01
+        down_conservative = max(down_conservative, min_floor)
+        down_aggressive = max(down_aggressive, min_floor)
 
         return {
             "available": True,
