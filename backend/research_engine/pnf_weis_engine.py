@@ -28,6 +28,7 @@ from backend.research_engine.point_in_time_pnf_generator import (
     PointInTimePnFGenerator,
     PnFColumn,
 )
+from backend.research_engine.point_figure_target_engine import PointFigureTargetEngine
 
 
 @dataclass
@@ -198,6 +199,89 @@ class PnFWeisEngine:
                 f"No climax bar -- the most recent contributing bar's volume ({final_bar_volume:,.0f}) "
                 f"is in line with the column's own running average ({running_avg:,.0f})."
             ),
+        }
+
+    def identify_current_range(self, columns: List[PnFColumn], max_lookback: int = 30) -> Dict[str, Any]:
+        """
+        Identifies the genuine, currently-relevant consolidation range
+        by working backward from the most recent column, expanding the
+        range while prior columns' own high/low stay within (or
+        overlap) it -- stopping once a prior column falls entirely
+        outside the accumulated range, since that signals the edge of
+        the current base rather than part of it. Capped at
+        max_lookback columns as a sanity bound.
+        """
+        if not columns:
+            return {"available": False, "reason": "No columns detected yet."}
+
+        range_high = columns[-1].high
+        range_low = columns[-1].low
+        column_count = 1
+
+        for col in reversed(columns[:-1]):
+            if column_count >= max_lookback:
+                break
+            # A column entirely outside the current accumulated range
+            # marks the edge of this base -- stop expanding.
+            if col.high < range_low or col.low > range_high:
+                break
+            range_high = max(range_high, col.high)
+            range_low = min(range_low, col.low)
+            column_count += 1
+
+        return {
+            "available": True,
+            "range_high": round(range_high, 2),
+            "range_low": round(range_low, 2),
+            "column_count": column_count,
+        }
+
+    def count_guide_projection(self, columns: List[PnFColumn], reversal_boxes: int = 3) -> Dict[str, Any]:
+        """
+        The Wyckoff Count Guide, per the shared research: the
+        horizontal width of a consolidation (the "Cause") sets the
+        expected vertical size of the subsequent move (the "Effect").
+        Revives the correct, existing math from
+        point_figure_target_engine.py (found dead/unused earlier
+        tonight) -- combined with identify_current_range() above to
+        genuinely determine the relevant range width from real column
+        data, rather than assuming an arbitrary lookback.
+        """
+        range_info = self.identify_current_range(columns)
+        if not range_info.get("available"):
+            return {"available": False, "reason": range_info.get("reason", "No range available.")}
+
+        box_size = columns[-1].box_size
+        range_high = range_info["range_high"]
+        range_low = range_info["range_low"]
+        horizontal_count = max(1, round((range_high - range_low) / box_size)) if box_size > 0 else 1
+
+        target_engine = PointFigureTargetEngine()
+        up_targets = target_engine.calculate_targets(
+            base_price=range_high, horizontal_count=horizontal_count,
+            box_size=box_size, reversal=reversal_boxes,
+        )
+        down_targets = target_engine.calculate_targets(
+            base_price=-range_low, horizontal_count=horizontal_count,
+            box_size=box_size, reversal=reversal_boxes,
+        )
+        # down_targets was computed on negated prices to reuse the same
+        # (always-additive) formula for a downside projection -- negate back.
+        down_conservative = -down_targets["conservative_target"]
+        down_aggressive = -down_targets["aggressive_target"]
+
+        return {
+            "available": True,
+            "range_high": range_high,
+            "range_low": range_low,
+            "range_column_count": range_info["column_count"],
+            "box_size": box_size,
+            "horizontal_count": horizontal_count,
+            "cause": up_targets["cause"],
+            "upside_conservative_target": up_targets["conservative_target"],
+            "upside_aggressive_target": up_targets["aggressive_target"],
+            "downside_conservative_target": round(down_conservative, 4),
+            "downside_aggressive_target": round(down_aggressive, 4),
         }
 
     def current_column_reading(self, columns: List[PnFColumn]) -> Dict[str, Any]:
