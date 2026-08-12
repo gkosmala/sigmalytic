@@ -2672,10 +2672,27 @@ def build_command_tab(live, candles, symbol, tf):
     # repainting Renko brick generation -> wave grouping -> scoring)
     # into a live tab. Own daily-bar fetch inside the endpoint, not
     # tied to this chart's own (5-minute default) candles timeframe.
-    renko_weis = _get(f"/api/research/renko-weis/{symbol}")
+    # FIX (2026-08-12): user reported "PnF-Weis data not available"
+    # with no further detail, while a direct fetch of the same
+    # endpoint worked fine -- confirmed the same root cause already
+    # fixed once tonight for the D3E.9 Lifecycle panel: _get()
+    # silently swallows any failure (timeout, non-200 status, genuine
+    # exception) into {}, so a transient issue produced empty data
+    # with zero diagnostic information. Direct requests.get() calls
+    # here distinguish the actual reason instead.
+    def _fetch_weis_engine(path: str) -> dict:
+        try:
+            r = req.get(f"{BACKEND_HTTP}{path}", timeout=20)
+            if r.ok:
+                return r.json()
+            return {"status": "BACKEND_ERROR", "error": f"Backend returned {r.status_code}: {r.text[:200]}"}
+        except Exception as exc:
+            return {"status": "FRONTEND_FETCH_ERROR", "error": f"Fetch failed: {str(exc)[:200]}"}
+
+    renko_weis = _fetch_weis_engine(f"/api/research/renko-weis/{symbol}")
     renko_weis_status = renko_weis.get("status", "UNKNOWN")
 
-    pnf_weis = _get(f"/api/research/pnf-weis/{symbol}")
+    pnf_weis = _fetch_weis_engine(f"/api/research/pnf-weis/{symbol}")
     pnf_weis_status = pnf_weis.get("status", "UNKNOWN")
 
     _REGIME_LABELS = {
