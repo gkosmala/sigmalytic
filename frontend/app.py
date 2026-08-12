@@ -88,7 +88,7 @@ RED_DIM = "#FB7185"
 PURPLE = "#C4B5FD"
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
-    sanitize_symbol, create_live_update, get_key_levels,
+    sanitize_symbol, create_live_update, get_key_levels, touch_probability,
 )
 
 BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
@@ -1333,6 +1333,63 @@ def brow(label, value, tone):
                  style={"height":"7px","background":"rgba(255,255,255,.08)","borderRadius":"999px","overflow":"hidden"}),
     ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
                "padding":"12px 14px","marginBottom":"8px"})
+
+def _render_probability_ladder_rows(real_gamma, price, kl, nodes, score):
+    """
+    Computes real, market-derived touch probabilities for the four
+    Probability Ladder levels (Upside Expansion=kl.breakout,
+    Liquidity Retest=kl.prior_high, Hold/Balance=kl.confirm,
+    Failure Gate=kl.fail) using the actual options chain's implied
+    volatility (shared.engine.touch_probability). Falls back to the
+    prior heuristic (nodes[]["score"]/score/100-score) ONLY if the
+    real inputs aren't available, and clearly labels that fallback
+    as an estimate rather than presenting it as equally real.
+    """
+    tpi = (real_gamma or {}).get("touch_probability_inputs") or {}
+    levels = [
+        ("Upside Expansion", kl.breakout),
+        ("Liquidity Retest", kl.prior_high),
+        ("Hold / Balance", kl.confirm),
+        ("Failure Gate", kl.fail),
+    ]
+
+    if tpi.get("available") and tpi.get("atm_implied_volatility") and tpi.get("days_to_expiration"):
+        sigma = tpi["atm_implied_volatility"]
+        dte = tpi["days_to_expiration"]
+        rows = []
+        for label, level in levels:
+            p = touch_probability(price, level, sigma, dte)
+            pct = round(p * 100) if p is not None else 0
+            tone = "up" if level >= price else "down"
+            if label == "Hold / Balance":
+                tone = "neutral"
+            rows.append(brow(label, pct, tone))
+            rows.append(html.P(f"Level ${level:.2f}",
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}))
+        rows.append(html.P(f"Real probability · {dte}d to {tpi.get('expiration_date','')} · {sigma*100:.1f}% IV",
+                            style={"fontSize":"8px","color":MUTED,"marginTop":"2px"}))
+        return rows
+
+    # Fallback: real options data wasn't available this tick -- old
+    # heuristic, but clearly labeled as an estimate, not silently
+    # presented as if it were the same real calculation.
+    rows = [
+        brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
+        html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
+               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+        brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
+        html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
+               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+        brow("Hold / Balance", score, "neutral"),
+        html.P(f"Level ${kl.confirm:.2f}",
+               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+        brow("Failure Gate", 100-score, "down"),
+        html.P(f"Level ${kl.fail:.2f}",
+               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px"}),
+        html.P("Estimated · real options data unavailable this tick",
+               style={"fontSize":"8px","color":MUTED,"marginTop":"2px"}),
+    ]
+    return rows
 
 def zcard(name, level, desc, color):
     return html.Div([
@@ -2859,21 +2916,18 @@ def build_command_tab(live, candles, symbol, tf):
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
             # Column C — Probability Ladder
+            # FIX (2026-08-12): the four percentages here were a
+            # heuristic (fixed base score + ad-hoc bonuses) dressed up
+            # as probabilities. Now computed as real, market-derived
+            # touch probabilities from the actual options chain's
+            # implied volatility (shared.engine.touch_probability),
+            # using the nearest monthly expiration's ATM IV -- falls
+            # back to the old heuristic, honestly labeled as such,
+            # only if the real inputs genuinely aren't available.
             html.Div([
                 slabel("Probability Ladder"),
                 html.Div(style={"height":"6px"}),
-                brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
-                html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
-                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-                brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
-                html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
-                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-                brow("Hold / Balance", score, "neutral"),
-                html.P(f"Level ${kl.confirm:.2f}",
-                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-                brow("Failure Gate", 100-score, "down"),
-                html.P(f"Level ${kl.fail:.2f}",
-                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px"}),
+                *_render_probability_ladder_rows(real_gamma, price, kl, nodes, score),
             ], style={"flex":"1.5","minWidth":"180px","paddingLeft":"16px"}),
 
         ], style={"display":"flex","gap":"0","alignItems":"flex-start","flexWrap":"wrap"}),

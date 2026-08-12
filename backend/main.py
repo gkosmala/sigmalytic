@@ -407,6 +407,26 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
     )
     result["ok"] = True
     result["has_real_data"] = True
+
+    # Real, market-derived inputs for the Probability Ladder's touch-
+    # probability calculation, replacing the prior heuristic score.
+    # Returns just the nearest monthly expiration's ATM IV and dte --
+    # the frontend already knows its own price levels (kl.breakout
+    # etc.) and computes the actual per-level probability itself,
+    # avoiding passing price levels back and forth as query params.
+    from backend.gamma.touch_probability_engine import TouchProbabilityEngine
+    monthly = TouchProbabilityEngine.find_nearest_monthly_expiration(options_data)
+    if monthly:
+        sigma = TouchProbabilityEngine.atm_implied_volatility(monthly["contracts"], spot_price)
+        result["touch_probability_inputs"] = {
+            "available": sigma is not None,
+            "expiration_date": monthly["expiration_date"],
+            "days_to_expiration": monthly["dte"],
+            "atm_implied_volatility": round(sigma, 4) if sigma is not None else None,
+        }
+    else:
+        result["touch_probability_inputs"] = {"available": False, "reason": "No monthly expiration in the current chain."}
+
     return result
 
 

@@ -160,6 +160,39 @@ def get_key_levels(price: float, count_guide: dict = None) -> KeyLevels:
     )
 
 
+def touch_probability(spot_price: float, level: float, sigma: float, days_to_expiration: float) -> float:
+    """
+    FIX (2026-08-12): the Probability Ladder's percentages were a
+    heuristic (fixed base score + ad-hoc bonuses) dressed up as
+    probabilities -- confirmed via direct code inspection, not an
+    empirically-derived "chance of reaching this level" at all.
+
+    Real, market-derived replacement: the standard "one-touch"
+    probability formula for a driftless lognormal (geometric Brownian
+    motion) price process, via the reflection principle --
+    P(touch) = 2 * N(-|ln(level/spot)| / (sigma * sqrt(T))) -- driven
+    by real, live implied volatility from the actual options chain
+    (backend's TouchProbabilityEngine), not a fixed base score. Same
+    core lognormal assumption options pricing itself is built on.
+
+    Deliberately duplicated here (rather than calling the backend a
+    second time) since the frontend already computes its own price
+    levels (kl.breakout etc.) locally -- this small formula is a much
+    smaller surface to keep in sync than passing price levels back and
+    forth as query params. Backend's TouchProbabilityEngine remains
+    the source of truth for sigma/days_to_expiration inputs.
+    """
+    if spot_price <= 0 or level <= 0 or sigma <= 0 or days_to_expiration <= 0:
+        return None
+    if level == spot_price:
+        return 1.0
+    t_years = days_to_expiration / 365.0
+    ratio = level / spot_price
+    d = abs(math.log(ratio)) / (sigma * math.sqrt(t_years))
+    prob = 2.0 * (0.5 * (1.0 + math.erf(-d / math.sqrt(2.0))))
+    return max(0.0, min(1.0, prob))
+
+
 # ─────────────────────────────────────────────
 # Behavioral Modeling
 # ─────────────────────────────────────────────
