@@ -7595,6 +7595,12 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # driving Bias/Confidence/Grade/Status/Mode reflects genuine PnF
     # structure. Falls back to the old synthetic levels only if this
     # fetch fails (still better than no data at all in that case).
+    # TTL shortened 30min -> 5min (2026-08-12): a stale cached value
+    # from just before a deploy fix went live kept serving the old,
+    # broken levels for up to 30 minutes afterward -- still well above
+    # this file's other caches (90-120s), since this data is derived
+    # from daily bars and doesn't change intraday, but a smaller
+    # window to notice next time something like this happens.
     count_guide = None
     try:
         def _fetch_count_guide():
@@ -7602,7 +7608,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
             return resp.get("count_guide") if resp.get("status") == "OK" else None
         if shared_cache:
             count_guide = shared_cache.get_or_fetch(
-                f"/api/research/pnf-weis/{clean}", _fetch_count_guide, ttl_seconds=1800)
+                f"/api/research/pnf-weis/{clean}", _fetch_count_guide, ttl_seconds=300)
         else:
             count_guide = _fetch_count_guide()
     except Exception:
