@@ -7573,8 +7573,29 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
 
     new_seq = (seq or 0) + 1
 
+    # FIX (2026-08-09): the Decision Engine's key levels previously
+    # used a fixed-percentage synthetic formula regardless of any real
+    # market structure -- confirmed to have no documented rationale,
+    # genuinely leftover placeholder code. Now fetches the real
+    # Wyckoff Count Guide projection (PnFWeisEngine) so the base score
+    # driving Bias/Confidence/Grade/Status/Mode reflects genuine PnF
+    # structure. Falls back to the old synthetic levels only if this
+    # fetch fails (still better than no data at all in that case).
+    count_guide = None
+    try:
+        def _fetch_count_guide():
+            resp = _get(f"/api/research/pnf-weis/{clean}")
+            return resp.get("count_guide") if resp.get("status") == "OK" else None
+        if shared_cache:
+            count_guide = shared_cache.get_or_fetch(
+                f"/api/research/pnf-weis/{clean}", _fetch_count_guide, ttl_seconds=1800)
+        else:
+            count_guide = _fetch_count_guide()
+    except Exception:
+        count_guide = None
+
     # Preserve backend decision/confluence if present. Fall back to local engine output.
-    fallback_live = create_live_update(clean, price, volume, new_seq).to_dict()
+    fallback_live = create_live_update(clean, price, volume, new_seq, count_guide=count_guide).to_dict()
     new_live = {
         **fallback_live,
         "symbol": clean,

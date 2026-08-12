@@ -111,8 +111,44 @@ def sanitize_symbol(value: str) -> str:
     return re.sub(r"[^A-Z]", "", value.strip().upper())
 
 
-def get_key_levels(price: float) -> KeyLevels:
+def get_key_levels(price: float, count_guide: dict = None) -> KeyLevels:
+    """
+    FIX (2026-08-09): previously always used a fixed-percentage
+    synthetic formula (price * 1.03, price * 0.992, etc.) regardless
+    of any real market structure -- confirmed to have no documented
+    rationale anywhere in this function's history, genuinely
+    leftover, un-upgraded placeholder code.
+
+    Now derives real levels from the Wyckoff Count Guide projection
+    (backend's PnFWeisEngine.count_guide_projection()) when provided:
+    the actual, currently-relevant PnF consolidation range and its
+    genuine upside/downside targets, not arbitrary percentage offsets.
+    Falls back to the old synthetic formula ONLY if real data isn't
+    available (e.g. backend unreachable, insufficient history) --
+    this fallback is intentionally still synthetic math, since some
+    real levels are strictly better than none, but every caller
+    should be migrated to supply count_guide where possible rather
+    than relying on this fallback silently.
+    """
     safe = price if math.isfinite(price) and price > 0 else 1.0
+
+    if count_guide and count_guide.get("available"):
+        range_high = count_guide.get("range_high", safe)
+        range_low = count_guide.get("range_low", safe)
+        upside_conservative = count_guide.get("upside_conservative_target", range_high)
+        upside_aggressive = count_guide.get("upside_aggressive_target", range_high)
+        downside_conservative = count_guide.get("downside_conservative_target", range_low)
+        downside_aggressive = count_guide.get("downside_aggressive_target", range_low)
+        return KeyLevels(
+            breakout=round(upside_aggressive, 4),
+            prior_high=round(range_high, 4),
+            expansion=round(upside_conservative, 4),
+            confirm=round(safe, 4),
+            trigger=round(range_low, 4),
+            trap=round(downside_conservative, 4),
+            fail=round(downside_aggressive, 4),
+        )
+
     return KeyLevels(
         breakout=round(safe * 1.030, 4),
         prior_high=round(safe * 1.022, 4),
@@ -383,12 +419,13 @@ def _synthetic_options_bias(price: float) -> Optionsbias:
 
 def run_decision(price: float, volume_confirm: bool,
                  behavioral: BehavioralScore = None,
-                 options: Optionsbias = None) -> Decision:
+                 options: Optionsbias = None,
+                 count_guide: dict = None) -> Decision:
     """
     Enhanced decision engine that blends price, behavioral,
     and options signals into a single scored output.
     """
-    kl = get_key_levels(price)
+    kl = get_key_levels(price, count_guide=count_guide)
 
     # ── Base price score ───────────────────────────────────────────
     if price >= kl.confirm and volume_confirm:
@@ -513,18 +550,21 @@ def build_confluence_nodes(price: float,
 
 def create_live_update(
     symbol: str, price: float, volume: int, sequence: int,
-    candles: list[dict] = None,
+    candles: list[dict] = None, count_guide: dict = None,
 ) -> LiveUpdate:
     """
     Creates a full live update with behavioral and options scoring.
     Pass candles list for behavioral modeling — falls back gracefully if absent.
+    Pass count_guide (from the backend's PnFWeisEngine.count_guide_projection())
+    for real, structural key levels — falls back to synthetic percentage
+    levels only if not provided.
     """
     behavioral = calculate_behavioral_score(candles) if candles else None
     try:
         options = fetch_options_bias(symbol, price)
     except Exception:
         options = _synthetic_options_bias(price)
-    decision   = run_decision(price, volume > 1_500_000, behavioral, options)
+    decision   = run_decision(price, volume > 1_500_000, behavioral, options, count_guide=count_guide)
     confluence = build_confluence_nodes(price, behavioral, options)
 
     return LiveUpdate(

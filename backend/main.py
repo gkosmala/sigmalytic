@@ -507,6 +507,7 @@ def get_pnf_weis_verdict(symbol: str):
         result["status"] = "OK"
         result["bars_used"] = len(bars)
         result["current_column"] = engine.current_column_reading(columns)
+        result["count_guide"] = engine.count_guide_projection(columns)
         return result
     except Exception as e:
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
