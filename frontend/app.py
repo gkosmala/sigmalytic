@@ -1262,7 +1262,7 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
 def _regime_from_live(live: dict) -> str:
     score = live.get("decision", {}).get("score", 50)
     price = live.get("price", 100)
-    kl    = get_key_levels(price)
+    kl    = get_key_levels(price, count_guide=live.get("count_guide"))
     if score >= 80 and price >= kl.expansion: return "expansion"
     if score >= 70:                            return "trend_continuation"
     if score >= 45:                            return "neutral"
@@ -1362,9 +1362,9 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
-def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None):
+def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None, count_guide=None):
     """Clean chart — integer index x-axis for proper candle rendering."""
-    kl = get_key_levels(price)
+    kl = get_key_levels(price, count_guide=count_guide)
     # FIX (2026-07-30): user-reported the candlesticks don't match the
     # live price shown elsewhere on the page. Root cause: fetch_real_candles
     # only returns bars the backend's Alpaca endpoint has already closed
@@ -2631,7 +2631,7 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
 
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
-    nodes    = live["confluence"]; kl = get_key_levels(price)
+    nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
     seq      = live["sequence"]; score = decision["score"]
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
@@ -2706,7 +2706,7 @@ def build_command_tab(live, candles, symbol, tf):
             options_note = f"Synthetic options layer — no live options data available ({_reason})."
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
-    fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level)
+    fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level, count_guide=live.get("count_guide"))
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -7612,6 +7612,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
+        "count_guide": count_guide,
     }
     if d.get("decision"):
         new_live["decision"] = d.get("decision")

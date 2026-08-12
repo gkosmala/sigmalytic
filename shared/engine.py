@@ -507,13 +507,15 @@ def run_decision(price: float, volume_confirm: bool,
 
 def build_confluence_nodes(price: float,
                             behavioral: BehavioralScore = None,
-                            options: Optionsbias = None) -> list[ConfluenceNode]:
+                            options: Optionsbias = None,
+                            count_guide: dict = None) -> list[ConfluenceNode]:
     """
     Enhanced confluence nodes that adjust scores based on
     behavioral and options signals.
     """
-    kl = get_key_levels(price)
+    kl = get_key_levels(price, count_guide=count_guide)
     above_trigger = price > kl.trigger
+
 
     raw = [
         ConfluenceNode("Expansion Node 1", "Expansion Node",   kl.breakout,   63, "up"),
@@ -565,7 +567,7 @@ def create_live_update(
     except Exception:
         options = _synthetic_options_bias(price)
     decision   = run_decision(price, volume > 1_500_000, behavioral, options, count_guide=count_guide)
-    confluence = build_confluence_nodes(price, behavioral, options)
+    confluence = build_confluence_nodes(price, behavioral, options, count_guide=count_guide)
 
     return LiveUpdate(
         type="LIVE_UPDATE",
