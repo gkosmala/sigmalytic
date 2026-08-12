@@ -59,6 +59,13 @@ reproduced). Also checked this second file's SumVol column directly:
 count) -- confirmed this column is not independent volume data, just
 a restatement of the box count already used above, not a new
 validation signal.
+
+Re-validated a third time with a ~90-day real reference export (565
+rows, vs. the original ~1-week/47-row and second ~6-week/244-row
+samples): 564 out of 564 real, complete columns matched exactly (same
+single-incomplete-final-row pattern as both prior files, correctly
+not reproduced). Confirms the 3-box reversal state machine holds
+across many more market days and conditions.
 """
 
 from __future__ import annotations

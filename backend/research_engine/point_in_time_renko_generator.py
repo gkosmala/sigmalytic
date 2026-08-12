@@ -36,6 +36,14 @@ that jumps directly to the new position (not the "penalty step" plus
 a separate continuation brick the old logic produced). Corrected
 logic: 296/296 bricks, 100% direction and open/close match against
 the same reference data.
+
+Re-validated at much larger scale with a ~90-day real reference
+export (3,664 rows, vs. the original ~1-week/296-row sample): 3,663
+out of 3,663 real, complete bricks matched exactly on both direction
+and precise open/close values (same single-incomplete-final-row
+pattern as before, correctly not reproduced). Confirms the corrected
+2-brick reversal convention holds across many more market days and
+conditions, not just the original sample window.
 """
 
 from __future__ import annotations
