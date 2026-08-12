@@ -464,6 +464,7 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0, feed: str = ""):
         "contracts_with_real_bid_ask": contracts_with_real_bid_ask,
         "sample_liquid_contracts": [_sample_row(r) for r in sample_liquid],
         "sample_liquid_non_0dte_contracts": [_sample_row(r) for r in sample_liquid_non_0dte],
+        "raw_sample_snapshot": chain.get("raw_sample_snapshot"),
     }
 
     # Real, market-derived inputs for the Probability Ladder's touch-

@@ -248,10 +248,18 @@ class AlpacaOptionChainAdapter:
         delta = cls._safe_float(greeks.get("delta"), 0.0)
         theta = cls._safe_float(greeks.get("theta"), 0.0)
         vega = cls._safe_float(greeks.get("vega"), 0.0)
+        # FIX (2026-08-12): added impliedVolatility (camelCase),
+        # consistent with the already-confirmed pattern for
+        # latestQuote/latestTrade/dailyBar -- bid/ask started working
+        # once latestQuote was checked, but IV/greeks still didn't,
+        # even for confirmed non-0DTE, liquid contracts with real
+        # bid/ask, suggesting the same camelCase issue applies here too.
         iv = cls._safe_optional_float(
             greeks.get("implied_volatility")
+            or greeks.get("impliedVolatility")
             or greeks.get("iv")
             or snapshot.get("implied_volatility")
+            or snapshot.get("impliedVolatility")
         )
 
         gamma_exposure = gamma * open_interest * CONTRACT_MULTIPLIER
@@ -427,6 +435,7 @@ class AlpacaOptionChainAdapter:
             params["expiration_date_lte"] = expiration_date_lte
 
         all_rows: List[Dict[str, Any]] = []
+        raw_sample: Optional[Dict[str, Any]] = None
         page_token: Optional[str] = None
         pages = 0
         errors: List[str] = []
@@ -455,6 +464,20 @@ class AlpacaOptionChainAdapter:
                     }
 
                 payload = response.json()
+
+                # FIX (2026-08-12): capture one raw, completely
+                # unmodified snapshot for direct diagnostic inspection.
+                # The camelCase fix for latestQuote/latestTrade worked
+                # (bid/ask now populate correctly), but implied_volatility
+                # still doesn't -- even for confirmed non-0DTE, liquid
+                # contracts with real bid/ask. Rather than keep guessing
+                # at possible key-name variants for greeks one at a time,
+                # exposing the actual raw payload directly settles it.
+                if raw_sample is None and isinstance(payload, dict):
+                    _snaps = payload.get("snapshots") or payload.get("options") or payload.get("data") or {}
+                    if isinstance(_snaps, dict) and _snaps:
+                        raw_sample = next(iter(_snaps.values()))
+
                 rows = cls.normalize_chain(
                     payload=payload,
                     underlying_symbol=symbol,
@@ -482,6 +505,7 @@ class AlpacaOptionChainAdapter:
             "rows": len(all_rows),
             "pages": pages,
             "feed": params.get("feed"),
+            "raw_sample_snapshot": raw_sample,
             "source": "alpaca_option_chain",
             "errors": errors,
             "fetched_at": datetime.now(timezone.utc).isoformat(),
