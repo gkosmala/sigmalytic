@@ -408,6 +408,24 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0):
     result["ok"] = True
     result["has_real_data"] = True
 
+    # FIX (2026-08-12): diagnostic fields to help distinguish, without
+    # needing direct access to the deployed environment, whether
+    # missing greeks/IV are caused by an explicit feed override (e.g.
+    # ALPACA_OPTIONS_FEED forcing "indicative", which never includes
+    # greeks per the FIX comment in alpaca_option_chain_adapter.py) or
+    # a genuine, real data gap from Alpaca despite a full OPRA
+    # subscription and requesting no specific feed (letting Alpaca
+    # apply its own entitlement-aware default).
+    contracts_with_iv = sum(
+        1 for row in options_data
+        if row.get("implied_volatility") is not None and row.get("implied_volatility") > 0
+    )
+    result["feed_diagnostics"] = {
+        "explicitly_requested_feed": chain.get("feed"),  # None means we let Alpaca choose its own default
+        "contracts_total": len(options_data),
+        "contracts_with_real_iv": contracts_with_iv,
+    }
+
     # Real, market-derived inputs for the Probability Ladder's touch-
     # probability calculation, replacing the prior heuristic score.
     # Returns just the nearest monthly expiration's ATM IV and dte --
