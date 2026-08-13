@@ -553,7 +553,7 @@ def _track(event_type, symbol, price=None, timeframe=None, regime=None,
     except Exception:
         pass
 
-def _get(path, headers=None, **params):
+def _get(path, headers=None, ttl_seconds=90, **params):
     def _do_fetch():
         try:
             r = req.get(f"{BACKEND_HTTP}{path}", params=params, headers=headers or {}, timeout=15)
@@ -568,7 +568,7 @@ def _get(path, headers=None, **params):
         # cached result. Rare in this codebase, but safer to just fetch fresh.
         return _do_fetch()
 
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=90)
+    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=ttl_seconds)
 
 
 # ============================================================
@@ -2967,8 +2967,17 @@ def build_weis_analysis_tab(symbol):
         "pnf": f"/api/research/pnf-weis/{symbol}",
         "wyckoff": f"/api/radar/symbol/{symbol}/wyckoff-verdict",
     }
+    # FIX (2026-08-12): all four of these are daily-bar-derived and
+    # genuinely don't change intraday -- extended from the default 90s
+    # to 30 minutes. Given a single gunicorn worker (--workers 1,
+    # deliberately not increased given confirmed prior memory-leak
+    # history), this whole server blocks for the duration of these 4
+    # real backend fetches whenever the cache is cold, which is what
+    # was presenting as "whole page unresponsive." A much longer TTL
+    # means that blocking window happens far less often, without
+    # touching the riskier worker-count change.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {key: pool.submit(_get, path) for key, path in endpoints.items()}
+        futures = {key: pool.submit(_get, path, ttl_seconds=1800) for key, path in endpoints.items()}
         results = {key: fut.result() for key, fut in futures.items()}
 
     time_resp = results["time"]
