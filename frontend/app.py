@@ -2700,6 +2700,326 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
     ])
 
 
+# ── Weis Analysis Tab ────────────────────────────────────────────────────────
+# Real, live version of the three-engine layout the user shared as a mockup.
+# Extended with a fourth section (Spring/Upthrust/SOS/Cause-Effect from
+# WyckoffVerdictEngine) per explicit instruction -- Weis's own book frames
+# his volume-wave work as an adaptation OF Wyckoff, not a separate
+# methodology, so the broader Wyckoff signals belong alongside it. All four
+# stay genuinely separate, unblended readings -- no combined score.
+
+def _weis_pace_color(condition):
+    if condition == "ABSORPTION":
+        return RED_DIM
+    if condition == "EASE_OF_MOVEMENT":
+        return TEAL_DIM
+    return MUTED
+
+def _weis_effort_color(effort):
+    if effort == "BUILDING":
+        return TEAL_DIM
+    if effort == "EXHAUSTING":
+        return RED_DIM
+    return MUTED
+
+def _weis_engine_card(title, subtitle, engine_status, current_wave, verdict_data, unit_label, extra_content=None):
+    """
+    Renders one Weis engine column. Shared by all three (time-bar,
+    Renko, PnF) since they now expose an identical structure (Effort
+    vs. Result, Structural Pace, Climax, Confirmed Setup Gate) --
+    only the labels/unit ("bar"/"brick"/"box") and engine-specific
+    extras (e.g. PnF's Count Guide) differ.
+    """
+    if engine_status != "OK":
+        body = html.Div(
+            f"Data not available ({engine_status}).",
+            style={"fontSize":"12px","color":MUTED,"padding":"20px 0"})
+        return html.Div([
+            html.Div(title, style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"2px"}),
+            html.Div(subtitle, style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
+            body,
+        ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
+                   "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px"})
+
+    cw = current_wave or {}
+    available = cw.get("available")
+    direction = cw.get("direction", "—")
+    effort = cw.get("effort_vs_result", "INSUFFICIENT_HISTORY")
+    pace_condition = cw.get("market_condition", "INSUFFICIENT_HISTORY")
+    pace_ratio = cw.get("relative_pace_ratio")
+    climax = cw.get("climax") or {}
+    climax_detected = climax.get("detected", False)
+
+    long_score = verdict_data.get("weis_score", 0)
+    long_verdict = verdict_data.get("verdict", "NO_WEIS_SIGNAL")
+    short_score = verdict_data.get("weis_score_bearish", 0)
+    short_verdict = verdict_data.get("verdict_bearish", "NO_WEIS_SIGNAL")
+    gate_fired = long_score >= 90 or short_score >= 90
+    gate_side = "LONG" if long_score >= 90 else ("SHORT" if short_score >= 90 else None)
+
+    header_badge = html.Span(
+        f"{direction}-WAVE" if available else "NO DATA",
+        style={"fontSize":"10px","fontWeight":"900","padding":"3px 8px","borderRadius":"6px",
+               "background": "rgba(52,211,153,.12)" if direction == "UP" else ("rgba(251,113,133,.12)" if direction == "DOWN" else "rgba(148,163,184,.12)"),
+               "color": TEAL_DIM if direction == "UP" else (RED_DIM if direction == "DOWN" else MUTED),
+               "border": f"1px solid {TEAL_DIM if direction=='UP' else (RED_DIM if direction=='DOWN' else BORDER)}"})
+
+    effort_row = html.Div([
+        html.Div([
+            html.Span("EFFORT VS. RESULT", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
+            html.Span(effort.replace("_"," ").title(), style={"fontSize":"11px","fontWeight":"900","color":_weis_effort_color(effort),
+                                                                 "float":"right"}),
+        ]),
+        html.Div(cw.get("reading", "No data yet."), style={"fontSize":"11px","color":MUTED,"marginTop":"6px","lineHeight":"1.5"}),
+    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
+
+    pace_bar_pct = min(100, abs((pace_ratio or 1.0) - 1.0) * 60 + 15) if pace_ratio else 15
+    pace_row = html.Div([
+        html.Div([
+            html.Span("STRUCTURAL PACE", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
+            html.Span(pace_condition.replace("_"," ").title(), style={"fontSize":"11px","fontWeight":"900","color":_weis_pace_color(pace_condition),
+                                                                        "float":"right"}),
+        ]),
+        html.Div([
+            html.Span(f"Vol per {unit_label}:", style={"fontSize":"10px","color":MUTED}),
+            html.Span(f"{cw.get('avg_volume_per_' + unit_label.lower(), 0):,.0f}", style={"fontSize":"10px","color":WHITE,"fontWeight":"800","float":"right"}),
+        ], style={"marginTop":"6px","marginBottom":"4px"}),
+        html.Div(html.Div(style={"width":f"{pace_bar_pct}%","height":"100%","borderRadius":"3px",
+                                   "background": _weis_pace_color(pace_condition)}),
+                 style={"width":"100%","height":"5px","background":"rgba(148,163,184,.15)","borderRadius":"3px","overflow":"hidden"}),
+    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
+
+    climax_row = html.Div([
+        html.Span("CLIMAX DETECTION", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
+        html.Span([
+            html.Span("● ", style={"color": YELLOW_DIM if climax_detected else MUTED}),
+            html.Span("Climax Spike" if climax_detected else "No Climax",
+                      style={"color": YELLOW_DIM if climax_detected else MUTED, "fontWeight":"900" if climax_detected else "700"}),
+        ], style={"fontSize":"11px","float":"right"}),
+        html.Div(climax.get("reading", ""), style={"fontSize":"10px","color":MUTED,"marginTop":"6px","lineHeight":"1.4","clear":"both"}),
+    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
+
+    gate_row = html.Div([
+        html.Div("STRICT SETUP GATE STATUS", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
+        html.Div([
+            html.Span(f"{gate_side} CONFIRMED" if gate_fired else "NO ACTIVE GATE",
+                      style={"fontSize":"11px","fontWeight":"900",
+                             "color": TEAL_DIM if gate_side=="LONG" else (RED_DIM if gate_side=="SHORT" else MUTED)}),
+            html.Span("SOT → Exh → Conf", style={"fontSize":"9px","color":MUTED,"background":"rgba(148,163,184,.1)",
+                                                    "padding":"2px 6px","borderRadius":"4px","float":"right"}),
+        ]),
+    ], style={"background":"rgba(2,10,20,.7)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginTop":"auto"})
+
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div(title, style={"fontSize":"13px","fontWeight":"900","color":WHITE}),
+                html.Div(subtitle, style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
+            ]),
+            header_badge,
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"12px"}),
+        effort_row, pace_row, climax_row,
+        extra_content if extra_content else None,
+        gate_row,
+    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
+               "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px",
+               "display":"flex","flexDirection":"column"})
+
+
+def _wyckoff_card(wyckoff_status, wyckoff_data):
+    """
+    The broader Wyckoff signals (Spring, Upthrust, Sign of Strength,
+    cause/effect) -- structurally different from the three Weis wave
+    engines, so its own layout rather than reusing _weis_engine_card.
+    """
+    if wyckoff_status != "OK" or not wyckoff_data:
+        body = html.Div("Data not available.", style={"fontSize":"12px","color":MUTED,"padding":"20px 0"})
+        return html.Div([
+            html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"2px"}),
+            html.Div("Spring · Upthrust · Sign of Strength", style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
+            body,
+        ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
+                   "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px"})
+
+    v = wyckoff_data.get("verdict", {}) if "verdict" in wyckoff_data else wyckoff_data
+    spring = v.get("spring_score", 0)
+    upthrust = v.get("upthrust_score", 0)
+    sos = v.get("sign_of_strength_score", 0)
+    absorption = v.get("supply_absorption_score", 0)
+    resistance = v.get("resistance_level")
+    support = v.get("support_level")
+    cause_width = v.get("cause_width_pct")
+    trend_context = v.get("trend_context", "unknown")
+    verdict_label = v.get("verdict", "NO_ACCUMULATION")
+
+    def _metric_row(label, value, color=WHITE):
+        return html.Div([
+            html.Span(label, style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
+            html.Span(f"{value:.0f}" if isinstance(value,(int,float)) else str(value),
+                      style={"fontSize":"11px","fontWeight":"900","color":color,"float":"right"}),
+        ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px",
+                   "padding":"10px","marginBottom":"8px"})
+
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE}),
+                html.Div("Spring · Upthrust · Sign of Strength", style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
+            ]),
+            html.Span(verdict_label.replace("_"," "), style={"fontSize":"10px","fontWeight":"900","padding":"3px 8px","borderRadius":"6px",
+                       "background":"rgba(148,163,184,.12)","color":MUTED,"border":f"1px solid {BORDER}"}),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"12px"}),
+
+        _metric_row("SPRING SCORE", spring, TEAL_DIM if spring >= 60 else MUTED),
+        _metric_row("UPTHRUST SCORE", upthrust, RED_DIM if upthrust >= 60 else MUTED),
+        _metric_row("SIGN OF STRENGTH", sos, TEAL_DIM if sos >= 60 else MUTED),
+        _metric_row("SUPPLY ABSORPTION", absorption, TEAL_DIM if absorption >= 60 else MUTED),
+
+        html.Div([
+            html.Div("CAUSE / EFFECT", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
+            html.Div([
+                html.Span(f"Support: ${support:.2f}" if support else "Support: —", style={"fontSize":"10px","color":MUTED}),
+                html.Span(f"Resistance: ${resistance:.2f}" if resistance else "Resistance: —", style={"fontSize":"10px","color":MUTED,"float":"right"}),
+            ], style={"marginBottom":"4px"}),
+            html.Div(f"Cause width: {cause_width*100:.1f}% of range · Trend context: {trend_context}" if cause_width else f"Trend context: {trend_context}",
+                      style={"fontSize":"10px","color":MUTED}),
+        ], style={"background":"rgba(2,10,20,.7)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginTop":"auto"}),
+    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
+               "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px",
+               "display":"flex","flexDirection":"column"})
+
+
+def _weis_cross_engine_synthesis(time_cw, renko_cw, pnf_cw, wyckoff_data):
+    """
+    Rule-based, generated directly from the real data's actual
+    agreement/divergence -- never a pre-scripted note. No combined
+    score; states plainly where the engines agree or diverge.
+    """
+    directions = {}
+    for name, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]:
+        if cw and cw.get("available"):
+            directions[name] = cw.get("direction")
+
+    if not directions:
+        return "Insufficient live data across the three Weis engines to synthesize a reading right now."
+
+    unique_dirs = set(directions.values())
+    lines = []
+
+    if len(unique_dirs) == 1:
+        d = next(iter(unique_dirs))
+        lines.append(f"Full directional alignment: all {len(directions)} available Weis engines currently show an active {d} wave.")
+    else:
+        agree = [n for n, d in directions.items() if d == max(unique_dirs, key=lambda x: list(directions.values()).count(x))]
+        lines.append(
+            f"Directional divergence present: " +
+            ", ".join(f"{n} shows {d}" for n, d in directions.items()) +
+            ". This mismatch is itself informative -- each engine's own reversal threshold reacts to price movement differently, not an error."
+        )
+
+    exhausting = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
+                  if cw and cw.get("available") and cw.get("effort_vs_result") == "EXHAUSTING"]
+    building = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
+                if cw and cw.get("available") and cw.get("effort_vs_result") == "BUILDING"]
+    if exhausting and building:
+        lines.append(f"Effort split: {', '.join(exhausting)} showing exhausting effort while {', '.join(building)} still building -- a genuine mixed signal, not smoothed into one number.")
+    elif exhausting:
+        lines.append(f"{', '.join(exhausting)} showing exhausting effort -- fading participation on the current move.")
+    elif building:
+        lines.append(f"{', '.join(building)} showing building effort -- fresh, genuine participation.")
+
+    climaxes = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
+                if cw and cw.get("available") and (cw.get("climax") or {}).get("detected")]
+    if climaxes:
+        lines.append(f"Climax detected on: {', '.join(climaxes)} -- a sudden, concentrated volume spike within the current wave, a real warning sign of an immediate structural roadblock.")
+
+    if wyckoff_data:
+        v = wyckoff_data.get("verdict", wyckoff_data)
+        spring = v.get("spring_score", 0)
+        upthrust = v.get("upthrust_score", 0)
+        if spring >= 60:
+            lines.append(f"Wyckoff Spring score is elevated ({spring:.0f}) -- some real shakeout-and-reclaim structure present at support.")
+        if upthrust >= 60:
+            lines.append(f"Wyckoff Upthrust score is elevated ({upthrust:.0f}) -- some real false-breakout structure present at resistance.")
+
+    return " ".join(lines)
+
+
+def build_weis_analysis_tab(symbol):
+    """
+    Real, live version of the four-engine layout: the three Weis wave
+    engines (time-bar, Renko, PnF) plus the broader Wyckoff structural
+    engine, per explicit instruction that Weis's own book frames his
+    work as an adaptation of Wyckoff, not a separate methodology.
+    Zero blended scores -- every reading stays genuinely separate.
+    """
+    time_resp = _get(f"/api/research/weis-wave/{symbol}")
+    renko_resp = _get(f"/api/research/renko-weis/{symbol}")
+    pnf_resp = _get(f"/api/research/pnf-weis/{symbol}")
+    wyckoff_resp = _get(f"/api/radar/symbol/{symbol}/wyckoff-verdict")
+
+    time_status = time_resp.get("status", "UNKNOWN")
+    renko_status = renko_resp.get("status", "UNKNOWN")
+    pnf_status = pnf_resp.get("status", "UNKNOWN")
+    wyckoff_status = "OK" if wyckoff_resp.get("ok") else "UNKNOWN"
+
+    columns = html.Div([
+        _weis_engine_card("1. Time-Bar Weis Engine", "Original Engine · Validated Close-to-Close",
+                            time_status, time_resp.get("current_wave"), time_resp, "Bar"),
+        _weis_engine_card("2. Renko-Weis Engine", "Brick-Based · Wave Momentum Decay",
+                            renko_status, renko_resp.get("current_wave"), renko_resp, "Brick"),
+        _weis_engine_card("3. PnF-Weis Engine", "Column-Based · Structural Boundaries",
+                            pnf_status, pnf_resp.get("current_column"), pnf_resp, "Box",
+                            extra_content=_pnf_count_guide_block(pnf_resp.get("count_guide"))),
+        _wyckoff_card(wyckoff_status, wyckoff_resp),
+    ], style={"display":"flex","gap":"16px","flexWrap":"wrap","marginBottom":"16px"})
+
+    synthesis_text = _weis_cross_engine_synthesis(
+        time_resp.get("current_wave"), renko_resp.get("current_wave"),
+        pnf_resp.get("current_column"), wyckoff_resp if wyckoff_status == "OK" else None,
+    )
+
+    synthesis = html.Div([
+        html.Div("Honest Cross-Engine Synthesis", style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"10px"}),
+        html.Div(synthesis_text, style={"fontSize":"12px","color":WHITE,"lineHeight":"1.6","background":"rgba(2,10,20,.5)",
+                                          "border":f"1px solid {BORDER}","borderRadius":"10px","padding":"14px"}),
+        html.Div([
+            html.Span("• Zero blended scores or numeric averages", style={"fontSize":"10px","color":MUTED,"marginRight":"20px"}),
+            html.Span("• Isolated data streams preserved side-by-side", style={"fontSize":"10px","color":MUTED,"marginRight":"20px"}),
+            html.Span("• No behavior grades or external bias injection", style={"fontSize":"10px","color":MUTED}),
+        ], style={"marginTop":"10px"}),
+    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px","background":"rgba(8,24,39,.72)"})
+
+    return html.Div([
+        html.Div([
+            html.Div(f"WEIS WAVE MODERN ADAPTATION — {symbol}", style={"fontSize":"15px","fontWeight":"900","color":WHITE}),
+            html.Div("Wyckoff-derived multi-engine structural analysis panel", style={"fontSize":"11px","color":MUTED,"marginTop":"2px"}),
+        ], style={"marginBottom":"16px"}),
+        columns,
+        synthesis,
+    ])
+
+
+def _pnf_count_guide_block(count_guide):
+    if not count_guide or not count_guide.get("available"):
+        return None
+    return html.Div([
+        html.Div("PNF COUNT GUIDE PROJECTION", style={"fontSize":"9px","color":BLUE_DIM,"fontWeight":"800","marginBottom":"6px"}),
+        html.Div([
+            html.Div([
+                html.Div("MEASURED CAUSE", style={"fontSize":"9px","color":MUTED}),
+                html.Div(f"{count_guide.get('horizontal_count','—')} boxes wide", style={"fontSize":"11px","color":WHITE,"fontWeight":"800"}),
+            ], style={"flex":"1"}),
+            html.Div([
+                html.Div("EFFECT TARGET (UP)", style={"fontSize":"9px","color":MUTED}),
+                html.Div(f"${count_guide.get('upside_conservative_target',0):.2f} – ${count_guide.get('upside_aggressive_target',0):.2f}",
+                          style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
+            ], style={"flex":"1"}),
+        ], style={"display":"flex","gap":"10px"}),
+    ], style={"background":"rgba(8,24,39,.9)","border":f"1px solid rgba(147,197,253,.25)","borderRadius":"10px",
+               "padding":"10px","marginBottom":"10px"})
+
+
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
@@ -7171,6 +7491,7 @@ _init_candles = []
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
+    ("weis",        "Weis Analysis"),
     ("heatmap",     "Heat Map"),
     ("radar",       "Radar Screen"),
     ("divergence",  "Intelligence Change Detector"),
@@ -7890,6 +8211,9 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                     build_command_tab(live, candles or _init_candles, symbol, tf),
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
+
+    if tab == "weis":
+        return (build_weis_analysis_tab(symbol), HIDDEN, no_update, no_update)
 
     if tab == "heatmap":
         # FIX (2026-08-03): same bug class already fixed for the Reports
