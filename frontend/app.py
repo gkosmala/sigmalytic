@@ -7569,9 +7569,28 @@ def _trigger_weis_background_fetch(symbol, cache_key):
         try:
             results = _fetch_weis_raw_data(symbol)
             if shared_cache:
-                shared_cache.get_or_fetch(cache_key, lambda: results, ttl_seconds=1800)
-        except Exception:
-            pass
+                # FIX (2026-08-13): user reported the PnF card stuck
+                # on "Data not available" indefinitely, even after
+                # switching tabs and confirming no [GET_FAIL] log ever
+                # appeared -- meaning the fetch wasn't even retriggering
+                # at all, not just failing silently again. Root cause:
+                # this cached the entire combined `results` dict as one
+                # atomic unit with a full 30-minute TTL, regardless of
+                # whether every individual sub-fetch inside it actually
+                # succeeded. A single, transient sub-failure (e.g. one
+                # request genuinely timing out under contention) got
+                # "locked in" as if it were a complete, healthy result,
+                # for the same 30 minutes a genuine success would get --
+                # with zero further attempts and zero visible trace,
+                # since the cache itself looked perfectly warm.
+                all_succeeded = all(
+                    isinstance(r, dict) and (r.get("ok") or r.get("status") == "OK")
+                    for r in results.values()
+                )
+                ttl = 1800 if all_succeeded else 60
+                shared_cache.get_or_fetch(cache_key, lambda: results, ttl_seconds=ttl)
+        except Exception as _bg_exc:
+            print(f"[WEIS_BG_FAIL] {symbol}: {type(_bg_exc).__name__}: {_bg_exc}", flush=True)
         finally:
             with _weis_fetch_lock:
                 _weis_fetch_in_progress.discard(cache_key)
