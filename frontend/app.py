@@ -7958,13 +7958,24 @@ def on_tick(_, __, current, seq, candles, live_mode, symbol, tf):
     clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
 
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=4)
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
         r.raise_for_status()
         d      = r.json()
         price  = float(d["price"])
         volume = int(d.get("volume", 0) or 0)
         tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
-    except Exception:
+    except Exception as _tick_exc:
+        # FIX (2026-08-13): user reported the live price stuck at the
+        # exact module-load placeholder ($280.15) indefinitely, even
+        # after ruling out browser caching entirely (confirmed via
+        # incognito). [MEM] logs showed on_tick() genuinely executing
+        # repeatedly, meaning this except block -- previously fully
+        # silent -- was very likely firing every single time, with no
+        # trace of it anywhere. Also widened the timeout from 4s,
+        # which is tight enough that even a normally-fast backend call
+        # could occasionally miss it under any momentary delay on this
+        # service's own single gunicorn worker.
+        print(f"[TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_tick_exc).__name__}: {_tick_exc}", flush=True)
         return no_update, no_update, no_update
 
     # Real, live relative-volume check -- powers the "A-grade requires
