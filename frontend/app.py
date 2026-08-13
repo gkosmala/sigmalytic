@@ -2838,7 +2838,7 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
         body = html.Div("Data not available.", style={"fontSize":"12px","color":MUTED,"padding":"20px 0"})
         return html.Div([
             html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"2px"}),
-            html.Div("Spring · Upthrust · Sign of Strength", style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
+            html.Div("Spring · Upthrust · SOS · SOW · AR · LPS/LPSY · ST", style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
             body,
         ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
                    "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px"})
@@ -2847,7 +2847,14 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
     spring = v.get("spring_score", 0)
     upthrust = v.get("upthrust_score", 0)
     sos = v.get("sign_of_strength_score", 0)
+    sow = v.get("sign_of_weakness_score", 0)
     absorption = v.get("supply_absorption_score", 0)
+    ar_score = v.get("automatic_rally_score", 0)
+    ar_high = v.get("ar_high")
+    ar_low = v.get("ar_low")
+    lps = v.get("last_point_of_support_score", 0)
+    lpsy = v.get("last_point_of_supply_score", 0)
+    st = v.get("secondary_test_score", 0)
     resistance = v.get("resistance_level")
     support = v.get("support_level")
     cause_width = v.get("cause_width_pct")
@@ -2866,7 +2873,7 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
         html.Div([
             html.Div([
                 html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE}),
-                html.Div("Spring · Upthrust · Sign of Strength", style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
+                html.Div("Spring · Upthrust · SOS · SOW · AR · LPS/LPSY · ST", style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
             ]),
             html.Span(verdict_label.replace("_"," "), style={"fontSize":"10px","fontWeight":"900","padding":"3px 8px","borderRadius":"6px",
                        "background":"rgba(148,163,184,.12)","color":MUTED,"border":f"1px solid {BORDER}"}),
@@ -2874,8 +2881,21 @@ def _wyckoff_card(wyckoff_status, wyckoff_data):
 
         _metric_row("SPRING SCORE", spring, TEAL_DIM if spring >= 60 else MUTED),
         _metric_row("UPTHRUST SCORE", upthrust, RED_DIM if upthrust >= 60 else MUTED),
-        _metric_row("SIGN OF STRENGTH", sos, TEAL_DIM if sos >= 60 else MUTED),
+        _metric_row("SIGN OF STRENGTH (SOS)", sos, TEAL_DIM if sos >= 60 else MUTED),
+        _metric_row("SIGN OF WEAKNESS (SOW)", sow, RED_DIM if sow >= 60 else MUTED),
         _metric_row("SUPPLY ABSORPTION", absorption, TEAL_DIM if absorption >= 60 else MUTED),
+        _metric_row("LAST POINT OF SUPPORT (LPS)", lps, TEAL_DIM if lps >= 60 else MUTED),
+        _metric_row("LAST POINT OF SUPPLY (LPSY)", lpsy, RED_DIM if lpsy >= 60 else MUTED),
+        _metric_row("SECONDARY TEST (ST)", st, TEAL_DIM if st >= 60 else MUTED),
+        _metric_row("AUTOMATIC RALLY (AR)", ar_score, TEAL_DIM if ar_score >= 60 else MUTED),
+
+        html.Div([
+            html.Div("AR RANGE (creek / ice)", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
+            html.Div([
+                html.Span(f"AR Low: ${ar_low:.2f}" if ar_low else "AR Low: —", style={"fontSize":"10px","color":MUTED}),
+                html.Span(f"AR High: ${ar_high:.2f}" if ar_high else "AR High: —", style={"fontSize":"10px","color":MUTED,"float":"right"}),
+            ]),
+        ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"8px"}) if (ar_high or ar_low) else None,
 
         html.Div([
             html.Div("CAUSE / EFFECT", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),

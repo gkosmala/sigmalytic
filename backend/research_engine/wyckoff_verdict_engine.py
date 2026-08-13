@@ -48,6 +48,19 @@ class WyckoffVerdict:
     upthrust_score: float = 0.0
     trend_context: str = "unknown"
 
+    # FIX (2026-08-13): four genuine Wyckoff/Weis structural signals
+    # this engine had no code for at all -- confirmed directly by
+    # comparing the full field list against Weis's own terminology in
+    # Trades About to Happen. Spring/Upthrust/SOS/SC/BC were already
+    # covered; SOW, AR, LPS/LPSY, and ST were not.
+    sign_of_weakness_score: float = 0.0
+    automatic_rally_score: float = 0.0
+    ar_high: Optional[float] = None
+    ar_low: Optional[float] = None
+    last_point_of_support_score: float = 0.0
+    last_point_of_supply_score: float = 0.0
+    secondary_test_score: float = 0.0
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -240,6 +253,122 @@ class WyckoffVerdictEngine:
             score += 25
         return self._clamp(score)
 
+    def _score_sign_of_weakness(self, df: pd.DataFrame, idx: int, support: float) -> float:
+        """
+        Direct mirror of _score_sign_of_strength() -- unlike Spring
+        vs. Upthrust (which Weis's own words explicitly describe as
+        asymmetric, not mirror images), SOS and SOW are genuinely
+        symmetric Wyckoff concepts: aggressive, high-volume expansion
+        of price bars to the downside, signaling supply has fully
+        overwhelmed demand.
+        """
+        row = df.iloc[idx]
+        atr = row["atr"] if pd.notna(row["atr"]) else 0
+        score = 0
+        if row["close"] < support:
+            score += 25
+        if row["close"] < support - 1.5 * atr:
+            score += 25
+        if row["volume"] > 1.5 * row["vol_sma"]:
+            score += 25
+        if support * 0.98 <= row["high"] <= support * 1.02 and row["volume"] < row["vol_sma"]:
+            score += 25
+        return self._clamp(score)
+
+    def _score_automatic_rally(self, df: pd.DataFrame, idx: int, support: float, lookback: int = 15) -> Dict[str, Any]:
+        """
+        The sharp, immediate counter-move following a climax (SC or
+        BC) -- per Weis, its own high/low establish the initial
+        parameters of the range's creek (resistance) or ice
+        (support), so this returns those levels directly alongside
+        the score, not just a bare number. Looks backward from idx
+        for the highest-volume bar in the window (a candidate
+        climax), then checks whether a genuine, sharp bounce followed
+        it -- not a gradual, multi-week drift.
+        """
+        window = df.iloc[max(0, idx - lookback):idx + 1]
+        if len(window) < 5:
+            return {"score": 0.0, "ar_high": None, "ar_low": None}
+
+        climax_candidates = window[window["volume"] >= 2.0 * window["vol_sma"]]
+        if climax_candidates.empty:
+            return {"score": 0.0, "ar_high": None, "ar_low": None}
+
+        climax_pos = climax_candidates["low"].idxmin()
+        climax_row = df.loc[climax_pos]
+        after_climax = df.loc[climax_pos:df.index[idx]]
+        if len(after_climax) < 2:
+            return {"score": 0.0, "ar_high": None, "ar_low": None}
+
+        ar_high = float(after_climax["high"].max())
+        climax_low = float(climax_row["low"])
+        rally_pct = (ar_high / climax_low - 1.0) if climax_low else 0.0
+
+        score = 0
+        if rally_pct >= 0.03:
+            score += 50
+        if len(after_climax) <= 5:
+            score += 30
+        if ar_high > support:
+            score += 20
+
+        return {
+            "score": self._clamp(score),
+            "ar_high": round(ar_high, 4),
+            "ar_low": round(climax_low, 4),
+        }
+
+    def _score_last_point_of_support(self, df: pd.DataFrame, idx: int, support: float) -> float:
+        """
+        LPS -- the final, low-volume test near support before the
+        market leaves the range to markup. A genuine LPS holds near
+        support on notably light volume (supply has dried up) with a
+        narrowing daily range, not another wide, high-volume swing.
+        """
+        row = df.iloc[idx]
+        atr = row["atr"] if pd.notna(row["atr"]) else 0
+        score = 0
+        if support * 0.98 <= row["low"] <= support * 1.03:
+            score += 30
+        if row["volume"] < 0.8 * row["vol_sma"]:
+            score += 35
+        if row["close"] > support:
+            score += 20
+        if atr and row["daily_range"] < atr:
+            score += 15
+        return self._clamp(score)
+
+    def _score_last_point_of_supply(self, df: pd.DataFrame, idx: int, resistance: float) -> float:
+        """LPSY -- the direct mirror of LPS, at resistance rather than support."""
+        row = df.iloc[idx]
+        atr = row["atr"] if pd.notna(row["atr"]) else 0
+        score = 0
+        if resistance * 0.97 <= row["high"] <= resistance * 1.02:
+            score += 30
+        if row["volume"] < 0.8 * row["vol_sma"]:
+            score += 35
+        if row["close"] < resistance:
+            score += 20
+        if atr and row["daily_range"] < atr:
+            score += 15
+        return self._clamp(score)
+
+    def _score_secondary_test(self, df: pd.DataFrame, idx: int, support: float) -> float:
+        """
+        ST -- a return to the prior climax's extreme on genuinely
+        lower volume than a typical swing, confirming supply/demand
+        was truly exhausted there rather than merely paused.
+        """
+        row = df.iloc[idx]
+        score = 0
+        if support * 0.98 <= row["low"] <= support * 1.02:
+            score += 40
+        if row["volume"] < row["vol_sma"]:
+            score += 35
+        if row["low"] >= support * 0.99:
+            score += 25
+        return self._clamp(score)
+
     def _score_meaningful_resistance(self, current_close: float, support: float, resistance: float) -> Dict[str, float]:
         cause_width = max(0.0, resistance - support)
         cause_width_pct = cause_width / max(current_close, 1.0)
@@ -318,6 +447,16 @@ class WyckoffVerdictEngine:
         trend_context = self._detect_trend_context(df, idx)
         upthrust = self._score_upthrust(df, idx, resistance, trend_context)
 
+        # FIX (2026-08-13): four more genuine Wyckoff/Weis signals,
+        # kept just as separate from wyckoff_score as upthrust already
+        # is -- these are diagnostic readings in their own right, not
+        # inputs to the existing accumulation-framed composite score.
+        sow = self._score_sign_of_weakness(df, idx, support)
+        ar_result = self._score_automatic_rally(df, idx, support)
+        lps = self._score_last_point_of_support(df, idx, support)
+        lpsy = self._score_last_point_of_supply(df, idx, resistance)
+        st = self._score_secondary_test(df, idx, support)
+
         raw_phase_score = stopping * 0.20 + absorption * 0.20 + spring * 0.35 + sos * 0.25
         wyckoff_score = self._clamp(raw_phase_score * 0.70 + resistance_result["score"] * 0.10 + resolution_result["score"] * 0.10 + survival * 0.10)
 
@@ -368,6 +507,13 @@ class WyckoffVerdictEngine:
             as_of=datetime.now(timezone.utc).isoformat(),
             upthrust_score=upthrust,
             trend_context=trend_context,
+            sign_of_weakness_score=sow,
+            automatic_rally_score=ar_result["score"],
+            ar_high=ar_result["ar_high"],
+            ar_low=ar_result["ar_low"],
+            last_point_of_support_score=lps,
+            last_point_of_supply_score=lpsy,
+            secondary_test_score=st,
         ).to_dict()
 
     def evaluate_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
