@@ -554,12 +554,23 @@ def _track(event_type, symbol, price=None, timeframe=None, regime=None,
     except Exception:
         pass
 
-def _get(path, headers=None, ttl_seconds=90, **params):
+def _get(path, headers=None, ttl_seconds=90, timeout=15, **params):
     def _do_fetch():
         try:
-            r = req.get(f"{BACKEND_HTTP}{path}", params=params, headers=headers or {}, timeout=15)
-            return r.json() if r.ok else {}
-        except Exception:
+            r = req.get(f"{BACKEND_HTTP}{path}", params=params, headers=headers or {}, timeout=timeout)
+            if r.ok:
+                return r.json()
+            print(f"[GET_FAIL] {path}: backend returned {r.status_code}: {r.text[:200]}", flush=True)
+            return {}
+        except Exception as _get_exc:
+            # FIX (2026-08-13): same silent-failure pattern already
+            # found and fixed once tonight in on_tick() -- this
+            # shared function is used throughout the entire app, so
+            # this could have been masking real failures anywhere,
+            # not just the case (the Weis Analysis tab's PnF card
+            # showing "Data not available (UNKNOWN)" with zero trace
+            # in the logs) that surfaced it.
+            print(f"[GET_FAIL] {path}: {type(_get_exc).__name__}: {_get_exc}", flush=True)
             return {}
 
     if shared_cache is None or params or headers:
@@ -2982,8 +2993,19 @@ def _fetch_weis_raw_data(symbol):
         "pnf": f"/api/research/pnf-weis/{symbol}",
         "wyckoff": f"/api/radar/symbol/{symbol}/wyckoff-verdict",
     }
+    # FIX (2026-08-13): user reported the PnF card specifically
+    # showing "Data not available (UNKNOWN)" -- confirmed the raw
+    # backend endpoint itself was genuinely healthy and fast when
+    # fetched directly. All 4 of these fire simultaneously against a
+    # 2-worker backend, so at least 2 must genuinely queue; PnF's own
+    # extra Count Guide computation on top of everything the other
+    # three already do likely makes it the one most often pushed past
+    # the default 15s timeout under that contention. Widened
+    # specifically here (not the shared _get() default, which many
+    # other, more latency-sensitive callers use) since this whole
+    # fetch already runs in a non-blocking background thread.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {key: pool.submit(_get, path, ttl_seconds=1800) for key, path in endpoints.items()}
+        futures = {key: pool.submit(_get, path, ttl_seconds=1800, timeout=30) for key, path in endpoints.items()}
         return {key: fut.result() for key, fut in futures.items()}
 
 
