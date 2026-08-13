@@ -16,6 +16,7 @@ import json
 import os
 import random
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 import dash
 from dash import dcc, html, Input, Output, State, no_update, callback_context
@@ -2952,11 +2953,28 @@ def build_weis_analysis_tab(symbol):
     engine, per explicit instruction that Weis's own book frames his
     work as an adaptation of Wyckoff, not a separate methodology.
     Zero blended scores -- every reading stays genuinely separate.
+
+    FIX (2026-08-12): user reported the tab freezing. Root cause: each
+    of these 4 endpoints independently triggers its own real
+    fetch_bars_batch() call to Alpaca on the backend -- fetched
+    sequentially, 4 separate multi-second round-trips genuinely add
+    up. Parallelized with a thread pool so the total wait is roughly
+    the slowest single call, not the sum of all four.
     """
-    time_resp = _get(f"/api/research/weis-wave/{symbol}")
-    renko_resp = _get(f"/api/research/renko-weis/{symbol}")
-    pnf_resp = _get(f"/api/research/pnf-weis/{symbol}")
-    wyckoff_resp = _get(f"/api/radar/symbol/{symbol}/wyckoff-verdict")
+    endpoints = {
+        "time": f"/api/research/weis-wave/{symbol}",
+        "renko": f"/api/research/renko-weis/{symbol}",
+        "pnf": f"/api/research/pnf-weis/{symbol}",
+        "wyckoff": f"/api/radar/symbol/{symbol}/wyckoff-verdict",
+    }
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {key: pool.submit(_get, path) for key, path in endpoints.items()}
+        results = {key: fut.result() for key, fut in futures.items()}
+
+    time_resp = results["time"]
+    renko_resp = results["renko"]
+    pnf_resp = results["pnf"]
+    wyckoff_resp = results["wyckoff"]
 
     time_status = time_resp.get("status", "UNKNOWN")
     renko_status = renko_resp.get("status", "UNKNOWN")
