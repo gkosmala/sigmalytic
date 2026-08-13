@@ -202,6 +202,13 @@ class WeisVerdictEngine:
 
         wave_volume = np.zeros(len(df))
         wave_direction = np.zeros(len(df))
+        # FIX (2026-08-12): tracks each individual bar's own volume
+        # within the current wave, needed for Structural Pace and
+        # Climax detection -- mirroring the same addition made
+        # earlier for RenkoWeisWave/PnFColumn. Not previously tracked
+        # since only the aggregate "vol" was needed for the existing
+        # SOT/exhaustion/confirmation scoring.
+        current_bar_volumes: list = []
 
         for i in range(1, len(df)):
 
@@ -233,25 +240,43 @@ class WeisVerdictEngine:
                 if new_dir != current_dir:
 
                     waves.append({
-                        "dir": current_dir,
-                        "vol": current_volume,
-                        "delta": abs(
+                        "dir": int(current_dir),
+                        "vol": float(current_volume),
+                        "delta": float(abs(
                             running_extreme
                             - current_start
-                        )
+                        )),
+                        "bar_volumes": current_bar_volumes,
                     })
 
                     current_dir = new_dir
                     current_volume = 0
                     current_start = running_extreme
                     running_extreme = close
+                    current_bar_volumes = []
 
             current_volume += df["volume"].iloc[i]
+            current_bar_volumes.append(float(df["volume"].iloc[i]))
 
             wave_volume[i] = current_volume
             wave_direction[i] = current_dir
 
-        return waves, wave_volume, wave_direction
+        # FIX (2026-08-12): the current, still-forming wave never gets
+        # appended to `waves` (that only happens on a completed
+        # reversal), so it was previously invisible outside this
+        # function -- needed for the new current_wave_reading()-style
+        # method below. Returned separately, NOT mixed into `waves`
+        # itself, to avoid any risk of changing the existing, already-
+        # validated SOT/exhaustion/confirmation scoring, which filters
+        # and indexes into `waves` directly.
+        current_wave = {
+            "dir": int(current_dir),
+            "vol": float(current_volume),
+            "delta": float(abs(df["close"].iloc[-1] - current_start)) if len(df) else 0.0,
+            "bar_volumes": current_bar_volumes,
+        }
+
+        return waves, wave_volume, wave_direction, current_wave
 
     def shortening_of_thrust_score(self, waves):
 
@@ -460,6 +485,144 @@ class WeisVerdictEngine:
 
         return 0.0
 
+    def detect_climax(self, wave: dict, multiplier: float = 2.0) -> Dict[str, Any]:
+        """
+        Mirrors RenkoWeisWaveEngine.detect_climax() exactly -- the
+        "Climax Variant" from the shared research: a single bar whose
+        volume diverges aggressively from the running average of the
+        OTHER bars within the same, current wave. Genuinely distinct
+        from Structural Pace below (which compares this wave's average
+        against a DIFFERENT, prior wave). Same 2.0x default multiplier,
+        same honesty caveat: a reasoned default, not independently
+        empirically validated against real reference data.
+        """
+        bar_volumes = wave.get("bar_volumes") or []
+        if len(bar_volumes) < 3:
+            return {"detected": False, "reason": "Needs at least 3 bars in the current wave to assess."}
+
+        baseline_bars = bar_volumes[:-1]
+        final_bar_volume = bar_volumes[-1]
+        running_avg = sum(baseline_bars) / len(baseline_bars)
+
+        if running_avg <= 0:
+            return {"detected": False, "reason": "Baseline volume unavailable."}
+
+        ratio = final_bar_volume / running_avg
+        detected = ratio >= multiplier
+
+        return {
+            "detected": detected,
+            "final_bar_volume": round(final_bar_volume, 0),
+            "running_avg_volume": round(running_avg, 0),
+            "climax_ratio": round(ratio, 2),
+            "reading": (
+                f"Climax bar detected: the final bar in this wave carried {ratio:.1f}x the "
+                f"volume of the {len(baseline_bars)} bars before it ({final_bar_volume:,.0f} vs. "
+                f"a {running_avg:,.0f} running average) -- a sudden, concentrated effort spike, "
+                f"signaling an immediate structural roadblock."
+                if detected else
+                f"No climax bar -- the final bar's volume ({final_bar_volume:,.0f}) is in line "
+                f"with the wave's own running average ({running_avg:,.0f})."
+            ),
+        }
+
+    def current_wave_reading(self, waves: list, current_wave: dict) -> Dict[str, Any]:
+        """
+        Mirrors RenkoWeisWaveEngine.current_wave_reading() exactly --
+        the always-informative reading (Effort vs. Result, Structural
+        Pace, Climax) independent of whether the strict SOT/exhaustion/
+        confirmation gate has fired, since that gate is genuinely rare
+        by design. Operates on the current, still-forming wave
+        (returned separately by build_waves(), not part of `waves`
+        itself) compared against the most recent COMPLETED same-
+        direction wave in `waves`.
+        """
+        if not current_wave or not current_wave.get("bar_volumes"):
+            return {"available": False, "reason": "No wave data available yet."}
+
+        direction_label = "UP" if current_wave["dir"] == 1 else "DOWN"
+        current_bars = current_wave["bar_volumes"]
+        current_avg_vol_per_bar = (current_wave["vol"] / len(current_bars)) if current_bars else 0.0
+
+        same_direction_prior = [w for w in waves if w["dir"] == current_wave["dir"]]
+
+        if not same_direction_prior:
+            return {
+                "available": True,
+                "direction": direction_label,
+                "current_wave_volume": round(current_wave["vol"], 0),
+                "current_wave_bar_count": len(current_bars),
+                "prior_same_direction_volume": None,
+                "effort_vs_result": "INSUFFICIENT_HISTORY",
+                "avg_volume_per_bar": round(current_avg_vol_per_bar, 0),
+                "relative_pace_ratio": None,
+                "market_condition": "INSUFFICIENT_HISTORY",
+                "reading": (
+                    f"Current swing is {direction_label} ({len(current_bars)} bars, "
+                    f"{current_wave['vol']:,.0f} volume) -- no prior same-direction wave yet "
+                    f"to compare effort against."
+                ),
+                "pace_reading": "No prior same-direction wave yet to compare structural pace against.",
+                "climax": self.detect_climax(current_wave),
+            }
+
+        prior = same_direction_prior[-1]
+        if current_wave["vol"] < prior["vol"]:
+            effort_vs_result = "EXHAUSTING"
+            reading_verb = "less volume than the prior swing -- effort is fading"
+        elif current_wave["vol"] > prior["vol"]:
+            effort_vs_result = "BUILDING"
+            reading_verb = "more volume than the prior swing -- fresh participation, trend building"
+        else:
+            effort_vs_result = "UNCHANGED"
+            reading_verb = "about the same volume as the prior swing"
+
+        prior_bars = prior.get("bar_volumes") or []
+        prior_avg_vol_per_bar = (prior["vol"] / len(prior_bars)) if prior_bars else 0.0
+        pace_ratio = None
+        if prior_avg_vol_per_bar > 0:
+            pace_ratio = current_avg_vol_per_bar / prior_avg_vol_per_bar
+
+        if pace_ratio is None:
+            market_condition = "INSUFFICIENT_HISTORY"
+            pace_reading = "Prior wave's per-bar volume unavailable -- cannot assess structural pace."
+        elif pace_ratio >= 1.40:
+            market_condition = "ABSORPTION"
+            pace_reading = (
+                f"Structural pace is slowing ({pace_ratio:.1f}x more volume per bar than the prior "
+                f"same-direction swing) -- heavy absorption forming, a possible roadblock ahead."
+            )
+        elif pace_ratio <= 0.74:
+            market_condition = "EASE_OF_MOVEMENT"
+            pace_reading = (
+                f"Structural pace is fast ({pace_ratio:.2f}x the volume per bar of the prior "
+                f"same-direction swing) -- little resistance, price moving with ease."
+            )
+        else:
+            market_condition = "SYMMETRICAL"
+            pace_reading = (
+                f"Structural pace is steady ({pace_ratio:.1f}x the prior same-direction swing's "
+                f"volume per bar) -- effort matches historical norms."
+            )
+
+        return {
+            "available": True,
+            "direction": direction_label,
+            "current_wave_volume": round(current_wave["vol"], 0),
+            "current_wave_bar_count": len(current_bars),
+            "prior_same_direction_volume": round(prior["vol"], 0),
+            "effort_vs_result": effort_vs_result,
+            "avg_volume_per_bar": round(current_avg_vol_per_bar, 0),
+            "relative_pace_ratio": round(pace_ratio, 3) if pace_ratio is not None else None,
+            "market_condition": market_condition,
+            "reading": (
+                f"Current swing is {direction_label} ({len(current_bars)} bars, "
+                f"{current_wave['vol']:,.0f} volume) -- printing {reading_verb} ({prior['vol']:,.0f})."
+            ),
+            "pace_reading": pace_reading,
+            "climax": self.detect_climax(current_wave),
+        }
+
     def evaluate(
         self,
         df: pd.DataFrame,
@@ -468,7 +631,7 @@ class WeisVerdictEngine:
 
         df = self._prepare(df)
 
-        waves, wave_volume, wave_direction = (
+        waves, wave_volume, wave_direction, current_wave = (
             self.build_waves(df)
         )
 
@@ -545,7 +708,7 @@ class WeisVerdictEngine:
         else:
             verdict_bearish = "NO_WEIS_SIGNAL"
 
-        return WeisVerdict(
+        weis_verdict_obj = WeisVerdict(
             symbol=symbol,
             weis_score=round(score, 2),
             verdict=verdict,
@@ -585,7 +748,11 @@ class WeisVerdictEngine:
             as_of=datetime.now(
                 timezone.utc
             ).isoformat()
-        ).to_dict()
+        )
+
+        result = weis_verdict_obj.to_dict()
+        result["current_wave"] = self.current_wave_reading(waves, current_wave)
+        return result
 
 
 def run_weis_verdict(
