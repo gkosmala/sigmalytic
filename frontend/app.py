@@ -7836,6 +7836,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
     Output("s-symbol","data"),
     Output("ticker-input","value"),
     Output("s-candles","data", allow_duplicate=True),
+    Output("s-live","data", allow_duplicate=True),
     Input("btn-load","n_clicks"),
     State("ticker-input","value"),
     State("s-live","data"),
@@ -7846,14 +7847,35 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
 def load_symbol(_, ticker, live, tf, session):
     clean = sanitize_symbol(ticker or "")
     if not clean:
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
            decision_score=live.get("decision",{}).get("score") if live else None, session=session)
 
     fresh = fetch_real_candles(clean, tf or "5m")
-    return clean, clean, fresh
+
+    # FIX (2026-08-13): previously never touched s-live at all --
+    # switching symbols left the PRIOR symbol's price/decision
+    # visible under the new symbol's label until whichever tick
+    # happened to fire next (up to 10s later), confirmed directly:
+    # user switched to GE and saw AAPL's own price shown under it.
+    # Immediately fetches the new symbol's real, current price so
+    # this is correct the instant the symbol actually changes.
+    new_live = no_update
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
+        r.raise_for_status()
+        d = r.json()
+        new_price = float(d["price"])
+        new_volume = int(d.get("volume", 0) or 0)
+        new_live = create_live_update(clean, new_price, new_volume, 0, candles=fresh).to_dict()
+        new_live["symbol"] = clean
+        new_live["timestamp"] = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    except Exception as _load_exc:
+        print(f"[SYMBOL_LOAD_FAIL] load_symbol {clean}: {type(_load_exc).__name__}: {_load_exc}", flush=True)
+
+    return clean, clean, fresh, new_live
 
 @app.callback(
     Output("s-tab","data"),
