@@ -8177,12 +8177,12 @@ def render_market_wire(items):
     # correctly already used Input("s-live","data") -- updated live.
     Input("s-live","data"),
     Input("s-candles","data"),
+    Input("s-symbol","data"),
     State("s-live-mode","data"),
-    State("s-symbol","data"),
     State("s-tf","data"),
     State("s-session","data"),
 )
-def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
+def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -8231,6 +8231,22 @@ def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
                 SHOWN, trade_plan, active_pane)
 
     if tab == "weis":
+        # FIX (2026-08-12): user reported the tab still freezing even
+        # after parallelizing the 4 fetches within build_weis_analysis_tab().
+        # Real, different root cause: render_main() is one shared callback
+        # for every tab, triggered by Input("s-live","data") and
+        # Input("s-candles","data") -- both of which update every 10-20s
+        # from the live price tick, regardless of which tab is actually
+        # active. That meant this tab's 4 real Alpaca fetches re-fired on
+        # every single tick while sitting on it, never letting a render
+        # settle before the next one started -- the earlier parallelization
+        # fix was real and necessary but didn't address this separate
+        # cause. This tab is entirely daily-bar-based and doesn't need to
+        # react to intraday live-price ticks at all, so skip rebuilding it
+        # when that's the only thing that changed.
+        triggered_id = callback_context.triggered_id if callback_context.triggered else None
+        if triggered_id in ("s-live", "s-candles"):
+            return no_update, no_update, no_update, no_update
         return (build_weis_analysis_tab(symbol), HIDDEN, no_update, no_update)
 
     if tab == "heatmap":
