@@ -7518,7 +7518,13 @@ _init_candles = []
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
-    ("weis",        "Weis Analysis"),
+    # FIX (2026-08-13): temporarily removed from navigation -- user
+    # reported being completely unable to access the app, traced to
+    # this tab's blocking, real backend fetches taking down the
+    # entire single-worker server for their duration. Prioritizing
+    # restoring access to the rest of the app while this is debugged
+    # more carefully rather than leaving the whole app inaccessible.
+    # ("weis",        "Weis Analysis"),
     ("heatmap",     "Heat Map"),
     ("radar",       "Radar Screen"),
     ("divergence",  "Intelligence Change Detector"),
@@ -8240,23 +8246,19 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                 SHOWN, trade_plan, active_pane)
 
     if tab == "weis":
-        # FIX (2026-08-12): user reported the tab still freezing even
-        # after parallelizing the 4 fetches within build_weis_analysis_tab().
-        # Real, different root cause: render_main() is one shared callback
-        # for every tab, triggered by Input("s-live","data") and
-        # Input("s-candles","data") -- both of which update every 10-20s
-        # from the live price tick, regardless of which tab is actually
-        # active. That meant this tab's 4 real Alpaca fetches re-fired on
-        # every single tick while sitting on it, never letting a render
-        # settle before the next one started -- the earlier parallelization
-        # fix was real and necessary but didn't address this separate
-        # cause. This tab is entirely daily-bar-based and doesn't need to
-        # react to intraday live-price ticks at all, so skip rebuilding it
-        # when that's the only thing that changed.
-        triggered_id = callback_context.triggered_id if callback_context.triggered else None
-        if triggered_id in ("s-live", "s-candles"):
-            return no_update, no_update, no_update, no_update
-        return (build_weis_analysis_tab(symbol), HIDDEN, no_update, no_update)
+        # FIX (2026-08-13): temporarily disabled entirely (see the
+        # ALL_TABS comment above) -- user reported being completely
+        # unable to access the app, traced to this tab's blocking,
+        # real backend fetches taking down the entire single-worker
+        # server for their duration. This branch is now a safe no-op
+        # rather than calling build_weis_analysis_tab() at all, in
+        # case a browser still has "weis" persisted in s-tab from
+        # before the button was removed from navigation -- prioritizing
+        # that this can never again block the whole server while the
+        # underlying issue is debugged more carefully.
+        return (html.Div("Weis Analysis is temporarily unavailable while a performance issue is fixed.",
+                          style={"color": MUTED, "padding": "20px"}),
+                HIDDEN, no_update, no_update)
 
     if tab == "heatmap":
         # FIX (2026-08-03): same bug class already fixed for the Reports
