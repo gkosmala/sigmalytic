@@ -91,6 +91,33 @@ class SharedCache:
                 pass
         return self._get_or_fetch_memory(key, fetch_fn, ttl_seconds)
 
+    def peek(self, key: str, ttl_seconds: int = 25):
+        """
+        Returns the cached value for `key` if present and younger than
+        ttl_seconds, or None otherwise. Unlike get_or_fetch(), this
+        NEVER calls a fetch function and NEVER blocks -- purely a
+        read-only check, so a caller can decide what to do (e.g. show
+        a loading state and fetch in the background) without paying
+        for a synchronous fetch on a cold key.
+        """
+        if self._redis_client is not None:
+            try:
+                data_key = f"{self._key_prefix}data:{key}"
+                raw = self._redis_client.get(data_key)
+                if raw is not None:
+                    return json.loads(raw)
+            except Exception:
+                pass
+
+        with self._memory_lock:
+            entry = self._memory_store.get(key)
+            if entry is not None:
+                age = time.monotonic() - entry["cached_at"]
+                if age < ttl_seconds:
+                    return entry["data"]
+
+        return None
+
     # ---- Redis backend: shared across all worker processes ----
 
     def _get_or_fetch_redis(self, key, fetch_fn, ttl_seconds):

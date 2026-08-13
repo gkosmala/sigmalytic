@@ -16,6 +16,7 @@ import json
 import os
 import random
 from datetime import datetime, timezone, timedelta
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import dash
@@ -2946,20 +2947,14 @@ def _weis_cross_engine_synthesis(time_cw, renko_cw, pnf_cw, wyckoff_data):
     return " ".join(lines)
 
 
-def build_weis_analysis_tab(symbol):
+def _fetch_weis_raw_data(symbol):
     """
-    Real, live version of the four-engine layout: the three Weis wave
-    engines (time-bar, Renko, PnF) plus the broader Wyckoff structural
-    engine, per explicit instruction that Weis's own book frames his
-    work as an adaptation of Wyckoff, not a separate methodology.
-    Zero blended scores -- every reading stays genuinely separate.
-
-    FIX (2026-08-12): user reported the tab freezing. Root cause: each
-    of these 4 endpoints independently triggers its own real
-    fetch_bars_batch() call to Alpaca on the backend -- fetched
-    sequentially, 4 separate multi-second round-trips genuinely add
-    up. Parallelized with a thread pool so the total wait is roughly
-    the slowest single call, not the sum of all four.
+    Pure fetch, no rendering -- the 4 real, independent backend calls
+    that make up the Weis Analysis tab's data. Split out from
+    build_weis_analysis_tab() (2026-08-13) so this can run inside a
+    background thread while the request/response cycle itself never
+    blocks on it -- see the "weis" branch of render_main() and
+    _weis_poll() for how the two are connected via shared_cache.
     """
     endpoints = {
         "time": f"/api/research/weis-wave/{symbol}",
@@ -2967,19 +2962,24 @@ def build_weis_analysis_tab(symbol):
         "pnf": f"/api/research/pnf-weis/{symbol}",
         "wyckoff": f"/api/radar/symbol/{symbol}/wyckoff-verdict",
     }
-    # FIX (2026-08-12): all four of these are daily-bar-derived and
-    # genuinely don't change intraday -- extended from the default 90s
-    # to 30 minutes. Given a single gunicorn worker (--workers 1,
-    # deliberately not increased given confirmed prior memory-leak
-    # history), this whole server blocks for the duration of these 4
-    # real backend fetches whenever the cache is cold, which is what
-    # was presenting as "whole page unresponsive." A much longer TTL
-    # means that blocking window happens far less often, without
-    # touching the riskier worker-count change.
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {key: pool.submit(_get, path, ttl_seconds=1800) for key, path in endpoints.items()}
-        results = {key: fut.result() for key, fut in futures.items()}
+        return {key: fut.result() for key, fut in futures.items()}
 
+
+def build_weis_analysis_tab(symbol, results):
+    """
+    Real, live version of the four-engine layout: the three Weis wave
+    engines (time-bar, Renko, PnF) plus the broader Wyckoff structural
+    engine, per explicit instruction that Weis's own book frames his
+    work as an adaptation of Wyckoff, not a separate methodology.
+    Zero blended scores -- every reading stays genuinely separate.
+
+    Pure rendering only -- takes already-fetched `results` (from
+    _fetch_weis_raw_data()) rather than fetching itself, so this
+    function is fast and safe to call directly from the main
+    request/response cycle.
+    """
     time_resp = results["time"]
     renko_resp = results["renko"]
     pnf_resp = results["pnf"]
@@ -7503,6 +7503,39 @@ if ('serviceWorker' in navigator) {{
 </body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
+
+# FIX (2026-08-13): tracks which Weis-tab cache keys already have a
+# background fetch in flight, so a second, redundant thread is never
+# started for the same key (e.g. rapid tab clicks, or multiple poll
+# ticks firing before the first fetch finishes). Deliberately a
+# one-shot trigger, not shared_cache's start_background_refresh() --
+# that mechanism is built for a small, fixed set of keys refreshed
+# forever, which would accumulate an unbounded number of never-
+# stopped threads for a dynamic, user-chosen symbol -- a real, new
+# leak risk on a service with confirmed prior memory-leak history.
+_weis_fetch_in_progress = set()
+_weis_fetch_lock = threading.Lock()
+
+
+def _trigger_weis_background_fetch(symbol, cache_key):
+    with _weis_fetch_lock:
+        if cache_key in _weis_fetch_in_progress:
+            return
+        _weis_fetch_in_progress.add(cache_key)
+
+    def _run():
+        try:
+            results = _fetch_weis_raw_data(symbol)
+            if shared_cache:
+                shared_cache.get_or_fetch(cache_key, lambda: results, ttl_seconds=1800)
+        except Exception:
+            pass
+        finally:
+            with _weis_fetch_lock:
+                _weis_fetch_in_progress.discard(cache_key)
+
+    threading.Thread(target=_run, daemon=True, name=f"weis-fetch-{symbol}").start()
+
 # FIX (2026-08-05): was `fetch_real_candles("AAPL", "5m")` here -- a
 # blocking, synchronous HTTP call to the backend made unconditionally
 # at MODULE IMPORT TIME, on every single process start. This runs
@@ -7518,13 +7551,7 @@ _init_candles = []
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
-    # FIX (2026-08-13): temporarily removed from navigation -- user
-    # reported being completely unable to access the app, traced to
-    # this tab's blocking, real backend fetches taking down the
-    # entire single-worker server for their duration. Prioritizing
-    # restoring access to the rest of the app while this is debugged
-    # more carefully rather than leaving the whole app inaccessible.
-    # ("weis",        "Weis Analysis"),
+    ("weis",        "Weis Analysis"),
     ("heatmap",     "Heat Map"),
     ("radar",       "Radar Screen"),
     ("divergence",  "Intelligence Change Detector"),
@@ -7589,6 +7616,20 @@ app.layout = html.Div([
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
     dcc.Interval(id="i-market-wire", interval=15_000, n_intervals=0),
     dcc.Store(id="s-market-wire", data=None),
+    # FIX (2026-08-13): the Weis Analysis tab's 4 real backend fetches
+    # were blocking the single gunicorn worker for their entire
+    # duration, taking the whole app down for every user at once --
+    # confirmed directly, not assumed. Rather than increase worker
+    # count (real risk given this service's own confirmed prior OOM
+    # history, documented just above) or add new infrastructure
+    # (Dash's official background=True needs a Celery/Redis manager
+    # not currently set up), this reuses the already-proven,
+    # already-thread-safe shared_cache as the handoff between a
+    # background thread (which does the real, slow fetch without
+    # blocking the request/response cycle) and a short poll that
+    # picks up the result once ready.
+    dcc.Store(id="s-weis-status", data=None),
+    dcc.Interval(id="i-weis-poll", interval=2000, n_intervals=0, disabled=True),
 
     html.Div([html.Div([
         html.Div(id="market-wire", style={"marginBottom": "10px"}),
@@ -7797,6 +7838,7 @@ def load_symbol(_, ticker, live, tf, session):
 @app.callback(
     Output("s-tab","data"),
     Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-weis","n_clicks"),
     Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
@@ -8246,19 +8288,42 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                 SHOWN, trade_plan, active_pane)
 
     if tab == "weis":
-        # FIX (2026-08-13): temporarily disabled entirely (see the
-        # ALL_TABS comment above) -- user reported being completely
-        # unable to access the app, traced to this tab's blocking,
-        # real backend fetches taking down the entire single-worker
-        # server for their duration. This branch is now a safe no-op
-        # rather than calling build_weis_analysis_tab() at all, in
-        # case a browser still has "weis" persisted in s-tab from
-        # before the button was removed from navigation -- prioritizing
-        # that this can never again block the whole server while the
-        # underlying issue is debugged more carefully.
-        return (html.Div("Weis Analysis is temporarily unavailable while a performance issue is fixed.",
-                          style={"color": MUTED, "padding": "20px"}),
-                HIDDEN, no_update, no_update)
+        # FIX (2026-08-13): proper fix, replacing the temporary full
+        # disable. Root cause remained: even with parallelized fetches
+        # and a 30-min cache, ANY cold-cache request still blocked the
+        # single gunicorn worker for the full duration of 4 real
+        # backend calls -- taking the whole app down for every user at
+        # once, confirmed directly. This never blocks: peek() checks
+        # the cache without ever fetching; if data isn't ready, a
+        # one-shot background thread is triggered (see
+        # _trigger_weis_background_fetch()) and a loading state is
+        # returned immediately. The dedicated i-weis-poll interval
+        # (enabled only while on this tab, via a separate small
+        # callback) picks up the result once the background thread
+        # finishes -- see _weis_poll() below.
+        #
+        # Defensive fallback: if shared_cache itself failed to import
+        # (rare), the background thread would have nowhere to store
+        # its result and the poll could never find it -- a permanently
+        # stuck loading state. A direct, blocking fetch here is worse
+        # than the non-blocking path but still recoverable, unlike that.
+        if not shared_cache:
+            return (build_weis_analysis_tab(symbol, _fetch_weis_raw_data(symbol)), HIDDEN, no_update, no_update)
+
+        cache_key = f"weis-combined:{symbol}"
+        cached = shared_cache.peek(cache_key, ttl_seconds=1800)
+        if cached is not None:
+            return (build_weis_analysis_tab(symbol, cached), HIDDEN, no_update, no_update)
+
+        _trigger_weis_background_fetch(symbol, cache_key)
+        loading = html.Div([
+            html.Div(f"Loading Weis Analysis for {symbol}...", style={
+                "color": WHITE, "fontSize": "14px", "fontWeight": "700", "padding": "20px",
+            }),
+            html.Div("Fetching four independent engine readings in the background -- this page stays responsive while it loads.",
+                      style={"color": MUTED, "fontSize": "12px", "padding": "0 20px"}),
+        ])
+        return (loading, HIDDEN, no_update, no_update)
 
     if tab == "heatmap":
         # FIX (2026-08-03): same bug class already fixed for the Reports
@@ -8470,6 +8535,43 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
     ])
 
     return main, HIDDEN, no_update, no_update
+
+# FIX (2026-08-13): dedicated, separate callbacks for the Weis tab's
+# non-blocking loading pattern -- deliberately NOT added as new
+# Outputs on render_main() itself, which would require updating every
+# single return statement across its many tab branches. Keeping these
+# separate is lower-risk and fully independent.
+
+@app.callback(
+    Output("i-weis-poll", "disabled"),
+    Input("s-tab", "data"),
+)
+def _weis_poll_toggle(tab):
+    # Only ever polls while genuinely on this tab -- never runs in
+    # the background for a tab the user isn't looking at.
+    return tab != "weis"
+
+
+@app.callback(
+    Output("main-content", "children", allow_duplicate=True),
+    Output("i-weis-poll", "disabled", allow_duplicate=True),
+    Input("i-weis-poll", "n_intervals"),
+    State("s-tab", "data"),
+    State("s-symbol", "data"),
+    prevent_initial_call=True,
+)
+def _weis_poll(_, tab, symbol):
+    # Stale poll tick landing after the user already left the tab --
+    # do nothing rather than overwrite whatever's now showing.
+    if tab != "weis":
+        return no_update, no_update
+
+    cache_key = f"weis-combined:{symbol}"
+    cached = shared_cache.peek(cache_key, ttl_seconds=1800) if shared_cache else None
+    if cached is None:
+        return no_update, no_update  # still loading, keep polling
+
+    return build_weis_analysis_tab(symbol, cached), True  # done -- stop polling
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
 
