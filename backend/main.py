@@ -500,6 +500,110 @@ CANDLE_CALENDAR_DAYS_PER_BAR = {
 }
 
 
+@app.get("/api/research/trap-door-check/{symbol}")
+def trap_door_check(symbol: str):
+    """
+    TEMPORARY, one-off diagnostic (2026-08-13) -- not a permanent
+    feature. Traces through the real Decision Engine score
+    determination for one symbol using real historical data, so the
+    exact numbers behind a "Trap Door" (score < 35) classification
+    are directly visible and checkable, rather than just described.
+
+    Honest limitation: options_adj cannot be computed for a past day
+    at all -- Alpaca's options API only ever returns live, current
+    snapshots, with no historical view. Reported as unavailable
+    (0, clearly labeled) rather than silently guessed.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels, calculate_behavioral_score
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY", "bars_available": len(bars)}
+
+        yesterday = bars[-1]
+        price = float(yesterday["close"])
+        volume = float(yesterday.get("volume", 0) or 0)
+        volume_confirm = volume > 1_500_000
+
+        pnf_engine = PnFWeisEngine()
+        pnf_verdict = pnf_engine.evaluate(bars, symbol=sym).to_dict()
+        count_guide = pnf_verdict.get("count_guide")
+
+        kl = get_key_levels(price, count_guide=count_guide)
+
+        # calculate_behavioral_score() requires short keys (o/h/l/c) --
+        # confirmed a genuine mismatch with fetch_bars_batch()'s real
+        # output format (open/high/low/close/volume), not just a test
+        # artifact.
+        recent_candles = [
+            {"o": bar["open"], "h": bar["high"], "l": bar["low"], "c": bar["close"]}
+            for bar in bars[-20:]
+        ]
+        behavioral = calculate_behavioral_score(recent_candles)
+
+        if price >= kl.confirm and volume_confirm:
+            base_score = 72
+        elif price >= kl.trigger:
+            base_score = 49
+        else:
+            base_score = 32
+
+        b = behavioral.composite
+        if b >= 70:
+            behavioral_adj = 10
+        elif b >= 50:
+            behavioral_adj = 5
+        elif b < 35:
+            behavioral_adj = -8
+        else:
+            behavioral_adj = 0
+
+        score_without_options = max(0, min(100, base_score + behavioral_adj))
+        # Options adjustment ranges -8..+8 -- bounds how far the true,
+        # live score could have differed from this historical estimate.
+        score_range_low = max(0, score_without_options - 8)
+        score_range_high = min(100, score_without_options + 8)
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "as_of_date": yesterday.get("t") or yesterday.get("timestamp"),
+            "price": round(price, 2),
+            "volume": int(volume),
+            "volume_confirm": volume_confirm,
+            "key_levels": {
+                "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
+                "prior_high": kl.prior_high, "fail": kl.fail,
+            },
+            "base_score": base_score,
+            "base_score_reasoning": (
+                "price >= confirm (== price itself, always true) AND volume_confirm -> 72"
+                if price >= kl.confirm and volume_confirm else
+                "price >= trigger (PnF range low) -> 49"
+                if price >= kl.trigger else
+                "price < trigger (PnF range low) -- genuine structural break -> 32"
+            ),
+            "behavioral_composite": round(b, 1),
+            "behavioral_adj": behavioral_adj,
+            "options_adj": "UNAVAILABLE (no historical options data -- see endpoint docstring)",
+            "estimated_score_without_options": score_without_options,
+            "estimated_score_range_with_options": [score_range_low, score_range_high],
+            "would_be_trap_door_without_options": score_without_options < 35,
+            "could_be_trap_door_with_options": score_range_low < 35,
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
+
+
 @app.get("/api/research/renko-weis/{symbol}")
 def get_renko_weis_verdict(symbol: str):
     """
