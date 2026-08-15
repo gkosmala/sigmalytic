@@ -810,6 +810,12 @@ def get_renko_weis_verdict(symbol: str):
         result["ok"] = True
         result["status"] = "OK"
         result["bars_used"] = len(bars)
+        # FIX (2026-08-15): added directly, factually verify whether
+        # this endpoint (which shares fetch_bars_batch() with the
+        # trap-door tool, where the pagination bug was found and
+        # fixed today) was genuinely serving stale data -- rather than
+        # assume based on shared code alone.
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
         result["current_wave"] = engine.current_wave_reading(waves)
         return result
     except Exception as e:
@@ -854,6 +860,7 @@ def get_pnf_weis_verdict(symbol: str):
         result["ok"] = True
         result["status"] = "OK"
         result["bars_used"] = len(bars)
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
         result["current_column"] = engine.current_column_reading(columns)
         result["count_guide"] = engine.count_guide_projection(columns)
         return result
@@ -903,6 +910,7 @@ def get_weis_wave_verdict(symbol: str):
         result["ok"] = True
         result["status"] = "OK"
         result["bars_used"] = len(bars)
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
         return result
     except Exception as e:
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
