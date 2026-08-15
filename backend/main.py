@@ -601,6 +601,20 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     score_range_low = max(0, score_without_options - 8)
     score_range_high = min(100, score_without_options + 8)
 
+    # FIX (2026-08-15): CRITICAL correction. The real, live app's
+    # actual "Trap-Door Alert" (confirmed directly against frontend/
+    # app.py) is triggered by price < kl.trap AND score < 80 -- a
+    # direct price-vs-structural-level check, genuinely different
+    # from "Decision Engine composite score < 35" (a separate,
+    # differently-named tier from the Behavioral Analysis panel) that
+    # this tool incorrectly scanned for until now. Confirmed the
+    # error directly: TSLA scored 72 under the old logic (nowhere
+    # near 35) while genuinely triggering the real, live alert.
+    # Conservative on the score<80 half given options uncertainty --
+    # only counts as definitively under 80 if even the upper bound of
+    # the estimated range is.
+    is_trap_door_alert = (price < kl.trap) and (score_range_high < 80)
+
     return {
         "ok": True,
         "symbol": sym,
@@ -613,8 +627,21 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
             "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
             "prior_high": kl.prior_high, "fail": kl.fail,
         },
-        "base_score": base_score,
-        "base_score_reasoning": (
+        # The real, live app's actual Trap-Door Alert condition.
+        "is_trap_door_alert": is_trap_door_alert,
+        "trap_door_reasoning": (
+            f"price (${price:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES"
+            if is_trap_door_alert else
+            f"price (${price:.2f}) >= trap level (${kl.trap:.2f}) -- no alert"
+            if price >= kl.trap else
+            "price < trap level, but score genuinely >=80 (Expansion Alert territory instead) -- no Trap-Door alert"
+        ),
+        # Decision Engine's own, SEPARATE composite score and tier
+        # label -- a genuinely different concept from the alert above,
+        # kept here as additional context only, not the qualifying
+        # condition.
+        "decision_engine_base_score": base_score,
+        "decision_engine_base_score_reasoning": (
             "price >= confirm (== price itself, always true) AND volume_confirm -> 72"
             if price >= kl.confirm and volume_confirm else
             "price >= trigger (PnF range low) -> 49"
@@ -624,26 +651,32 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
         "behavioral_composite": round(b, 1),
         "behavioral_adj": behavioral_adj,
         "options_adj": "UNAVAILABLE (no historical options data)",
-        "estimated_score_without_options": score_without_options,
-        "estimated_score_range_with_options": [score_range_low, score_range_high],
-        "would_be_trap_door_without_options": score_without_options < 35,
-        "could_be_trap_door_with_options": score_range_low < 35,
+        "decision_engine_estimated_score": score_without_options,
+        "decision_engine_estimated_score_range": [score_range_low, score_range_high],
     }
 
 
 @app.get("/api/research/trap-door-check/{symbol}")
 def trap_door_check(symbol: str, raw: bool = False):
     """
-    TEMPORARY, one-off diagnostic (2026-08-13) -- not a permanent
-    feature. Traces through the real Decision Engine score
-    determination for one symbol using real historical data, so the
-    exact numbers behind a "Trap Door" (score < 35) classification
-    are directly visible and checkable, rather than just described.
+    TEMPORARY, one-off diagnostic (2026-08-13, corrected 2026-08-15)
+    -- not a permanent feature.
+
+    CORRECTED (2026-08-15): originally scanned for the Decision
+    Engine's own composite score < 35 -- a genuinely different,
+    separate concept from this app's real, live "Trap-Door Alert",
+    which is actually triggered by price < kl.trap (a direct
+    structural-level comparison) AND score < 80, confirmed directly
+    against frontend/app.py's real alert logic. The error was caught
+    when a real symbol (TSLA) scored 72 under the old logic -- nowhere
+    near 35 -- while genuinely triggering the real, live alert. Now
+    replicates the real, correct condition exactly.
 
     Honest limitation: options_adj cannot be computed for a past day
     at all -- Alpaca's options API only ever returns live, current
-    snapshots, with no historical view. Reported as unavailable
-    (0, clearly labeled) rather than silently guessed.
+    snapshots, with no historical view. The score<80 half of the real
+    condition is evaluated conservatively against the upper bound of
+    the estimated score range for this reason.
     """
     sym = (symbol or "").upper().strip()
     if not sym:
@@ -695,10 +728,13 @@ def trap_door_check(symbol: str, raw: bool = False):
 @app.get("/api/research/trap-door-scan")
 def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
     """
-    TEMPORARY, one-off Russell 1000 scan (2026-08-13) -- not a
-    permanent feature. Reuses _compute_trap_door_estimate() (the exact
-    same logic as trap_door_check()) across the full universe, so this
-    can never silently drift from the single-symbol version.
+    TEMPORARY, one-off Russell 1000 scan (2026-08-13, corrected
+    2026-08-15) -- not a permanent feature. Reuses
+    _compute_trap_door_estimate() (the exact same logic as
+    trap_door_check()) across the full universe, so this can never
+    silently drift from the single-symbol version -- including the
+    2026-08-15 correction to the real qualifying condition, see that
+    function's own comments for the full explanation.
 
     fetch_bars_batch() itself fetches symbols sequentially -- with
     ~1000-1500 symbols and the backend's own 300s gunicorn timeout,
@@ -747,8 +783,7 @@ def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
 
         stale = [r for r in results if r.get("is_stale")]
         fresh_results = [r for r in results if not r.get("is_stale")]
-        qualified = [r for r in fresh_results if r.get("would_be_trap_door_without_options")]
-        possible = [r for r in fresh_results if not r.get("would_be_trap_door_without_options") and r.get("could_be_trap_door_with_options")]
+        alerted = [r for r in fresh_results if r.get("is_trap_door_alert")]
 
         return {
             "ok": True,
@@ -762,13 +797,13 @@ def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
             "stale_data_symbols": [
                 {"symbol": r["symbol"], "as_of_date": r.get("as_of_date")} for r in stale
             ],
-            "qualified_trap_door": [
-                {"symbol": r["symbol"], "price": r["price"], "score": r["estimated_score_without_options"], "as_of_date": r.get("as_of_date")}
-                for r in sorted(qualified, key=lambda r: r["estimated_score_without_options"])
-            ],
-            "possible_trap_door_depending_on_options": [
-                {"symbol": r["symbol"], "price": r["price"], "score_range": r["estimated_score_range_with_options"], "as_of_date": r.get("as_of_date")}
-                for r in sorted(possible, key=lambda r: r["estimated_score_range_with_options"][0])
+            "trap_door_alerts": [
+                {
+                    "symbol": r["symbol"], "price": r["price"],
+                    "trap_level": r["key_levels"]["trap"],
+                    "as_of_date": r.get("as_of_date"),
+                }
+                for r in sorted(alerted, key=lambda r: r["price"] - r["key_levels"]["trap"])
             ],
             "error_samples": errors[:10],
         }
