@@ -495,6 +495,21 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
             # accumulated to cover target_limit from the most recent
             # end, capped at 10 pages as a hard safety bound against a
             # genuine infinite-pagination edge case.
+            #
+            # CRITICAL FIX (2026-08-15): the original version of this
+            # fix stopped early once len(all_bars) >= target_limit --
+            # but Alpaca's own per-page `limit` param is itself set to
+            # target_limit, so the FIRST page alone already reaches
+            # this count whenever enough data exists at all. That
+            # meant the "fix" never actually followed pagination
+            # beyond page 1 in practice, for the real parameters used
+            # throughout this entire app -- confirmed directly: a
+            # symbol fetched after this fix was deployed still showed
+            # a last_bar_date from February, unchanged from before.
+            # Now relies solely on the genuine end-of-data signal
+            # (Alpaca omits next_page_token on the true last page),
+            # not a count threshold that can never meaningfully fire
+            # given these parameters.
             all_bars = []
             next_token = None
             for _page in range(10):
@@ -517,7 +532,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
                 all_bars.extend(page_bars)
                 next_token = payload.get("next_page_token")
 
-                if not next_token or len(all_bars) >= target_limit:
+                if not next_token:
                     break
 
             bars = all_bars
