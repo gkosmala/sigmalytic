@@ -501,6 +501,39 @@ CANDLE_CALENDAR_DAYS_PER_BAR = {
 }
 
 
+def _fetch_intraday_min_low(sym: str, target_date: str):
+    """
+    Shared helper: fetches 5-minute intraday bars for one symbol on
+    one specific date and returns the minimum LOW seen, or None if
+    unavailable. Extracted from trap_door_intraday_check() (2026-08-15)
+    so both that single-symbol diagnostic and the full-universe scan
+    can share the exact same fetch logic -- the corrected replacement
+    for checking only the daily close, confirmed necessary after a
+    real symbol (TSLA) genuinely dipped below its trap level intraday
+    on 2026-08-14 while closing above it, which only the intraday
+    check could detect.
+    """
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+    if not key or not secret:
+        return None, 0
+
+    r = requests.get(
+        f"{base_url}/v2/stocks/{sym}/bars",
+        headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+        params={
+            "timeframe": "5Min", "start": f"{target_date}T00:00:00Z",
+            "end": f"{target_date}T23:59:59Z", "feed": os.getenv("ALPACA_FEED", "iex"),
+            "sort": "asc", "limit": 1000,
+        },
+        timeout=15,
+    )
+    intraday_bars = (r.json().get("bars") or []) if r.status_code == 200 else []
+    lows = [float(b.get("l") or b.get("low")) for b in intraday_bars if b.get("l") or b.get("low")]
+    return (min(lows) if lows else None), len(intraday_bars)
+
+
 def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score):
     """
     Shared computation used by both trap_door_check() (single symbol)
@@ -566,6 +599,19 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
 
     kl = get_key_levels(price, count_guide=count_guide)
 
+    # FIX (2026-08-15): CRITICAL correction. price here is only the
+    # daily CLOSING price -- confirmed directly this structurally
+    # misses genuine intraday dips below the trap level that recover
+    # by the close (TSLA: closed $342.27, but genuinely touched
+    # $335.33 intraday on the same day, below its $337.14 trap level
+    # -- the real, live alert fired on that intraday move, which a
+    # close-only check could never see). Fetches the same day's
+    # intraday lows so the alert condition below can be evaluated
+    # against what actually happened during the session, not just its
+    # final snapshot.
+    _check_date = (as_of_raw or "")[:10] or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    intraday_min_low, intraday_bars_found = _fetch_intraday_min_low(sym, _check_date)
+
     # calculate_behavioral_score() requires short keys (o/h/l/c) --
     # confirmed a genuine mismatch with fetch_bars_batch()'s real
     # output format, not just a test artifact.
@@ -601,19 +647,24 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     score_range_low = max(0, score_without_options - 8)
     score_range_high = min(100, score_without_options + 8)
 
-    # FIX (2026-08-15): CRITICAL correction. The real, live app's
-    # actual "Trap-Door Alert" (confirmed directly against frontend/
-    # app.py) is triggered by price < kl.trap AND score < 80 -- a
-    # direct price-vs-structural-level check, genuinely different
-    # from "Decision Engine composite score < 35" (a separate,
-    # differently-named tier from the Behavioral Analysis panel) that
-    # this tool incorrectly scanned for until now. Confirmed the
-    # error directly: TSLA scored 72 under the old logic (nowhere
-    # near 35) while genuinely triggering the real, live alert.
-    # Conservative on the score<80 half given options uncertainty --
-    # only counts as definitively under 80 if even the upper bound of
-    # the estimated range is.
-    is_trap_door_alert = (price < kl.trap) and (score_range_high < 80)
+    # FIX (2026-08-15): CRITICAL correction, part 2. The real, live
+    # app's actual "Trap-Door Alert" (confirmed directly against
+    # frontend/app.py) is triggered by price < kl.trap AND score < 80
+    # -- genuinely different from "Decision Engine composite score <
+    # 35" (a separate tier from the Behavioral Analysis panel) that
+    # this tool incorrectly scanned for at first. That correction
+    # alone still wasn't enough: using only the daily CLOSING price
+    # for the price<kl.trap half still missed real alerts -- confirmed
+    # directly (TSLA: closed above its trap level, but genuinely
+    # dipped below it intraday on the same day, which is what the
+    # real, live alert actually caught). Uses the genuine intraday
+    # minimum low when available, which correctly subsumes the
+    # close-only check (the close is itself one of the intraday bars,
+    # so a close-based breach is still caught). Falls back to the
+    # close-only check, clearly flagged, if intraday data genuinely
+    # couldn't be fetched for that date.
+    effective_low = intraday_min_low if intraday_min_low is not None else price
+    is_trap_door_alert = (effective_low < kl.trap) and (score_range_high < 80)
 
     return {
         "ok": True,
@@ -623,17 +674,27 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
         "price": round(price, 2),
         "volume": int(volume),
         "volume_confirm": volume_confirm,
+        "intraday_min_low": intraday_min_low,
+        "intraday_bars_found": intraday_bars_found,
+        "intraday_data_available": intraday_min_low is not None,
         "key_levels": {
             "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
             "prior_high": kl.prior_high, "fail": kl.fail,
         },
-        # The real, live app's actual Trap-Door Alert condition.
+        # The real, live app's actual Trap-Door Alert condition,
+        # evaluated against the genuine intraday low when available.
         "is_trap_door_alert": is_trap_door_alert,
         "trap_door_reasoning": (
-            f"price (${price:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES"
+            f"intraday low (${effective_low:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES"
+            if is_trap_door_alert and intraday_min_low is not None else
+            f"closing price (${effective_low:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES "
+            "[intraday data unavailable -- close-only check, may understate real alerts]"
             if is_trap_door_alert else
-            f"price (${price:.2f}) >= trap level (${kl.trap:.2f}) -- no alert"
-            if price >= kl.trap else
+            f"intraday low (${effective_low:.2f}) >= trap level (${kl.trap:.2f}) -- no alert"
+            if effective_low >= kl.trap and intraday_min_low is not None else
+            f"closing price (${effective_low:.2f}) >= trap level (${kl.trap:.2f}) -- no alert "
+            "[intraday data unavailable -- close-only check, may understate real alerts]"
+            if effective_low >= kl.trap else
             "price < trap level, but score genuinely >=80 (Expansion Alert territory instead) -- no Trap-Door alert"
         ),
         # Decision Engine's own, SEPARATE composite score and tier
@@ -769,32 +830,21 @@ def trap_door_intraday_check(symbol: str, date: str = ""):
         count_guide = pnf_engine.evaluate(daily_bars, symbol=sym).to_dict().get("count_guide")
         kl = get_key_levels(last_close, count_guide=count_guide)
 
-        # Intraday (5-minute) bars, filtered to just the target date.
-        key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
-        secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
-        base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
-        if not key or not secret:
+        # Intraday (5-minute) bars, filtered to just the target date --
+        # via the shared helper (2026-08-15), now also used by
+        # _compute_trap_door_estimate() so this logic lives in one
+        # place only.
+        _key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+        _secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+        if not _key or not _secret:
             return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
 
-        r = requests.get(
-            f"{base_url}/v2/stocks/{sym}/bars",
-            headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
-            params={
-                "timeframe": "5Min", "start": f"{target_date}T00:00:00Z",
-                "end": f"{target_date}T23:59:59Z", "feed": os.getenv("ALPACA_FEED", "iex"),
-                "sort": "asc", "limit": 1000,
-            },
-            timeout=15,
-        )
-        intraday_bars = (r.json().get("bars") or []) if r.status_code == 200 else []
-
-        lows = [float(b.get("l") or b.get("low")) for b in intraday_bars if b.get("l") or b.get("low")]
-        min_low = min(lows) if lows else None
+        min_low, bars_found = _fetch_intraday_min_low(sym, target_date)
         dipped_below_trap = (min_low is not None) and (min_low < kl.trap)
 
         return {
             "ok": True, "symbol": sym, "date_checked": target_date,
-            "intraday_bars_found": len(intraday_bars),
+            "intraday_bars_found": bars_found,
             "trap_level": kl.trap,
             "closing_price": last_close,
             "intraday_min_low": min_low,
@@ -840,6 +890,11 @@ def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
     start. ?max_workers=N controls parallelism (default 20) -- kept
     moderate rather than aggressive, to avoid genuinely tripping
     Alpaca's own rate limits across many near-simultaneous requests.
+
+    2026-08-15: each symbol now makes one additional real API call
+    for its intraday bars (on top of the ~1-2 for daily bars), part of
+    the correction to catch genuine intraday dips a close-only check
+    would miss. Worth keeping batch sizes conservative given this.
     """
     try:
         from backend.radar_service import fetch_bars_batch, load_russell1000
