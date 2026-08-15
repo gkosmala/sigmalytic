@@ -21,6 +21,7 @@ backend/main.py
 # test build filter backend
 from fastapi import FastAPI, Body, Request, HTTPException, Header, Depends
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import os
 import json
 import hmac
@@ -500,6 +501,120 @@ CANDLE_CALENDAR_DAYS_PER_BAR = {
 }
 
 
+def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score):
+    """
+    Shared computation used by both trap_door_check() (single symbol)
+    and trap_door_scan() (full universe) -- kept as one function so
+    the two endpoints can never silently drift apart in their logic.
+    Returns a dict; callers decide how to present/filter results.
+    """
+    bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+    bars = bars_map.get(sym) or []
+
+    # FIX (2026-08-13): user hit a genuine KeyError on real TSLA data
+    # ('close') despite this working correctly in testing with
+    # constructed bars -- confirmed real-world fetch_bars_batch()
+    # output uses Alpaca's own short keys (o/h/l/c/v/t), not the long
+    # names originally assumed. Made every bar access defensive with
+    # .get() and both key-name variants (matching the same safe
+    # pattern already proven in the PnF generator:
+    # bar.get("c", bar.get("close"))), and filters out any bar
+    # genuinely missing required fields rather than crashing on it.
+    def _bar_field(bar, *keys):
+        for k in keys:
+            v = bar.get(k)
+            if v is not None:
+                return v
+        return None
+
+    clean_bars = []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        c = _bar_field(bar, "close", "c")
+        if c is None:
+            continue
+        clean_bars.append(bar)
+    bars = clean_bars
+
+    if len(bars) < 20:
+        return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY", "bars_available": len(bars)}
+
+    yesterday = bars[-1]
+    price = float(_bar_field(yesterday, "close", "c"))
+    volume = float(_bar_field(yesterday, "volume", "v") or 0)
+    volume_confirm = volume > 1_500_000
+
+    pnf_engine = PnFWeisEngine()
+    pnf_verdict = pnf_engine.evaluate(bars, symbol=sym).to_dict()
+    count_guide = pnf_verdict.get("count_guide")
+
+    kl = get_key_levels(price, count_guide=count_guide)
+
+    # calculate_behavioral_score() requires short keys (o/h/l/c) --
+    # confirmed a genuine mismatch with fetch_bars_batch()'s real
+    # output format, not just a test artifact.
+    recent_candles = [
+        {
+            "o": _bar_field(bar, "open", "o"), "h": _bar_field(bar, "high", "h"),
+            "l": _bar_field(bar, "low", "l"), "c": _bar_field(bar, "close", "c"),
+        }
+        for bar in bars[-20:]
+    ]
+    behavioral = calculate_behavioral_score(recent_candles)
+
+    if price >= kl.confirm and volume_confirm:
+        base_score = 72
+    elif price >= kl.trigger:
+        base_score = 49
+    else:
+        base_score = 32
+
+    b = behavioral.composite
+    if b >= 70:
+        behavioral_adj = 10
+    elif b >= 50:
+        behavioral_adj = 5
+    elif b < 35:
+        behavioral_adj = -8
+    else:
+        behavioral_adj = 0
+
+    score_without_options = max(0, min(100, base_score + behavioral_adj))
+    # Options adjustment ranges -8..+8 -- bounds how far the true,
+    # live score could have differed from this historical estimate.
+    score_range_low = max(0, score_without_options - 8)
+    score_range_high = min(100, score_without_options + 8)
+
+    return {
+        "ok": True,
+        "symbol": sym,
+        "as_of_date": yesterday.get("t") or yesterday.get("timestamp"),
+        "price": round(price, 2),
+        "volume": int(volume),
+        "volume_confirm": volume_confirm,
+        "key_levels": {
+            "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
+            "prior_high": kl.prior_high, "fail": kl.fail,
+        },
+        "base_score": base_score,
+        "base_score_reasoning": (
+            "price >= confirm (== price itself, always true) AND volume_confirm -> 72"
+            if price >= kl.confirm and volume_confirm else
+            "price >= trigger (PnF range low) -> 49"
+            if price >= kl.trigger else
+            "price < trigger (PnF range low) -- genuine structural break -> 32"
+        ),
+        "behavioral_composite": round(b, 1),
+        "behavioral_adj": behavioral_adj,
+        "options_adj": "UNAVAILABLE (no historical options data)",
+        "estimated_score_without_options": score_without_options,
+        "estimated_score_range_with_options": [score_range_low, score_range_high],
+        "would_be_trap_door_without_options": score_without_options < 35,
+        "could_be_trap_door_with_options": score_range_low < 35,
+    }
+
+
 @app.get("/api/research/trap-door-check/{symbol}")
 def trap_door_check(symbol: str):
     """
@@ -523,85 +638,80 @@ def trap_door_check(symbol: str):
         from backend.research_engine.pnf_weis_engine import PnFWeisEngine
         from shared.engine import get_key_levels, calculate_behavioral_score
 
-        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
-        bars = bars_map.get(sym) or []
+        return _compute_trap_door_estimate(sym, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score)
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
 
-        if len(bars) < 20:
-            return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY", "bars_available": len(bars)}
 
-        yesterday = bars[-1]
-        price = float(yesterday["close"])
-        volume = float(yesterday.get("volume", 0) or 0)
-        volume_confirm = volume > 1_500_000
+@app.get("/api/research/trap-door-scan")
+def trap_door_scan(limit: int = 1500, max_workers: int = 20):
+    """
+    TEMPORARY, one-off Russell 1000 scan (2026-08-13) -- not a
+    permanent feature. Reuses _compute_trap_door_estimate() (the exact
+    same logic as trap_door_check()) across the full universe, so this
+    can never silently drift from the single-symbol version.
 
-        pnf_engine = PnFWeisEngine()
-        pnf_verdict = pnf_engine.evaluate(bars, symbol=sym).to_dict()
-        count_guide = pnf_verdict.get("count_guide")
+    fetch_bars_batch() itself fetches symbols sequentially -- with
+    ~1000-1500 symbols and the backend's own 300s gunicorn timeout,
+    a naive sequential loop would very likely time out. Parallelized
+    internally with a thread pool (default 20 concurrent) so this
+    completes within a few minutes rather than many, without needing
+    any change to the backend's own worker count.
 
-        kl = get_key_levels(price, count_guide=count_guide)
+    Query params: ?limit=N caps the universe size (default full
+    ~1500), useful for a quick, smaller test run first. ?max_workers=N
+    controls parallelism (default 20) -- kept moderate rather than
+    aggressive, to avoid genuinely tripping Alpaca's own rate limits
+    across ~1500 near-simultaneous requests.
+    """
+    try:
+        from backend.radar_service import fetch_bars_batch, load_russell1000
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels, calculate_behavioral_score
 
-        # calculate_behavioral_score() requires short keys (o/h/l/c) --
-        # confirmed a genuine mismatch with fetch_bars_batch()'s real
-        # output format (open/high/low/close/volume), not just a test
-        # artifact.
-        recent_candles = [
-            {"o": bar["open"], "h": bar["high"], "l": bar["low"], "c": bar["close"]}
-            for bar in bars[-20:]
-        ]
-        behavioral = calculate_behavioral_score(recent_candles)
+        universe = load_russell1000()
+        if limit and limit < len(universe):
+            universe = universe[:limit]
 
-        if price >= kl.confirm and volume_confirm:
-            base_score = 72
-        elif price >= kl.trigger:
-            base_score = 49
-        else:
-            base_score = 32
+        results = []
+        errors = []
 
-        b = behavioral.composite
-        if b >= 70:
-            behavioral_adj = 10
-        elif b >= 50:
-            behavioral_adj = 5
-        elif b < 35:
-            behavioral_adj = -8
-        else:
-            behavioral_adj = 0
+        def _run_one(sym):
+            try:
+                return _compute_trap_door_estimate(sym, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score)
+            except Exception as e:
+                return {"ok": False, "symbol": sym, "error": str(e)}
 
-        score_without_options = max(0, min(100, base_score + behavioral_adj))
-        # Options adjustment ranges -8..+8 -- bounds how far the true,
-        # live score could have differed from this historical estimate.
-        score_range_low = max(0, score_without_options - 8)
-        score_range_high = min(100, score_without_options + 8)
+        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, 40))) as pool:
+            futures = {pool.submit(_run_one, sym): sym for sym in universe}
+            for fut in futures:
+                r = fut.result()
+                if not r.get("ok"):
+                    errors.append(r)
+                else:
+                    results.append(r)
+
+        qualified = [r for r in results if r.get("would_be_trap_door_without_options")]
+        possible = [r for r in results if not r.get("would_be_trap_door_without_options") and r.get("could_be_trap_door_with_options")]
 
         return {
             "ok": True,
-            "symbol": sym,
-            "as_of_date": yesterday.get("t") or yesterday.get("timestamp"),
-            "price": round(price, 2),
-            "volume": int(volume),
-            "volume_confirm": volume_confirm,
-            "key_levels": {
-                "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
-                "prior_high": kl.prior_high, "fail": kl.fail,
-            },
-            "base_score": base_score,
-            "base_score_reasoning": (
-                "price >= confirm (== price itself, always true) AND volume_confirm -> 72"
-                if price >= kl.confirm and volume_confirm else
-                "price >= trigger (PnF range low) -> 49"
-                if price >= kl.trigger else
-                "price < trigger (PnF range low) -- genuine structural break -> 32"
-            ),
-            "behavioral_composite": round(b, 1),
-            "behavioral_adj": behavioral_adj,
-            "options_adj": "UNAVAILABLE (no historical options data -- see endpoint docstring)",
-            "estimated_score_without_options": score_without_options,
-            "estimated_score_range_with_options": [score_range_low, score_range_high],
-            "would_be_trap_door_without_options": score_without_options < 35,
-            "could_be_trap_door_with_options": score_range_low < 35,
+            "universe_size": len(universe),
+            "scanned": len(results),
+            "errors": len(errors),
+            "qualified_trap_door": [
+                {"symbol": r["symbol"], "price": r["price"], "score": r["estimated_score_without_options"], "as_of_date": r.get("as_of_date")}
+                for r in sorted(qualified, key=lambda r: r["estimated_score_without_options"])
+            ],
+            "possible_trap_door_depending_on_options": [
+                {"symbol": r["symbol"], "price": r["price"], "score_range": r["estimated_score_range_with_options"], "as_of_date": r.get("as_of_date")}
+                for r in sorted(possible, key=lambda r: r["estimated_score_range_with_options"][0])
+            ],
+            "error_samples": errors[:10],
         }
     except Exception as e:
-        return {"ok": False, "symbol": sym, "error": str(e)}
+        return {"ok": False, "error": str(e)}
+
 
 
 @app.get("/api/research/renko-weis/{symbol}")
