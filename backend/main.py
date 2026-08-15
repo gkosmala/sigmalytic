@@ -663,10 +663,26 @@ def trap_door_check(symbol: str, raw: bool = False):
             # completely unfiltered output, to determine directly
             # whether the staleness originates there or in this
             # endpoint's own processing.
+            #
+            # Also computes the exact same date-range logic
+            # fetch_bars_batch() itself uses internally (that function
+            # doesn't expose its computed start/end dates), so the
+            # requested range and the server's own current time are
+            # directly visible -- distinguishes "the request itself
+            # was wrong" from "Alpaca returned something unexpected
+            # for a genuinely correct request".
+            server_now = datetime.now(timezone.utc)
+            _end_dt = server_now + timedelta(days=1)
+            _calendar_days = max(180, int(252 * 2.2))
+            _start_dt = _end_dt - timedelta(days=_calendar_days)
+
             bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
             raw_bars = bars_map.get(sym) or []
             return {
                 "ok": True, "symbol": sym, "raw_bar_count": len(raw_bars),
+                "server_now_utc": server_now.isoformat(),
+                "requested_start_date": _start_dt.strftime("%Y-%m-%d"),
+                "requested_end_date": _end_dt.strftime("%Y-%m-%d"),
                 "first_bar": raw_bars[0] if raw_bars else None,
                 "last_bar": raw_bars[-1] if raw_bars else None,
             }

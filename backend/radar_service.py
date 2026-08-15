@@ -480,16 +480,49 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
                 "limit": target_limit,
             }
 
-            r = _req.get(
-                f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
-                headers=_alpaca_headers(),
-                params=params,
-                timeout=12,
-            )
+            # FIX (2026-08-15): confirmed via direct diagnostic testing
+            # that this function was silently returning only Alpaca's
+            # FIRST page of results -- since sort="asc" returns oldest-
+            # first, any symbol whose requested date range genuinely
+            # spans more than one page (Alpaca's own per-request cap,
+            # not a total) would have its most recent data silently
+            # missing entirely, with the returned set appearing to be
+            # a complete, correctly-shaped `limit`-sized result. This
+            # went unnoticed because callers only ever checked whether
+            # the numbers looked internally reasonable, not the exact
+            # date of the underlying data. Now follows next_page_token
+            # until either no more pages remain or enough bars have
+            # accumulated to cover target_limit from the most recent
+            # end, capped at 10 pages as a hard safety bound against a
+            # genuine infinite-pagination edge case.
+            all_bars = []
+            next_token = None
+            for _page in range(10):
+                page_params = dict(params)
+                if next_token:
+                    page_params["page_token"] = next_token
+
+                r = _req.get(
+                    f"{ALPACA_BASE_URL}/v2/stocks/{symbol}/bars",
+                    headers=_alpaca_headers(),
+                    params=page_params,
+                    timeout=12,
+                )
+
+                if r.status_code != 200:
+                    break
+
+                payload = r.json()
+                page_bars = payload.get("bars") or []
+                all_bars.extend(page_bars)
+                next_token = payload.get("next_page_token")
+
+                if not next_token or len(all_bars) >= target_limit:
+                    break
+
+            bars = all_bars
 
             if r.status_code == 200:
-                bars = r.json().get("bars") or []
-
                 # Keep the most recent `limit` bars and ignore obviously empty rows.
                 cleaned = [b for b in bars if b.get("c") and b.get("v") is not None]
                 if len(debug_samples) < 8:
