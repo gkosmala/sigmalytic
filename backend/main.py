@@ -725,6 +725,94 @@ def trap_door_check(symbol: str, raw: bool = False):
         return {"ok": False, "symbol": sym, "error": str(e)}
 
 
+@app.get("/api/research/trap-door-intraday-check/{symbol}")
+def trap_door_intraday_check(symbol: str, date: str = ""):
+    """
+    TEMPORARY, one-off diagnostic (2026-08-15) -- not a permanent
+    feature. trap_door_check() only ever sees the daily CLOSING price
+    -- it structurally cannot detect a genuine intraday dip below the
+    trap level that recovered by the close, which the real, live app's
+    own alert (evaluated continuously as price ticks) genuinely can
+    and does catch. Built after TSLA/CRWD both showed price above
+    their trap level at the close on 2026-08-14, despite the user
+    directly, personally observing a real, live Trap-Door alert fire
+    for both that day.
+
+    Fetches 5-minute intraday bars for the specified date (defaults to
+    yesterday if omitted) and checks every bar's LOW (not just the
+    close) against the same day's structural trap level, to determine
+    directly whether price genuinely touched below it at any point
+    during the session -- the honest, complete answer this app's own
+    daily-bar-only tool cannot give on its own.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels
+
+        target_date = date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Daily bars to compute the same structural trap level used
+        # everywhere else in this tool, as of the requested date.
+        daily_bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        daily_bars = daily_bars_map.get(sym) or []
+        daily_bars = [b for b in daily_bars if (b.get("t") or "")[:10] <= target_date]
+        if len(daily_bars) < 20:
+            return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY"}
+
+        last_close = float(daily_bars[-1].get("c") or daily_bars[-1].get("close"))
+        pnf_engine = PnFWeisEngine()
+        count_guide = pnf_engine.evaluate(daily_bars, symbol=sym).to_dict().get("count_guide")
+        kl = get_key_levels(last_close, count_guide=count_guide)
+
+        # Intraday (5-minute) bars, filtered to just the target date.
+        key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+        secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+        base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+        if not key or not secret:
+            return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
+
+        r = requests.get(
+            f"{base_url}/v2/stocks/{sym}/bars",
+            headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+            params={
+                "timeframe": "5Min", "start": f"{target_date}T00:00:00Z",
+                "end": f"{target_date}T23:59:59Z", "feed": os.getenv("ALPACA_FEED", "iex"),
+                "sort": "asc", "limit": 1000,
+            },
+            timeout=15,
+        )
+        intraday_bars = (r.json().get("bars") or []) if r.status_code == 200 else []
+
+        lows = [float(b.get("l") or b.get("low")) for b in intraday_bars if b.get("l") or b.get("low")]
+        min_low = min(lows) if lows else None
+        dipped_below_trap = (min_low is not None) and (min_low < kl.trap)
+
+        return {
+            "ok": True, "symbol": sym, "date_checked": target_date,
+            "intraday_bars_found": len(intraday_bars),
+            "trap_level": kl.trap,
+            "closing_price": last_close,
+            "intraday_min_low": min_low,
+            "dipped_below_trap_intraday": dipped_below_trap,
+            "conclusion": (
+                f"Price touched as low as ${min_low:.2f} intraday, genuinely below the ${kl.trap:.2f} trap level -- "
+                f"the real, live alert would have fired during the session even though the close (${last_close:.2f}) recovered above it."
+                if dipped_below_trap else
+                f"Intraday low of ${min_low:.2f} never touched the ${kl.trap:.2f} trap level -- "
+                f"does not explain the observed alert on its own."
+                if min_low is not None else
+                "No intraday bars found for this date/symbol."
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
+
+
 @app.get("/api/research/trap-door-scan")
 def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
     """
