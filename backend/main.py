@@ -693,7 +693,7 @@ def trap_door_check(symbol: str, raw: bool = False):
 
 
 @app.get("/api/research/trap-door-scan")
-def trap_door_scan(limit: int = 1500, max_workers: int = 20):
+def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
     """
     TEMPORARY, one-off Russell 1000 scan (2026-08-13) -- not a
     permanent feature. Reuses _compute_trap_door_estimate() (the exact
@@ -707,18 +707,23 @@ def trap_door_scan(limit: int = 1500, max_workers: int = 20):
     completes within a few minutes rather than many, without needing
     any change to the backend's own worker count.
 
-    Query params: ?limit=N caps the universe size (default full
-    ~1500), useful for a quick, smaller test run first. ?max_workers=N
-    controls parallelism (default 20) -- kept moderate rather than
-    aggressive, to avoid genuinely tripping Alpaca's own rate limits
-    across ~1500 near-simultaneous requests.
+    Query params: ?limit=N caps how many symbols this call scans
+    (default full ~1500). ?offset=N skips the first N symbols of the
+    universe before applying limit -- added (2026-08-15) so multiple
+    calls can genuinely cover non-overlapping slices of the full
+    universe (e.g. offset=0&limit=224, then offset=224&limit=224, ...)
+    rather than every call re-scanning the same symbols from the
+    start. ?max_workers=N controls parallelism (default 20) -- kept
+    moderate rather than aggressive, to avoid genuinely tripping
+    Alpaca's own rate limits across many near-simultaneous requests.
     """
     try:
         from backend.radar_service import fetch_bars_batch, load_russell1000
         from backend.research_engine.pnf_weis_engine import PnFWeisEngine
         from shared.engine import get_key_levels, calculate_behavioral_score
 
-        universe = load_russell1000()
+        full_universe = load_russell1000()
+        universe = full_universe[max(0, offset):]
         if limit and limit < len(universe):
             universe = universe[:limit]
 
@@ -747,7 +752,10 @@ def trap_door_scan(limit: int = 1500, max_workers: int = 20):
 
         return {
             "ok": True,
-            "universe_size": len(universe),
+            "full_universe_size": len(full_universe),
+            "batch_offset": offset,
+            "batch_size": len(universe),
+            "batch_covers_symbols": f"{offset}-{offset + len(universe) - 1}" if universe else "none",
             "scanned": len(results),
             "errors": len(errors),
             "stale_data_count": len(stale),
