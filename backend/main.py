@@ -593,9 +593,21 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
         except Exception:
             pass
 
+    # CRITICAL FIX (2026-08-15): count_guide was NEVER actually being
+    # computed. PnFWeisVerdict's own dataclass has no count_guide
+    # field at all -- .to_dict().get("count_guide") always silently
+    # returned None, causing get_key_levels() to fall back to the
+    # synthetic price*0.985 formula for every single call this entire
+    # time (confirmed directly: every one of 309 scanned "alerts"
+    # showed exactly a 1.5% gap regardless of symbol or price, and
+    # 342.27*0.985 exactly matches TSLA's own reported trap level).
+    # count_guide_projection() is a genuinely separate method that
+    # needs the PnF columns explicitly, not part of evaluate()'s own
+    # output -- matches the pattern the real, working pnf-weis
+    # endpoint already uses correctly.
     pnf_engine = PnFWeisEngine()
-    pnf_verdict = pnf_engine.evaluate(bars, symbol=sym).to_dict()
-    count_guide = pnf_verdict.get("count_guide")
+    columns = pnf_engine.build_columns(bars)
+    count_guide = pnf_engine.count_guide_projection(columns)
 
     kl = get_key_levels(price, count_guide=count_guide)
 
@@ -842,7 +854,8 @@ def trap_door_intraday_check(symbol: str, date: str = ""):
 
         last_close = float(daily_bars[-1].get("c") or daily_bars[-1].get("close"))
         pnf_engine = PnFWeisEngine()
-        count_guide = pnf_engine.evaluate(daily_bars, symbol=sym).to_dict().get("count_guide")
+        columns = pnf_engine.build_columns(daily_bars)
+        count_guide = pnf_engine.count_guide_projection(columns)
         kl = get_key_levels(last_close, count_guide=count_guide)
 
         # Intraday (5-minute) bars, filtered to just the target date --
