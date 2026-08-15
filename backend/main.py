@@ -545,6 +545,21 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     volume = float(_bar_field(yesterday, "volume", "v") or 0)
     volume_confirm = volume > 1_500_000
 
+    # FIX (2026-08-13): user found a symbol (AIZ) where the "most
+    # recent" bar was genuinely from February, not yesterday --
+    # likely because the close-price filter above silently dropped
+    # recent bars with missing/null data and left an old, valid one
+    # as the last entry, with no warning this had happened. Flag this
+    # directly rather than silently presenting stale data as current.
+    as_of_raw = yesterday.get("t") or yesterday.get("timestamp")
+    is_stale = False
+    if as_of_raw:
+        try:
+            as_of_dt = datetime.fromisoformat(str(as_of_raw).replace("Z", "+00:00"))
+            is_stale = (datetime.now(timezone.utc) - as_of_dt).days > 5
+        except Exception:
+            pass
+
     pnf_engine = PnFWeisEngine()
     pnf_verdict = pnf_engine.evaluate(bars, symbol=sym).to_dict()
     count_guide = pnf_verdict.get("count_guide")
@@ -589,7 +604,8 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     return {
         "ok": True,
         "symbol": sym,
-        "as_of_date": yesterday.get("t") or yesterday.get("timestamp"),
+        "as_of_date": as_of_raw,
+        "is_stale": is_stale,
         "price": round(price, 2),
         "volume": int(volume),
         "volume_confirm": volume_confirm,
@@ -691,14 +707,20 @@ def trap_door_scan(limit: int = 1500, max_workers: int = 20):
                 else:
                     results.append(r)
 
-        qualified = [r for r in results if r.get("would_be_trap_door_without_options")]
-        possible = [r for r in results if not r.get("would_be_trap_door_without_options") and r.get("could_be_trap_door_with_options")]
+        stale = [r for r in results if r.get("is_stale")]
+        fresh_results = [r for r in results if not r.get("is_stale")]
+        qualified = [r for r in fresh_results if r.get("would_be_trap_door_without_options")]
+        possible = [r for r in fresh_results if not r.get("would_be_trap_door_without_options") and r.get("could_be_trap_door_with_options")]
 
         return {
             "ok": True,
             "universe_size": len(universe),
             "scanned": len(results),
             "errors": len(errors),
+            "stale_data_count": len(stale),
+            "stale_data_symbols": [
+                {"symbol": r["symbol"], "as_of_date": r.get("as_of_date")} for r in stale
+            ],
             "qualified_trap_door": [
                 {"symbol": r["symbol"], "price": r["price"], "score": r["estimated_score_without_options"], "as_of_date": r.get("as_of_date")}
                 for r in sorted(qualified, key=lambda r: r["estimated_score_without_options"])
