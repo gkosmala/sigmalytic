@@ -664,7 +664,22 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     # close-only check, clearly flagged, if intraday data genuinely
     # couldn't be fetched for that date.
     effective_low = intraday_min_low if intraday_min_low is not None else price
-    is_trap_door_alert = (effective_low < kl.trap) and (score_range_high < 80)
+
+    # FIX (2026-08-15), correction to the correction: using
+    # score_range_high (the upper bound) for this check was too
+    # conservative -- confirmed directly against TSLA, which the user
+    # personally observed firing a genuine, live Trap-Door alert (not
+    # an Expansion Alert) on this exact day, yet score_range_high
+    # landed at exactly 80, failing a strict "< 80" check at the
+    # boundary. Since the alert genuinely fired as Trap-Door and not
+    # Expansion, the true, live score at that moment must genuinely
+    # have been below 80 -- proving the upper-bound check was
+    # systematically excluding real alerts like this one. Uses the
+    # honest midpoint estimate (score_without_options, no adjustment)
+    # instead, which real-world evidence shows is a more accurate
+    # reflection of the true condition than an artificially
+    # conservative bound.
+    is_trap_door_alert = (effective_low < kl.trap) and (score_without_options < 80)
 
     return {
         "ok": True,
@@ -695,7 +710,7 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
             f"closing price (${effective_low:.2f}) >= trap level (${kl.trap:.2f}) -- no alert "
             "[intraday data unavailable -- close-only check, may understate real alerts]"
             if effective_low >= kl.trap else
-            "price < trap level, but score genuinely >=80 (Expansion Alert territory instead) -- no Trap-Door alert"
+            f"price < trap level, but estimated score ({score_without_options}) genuinely >=80 (Expansion Alert territory instead) -- no Trap-Door alert"
         ),
         # Decision Engine's own, SEPARATE composite score and tier
         # label -- a genuinely different concept from the alert above,
