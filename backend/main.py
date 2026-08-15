@@ -632,7 +632,7 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
 
 
 @app.get("/api/research/trap-door-check/{symbol}")
-def trap_door_check(symbol: str):
+def trap_door_check(symbol: str, raw: bool = False):
     """
     TEMPORARY, one-off diagnostic (2026-08-13) -- not a permanent
     feature. Traces through the real Decision Engine score
@@ -653,6 +653,23 @@ def trap_door_check(symbol: str):
         from backend.radar_service import fetch_bars_batch
         from backend.research_engine.pnf_weis_engine import PnFWeisEngine
         from shared.engine import get_key_levels, calculate_behavioral_score
+
+        if raw:
+            # FIX (2026-08-13): user's full scan showed nearly every
+            # symbol -- including AAPL, whose fresh data is already
+            # directly confirmed via other endpoints tonight -- with
+            # the exact same stale February date. Rules out a
+            # per-symbol data gap; this raw mode shows fetch_bars_batch()'s
+            # completely unfiltered output, to determine directly
+            # whether the staleness originates there or in this
+            # endpoint's own processing.
+            bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+            raw_bars = bars_map.get(sym) or []
+            return {
+                "ok": True, "symbol": sym, "raw_bar_count": len(raw_bars),
+                "first_bar": raw_bars[0] if raw_bars else None,
+                "last_bar": raw_bars[-1] if raw_bars else None,
+            }
 
         return _compute_trap_door_estimate(sym, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score)
     except Exception as e:
