@@ -454,7 +454,45 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     # Alpaca needs both start and end; otherwise it may only return today's bar.
     target_limit = max(int(limit or 252), 60)
     end_dt = datetime.now(timezone.utc) + timedelta(days=1)
-    calendar_days = max(180, int(target_limit * 2.2))
+
+    # FIX (2026-08-17): this calendar-window calculation was hardcoded to
+    # daily bars specifically (target_limit * 2.2, tuned to convert ~252
+    # trading days into a ~554-calendar-day window with buffer). Found
+    # while auditing for hidden daily-only assumptions ahead of making
+    # the PnF/Weis chart engine timeframe-selectable (5-min through
+    # weekly). Confirmed by direct calculation before this fix: reusing
+    # the same formula for other timeframes was a genuine, severe bug --
+    # ~30,865 bars fetched for a 252-bar 5-minute request (122x over,
+    # via ~78 bars/trading day), and only ~79 bars fetched for a 252-bar
+    # weekly request (3x under, since a week is 7 calendar days per bar).
+    #
+    # "1Day" is special-cased to the exact prior formula/value -- zero
+    # behavior change to this already-validated, already-live path.
+    # Other timeframes get a real per-timeframe bars/day estimate instead
+    # of inheriting daily's ratio, plus a cap so intraday requests can't
+    # balloon into tens of thousands of bars nobody asked for.
+    if timeframe == "1Day":
+        calendar_days = max(180, int(target_limit * 2.2))
+    elif timeframe == "1Week":
+        # one bar per 7 calendar days, plus buffer for early weeks with
+        # holidays/short weeks
+        calendar_days = max(180, int(target_limit * 7 * 1.15))
+    else:
+        bars_per_trading_day = {
+            "1Min": 390, "5Min": 78, "15Min": 26, "30Min": 13, "1Hour": 7,
+        }.get(timeframe, 1)
+        trading_days_needed = target_limit / bars_per_trading_day
+        # ~1.4x converts trading days to calendar days (weekends); small
+        # extra buffer for holidays, matching the spirit of the existing
+        # daily buffer without inheriting its literal ratio.
+        calendar_days = max(5, int(trading_days_needed * 1.4 * 1.15))
+        # Cap intraday windows -- range/wall identification only looks
+        # back ~30 columns, so there's no genuine need for, e.g., a full
+        # year of 5-minute bars even after the fix above; keeps requests
+        # right-sized rather than merely "less wrong."
+        if bars_per_trading_day >= 7:
+            calendar_days = min(calendar_days, 90)
+
     start_dt = end_dt - timedelta(days=calendar_days)
     start_date = start_dt.strftime("%Y-%m-%d")
     end_date = end_dt.strftime("%Y-%m-%d")
