@@ -261,18 +261,157 @@ class PnFWeisEngine:
             "range_high": round(range_high, 2),
             "range_low": round(range_low, 2),
             "column_count": column_count,
+            # The actual column objects making up the identified range,
+            # oldest first -- needed by count_guide_projection() below for
+            # genuine horizontal (row-crossing) counting and wall/phase
+            # detection. Not previously returned; the caller had to
+            # re-derive range membership from range_high/range_low alone.
+            #
+            # columns[-column_count:] is already chronological
+            # (oldest-first) since the source columns list is built in
+            # append order by the generator; no reversal needed --
+            # _identify_phase_walls() below walks this list forward
+            # accumulating "columns_included", so processing
+            # oldest-to-newest is what makes the phase/wall staircase
+            # count outward from an anchor toward the present, matching
+            # Weis's own worked example (walls counted A->B->C->D->E
+            # moving forward in time from a base anchor).
+            "columns": list(columns[-column_count:]) if column_count <= len(columns) else list(columns),
         }
+
+    @staticmethod
+    def _horizontal_count_at_best_row(columns: List["PnFColumn"], range_low: float, range_high: float,
+                                        box_size: float) -> Dict[str, Any]:
+        """
+        FIX (2026-08-17): genuine horizontal count, per source
+        methodology (Weis, "Trades About to Happen," Ch. 11 -- Wyckoff
+        before him): "one counts the number of boxes ... plotted along
+        a LINE OF CONGESTION" -- i.e. how many columns physically cross
+        a chosen horizontal price row, not the vertical height of the
+        range divided by box size (the prior implementation's actual
+        bug: that measures the range's own vertical extent, a
+        different and generally much larger quantity that scales with
+        how tall the base is rather than how many columns sit side by
+        side within it).
+
+        Classic technique picks the row within the base that the most
+        columns cross (the most "congested" line) and counts across
+        that -- mirrors Weis choosing "the 154 line" / "the 164 line"
+        in his own worked examples, which were visibly the most
+        heavily built-up rows in each base, not an arbitrary boundary.
+        """
+        if box_size <= 0 or not columns:
+            return {"count": 1, "row_price": range_low}
+
+        best_row = range_low
+        best_count = 0
+        row = range_low
+        # Step row-by-row (one box at a time) through the range and count
+        # how many columns' [low, high] span includes that row.
+        while row <= range_high + (box_size / 2):
+            crossing = sum(1 for c in columns if c.low <= row <= c.high)
+            if crossing > best_count:
+                best_count = crossing
+                best_row = row
+            row += box_size
+
+        return {"count": max(1, best_count), "row_price": round(best_row, 4)}
+
+    @staticmethod
+    def _identify_phase_walls(columns: List["PnFColumn"], box_size: float, direction: str) -> List[Dict[str, Any]]:
+        """
+        FIX (2026-08-17): staged, event-anchored counting, per source
+        methodology (Weis, Ch. 11): rather than one count across the
+        full width of a base, break the count into phases anchored at
+        internal "walls" -- points where price visibly accelerated
+        away from the congestion before the base continued. Weis's own
+        worked example (FXB, Figure 11.1) shows four such phases
+        (walls "B" through "E") built outward from a base anchor
+        ("A"), each producing its own, progressively larger target,
+        with the nearest phase read as the conservative case and the
+        widest (full-range) phase as the aggressive case.
+
+        Weis describes wall placement as visual judgment ("with
+        practice, one learns how to find the right balance"), not a
+        formula. This is an explicit, documented engineering
+        interpretation of that description, not a transcription of a
+        rule the book states: a column is treated as a wall when its
+        own box count is notably larger (>= 1.5x, min 2 boxes) than
+        the running average box count of the columns already included
+        -- i.e. a genuine local acceleration relative to the base
+        built so far, in the direction being measured (X columns for
+        upside phases, O columns for downside phases).
+
+        direction: "up" or "down" -- which column type marks an
+        acceleration relevant to that side's projection.
+        """
+        target_type = "X" if direction == "up" else "O"
+        walls: List[Dict[str, Any]] = []
+        seen_boxes: List[int] = []
+        cumulative_cols = 0
+
+        for col in columns:
+            cumulative_cols += 1
+            if col.column_type != target_type:
+                continue
+            avg_so_far = (sum(seen_boxes) / len(seen_boxes)) if seen_boxes else col.boxes
+            is_wall = col.boxes >= max(2, avg_so_far * 1.5)
+            seen_boxes.append(col.boxes)
+            if is_wall:
+                extreme = col.high if direction == "up" else col.low
+                walls.append({
+                    "extreme_price": extreme,
+                    "columns_included": cumulative_cols,
+                })
+
+        return walls
 
     def count_guide_projection(self, columns: List[PnFColumn], reversal_boxes: int = 3) -> Dict[str, Any]:
         """
         The Wyckoff Count Guide, per the shared research: the
         horizontal width of a consolidation (the "Cause") sets the
         expected vertical size of the subsequent move (the "Effect").
-        Revives the correct, existing math from
-        point_figure_target_engine.py (found dead/unused earlier
-        tonight) -- combined with identify_current_range() above to
-        genuinely determine the relevant range width from real column
-        data, rather than assuming an arbitrary lookback.
+
+        FIX (2026-08-17): full rework against the primary source
+        (Weis, "Trades About to Happen," Ch. 11), replacing the prior
+        single full-range x1/x3 calculation with four corrected
+        pieces, each independently traceable to that chapter:
+
+        1. Horizontal count now genuinely counts columns crossing a
+           congestion row (_horizontal_count_at_best_row), not the
+           range's own vertical height in boxes.
+        2. Anchor direction corrected: an up-count is anchored from
+           the range LOW and projects upward; a down-count is anchored
+           from the range HIGH and projects downward (the prior code
+           had this backward on both sides).
+        3. The multiplier is now the real reversal unit
+           (reversal_boxes x box_size) applied consistently, not an
+           arbitrary x1 for "conservative" vs. blind x3 for
+           "aggressive" -- that blind tripling of the full range was
+           the direct mechanism behind the negative-target bug this
+           replaces.
+        4. Conservative / aggressive targets now come from genuine
+           staged phases (_identify_phase_walls) -- the nearest wall's
+           phase for conservative, the full range's own phase for
+           aggressive -- rather than one number multiplied by 1 and
+           the same number multiplied by 3.
+
+           NOTE, added after direct testing against a synthetic
+           long-duration/narrow-range base: a genuine horizontal count
+           (columns crossing a row) reflects how long a level was
+           tested over TIME, which is legitimately independent of the
+           range's own vertical height -- a long, heavily-chopped but
+           narrow base can still produce a horizontal_count large
+           enough that count x reversal_unit exceeds the range itself,
+           which can still drive a downside target to or below zero.
+           This is a real, structurally possible case, not an
+           artifact -- so rather than reinstating a blind clamp (the
+           exact silent-failure pattern this rework exists to remove),
+           an invalid (<=0) target is now OMITTED from the returned
+           dict entirely, letting the caller's own existing, intentional
+           fallback (shared/engine.py's get_key_levels(), which already
+           falls back to the synthetic formula when a key is absent)
+           take over -- visibly, not silently.
         """
         range_info = self.identify_current_range(columns)
         if not range_info.get("available"):
@@ -281,46 +420,71 @@ class PnFWeisEngine:
         box_size = columns[-1].box_size
         range_high = range_info["range_high"]
         range_low = range_info["range_low"]
-        horizontal_count = max(1, round((range_high - range_low) / box_size)) if box_size > 0 else 1
+        range_columns = range_info["columns"]
+        reversal_unit = reversal_boxes * box_size if box_size > 0 else 0
 
-        target_engine = PointFigureTargetEngine()
-        up_targets = target_engine.calculate_targets(
-            base_price=range_high, horizontal_count=horizontal_count,
-            box_size=box_size, reversal=reversal_boxes,
-        )
-        down_targets = target_engine.calculate_targets(
-            base_price=-range_low, horizontal_count=horizontal_count,
-            box_size=box_size, reversal=reversal_boxes,
-        )
-        # down_targets was computed on negated prices to reuse the same
-        # (always-additive) formula for a downside projection -- negate back.
-        down_conservative = -down_targets["conservative_target"]
-        down_aggressive = -down_targets["aggressive_target"]
+        row_info = self._horizontal_count_at_best_row(range_columns, range_low, range_high, box_size)
+        full_range_count = row_info["count"]
 
-        # FIX (2026-08-12): defensive floor, independent of the
-        # identify_current_range() width-bound fix above -- a price
-        # target can never be at or below zero. Given the severity of
-        # the bug this addresses (a real, negative price shown live in
-        # production), this is a deliberate second, independent
-        # safeguard rather than relying on the range fix alone to
-        # prevent every possible broken output.
-        min_floor = range_low * 0.01
-        down_conservative = max(down_conservative, min_floor)
-        down_aggressive = max(down_aggressive, min_floor)
+        # --- Upside: anchored at range_low, phases built from X columns ---
+        up_walls = self._identify_phase_walls(range_columns, box_size, direction="up")
+        up_phase_counts = [w["columns_included"] for w in up_walls] or [full_range_count]
+        up_conservative_count = min(up_phase_counts)
+        up_aggressive_count = max(max(up_phase_counts), full_range_count)
+        up_average_count = sum(up_phase_counts) / len(up_phase_counts)
 
-        return {
+        upside_conservative_target = range_low + (up_conservative_count * reversal_unit)
+        upside_aggressive_target = range_low + (up_aggressive_count * reversal_unit)
+        upside_average_target = range_low + (up_average_count * reversal_unit)
+
+        # --- Downside: anchored at range_high, phases built from O columns ---
+        down_walls = self._identify_phase_walls(range_columns, box_size, direction="down")
+        down_phase_counts = [w["columns_included"] for w in down_walls] or [full_range_count]
+        down_conservative_count = min(down_phase_counts)
+        down_aggressive_count = max(max(down_phase_counts), full_range_count)
+        down_average_count = sum(down_phase_counts) / len(down_phase_counts)
+
+        downside_conservative_target = range_high - (down_conservative_count * reversal_unit)
+        downside_aggressive_target = range_high - (down_aggressive_count * reversal_unit)
+        downside_average_target = range_high - (down_average_count * reversal_unit)
+
+        result: Dict[str, Any] = {
             "available": True,
             "range_high": range_high,
             "range_low": range_low,
             "range_column_count": range_info["column_count"],
             "box_size": box_size,
-            "horizontal_count": horizontal_count,
-            "cause": up_targets["cause"],
-            "upside_conservative_target": up_targets["conservative_target"],
-            "upside_aggressive_target": up_targets["aggressive_target"],
-            "downside_conservative_target": round(down_conservative, 4),
-            "downside_aggressive_target": round(down_aggressive, 4),
+            "count_row_price": row_info["row_price"],
+            "horizontal_count": full_range_count,
+            "reversal_unit": round(reversal_unit, 4),
+            "upside_phase_count": len(up_phase_counts),
+            "downside_phase_count": len(down_phase_counts),
         }
+
+        # Only include a target if it's a structurally valid (positive)
+        # price. An invalid one is OMITTED, not clamped or defaulted here
+        # -- see the docstring note above on why a blind floor was
+        # rejected after testing. Omission lets the caller's own,
+        # already-designed fallback take over instead of this function
+        # silently fabricating a number.
+        invalid_targets = []
+        for key, value in [
+            ("upside_conservative_target", upside_conservative_target),
+            ("upside_aggressive_target", upside_aggressive_target),
+            ("upside_average_target", upside_average_target),
+            ("downside_conservative_target", downside_conservative_target),
+            ("downside_aggressive_target", downside_aggressive_target),
+            ("downside_average_target", downside_average_target),
+        ]:
+            if value > 0:
+                result[key] = round(value, 4)
+            else:
+                invalid_targets.append(key)
+
+        if invalid_targets:
+            result["invalid_targets_omitted"] = invalid_targets
+
+        return result
 
     def current_column_reading(self, columns: List[PnFColumn]) -> Dict[str, Any]:
         """
