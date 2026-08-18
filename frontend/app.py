@@ -8172,7 +8172,59 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # client-side renderer issue (same limitation already documented
     # once elsewhere in this file, for a different scenario). The
     # 5-minute TTL above remains as the sole freshness mechanism.
-    count_guide_key = f"/api/research/pnf-weis/{clean}"
+    # FIX (2026-08-17): found while investigating a previously-unresolved
+    # intermittency (documented in the Aug 15 investigation record,
+    # Section 4.17.1: the live frontend's displayed trap level was
+    # observed to intermittently diverge from the live backend
+    # endpoint's own output at the same moment, with the backend
+    # independently confirmed correct when checked directly).
+    #
+    # Root cause, confirmed by tracing every caller of this exact
+    # endpoint path: this key (f"/api/research/pnf-weis/{clean}") was
+    # being used as the cache key by THREE independent call sites at
+    # once, sharing one underlying cache slot despite disagreeing on
+    # both TTL and data shape:
+    #   1. This function's own outer wrapper (below) -- stores just
+    #      the EXTRACTED count_guide sub-dict, TTL 300s.
+    #   2. _get()'s own internal caching, triggered by the bare
+    #      _get(f"/api/research/pnf-weis/{clean}") call inside
+    #      _fetch_count_guide() below -- stores the FULL raw envelope
+    #      ({"status":..., "count_guide": {...}, ...}), default TTL 90s.
+    #   3. The Weis Analysis tab's background fetch
+    #      (_fetch_weis_raw_data(), same path) -- ALSO stores the full
+    #      raw envelope, but with a 1800s (30-minute) TTL.
+    # SharedCache's freshness check uses whatever ttl_seconds the
+    # CURRENT reader passes, independent of which TTL the data was
+    # originally written under -- so if the Weis Analysis tab had been
+    # viewed for this symbol recently, this wrapper's read (ttl=300)
+    # could silently receive #2/#3's full raw envelope instead of the
+    # extracted sub-dict it expects. count_guide.get("available") on
+    # that mismatched shape returns None (dict.get() never raises),
+    # so this doesn't even hit the except block below -- it silently
+    # produces a wrong-shaped value that get_key_levels() then
+    # silently treats as "count guide unavailable," falling through to
+    # the synthetic formula. That exactly reproduces the reported
+    # symptom: a stale/wrong displayed trap level with zero trace in
+    # the logs, while the backend itself is genuinely fine.
+    #
+    # Fix: give this wrapper's cache entry its own distinct key so it
+    # can never collide with the plain-path key _get() and the Weis
+    # Analysis tab's fetch both use for the (differently-shaped) raw
+    # envelope. Those two can continue sharing the plain-path key
+    # safely, since they agree on shape (both store the full envelope)
+    # -- only this wrapper's extracted-sub-dict shape needed isolating.
+    #
+    # NOTE (2026-08-17): this fetch is intentionally hardcoded to the
+    # daily-alert use case and does not take a timeframe. The backend
+    # endpoint (get_pnf_weis_verdict) now accepts a real timeframe
+    # parameter for the general, timeframe-selectable chart engine --
+    # if a future caller here ever needs a non-daily chart view, it
+    # MUST build its own separate cache key that includes the
+    # timeframe (e.g. f"...::chart_view::{timeframe}"), never reusing
+    # this trap_door-specific key or the plain-path key. Two callers
+    # requesting different timeframes for the same symbol sharing one
+    # cache slot is the exact bug this key isolation exists to prevent.
+    count_guide_key = f"/api/research/pnf-weis/{clean}::trap_door_count_guide"
 
     count_guide = None
     try:
