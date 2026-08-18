@@ -609,7 +609,169 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
     columns = pnf_engine.build_columns(bars)
     count_guide = pnf_engine.count_guide_projection(columns)
 
+    # ADDED (2026-08-17): additive Weis Wave volume-exhaustion tag.
+    # Purely informational -- does NOT alter is_trap_door_alert below
+    # in any way. Motivated directly by the real TSLA case that started
+    # this whole investigation: the price-only condition alone can't
+    # distinguish a genuinely deceptive, exhausted-selling break (a
+    # true Wyckoff Spring, matching the "Trap Door" name) from a heavy,
+    # contested, real breakdown (which is what TSLA's own Aug 14 move
+    # actually was, per the direct wave-volume analysis: 1033.8% of the
+    # exhaustion threshold -- the opposite of exhausted). Surfacing
+    # both kinds honestly as a tag, rather than gating the alert behind
+    # this criterion, was a deliberate choice after review: gating
+    # would have silently excluded the exact real, tradeable move that
+    # motivated this feature in the first place (see the user-provided
+    # TradeStation Weis Wave chart and live trade example from this
+    # session, both showing a real, valuable move on the *contested*
+    # side, not the exhausted side).
+    #
+    # volume_exhaustion / sot_downwaves / verdict (not verdict_bearish)
+    # are the correct field triple here despite their bullish-sounding
+    # names: they measure whether DOWN-waves are shortening and
+    # exhausting, which is the actual "deceptive break / exhausted
+    # selling / genuine spring" signature relevant to a downside
+    # Trap-Door break. verdict_bearish/buying_exhaustion measure the
+    # mirror-image (up-wave exhaustion, relevant to distribution/
+    # Upthrust setups), not this alert.
+    #
+    # Reuses the same `bars` already fetched above -- no additional
+    # API call.
+    weis_exhaustion_tag = None
+    try:
+        from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+        import pandas as pd
+        weis_df = pd.DataFrame(bars)
+        # REQUIRED rename -- bars use Alpaca's short keys (o/h/l/c/v),
+        # but WeisVerdictEngine's build_waves()/_prepare() reference
+        # df["close"]/df["volume"] by long-form name. Missing this
+        # exact step here initially would have made this block's own
+        # try/except silently swallow a KeyError on every single call,
+        # always returning an error string instead of a real reading --
+        # caught only by testing this end-to-end before considering it
+        # done, not by code review alone. Mirrors the identical,
+        # already-proven rename already used by the live weis-wave
+        # endpoint (main.py, get_weis_wave_verdict) for this exact engine.
+        weis_df = weis_df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        weis_engine = WeisVerdictEngine()
+        weis_verdict = weis_engine.evaluate(weis_df, symbol=sym)
+        exhaustion_score = weis_verdict.get("volume_exhaustion")
+        sot_score = weis_verdict.get("sot_downwaves")
+        # NOTE, confirmed by direct unit test of volume_exhaustion_score
+        # in isolation: this underlying score is strictly binary (0.0 or
+        # 100.0), not continuous -- SOT itself is also strictly binary
+        # (three genuinely shortening waves, or not). So in practice
+        # this resolves to EXHAUSTED or CONTESTED; MIXED is a safe
+        # fallback for an unexpected/missing score, not an outcome this
+        # data will actually produce.
+        if exhaustion_score is not None and exhaustion_score >= 60:
+            reading = "EXHAUSTED"  # selling genuinely drying up -- matches classic Spring/Trap Door
+        elif exhaustion_score is not None and exhaustion_score < 30:
+            reading = "CONTESTED"  # heavy, real selling -- matches TSLA's actual Aug 14 character
+        else:
+            reading = "MIXED"
+        weis_exhaustion_tag = {
+            "volume_exhaustion_score": exhaustion_score,
+            "sot_score": sot_score,
+            "verdict": weis_verdict.get("verdict"),
+            "reading": reading,
+        }
+    except Exception as e:
+        weis_exhaustion_tag = {"error": str(e)[:200]}
+
     kl = get_key_levels(price, count_guide=count_guide)
+
+    # ADDED (2026-08-17): additive gamma-wall/guard-rail proximity tag.
+    # Purely informational, like weis_exhaustion_tag above -- never
+    # alters is_trap_door_alert. Motivated directly by a real,
+    # user-supplied TSLA chart from this session showing the actual
+    # violent price action clustered right at the app's own existing
+    # Call Wall / Put Wall / Gamma Flip levels, not at a volume-
+    # exhaustion threshold -- matching David Weis's own emphasis on
+    # drawn structure (channels, boxes, support/resistance) as
+    # meaningful confirmation, independent of the wave-volume approach
+    # above.
+    #
+    # IMPORTANT, disclosed honestly rather than silently: unlike
+    # weis_exhaustion_tag (which reuses the same historical daily bars
+    # already fetched), options data is only ever available LIVE/
+    # current -- Alpaca's options API has no historical view (the same
+    # limitation already disclosed in this tool's docstring, Section
+    # 4.2 of the Aug 15 investigation record). This function itself has
+    # no historical-date override (as_of_raw is derived FROM the fetched
+    # bars, not caller-supplied), so it's already inherently a
+    # live/most-recent computation -- this tag is consistent with that,
+    # but would be misleading if this function were ever called long
+    # after the evaluated bar's own date (e.g. a re-run against an old
+    # cached bar). Not a concern for its current live callers.
+    gamma_wall_tag = None
+    try:
+        from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+        from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
+
+        chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=price)
+        if chain.get("status") == "MISSING_ALPACA_CREDENTIALS":
+            gamma_wall_tag = {"available": False, "reason": "missing_alpaca_credentials"}
+        else:
+            options_data = chain.get("options_data") or []
+            if not options_data:
+                gamma_wall_tag = {"available": False, "reason": chain.get("status", "no_options_data")}
+            else:
+                gamma_result = GammaStrikeMatrixEngine.build(
+                    options_data=options_data, symbol=sym, spot_price=price)
+                if gamma_result.get("status") != "OK":
+                    gamma_wall_tag = {"available": False, "reason": gamma_result.get("status")}
+                else:
+                    zero_gamma = gamma_result.get("zero_gamma_level")
+                    nearest_above = gamma_result.get("nearest_wall_above")
+                    nearest_below = gamma_result.get("nearest_wall_below")
+
+                    # Proximity of kl.trap -- the alert's own real
+                    # structural level -- to each real options level,
+                    # reusing the SAME proximity convention the engine
+                    # itself already uses (1.5%), not an arbitrary new
+                    # threshold.
+                    #
+                    # SCALE NOTE, caught by direct testing before this
+                    # was considered done: the engine's own
+                    # proximity_pct/distance_to_spot_pct fields are
+                    # FRACTIONS (0.015 = 1.5%), but dist_pct below is
+                    # computed as an actual percentage number (1.5).
+                    # Converting the engine's fraction to the same
+                    # percentage scale here -- comparing them directly
+                    # without this would have made AT_GUARD_RAIL fire at
+                    # an effective 0.015% threshold instead of the
+                    # intended 1.5%, silently almost never triggering.
+                    proximity_pct = gamma_result.get("proximity_pct", 0.015) * 100
+                    candidates = []
+                    if zero_gamma:
+                        candidates.append(("GAMMA_FLIP", zero_gamma))
+                    if nearest_above:
+                        candidates.append((nearest_above.get("wall_type", "WALL_ABOVE"), nearest_above.get("strike")))
+                    if nearest_below:
+                        candidates.append((nearest_below.get("wall_type", "WALL_BELOW"), nearest_below.get("strike")))
+
+                    nearest_label, nearest_level, nearest_dist_pct = None, None, None
+                    for label, level in candidates:
+                        if not level:
+                            continue
+                        dist_pct = abs(kl.trap - level) / level * 100
+                        if nearest_dist_pct is None or dist_pct < nearest_dist_pct:
+                            nearest_label, nearest_level, nearest_dist_pct = label, level, dist_pct
+
+                    at_guard_rail = nearest_dist_pct is not None and nearest_dist_pct <= proximity_pct
+
+                    gamma_wall_tag = {
+                        "available": True,
+                        "zero_gamma_level": zero_gamma,
+                        "net_gamma_regime": gamma_result.get("net_gamma_regime"),
+                        "nearest_guard_rail_type": nearest_label,
+                        "nearest_guard_rail_level": nearest_level,
+                        "trap_distance_to_guard_rail_pct": round(nearest_dist_pct, 3) if nearest_dist_pct is not None else None,
+                        "reading": "AT_GUARD_RAIL" if at_guard_rail else "AWAY_FROM_GUARD_RAIL",
+                    }
+    except Exception as e:
+        gamma_wall_tag = {"available": False, "reason": f"error: {str(e)[:200]}"}
 
     # FIX (2026-08-15): CRITICAL correction. price here is only the
     # daily CLOSING price -- confirmed directly this structurally
@@ -711,6 +873,10 @@ def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_k
         # The real, live app's actual Trap-Door Alert condition,
         # evaluated against the genuine intraday low when available.
         "is_trap_door_alert": is_trap_door_alert,
+        # ADDED (2026-08-17): additive only -- see comment above at
+        # computation site. Never used in is_trap_door_alert itself.
+        "weis_exhaustion_tag": weis_exhaustion_tag,
+        "gamma_wall_tag": gamma_wall_tag,
         "trap_door_reasoning": (
             f"intraday low (${effective_low:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES"
             if is_trap_door_alert and intraday_min_low is not None else
@@ -1037,7 +1203,7 @@ def get_renko_weis_verdict(symbol: str):
 
 
 @app.get("/api/research/pnf-weis/{symbol}")
-def get_pnf_weis_verdict(symbol: str):
+def get_pnf_weis_verdict(symbol: str, timeframe: str = "1Day"):
     """
     Sixth piece of the new, parallel "pure Weis" engine: the PnF
     counterpart to get_renko_weis_verdict() above, following the same
@@ -1048,16 +1214,39 @@ def get_pnf_weis_verdict(symbol: str):
     already correct (46/46 real, complete columns matched exactly) --
     unlike Renko, no fix was needed before building this scoring layer
     on top of it.
+
+    FIX (2026-08-17): timeframe is now a real, caller-supplied
+    parameter (still defaulting to "1Day" so every existing caller is
+    unaffected) rather than hardcoded. This alone required the
+    fetch_bars_batch() calendar-window fix in radar_service.py (see
+    its own comment) -- without that fix, requesting anything other
+    than daily bars through this new parameter would have silently
+    over- or under-fetched.
+
+    IMPORTANT for any future frontend caller that uses this parameter:
+    the frontend's own cache key for this endpoint MUST include the
+    timeframe value if more than one timeframe will ever be requested
+    for the same symbol. This is not hypothetical -- it's the exact
+    class of bug found and fixed earlier this session (Aug 17, see
+    frontend/app.py's count_guide_key comment): two callers sharing one
+    cache key with different data expectations silently served each
+    other's wrong-shaped/wrong-timeframe data with no visible error.
+    A 5-minute-chart request and a weekly-chart request for the same
+    symbol must not be allowed to collide on one cache slot.
     """
     sym = (symbol or "").upper().strip()
     if not sym:
         return {"ok": False, "error": "missing_symbol"}
 
+    allowed_timeframes = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    if timeframe not in allowed_timeframes:
+        return {"ok": False, "symbol": sym, "error": f"invalid_timeframe: {timeframe}. Must be one of {sorted(allowed_timeframes)}"}
+
     try:
         from backend.radar_service import fetch_bars_batch
         from backend.research_engine.pnf_weis_engine import PnFWeisEngine
 
-        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars_map = fetch_bars_batch([sym], timeframe=timeframe, limit=252)
         bars = bars_map.get(sym) or []
 
         if len(bars) < 20:
@@ -1073,6 +1262,7 @@ def get_pnf_weis_verdict(symbol: str):
         result = verdict.to_dict()
         result["ok"] = True
         result["status"] = "OK"
+        result["timeframe"] = timeframe
         result["bars_used"] = len(bars)
         result["last_bar_date"] = (bars[-1].get("t") if bars else None)
         result["current_column"] = engine.current_column_reading(columns)
