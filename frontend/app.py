@@ -3871,6 +3871,185 @@ def build_stub_tab(title, description):
 # REAL TAB FUNCTIONS — injected from source files
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
+# narration, browser TTS based. See the i-radio/s-radio-* component
+# comments near i-clock for the full design rationale.
+
+def _radio_narrate_market_wire(wire_data):
+    """
+    Turns real market-wire data (already fetched elsewhere, reused
+    here -- no new backend load) into short spoken lines. Time-bucketed
+    IDs (changes every 5 minutes) give a natural, predictable "periodic
+    market update" cadence, like a real radio station, without needing
+    any extra server-side state to track what was last announced.
+
+    FIX (2026-08-20): wire_data is the raw list of items directly
+    (confirmed against the real fetch_market_wire() callback, which
+    stores payload.get("items", []) straight into s-market-wire.data)
+    -- not a dict wrapping an "items" key as first assumed. Caught by
+    checking the real populating callback before shipping this, not by
+    trusting the assumption.
+    """
+    if not wire_data or not isinstance(wire_data, list):
+        return []
+    items = wire_data
+    if not items:
+        return []
+
+    bucket = int(datetime.now(timezone.utc).timestamp() // 300)  # changes every 5 minutes
+    parts = []
+    for it in items:
+        label = it.get("label")
+        chg = it.get("change_pct")
+        if label is None or chg is None:
+            continue
+        direction = "up" if chg >= 0 else "down"
+        parts.append(f"{label} {direction} {abs(chg):.1f} percent")
+
+    if not parts:
+        return []
+    text = "Market update. " + ", ".join(parts) + "."
+    return [{"id": f"market_snapshot_{bucket}", "text": text}]
+
+
+def _radio_narrate_alerts(signals):
+    """
+    Turns real radar signals into short spoken lines, limited to a
+    small number of the most notable ones (top-scored, genuinely
+    "Armed"/"Triggered" states) rather than narrating the entire
+    watchlist every cycle. ID includes state, not just symbol, so a
+    genuine state change (Setting Up -> Triggered) is re-announced,
+    but an unchanged alert isn't repeated every 30 seconds forever.
+    """
+    if not signals:
+        return []
+
+    notable_states = ("armed", "triggered", "setting")
+    candidates = []
+    for s in signals:
+        if not isinstance(s, dict):
+            continue
+        state = str(s.get("opportunity_state") or "").lower()
+        if not any(k in state for k in notable_states):
+            continue
+        candidates.append(s)
+
+    candidates.sort(key=lambda s: float(s.get("composite_score") or s.get("score") or 0), reverse=True)
+    top = candidates[:3]
+
+    items = []
+    for s in top:
+        symbol = s.get("symbol")
+        state = s.get("opportunity_state") or "Watching"
+        score = s.get("composite_score") or s.get("score")
+        if not symbol:
+            continue
+        score_txt = f", score {int(float(score))}" if score not in (None, "") else ""
+        text = f"{symbol}: {state}{score_txt}."
+        items.append({"id": f"alert_{symbol}_{state}", "text": text})
+    return items
+
+
+@app.callback(
+    Output("s-radio-script", "data"),
+    Input("i-radio", "n_intervals"),
+    State("s-radio-enabled", "data"),
+    State("s-market-wire", "data"),
+    prevent_initial_call=True,
+)
+def generate_radio_script(n_intervals, enabled, market_wire_data):
+    """
+    Python side of Market Radio: prepares narration TEXT only. The
+    actual browser speech playback happens client-side (see the
+    matching clientside_callback below) -- Dash callbacks run
+    server-side and can't call the browser's speechSynthesis API
+    directly, so this hands off real text through s-radio-script and
+    lets JS take it from there.
+    """
+    if not enabled:
+        return no_update
+
+    import requests as _rq
+    items = []
+    items.extend(_radio_narrate_market_wire(market_wire_data))
+
+    try:
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores?limit=25", timeout=15)
+        data = r.json() if r.ok else {}
+        signals = data.get("symbols") or data.get("signals") or data.get("scores") or data.get("data") or []
+        if isinstance(signals, list):
+            items.extend(_radio_narrate_alerts(signals))
+    except Exception as e:
+        print(f"[RADIO] alert fetch failed: {e}", flush=True)
+
+    return items
+
+
+@app.callback(
+    Output("s-radio-enabled", "data"),
+    Output("i-radio", "disabled"),
+    Output("btn-radio-toggle", "children"),
+    Input("btn-radio-toggle", "n_clicks"),
+    State("s-radio-enabled", "data"),
+    prevent_initial_call=True,
+)
+def toggle_radio(n_clicks, currently_enabled):
+    new_state = not currently_enabled
+    label = "🔊 Market Radio (On)" if new_state else "🔊 Market Radio"
+    return new_state, (not new_state), label
+
+
+app.clientside_callback(
+    """
+    function(scriptItems, enabled) {
+        if (!enabled || !scriptItems || !scriptItems.length) {
+            return window.dash_clientside.no_update;
+        }
+        if (!window._radioSpokenIds) {
+            window._radioSpokenIds = new Set();
+        }
+        if (!window._radioQueue) {
+            window._radioQueue = [];
+        }
+        if (!window._radioSpeaking) {
+            window._radioSpeaking = false;
+        }
+
+        function processQueue() {
+            if (window._radioSpeaking || window._radioQueue.length === 0) return;
+            window._radioSpeaking = true;
+            var text = window._radioQueue.shift();
+            var utter = new SpeechSynthesisUtterance(text);
+            utter.rate = 1.0;
+            utter.onend = function() {
+                window._radioSpeaking = false;
+                processQueue();
+            };
+            utter.onerror = function() {
+                window._radioSpeaking = false;
+                processQueue();
+            };
+            window.speechSynthesis.speak(utter);
+        }
+
+        for (var i = 0; i < scriptItems.length; i++) {
+            var item = scriptItems[i];
+            if (!window._radioSpokenIds.has(item.id)) {
+                window._radioSpokenIds.add(item.id);
+                window._radioQueue.push(item.text);
+            }
+        }
+        processQueue();
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("radio-audio-sink", "children"),
+    Input("s-radio-script", "data"),
+    State("s-radio-enabled", "data"),
+    prevent_initial_call=True,
+)
+
+
 def build_radar_tab(session=None):
     """Opportunity Dashboard — behavioral transition radar."""
     import requests as _rq
@@ -7745,6 +7924,7 @@ app.layout = html.Div([
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
+    html.Div(id="radio-audio-sink", style={"display":"none"}),
     # FIX (2026-08-04): shortened aggressively (20s->2s, 30s->2s) per
     # request, given user confirmed they're currently the only
     # subscriber. Each of i-alpaca and i-market-wire makes 2 Alpaca API
@@ -7768,6 +7948,20 @@ app.layout = html.Div([
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
     dcc.Interval(id="i-market-wire", interval=15_000, n_intervals=0),
     dcc.Store(id="s-market-wire", data=None),
+    # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
+    # narration of live market context and radar alerts, via the
+    # browser's own built-in text-to-speech (no third-party service,
+    # no per-subscriber cost). Deliberately opt-in and disabled by
+    # default (i-radio starts disabled) given this service's own
+    # documented, recurring OOM history just above -- this must never
+    # add background load for subscribers who haven't turned it on.
+    # 30s cadence (not the more aggressive 5s/10s intervals elsewhere)
+    # since narration doesn't need sub-minute freshness for a genuine
+    # "radio" feel, and /api/radar/scores already has its own 90s
+    # server-side cache regardless.
+    dcc.Interval(id="i-radio", interval=30_000, n_intervals=0, disabled=True),
+    dcc.Store(id="s-radio-script", data=[]),
+    dcc.Store(id="s-radio-enabled", data=False),
     # FIX (2026-08-13): the Weis Analysis tab's 4 real backend fetches
     # were blocking the single gunicorn worker for their entire
     # duration, taking the whole app down for every user at once --
@@ -7801,6 +7995,11 @@ app.layout = html.Div([
                 ], style={"textAlign":"center"}),
                 html.Div([
                     html.Div(id="sim-label", style={"display":"none"}),
+                    html.Button("🔊 Market Radio", id="btn-radio-toggle", n_clicks=0,
+                        style={"background":"rgba(20,184,166,.1)","border":"1px solid rgba(20,184,166,.3)",
+                               "borderRadius":"10px","color":"#2dd4bf","cursor":"pointer",
+                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
+                               "fontFamily":"DM Sans, sans-serif"}),
                     html.Button("Log Out", id="btn-logout", n_clicks=0,
                         style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                                "borderRadius":"10px","color":"#f87171","cursor":"pointer",
