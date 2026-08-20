@@ -6608,41 +6608,85 @@ def _radio_narrate_market_wire(wire_data):
     return [{"id": f"market_snapshot_{bucket}", "text": text}]
 
 
-def _radio_narrate_alerts(signals):
+def _radio_narrate_alerts_headline(signals):
     """
-    Turns real radar signals into short spoken lines, limited to a
-    small number of the most notable ones (top-scored, genuinely
-    "Armed"/"Triggered" states) rather than narrating the entire
-    watchlist every cycle. ID includes state, not just symbol, so a
-    genuine state change (Setting Up -> Triggered) is re-announced,
-    but an unchanged alert isn't repeated every 30 seconds forever.
+    Cheap, every-30s headline: just counts, from data already fetched
+    for the radar tab -- no additional backend calls. Bucketed to a
+    5-minute window (same pattern as the market snapshot) so the same
+    counts aren't repeated every single 30-second tick.
+    """
+    if not signals:
+        return []
+    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
+    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
+    if not armed and not setting_up:
+        return []
+    bucket = int(datetime.now(timezone.utc).timestamp() // 300)
+    text = f"{len(armed)} symbols armed, {len(setting_up)} setting up."
+    return [{"id": f"headline_{bucket}", "text": text}]
+
+
+def _radio_narrate_detailed(signals):
+    """
+    ADDED (2026-08-20): real structural detail for the strongest
+    symbols, reusing the already-live, already-tested
+    /api/research/trap-door-check/{symbol} endpoint (which returns
+    is_trap_door_alert, weis_exhaustion_tag, and gamma_wall_tag --
+    real work verified earlier this same session, not new/unverified
+    logic).
+
+    HONEST SCOPE NOTE: Spring/Upthrust specifically live in a separate
+    engine (confluence_engine.py) not yet wired into this endpoint or
+    verified today -- deliberately left out of this version rather
+    than bolted on unverified, given the real cost of the ordering bug
+    caught earlier this session. This version covers Trap Door,
+    exhaustion, and gamma-wall proximity only.
+
+    Real per-symbol backend cost (bar fetches + PnF + live options) is
+    why this only runs once every 5 minutes (gated by the caller on
+    n_intervals), not every 30-second tick like the headline above --
+    up to 12 of these every 30s would be real, avoidable backend load.
     """
     if not signals:
         return []
 
-    notable_states = ("armed", "triggered", "setting")
-    candidates = []
-    for s in signals:
-        if not isinstance(s, dict):
-            continue
-        state = str(s.get("opportunity_state") or "").lower()
-        if not any(k in state for k in notable_states):
-            continue
-        candidates.append(s)
+    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
+    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
+    armed.sort(key=lambda s: float(s.get("composite_score") or s.get("score") or 0), reverse=True)
+    detail_targets = armed[:10] + setting_up
 
-    candidates.sort(key=lambda s: float(s.get("composite_score") or s.get("score") or 0), reverse=True)
-    top = candidates[:3]
-
+    import requests as _rq
+    bucket = int(datetime.now(timezone.utc).timestamp() // 300)
     items = []
-    for s in top:
+
+    for s in detail_targets:
         symbol = s.get("symbol")
-        state = s.get("opportunity_state") or "Watching"
-        score = s.get("composite_score") or s.get("score")
         if not symbol:
             continue
+        score = s.get("composite_score") or s.get("score")
         score_txt = f", score {int(float(score))}" if score not in (None, "") else ""
-        text = f"{symbol}: {state}{score_txt}."
-        items.append({"id": f"alert_{symbol}_{state}", "text": text})
+
+        structural_bits = []
+        try:
+            r = _rq.get(f"{BACKEND_HTTP}/api/research/trap-door-check/{symbol}", timeout=20)
+            detail = r.json() if r.ok else {}
+            if detail.get("is_trap_door_alert"):
+                structural_bits.append("trap door active")
+            exhaustion = (detail.get("weis_exhaustion_tag") or {}).get("reading")
+            if exhaustion == "EXHAUSTED":
+                structural_bits.append("exhausted selling")
+            elif exhaustion == "CONTESTED":
+                structural_bits.append("contested volume")
+            gamma = (detail.get("gamma_wall_tag") or {}).get("reading")
+            if gamma == "AT_GUARD_RAIL":
+                structural_bits.append("at a gamma guard rail")
+        except Exception as e:
+            print(f"[RADIO] detail fetch failed for {symbol}: {e}", flush=True)
+
+        detail_txt = f" {', '.join(structural_bits)}." if structural_bits else ""
+        text = f"{symbol}{score_txt}.{detail_txt}"
+        items.append({"id": f"detail_{symbol}_{bucket}", "text": text})
+
     return items
 
 
@@ -6661,6 +6705,14 @@ def generate_radio_script(n_intervals, enabled, market_wire_data):
     server-side and can't call the browser's speechSynthesis API
     directly, so this hands off real text through s-radio-script and
     lets JS take it from there.
+
+    Two cadences, deliberately: the cheap market snapshot + headline
+    count run every tick (30s), reusing data already being fetched
+    elsewhere -- no new backend load. The expensive, real per-symbol
+    structural detail (_radio_narrate_detailed) only runs once every 5
+    minutes (n_intervals % 10 == 0, at interval=30s) since it makes a
+    real backend call per symbol -- see that function's own docstring
+    for the full reasoning.
     """
     if not enabled:
         return no_update
@@ -6674,7 +6726,9 @@ def generate_radio_script(n_intervals, enabled, market_wire_data):
         data = r.json() if r.ok else {}
         signals = data.get("symbols") or data.get("signals") or data.get("scores") or data.get("data") or []
         if isinstance(signals, list):
-            items.extend(_radio_narrate_alerts(signals))
+            items.extend(_radio_narrate_alerts_headline(signals))
+            if n_intervals % 10 == 0:
+                items.extend(_radio_narrate_detailed(signals))
     except Exception as e:
         print(f"[RADIO] alert fetch failed: {e}", flush=True)
 
