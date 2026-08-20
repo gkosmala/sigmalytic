@@ -6650,14 +6650,42 @@ def _radio_narrate_detailed(signals):
     if not signals:
         return []
 
+    def _safe_float_local(x, key):
+        try:
+            v = x.get(key)
+            return float(v) if v not in (None, "") else 0.0
+        except Exception:
+            return 0.0
+
+    # FIX (2026-08-20): confirmed against the real, exact ranking
+    # logic the backend itself uses (backend/radar_service.py's own
+    # _rank_key, which genuinely determines what order the real Radar
+    # screen displays) -- previously sorted by composite_score alone,
+    # which can produce a real, different "top 10" than what's
+    # actually visible on the live screen. This is the SAME 4-part
+    # tuple the real screen sorts by: Armed status first, then Setting
+    # Up status, then readiness_score, then composite_score as the
+    # final tiebreaker -- not an approximation.
+    def _real_rank_key(x):
+        opportunity_state = str(x.get("opportunity_state", ""))
+        return (
+            opportunity_state == "Armed",
+            opportunity_state == "Setting Up",
+            _safe_float_local(x, "readiness_score"),
+            _safe_float_local(x, "composite_score"),
+        )
+
     armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
     setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
-    armed.sort(key=lambda s: float(s.get("composite_score") or s.get("score") or 0), reverse=True)
+    armed.sort(key=_real_rank_key, reverse=True)
     detail_targets = armed[:10] + setting_up
 
     import requests as _rq
     bucket = int(datetime.now(timezone.utc).timestamp() // 300)
     items = []
+
+    if armed:
+        items.append({"id": f"top10_intro_{bucket}", "text": "Top 10 by radar score."})
 
     for s in detail_targets:
         symbol = s.get("symbol")
@@ -6722,7 +6750,15 @@ def generate_radio_script(n_intervals, enabled, market_wire_data):
     items.extend(_radio_narrate_market_wire(market_wire_data))
 
     try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores?limit=25", timeout=15)
+        # FIX (2026-08-20): confirmed against the real Radar tab
+        # (build_radar_tab) that it calls this endpoint with NO limit
+        # param at all -- this call previously added ?limit=25, which
+        # silently capped the radio's view of the universe far below
+        # what the actual Radar screen shows. Root cause of a real,
+        # reported mismatch: radio said "2 armed, 0 setting up" while
+        # the real screen showed 37 armed, 13 setting up. Now matches
+        # the real tab's call exactly, so counts genuinely agree.
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=15)
         data = r.json() if r.ok else {}
         signals = data.get("symbols") or data.get("signals") or data.get("scores") or data.get("data") or []
         if isinstance(signals, list):
@@ -6739,6 +6775,7 @@ def generate_radio_script(n_intervals, enabled, market_wire_data):
     Output("s-radio-enabled", "data"),
     Output("i-radio", "disabled"),
     Output("btn-radio-toggle", "children"),
+    Output("btn-radio-toggle", "style"),
     Input("btn-radio-toggle", "n_clicks"),
     State("s-radio-enabled", "data"),
     prevent_initial_call=True,
@@ -6746,7 +6783,16 @@ def generate_radio_script(n_intervals, enabled, market_wire_data):
 def toggle_radio(n_clicks, currently_enabled):
     new_state = not currently_enabled
     label = "🔊 Market Radio (On)" if new_state else "🔊 Market Radio"
-    return new_state, (not new_state), label
+    # ADDED (2026-08-20): real color feedback on the button itself --
+    # green when actually narrating, red when off -- rather than only
+    # a small text-label change that's easy to miss at a glance.
+    base_style = {"borderRadius":"10px","cursor":"pointer","fontSize":"11px","fontWeight":"700",
+                  "padding":"6px 12px","fontFamily":"DM Sans, sans-serif"}
+    if new_state:
+        style = {**base_style, "background":"rgba(34,197,94,.15)","border":"1px solid rgba(34,197,94,.4)","color":"#4ade80"}
+    else:
+        style = {**base_style, "background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)","color":"#f87171"}
+    return new_state, (not new_state), label, style
 
 
 app.clientside_callback(
@@ -8052,8 +8098,8 @@ app.layout = html.Div([
                 html.Div([
                     html.Div(id="sim-label", style={"display":"none"}),
                     html.Button("🔊 Market Radio", id="btn-radio-toggle", n_clicks=0,
-                        style={"background":"rgba(20,184,166,.1)","border":"1px solid rgba(20,184,166,.3)",
-                               "borderRadius":"10px","color":"#2dd4bf","cursor":"pointer",
+                        style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
+                               "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                                "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
                                "fontFamily":"DM Sans, sans-serif"}),
                     html.Button("Log Out", id="btn-logout", n_clicks=0,
