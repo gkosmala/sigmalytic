@@ -6712,9 +6712,9 @@ def poll_report_generation(n_intervals, job_date, session):
             headers=_auth_headers(session),
             timeout=15,
         )
-        payload = r.json() if r.ok else {"status": "unknown"}
-    except Exception:
-        payload = {"status": "unknown"}
+        payload = r.json() if r.ok else {"status": "unknown", "error": f"HTTP {r.status_code}"}
+    except Exception as exc:
+        payload = {"status": "unknown", "error": f"could not reach backend: {exc}"}
 
     status = payload.get("status", "unknown")
 
@@ -6723,8 +6723,20 @@ def poll_report_generation(n_intervals, job_date, session):
 
     if status == "unknown":
         if n_intervals >= 12:
-            return ("Lost track of the report's progress (the status couldn't be confirmed). "
-                    "Check the Reports list in a few minutes, or try again.", True, no_update, no_update)
+            # FIX (2026-08-20): this used to show only a generic message,
+            # discarding whatever real error the backend's
+            # get_report_generation_status() had already captured
+            # (e.g. a genuine Redis exception) -- confirmed a real gap
+            # after a report generation genuinely failed to appear and
+            # this message gave no actual diagnostic to work from. Now
+            # surfaces the real underlying reason when the backend
+            # provided one, falling back to the generic explanation
+            # only when it genuinely has nothing more specific (a
+            # truly-missing key, not a caught exception).
+            reason = payload.get("error")
+            detail = f" (real reason: {reason})" if reason else ""
+            return (f"Lost track of the report's progress{detail}. "
+                    f"Check the Reports list in a few minutes, or try again.", True, no_update, no_update)
         return no_update, False, no_update, no_update  # keep polling briefly -- job may not be visible yet
 
     # status is "done" or "error" -- either way, stop polling and refresh the list
