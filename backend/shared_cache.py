@@ -71,7 +71,8 @@ class SharedCache:
         """Returns 'redis' or 'memory' -- useful for diagnostics/logging."""
         return "redis" if self._redis() is not None else "memory"
 
-    def get_or_fetch(self, key: str, fetch_fn, ttl_seconds: int = 15):
+    def get_or_fetch(self, key: str, fetch_fn, ttl_seconds: int = 15,
+                      lock_ttl_seconds: int = 30, lock_wait_seconds: int = 10):
         """
         Returns cached data for `key` if younger than ttl_seconds.
         Otherwise calls fetch_fn() (no arguments), caches the result,
@@ -79,18 +80,40 @@ class SharedCache:
         across separate gunicorn worker processes when Redis is
         active -- for the same uncached key are serialized so only
         one real fetch happens.
+
+        FIX (2026-08-20): confirmed a real, genuine bug -- lock_ttl_seconds
+        and lock_wait_seconds previously hardcoded to 30/10, regardless
+        of how long fetch_fn() itself could legitimately take. For any
+        computation slower than lock_wait_seconds (confirmed true of
+        campaign_full_enrichment_api.py's full_universe_enriched_campaign_table,
+        which genuinely fetches 100 symbols x 7 years of history and can
+        take well over 10 seconds), a second caller arriving while the
+        first is still computing would give up waiting after only 10
+        seconds and run the SAME expensive computation itself too --
+        directly defeating this cache's own stated guarantee ("N
+        processes racing produce exactly 1 real fetch, not N"), and a
+        very plausible real cause of report generation crashing the
+        whole backend: two or more full 100-symbol/7-year computations
+        running concurrently, multiplying the same heavy memory load.
+
+        Now configurable per-call, defaulting to the exact same 30/10
+        values as before so every EXISTING caller's behavior is
+        completely unchanged -- only a caller that knows its own
+        fetch_fn() is genuinely slow needs to pass larger values.
         """
         redis_client = self._redis()
         if redis_client is not None:
             try:
-                return self._get_or_fetch_redis(redis_client, key, fetch_fn, ttl_seconds)
+                return self._get_or_fetch_redis(redis_client, key, fetch_fn, ttl_seconds,
+                                                  lock_ttl_seconds, lock_wait_seconds)
             except Exception:
                 pass
         return self._get_or_fetch_memory(key, fetch_fn, ttl_seconds)
 
     # ---- Redis backend: shared across all worker processes ----
 
-    def _get_or_fetch_redis(self, redis_client, key, fetch_fn, ttl_seconds):
+    def _get_or_fetch_redis(self, redis_client, key, fetch_fn, ttl_seconds,
+                             lock_ttl_seconds=30, lock_wait_seconds=10):
         data_key = f"{self._key_prefix}data:{key}"
         lock_key = f"{self._key_prefix}lock:{key}"
 
@@ -98,10 +121,10 @@ class SharedCache:
         if raw is not None:
             return json.loads(raw)
 
-        acquired = redis_client.set(lock_key, "1", nx=True, ex=30)
+        acquired = redis_client.set(lock_key, "1", nx=True, ex=lock_ttl_seconds)
 
         if not acquired:
-            deadline = time.monotonic() + 10
+            deadline = time.monotonic() + lock_wait_seconds
             while time.monotonic() < deadline:
                 raw = redis_client.get(data_key)
                 if raw is not None:

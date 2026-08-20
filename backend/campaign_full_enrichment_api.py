@@ -3326,6 +3326,19 @@ def full_universe_enriched_campaign_table(
             },
         }
 
-    return shared_cache.get_or_fetch(f"enriched_campaign_table_{limit}", _compute, ttl_seconds=600)
+    # FIX (2026-08-20): confirmed real bug in shared_cache's own
+    # locking -- this computation (100 symbols x 7 years of history)
+    # genuinely takes well over the cache's previous 10-second
+    # lock_wait_seconds default, so a second concurrent caller (e.g.
+    # a manual report-generation click overlapping with this same
+    # function being called elsewhere) would give up waiting and run
+    # this entire heavy computation a second time simultaneously --
+    # multiplying real memory load, a plausible direct cause of
+    # report generation crashing the whole backend. 240s (4 minutes)
+    # comfortably covers this function's genuine real-world runtime;
+    # lock_ttl_seconds raised to match so the lock itself doesn't
+    # expire mid-computation and let a third caller in too.
+    return shared_cache.get_or_fetch(f"enriched_campaign_table_{limit}", _compute, ttl_seconds=600,
+                                       lock_ttl_seconds=260, lock_wait_seconds=240)
 
 
