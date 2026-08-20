@@ -580,8 +580,32 @@ def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
     request, exactly the kind of bug already caught once this session
     (the frontend cache-key collision) from assuming single-process state
     where multiple processes are actually involved.
+
+    FIX (2026-08-20): the background-thread version above (still true as
+    written) genuinely decoupled this from the request/response cycle,
+    but running the heavy computation in a THREAD ON THIS SAME BACKEND
+    PROCESS didn't decouple it from this process's own memory budget --
+    confirmed by a real, repeated 502 (this whole service, including
+    the lightweight status-check endpoint, becoming unresponsive) even
+    after fixing a separate, real concurrency bug in shared_cache's own
+    locking. A single run of the underlying 100-symbol/7-year
+    computation, competing with this process's own normal live traffic,
+    is apparently enough on its own -- no concurrency needed.
+
+    Reducing symbol count was considered and explicitly rejected
+    (report scope must stay at 100). The real fix: don't run this
+    computation on the web-facing process's memory budget AT ALL.
+    Mirrors the exact, already-proven pattern used for the radar
+    scanner itself (tools/render_radar_scanner_worker.py) -- push the
+    request onto a Redis queue instead of a local thread; the
+    separate, already-isolated worker service (which already runs
+    continuously, with its own independent memory, specifically
+    because sharing memory with this process caused real OOM crashes
+    once before) picks it up and does the actual work in ITS OWN
+    process, genuinely off this one's memory budget. See
+    run_queued_report_job() and the worker's own polling loop for the
+    other half of this.
     """
-    import threading
     from backend.radar_service import _redis_client
 
     if not _redis_client:
@@ -593,32 +617,76 @@ def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
     try:
         _redis_client.set(job_key, json.dumps({"status": "running", "started_at": started_at}),
                            ex=REPORT_JOB_TTL_SECONDS)
+        _redis_client.lpush(REPORT_QUEUE_KEY, report_date_str)
     except Exception as e:
         return {"ok": False, "error": f"Could not start job: {e}"}
 
-    def _run():
-        try:
-            result = generate_and_store_report(report_date_str)
-            if result.get("ok"):
-                _redis_client.set(job_key, json.dumps({"status": "done", "started_at": started_at,
-                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
-                                   ex=REPORT_JOB_TTL_SECONDS)
-            else:
-                _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
-                                                         "error": result.get("error", "unknown error"),
-                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
-                                   ex=REPORT_JOB_TTL_SECONDS)
-        except Exception as e:
-            try:
-                _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
-                                                         "error": str(e)[:500],
-                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
-                                   ex=REPORT_JOB_TTL_SECONDS)
-            except Exception:
-                pass  # if Redis itself is now unreachable, the poller's own timeout-without-update handles this
-
-    threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "status": "started", "date": report_date_str}
+
+
+REPORT_QUEUE_KEY = "report_generation_queue"
+
+
+def run_queued_report_job(report_date_str: str) -> None:
+    """
+    The actual generation-plus-status-recording logic, extracted so it
+    can run wherever a caller wants it to -- specifically, from the
+    separate radar-scanner worker process's own polling loop (see that
+    file), not this backend service. Genuinely the same logic
+    start_report_generation_job()'s old background thread used to run
+    inline; only WHERE this executes has changed, not what it does.
+    """
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return
+
+    job_key = f"{REPORT_JOB_KEY_PREFIX}{report_date_str}"
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        result = generate_and_store_report(report_date_str)
+        if result.get("ok"):
+            _redis_client.set(job_key, json.dumps({"status": "done", "started_at": started_at,
+                                                     "finished_at": datetime.now(timezone.utc).isoformat()}),
+                               ex=REPORT_JOB_TTL_SECONDS)
+        else:
+            _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
+                                                     "error": result.get("error", "unknown error"),
+                                                     "finished_at": datetime.now(timezone.utc).isoformat()}),
+                               ex=REPORT_JOB_TTL_SECONDS)
+    except Exception as e:
+        try:
+            _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
+                                                     "error": str(e)[:500],
+                                                     "finished_at": datetime.now(timezone.utc).isoformat()}),
+                               ex=REPORT_JOB_TTL_SECONDS)
+        except Exception:
+            pass
+
+
+def process_one_pending_report_job() -> bool:
+    """
+    Called periodically by the separate radar-scanner worker process
+    (not this backend service) -- pops at most one pending report
+    request off the queue and runs it, in that worker's own process
+    and memory space. Returns True if a job was found and processed,
+    False if the queue was empty (so the caller's own loop knows
+    whether to check again immediately or wait for its next tick).
+    """
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return False
+
+    try:
+        report_date_str = _redis_client.rpop(REPORT_QUEUE_KEY)
+    except Exception:
+        return False
+
+    if not report_date_str:
+        return False
+
+    run_queued_report_job(report_date_str)
+    return True
 
 
 def get_report_generation_status(report_date_str: str) -> Dict[str, Any]:

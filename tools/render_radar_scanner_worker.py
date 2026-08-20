@@ -77,9 +77,35 @@ def main() -> int:
     # would die with it. This loop is that -- it does nothing itself,
     # just keeps the process (and therefore the background scheduler)
     # alive indefinitely.
-    print("[RADAR_WORKER] Running. Sleeping to keep the scheduler alive.", flush=True)
+    # ADDED (2026-08-20): pick up any pending report-generation requests
+    # queued by the web backend (see backend/reports_engine.py's
+    # start_report_generation_job -- it now enqueues here instead of
+    # running the heavy computation inline on the web-facing process,
+    # after confirming a single run of that computation could crash
+    # the whole backend on its own, independent of the concurrency bug
+    # fixed earlier the same day). Checked on a tight, 15-second
+    # cadence -- much tighter than this loop's original 60s sleep --
+    # so a subscriber clicking "Generate Report" doesn't wait
+    # needlessly long for this worker to notice the request, while
+    # still keeping the actual heavy work fully isolated from the web
+    # backend's own memory budget, on this already-separate process.
+    try:
+        from backend.reports_engine import process_one_pending_report_job
+    except Exception as exc:
+        print(f"[RADAR_WORKER] Could not import report-job processor: {exc}", flush=True)
+        process_one_pending_report_job = None
+
+    print("[RADAR_WORKER] Running. Sleeping to keep the scheduler alive, "
+          "polling for pending report-generation requests every 15s.", flush=True)
     while True:
-        time.sleep(60)
+        if process_one_pending_report_job is not None:
+            try:
+                processed = process_one_pending_report_job()
+                if processed:
+                    print("[RADAR_WORKER] Processed one queued report-generation request.", flush=True)
+            except Exception as exc:
+                print(f"[RADAR_WORKER] Error while checking for report jobs: {exc}", flush=True)
+        time.sleep(15)
 
 
 if __name__ == "__main__":
