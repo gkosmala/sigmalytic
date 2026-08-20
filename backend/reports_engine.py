@@ -549,6 +549,94 @@ def get_report_html(report_date_str: str) -> Optional[str]:
         return None
 
 
+REPORT_JOB_KEY_PREFIX = "report_job:"
+REPORT_JOB_TTL_SECONDS = 60 * 60  # 1 hour -- long enough to poll to completion, short enough not to accumulate stale job records
+
+
+def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
+    """
+    FIX (2026-08-20): confirmed root cause of "Generate Report" freezing
+    for 3+ minutes then failing with a raw 502 -- generate_and_store_report()
+    was being called synchronously, inline, inside the HTTP request/response
+    cycle. Its underlying computation (full_universe_enriched_campaign_table,
+    100 symbols x 7 years of history) is cached, but only for 10 minutes --
+    on a cold cache (the common case for a manual click), and after several
+    real feature additions stacked onto that same function over time (PnF,
+    Gamma, divergence, doctrine, and deterioration-risk overlays, all wired
+    in July), the cold-path computation now regularly exceeds both the
+    frontend's 180s client timeout and this service's own worker timeout --
+    the worker dies mid-request, and Render's proxy returns a 502 with no
+    chance for this codebase's own error handling to ever run.
+
+    Same fix pattern already proven for the Weis Analysis tab's identical
+    class of problem (Section 2.3.4 of the Aug 15 investigation record):
+    move the heavy work into a background thread, decoupled from the
+    request/response cycle, and let the frontend poll for the result
+    instead of holding the connection open and hoping it finishes in time.
+
+    Job status lives in Redis (report_job:{date}), not in-process memory,
+    since this service runs multiple worker processes -- an in-memory dict
+    would only be visible to whichever worker happened to handle a given
+    request, exactly the kind of bug already caught once this session
+    (the frontend cache-key collision) from assuming single-process state
+    where multiple processes are actually involved.
+    """
+    import threading
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+
+    job_key = f"{REPORT_JOB_KEY_PREFIX}{report_date_str}"
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        _redis_client.set(job_key, json.dumps({"status": "running", "started_at": started_at}),
+                           ex=REPORT_JOB_TTL_SECONDS)
+    except Exception as e:
+        return {"ok": False, "error": f"Could not start job: {e}"}
+
+    def _run():
+        try:
+            result = generate_and_store_report(report_date_str)
+            if result.get("ok"):
+                _redis_client.set(job_key, json.dumps({"status": "done", "started_at": started_at,
+                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
+                                   ex=REPORT_JOB_TTL_SECONDS)
+            else:
+                _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
+                                                         "error": result.get("error", "unknown error"),
+                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
+                                   ex=REPORT_JOB_TTL_SECONDS)
+        except Exception as e:
+            try:
+                _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
+                                                         "error": str(e)[:500],
+                                                         "finished_at": datetime.now(timezone.utc).isoformat()}),
+                                   ex=REPORT_JOB_TTL_SECONDS)
+            except Exception:
+                pass  # if Redis itself is now unreachable, the poller's own timeout-without-update handles this
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "status": "started", "date": report_date_str}
+
+
+def get_report_generation_status(report_date_str: str) -> Dict[str, Any]:
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"status": "unknown", "error": "Redis not configured"}
+
+    job_key = f"{REPORT_JOB_KEY_PREFIX}{report_date_str}"
+    try:
+        raw = _redis_client.get(job_key)
+        if raw is None:
+            return {"status": "unknown"}
+        return json.loads(raw)
+    except Exception as e:
+        return {"status": "unknown", "error": str(e)[:200]}
+
+
 def delete_report(report_date_str: str) -> Dict[str, Any]:
     """
     Removes a stored report: both the actual HTML content (report:{date})

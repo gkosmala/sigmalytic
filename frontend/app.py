@@ -3714,6 +3714,17 @@ def build_reports_tab(selected_date=None, session=None):
             html.Div(id="reports-generate-message", style={"fontSize": "12px", "color": TEAL_DIM, "marginTop": "8px"}),
             type="dot", color=TEAL,
         ),
+        # FIX (2026-08-20): the generation itself now runs in a backend
+        # background thread (see generate_report_now()'s own fix note) --
+        # these two components are what let the frontend poll for the
+        # real result instead of holding one long HTTP request open and
+        # freezing/timing out. Interval starts disabled; the button-click
+        # callback enables it, the polling callback disables it again once
+        # the job reaches "done" or "error". Store just remembers which
+        # date is currently being polled, since Interval itself carries no
+        # payload of its own.
+        dcc.Interval(id="reports-generate-poll", interval=4000, disabled=True, n_intervals=0),
+        dcc.Store(id="reports-generate-job-date", data=None),
     ], style={"marginTop": "16px", "padding": "16px", "border": f"1px solid {BORDER}", "borderRadius": "12px"}) if is_admin(session) else None
 
     if not dates:
@@ -3722,6 +3733,25 @@ def build_reports_tab(selected_date=None, session=None):
             html.P("No daily reports are available yet. The first report is generated once daily; check back after the next scheduled run.",
                    style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
             _generate_control,
+            # FIX (2026-08-20): handle_generate_report()'s callback
+            # declares Output("reports-date-picker","options"/"value"),
+            # but this empty-state branch previously never rendered that
+            # dropdown at all (it only existed in the non-empty branch
+            # below) -- confirmed via a real Dash ReferenceError
+            # ("A nonexistent object was used in an Output... id is
+            # reports-date-picker") when a user with zero existing
+            # reports clicked Generate Report. Dash can't resolve a
+            # missing Output target, so the callback failed instantly,
+            # client-side, before ever sending the request -- the
+            # button appeared to "freeze" but was actually failing
+            # silently in under a second, well before the real 180s
+            # backend timeout ever had a chance to matter. This was a
+            # genuine chicken-and-egg bug: generating your first report
+            # was broken specifically because no report existed yet.
+            # display:none since there's nothing meaningful to show
+            # here -- this exists purely so the Output id resolves.
+            dcc.Dropdown(id="reports-date-picker", options=[], value=None,
+                         clearable=False, style={"display": "none"}),
         ])
 
     most_recent = selected_date if selected_date in dates else dates[0]
@@ -6595,8 +6625,9 @@ def update_report_view(selected_date):
 
 
 @app.callback(Output("reports-generate-message","children"),
-              Output("reports-date-picker","options"),
-              Output("reports-date-picker","value"),
+              Output("reports-generate-poll","disabled"),
+              Output("reports-generate-poll","n_intervals"),
+              Output("reports-generate-job-date","data"),
               Input("reports-generate-btn","n_clicks"),
               State("reports-generate-date","value"),
               State("s-session","data"),
@@ -6609,55 +6640,110 @@ def handle_generate_report(n_clicks, date_str, session):
     browser navigation can't attach one, so this needed a real in-app
     control that sends the auth header via a normal HTTP request instead.
 
-    FIX (2026-08-07): confirmed a real bug -- a successful generation
-    said 'Select it from the date dropdown above', but the dropdown
-    itself lives inside build_reports_tab(), which only rebuilds on a
-    genuine tab switch (a deliberate 2026-07-31 fix to stop the date
-    picker resetting while a user reads an older report). This
-    separate callback never touched the dropdown at all, so the newly
-    generated date genuinely never appeared until the user manually
-    switched tabs away and back. Now directly re-fetches the real,
-    current list and updates the dropdown's options/value after a
-    successful generation, without needing to rebuild the whole tab
-    (so the original 2026-07-31 fix stays intact).
+    FIX (2026-08-20): this used to make one long, synchronous HTTP call
+    (timeout=180) and wait for the entire report to finish generating
+    before returning anything -- confirmed root cause of a real,
+    reported freeze followed by a raw 502 (the underlying computation
+    grew heavy enough over time, through several genuine feature
+    additions, that a cold-cache run now regularly exceeds both this
+    call's own timeout and the backend's worker timeout, killing the
+    worker mid-request). Now just starts the job (the backend returns
+    almost immediately, having only kicked off a background thread) and
+    hands off to poll_report_generation() below via the Interval this
+    enables, instead of blocking here for minutes.
     """
     if not date_str:
-        return "Please enter a date in YYYY-MM-DD format.", no_update, no_update
+        return "Please enter a date in YYYY-MM-DD format.", True, 0, None
 
     try:
         r = req.get(
             f"{BACKEND_HTTP}/api/admin/generate-report",
             params={"date": date_str},
             headers=_auth_headers(session),
-            timeout=180,  # fetches 7 years of history for up to 100 symbols; can genuinely take a while
+            timeout=20,  # just starts a background job now; should return almost immediately
         )
         if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again.", no_update, no_update
+            return "Not signed in, or session expired. Please sign in again.", True, 0, None
         if r.status_code == 403:
-            return "Admin access only.", no_update, no_update
+            return "Admin access only.", True, 0, None
         if not r.ok:
-            return f"Generation failed (error {r.status_code}): {r.text[:200]}", no_update, no_update
+            return f"Could not start generation (error {r.status_code}): {r.text[:200]}", True, 0, None
         payload = r.json()
         if not payload.get("ok"):
-            return f"Generation failed: {payload.get('error', 'unknown error')}", no_update, no_update
+            return f"Could not start generation: {payload.get('error', 'unknown error')}", True, 0, None
 
-        try:
-            list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-            dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
-        except Exception:
-            dates = []
-
-        if date_str not in dates:
-            dates = [date_str] + dates
-
-        options = [{"label": d, "value": d} for d in dates]
         return (
-            f"Report generated successfully for {date_str}.",
-            options,
+            f"Generating report for {date_str}... this can take a few minutes. "
+            f"You can keep using the app while it works.",
+            False,   # enable polling
+            0,       # reset interval count
             date_str,
         )
     except Exception as exc:
-        return f"Could not reach the backend: {exc}", no_update, no_update
+        return f"Could not reach the backend: {exc}", True, 0, None
+
+
+@app.callback(Output("reports-generate-message","children", allow_duplicate=True),
+              Output("reports-generate-poll","disabled", allow_duplicate=True),
+              Output("reports-date-picker","options"),
+              Output("reports-date-picker","value"),
+              Input("reports-generate-poll","n_intervals"),
+              State("reports-generate-job-date","data"),
+              State("s-session","data"),
+              prevent_initial_call=True)
+def poll_report_generation(n_intervals, job_date, session):
+    """
+    Polling companion to handle_generate_report() above -- see that
+    callback's 2026-08-20 fix note for the full context. Fires every 4s
+    while the Interval is enabled, checking the real job status the
+    backend is tracking in Redis, until it reaches done/error (at which
+    point polling is disabled again) or a safety cap is hit (12
+    attempts, ~48s past the point Redis itself would have to be
+    unreachable for status to still read "unknown" -- distinct from
+    "running," which is expected and keeps polling normally).
+    """
+    if not job_date:
+        return no_update, True, no_update, no_update
+
+    try:
+        r = req.get(
+            f"{BACKEND_HTTP}/api/admin/generate-report-status",
+            params={"date": job_date},
+            headers=_auth_headers(session),
+            timeout=15,
+        )
+        payload = r.json() if r.ok else {"status": "unknown"}
+    except Exception:
+        payload = {"status": "unknown"}
+
+    status = payload.get("status", "unknown")
+
+    if status == "running":
+        return no_update, False, no_update, no_update  # keep polling, message unchanged
+
+    if status == "unknown":
+        if n_intervals >= 12:
+            return ("Lost track of the report's progress (the status couldn't be confirmed). "
+                    "Check the Reports list in a few minutes, or try again.", True, no_update, no_update)
+        return no_update, False, no_update, no_update  # keep polling briefly -- job may not be visible yet
+
+    # status is "done" or "error" -- either way, stop polling and refresh the list
+    try:
+        list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
+        dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
+    except Exception:
+        dates = []
+
+    if status == "done":
+        if job_date not in dates:
+            dates = [job_date] + dates
+        options = [{"label": d, "value": d} for d in dates]
+        return f"Report generated successfully for {job_date}.", True, options, job_date
+
+    # status == "error"
+    options = [{"label": d, "value": d} for d in dates] if dates else no_update
+    return f"Generation failed: {payload.get('error', 'unknown error')}", True, options, no_update
+
 
 @app.callback(Output("reports-delete-confirm", "message"),
               Output("reports-delete-confirm", "displayed"),

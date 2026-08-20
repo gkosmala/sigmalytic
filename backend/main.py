@@ -1602,15 +1602,53 @@ def generate_report_now(date: str = None, _admin: str = Depends(require_admin)):
     which would explain everything observed. Explicit no-cache headers
     added defensively; this is a real gap regardless of whether it was
     the specific cause here.
+
+    FIX (2026-08-20): this used to call generate_and_store_report()
+    directly, synchronously, inside this request -- confirmed root
+    cause of a real, reported "Generate Report" freeze followed by a
+    raw 502 (the underlying full-universe computation is only cached
+    for 10 minutes, and had grown heavy enough through several genuine
+    feature additions over time that a cold-cache run now regularly
+    exceeds both the frontend's client timeout and this service's own
+    worker timeout, killing the worker mid-request before its own
+    error handling ever runs). Now starts the same work in a
+    background thread and returns immediately; the frontend polls
+    /api/admin/generate-report-status instead of holding the
+    connection open. Same fix pattern already proven for the Weis
+    Analysis tab's identical class of problem.
     """
     from fastapi.responses import JSONResponse as _JSONResponse
 
     try:
-        from backend.reports_engine import generate_and_store_report
-        result = generate_and_store_report(date)
+        from backend.reports_engine import start_report_generation_job
+        result = start_report_generation_job(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     except Exception as exc:
         result = {"ok": False, "error": str(exc)[:500]}
 
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/admin/generate-report-status")
+def generate_report_status(date: str = None, _admin: str = Depends(require_admin)):
+    """
+    Polling companion to /api/admin/generate-report -- see that
+    endpoint's 2026-08-20 fix note. Returns the real, current status
+    of a background report-generation job: running / done / error /
+    unknown (unknown covers both "never started" and "Redis itself is
+    unreachable," both surfaced as an honest unknown rather than a
+    fabricated status).
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from backend.reports_engine import get_report_generation_status
+
+    result = get_report_generation_status(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     return _JSONResponse(
         content=result,
         headers={
