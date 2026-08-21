@@ -1659,6 +1659,59 @@ def generate_report_status(date: str = None, _admin: str = Depends(require_admin
     )
 
 
+# ADDED (2026-08-21): Morning Report -- a genuinely different content
+# category from everything else Market Radio narrates (real macro/news
+# briefing -- oil prices, Fed policy, earnings -- versus Sigmalytic's
+# own structural/technical data). No automated news-fetching exists in
+# this codebase, confirmed before building this, so content comes from
+# an admin pasting it in each morning, not automatic generation.
+# Same Redis-backed pattern as everything else session -- a single
+# current-value key, not a history/archive (only "today's report"
+# matters for this feature; simplicity intentional given the small,
+# well-scoped use case).
+MORNING_REPORT_KEY = "morning_report:current"
+
+
+@app.post("/api/admin/morning-report")
+def save_morning_report(payload: dict, _admin: str = Depends(require_admin)):
+    from backend.radar_service import _redis_client
+
+    text = (payload or {}).get("text", "").strip()
+    if not text:
+        return {"ok": False, "error": "No text provided"}
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+
+    try:
+        _redis_client.set(MORNING_REPORT_KEY, json.dumps({
+            "text": text,
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }))
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/morning-report")
+def get_morning_report():
+    """Subscriber-facing -- no admin gate, any signed-in user can read
+    (and thus hear, via Market Radio's playback button) today's
+    morning report, same as they can read/hear any other radio content."""
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+    try:
+        raw = _redis_client.get(MORNING_REPORT_KEY)
+        if raw is None:
+            return {"ok": True, "text": None}
+        data = json.loads(raw)
+        return {"ok": True, **data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/heatmap/data")
 def heatmap_data(timeframe: str = "daily"):
     """

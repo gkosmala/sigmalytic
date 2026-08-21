@@ -6795,6 +6795,86 @@ def toggle_radio(n_clicks, currently_enabled):
     return new_state, (not new_state), label, style
 
 
+# ADDED (2026-08-21): Morning Report -- see the layout comments near
+# morning-report-admin-panel / btn-morning-report-play for the full
+# design rationale (real macro/news content, admin-pasted since no
+# automated news source exists, playback independent of the ambient
+# radio's own on/off state).
+
+@app.callback(
+    Output("morning-report-admin-panel", "style"),
+    Input("s-session", "data"),
+)
+def toggle_morning_report_admin_visibility(session):
+    base = {"width": "100%", "marginBottom": "8px"}
+    return {**base, "display": "block"} if is_admin(session) else {**base, "display": "none"}
+
+
+@app.callback(
+    Output("morning-report-save-message", "children"),
+    Input("btn-save-morning-report", "n_clicks"),
+    State("morning-report-text", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def save_morning_report_callback(n_clicks, text, session):
+    if not text or not text.strip():
+        return "Please enter report text first."
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/morning-report",
+                      json={"text": text}, headers=_auth_headers(session), timeout=15)
+        payload = r.json() if r.ok else {"ok": False, "error": f"HTTP {r.status_code}"}
+        if payload.get("ok"):
+            return f"Saved at {datetime.now(timezone.utc).strftime('%H:%M UTC')}."
+        return f"Save failed: {payload.get('error', 'unknown error')}"
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+
+@app.callback(
+    Output("s-morning-report-play-request", "data"),
+    Input("btn-morning-report-play", "n_clicks"),
+    prevent_initial_call=True,
+)
+def request_morning_report_playback(n_clicks):
+    """
+    Deliberately NOT gated on s-radio-enabled (the ambient radio's own
+    on/off state) or session/admin status -- any signed-in subscriber
+    can play today's morning report regardless of whether they've
+    turned on the separate ambient radio feature. A fresh timestamp on
+    every click means clicking again always re-speaks it, rather than
+    being silently deduped the way ambient radio content is.
+    """
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/morning-report", timeout=15)
+        payload = r.json() if r.ok else {}
+        text = payload.get("text")
+    except Exception:
+        text = None
+
+    if not text:
+        text = "No morning report has been posted yet today."
+    return {"text": text, "ts": datetime.now(timezone.utc).isoformat()}
+
+
+app.clientside_callback(
+    """
+    function(request) {
+        if (!request || !request.text) {
+            return window.dash_clientside.no_update;
+        }
+        var utter = new SpeechSynthesisUtterance(request.text);
+        utter.rate = 1.0;
+        window.speechSynthesis.speak(utter);
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("morning-report-audio-sink", "children"),
+    Input("s-morning-report-play-request", "data"),
+    prevent_initial_call=True,
+)
+
+
 app.clientside_callback(
     """
     function(scriptItems, enabled) {
@@ -8064,6 +8144,13 @@ app.layout = html.Div([
     dcc.Interval(id="i-radio", interval=30_000, n_intervals=0, disabled=True),
     dcc.Store(id="s-radio-script", data=[]),
     dcc.Store(id="s-radio-enabled", data=False),
+    # ADDED (2026-08-21): Morning Report support components. Playback
+    # request/sink are deliberately separate from s-radio-script /
+    # radio-audio-sink above -- morning report playback must work
+    # regardless of whether the ambient radio toggle is on, so it
+    # can't share that pipeline's enabled-state gate.
+    dcc.Store(id="s-morning-report-play-request", data=None),
+    html.Div(id="morning-report-audio-sink", style={"display":"none"}),
     # FIX (2026-08-13): the Weis Analysis tab's 4 real backend fetches
     # were blocking the single gunicorn worker for their entire
     # duration, taking the whole app down for every user at once --
@@ -8102,6 +8189,18 @@ app.layout = html.Div([
                                "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                                "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
                                "fontFamily":"DM Sans, sans-serif"}),
+                    # ADDED (2026-08-21): Morning Report -- a real macro/news
+                    # briefing (distinct from the ambient radio's own
+                    # structural narration), pasted in by an admin each
+                    # morning since no automated news-fetching exists in
+                    # this codebase. Playback is independent of whether the
+                    # ambient radio toggle above is on -- these are two
+                    # separate features, not one gating the other.
+                    html.Button("☀️ Morning Report", id="btn-morning-report-play", n_clicks=0,
+                        style={"background":"rgba(251,191,36,.1)","border":"1px solid rgba(251,191,36,.3)",
+                               "borderRadius":"10px","color":"#fbbf24","cursor":"pointer",
+                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
+                               "fontFamily":"DM Sans, sans-serif"}),
                     html.Button("Log Out", id="btn-logout", n_clicks=0,
                         style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                                "borderRadius":"10px","color":"#f87171","cursor":"pointer",
@@ -8110,6 +8209,26 @@ app.layout = html.Div([
                 ], style={"display":"flex","alignItems":"center","gap":"8px"}),
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                        "width":"100%","marginBottom":"8px"}),
+
+            # ADDED (2026-08-21): Morning Report admin paste-in panel.
+            # Hidden by default (display:none) -- the base layout here
+            # is global/session-independent (built once, not per-request
+            # like build_reports_tab(session)), so admin-only visibility
+            # can't be decided at layout-build time the way it is
+            # elsewhere in this app. Shown/hidden instead via a small,
+            # dedicated callback keyed off s-session, right below.
+            html.Div(id="morning-report-admin-panel", style={"display":"none","width":"100%","marginBottom":"8px"}, children=[
+                dcc.Textarea(id="morning-report-text", placeholder="Paste today's morning report text here...",
+                    style={"width":"100%","minHeight":"100px","background":"rgba(0,0,0,.3)",
+                           "border":f"1px solid {BORDER}","borderRadius":"8px","padding":"10px",
+                           "color":WHITE,"fontSize":"12px","fontFamily":"DM Sans, sans-serif"}),
+                html.Button("Save Morning Report", id="btn-save-morning-report", n_clicks=0,
+                    style={"background":"rgba(251,191,36,.1)","border":"1px solid rgba(251,191,36,.3)",
+                           "borderRadius":"8px","color":"#fbbf24","cursor":"pointer","marginTop":"6px",
+                           "fontSize":"11px","fontWeight":"700","padding":"8px 14px",
+                           "fontFamily":"DM Sans, sans-serif"}),
+                html.Div(id="morning-report-save-message", style={"fontSize":"11px","color":TEAL_DIM,"marginTop":"6px"}),
+            ]),
 
             # ── Controls row ───────────────────────────────────────────────
             html.Div([
