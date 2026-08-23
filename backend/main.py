@@ -344,54 +344,60 @@ def _get_market_wire_uncached():
     except Exception as e:
         print(f"[MARKET_WIRE] Currency fetch failed: {e}", flush=True)
 
-    # ADDED (2026-08-21): US 10-year Treasury yield. Alpaca has no such
-    # data at all (confirmed directly -- their "fixed income" product
-    # is US Treasury Bills and corporate bonds for trading, not a
-    # continuous yield quote, and nothing international). International
-    # yields explicitly out of scope per a real decision -- domestic
-    # only. Uses FRED (the Federal Reserve's own public data), a
-    # mature, stable, well-documented API -- confirmed the exact
-    # response shape against FRED's own docs and multiple independent
-    # client libraries before writing this, unlike the newer, less
-    # documented Alpaca forex endpoints above.
+    # ADDED (2026-08-21): FRED-sourced items (US 10-year yield, VIX,
+    # Dollar Index). Extracted into a shared helper below since all
+    # three use the identical fetch/parse pattern -- avoids copying
+    # the same placeholder-filtering and error-handling logic three
+    # times with the risk of a subtle divergence between copies.
     #
-    # Requires a free FRED_API_KEY (self-service registration at
-    # https://fred.stlouisfed.org/docs/api/api_key.html, not paid) --
-    # silently skipped (not an error) if that env var isn't set, same
-    # as how Alpaca credentials being absent is handled above.
+    # HONEST, IMPORTANT LIMITATION, confirmed directly and explicitly
+    # requested to be labeled clearly after real confusion the first
+    # time this shipped: FRED publishes ALL of these once per business
+    # day, reflecting the PRIOR day's close -- not live, intraday data,
+    # unlike everything else in this ticker. "update_frequency": "daily"
+    # is set on every FRED-sourced item specifically so the frontend
+    # can label it clearly and this doesn't read as broken/stale to a
+    # subscriber expecting the same liveness as the equity prices above.
     #
-    # "value" comes back as a STRING, and FRED uses "." as a literal
-    # placeholder for non-trading days on this daily series (weekends,
-    # holidays) -- filtered out explicitly rather than trusting every
-    # returned observation is a real number.
+    # Genuinely live tick-by-tick data for any of these three doesn't
+    # exist for free anywhere (confirmed for yields already) -- this
+    # is a real characteristic of the free data landscape, not a
+    # limitation specific to how this is built.
     fred_key = os.getenv("FRED_API_KEY", "")
     if fred_key:
-        try:
-            r3 = requests.get(
-                "https://api.stlouisfed.org/fred/series/observations",
-                params={"series_id": "DGS10", "api_key": fred_key, "file_type": "json",
-                        "sort_order": "desc", "limit": 10},
-                timeout=10,
-            )
-            if r3.ok:
-                observations = (r3.json() or {}).get("observations") or []
+        def _fetch_fred_daily_item(series_id, symbol, label, decimals=3):
+            try:
+                r = requests.get(
+                    "https://api.stlouisfed.org/fred/series/observations",
+                    params={"series_id": series_id, "api_key": fred_key, "file_type": "json",
+                            "sort_order": "desc", "limit": 10},
+                    timeout=10,
+                )
+                if not r.ok:
+                    print(f"[MARKET_WIRE] FRED {series_id} HTTP {r.status_code}: {r.text[:200]}", flush=True)
+                    return None
+                observations = (r.json() or {}).get("observations") or []
                 real_values = [o for o in observations if o.get("value") not in (None, ".", "")]
-                if real_values:
-                    latest_yield = float(real_values[0]["value"])
-                    yield_change = None
-                    if len(real_values) >= 2:
-                        prev_yield = float(real_values[1]["value"])
-                        yield_change = round(latest_yield - prev_yield, 3)
-                    items.append({
-                        "symbol": "US10Y", "label": "U.S. 10yr", "price": latest_yield,
-                        "change_pct": yield_change, "asset_class": "yield",
-                    })
-                else:
-                    print("[MARKET_WIRE] FRED returned no real (non-placeholder) DGS10 observations.", flush=True)
-            else:
-                print(f"[MARKET_WIRE] FRED HTTP {r3.status_code}: {r3.text[:200]}", flush=True)
-        except Exception as e:
-            print(f"[MARKET_WIRE] US 10yr yield fetch failed: {e}", flush=True)
+                if not real_values:
+                    print(f"[MARKET_WIRE] FRED returned no real (non-placeholder) {series_id} observations.", flush=True)
+                    return None
+                latest = float(real_values[0]["value"])
+                change = None
+                if len(real_values) >= 2:
+                    change = round(latest - float(real_values[1]["value"]), decimals)
+                return {"symbol": symbol, "label": label, "price": round(latest, decimals),
+                        "change_pct": change, "asset_class": "yield", "update_frequency": "daily"}
+            except Exception as e:
+                print(f"[MARKET_WIRE] FRED {series_id} fetch failed: {e}", flush=True)
+                return None
+
+        for item in [
+            _fetch_fred_daily_item("DGS10", "US10Y", "U.S. 10yr", decimals=3),
+            _fetch_fred_daily_item("VIXCLS", "VIX", "VIX", decimals=2),
+            _fetch_fred_daily_item("DTWEXBGS", "DXY", "Dollar Index", decimals=2),
+        ]:
+            if item:
+                items.append(item)
 
     return {"ok": True, "items": items}
 

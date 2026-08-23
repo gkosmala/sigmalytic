@@ -1570,9 +1570,10 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
 
 def _render_market_wire(items):
     """
-    Top-of-page ticker: DJIA/S&P/Nasdaq/Russell 2000/Gold/Oil/Bitcoin.
-    VIX intentionally excluded -- see the backend endpoint's own comment
-    for why (no reliable, non-misleading proxy available).
+    Top-of-page ticker: DJIA/S&P/Nasdaq/Russell 2000/Gold/Oil/Bitcoin,
+    plus currencies and FRED-sourced items (10yr yield, VIX, Dollar
+    Index -- see backend's own comment for why VIX was originally
+    excluded and how FRED resolved that).
     """
     if not items:
         return html.Div()
@@ -1582,6 +1583,7 @@ def _render_market_wire(items):
         price = item.get("price")
         change_pct = item.get("change_pct")
         label = item.get("label", item.get("symbol", "—"))
+        symbol = item.get("symbol", "")
 
         if price is None:
             continue
@@ -1595,36 +1597,54 @@ def _render_market_wire(items):
             # actually use: 4 decimals for most pairs, but yen pairs
             # trade at a completely different scale (100+ per dollar)
             # and are conventionally quoted to 2-3 decimals instead.
-            price_text = f"{price:,.2f}" if "JPY" in item.get("symbol", "") else f"{price:,.4f}"
+            price_text = f"{price:,.2f}" if "JPY" in symbol else f"{price:,.4f}"
         elif item.get("asset_class") == "yield":
-            # ADDED (2026-08-21): a yield is a percentage rate, not a
-            # dollar amount -- "$4.74" would be actively wrong. Matches
-            # the plain-number convention (e.g. "4.736") from the
-            # user's own real WSJ-style reference example, 3 decimals
-            # to match FRED's own published precision for DGS10.
-            price_text = f"{price:,.3f}"
+            # ADDED (2026-08-21): a yield/index level isn't a dollar
+            # amount -- "$4.74" would be actively wrong. Matches the
+            # plain-number convention from the user's own real
+            # WSJ-style reference example. Precision by symbol (3
+            # decimals for the 10yr yield matching FRED's own published
+            # precision; 2 for VIX/Dollar Index matching how those are
+            # conventionally quoted) rather than one fixed value for
+            # all three, since the backend already rounds each to its
+            # own correct precision -- forcing 3 decimals here would
+            # have shown VIX as "14.180" instead of "14.18".
+            decimals = 3 if symbol == "US10Y" else 2
+            price_text = f"{price:,.{decimals}f}"
         else:
             price_text = f"${price:,.2f}"
 
         if change_pct is None:
             change_text, change_color = "—", MUTED
         elif item.get("asset_class") == "yield":
-            # Yield changes are conventionally shown as a plain signed
-            # point difference (e.g. "+0.005" or "-0.005"), not a
-            # percent -- again matching the user's own reference
-            # example ("0.000", no % sign).
+            decimals = 3 if symbol == "US10Y" else 2
             sign = "+" if change_pct > 0 else ""
-            change_text, change_color = f"{sign}{change_pct:.3f}", (TEAL_DIM if change_pct >= 0 else RED_DIM)
+            change_text, change_color = f"{sign}{change_pct:.{decimals}f}", (TEAL_DIM if change_pct >= 0 else RED_DIM)
         elif change_pct >= 0:
             change_text, change_color = f"+{change_pct:.2f}%", TEAL_DIM
         else:
             change_text, change_color = f"{change_pct:.2f}%", RED_DIM
 
-        pills.append(html.Div([
+        pill_children = [
             html.Span(label, style={"color": WHITE, "fontSize": "11px", "fontWeight": "700", "marginRight": "6px"}),
             html.Span(price_text, style={"color": WHITE, "fontSize": "11px", "fontWeight": "800", "marginRight": "6px"}),
             html.Span(change_text, style={"color": change_color, "fontSize": "11px", "fontWeight": "800"}),
-        ], style={"display": "flex", "alignItems": "center", "padding": "6px 12px",
+        ]
+        # ADDED (2026-08-21): a clear "Daily" badge on every FRED-sourced
+        # item -- real, direct response to genuine confusion the first
+        # time the 10yr yield shipped without this. These update once
+        # per business day (the prior close), unlike everything else in
+        # this ticker, which is live/near-real-time -- this should never
+        # again look like stale/broken data to a subscriber who isn't
+        # told the difference upfront.
+        if item.get("update_frequency") == "daily":
+            pill_children.append(html.Span("DAILY", style={
+                "color": MUTED, "fontSize": "8px", "fontWeight": "700", "marginLeft": "6px",
+                "padding": "2px 5px", "border": f"1px solid {BORDER}", "borderRadius": "4px",
+                "letterSpacing": "0.5px",
+            }))
+
+        pills.append(html.Div(pill_children, style={"display": "flex", "alignItems": "center", "padding": "6px 12px",
                    "background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "10px",
                    "whiteSpace": "nowrap"}))
 
