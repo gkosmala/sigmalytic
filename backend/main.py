@@ -148,6 +148,26 @@ MARKET_WIRE_SYMBOLS = {
     "USO": "Oil",
 }
 
+# ADDED (2026-08-21): currencies, extending the existing market-wire
+# ticker. Confirmed directly against Alpaca's own docs and official
+# SDK before writing this: they DO have real forex endpoints now (a
+# genuinely newer capability -- older forum threads were still asking
+# "when will forex be supported"), using slash-separated pair names
+# (e.g. "EUR/USD"), confirmed from Alpaca's own JS SDK usage example
+# rather than assumed.
+#
+# International interest rates deliberately NOT included here (a
+# separate, explicit decision) -- Alpaca has no such data at all (its
+# "fixed income" product is US Treasury trading, not a yield feed),
+# and international sovereign yields would need an entirely different
+# data relationship. Left for later.
+CURRENCY_PAIRS = {
+    "EUR/USD": "Euro",
+    "USD/JPY": "Yen",
+    "GBP/USD": "Pound",
+    "AUD/USD": "Australia$",
+}
+
 
 @app.get("/api/market-wire")
 def get_market_wire():
@@ -246,6 +266,83 @@ def _get_market_wire_uncached():
                 })
     except Exception as e:
         print(f"[MARKET_WIRE] Crypto bar fetch failed: {e}", flush=True)
+
+    # Currencies -- latest rate + a short historical window for a
+    # meaningful day-over-day change, same two-call pattern as crypto
+    # above (a single "latest" call has no prior-close to diff against).
+    #
+    # HONEST GAP: I could not verify Alpaca's exact JSON response field
+    # names for either forex endpoint without live credentials --
+    # confirmed the endpoints, params, and pair-naming convention
+    # (slash-separated, e.g. "EUR/USD") directly against Alpaca's own
+    # docs and SDK examples, but not the precise response body shape.
+    # Parses defensively (checks several plausible key names) rather
+    # than guessing one. Visit /api/market-wire directly in a browser
+    # once deployed to see the real result and confirm this parses
+    # correctly -- if a field name is wrong, this will show clearly as
+    # a missing price and print a diagnostic, not fail silently.
+    try:
+        pairs_param = ",".join(CURRENCY_PAIRS.keys())
+        r = requests.get(
+            f"{base_url}/v1beta1/forex/latest/rates",
+            headers=headers,
+            params={"currency_pairs": pairs_param},
+            timeout=10,
+        )
+        latest_rates = {}
+        if r.ok:
+            body = r.json() or {}
+            latest_rates = body.get("rates") or body.get("data") or body
+        else:
+            print(f"[MARKET_WIRE] Forex latest-rates HTTP {r.status_code}: {r.text[:200]}", flush=True)
+
+        fx_start = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r2 = requests.get(
+            f"{base_url}/v1beta1/forex/rates",
+            headers=headers,
+            params={"currency_pairs": pairs_param, "timeframe": "1Day", "start": fx_start, "limit": 5},
+            timeout=10,
+        )
+        historical_rates = {}
+        if r2.ok:
+            body2 = r2.json() or {}
+            historical_rates = body2.get("rates") or body2.get("data") or {}
+        else:
+            print(f"[MARKET_WIRE] Forex historical-rates HTTP {r2.status_code}: {r2.text[:200]}", flush=True)
+
+        for pair, label in CURRENCY_PAIRS.items():
+            pair_latest = latest_rates.get(pair) if isinstance(latest_rates, dict) else None
+            if not pair_latest:
+                print(f"[MARKET_WIRE] No latest rate found for {pair} -- check the real response shape "
+                      f"at /api/market-wire directly.", flush=True)
+                continue
+
+            price = None
+            for key in ("rate", "price", "close", "c", "ask_price", "bid_price"):
+                if isinstance(pair_latest, dict) and pair_latest.get(key) is not None:
+                    price = pair_latest[key]
+                    break
+
+            prev_close = None
+            pair_history = historical_rates.get(pair) if isinstance(historical_rates, dict) else None
+            if isinstance(pair_history, list) and len(pair_history) >= 2:
+                prev_bar = pair_history[-2]
+                for key in ("rate", "price", "close", "c"):
+                    if isinstance(prev_bar, dict) and prev_bar.get(key) is not None:
+                        prev_close = prev_bar[key]
+                        break
+
+            change_pct = None
+            if price is not None and prev_close:
+                change_pct = round((price - prev_close) / prev_close * 100, 2)
+
+            if price is not None:
+                items.append({
+                    "symbol": pair, "label": label, "price": price,
+                    "change_pct": change_pct, "asset_class": "currency",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Currency fetch failed: {e}", flush=True)
 
     return {"ok": True, "items": items}
 

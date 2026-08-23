@@ -1588,6 +1588,14 @@ def _render_market_wire(items):
 
         if item.get("asset_class") == "crypto":
             price_text = f"${price:,.0f}"
+        elif item.get("asset_class") == "currency":
+            # FIX (2026-08-21): currency rates aren't dollar amounts --
+            # showing "EUR/USD" as "$1.17" is actively misleading. Real
+            # currency quotes match the precision convention traders
+            # actually use: 4 decimals for most pairs, but yen pairs
+            # trade at a completely different scale (100+ per dollar)
+            # and are conventionally quoted to 2-3 decimals instead.
+            price_text = f"{price:,.2f}" if "JPY" in item.get("symbol", "") else f"{price:,.4f}"
         else:
             price_text = f"${price:,.2f}"
 
