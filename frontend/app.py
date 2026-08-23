@@ -1596,11 +1596,25 @@ def _render_market_wire(items):
             # trade at a completely different scale (100+ per dollar)
             # and are conventionally quoted to 2-3 decimals instead.
             price_text = f"{price:,.2f}" if "JPY" in item.get("symbol", "") else f"{price:,.4f}"
+        elif item.get("asset_class") == "yield":
+            # ADDED (2026-08-21): a yield is a percentage rate, not a
+            # dollar amount -- "$4.74" would be actively wrong. Matches
+            # the plain-number convention (e.g. "4.736") from the
+            # user's own real WSJ-style reference example, 3 decimals
+            # to match FRED's own published precision for DGS10.
+            price_text = f"{price:,.3f}"
         else:
             price_text = f"${price:,.2f}"
 
         if change_pct is None:
             change_text, change_color = "—", MUTED
+        elif item.get("asset_class") == "yield":
+            # Yield changes are conventionally shown as a plain signed
+            # point difference (e.g. "+0.005" or "-0.005"), not a
+            # percent -- again matching the user's own reference
+            # example ("0.000", no % sign).
+            sign = "+" if change_pct > 0 else ""
+            change_text, change_color = f"{sign}{change_pct:.3f}", (TEAL_DIM if change_pct >= 0 else RED_DIM)
         elif change_pct >= 0:
             change_text, change_color = f"+{change_pct:.2f}%", TEAL_DIM
         else:
