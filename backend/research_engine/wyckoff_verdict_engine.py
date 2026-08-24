@@ -209,6 +209,85 @@ class WyckoffVerdictEngine:
             score += 20
         return self._clamp(score)
 
+    def detect_breakout(self, df: pd.DataFrame, idx: int, resistance: Optional[float],
+                          lookback_days: int = 20) -> Optional[Dict[str, Any]]:
+        """
+        ADDED (2026-08-24): the successful-test mirror image of
+        Upthrust -- price sweeps above a well-defined resistance level
+        and HOLDS there, rather than reverting. Ported directly from
+        the same, already-validated logic in the standalone Weis scan
+        tool built this session (scanForCrossing). Standalone method,
+        deliberately not wired into evaluate_bars()/WyckoffVerdict --
+        built specifically for the new Russell 1000 scan, without
+        touching the existing dataclass/single-symbol panel already
+        live in production.
+        """
+        return self._scan_for_crossing(df, idx, resistance, is_breakout=True, lookback_days=lookback_days)
+
+    def detect_breakdown(self, df: pd.DataFrame, idx: int, support: Optional[float],
+                           lookback_days: int = 20) -> Optional[Dict[str, Any]]:
+        """The successful-test mirror image of Spring -- see detect_breakout()."""
+        return self._scan_for_crossing(df, idx, support, is_breakout=False, lookback_days=lookback_days)
+
+    def _scan_for_crossing(self, df: pd.DataFrame, idx: int, level: Optional[float],
+                             is_breakout: bool, lookback_days: int = 20) -> Optional[Dict[str, Any]]:
+        if level is None:
+            return None
+        row = df.iloc[idx]
+        is_beyond = (lambda r: r["close"] > level * 1.001) if is_breakout else (lambda r: r["close"] < level * 0.999)
+        if not is_beyond(row):
+            return None
+
+        crossing_idx = idx
+        for i in range(idx, max(-1, idx - lookback_days - 1), -1):
+            if is_beyond(df.iloc[i]):
+                crossing_idx = i
+            else:
+                break
+        held = all(is_beyond(df.iloc[i]) for i in range(crossing_idx, idx + 1))
+        days_back = idx - crossing_idx
+        pct_beyond = (row["close"] / level - 1) * 100 if is_breakout else (1 - row["close"] / level) * 100
+        return {
+            "level": float(level), "date": str(df.index[crossing_idx]) if hasattr(df, "index") else None,
+            "days_back": int(days_back), "held": bool(held), "pct_beyond": round(float(pct_beyond), 2),
+        }
+
+
+    def _get_prior_wave_volumes(self, df: pd.DataFrame, upto_idx: int,
+                                  trend_length: int = 2, max_waves: int = 5) -> Dict[str, Any]:
+        """
+        ADDED (2026-08-24): ported directly from the same, already-
+        validated logic built and tested in the standalone Weis scan
+        tool this session -- replaces a fixed bar-count volume moving
+        average (previously used by _score_spring/_score_upthrust)
+        with a comparison against the average of recent COMPLETED
+        waves. A "20-bar average" means a different real-world span
+        depending on the underlying bar interval (confirmed directly:
+        140 hourly bars is ~1 month, not ~4 days, a genuine arithmetic
+        error caught in an earlier proposed fix) -- waves, unlike bar
+        counts, scale naturally with real market structure regardless
+        of timeframe, matching Weis's own stated preference for
+        Renko/PnF over time bars for exactly this reason.
+        """
+        waves: list = []
+        current_dir = 0
+        up_count = dn_count = 0
+        running = 0.0
+        for i in range(1, upto_idx + 1):
+            is_higher = df["close"].iloc[i] > df["close"].iloc[i - 1]
+            is_lower = df["close"].iloc[i] < df["close"].iloc[i - 1]
+            up_count = up_count + 1 if is_higher else 0
+            dn_count = dn_count + 1 if is_lower else 0
+            reversal_to_up = up_count >= trend_length and current_dir != 1
+            reversal_to_down = dn_count >= trend_length and current_dir != -1
+            if reversal_to_up or reversal_to_down:
+                if current_dir != 0:
+                    waves.append(running)
+                current_dir = 1 if reversal_to_up else -1
+                running = 0.0
+            running += float(df["volume"].iloc[i])
+        return {"prior_waves": waves[-max_waves:], "current_wave_volume": running}
+
     def _score_spring(self, df: pd.DataFrame, idx: int, support: Optional[float]) -> float:
         """
         FIX (2026-08-23): confirmed via direct testing that the breach
@@ -225,6 +304,10 @@ class WyckoffVerdictEngine:
         checked. Also now requires a genuinely well-defined
         (multi-touch) support level -- see _find_well_defined_level()
         -- not just the single most recent swing low.
+
+        FIX (2026-08-24): volume confirmation now uses
+        _get_prior_wave_volumes() (wave-relative) instead of a fixed
+        20-bar moving average -- see that method's own docstring.
         """
         if support is None:
             return 0
@@ -234,8 +317,11 @@ class WyckoffVerdictEngine:
         score = 30  # breach confirmed -- baseline for meeting the core definition
         if row["close"] > support:
             score += 35
-        if row["volume"] >= 1.5 * row["vol_sma"]:
-            score += 20
+        wave_info = self._get_prior_wave_volumes(df, idx)
+        if wave_info["prior_waves"]:
+            avg_prior_wave = sum(wave_info["prior_waves"]) / len(wave_info["prior_waves"])
+            if wave_info["current_wave_volume"] >= 1.5 * avg_prior_wave:
+                score += 20
         if row["close_pct_of_range"] >= 0.50:
             score += 15
         return self._clamp(score)
@@ -307,8 +393,14 @@ class WyckoffVerdictEngine:
         score = 30  # sweep confirmed -- baseline for meeting the core definition
         if row["close"] < resistance:
             score += 35
-        if row["volume"] >= 1.5 * row["vol_sma"]:
-            score += 20
+        # FIX (2026-08-24): volume confirmation now uses
+        # _get_prior_wave_volumes() (wave-relative), same fix and
+        # same reasoning as _score_spring() above.
+        wave_info = self._get_prior_wave_volumes(df, idx)
+        if wave_info["prior_waves"]:
+            avg_prior_wave = sum(wave_info["prior_waves"]) / len(wave_info["prior_waves"])
+            if wave_info["current_wave_volume"] >= 1.5 * avg_prior_wave:
+                score += 20
         if row["close_pct_of_range"] <= 0.50:
             score += 15
 

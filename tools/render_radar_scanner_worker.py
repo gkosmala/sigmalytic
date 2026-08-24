@@ -95,8 +95,47 @@ def main() -> int:
         print(f"[RADAR_WORKER] Could not import report-job processor: {exc}", flush=True)
         process_one_pending_report_job = None
 
+    # ADDED (2026-08-24): Weis Radar -- daily Russell 1000 scan for
+    # Spring/Upthrust/Breakout/Breakdown patterns. Deliberately reuses
+    # this same main loop rather than adding a new APScheduler job
+    # inside start_radar_scheduler() -- that function is already
+    # complex and already working; a simple timestamp check here
+    # carries far less risk of destabilizing it. Checked once per
+    # loop iteration (every 15s), but only actually runs the real scan
+    # once every 24 hours.
+    #
+    # HONEST TRADEOFF: run_weis_radar_scan() runs inline in this same
+    # loop, so a pending report-generation request could wait up to
+    # however long the scan takes (likely several minutes for 1,023
+    # symbols) before being picked up on this same iteration. Accepted
+    # deliberately for now -- report generation is an occasional admin
+    # action, not something users wait on live, and this avoids the
+    # real concurrency complexity of a second background thread on
+    # top of everything already running here.
+    try:
+        from backend.weis_radar_scan import run_weis_radar_scan
+        from backend.radar_service import _redis_client
+    except Exception as exc:
+        print(f"[RADAR_WORKER] Could not import Weis Radar scan: {exc}", flush=True)
+        run_weis_radar_scan = None
+
+    WEIS_RADAR_LAST_RUN_KEY = "weis_radar:last_run_at"
+    WEIS_RADAR_INTERVAL_SECONDS = 24 * 60 * 60
+
+    def _weis_radar_due():
+        if run_weis_radar_scan is None or not _redis_client:
+            return False
+        try:
+            last_run = _redis_client.get(WEIS_RADAR_LAST_RUN_KEY)
+            if last_run is None:
+                return True
+            return (time.time() - float(last_run)) >= WEIS_RADAR_INTERVAL_SECONDS
+        except Exception:
+            return False
+
     print("[RADAR_WORKER] Running. Sleeping to keep the scheduler alive, "
-          "polling for pending report-generation requests every 15s.", flush=True)
+          "polling for pending report-generation requests every 15s, "
+          "checking for the daily Weis Radar scan.", flush=True)
     while True:
         if process_one_pending_report_job is not None:
             try:
@@ -105,6 +144,18 @@ def main() -> int:
                     print("[RADAR_WORKER] Processed one queued report-generation request.", flush=True)
             except Exception as exc:
                 print(f"[RADAR_WORKER] Error while checking for report jobs: {exc}", flush=True)
+
+        if _weis_radar_due():
+            print("[RADAR_WORKER] Starting daily Weis Radar scan...", flush=True)
+            try:
+                result = run_weis_radar_scan()
+                _redis_client.set(WEIS_RADAR_LAST_RUN_KEY, str(time.time()))
+                print(f"[RADAR_WORKER] Weis Radar scan complete: "
+                      f"{result.get('hits')} hits out of {result.get('scanned')} scanned, "
+                      f"{result.get('errors')} errors.", flush=True)
+            except Exception as exc:
+                print(f"[RADAR_WORKER] Weis Radar scan failed: {exc}", flush=True)
+
         time.sleep(15)
 
 

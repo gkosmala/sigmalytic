@@ -1864,6 +1864,19 @@ def get_morning_report():
         return {"ok": False, "error": str(e)[:300]}
 
 
+@app.get("/api/weis-radar/results")
+def weis_radar_results():
+    """
+    Read-only -- serves whatever the worker's last daily scan
+    produced (see backend/weis_radar_scan.py and the worker's own
+    24-hour timestamp check). This endpoint never runs the scan
+    itself -- same separation as reports/generate-report vs. the
+    worker doing the actual heavy work.
+    """
+    from backend.weis_radar_scan import get_weis_radar_results
+    return get_weis_radar_results()
+
+
 @app.get("/api/heatmap/data")
 def heatmap_data(timeframe: str = "daily"):
     """
