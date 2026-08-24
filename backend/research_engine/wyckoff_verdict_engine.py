@@ -121,6 +121,59 @@ class WyckoffVerdictEngine:
             return {"support": None, "resistance": None}
         return {"support": float(recent_lows[-1]), "resistance": float(recent_highs[-1])}
 
+    def _find_well_defined_level(self, df: pd.DataFrame, idx: int, is_support: bool,
+                                   lookback: int = 150, proximity_pct: float = 0.0015,
+                                   min_touches: int = 2) -> Optional[float]:
+        """
+        FIX (2026-08-23): a genuine, multi-touch support/resistance
+        level -- distinct from _structure_bounds() above, which is
+        just the single most recent swing point and remains unchanged
+        for everything else in this engine that uses it (absorption,
+        climax, meaningful-resistance scoring, etc.). This stricter
+        definition is specifically for Spring/Upthrust, matching
+        Weis's own words for exactly that context: "a well-defined
+        support line" -- confirmed directly against the actual text
+        (Trades About to Happen, "Springs" chapter), which describes
+        markets that "test and retest" a level, large operators
+        gauging "how much demand exists around well-defined support
+        levels." A single, never-retested swing point is not that.
+
+        Reuses this engine's own existing is_high/is_low swing
+        detection (already computed in _prepare(), same swing_window
+        used everywhere else in this engine) rather than introducing a
+        second, differently-parameterized swing definition.
+
+        Requires at least min_touches genuine swing points within
+        proximity_pct of each other; returns their average as the
+        level, or None if no such cluster exists -- callers (Spring/
+        Upthrust scoring) must treat None as "no well-defined level to
+        evaluate against," not fall back to a weaker single-point
+        definition, since that fallback is the exact behavior this
+        fix exists to remove.
+        """
+        col = "is_low" if is_support else "is_high"
+        price_col = "low" if is_support else "high"
+        hist_start = max(0, idx - lookback)
+        hist_end = max(hist_start, idx - 5)  # exclude the most recent 5 bars -- still "ripening"
+        window = df.iloc[hist_start:hist_end]
+        swings = window[window[col]][price_col].values
+        if len(swings) < min_touches:
+            return None
+
+        best_zone = None
+        best_distance = None
+        current_price = float(df["close"].iloc[idx])
+        for candidate in swings:
+            upper = candidate * (1 + proximity_pct)
+            lower = candidate * (1 - proximity_pct)
+            matches = swings[(swings >= lower) & (swings <= upper)]
+            if len(matches) >= min_touches:
+                zone_avg = float(np.mean(matches))
+                distance = abs(zone_avg - current_price)
+                if best_distance is None or distance < best_distance:
+                    best_zone, best_distance = zone_avg, distance
+        return best_zone
+
     def _score_stopping_climax(self, df: pd.DataFrame, idx: int, support: float) -> float:
         row = df.iloc[idx]
         score = 0
@@ -156,11 +209,29 @@ class WyckoffVerdictEngine:
             score += 20
         return self._clamp(score)
 
-    def _score_spring(self, df: pd.DataFrame, idx: int, support: float) -> float:
+    def _score_spring(self, df: pd.DataFrame, idx: int, support: Optional[float]) -> float:
+        """
+        FIX (2026-08-23): confirmed via direct testing that the breach
+        condition (row["low"] < 0.995*support) was previously just one
+        of four additive factors -- a bar that never dipped below
+        support at all could still score 70 (the confirmation
+        threshold) purely from a strong close, elevated volume, and
+        close-of-range, with zero actual shakeout. That's a real
+        mismatch with Weis's own definition: "a spring is a washout
+        (penetration) of a trading range or support level" -- the
+        breach isn't one factor among several, it's the premise the
+        whole pattern rests on. Now a hard gate: no genuine breach,
+        score is 0, full stop, before any other factor is even
+        checked. Also now requires a genuinely well-defined
+        (multi-touch) support level -- see _find_well_defined_level()
+        -- not just the single most recent swing low.
+        """
+        if support is None:
+            return 0
         row = df.iloc[idx]
-        score = 0
-        if row["low"] < 0.995 * support:
-            score += 30
+        if not (row["low"] < 0.995 * support):
+            return 0
+        score = 30  # breach confirmed -- baseline for meeting the core definition
         if row["close"] > support:
             score += 35
         if row["volume"] >= 1.5 * row["vol_sma"]:
@@ -195,7 +266,7 @@ class WyckoffVerdictEngine:
             return "bullish"
         return "bearish"
 
-    def _score_upthrust(self, df: pd.DataFrame, idx: int, resistance: float, trend_context: str) -> float:
+    def _score_upthrust(self, df: pd.DataFrame, idx: int, resistance: Optional[float], trend_context: str) -> float:
         """
         Genuine Upthrust detection -- this engine previously had none
         at all. Mirrors _score_spring()'s structure (sweep, reclaim,
@@ -212,16 +283,28 @@ class WyckoffVerdictEngine:
           while Upthrusts in a downtrend (testing a corrective bounce)
           have "a higher likelihood of working" -- modeled as a
           genuine penalty/bonus, not a cosmetic label.
-        """
-        row = df.iloc[idx]
-        score = 0
 
+        FIX (2026-08-23): confirmed via direct testing -- the exact
+        mirror image of the Spring bug fixed the same day. A bar that
+        never once traded above resistance scored 80.5 and would have
+        been labeled a confirmed Upthrust, purely from a weak close,
+        elevated volume, and closing near its own low -- the one
+        factor that actually defines an Upthrust (a genuine sweep
+        above resistance) was worth only 30 of 100 points, not a
+        precondition. Now a hard gate, same as Spring, plus requiring
+        a genuinely well-defined (multi-touch) resistance level.
+        """
+        if resistance is None:
+            return 0
+        row = df.iloc[idx]
         sweep_pct = (row["high"] / resistance - 1.0) if resistance else 0.0
         # The sweep must be genuine (above resistance) but not so
         # large it's a real breakout rather than a trap -- the book's
-        # own explicit 10-15% ceiling.
-        if 0.0 < sweep_pct <= 0.15:
-            score += 30
+        # own explicit 10-15% ceiling. Hard gate: no genuine sweep,
+        # score is 0, before any other factor is even checked.
+        if not (0.0 < sweep_pct <= 0.15):
+            return 0
+        score = 30  # sweep confirmed -- baseline for meeting the core definition
         if row["close"] < resistance:
             score += 35
         if row["volume"] >= 1.5 * row["vol_sma"]:
@@ -434,7 +517,15 @@ class WyckoffVerdictEngine:
 
         stopping = self._score_stopping_climax(df, idx, support)
         absorption = self._score_supply_absorption(df, idx, support, resistance)
-        spring = self._score_spring(df, idx, support)
+        # FIX (2026-08-23): Spring/Upthrust now evaluated against a
+        # genuinely well-defined (multi-touch) level, not the general
+        # single-most-recent-swing "support"/"resistance" used above
+        # for absorption/climax/etc. -- see _find_well_defined_level()
+        # for why this distinction matters specifically here, per
+        # Weis's own words about "well-defined support."
+        well_defined_support = self._find_well_defined_level(df, idx, is_support=True)
+        well_defined_resistance = self._find_well_defined_level(df, idx, is_support=False)
+        spring = self._score_spring(df, idx, well_defined_support)
         sos = self._score_sign_of_strength(df, idx, resistance)
         resistance_result = self._score_meaningful_resistance(current_close, support, resistance)
         resolution_result = self._score_behavioral_resolution(df, idx, resistance)
@@ -445,7 +536,7 @@ class WyckoffVerdictEngine:
         # are all bullish-framed, so a strong Upthrust (a distribution
         # signal) must not blend into and inflate it.
         trend_context = self._detect_trend_context(df, idx)
-        upthrust = self._score_upthrust(df, idx, resistance, trend_context)
+        upthrust = self._score_upthrust(df, idx, well_defined_resistance, trend_context)
 
         # FIX (2026-08-13): four more genuine Wyckoff/Weis signals,
         # kept just as separate from wyckoff_score as upthrust already
