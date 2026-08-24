@@ -3915,6 +3915,82 @@ def build_stub_tab(title, description):
 
 
 
+def build_weis_radar_tab():
+    """
+    ADDED (2026-08-24): Weis Radar -- shows the results of the daily
+    Russell 1000 Spring/Upthrust/Breakout/Breakdown scan (see
+    backend/weis_radar_scan.py, run once daily by the isolated worker
+    process -- see that module's own docstring for the full
+    architecture). This tab only ever reads the already-computed
+    cached results; it never triggers the scan itself, same
+    read/compute separation already used for the Reports tab.
+    """
+    import requests as _rq
+
+    try:
+        r = _rq.get(f"{BACKEND_HTTP}/api/weis-radar/results", timeout=15)
+        data = r.json() if r.ok else {}
+    except Exception as e:
+        data = {"ok": False, "error": str(e)}
+
+    if not data.get("ok"):
+        return html.Div([
+            html.H3("Weis Radar", style={"color": WHITE}),
+            html.Div(f"Could not load scan results: {data.get('error', 'unknown error')}",
+                      style={"color": RED_DIM, "marginTop": "12px"}),
+        ], style={"padding": "20px"})
+
+    results = data.get("results") or []
+    generated_at = data.get("generated_at")
+
+    if not results:
+        return html.Div([
+            html.H3("Weis Radar", style={"color": WHITE}),
+            html.Div(data.get("note") or "No patterns found in the most recent scan.",
+                      style={"color": MUTED, "marginTop": "12px"}),
+        ], style={"padding": "20px"})
+
+    PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c"}
+
+    def _format_hit(h):
+        t = h.get("type")
+        color = PATTERN_COLORS.get(t, MUTED)
+        if t in ("SPRING", "UPTHRUST"):
+            detail = f"score {h.get('score')}, level ${h.get('level')}"
+        else:
+            held_txt = "HOLDING" if h.get("held") else "not holding"
+            detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
+        return html.Span([html.Span(t, style={"color": color, "fontWeight": "800"}), f" ({detail})"])
+
+    rows = []
+    for r_ in results:
+        hit_spans = []
+        for h in r_.get("hits", []):
+            hit_spans.append(_format_hit(h))
+            hit_spans.append(html.Br())
+        rows.append(html.Tr([
+            html.Td(r_.get("symbol"), style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
+            html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
+            html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
+        ], style={"borderBottom": f"1px solid {BORDER}"}))
+
+    return html.Div([
+        html.H3("Weis Radar", style={"color": WHITE, "marginBottom": "4px"}),
+        html.Div(f"Daily Russell 1000 scan for Spring, Upthrust, Breakout, and Breakdown patterns. "
+                  f"{data.get('scanned', 0)} symbols scanned, {len(results)} with a hit."
+                  + (f" Last run: {generated_at}" if generated_at else ""),
+                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
+        html.Table([
+            html.Thead(html.Tr([
+                html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+                html.Th("Price", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+                html.Th("Patterns Found", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+            ])),
+            html.Tbody(rows),
+        ], style={"width": "100%", "borderCollapse": "collapse"}),
+    ], style={"padding": "20px"})
+
+
 def build_radar_tab(session=None):
     """Opportunity Dashboard — behavioral transition radar."""
     import requests as _rq
@@ -8106,6 +8182,7 @@ _init_candles = []
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
+    ("weis_radar",  "Weis Radar"),
     ("weis",        "Weis Analysis"),
     ("heatmap",     "Heat Map"),
     ("radar",       "Radar Screen"),
@@ -8474,6 +8551,7 @@ def load_symbol(_, ticker, live, tf, session):
 @app.callback(
     Output("s-tab","data"),
     Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-weis_radar","n_clicks"),
     Input("tab-weis","n_clicks"),
     Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
@@ -9036,6 +9114,14 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
             main = build_heatmap_tab()
         else:
             return no_update, no_update, no_update, no_update
+    elif tab == "weis_radar":
+        # Simpler than most tabs here -- no live ticker/candle
+        # dependency at all, since this just reads the worker's
+        # already-computed daily scan results from Redis. Safe to
+        # rebuild on every tick the same way build_heatmap_tab() is
+        # NOT (that one resets user state on rebuild); this tab has no
+        # per-user state to preserve.
+        main = build_weis_radar_tab()
     elif tab=="campaign":
         if build_campaign_tab is None:
             main = card([
