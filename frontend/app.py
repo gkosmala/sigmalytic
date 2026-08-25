@@ -3967,13 +3967,21 @@ def build_weis_radar_tab(session=None):
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
 
-    PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c"}
+    PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
+                        "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
 
     def _format_hit(h):
         t = h.get("type")
         color = PATTERN_COLORS.get(t, MUTED)
         if t in ("SPRING", "UPTHRUST"):
             detail = f"score {h.get('score')}, level ${h.get('level')}"
+        elif t in ("SPRING_BUILDING", "UPTHRUST_BUILDING"):
+            # ADDED (2026-08-25): building hits only ever carry "level" --
+            # no score, date, or held state, since the bar they're
+            # based on hasn't finished forming yet. Using the same
+            # BREAKOUT/BREAKDOWN branch here would have tried to read
+            # fields that don't exist on this hit type.
+            detail = f"level ${h.get('level')} -- still forming, market open"
         else:
             held_txt = "HOLDING" if h.get("held") else "not holding"
             detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
@@ -7051,12 +7059,37 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
     symbol = chart_data.get("symbol", "")
     dates = [b["date"] for b in bars]
 
+    # ADDED (2026-08-25): a Spring/Upthrust genuinely "building" on the
+    # still-forming current bar gets its own separate, yellow-colored
+    # trace layered on top of the main series -- go.Candlestick doesn't
+    # support per-bar color overrides directly, so the only clean way
+    # to highlight just the last bar differently is a second trace
+    # covering only that one point. Pops against the dark background,
+    # as requested, and makes clear this bar is still in progress
+    # rather than a finished, confirmed signal.
+    building_types = {"SPRING_BUILDING", "UPTHRUST_BUILDING"}
+    is_building = any(h.get("type") in building_types for h in hits)
+
     fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=dates, open=[b["open"] for b in bars], high=[b["high"] for b in bars],
-        low=[b["low"] for b in bars], close=[b["close"] for b in bars],
-        name="Price", yaxis="y1",
-    ))
+    if is_building and bars:
+        fig.add_trace(go.Candlestick(
+            x=dates[:-1], open=[b["open"] for b in bars[:-1]], high=[b["high"] for b in bars[:-1]],
+            low=[b["low"] for b in bars[:-1]], close=[b["close"] for b in bars[:-1]],
+            name="Price", yaxis="y1",
+        ))
+        fig.add_trace(go.Candlestick(
+            x=[dates[-1]], open=[bars[-1]["open"]], high=[bars[-1]["high"]],
+            low=[bars[-1]["low"]], close=[bars[-1]["close"]],
+            name="Building (in progress)", yaxis="y1",
+            increasing_line_color="#facc15", increasing_fillcolor="#facc15",
+            decreasing_line_color="#facc15", decreasing_fillcolor="#facc15",
+        ))
+    else:
+        fig.add_trace(go.Candlestick(
+            x=dates, open=[b["open"] for b in bars], high=[b["high"] for b in bars],
+            low=[b["low"] for b in bars], close=[b["close"] for b in bars],
+            name="Price", yaxis="y1",
+        ))
 
     up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
     if volume_mode == "cumulative":
@@ -7072,7 +7105,8 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
         x=dates, y=vol_values, name=vol_name, marker_color=vol_colors, yaxis="y2",
     ))
 
-    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c"}
+    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
+                       "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
     last_date = dates[-1] if dates else None
     for h in hits:
         color = pattern_colors.get(h.get("type"), "#94a3b8")

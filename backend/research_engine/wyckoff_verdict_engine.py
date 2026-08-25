@@ -209,6 +209,38 @@ class WyckoffVerdictEngine:
             score += 20
         return self._clamp(score)
 
+    def check_building_pattern(self, df: pd.DataFrame, idx: int, support: Optional[float],
+                                 resistance: Optional[float]) -> Optional[str]:
+        """
+        ADDED (2026-08-25): honest "in progress" state for when the
+        most recent bar is still forming (market currently open) --
+        confirmed as a real, concrete problem via IRM: a Spring found
+        by an earlier scan had genuinely vanished by the time the
+        chart was checked minutes later, because "today's bar" is a
+        moving target throughout the trading session, not a finished
+        value. Rather than silently hide this (skip today's bar
+        entirely) or present a still-forming shape as a confirmed
+        signal, this reports the one criterion that's already
+        knowable even on an incomplete bar -- the genuine breach/sweep
+        itself -- without requiring the full reclaim/volume/close-
+        position combination that can't be known for certain until the
+        bar actually finishes.
+
+        Deliberately checks breach/sweep ONLY, not the full scoring
+        formula -- a breach that's already happened is a real, present
+        fact regardless of how the rest of the day plays out; whether
+        it reclaims, on what volume, and where it closes are all still
+        genuinely unknown until the close.
+        """
+        row = df.iloc[idx]
+        if support is not None and row["low"] < 0.995 * support:
+            return "SPRING_BUILDING"
+        if resistance is not None:
+            sweep_pct = (row["high"] / resistance - 1.0) if resistance else 0.0
+            if 0.0 < sweep_pct <= 0.15:
+                return "UPTHRUST_BUILDING"
+        return None
+
     def detect_breakout(self, df: pd.DataFrame, idx: int, resistance: Optional[float],
                           lookback_days: int = 20) -> Optional[Dict[str, Any]]:
         """

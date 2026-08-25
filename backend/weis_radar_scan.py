@@ -110,6 +110,13 @@ def scan_symbol_for_weis_patterns(engine, df: pd.DataFrame) -> list:
     the exact logic already validated in the standalone Weis scan
     tool this session -- same thresholds (spring/upthrust >= 70),
     same well-defined-level requirement.
+
+    ADDED (2026-08-25): also checks for a "building" Spring/Upthrust
+    -- see WyckoffVerdictEngine.check_building_pattern() for the full
+    reasoning -- but only during actual market hours, when the most
+    recent bar is genuinely still forming. Reuses the same
+    _is_market_hours() already established in backend/
+    scoreboard_service.py for consistency.
     """
     if len(df) < 60:
         return []
@@ -133,6 +140,19 @@ def scan_symbol_for_weis_patterns(engine, df: pd.DataFrame) -> list:
         hits.append({"type": "BREAKOUT", **breakout})
     if breakdown:
         hits.append({"type": "BREAKDOWN", **breakdown})
+
+    if spring < 70 and upthrust < 70:
+        try:
+            from backend.scoreboard_service import _is_market_hours
+            market_open_now = _is_market_hours()
+        except Exception:
+            market_open_now = False
+        if market_open_now:
+            building = engine.check_building_pattern(df, idx, support, resistance)
+            if building == "SPRING_BUILDING":
+                hits.append({"type": "SPRING_BUILDING", "level": round(float(support), 2)})
+            elif building == "UPTHRUST_BUILDING":
+                hits.append({"type": "UPTHRUST_BUILDING", "level": round(float(resistance), 2)})
 
     return [{"price": round(price, 2), **h} for h in hits] if hits else []
 
