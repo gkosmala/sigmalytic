@@ -27,10 +27,21 @@ WEIS_RADAR_JOB_TTL_SECONDS = 3600
 
 
 def _bars_to_dataframe(raw_bars: list) -> pd.DataFrame:
-    """Same conversion already used by the live single-symbol
-    wyckoff-verdict endpoint -- Alpaca's own o/h/l/c/v field names."""
+    """
+    Same conversion already used by the live single-symbol
+    wyckoff-verdict endpoint -- Alpaca's own o/h/l/c/v field names.
+
+    FIX (2026-08-24): confirmed a real bug -- previously dropped
+    Alpaca's own timestamp field ("t") entirely, so the resulting
+    DataFrame had only a default 0,1,2... integer index. _scan_for_
+    crossing()'s "date" field then read that raw row number (e.g.
+    "236") instead of an actual date -- exactly the "crossed 236"
+    output reported live. Now keeps the real date, sliced to just the
+    calendar date portion of Alpaca's ISO timestamp.
+    """
     return pd.DataFrame([
-        {"open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"]}
+        {"open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"],
+         "date": str(b.get("t", ""))[:10]}
         for b in raw_bars
     ])
 

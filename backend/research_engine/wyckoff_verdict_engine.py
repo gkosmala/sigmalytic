@@ -247,8 +247,17 @@ class WyckoffVerdictEngine:
         held = all(is_beyond(df.iloc[i]) for i in range(crossing_idx, idx + 1))
         days_back = idx - crossing_idx
         pct_beyond = (row["close"] / level - 1) * 100 if is_breakout else (1 - row["close"] / level) * 100
+        # FIX (2026-08-24): confirmed a real bug -- df.index[crossing_idx]
+        # returned the DataFrame's raw integer row position (e.g. "236"),
+        # not an actual date, since no date-based index was ever set.
+        # Uses the real "date" column now (added to the DataFrame by
+        # the caller), falling back to the row number only if that
+        # column genuinely isn't present. Also rounds "level" -- was
+        # returning raw floating-point values with visible precision
+        # artifacts (e.g. "$18.314999999999998").
+        crossing_date = str(df["date"].iloc[crossing_idx]) if "date" in df.columns else str(crossing_idx)
         return {
-            "level": float(level), "date": str(df.index[crossing_idx]) if hasattr(df, "index") else None,
+            "level": round(float(level), 2), "date": crossing_date,
             "days_back": int(days_back), "held": bool(held), "pct_beyond": round(float(pct_beyond), 2),
         }
 
