@@ -4005,6 +4005,21 @@ def build_weis_radar_tab(session=None):
                   + (f" Last run: {generated_at}" if generated_at else "")
                   + " Click any row to see its chart.",
                   style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
+        # ADDED (2026-08-25): volume-mode toggle + a Store remembering
+        # which symbol is currently charted, so switching the toggle
+        # can redraw the SAME symbol's chart without requiring another
+        # row click.
+        dcc.Store(id="s-weis-radar-current-symbol", data=None),
+        html.Div(
+            dcc.RadioItems(
+                id="weis-radar-volume-mode",
+                options=[{"label": " Standard Volume", "value": "standard"},
+                          {"label": " Cumulative (Wave) Volume", "value": "cumulative"}],
+                value="standard", inline=True,
+                style={"color": MUTED, "fontSize": "12px", "marginBottom": "6px"},
+                labelStyle={"marginRight": "16px"},
+            ),
+        ),
         dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
         html.Table([
             html.Thead(html.Tr([
@@ -7004,7 +7019,7 @@ def poll_weis_radar_status(n_intervals, session):
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
 
 
-def _build_weis_radar_chart_figure(chart_data):
+def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
     """
     ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
     for the symbol clicked -- a genuine upgrade over the standalone
@@ -7012,6 +7027,15 @@ def _build_weis_radar_chart_figure(chart_data):
     this session), using Plotly's own native, well-tested candlestick
     support instead. Same annotation concept as before: a horizontal
     line at each hit's level, a marker at its actual event date.
+
+    volume_mode: "standard" colors each bar by that day's own
+    open/close, matching every other volume chart in this app.
+    "cumulative" colors by the WAVE's direction instead (wave_dir from
+    the backend's get_cumulative_wave_volume_series()) -- confirmed
+    earlier this session that coloring cumulative volume by a bar's
+    own candle instead of its wave produced a real, reported bug: a
+    normal red daily candle inside a genuine green up-wave rendered
+    red, contradicting the price action above it.
     """
     bars = chart_data.get("bars", [])
     hits = chart_data.get("hits", [])
@@ -7024,9 +7048,19 @@ def _build_weis_radar_chart_figure(chart_data):
         low=[b["low"] for b in bars], close=[b["close"] for b in bars],
         name="Price", yaxis="y1",
     ))
+
+    up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
+    if volume_mode == "cumulative":
+        vol_values = [b.get("cumulative_volume", b["volume"]) for b in bars]
+        vol_colors = [up_color if b.get("wave_dir", 0) == 1 else down_color for b in bars]
+        vol_name = "Cumulative (Wave) Volume"
+    else:
+        vol_values = [b["volume"] for b in bars]
+        vol_colors = [up_color if b["close"] >= b["open"] else down_color for b in bars]
+        vol_name = "Volume"
+
     fig.add_trace(go.Bar(
-        x=dates, y=[b["volume"] for b in bars], name="Volume",
-        marker_color="rgba(148,163,184,0.4)", yaxis="y2",
+        x=dates, y=vol_values, name=vol_name, marker_color=vol_colors, yaxis="y2",
     ))
 
     pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c"}
@@ -7057,10 +7091,13 @@ def _build_weis_radar_chart_figure(chart_data):
 @app.callback(
     Output("weis-radar-chart", "figure"),
     Output("weis-radar-chart", "style"),
+    Output("s-weis-radar-current-symbol", "data"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
+    Input("weis-radar-volume-mode", "value"),
+    State("s-weis-radar-current-symbol", "data"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(n_clicks_list):
+def show_weis_radar_chart(n_clicks_list, volume_mode, current_symbol):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -7068,13 +7105,21 @@ def show_weis_radar_chart(n_clicks_list):
     callback_context.triggered_id gives the exact {"type":...,
     "symbol":...} dict of whichever row was actually clicked, out of
     however many rows exist.
+
+    ADDED (2026-08-25): also fires when the volume-mode toggle
+    changes, using the STORED current symbol (s-weis-radar-current-
+    symbol) rather than requiring another row click just to switch
+    between standard and cumulative volume on the same chart.
     """
     triggered = callback_context.triggered_id
-    if not triggered or not isinstance(triggered, dict):
-        return no_update, no_update
-    symbol = triggered.get("symbol")
+    if isinstance(triggered, dict):
+        symbol = triggered.get("symbol")
+    elif triggered == "weis-radar-volume-mode":
+        symbol = current_symbol
+    else:
+        symbol = None
     if not symbol:
-        return no_update, no_update
+        return no_update, no_update, no_update
 
     try:
         r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}", timeout=20)
@@ -7086,10 +7131,10 @@ def show_weis_radar_chart(n_clicks_list):
         fig = go.Figure()
         fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
-        return fig, {"display": "block"}
+        return fig, {"display": "block"}, symbol
 
-    fig = _build_weis_radar_chart_figure(data)
-    return fig, {"display": "block"}
+    fig = _build_weis_radar_chart_figure(data, volume_mode=volume_mode or "standard")
+    return fig, {"display": "block"}, symbol
 
 
 @app.callback(

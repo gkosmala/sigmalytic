@@ -262,6 +262,47 @@ class WyckoffVerdictEngine:
         }
 
 
+    def get_cumulative_wave_volume_series(self, df: pd.DataFrame, trend_length: int = 2) -> Dict[str, list]:
+        """
+        ADDED (2026-08-25): full per-bar cumulative wave volume series,
+        for charting -- distinct from _get_prior_wave_volumes() above,
+        which only returns completed prior waves plus the current
+        wave's running total (built for Spring/Upthrust scoring, not
+        for drawing every bar). Same confirmed-reversal logic (requires
+        trend_length consecutive bars before confirming a reversal,
+        not a single-bar wiggle) already validated against a real
+        reference implementation earlier this session.
+
+        Also returns wave_dir per bar (1 for up-wave, -1 for down-wave,
+        0 for the undefined first bar) -- needed so a chart can color
+        each bar by the WAVE's direction, not that single day's own
+        open/close. Confirmed earlier this session that coloring by a
+        bar's own candle instead of its wave produced a real, reported
+        bug: a normal red daily candle inside a genuine, ongoing green
+        up-wave rendered red, contradicting the price action above it.
+        """
+        n = len(df)
+        cum_vol = [0.0] * n
+        wave_dir = [0] * n
+        current_dir = 0
+        up_count = dn_count = 0
+        running = 0.0
+        for i in range(1, n):
+            is_higher = df["close"].iloc[i] > df["close"].iloc[i - 1]
+            is_lower = df["close"].iloc[i] < df["close"].iloc[i - 1]
+            up_count = up_count + 1 if is_higher else 0
+            dn_count = dn_count + 1 if is_lower else 0
+            if up_count >= trend_length and current_dir != 1:
+                current_dir = 1
+                running = 0.0
+            elif dn_count >= trend_length and current_dir != -1:
+                current_dir = -1
+                running = 0.0
+            running += float(df["volume"].iloc[i])
+            cum_vol[i] = running
+            wave_dir[i] = current_dir
+        return {"cumulative_volume": cum_vol, "wave_dir": wave_dir}
+
     def _get_prior_wave_volumes(self, df: pd.DataFrame, upto_idx: int,
                                   trend_length: int = 2, max_waves: int = 5) -> Dict[str, Any]:
         """

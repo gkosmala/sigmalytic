@@ -1904,11 +1904,21 @@ def weis_radar_chart_data(symbol: str):
         df = _bars_to_dataframe(raw_bars)
         engine = WyckoffVerdictEngine()
         hits = scan_symbol_for_weis_patterns(engine, df)
+        # FIX: build bars_out from the SAME prepared DataFrame the wave
+        # series is computed from, not a separate copy -- _prepare()
+        # calls dropna() internally, which could remove rows with any
+        # missing OHLCV data. Using two separately-derived DataFrames
+        # risked a real positional misalignment between bars_out[i]
+        # and wave_series[...][i] if any row had ever been dropped.
+        prepared_df = engine._prepare(df)
+        wave_series = engine.get_cumulative_wave_volume_series(prepared_df)
 
         bars_out = [
             {"date": row["date"], "open": row["open"], "high": row["high"],
-             "low": row["low"], "close": row["close"], "volume": row["volume"]}
-            for _, row in df.iterrows()
+             "low": row["low"], "close": row["close"], "volume": row["volume"],
+             "cumulative_volume": wave_series["cumulative_volume"][i],
+             "wave_dir": wave_series["wave_dir"][i]}
+            for i, (_, row) in enumerate(prepared_df.iterrows())
         ]
         return {"ok": True, "symbol": sym, "bars": bars_out, "hits": hits}
     except Exception as e:
