@@ -3915,6 +3915,89 @@ def build_stub_tab(title, description):
 
 
 
+PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
+                    "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
+
+
+def _format_weis_radar_hit(h):
+    t = h.get("type")
+    color = PATTERN_COLORS.get(t, MUTED)
+    if t in ("SPRING", "UPTHRUST"):
+        detail = f"score {h.get('score')}, level ${h.get('level')}"
+    elif t in ("SPRING_BUILDING", "UPTHRUST_BUILDING"):
+        detail = f"level ${h.get('level')} -- still forming, market open"
+    else:
+        held_txt = "HOLDING" if h.get("held") else "not holding"
+        detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
+    return html.Span([html.Span(t, style={"color": color, "fontWeight": "800"}), f" ({detail})"])
+
+
+def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
+    """
+    ADDED (2026-08-25): extracted from build_weis_radar_tab() so the
+    same rendering logic can be reused both on initial tab load and
+    from the filter/sort callback, without a second API round-trip --
+    the full, unfiltered results are kept client-side in
+    s-weis-radar-raw-results and re-rendered locally on every
+    filter/sort change.
+
+    Filtering by a specific pattern type does two things: only
+    symbols with at least one matching hit are shown, AND only that
+    symbol's matching hits are displayed (not its unrelated hits) --
+    "filter by breakdowns" should show breakdowns, not every pattern
+    that symbol happens to also have.
+
+    Sorting by date uses each hit's own days_back (0 = today) rather
+    than parsing date strings -- SPRING/UPTHRUST/BUILDING hits have no
+    "date" field at all (always today, by this scan's own design), so
+    they naturally sort as "newest" using this same field, no special
+    case needed.
+    """
+    if filter_type and filter_type != "all":
+        filtered = []
+        for r_ in results:
+            matching_hits = [h for h in r_.get("hits", []) if h.get("type") == filter_type]
+            if matching_hits:
+                filtered.append({**r_, "hits": matching_hits})
+    else:
+        filtered = list(results)
+
+    if sort_by == "newest":
+        filtered.sort(key=lambda r_: min((h.get("days_back", 0) for h in r_.get("hits", [])), default=0))
+    elif sort_by == "oldest":
+        filtered.sort(key=lambda r_: max((h.get("days_back", 0) for h in r_.get("hits", [])), default=0), reverse=True)
+    elif sort_by == "symbol_az":
+        filtered.sort(key=lambda r_: r_.get("symbol", ""))
+    else:  # "most_hits" -- matches the original default behavior
+        filtered.sort(key=lambda r_: len(r_.get("hits", [])), reverse=True)
+
+    rows = []
+    for r_ in filtered:
+        hit_spans = []
+        for h in r_.get("hits", []):
+            hit_spans.append(_format_weis_radar_hit(h))
+            hit_spans.append(html.Br())
+        symbol = r_.get("symbol")
+        rows.append(html.Tr([
+            html.Td(symbol, style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
+            html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
+            html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
+        ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,
+           style={"borderBottom": f"1px solid {BORDER}", "cursor": "pointer"}))
+
+    if not rows:
+        return html.Div("No symbols match this filter.", style={"color": MUTED, "padding": "12px"})
+
+    return html.Table([
+        html.Thead(html.Tr([
+            html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+            html.Th("Price", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+            html.Th("Patterns Found", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+        ])),
+        html.Tbody(rows),
+    ], style={"width": "100%", "borderCollapse": "collapse"})
+
+
 def build_weis_radar_tab(session=None):
     """
     ADDED (2026-08-24): Weis Radar -- shows the results of the daily
@@ -3929,6 +4012,10 @@ def build_weis_radar_tab(session=None):
     same reasoning as Reports' own manual generate button -- waiting
     up to 24 hours for the next scheduled scan isn't reasonable when
     verifying a fix.
+
+    ADDED (2026-08-25): filter (by pattern type) and sort (by
+    recency, symbol, or hit count) controls -- see
+    _render_weis_radar_table() for the actual logic.
     """
     import requests as _rq
 
@@ -3967,44 +4054,21 @@ def build_weis_radar_tab(session=None):
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
 
-    PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
-                        "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
-
-    def _format_hit(h):
-        t = h.get("type")
-        color = PATTERN_COLORS.get(t, MUTED)
-        if t in ("SPRING", "UPTHRUST"):
-            detail = f"score {h.get('score')}, level ${h.get('level')}"
-        elif t in ("SPRING_BUILDING", "UPTHRUST_BUILDING"):
-            # ADDED (2026-08-25): building hits only ever carry "level" --
-            # no score, date, or held state, since the bar they're
-            # based on hasn't finished forming yet. Using the same
-            # BREAKOUT/BREAKDOWN branch here would have tried to read
-            # fields that don't exist on this hit type.
-            detail = f"level ${h.get('level')} -- still forming, market open"
-        else:
-            held_txt = "HOLDING" if h.get("held") else "not holding"
-            detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
-        return html.Span([html.Span(t, style={"color": color, "fontWeight": "800"}), f" ({detail})"])
-
-    rows = []
-    for r_ in results:
-        hit_spans = []
-        for h in r_.get("hits", []):
-            hit_spans.append(_format_hit(h))
-            hit_spans.append(html.Br())
-        symbol = r_.get("symbol")
-        # ADDED (2026-08-25): pattern-matching ID so a single callback
-        # (using ALL) can tell which of the N dynamically-generated
-        # rows was actually clicked -- the standard Dash idiom for a
-        # variable-length clickable list, since Dash callbacks need a
-        # real Input to trigger on, not passive hover.
-        rows.append(html.Tr([
-            html.Td(symbol, style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
-            html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
-            html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
-        ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,
-           style={"borderBottom": f"1px solid {BORDER}", "cursor": "pointer"}))
+    FILTER_OPTIONS = [
+        {"label": "All Patterns", "value": "all"},
+        {"label": "Spring", "value": "SPRING"},
+        {"label": "Upthrust", "value": "UPTHRUST"},
+        {"label": "Breakout", "value": "BREAKOUT"},
+        {"label": "Breakdown", "value": "BREAKDOWN"},
+        {"label": "Spring Building", "value": "SPRING_BUILDING"},
+        {"label": "Upthrust Building", "value": "UPTHRUST_BUILDING"},
+    ]
+    SORT_OPTIONS = [
+        {"label": "Most Patterns", "value": "most_hits"},
+        {"label": "Newest Alert First", "value": "newest"},
+        {"label": "Oldest Alert First", "value": "oldest"},
+        {"label": "Symbol (A-Z)", "value": "symbol_az"},
+    ]
 
     return html.Div([
         _header_row(),
@@ -4013,6 +4077,22 @@ def build_weis_radar_tab(session=None):
                   + (f" Last run: {generated_at}" if generated_at else "")
                   + " Click any row to see its chart.",
                   style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
+        # ADDED (2026-08-25): the full, unfiltered scan results, kept
+        # client-side so filter/sort changes re-render locally instead
+        # of hitting the backend again.
+        dcc.Store(id="s-weis-radar-raw-results", data=results),
+        html.Div([
+            html.Div([
+                html.Span("Filter: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
+                dcc.Dropdown(id="weis-radar-filter-type", options=FILTER_OPTIONS, value="all", clearable=False,
+                              style={"width": "220px", "display": "inline-block", "color": "#111"}),
+            ], style={"display": "inline-block", "marginRight": "20px"}),
+            html.Div([
+                html.Span("Sort: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
+                dcc.Dropdown(id="weis-radar-sort-by", options=SORT_OPTIONS, value="most_hits", clearable=False,
+                              style={"width": "220px", "display": "inline-block", "color": "#111"}),
+            ], style={"display": "inline-block"}),
+        ], style={"marginBottom": "16px"}),
         # ADDED (2026-08-25): volume-mode toggle + a Store remembering
         # which symbol is currently charted, so switching the toggle
         # can redraw the SAME symbol's chart without requiring another
@@ -4038,14 +4118,7 @@ def build_weis_radar_tab(session=None):
                        "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px"}),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "6px"}),
         dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
-        html.Table([
-            html.Thead(html.Tr([
-                html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-                html.Th("Price", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-                html.Th("Patterns Found", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-            ])),
-            html.Tbody(rows),
-        ], style={"width": "100%", "borderCollapse": "collapse"}),
+        html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
 
@@ -7186,6 +7259,26 @@ def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symb
 
     fig = _build_weis_radar_chart_figure(data, volume_mode=volume_mode or "standard")
     return fig, {"display": "block"}, symbol
+
+
+@app.callback(
+    Output("weis-radar-table-container", "children"),
+    Input("weis-radar-filter-type", "value"),
+    Input("weis-radar-sort-by", "value"),
+    State("s-weis-radar-raw-results", "data"),
+    prevent_initial_call=True,
+)
+def update_weis_radar_table(filter_type, sort_by, raw_results):
+    """
+    ADDED (2026-08-25): re-renders the table locally from the full,
+    already-fetched results (s-weis-radar-raw-results) whenever either
+    dropdown changes -- no backend round-trip needed, since filtering
+    and sorting are both pure client-visible operations on data
+    already in the page.
+    """
+    if not raw_results:
+        return no_update
+    return _render_weis_radar_table(raw_results, filter_type=filter_type, sort_by=sort_by)
 
 
 @app.callback(
