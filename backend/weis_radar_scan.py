@@ -147,7 +147,20 @@ def scan_symbol_for_weis_patterns(engine, df: pd.DataFrame) -> list:
             market_open_now = _is_market_hours()
         except Exception:
             market_open_now = False
-        if market_open_now:
+        # FIX (2026-08-25): confirmed a real, systematic bug via live
+        # scan data -- check_building_pattern() only checked "is
+        # today's low below support," which is ALSO true every single
+        # day an already-confirmed, already-resolved Breakdown
+        # continues (a stock sitting 20 days below a level it broke
+        # weeks ago isn't "building" a Spring -- nothing is attempting
+        # to reverse). This produced SPRING_BUILDING on nearly every
+        # symbol that already had a confirmed BREAKDOWN, always at the
+        # exact same level, and the mirror-image bug for UPTHRUST_
+        # BUILDING/BREAKOUT. Now explicitly skipped whenever the
+        # corresponding confirmed pattern already exists at this
+        # level -- "building" is reserved for a level being tested
+        # right now, not one whose test was already resolved.
+        if market_open_now and not breakdown and not breakout:
             building = engine.check_building_pattern(df, idx, support, resistance)
             if building == "SPRING_BUILDING":
                 hits.append({"type": "SPRING_BUILDING", "level": round(float(support), 2)})
