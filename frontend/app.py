@@ -1460,46 +1460,57 @@ def _build_time_axis_ticks(candles, tf, target_tick_count=7):
     is_intraday = tf in ("1m", "5m", "15m", "1H")
     month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    # FIX (2026-08-25): confirmed a real, reported bug -- reproduced
-    # directly with realistic multi-day hourly data. Showing only
-    # "H:MM" for intraday bars looks fine for a single session, but
-    # the hour-of-day repeats every single trading day, so evenly-
-    # spaced ticks across a MULTI-DAY intraday chart land on different
-    # days' hours with no indication a new day even started --
-    # produces exactly the jumbled-looking, non-monotonic sequence
-    # reported ("15:00, 8:00, 9:00..."). Now includes the date
-    # whenever the visible candles actually span more than one
-    # calendar day; a genuinely single-day view still shows just the
-    # time, since the date would be redundant there.
-    def _date_key(ts_str):
-        return ts_str[:10] if ts_str else ""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
 
-    spans_multiple_days = is_intraday and n > 0 and _date_key(candles[0].get("t", "")) != _date_key(candles[-1].get("t", ""))
-
-    def _fmt(ts_str):
-        # converts to US/Eastern -- Alpaca's own timestamps are UTC,
-        # and displaying those raw would show market-open (9:30am ET)
-        # as "13:30" or "14:30" depending on daylight saving, genuinely
-        # confusing for a US-market chart. Same zoneinfo/"America/
-        # New_York" pattern already established in backend/
-        # scoreboard_service.py's own _is_market_hours().
+    def _to_et(ts_str):
         try:
-            from zoneinfo import ZoneInfo
-        except ImportError:
-            from backports.zoneinfo import ZoneInfo
-        try:
-            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(ZoneInfo("America/New_York"))
+            return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(_ET)
         except Exception:
+            return None
+
+    et_dts = [_to_et(c.get("t", "")) for c in candles]
+
+    # FIX (2026-08-25, second follow-up): explicit request -- the date
+    # should sit BELOW the time (a real two-line tick label, via
+    # Plotly's own "<br>" line break in ticktext) and should appear
+    # exactly once per day, at that day's actual opening bar, not
+    # repeated under every regularly-spaced time tick. Previous
+    # version put date+time on one line, on every tick once a chart
+    # spanned multiple days -- correct information, wrong presentation.
+    #
+    # Two separate tick sets get merged here: a regular, evenly-spaced
+    # grid of TIME-only ticks (unchanged from before), plus the exact
+    # index of each new calendar day's first bar (found directly from
+    # the real ET-converted timestamps, not inferred from spacing) --
+    # only those specific indices get the second date line.
+    day_start_indices = set()
+    if is_intraday:
+        prev_date = None
+        for i, dt in enumerate(et_dts):
+            if dt is None:
+                continue
+            if prev_date is not None and dt.date() != prev_date:
+                day_start_indices.add(i)
+            prev_date = dt.date()
+
+    def _fmt(i):
+        dt = et_dts[i] if i < len(et_dts) else None
+        if dt is None:
             return ""
         if is_intraday:
-            if spans_multiple_days:
-                return f"{month_abbr[dt.month]} {dt.day}, {dt.hour}:{dt.minute:02d}"
-            return f"{dt.hour}:{dt.minute:02d}"
+            time_part = f"{dt.hour}:{dt.minute:02d}"
+            if i in day_start_indices or i == 0:
+                return f"{time_part}<br>{month_abbr[dt.month]} {dt.day}"
+            return time_part
         return f"{month_abbr[dt.month]} {dt.day}"
 
     step = max(1, n // target_tick_count)
-    tickvals = list(range(0, n, step))
-    ticktext = [_fmt(candles[i].get("t", "")) for i in tickvals]
+    tickvals = sorted(set(range(0, n, step)) | day_start_indices)
+    ticktext = [_fmt(i) for i in tickvals]
     return tickvals, ticktext
 
 
