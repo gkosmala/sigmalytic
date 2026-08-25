@@ -1877,6 +1877,44 @@ def weis_radar_results():
     return get_weis_radar_results()
 
 
+@app.get("/api/weis-radar/chart/{symbol}")
+def weis_radar_chart_data(symbol: str):
+    """
+    ADDED (2026-08-25): on-demand, single-symbol bar+hit data for the
+    new click-to-chart feature. Deliberately NOT part of the cached
+    full-universe scan results (storing 252 bars x 1,023 symbols in
+    Redis would be wasteful when most users only ever inspect a
+    handful) -- this fetches fresh, real bars for just the one symbol
+    clicked, the same cheap single-symbol pattern the existing Weis
+    Analysis tab already uses safely on this same web backend.
+    Reuses scan_symbol_for_weis_patterns() (already tested) so the
+    chart's annotations match exactly what the table already showed.
+    """
+    from backend.radar_service import fetch_bars_batch
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.weis_radar_scan import _bars_to_dataframe, scan_symbol_for_weis_patterns
+
+    try:
+        sym = symbol.upper().strip()
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        raw_bars = bars_map.get(sym, [])
+        if len(raw_bars) < 60:
+            return {"ok": False, "error": f"Insufficient bar history for {sym}."}
+
+        df = _bars_to_dataframe(raw_bars)
+        engine = WyckoffVerdictEngine()
+        hits = scan_symbol_for_weis_patterns(engine, df)
+
+        bars_out = [
+            {"date": row["date"], "open": row["open"], "high": row["high"],
+             "low": row["low"], "close": row["close"], "volume": row["volume"]}
+            for _, row in df.iterrows()
+        ]
+        return {"ok": True, "symbol": sym, "bars": bars_out, "hits": hits}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.post("/api/admin/weis-radar/run-now")
 def weis_radar_run_now(_admin: str = Depends(require_admin)):
     """

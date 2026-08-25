@@ -20,7 +20,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import dash
-from dash import dcc, html, Input, Output, State, no_update, callback_context
+from dash import dcc, html, Input, Output, State, no_update, callback_context, MATCH, ALL
 import plotly.graph_objects as go
 import requests as req
 
@@ -3985,18 +3985,27 @@ def build_weis_radar_tab(session=None):
         for h in r_.get("hits", []):
             hit_spans.append(_format_hit(h))
             hit_spans.append(html.Br())
+        symbol = r_.get("symbol")
+        # ADDED (2026-08-25): pattern-matching ID so a single callback
+        # (using ALL) can tell which of the N dynamically-generated
+        # rows was actually clicked -- the standard Dash idiom for a
+        # variable-length clickable list, since Dash callbacks need a
+        # real Input to trigger on, not passive hover.
         rows.append(html.Tr([
-            html.Td(r_.get("symbol"), style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
+            html.Td(symbol, style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
             html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
             html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
-        ], style={"borderBottom": f"1px solid {BORDER}"}))
+        ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,
+           style={"borderBottom": f"1px solid {BORDER}", "cursor": "pointer"}))
 
     return html.Div([
         _header_row(),
         html.Div(f"Daily Russell 1000 scan for Spring, Upthrust, Breakout, and Breakdown patterns. "
                   f"{data.get('scanned', 0)} symbols scanned, {len(results)} with a hit."
-                  + (f" Last run: {generated_at}" if generated_at else ""),
+                  + (f" Last run: {generated_at}" if generated_at else "")
+                  + " Click any row to see its chart.",
                   style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
+        dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
         html.Table([
             html.Thead(html.Tr([
                 html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
@@ -6993,6 +7002,94 @@ def poll_weis_radar_status(n_intervals, session):
     if n_intervals and n_intervals >= 200:
         return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
+
+
+def _build_weis_radar_chart_figure(chart_data):
+    """
+    ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
+    for the symbol clicked -- a genuine upgrade over the standalone
+    tool's hand-rolled canvas drawing (built and validated earlier
+    this session), using Plotly's own native, well-tested candlestick
+    support instead. Same annotation concept as before: a horizontal
+    line at each hit's level, a marker at its actual event date.
+    """
+    bars = chart_data.get("bars", [])
+    hits = chart_data.get("hits", [])
+    symbol = chart_data.get("symbol", "")
+    dates = [b["date"] for b in bars]
+
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=dates, open=[b["open"] for b in bars], high=[b["high"] for b in bars],
+        low=[b["low"] for b in bars], close=[b["close"] for b in bars],
+        name="Price", yaxis="y1",
+    ))
+    fig.add_trace(go.Bar(
+        x=dates, y=[b["volume"] for b in bars], name="Volume",
+        marker_color="rgba(148,163,184,0.4)", yaxis="y2",
+    ))
+
+    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c"}
+    last_date = dates[-1] if dates else None
+    for h in hits:
+        color = pattern_colors.get(h.get("type"), "#94a3b8")
+        level = h.get("level")
+        event_date = h.get("date") or last_date  # Spring/Upthrust have no "date" -- always "today" by design
+        if level is not None:
+            fig.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.6,
+                           annotation_text=h.get("type"), annotation_font_color=color)
+        if event_date:
+            fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
+
+    fig.update_layout(
+        title=f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}",
+        yaxis=dict(domain=[0.28, 1.0], title="Price"),
+        yaxis2=dict(domain=[0.0, 0.22], title="Volume"),
+        xaxis_rangeslider_visible=False,
+        template="plotly_dark",
+        height=520,
+        margin=dict(l=40, r=20, t=50, b=30),
+        paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
+    )
+    return fig
+
+
+@app.callback(
+    Output("weis-radar-chart", "figure"),
+    Output("weis-radar-chart", "style"),
+    Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def show_weis_radar_chart(n_clicks_list):
+    """
+    Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
+    architecture doesn't support passive hover-triggered callbacks the
+    way raw JS does -- click is the robust, native equivalent).
+    callback_context.triggered_id gives the exact {"type":...,
+    "symbol":...} dict of whichever row was actually clicked, out of
+    however many rows exist.
+    """
+    triggered = callback_context.triggered_id
+    if not triggered or not isinstance(triggered, dict):
+        return no_update, no_update
+    symbol = triggered.get("symbol")
+    if not symbol:
+        return no_update, no_update
+
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}", timeout=20)
+        data = r.json() if r.ok else {"ok": False}
+    except Exception as e:
+        data = {"ok": False, "error": str(e)}
+
+    if not data.get("ok"):
+        fig = go.Figure()
+        fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
+                            template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
+        return fig, {"display": "block"}
+
+    fig = _build_weis_radar_chart_figure(data)
+    return fig, {"display": "block"}
 
 
 @app.callback(
