@@ -4010,16 +4010,25 @@ def build_weis_radar_tab(session=None):
         # can redraw the SAME symbol's chart without requiring another
         # row click.
         dcc.Store(id="s-weis-radar-current-symbol", data=None),
-        html.Div(
+        html.Div([
             dcc.RadioItems(
                 id="weis-radar-volume-mode",
                 options=[{"label": " Standard Volume", "value": "standard"},
                           {"label": " Cumulative (Wave) Volume", "value": "cumulative"}],
                 value="standard", inline=True,
-                style={"color": MUTED, "fontSize": "12px", "marginBottom": "6px"},
+                style={"color": MUTED, "fontSize": "12px"},
                 labelStyle={"marginRight": "16px"},
             ),
-        ),
+            # ADDED (2026-08-25): explicit close button -- previously
+            # the only way the chart ever disappeared was an unwanted
+            # side effect of the whole tab rebuilding on a live tick
+            # (now fixed separately). The user asked specifically for
+            # a real, deliberate way to close it themselves instead.
+            html.Button("✕ Close Chart", id="btn-close-weis-radar-chart", n_clicks=0,
+                style={"background": "rgba(239,68,68,.1)", "border": "1px solid rgba(239,68,68,.3)",
+                       "borderRadius": "8px", "color": "#f87171", "cursor": "pointer",
+                       "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px"}),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "6px"}),
         dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
         html.Table([
             html.Thead(html.Tr([
@@ -7094,10 +7103,11 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
     Output("s-weis-radar-current-symbol", "data"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
     Input("weis-radar-volume-mode", "value"),
+    Input("btn-close-weis-radar-chart", "n_clicks"),
     State("s-weis-radar-current-symbol", "data"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(n_clicks_list, volume_mode, current_symbol):
+def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symbol):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -7109,9 +7119,16 @@ def show_weis_radar_chart(n_clicks_list, volume_mode, current_symbol):
     ADDED (2026-08-25): also fires when the volume-mode toggle
     changes, using the STORED current symbol (s-weis-radar-current-
     symbol) rather than requiring another row click just to switch
-    between standard and cumulative volume on the same chart.
+    between standard and cumulative volume on the same chart. Also
+    fires on the explicit "Close Chart" button -- hides the chart and
+    clears the stored symbol, a real, deliberate close the user asked
+    for (distinct from, and in addition to, the separate fix that
+    stops the chart from disappearing on its own via the tab's
+    periodic live-tick rebuild).
     """
     triggered = callback_context.triggered_id
+    if triggered == "btn-close-weis-radar-chart":
+        return {}, {"display": "none"}, None
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
     elif triggered == "weis-radar-volume-mode":
@@ -9324,13 +9341,19 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         else:
             return no_update, no_update, no_update, no_update
     elif tab == "weis_radar":
-        # Simpler than most tabs here -- no live ticker/candle
-        # dependency at all, since this just reads the worker's
-        # already-computed daily scan results from Redis. Safe to
-        # rebuild on every tick the same way build_heatmap_tab() is
-        # NOT (that one resets user state on rebuild); this tab has no
-        # per-user state to preserve.
-        main = build_weis_radar_tab(session)
+        # FIX (2026-08-25): the original comment here said this tab had
+        # "no per-user state to preserve" -- true when this was written,
+        # but wrong once click-to-chart was added on top: this tab
+        # rebuilds from scratch on every ~20s live-price tick, the same
+        # way build_heatmap_tab() was already fixed to stop doing,
+        # wiping whichever chart was open (and its volume-mode choice)
+        # every single tick. Same fix, same reason: only rebuild on a
+        # genuine tab switch (s-tab).
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if _trigger.startswith("s-tab"):
+            main = build_weis_radar_tab(session)
+        else:
+            return no_update, no_update, no_update, no_update
     elif tab=="campaign":
         if build_campaign_tab is None:
             main = card([
