@@ -1432,6 +1432,43 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
+def _compute_cumulative_wave_volume_local(candles, trend_length=2):
+    """
+    ADDED (2026-08-25): same confirmed-reversal Weis Wave volume logic
+    already built and validated twice this session (once in the
+    standalone scan tool's JS, once in the real backend's
+    WyckoffVerdictEngine.get_cumulative_wave_volume_series()) --
+    re-implemented locally here rather than imported, since frontend
+    and backend are separate deployed Render services and can't share
+    Python modules across that boundary at runtime. Requires
+    trend_length consecutive closes in the new direction before
+    confirming a reversal, not a single-bar wiggle -- confirmed
+    earlier this session this matters: without it, ordinary daily
+    noise fragments what's really one continuous wave into many.
+    """
+    n = len(candles)
+    cum_vol = [0.0] * n
+    wave_dir = [0] * n
+    current_dir = 0
+    up_count = dn_count = 0
+    running = 0.0
+    for i in range(1, n):
+        is_higher = candles[i]["c"] > candles[i - 1]["c"]
+        is_lower = candles[i]["c"] < candles[i - 1]["c"]
+        up_count = up_count + 1 if is_higher else 0
+        dn_count = dn_count + 1 if is_lower else 0
+        if up_count >= trend_length and current_dir != 1:
+            current_dir = 1
+            running = 0.0
+        elif dn_count >= trend_length and current_dir != -1:
+            current_dir = -1
+            running = 0.0
+        running += float(candles[i].get("v", 0))
+        cum_vol[i] = running
+        wave_dir[i] = current_dir
+    return cum_vol, wave_dir
+
+
 def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None, count_guide=None):
     """Clean chart — integer index x-axis for proper candle rendering."""
     kl = get_key_levels(price, count_guide=count_guide)
@@ -1486,7 +1523,30 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
         increasing=dict(line=dict(color=TEAL_DIM, width=2), fillcolor=TEAL_DIM),
         decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
         whiskerwidth=1.0,
+        yaxis="y1",
     ))
+
+    # ADDED (2026-08-25): time-based volume + stacked cumulative
+    # (Weis Wave) volume beneath the price panel -- three panels
+    # sharing one x-axis via domain-based y-axes (y1/y2/y3), the same
+    # approach already used for the Weis Radar chart, rather than
+    # make_subplots, to keep this a minimal, contained change to an
+    # already-working, heavily-used chart.
+    if candles:
+        up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
+        time_vol_colors = [up_color if c["c"] >= c["o"] else down_color for c in candles]
+        fig.add_trace(go.Bar(
+            x=xs, y=[c.get("v", 0) for c in candles], name="Volume",
+            marker_color=time_vol_colors, yaxis="y2",
+        ))
+
+        cum_vol, wave_dir = _compute_cumulative_wave_volume_local(candles)
+        wave_colors = [up_color if d == 1 else down_color for d in wave_dir]
+        fig.add_trace(go.Bar(
+            x=xs, y=cum_vol, name="Cumulative (Wave) Volume",
+            marker_color=wave_colors, yaxis="y3",
+        ))
+
     # Level lines — the 4 generic structural levels stay unlabeled (labels
     # live in the Price Ladder panel), but Call Wall / Put Wall / Gamma
     # Pivot are the exact same numbers shown in the Options Matrix widget
@@ -1557,10 +1617,30 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
             # lines simply extend beyond the visible range instead of
             # dictating it.
             range=[_y_bot, _y_top],
+            # ADDED (2026-08-25): price panel now occupies the top
+            # ~58% of the figure, leaving room below for the two new
+            # volume panels -- domain-based stacking, same approach
+            # already used for the Weis Radar chart.
+            domain=[0.58, 1.0],
+        ),
+        # ADDED (2026-08-25): time-based volume (middle) and
+        # cumulative Weis Wave volume (bottom), each its own panel
+        # sharing the same x-axis as the price chart above.
+        yaxis2=dict(
+            showgrid=False, zeroline=False, color=WHITE, side="right",
+            tickfont=dict(color=MUTED, size=9, family="DM Mono, monospace"),
+            domain=[0.30, 0.54],
+        ),
+        yaxis3=dict(
+            showgrid=False, zeroline=False, color=WHITE, side="right",
+            tickfont=dict(color=MUTED, size=9, family="DM Mono, monospace"),
+            domain=[0.0, 0.24],
         ),
         # Enough right margin for y-axis labels, bottom for x-axis labels
         margin=dict(l=0, r=60, t=8, b=24),
-        height=480,
+        # ADDED (2026-08-25): taller now to properly fit 3 stacked
+        # panels instead of 1 -- was 480 for price alone.
+        height=640,
         showlegend=False,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
@@ -3311,9 +3391,6 @@ def build_command_tab(live, candles, symbol, tf):
 
         # Footer — aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"{tf}  ·  {len(candles)} candles",
-                      style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
-                             "fontFamily":"DM Mono, monospace"}),
             html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
