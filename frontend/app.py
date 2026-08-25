@@ -1460,13 +1460,29 @@ def _build_time_axis_ticks(candles, tf, target_tick_count=7):
     is_intraday = tf in ("1m", "5m", "15m", "1H")
     month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+    # FIX (2026-08-25): confirmed a real, reported bug -- reproduced
+    # directly with realistic multi-day hourly data. Showing only
+    # "H:MM" for intraday bars looks fine for a single session, but
+    # the hour-of-day repeats every single trading day, so evenly-
+    # spaced ticks across a MULTI-DAY intraday chart land on different
+    # days' hours with no indication a new day even started --
+    # produces exactly the jumbled-looking, non-monotonic sequence
+    # reported ("15:00, 8:00, 9:00..."). Now includes the date
+    # whenever the visible candles actually span more than one
+    # calendar day; a genuinely single-day view still shows just the
+    # time, since the date would be redundant there.
+    def _date_key(ts_str):
+        return ts_str[:10] if ts_str else ""
+
+    spans_multiple_days = is_intraday and n > 0 and _date_key(candles[0].get("t", "")) != _date_key(candles[-1].get("t", ""))
+
     def _fmt(ts_str):
-        # FIX (2026-08-25): converts to US/Eastern -- Alpaca's own
-        # timestamps are UTC, and displaying those raw would show
-        # market-open (9:30am ET) as "13:30" or "14:30" depending on
-        # daylight saving, genuinely confusing for a US-market chart.
-        # Same zoneinfo/"America/New_York" pattern already established
-        # in backend/scoreboard_service.py's own _is_market_hours().
+        # converts to US/Eastern -- Alpaca's own timestamps are UTC,
+        # and displaying those raw would show market-open (9:30am ET)
+        # as "13:30" or "14:30" depending on daylight saving, genuinely
+        # confusing for a US-market chart. Same zoneinfo/"America/
+        # New_York" pattern already established in backend/
+        # scoreboard_service.py's own _is_market_hours().
         try:
             from zoneinfo import ZoneInfo
         except ImportError:
@@ -1476,6 +1492,8 @@ def _build_time_axis_ticks(candles, tf, target_tick_count=7):
         except Exception:
             return ""
         if is_intraday:
+            if spans_multiple_days:
+                return f"{month_abbr[dt.month]} {dt.day}, {dt.hour}:{dt.minute:02d}"
             return f"{dt.hour}:{dt.minute:02d}"
         return f"{month_abbr[dt.month]} {dt.day}"
 
