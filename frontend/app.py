@@ -1432,6 +1432,49 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
+def _build_time_axis_ticks(candles, tf, target_tick_count=7):
+    """
+    ADDED (2026-08-25): real, human-readable time labels for the
+    x-axis -- previously showticklabels=False entirely. The chart's
+    x-axis deliberately uses plain integer indices (0,1,2...), not
+    real datetime values, per this file's own earlier design note --
+    a genuine, intentional choice to avoid gaps for closed-market
+    periods (nights, weekends) that a true datetime axis would show as
+    blank space. Real labels are layered on top of that integer axis
+    via explicit tickvals/ticktext instead, computed here from each
+    candle's own real timestamp ("t"), so the axis stays gap-free
+    while still showing genuine times.
+
+    Format adapts to the timeframe -- "H:MM" for intraday bars (1m/5m/
+    15m/1H), "Mon D" for daily/weekly -- and tick spacing is computed
+    generally (evenly spread to hit roughly target_tick_count labels)
+    rather than a fixed interval hardcoded per timeframe, so this
+    stays sensible regardless of how many candles are actually shown.
+    """
+    from datetime import datetime
+
+    n = len(candles)
+    if n == 0:
+        return [], []
+
+    is_intraday = tf in ("1m", "5m", "15m", "1H")
+    month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    def _fmt(ts_str):
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except Exception:
+            return ""
+        if is_intraday:
+            return f"{dt.hour}:{dt.minute:02d}"
+        return f"{month_abbr[dt.month]} {dt.day}"
+
+    step = max(1, n // target_tick_count)
+    tickvals = list(range(0, n, step))
+    ticktext = [_fmt(candles[i].get("t", "")) for i in tickvals]
+    return tickvals, ticktext
+
+
 def _compute_cumulative_wave_volume_local(candles, trend_length=2):
     """
     ADDED (2026-08-25): same confirmed-reversal Weis Wave volume logic
@@ -1532,19 +1575,25 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
     # approach already used for the Weis Radar chart, rather than
     # make_subplots, to keep this a minimal, contained change to an
     # already-working, heavily-used chart.
+    #
+    # FIX (2026-08-25): swapped panel order per explicit request --
+    # cumulative (wave) volume now sits in the middle (y2), standard
+    # time-based volume at the bottom (y3). Only the axis assignment
+    # changed here; the layout's own y2/y3 domain definitions below
+    # didn't need to move.
     if candles:
         up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
-        time_vol_colors = [up_color if c["c"] >= c["o"] else down_color for c in candles]
-        fig.add_trace(go.Bar(
-            x=xs, y=[c.get("v", 0) for c in candles], name="Volume",
-            marker_color=time_vol_colors, yaxis="y2",
-        ))
-
         cum_vol, wave_dir = _compute_cumulative_wave_volume_local(candles)
         wave_colors = [up_color if d == 1 else down_color for d in wave_dir]
         fig.add_trace(go.Bar(
             x=xs, y=cum_vol, name="Cumulative (Wave) Volume",
-            marker_color=wave_colors, yaxis="y3",
+            marker_color=wave_colors, yaxis="y2",
+        ))
+
+        time_vol_colors = [up_color if c["c"] >= c["o"] else down_color for c in candles]
+        fig.add_trace(go.Bar(
+            x=xs, y=[c.get("v", 0) for c in candles], name="Volume",
+            marker_color=time_vol_colors, yaxis="y3",
         ))
 
     # Level lines — the 4 generic structural levels stay unlabeled (labels
@@ -1589,13 +1638,18 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
             )
     # Live price line
     fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
+    # ADDED (2026-08-25): real time-axis labels, computed above via
+    # _build_time_axis_ticks() -- was showticklabels=False entirely.
+    tickvals, ticktext = _build_time_axis_ticks(candles, tf)
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
         font=dict(family="DM Sans", color=WHITE, size=12),
         xaxis=dict(
             showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
             rangeslider=dict(visible=False),
-            showticklabels=False,
+            showticklabels=True,
+            tickvals=tickvals, ticktext=ticktext,
+            tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
             title=None,
             color=WHITE,
         ),
@@ -1637,7 +1691,9 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
             domain=[0.0, 0.24],
         ),
         # Enough right margin for y-axis labels, bottom for x-axis labels
-        margin=dict(l=0, r=60, t=8, b=24),
+        # ADDED (2026-08-25): bumped from 24 to give the now-visible
+        # real time-axis labels enough room, not just the axis line.
+        margin=dict(l=0, r=60, t=8, b=32),
         # ADDED (2026-08-25): taller now to properly fit 3 stacked
         # panels instead of 1 -- was 480 for price alone.
         height=640,
