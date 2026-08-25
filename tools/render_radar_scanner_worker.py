@@ -113,11 +113,12 @@ def main() -> int:
     # real concurrency complexity of a second background thread on
     # top of everything already running here.
     try:
-        from backend.weis_radar_scan import run_weis_radar_scan
+        from backend.weis_radar_scan import run_weis_radar_scan, process_one_pending_weis_radar_scan
         from backend.radar_service import _redis_client
     except Exception as exc:
         print(f"[RADAR_WORKER] Could not import Weis Radar scan: {exc}", flush=True)
         run_weis_radar_scan = None
+        process_one_pending_weis_radar_scan = None
 
     WEIS_RADAR_LAST_RUN_KEY = "weis_radar:last_run_at"
     WEIS_RADAR_INTERVAL_SECONDS = 24 * 60 * 60
@@ -144,6 +145,15 @@ def main() -> int:
                     print("[RADAR_WORKER] Processed one queued report-generation request.", flush=True)
             except Exception as exc:
                 print(f"[RADAR_WORKER] Error while checking for report jobs: {exc}", flush=True)
+
+        if process_one_pending_weis_radar_scan is not None:
+            try:
+                processed = process_one_pending_weis_radar_scan()
+                if processed:
+                    _redis_client.set(WEIS_RADAR_LAST_RUN_KEY, str(time.time()))
+                    print("[RADAR_WORKER] Processed one manually-triggered Weis Radar scan request.", flush=True)
+            except Exception as exc:
+                print(f"[RADAR_WORKER] Error while checking for manual Weis Radar scan requests: {exc}", flush=True)
 
         if _weis_radar_due():
             print("[RADAR_WORKER] Starting daily Weis Radar scan...", flush=True)

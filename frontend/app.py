@@ -3915,7 +3915,7 @@ def build_stub_tab(title, description):
 
 
 
-def build_weis_radar_tab():
+def build_weis_radar_tab(session=None):
     """
     ADDED (2026-08-24): Weis Radar -- shows the results of the daily
     Russell 1000 Spring/Upthrust/Breakout/Breakdown scan (see
@@ -3924,6 +3924,11 @@ def build_weis_radar_tab():
     architecture). This tab only ever reads the already-computed
     cached results; it never triggers the scan itself, same
     read/compute separation already used for the Reports tab.
+
+    ADDED (2026-08-25): an admin-only "Run Scan Now" manual trigger,
+    same reasoning as Reports' own manual generate button -- waiting
+    up to 24 hours for the next scheduled scan isn't reasonable when
+    verifying a fix.
     """
     import requests as _rq
 
@@ -3933,9 +3938,21 @@ def build_weis_radar_tab():
     except Exception as e:
         data = {"ok": False, "error": str(e)}
 
+    def _header_row():
+        children = [html.H3("Weis Radar", style={"color": WHITE, "marginBottom": "4px", "display": "inline-block", "marginRight": "12px"})]
+        if is_admin(session):
+            children.append(html.Button("Run Scan Now", id="btn-run-weis-radar", n_clicks=0,
+                style={"background": "rgba(96,165,250,.1)", "border": "1px solid rgba(96,165,250,.3)",
+                       "borderRadius": "8px", "color": "#60a5fa", "cursor": "pointer",
+                       "fontSize": "11px", "fontWeight": "700", "padding": "6px 12px",
+                       "fontFamily": "DM Sans, sans-serif", "verticalAlign": "middle"}))
+            children.append(html.Div(id="weis-radar-run-message", style={"color": MUTED, "fontSize": "11px", "marginTop": "6px"}))
+            children.append(dcc.Interval(id="i-weis-radar-poll", interval=4000, disabled=True))
+        return html.Div(children)
+
     if not data.get("ok"):
         return html.Div([
-            html.H3("Weis Radar", style={"color": WHITE}),
+            _header_row(),
             html.Div(f"Could not load scan results: {data.get('error', 'unknown error')}",
                       style={"color": RED_DIM, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -3945,7 +3962,7 @@ def build_weis_radar_tab():
 
     if not results:
         return html.Div([
-            html.H3("Weis Radar", style={"color": WHITE}),
+            _header_row(),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -3975,7 +3992,7 @@ def build_weis_radar_tab():
         ], style={"borderBottom": f"1px solid {BORDER}"}))
 
     return html.Div([
-        html.H3("Weis Radar", style={"color": WHITE, "marginBottom": "4px"}),
+        _header_row(),
         html.Div(f"Daily Russell 1000 scan for Spring, Upthrust, Breakout, and Breakdown patterns. "
                   f"{data.get('scanned', 0)} symbols scanned, {len(results)} with a hit."
                   + (f" Last run: {generated_at}" if generated_at else ""),
@@ -6928,6 +6945,56 @@ def toggle_morning_report_admin_visibility(session):
     return {**base, "display": "block"} if is_admin(session) else {**base, "display": "none"}
 
 
+# ADDED (2026-08-25): Weis Radar manual "Run Scan Now" trigger --
+# same enqueue-then-poll pattern already proven for Generate Report.
+@app.callback(
+    Output("weis-radar-run-message", "children"),
+    Output("i-weis-radar-poll", "disabled"),
+    Input("btn-run-weis-radar", "n_clicks"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def handle_run_weis_radar(n_clicks, session):
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/weis-radar/run-now",
+                      headers=_auth_headers(session), timeout=15)
+        payload = r.json() if r.ok else {"ok": False, "error": f"HTTP {r.status_code}"}
+        if payload.get("ok"):
+            return "Scan started -- this can take several minutes for the full Russell 1000.", False
+        return f"Could not start scan: {payload.get('error', 'unknown error')}", True
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}", True
+
+
+@app.callback(
+    Output("weis-radar-run-message", "children", allow_duplicate=True),
+    Output("i-weis-radar-poll", "disabled", allow_duplicate=True),
+    Input("i-weis-radar-poll", "n_intervals"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def poll_weis_radar_status(n_intervals, session):
+    """Same 4s polling pattern as Reports' own status check, capped at
+    ~200 polls (~13 minutes) since a full Russell 1000 scan genuinely
+    takes longer than a report generation does."""
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/admin/weis-radar/status",
+                     headers=_auth_headers(session), timeout=15)
+        payload = r.json() if r.ok else {"status": "unknown"}
+    except Exception:
+        payload = {"status": "unknown"}
+
+    status = payload.get("status", "unknown")
+    if status == "done":
+        return (f"Scan complete -- {payload.get('hits', 0)} hits out of {payload.get('scanned', 0)} scanned. "
+                f"Refresh or switch tabs to see updated results.", True)
+    if status == "error":
+        return f"Scan failed: {payload.get('error', 'unknown error')}", True
+    if n_intervals and n_intervals >= 200:
+        return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True
+    return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
+
+
 @app.callback(
     Output("morning-report-save-message", "children"),
     Input("btn-save-morning-report", "n_clicks"),
@@ -9121,7 +9188,7 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         # rebuild on every tick the same way build_heatmap_tab() is
         # NOT (that one resets user state on rebuild); this tab has no
         # per-user state to preserve.
-        main = build_weis_radar_tab()
+        main = build_weis_radar_tab(session)
     elif tab=="campaign":
         if build_campaign_tab is None:
             main = card([

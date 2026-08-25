@@ -1877,6 +1877,25 @@ def weis_radar_results():
     return get_weis_radar_results()
 
 
+@app.post("/api/admin/weis-radar/run-now")
+def weis_radar_run_now(_admin: str = Depends(require_admin)):
+    """
+    ADDED (2026-08-24): admin-triggered manual scan -- same
+    enqueue-and-return-immediately pattern as /api/admin/generate-
+    report. Never runs the actual scan on this process -- only ever
+    enqueues a request the isolated worker picks up.
+    """
+    from backend.weis_radar_scan import request_manual_weis_radar_scan
+    return request_manual_weis_radar_scan()
+
+
+@app.get("/api/admin/weis-radar/status")
+def weis_radar_status(_admin: str = Depends(require_admin)):
+    """Polling companion to run-now, same pattern as generate-report-status."""
+    from backend.weis_radar_scan import get_weis_radar_job_status
+    return get_weis_radar_job_status()
+
+
 @app.get("/api/heatmap/data")
 def heatmap_data(timeframe: str = "daily"):
     """

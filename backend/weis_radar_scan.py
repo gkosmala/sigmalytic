@@ -24,6 +24,63 @@ import pandas as pd
 WEIS_RADAR_RESULTS_KEY = "weis_radar:results"
 WEIS_RADAR_JOB_KEY = "weis_radar:job_status"
 WEIS_RADAR_JOB_TTL_SECONDS = 3600
+WEIS_RADAR_MANUAL_QUEUE_KEY = "weis_radar:manual_scan_queue"
+
+
+def request_manual_weis_radar_scan() -> dict:
+    """
+    ADDED (2026-08-24): admin-triggered "run now" -- same queue
+    pattern already proven for report generation (start_report_
+    generation_job in reports_engine.py). Called from a new admin-
+    only endpoint; just enqueues and sets status immediately, never
+    runs the actual scan inline here -- same OOM lesson as everything
+    else this session, the real work only ever happens on the
+    isolated worker process, via process_one_pending_weis_radar_scan().
+    """
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+    try:
+        _redis_client.set(WEIS_RADAR_JOB_KEY, json.dumps({
+            "status": "running", "started_at": datetime.now(timezone.utc).isoformat(),
+        }), ex=WEIS_RADAR_JOB_TTL_SECONDS)
+        _redis_client.lpush(WEIS_RADAR_MANUAL_QUEUE_KEY, "1")
+        return {"ok": True, "status": "started"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def process_one_pending_weis_radar_scan() -> bool:
+    """
+    Called periodically by the worker's own polling loop (same 15s
+    cadence already used for report-generation requests). Pops at
+    most one pending manual scan request and runs the real scan if
+    found. Returns True if a request was found and processed.
+    """
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return False
+    try:
+        request = _redis_client.rpop(WEIS_RADAR_MANUAL_QUEUE_KEY)
+    except Exception:
+        return False
+    if not request:
+        return False
+    run_weis_radar_scan()
+    return True
+
+
+def get_weis_radar_job_status() -> dict:
+    """Read-only -- lets the frontend poll for progress after a manual
+    trigger, same pattern as Reports' own status polling."""
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return {"status": "unknown"}
+    try:
+        raw = _redis_client.get(WEIS_RADAR_JOB_KEY)
+        return json.loads(raw) if raw else {"status": "unknown"}
+    except Exception:
+        return {"status": "unknown"}
 
 
 def _bars_to_dataframe(raw_bars: list) -> pd.DataFrame:
