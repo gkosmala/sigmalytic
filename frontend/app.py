@@ -1461,8 +1461,18 @@ def _build_time_axis_ticks(candles, tf, target_tick_count=7):
     month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     def _fmt(ts_str):
+        # FIX (2026-08-25): converts to US/Eastern -- Alpaca's own
+        # timestamps are UTC, and displaying those raw would show
+        # market-open (9:30am ET) as "13:30" or "14:30" depending on
+        # daylight saving, genuinely confusing for a US-market chart.
+        # Same zoneinfo/"America/New_York" pattern already established
+        # in backend/scoreboard_service.py's own _is_market_hours().
         try:
-            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(ZoneInfo("America/New_York"))
         except Exception:
             return ""
         if is_intraday:
@@ -1652,6 +1662,14 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
             tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
             title=None,
             color=WHITE,
+            # ADDED (2026-08-25): explicit anchor -- with 3 stacked
+            # y-axes sharing one xaxis, Plotly doesn't reliably default
+            # to drawing tick labels below the bottom-most panel on
+            # its own. Anchoring directly to y3 (the standard volume
+            # panel, now the lowest one after the panel-order swap)
+            # guarantees the labels render there specifically, not
+            # left to implicit/default positioning.
+            anchor="y3",
         ),
         yaxis=dict(
             showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
