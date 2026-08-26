@@ -4320,10 +4320,43 @@ def build_weis_radar_tab(session=None):
                        "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px",
                        "float": "right"}),
         ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
-        dcc.Loading(dcc.Graph(
-            id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
-            config={"responsive": True},
-        )),
+        # ADDED (2026-08-26): raw chart data (bars/hits) kept
+        # client-side once fetched, so moving either volume slider
+        # rebuilds the figure locally instead of hitting the backend
+        # again -- the data itself doesn't change, only the y-axis
+        # range displayed.
+        dcc.Store(id="s-weis-radar-chart-rawdata", data=None),
+        html.Div([
+            dcc.Loading(dcc.Graph(
+                id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
+                config={"responsive": True},
+            ), style={"flex": "1", "minWidth": "0"}),
+            # ADDED (2026-08-26): explicit, visible vertical sliders
+            # for adjusting each volume panel's bar-height scale --
+            # per request, not just relying on Plotly's own built-in
+            # click-drag zoom. Positioned in a side column labeled
+            # clearly, rather than attempting pixel-exact overlay onto
+            # Plotly's internal SVG panel positions, which shifts with
+            # title/legend/margin changes and would be fragile.
+            html.Div([
+                html.Div("Cum. Vol\nScale", style={"fontSize": "9px", "color": MUTED, "textAlign": "center",
+                                                       "marginBottom": "6px", "whiteSpace": "pre-line"}),
+                html.Div(dcc.RangeSlider(
+                    id="weis-radar-cumvol-slider", vertical=True, min=0, max=100, step=1, value=[0, 100],
+                    marks=None, tooltip={"placement": "left", "always_visible": False},
+                ), style={"height": "150px"}),
+            ], id="weis-radar-cumvol-slider-wrap", style={"display": "none", "width": "50px",
+                "marginTop": "230px", "textAlign": "center"}),
+            html.Div([
+                html.Div("Volume\nScale", style={"fontSize": "9px", "color": MUTED, "textAlign": "center",
+                                                    "marginBottom": "6px", "whiteSpace": "pre-line"}),
+                html.Div(dcc.RangeSlider(
+                    id="weis-radar-stdvol-slider", vertical=True, min=0, max=100, step=1, value=[0, 100],
+                    marks=None, tooltip={"placement": "left", "always_visible": False},
+                ), style={"height": "150px"}),
+            ], id="weis-radar-stdvol-slider-wrap", style={"display": "none", "width": "50px",
+                "marginTop": "20px", "textAlign": "center"}),
+        ], style={"display": "flex", "flexDirection": "row", "alignItems": "flex-start"}),
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
@@ -7315,7 +7348,7 @@ def poll_weis_radar_status(n_intervals, session):
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
 
 
-def _build_weis_radar_chart_figure(chart_data, ma_period=20):
+def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, yaxis3_range=None):
     """
     ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
     for the symbol clicked -- a genuine upgrade over the standalone
@@ -7331,8 +7364,14 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20):
     chart in this same file (see build_chart()), for visual
     consistency across the app. Also adds an adjustable moving-average
     line over the standard volume panel (ma_period, a real, user-
-    controlled parameter -- not hardcoded) and enables the horizontal
-    range slider for scrolling/full-width viewing of longer histories.
+    controlled parameter -- not hardcoded).
+
+    ADDED (2026-08-26, second follow-up): yaxis2_range/yaxis3_range let
+    a caller explicitly set the visible y-axis range for the
+    cumulative and standard volume panels respectively -- the real
+    mechanism behind the two vertical sliders next to the chart. None
+    (the default) leaves Plotly's own auto-range in place, unchanged
+    from before this was added.
     """
     bars = chart_data.get("bars", [])
     hits = chart_data.get("hits", [])
@@ -7422,8 +7461,11 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20):
         # volume), matching the Command Center chart's own
         # proportions in this same file.
         yaxis=dict(domain=[0.58, 1.0], title="Price"),
-        yaxis2=dict(domain=[0.30, 0.54], title="Cum. Vol"),
-        yaxis3=dict(domain=[0.0, 0.24], title="Volume"),
+        # ADDED (2026-08-26): explicit range override, driven by the
+        # two vertical sliders next to the chart -- None leaves
+        # Plotly's own auto-range untouched.
+        yaxis2=dict(domain=[0.30, 0.54], title="Cum. Vol", range=yaxis2_range),
+        yaxis3=dict(domain=[0.0, 0.24], title="Volume", range=yaxis3_range),
         # FIX (2026-08-26): removed per explicit correction -- the
         # range slider was never actually requested; it adds its own
         # extra visual pane beneath the standard volume panel, which
@@ -7451,6 +7493,15 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20):
     Output("weis-radar-chart", "figure"),
     Output("weis-radar-chart", "style"),
     Output("s-weis-radar-current-symbol", "data"),
+    Output("s-weis-radar-chart-rawdata", "data"),
+    Output("weis-radar-cumvol-slider-wrap", "style"),
+    Output("weis-radar-stdvol-slider-wrap", "style"),
+    Output("weis-radar-cumvol-slider", "min"),
+    Output("weis-radar-cumvol-slider", "max"),
+    Output("weis-radar-cumvol-slider", "value"),
+    Output("weis-radar-stdvol-slider", "min"),
+    Output("weis-radar-stdvol-slider", "max"),
+    Output("weis-radar-stdvol-slider", "value"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
     Input("weis-radar-chart-timeframe", "value"),
     Input("weis-radar-chart-lookback", "value"),
@@ -7481,10 +7532,19 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     asked for (distinct from, and in addition to, the separate fix
     that stops the chart from disappearing on its own via the tab's
     periodic live-tick rebuild).
+
+    ADDED (2026-08-26, second follow-up): also computes real min/max
+    bounds for the two vertical volume-scale sliders from the actual
+    fetched data (0 to that panel's real max, a small headroom margin
+    added so the tallest bar isn't flush against the slider's own
+    max), and stores the raw chart data client-side so moving either
+    slider can rebuild the figure without a second backend fetch.
     """
     triggered = callback_context.triggered_id
+    hidden_style = {"display": "none", "width": "50px", "textAlign": "center"}
     if triggered == "btn-close-weis-radar-chart":
-        return {}, {"display": "none", "width": "100%"}, None
+        return ({}, {"display": "none", "width": "100%"}, None, None,
+                hidden_style, hidden_style, 0, 100, [0, 100], 0, 100, [0, 100])
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
@@ -7493,7 +7553,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     else:
         symbol = None
     if not symbol:
-        return no_update, no_update, no_update
+        return (no_update,) * 12
 
     try:
         r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
@@ -7506,10 +7566,44 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
         fig = go.Figure()
         fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
-        return fig, {"display": "block", "width": "100%"}, symbol
+        return (fig, {"display": "block", "width": "100%"}, symbol, None,
+                hidden_style, hidden_style, 0, 100, [0, 100], 0, 100, [0, 100])
+
+    bars = data.get("bars", [])
+    cum_max = max([b.get("cumulative_volume", 0) for b in bars], default=100) * 1.05 or 100
+    std_max = max([b.get("volume", 0) for b in bars], default=100) * 1.05 or 100
+    visible_style = {"display": "block", "width": "50px", "textAlign": "center"}
 
     fig = _build_weis_radar_chart_figure(data, ma_period=ma_period or 0)
-    return fig, {"display": "block", "width": "100%"}, symbol
+    return (fig, {"display": "block", "width": "100%"}, symbol, data,
+            visible_style, visible_style,
+            0, cum_max, [0, cum_max], 0, std_max, [0, std_max])
+
+
+@app.callback(
+    Output("weis-radar-chart", "figure", allow_duplicate=True),
+    Input("weis-radar-cumvol-slider", "value"),
+    Input("weis-radar-stdvol-slider", "value"),
+    State("s-weis-radar-chart-rawdata", "data"),
+    State("weis-radar-chart-ma", "value"),
+    prevent_initial_call=True,
+)
+def rescale_weis_radar_volume_panels(cumvol_range, stdvol_range, raw_data, ma_period):
+    """
+    ADDED (2026-08-26): moving either vertical volume-scale slider
+    rebuilds the figure from the ALREADY-FETCHED raw data (stored in
+    s-weis-radar-chart-rawdata by show_weis_radar_chart) rather than
+    hitting the backend again -- the underlying bars/hits don't
+    change when adjusting bar-height scale, only the y-axis range
+    displayed for that one panel.
+    """
+    if not raw_data:
+        return no_update
+    fig = _build_weis_radar_chart_figure(
+        raw_data, ma_period=ma_period or 0,
+        yaxis2_range=cumvol_range, yaxis3_range=stdvol_range,
+    )
+    return fig
 
 
 @app.callback(
