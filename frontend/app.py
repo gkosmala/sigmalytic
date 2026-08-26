@@ -4320,7 +4320,10 @@ def build_weis_radar_tab(session=None):
                        "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px",
                        "float": "right"}),
         ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
-        dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
+        dcc.Loading(dcc.Graph(
+            id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
+            config={"responsive": True},
+        )),
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
@@ -7415,17 +7418,29 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20):
 
     fig.update_layout(
         title=f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}",
-        # ADDED (2026-08-26): 3-panel domain split (price / cumulative
-        # volume / standard volume), matching the Command Center
-        # chart's own proportions in this same file.
+        # 3-panel domain split (price / cumulative volume / standard
+        # volume), matching the Command Center chart's own
+        # proportions in this same file.
         yaxis=dict(domain=[0.58, 1.0], title="Price"),
         yaxis2=dict(domain=[0.30, 0.54], title="Cum. Vol"),
         yaxis3=dict(domain=[0.0, 0.24], title="Volume"),
-        # ADDED (2026-08-26): horizontal range slider for scrolling
-        # through longer histories, per explicit request.
-        xaxis_rangeslider_visible=True,
+        # FIX (2026-08-26): removed per explicit correction -- the
+        # range slider was never actually requested; it adds its own
+        # extra visual pane beneath the standard volume panel, which
+        # was mistaken for a fourth chart panel.
+        xaxis_rangeslider_visible=False,
+        # FIX (2026-08-26): legend moved below the chart per explicit
+        # request -- was Plotly's default (unset), which places it
+        # vertically along the right edge.
+        legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5,
+                     font=dict(color=WHITE, size=10)),
         template="plotly_dark",
         height=640,
+        # FIX (2026-08-26): autosize so the figure genuinely fills the
+        # full width of its container (see the dcc.Graph's own
+        # style/config change below) rather than rendering at
+        # Plotly's fixed internal default width.
+        autosize=True,
         margin=dict(l=40, r=20, t=50, b=30),
         paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
     )
@@ -7469,7 +7484,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     """
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
-        return {}, {"display": "none"}, None
+        return {}, {"display": "none", "width": "100%"}, None
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
@@ -7491,10 +7506,10 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
         fig = go.Figure()
         fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
-        return fig, {"display": "block"}, symbol
+        return fig, {"display": "block", "width": "100%"}, symbol
 
     fig = _build_weis_radar_chart_figure(data, ma_period=ma_period or 0)
-    return fig, {"display": "block"}, symbol
+    return fig, {"display": "block", "width": "100%"}, symbol
 
 
 @app.callback(
