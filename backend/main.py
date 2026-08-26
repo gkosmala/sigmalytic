@@ -1878,7 +1878,7 @@ def weis_radar_results():
 
 
 @app.get("/api/weis-radar/chart/{symbol}")
-def weis_radar_chart_data(symbol: str):
+def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252):
     """
     ADDED (2026-08-25): on-demand, single-symbol bar+hit data for the
     new click-to-chart feature. Deliberately NOT part of the cached
@@ -1889,19 +1889,31 @@ def weis_radar_chart_data(symbol: str):
     Analysis tab already uses safely on this same web backend.
     Reuses scan_symbol_for_weis_patterns() (already tested) so the
     chart's annotations match exactly what the table already showed.
+
+    ADDED (2026-08-26): timeframe and limit are now real, selectable
+    query params rather than hardcoded -- confirmed fetch_bars_batch()
+    (backend/radar_service.py) already has correct, separately-tuned
+    calendar-window math for every timeframe it supports (1Min, 5Min,
+    15Min, 30Min, 1Hour, 1Day, 1Week), so this is a safe, mechanical
+    change, not new risk.
     """
     from backend.radar_service import fetch_bars_batch
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
     from backend.weis_radar_scan import _bars_to_dataframe, scan_symbol_for_weis_patterns
 
+    ALLOWED_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    if timeframe not in ALLOWED_TIMEFRAMES:
+        return {"ok": False, "error": f"Unsupported timeframe '{timeframe}'."}
+    limit = max(60, min(int(limit), 1000))  # sane bounds -- same floor scan_symbol_for_weis_patterns already requires, cap to prevent an oversized request
+
     try:
         sym = symbol.upper().strip()
-        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars_map = fetch_bars_batch([sym], timeframe=timeframe, limit=limit)
         raw_bars = bars_map.get(sym, [])
         if len(raw_bars) < 60:
             return {"ok": False, "error": f"Insufficient bar history for {sym}."}
 
-        df = _bars_to_dataframe(raw_bars)
+        df = _bars_to_dataframe(raw_bars, keep_time=(timeframe != "1Day" and timeframe != "1Week"))
         engine = WyckoffVerdictEngine()
         hits = scan_symbol_for_weis_patterns(engine, df)
         # FIX: build bars_out from the SAME prepared DataFrame the wave
@@ -1920,7 +1932,7 @@ def weis_radar_chart_data(symbol: str):
              "wave_dir": wave_series["wave_dir"][i]}
             for i, (_, row) in enumerate(prepared_df.iterrows())
         ]
-        return {"ok": True, "symbol": sym, "bars": bars_out, "hits": hits}
+        return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 

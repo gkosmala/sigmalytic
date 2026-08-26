@@ -83,7 +83,7 @@ def get_weis_radar_job_status() -> dict:
         return {"status": "unknown"}
 
 
-def _bars_to_dataframe(raw_bars: list) -> pd.DataFrame:
+def _bars_to_dataframe(raw_bars: list, keep_time: bool = False) -> pd.DataFrame:
     """
     Same conversion already used by the live single-symbol
     wyckoff-verdict endpoint -- Alpaca's own o/h/l/c/v field names.
@@ -95,10 +95,19 @@ def _bars_to_dataframe(raw_bars: list) -> pd.DataFrame:
     "236") instead of an actual date -- exactly the "crossed 236"
     output reported live. Now keeps the real date, sliced to just the
     calendar date portion of Alpaca's ISO timestamp.
+
+    ADDED (2026-08-26): keep_time=True preserves the full timestamp
+    instead of slicing to just the date -- needed once the chart
+    endpoint (backend/main.py) became timeframe-selectable, since
+    multiple intraday bars share the same calendar date and would
+    otherwise collapse to identical, indistinguishable "date" values.
+    Defaults to False (unchanged, date-only) so the full-universe
+    daily-only scan's own call site (this same file, below) needs no
+    changes and its existing table-display formatting is unaffected.
     """
     return pd.DataFrame([
         {"open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"],
-         "date": str(b.get("t", ""))[:10]}
+         "date": str(b.get("t", "")) if keep_time else str(b.get("t", ""))[:10]}
         for b in raw_bars
     ])
 

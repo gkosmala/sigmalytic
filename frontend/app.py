@@ -4273,30 +4273,53 @@ def build_weis_radar_tab(session=None):
                               style={"width": "220px", "display": "inline-block", "color": "#111"}),
             ], style={"display": "inline-block"}),
         ], style={"marginBottom": "16px"}),
-        # ADDED (2026-08-25): volume-mode toggle + a Store remembering
-        # which symbol is currently charted, so switching the toggle
-        # can redraw the SAME symbol's chart without requiring another
-        # row click.
+        # ADDED (2026-08-25): a Store remembering which symbol is
+        # currently charted, so control changes can redraw the SAME
+        # symbol's chart without requiring another row click.
+        #
+        # REDESIGNED (2026-08-26): the old Standard/Cumulative toggle
+        # is gone -- both volume views are now permanent, separate
+        # panels (see _build_weis_radar_chart_figure()). Replaced with
+        # real timeframe, lookback, and volume-MA-period controls, all
+        # wired through to the now-selectable backend endpoint.
         dcc.Store(id="s-weis-radar-current-symbol", data=None),
         html.Div([
-            dcc.RadioItems(
-                id="weis-radar-volume-mode",
-                options=[{"label": " Standard Volume", "value": "standard"},
-                          {"label": " Cumulative (Wave) Volume", "value": "cumulative"}],
-                value="standard", inline=True,
-                style={"color": MUTED, "fontSize": "12px"},
-                labelStyle={"marginRight": "16px"},
-            ),
-            # ADDED (2026-08-25): explicit close button -- previously
-            # the only way the chart ever disappeared was an unwanted
-            # side effect of the whole tab rebuilding on a live tick
-            # (now fixed separately). The user asked specifically for
-            # a real, deliberate way to close it themselves instead.
+            html.Div([
+                html.Span("Timeframe: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
+                dcc.Dropdown(
+                    id="weis-radar-chart-timeframe",
+                    options=[{"label": lbl, "value": val} for lbl, val in [
+                        ("1 Min", "1Min"), ("5 Min", "5Min"), ("15 Min", "15Min"),
+                        ("30 Min", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"), ("1 Week", "1Week"),
+                    ]],
+                    value="1Day", clearable=False,
+                    style={"width": "130px", "display": "inline-block", "color": "#111"},
+                ),
+            ], style={"display": "inline-block", "marginRight": "16px"}),
+            html.Div([
+                html.Span("Lookback: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
+                dcc.Dropdown(
+                    id="weis-radar-chart-lookback",
+                    options=[{"label": f"{n} bars", "value": n} for n in [100, 150, 252, 500]],
+                    value=252, clearable=False,
+                    style={"width": "110px", "display": "inline-block", "color": "#111"},
+                ),
+            ], style={"display": "inline-block", "marginRight": "16px"}),
+            html.Div([
+                html.Span("Volume MA: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
+                dcc.Dropdown(
+                    id="weis-radar-chart-ma",
+                    options=[{"label": "Off", "value": 0}] + [{"label": f"{n}-bar", "value": n} for n in [10, 20, 50]],
+                    value=20, clearable=False,
+                    style={"width": "100px", "display": "inline-block", "color": "#111"},
+                ),
+            ], style={"display": "inline-block"}),
             html.Button("✕ Close Chart", id="btn-close-weis-radar-chart", n_clicks=0,
                 style={"background": "rgba(239,68,68,.1)", "border": "1px solid rgba(239,68,68,.3)",
                        "borderRadius": "8px", "color": "#f87171", "cursor": "pointer",
-                       "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px"}),
-        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "6px"}),
+                       "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px",
+                       "float": "right"}),
+        ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
         dcc.Loading(dcc.Graph(id="weis-radar-chart", figure={}, style={"display": "none"})),
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
@@ -7289,7 +7312,7 @@ def poll_weis_radar_status(n_intervals, session):
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
 
 
-def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
+def _build_weis_radar_chart_figure(chart_data, ma_period=20):
     """
     ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
     for the symbol clicked -- a genuine upgrade over the standalone
@@ -7298,28 +7321,27 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
     support instead. Same annotation concept as before: a horizontal
     line at each hit's level, a marker at its actual event date.
 
-    volume_mode: "standard" colors each bar by that day's own
-    open/close, matching every other volume chart in this app.
-    "cumulative" colors by the WAVE's direction instead (wave_dir from
-    the backend's get_cumulative_wave_volume_series()) -- confirmed
-    earlier this session that coloring cumulative volume by a bar's
-    own candle instead of its wave produced a real, reported bug: a
-    normal red daily candle inside a genuine green up-wave rendered
-    red, contradicting the price action above it.
+    REDESIGNED (2026-08-26): per explicit request, both volume views
+    are now permanent, separate panels (no toggle) -- cumulative Weis
+    Wave volume and standard time-based volume, mirroring the exact
+    3-panel domain-based layout already used for the Command Center
+    chart in this same file (see build_chart()), for visual
+    consistency across the app. Also adds an adjustable moving-average
+    line over the standard volume panel (ma_period, a real, user-
+    controlled parameter -- not hardcoded) and enables the horizontal
+    range slider for scrolling/full-width viewing of longer histories.
     """
     bars = chart_data.get("bars", [])
     hits = chart_data.get("hits", [])
     symbol = chart_data.get("symbol", "")
     dates = [b["date"] for b in bars]
 
-    # ADDED (2026-08-25): a Spring/Upthrust genuinely "building" on the
-    # still-forming current bar gets its own separate, yellow-colored
-    # trace layered on top of the main series -- go.Candlestick doesn't
-    # support per-bar color overrides directly, so the only clean way
-    # to highlight just the last bar differently is a second trace
-    # covering only that one point. Pops against the dark background,
-    # as requested, and makes clear this bar is still in progress
-    # rather than a finished, confirmed signal.
+    # a Spring/Upthrust genuinely "building" on the still-forming
+    # current bar gets its own separate, yellow-colored trace layered
+    # on top of the main series -- go.Candlestick doesn't support
+    # per-bar color overrides directly, so the only clean way to
+    # highlight just the last bar differently is a second trace
+    # covering only that one point.
     building_types = {"SPRING_BUILDING", "UPTHRUST_BUILDING"}
     is_building = any(h.get("type") in building_types for h in hits)
 
@@ -7345,18 +7367,38 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
         ))
 
     up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
-    if volume_mode == "cumulative":
-        vol_values = [b.get("cumulative_volume", b["volume"]) for b in bars]
-        vol_colors = [up_color if b.get("wave_dir", 0) == 1 else down_color for b in bars]
-        vol_name = "Cumulative (Wave) Volume"
-    else:
-        vol_values = [b["volume"] for b in bars]
-        vol_colors = [up_color if b["close"] >= b["open"] else down_color for b in bars]
-        vol_name = "Volume"
 
+    # Middle panel: cumulative Weis Wave volume, colored by wave
+    # direction (confirmed earlier this session: coloring by a bar's
+    # own candle instead of its wave produced a real, reported bug --
+    # a normal red daily candle inside a genuine green up-wave
+    # rendered red, contradicting the price action above it).
+    cum_values = [b.get("cumulative_volume", b["volume"]) for b in bars]
+    cum_colors = [up_color if b.get("wave_dir", 0) == 1 else down_color for b in bars]
     fig.add_trace(go.Bar(
-        x=dates, y=vol_values, name=vol_name, marker_color=vol_colors, yaxis="y2",
+        x=dates, y=cum_values, name="Cumulative (Wave) Volume", marker_color=cum_colors, yaxis="y2",
     ))
+
+    # Bottom panel: standard time-based volume, colored by that bar's
+    # own open/close, plus an adjustable moving average line.
+    std_values = [b["volume"] for b in bars]
+    std_colors = [up_color if b["close"] >= b["open"] else down_color for b in bars]
+    fig.add_trace(go.Bar(
+        x=dates, y=std_values, name="Volume", marker_color=std_colors, yaxis="y3",
+    ))
+    if ma_period and ma_period > 1 and len(std_values) >= ma_period:
+        # FIX: pandas is not imported anywhere in this file -- avoided
+        # adding a new top-level import to an already very large file
+        # for one simple rolling mean; plain Python is just as correct
+        # here and safer as a minimal, contained change.
+        ma_values = [None] * (ma_period - 1) + [
+            sum(std_values[i - ma_period + 1:i + 1]) / ma_period
+            for i in range(ma_period - 1, len(std_values))
+        ]
+        fig.add_trace(go.Scatter(
+            x=dates, y=ma_values, name=f"{ma_period}-bar Volume MA", mode="lines",
+            line=dict(color="#facc15", width=1.5), yaxis="y3",
+        ))
 
     pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
                        "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
@@ -7373,11 +7415,17 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
 
     fig.update_layout(
         title=f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}",
-        yaxis=dict(domain=[0.28, 1.0], title="Price"),
-        yaxis2=dict(domain=[0.0, 0.22], title="Volume"),
-        xaxis_rangeslider_visible=False,
+        # ADDED (2026-08-26): 3-panel domain split (price / cumulative
+        # volume / standard volume), matching the Command Center
+        # chart's own proportions in this same file.
+        yaxis=dict(domain=[0.58, 1.0], title="Price"),
+        yaxis2=dict(domain=[0.30, 0.54], title="Cum. Vol"),
+        yaxis3=dict(domain=[0.0, 0.24], title="Volume"),
+        # ADDED (2026-08-26): horizontal range slider for scrolling
+        # through longer histories, per explicit request.
+        xaxis_rangeslider_visible=True,
         template="plotly_dark",
-        height=520,
+        height=640,
         margin=dict(l=40, r=20, t=50, b=30),
         paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
     )
@@ -7389,12 +7437,14 @@ def _build_weis_radar_chart_figure(chart_data, volume_mode="standard"):
     Output("weis-radar-chart", "style"),
     Output("s-weis-radar-current-symbol", "data"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
-    Input("weis-radar-volume-mode", "value"),
+    Input("weis-radar-chart-timeframe", "value"),
+    Input("weis-radar-chart-lookback", "value"),
+    Input("weis-radar-chart-ma", "value"),
     Input("btn-close-weis-radar-chart", "n_clicks"),
     State("s-weis-radar-current-symbol", "data"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symbol):
+def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -7403,22 +7453,27 @@ def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symb
     "symbol":...} dict of whichever row was actually clicked, out of
     however many rows exist.
 
-    ADDED (2026-08-25): also fires when the volume-mode toggle
-    changes, using the STORED current symbol (s-weis-radar-current-
-    symbol) rather than requiring another row click just to switch
-    between standard and cumulative volume on the same chart. Also
-    fires on the explicit "Close Chart" button -- hides the chart and
-    clears the stored symbol, a real, deliberate close the user asked
-    for (distinct from, and in addition to, the separate fix that
-    stops the chart from disappearing on its own via the tab's
+    REDESIGNED (2026-08-26): the old Standard/Cumulative volume toggle
+    is gone (both are now permanent panels -- see
+    _build_weis_radar_chart_figure()). Now fires on real timeframe,
+    lookback, and volume-MA controls instead, all using the STORED
+    current symbol so changing any control redraws the same chart
+    without requiring another row click. Timeframe/lookback are real
+    query params on the backend endpoint now, not hardcoded.
+
+    Also fires on the explicit "Close Chart" button -- hides the chart
+    and clears the stored symbol, a real, deliberate close the user
+    asked for (distinct from, and in addition to, the separate fix
+    that stops the chart from disappearing on its own via the tab's
     periodic live-tick rebuild).
     """
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
         return {}, {"display": "none"}, None
+    control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
-    elif triggered == "weis-radar-volume-mode":
+    elif triggered in control_ids:
         symbol = current_symbol
     else:
         symbol = None
@@ -7426,7 +7481,8 @@ def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symb
         return no_update, no_update, no_update
 
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}", timeout=20)
+        r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
+                     params={"timeframe": timeframe or "1Day", "limit": lookback or 252}, timeout=20)
         data = r.json() if r.ok else {"ok": False}
     except Exception as e:
         data = {"ok": False, "error": str(e)}
@@ -7437,7 +7493,7 @@ def show_weis_radar_chart(n_clicks_list, volume_mode, close_clicks, current_symb
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
         return fig, {"display": "block"}, symbol
 
-    fig = _build_weis_radar_chart_figure(data, volume_mode=volume_mode or "standard")
+    fig = _build_weis_radar_chart_figure(data, ma_period=ma_period or 0)
     return fig, {"display": "block"}, symbol
 
 
