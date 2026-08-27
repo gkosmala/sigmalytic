@@ -7460,16 +7460,38 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
             line=dict(color="#facc15", width=1.5), yaxis="y3",
         ))
 
-    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
+    # FIX (2026-08-27): colors corrected per explicit clarification --
+    # should indicate bullish/bearish direction, not four arbitrary
+    # distinct colors. Spring and Breakout are both bullish resolutions
+    # (a support-level shakeout that reclaims, and a resistance-level
+    # break that holds) -- both green. Upthrust and Breakdown are both
+    # bearish resolutions (a resistance-level sweep that fails, and a
+    # support-level break that holds) -- both red. Building states stay
+    # yellow regardless of direction, since that color specifically
+    # means "still forming/uncertain," not a resolved bullish or
+    # bearish outcome.
+    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#4ade80", "BREAKDOWN": "#f87171",
                        "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
+    # FIX (2026-08-27): confirmed a real, reported readability bug --
+    # annotation text had no explicit position, so Plotly defaulted to
+    # placing it directly on the line itself, which for a level near
+    # the actual traded price range visually blended into the
+    # candlesticks. Support-type patterns (a breach/breakdown BELOW a
+    # level) now label below their line; resistance-type patterns (a
+    # sweep/breakout ABOVE a level) label above theirs -- matching the
+    # real, physical direction each pattern actually represents, not
+    # just an arbitrary readability choice.
+    SUPPORT_TYPES = {"SPRING", "BREAKDOWN", "SPRING_BUILDING"}
     last_date = dates[-1] if dates else None
     for h in hits:
         color = pattern_colors.get(h.get("type"), "#94a3b8")
         level = h.get("level")
         event_date = h.get("date") or last_date  # Spring/Upthrust have no "date" -- always "today" by design
         if level is not None:
+            position = "bottom right" if h.get("type") in SUPPORT_TYPES else "top right"
             fig.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.6,
-                           annotation_text=h.get("type"), annotation_font_color=color)
+                           annotation_text=h.get("type"), annotation_font_color=color,
+                           annotation_position=position)
         if event_date:
             fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
 
