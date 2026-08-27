@@ -7488,10 +7488,22 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
         level = h.get("level")
         event_date = h.get("date") or last_date  # Spring/Upthrust have no "date" -- always "today" by design
         if level is not None:
-            position = "bottom right" if h.get("type") in SUPPORT_TYPES else "top right"
+            is_support = h.get("type") in SUPPORT_TYPES
+            # FIX (2026-08-27): confirmed a real, reported readability
+            # bug -- annotation_position alone only sets which SIDE of
+            # the line the text anchors to, not how FAR from it. A
+            # breach/breakdown level sits, by definition, right where
+            # price recently was (that's what makes it a genuine
+            # support/resistance level in the first place), so "below
+            # the line" could still land directly on nearby candle
+            # bodies. Adding an explicit pixel offset (independent of
+            # the data's own price scale) gives the text real
+            # breathing room regardless of how close candles are.
+            position = "bottom right" if is_support else "top right"
+            yshift = -18 if is_support else 18
             fig.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.6,
                            annotation_text=h.get("type"), annotation_font_color=color,
-                           annotation_position=position)
+                           annotation_position=position, annotation_yshift=yshift)
         if event_date:
             fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
 
