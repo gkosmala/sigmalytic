@@ -369,10 +369,13 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
    matches something already establishedly green in this component,
    not an unrelated app-wide accent. Width (8px) still matches the
    main scrollbar, per the original request. */
-.weis-radar-vol-slider.rc-slider-vertical{{width:8px;}}
-.weis-radar-vol-slider .rc-slider-rail{{width:8px;background:{NAVY};border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-track{{width:8px;background:#4ade80;border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-handle{{width:12px;height:12px;margin-left:-3px;background:#4ade80;border:2px solid #4ade80;}}
+/* FIX (2026-08-26, fifth follow-up): switched from vertical to
+   horizontal sliders per explicit redesign -- a horizontal rail's
+   thickness is controlled by height, not width (the reverse of the
+   vertical case this replaced). */
+.weis-radar-vol-slider .rc-slider-rail{{height:8px;background:{NAVY};border-radius:2px;}}
+.weis-radar-vol-slider .rc-slider-track{{height:8px;background:#4ade80;border-radius:2px;}}
+.weis-radar-vol-slider .rc-slider-handle{{width:12px;height:12px;margin-top:-2px;background:#4ade80;border:2px solid #4ade80;}}
 .weis-radar-vol-slider .rc-slider-handle:hover,.weis-radar-vol-slider .rc-slider-handle:focus{{border-color:#4ade80;box-shadow:none;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input,textarea,select{{font-family:inherit;outline:none;}}
@@ -4340,55 +4343,38 @@ def build_weis_radar_tab(session=None):
         dcc.Store(id="s-weis-radar-chart-rawdata", data=None),
         # the chart's title lives here, outside the Plotly figure,
         # specifically so the figure's own top margin is a small,
-        # fixed, known value -- required for the exact pixel math
-        # below to correctly align each slider with its actual volume
-        # panel.
+        # fixed, known value.
         html.Div(id="weis-radar-chart-title", style={"color": WHITE, "fontSize": "13px",
                   "fontWeight": "700", "marginBottom": "4px", "display": "none"}),
-        # FIX (2026-08-26, fourth follow-up): switched from a flex row
-        # (which grouped both sliders together as one visual column,
-        # reported as reading like a paired "side by side" control
-        # rather than two independent ones) to position:absolute
-        # inside a position:relative wrapper. Each slider is now
-        # anchored directly by its own top/height, independent of the
-        # other -- both still sit at the chart's right edge (there's
-        # nowhere else a vertical scale control for a horizontal
-        # panel could meaningfully go), but they no longer share a
-        # flex container that visually pairs them.
-        #
-        # Pixel values recalculated for the new, smaller volume
-        # domains (12% each, was 24%): figure height=640, margin=
-        # {{t:10,b:30}} -> 600px plotting area. Cumulative domain
-        # [0.17,0.29] -> top 436px, height 72px. Standard domain
-        # [0.0,0.12] -> top 538px, height 72px. If the figure's
-        # height, margin, or these domains ever change, these values
-        # must be recalculated to match -- they are not independently
-        # adjustable from _build_weis_radar_chart_figure()'s own
-        # layout.
+        dcc.Loading(dcc.Graph(
+            id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
+            config={"responsive": True},
+        )),
+        # REDESIGNED (2026-08-26, fifth follow-up): the two vertical,
+        # pixel-aligned sliders (independently anchored beside each
+        # volume panel) were reported as unreadable -- overlapping and
+        # indistinguishable from one another. Replaced entirely with
+        # two horizontal sliders in a single row directly below the
+        # chart's own legend, cumulative on the left and standard on
+        # the right, separated by a small fixed gap. This is a much
+        # simpler, more robust layout than the vertical version: two
+        # normal-flow flex children with flex:1 each naturally share
+        # the available width in proportion, so "the ratio" requested
+        # is handled by flexbox itself rather than hardcoded pixel
+        # math tied to the figure's internal domains.
         html.Div([
-            dcc.Loading(dcc.Graph(
-                id="weis-radar-chart", figure={}, style={"display": "none"},
-                config={"responsive": True},
-            ), style={"width": "100%"}),
-            html.Div(
-                dcc.RangeSlider(
-                    id="weis-radar-cumvol-slider", vertical=True, min=0, max=100, step=1, value=[0, 100],
-                    marks=None, tooltip=None, className="weis-radar-vol-slider",
-                ),
-                id="weis-radar-cumvol-slider-wrap", title="Cumulative Volume scale",
-                style={"display": "none", "position": "absolute", "right": "0px",
-                        "top": "436px", "width": "24px", "height": "72px"},
-            ),
-            html.Div(
-                dcc.RangeSlider(
-                    id="weis-radar-stdvol-slider", vertical=True, min=0, max=100, step=1, value=[0, 100],
-                    marks=None, tooltip=None, className="weis-radar-vol-slider",
-                ),
-                id="weis-radar-stdvol-slider-wrap", title="Standard Volume scale",
-                style={"display": "none", "position": "absolute", "right": "0px",
-                        "top": "538px", "width": "24px", "height": "72px"},
-            ),
-        ], style={"position": "relative", "width": "100%"}),
+            html.Div(dcc.RangeSlider(
+                id="weis-radar-cumvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
+                marks=None, tooltip=None, className="weis-radar-vol-slider",
+            ), title="Cumulative Volume scale", style={"flex": "1"}),
+            html.Div(style={"width": "16px"}),  # small fixed gap between the two sliders
+            html.Div(dcc.RangeSlider(
+                id="weis-radar-stdvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
+                marks=None, tooltip=None, className="weis-radar-vol-slider",
+            ), title="Standard Volume scale", style={"flex": "1"}),
+        ], id="weis-radar-volume-sliders-row",
+           style={"display": "none", "flexDirection": "row", "alignItems": "center",
+                   "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}),
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
@@ -7534,8 +7520,7 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
     Output("s-weis-radar-chart-rawdata", "data"),
     Output("weis-radar-chart-title", "children"),
     Output("weis-radar-chart-title", "style"),
-    Output("weis-radar-cumvol-slider-wrap", "style"),
-    Output("weis-radar-stdvol-slider-wrap", "style"),
+    Output("weis-radar-volume-sliders-row", "style"),
     Output("weis-radar-cumvol-slider", "min"),
     Output("weis-radar-cumvol-slider", "max"),
     Output("weis-radar-cumvol-slider", "value"),
@@ -7568,44 +7553,29 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     query params on the backend endpoint now, not hardcoded.
 
     Also fires on the explicit "Close Chart" button -- hides the chart
-    and clears the stored symbol, a real, deliberate close the user
-    asked for (distinct from, and in addition to, the separate fix
-    that stops the chart from disappearing on its own via the tab's
-    periodic live-tick rebuild).
+    and clears the stored symbol.
 
     ADDED (2026-08-26, second follow-up): also computes real min/max
-    bounds for the two vertical volume-scale sliders from the actual
-    fetched data (0 to that panel's real max, a small headroom margin
-    added so the tallest bar isn't flush against the slider's own
-    max), and stores the raw chart data client-side so moving either
+    bounds for the two volume-scale sliders from the actual fetched
+    data, and stores the raw chart data client-side so moving either
     slider can rebuild the figure without a second backend fetch.
 
-    ADDED (2026-08-26, third follow-up): the chart's title now renders
-    in a separate html.Div (see build_weis_radar_tab()) instead of
-    inside the Plotly figure, so the figure's own margin stays a
-    small, fixed, known value -- required for the sliders' exact
-    pixel positioning to line up with their actual volume panels.
-    FIX: each slider-wrap's show/hide style must preserve its own
-    height/marginTop/width (which differ between the two sliders) --
-    a single shared style dict here would have silently overwritten
-    the precise positioning set in the layout.
+    REDESIGNED (2026-08-26, fifth follow-up): the two sliders were
+    switched from vertical (independently pixel-aligned beside each
+    volume panel -- reported as overlapping/unreadable) to horizontal,
+    sharing one row below the chart's legend. Both now show/hide
+    together as a single row (weis-radar-volume-sliders-row) instead
+    of two separately-positioned wrappers, since there's no longer any
+    per-panel vertical alignment to preserve.
     """
-    # ADDED: each wrap's own correct positioning, reused for both the
-    # hidden and visible states so toggling "display" never disturbs
-    # the exact pixel alignment set in the layout.
-    # FIX (2026-08-26, fourth follow-up): updated for the new,
-    # smaller volume domains (12% each) and switched to
-    # position:absolute (see build_weis_radar_tab()'s layout) --
-    # these values must stay in sync with both the figure's own
-    # domains and the layout's initial style.
-    cumvol_base = {"position": "absolute", "right": "0px", "width": "24px", "height": "72px", "top": "436px"}
-    stdvol_base = {"position": "absolute", "right": "0px", "width": "24px", "height": "72px", "top": "538px"}
+    ROW_VISIBLE = {"display": "flex", "flexDirection": "row", "alignItems": "center",
+                    "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}
+    ROW_HIDDEN = {"display": "none"}
 
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
         return ({}, {"display": "none", "width": "100%"}, None, None,
-                "", {"display": "none"},
-                {**cumvol_base, "display": "none"}, {**stdvol_base, "display": "none"},
+                "", {"display": "none"}, ROW_HIDDEN,
                 0, 100, [0, 100], 0, 100, [0, 100])
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
@@ -7615,7 +7585,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     else:
         symbol = None
     if not symbol:
-        return (no_update,) * 14
+        return (no_update,) * 13
 
     try:
         r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
@@ -7629,8 +7599,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
         fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
         return (fig, {"display": "block", "width": "100%"}, symbol, None,
-                "", {"display": "none"},
-                {**cumvol_base, "display": "none"}, {**stdvol_base, "display": "none"},
+                "", {"display": "none"}, ROW_HIDDEN,
                 0, 100, [0, 100], 0, 100, [0, 100])
 
     bars = data.get("bars", [])
@@ -7643,7 +7612,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     return (fig, {"display": "block", "width": "100%"}, symbol, data,
             title_text, {"display": "block", "color": WHITE, "fontSize": "13px",
                           "fontWeight": "700", "marginBottom": "4px"},
-            {**cumvol_base, "display": "block"}, {**stdvol_base, "display": "block"},
+            ROW_VISIBLE,
             0, cum_max, [0, cum_max], 0, std_max, [0, std_max])
 
 
