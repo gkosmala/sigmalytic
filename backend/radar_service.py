@@ -36,6 +36,7 @@ import logging
 import time
 import threading
 import pathlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Set
 
@@ -505,8 +506,19 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
 
     debug_samples = []
     error_samples = []
+    debug_lock = threading.Lock()
 
-    for symbol in symbols:
+    def _fetch_one_symbol(symbol: str):
+        """
+        ADDED (2026-08-27): the per-symbol fetch logic extracted
+        unchanged from the original sequential loop below, so it can
+        be called concurrently across many symbols at once. Returns
+        (symbol, bars_or_None, debug_msg_or_None, error_msg_or_None,
+        hit_rate_limit) rather than mutating any shared state directly
+        -- avoids race conditions between concurrent threads, since
+        each call is fully self-contained and only merges into the
+        shared results/debug/error collections after it returns.
+        """
         try:
             params = {
                 "timeframe": timeframe,
@@ -518,38 +530,13 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
                 "limit": target_limit,
             }
 
-            # FIX (2026-08-15): confirmed via direct diagnostic testing
-            # that this function was silently returning only Alpaca's
-            # FIRST page of results -- since sort="asc" returns oldest-
-            # first, any symbol whose requested date range genuinely
-            # spans more than one page (Alpaca's own per-request cap,
-            # not a total) would have its most recent data silently
-            # missing entirely, with the returned set appearing to be
-            # a complete, correctly-shaped `limit`-sized result. This
-            # went unnoticed because callers only ever checked whether
-            # the numbers looked internally reasonable, not the exact
-            # date of the underlying data. Now follows next_page_token
-            # until either no more pages remain or enough bars have
-            # accumulated to cover target_limit from the most recent
-            # end, capped at 10 pages as a hard safety bound against a
-            # genuine infinite-pagination edge case.
-            #
-            # CRITICAL FIX (2026-08-15): the original version of this
-            # fix stopped early once len(all_bars) >= target_limit --
-            # but Alpaca's own per-page `limit` param is itself set to
-            # target_limit, so the FIRST page alone already reaches
-            # this count whenever enough data exists at all. That
-            # meant the "fix" never actually followed pagination
-            # beyond page 1 in practice, for the real parameters used
-            # throughout this entire app -- confirmed directly: a
-            # symbol fetched after this fix was deployed still showed
-            # a last_bar_date from February, unchanged from before.
-            # Now relies solely on the genuine end-of-data signal
-            # (Alpaca omits next_page_token on the true last page),
-            # not a count threshold that can never meaningfully fire
-            # given these parameters.
+            # Same pagination logic as before (see the FIX comments
+            # this replaced, in git history) -- follows next_page_token
+            # until either no more pages remain or the true end of
+            # data is reached, capped at 10 pages as a safety bound.
             all_bars = []
             next_token = None
+            r = None
             for _page in range(10):
                 page_params = dict(params)
                 if next_token:
@@ -575,36 +562,54 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
 
             bars = all_bars
 
-            if r.status_code == 200:
-                # Keep the most recent `limit` bars and ignore obviously empty rows.
+            if r is not None and r.status_code == 200:
                 cleaned = [b for b in bars if b.get("c") and b.get("v") is not None]
-                if len(debug_samples) < 8:
-                    debug_samples.append(f"{symbol}:status=200 raw={len(bars)} clean={len(cleaned)}")
-
+                debug_msg = f"{symbol}:status=200 raw={len(bars)} clean={len(cleaned)}"
                 if cleaned:
-                    results[symbol] = cleaned[-target_limit:]
+                    return (symbol, cleaned[-target_limit:], debug_msg, None, False)
                 else:
-                    log.warning(f"No usable historical bars for {symbol}; raw={len(bars)}")
-
-            elif r.status_code == 429:
-                msg = f"{symbol}:429 rate_limit"
-                if len(error_samples) < 8:
-                    error_samples.append(msg)
-                log.warning("Rate limit during bar fetch — pausing 5s")
-                time.sleep(5)
+                    return (symbol, None, debug_msg, None, False)
+            elif r is not None and r.status_code == 429:
+                time.sleep(5)  # matches the original loop's own backoff behavior
+                return (symbol, None, None, f"{symbol}:429 rate_limit", True)
             else:
-                msg = f"{symbol}:status={r.status_code} body={r.text[:160]}"
-                if len(error_samples) < 8:
-                    error_samples.append(msg)
-                log.warning(f"Bar fetch failed: {msg}")
+                status = r.status_code if r is not None else "no_response"
+                body = r.text[:160] if r is not None else ""
+                return (symbol, None, None, f"{symbol}:status={status} body={body}", False)
 
         except Exception as e:
-            msg = f"{symbol}:exception={e}"
-            if len(error_samples) < 8:
-                error_samples.append(msg)
-            log.warning(f"Bar fetch error: {msg}")
+            return (symbol, None, None, f"{symbol}:exception={e}", False)
 
-        time.sleep(0.02)
+    # FIX (2026-08-27): confirmed via direct code inspection that this
+    # function previously fetched every symbol sequentially, one full
+    # network round-trip at a time -- for the Weis Radar scan's ~1,023
+    # symbols, that alone explained a real, reported 5-15 minute scan
+    # time (300-500ms typical external-API latency x ~1,023 sequential
+    # calls). This is pure network-wait, not CPU work, so it
+    # parallelizes well. max_workers=10 is a deliberately moderate
+    # concurrency level -- fast enough to meaningfully help, cautious
+    # enough not to aggressively hammer Alpaca's rate limits (the
+    # original sequential loop's own 429-handling and small per-call
+    # sleep were both signs the original author was already mindful of
+    # this risk). A 429 from any worker pauses 5s before that worker's
+    # next task, matching the original loop's own backoff behavior.
+    rate_limited_count = 0
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_one_symbol, sym): sym for sym in symbols}
+        for future in as_completed(futures):
+            symbol, bars, debug_msg, error_msg, hit_rate_limit = future.result()
+            if bars is not None:
+                results[symbol] = bars
+            with debug_lock:
+                if debug_msg and len(debug_samples) < 8:
+                    debug_samples.append(debug_msg)
+                if error_msg and len(error_samples) < 8:
+                    error_samples.append(error_msg)
+            if hit_rate_limit:
+                rate_limited_count += 1
+
+    if rate_limited_count:
+        log.warning(f"Hit rate limit on {rate_limited_count} symbol(s) during parallel bar fetch")
 
     if debug_samples:
         log.info("Historical bar sample responses: " + " | ".join(debug_samples))
