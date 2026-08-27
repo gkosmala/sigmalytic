@@ -86,12 +86,22 @@ services:
     # [MEM] evidence confirmed genuine stability (84-96 MB, flat) at
     # the aggressive setting, and the CallbackException this frequent
     # recycling was partly aggravating now has a real auto-reload fix.
-    # 50 requests (~8.3 min per worker at the current 10s tick
-    # interval) gives roughly 10 [MEM] readings per worker lifespan
-    # instead of ~4, enough to actually observe a trend rather than a
-    # brief snapshot, while staying well clear of the range already
-    # confirmed insufficient.
-    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 50 --max-requests-jitter 10 --bind 0.0.0.0:$PORT --timeout 240
+    #
+    # FIX (2026-08-27): the diagnostic above concluded successfully --
+    # memory is genuinely stable, not leaking -- so the aggressive
+    # 50-request recycling this comment describes no longer serves any
+    # remaining purpose. Confirmed directly via live production logs
+    # that this setting (combined with --workers 1, meaning there is
+    # no second worker to cover a gap) was causing real, recurring
+    # user-facing 502s: every worker restart showed a fresh on_tick
+    # sequence (seq=0) whose first call failed immediately, and
+    # restarts were visibly happening every 5-10 seconds under normal
+    # traffic. Raised to a value in line with typical production
+    # Gunicorn configurations (many real-world configs use 1000-10000+
+    # for this exact setting) -- still recycles periodically as a
+    # general safety net, just no longer aggressively enough to be the
+    # dominant source of restarts under ordinary load.
+    startCommand: gunicorn frontend.app:server --workers 1 --max-requests 1000 --max-requests-jitter 200 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
