@@ -362,15 +362,18 @@ body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system
 ::-webkit-scrollbar{{width:8px;height:4px;}}
 ::-webkit-scrollbar-track{{background:{NAVY};}}
 ::-webkit-scrollbar-thumb{{background:{TEAL};border-radius:2px;}}
-/* ADDED (2026-08-26): Weis Radar volume-scale sliders -- matches the
-   main scrollbar's exact width (8px) and color (TEAL) above, per
-   explicit request. Scoped to .weis-radar-vol-slider specifically so
-   it doesn't affect any other slider elsewhere in the app. */
+/* FIX (2026-08-26, fourth follow-up): switched from the app's TEAL
+   scrollbar color (reported as reading like sea-foam, not a proper
+   green) to #4ade80 -- the same solid green already used for "up"
+   volume bars in this exact chart, so the slider color genuinely
+   matches something already establishedly green in this component,
+   not an unrelated app-wide accent. Width (8px) still matches the
+   main scrollbar, per the original request. */
 .weis-radar-vol-slider.rc-slider-vertical{{width:8px;}}
 .weis-radar-vol-slider .rc-slider-rail{{width:8px;background:{NAVY};border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-track{{width:8px;background:{TEAL};border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-handle{{width:12px;height:12px;margin-left:-3px;background:{TEAL};border:2px solid {TEAL};}}
-.weis-radar-vol-slider .rc-slider-handle:hover,.weis-radar-vol-slider .rc-slider-handle:focus{{border-color:{TEAL};box-shadow:none;}}
+.weis-radar-vol-slider .rc-slider-track{{width:8px;background:#4ade80;border-radius:2px;}}
+.weis-radar-vol-slider .rc-slider-handle{{width:12px;height:12px;margin-left:-3px;background:#4ade80;border:2px solid #4ade80;}}
+.weis-radar-vol-slider .rc-slider-handle:hover,.weis-radar-vol-slider .rc-slider-handle:focus{{border-color:#4ade80;box-shadow:none;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input,textarea,select{{font-family:inherit;outline:none;}}
 .Select-control,.Select-menu-outer,.Select--single>.Select-control .Select-value,
@@ -4335,38 +4338,46 @@ def build_weis_radar_tab(session=None):
         # again -- the data itself doesn't change, only the y-axis
         # range displayed.
         dcc.Store(id="s-weis-radar-chart-rawdata", data=None),
-        # ADDED (2026-08-26, third follow-up): the chart's title now
-        # lives here, outside the Plotly figure, specifically so the
-        # figure's own top margin is a small, fixed, known value --
-        # required for the exact pixel math below to correctly align
-        # each slider with its actual volume panel.
+        # the chart's title lives here, outside the Plotly figure,
+        # specifically so the figure's own top margin is a small,
+        # fixed, known value -- required for the exact pixel math
+        # below to correctly align each slider with its actual volume
+        # panel.
         html.Div(id="weis-radar-chart-title", style={"color": WHITE, "fontSize": "13px",
                   "fontWeight": "700", "marginBottom": "4px", "display": "none"}),
+        # FIX (2026-08-26, fourth follow-up): switched from a flex row
+        # (which grouped both sliders together as one visual column,
+        # reported as reading like a paired "side by side" control
+        # rather than two independent ones) to position:absolute
+        # inside a position:relative wrapper. Each slider is now
+        # anchored directly by its own top/height, independent of the
+        # other -- both still sit at the chart's right edge (there's
+        # nowhere else a vertical scale control for a horizontal
+        # panel could meaningfully go), but they no longer share a
+        # flex container that visually pairs them.
+        #
+        # Pixel values recalculated for the new, smaller volume
+        # domains (12% each, was 24%): figure height=640, margin=
+        # {{t:10,b:30}} -> 600px plotting area. Cumulative domain
+        # [0.17,0.29] -> top 436px, height 72px. Standard domain
+        # [0.0,0.12] -> top 538px, height 72px. If the figure's
+        # height, margin, or these domains ever change, these values
+        # must be recalculated to match -- they are not independently
+        # adjustable from _build_weis_radar_chart_figure()'s own
+        # layout.
         html.Div([
             dcc.Loading(dcc.Graph(
                 id="weis-radar-chart", figure={}, style={"display": "none"},
                 config={"responsive": True},
-            ), style={"flex": "1", "minWidth": "0", "width": "100%"}),
-            # ADDED (2026-08-26): explicit, visible vertical sliders
-            # for adjusting each volume panel's bar-height scale.
-            #
-            # FIX (2026-08-26, third follow-up): now positioned with
-            # exact pixel math, not an approximate side column -- the
-            # figure is height=640 with margin={t:10, b:30} (see
-            # _build_weis_radar_chart_figure()), giving a 600px
-            # plotting area. Domain [0.30,0.54] (cumulative volume)
-            # and [0.0,0.24] (standard volume) translate directly to
-            # the marginTop/height values below. If either the
-            # figure's height, margins, or domains ever change, these
-            # numbers must be recalculated to match -- they are not
-            # independently adjustable.
+            ), style={"width": "100%"}),
             html.Div(
                 dcc.RangeSlider(
                     id="weis-radar-cumvol-slider", vertical=True, min=0, max=100, step=1, value=[0, 100],
                     marks=None, tooltip=None, className="weis-radar-vol-slider",
                 ),
                 id="weis-radar-cumvol-slider-wrap", title="Cumulative Volume scale",
-                style={"display": "none", "width": "24px", "height": "144px", "marginTop": "286px"},
+                style={"display": "none", "position": "absolute", "right": "0px",
+                        "top": "436px", "width": "24px", "height": "72px"},
             ),
             html.Div(
                 dcc.RangeSlider(
@@ -4374,9 +4385,10 @@ def build_weis_radar_tab(session=None):
                     marks=None, tooltip=None, className="weis-radar-vol-slider",
                 ),
                 id="weis-radar-stdvol-slider-wrap", title="Standard Volume scale",
-                style={"display": "none", "width": "24px", "height": "144px", "marginTop": "466px"},
+                style={"display": "none", "position": "absolute", "right": "0px",
+                        "top": "538px", "width": "24px", "height": "72px"},
             ),
-        ], style={"display": "flex", "flexDirection": "row", "alignItems": "flex-start", "width": "100%"}),
+        ], style={"position": "relative", "width": "100%"}),
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
@@ -7486,15 +7498,19 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
         # translate to exact, predictable pixel offsets -- see the
         # matching calculation in build_weis_radar_tab()'s layout.
         #
-        # 3-panel domain split (price / cumulative volume / standard
-        # volume), matching the Command Center chart's own
-        # proportions in this same file.
-        yaxis=dict(domain=[0.58, 1.0], title="Price"),
+        # FIX (2026-08-26, fourth follow-up): volume panels were
+        # explicitly reported as too tall -- reduced from 24% each
+        # (48% combined) to 12% each (24% combined), giving price
+        # significantly more room (35%-100% now, was 58%-100%). The
+        # matching slider position/height math in build_weis_radar_
+        # tab() was recalculated for these new domains, not just
+        # scaled proportionally by eye.
+        yaxis=dict(domain=[0.35, 1.0], title="Price"),
         # ADDED (2026-08-26): explicit range override, driven by the
         # two vertical sliders next to the chart -- None leaves
         # Plotly's own auto-range untouched.
-        yaxis2=dict(domain=[0.30, 0.54], title="Cum. Vol", range=yaxis2_range),
-        yaxis3=dict(domain=[0.0, 0.24], title="Volume", range=yaxis3_range),
+        yaxis2=dict(domain=[0.17, 0.29], title="Cum. Vol", range=yaxis2_range),
+        yaxis3=dict(domain=[0.0, 0.12], title="Volume", range=yaxis3_range),
         xaxis_rangeslider_visible=False,
         legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5,
                      font=dict(color=WHITE, size=10)),
@@ -7577,8 +7593,13 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     # ADDED: each wrap's own correct positioning, reused for both the
     # hidden and visible states so toggling "display" never disturbs
     # the exact pixel alignment set in the layout.
-    cumvol_base = {"width": "24px", "height": "144px", "marginTop": "286px"}
-    stdvol_base = {"width": "24px", "height": "144px", "marginTop": "466px"}
+    # FIX (2026-08-26, fourth follow-up): updated for the new,
+    # smaller volume domains (12% each) and switched to
+    # position:absolute (see build_weis_radar_tab()'s layout) --
+    # these values must stay in sync with both the figure's own
+    # domains and the layout's initial style.
+    cumvol_base = {"position": "absolute", "right": "0px", "width": "24px", "height": "72px", "top": "436px"}
+    stdvol_base = {"position": "absolute", "right": "0px", "width": "24px", "height": "72px", "top": "538px"}
 
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
