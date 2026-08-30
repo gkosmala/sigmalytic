@@ -16,11 +16,9 @@ import json
 import os
 import random
 from datetime import datetime, timezone, timedelta
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
 import dash
-from dash import dcc, html, Input, Output, State, no_update, callback_context, MATCH, ALL
+from dash import dcc, html, Input, Output, State, no_update, callback_context
 import plotly.graph_objects as go
 import requests as req
 
@@ -37,11 +35,6 @@ import requests as req
 # near the other sys.path.insert call.
 import sys as _early_sys
 _early_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-try:
-    from shared_cache import shared_cache
-except Exception:
-    shared_cache = None
 
 # SIGMALYTIC_STEP100R_K_CAMPAIGN_TAB_IMPORT
 try:
@@ -90,73 +83,13 @@ RED_DIM = "#FB7185"
 PURPLE = "#C4B5FD"
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from shared.engine import (
-    sanitize_symbol, create_live_update, get_key_levels, touch_probability,
+    sanitize_symbol, create_live_update, get_key_levels,
 )
 
 BACKEND_HTTP      = os.getenv("BACKEND_URL", "https://sigmalytic-backend.onrender.com")
-FRONTEND_URL      = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
 SUPABASE_URL      = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 BACKEND_WS   = os.getenv("BACKEND_WS_URL", "ws://localhost:8000")
-
-
-# FIX (2026-07-25): proactively keeps the shared cache warm for every
-# endpoint used across tabs, instead of waiting for a user's click to
-# trigger a refresh after the TTL expires. This is what actually makes
-# tab-switching consistently fast rather than "fast most of the time,
-# occasionally slow when the cache just expired." Registered once per
-# worker process at import time; with Redis active, all worker processes
-# coordinate so only one of them performs each scheduled refresh.
-def _start_all_background_refreshers():
-    if shared_cache is None:
-        return
-
-    def _make_fetcher(path, extra_headers=None, timeout=20):
-        def _fetch():
-            try:
-                r = req.get(f"{BACKEND_HTTP}{path}", headers=extra_headers or {}, timeout=timeout)
-                return r.json() if r.ok else {}
-            except Exception:
-                return {}
-        return _fetch
-
-    demo_auth_headers = {"Authorization": "Bearer demo"}
-
-    # FIX (2026-07-27): real production logs showed 6-7 of these large,
-    # campaign-heavy endpoints all firing within the same 20-40 second
-    # window, every single cycle -- because every thread started at
-    # roughly the same moment (worker boot) with similar intervals. That
-    # repeated concurrent burst, not slow gradual growth, is what was
-    # actually spiking memory and crashing the backend. Each endpoint now
-    # gets a staggered initial delay (roughly 8s apart) so they land at
-    # different points in time on every cycle, not just the first one.
-    #
-    # (path, ttl_seconds, refresh_interval_seconds, extra_headers, initial_delay_seconds)
-    endpoints = [
-        ("/api/campaigns/active", 120, 90, None, 0),
-        ("/api/campaigns/summary", 120, 90, None, 8),
-        ("/api/radar/scores", 90, 65, None, 16),
-        ("/api/radar/scores?limit=25", 90, 65, None, 24),
-        ("/api/scoreboard", 120, 90, None, 32),
-        ("/api/radar/divergence", 90, 65, None, 40),
-        ("/api/intelligence/status-center", 90, 65, None, 48),
-        ("/api/intelligence/opportunities?limit=25", 90, 65, None, 56),
-        ("/api/radar/intelligence?limit=8", 90, 65, None, 64),
-        ("/api/journal/trades", 90, 65, demo_auth_headers, 72),
-        ("/api/journal/profile", 90, 65, demo_auth_headers, 80),
-    ]
-
-    for path, ttl_seconds, refresh_interval_seconds, headers, initial_delay in endpoints:
-        shared_cache.start_background_refresh(
-            key=path,
-            fetch_fn=_make_fetcher(path, extra_headers=headers),
-            ttl_seconds=ttl_seconds,
-            refresh_interval_seconds=refresh_interval_seconds,
-            initial_delay_seconds=initial_delay,
-        )
-
-
-_start_all_background_refreshers()
 
 
 # SIGMALYTIC_RFA25H_COMMAND_CENTER_FRESHNESS_VISIBLE_START
@@ -164,21 +97,15 @@ def _rfa25h_color(name, fallback):
     return globals().get(name, fallback)
 
 
-def _rfa25h_fetch_json(path, timeout=20):
-    def _do_fetch():
-        try:
-            response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
-            if not response.ok:
-                return {}
-            data = response.json()
-            return data if isinstance(data, dict) else {}
-        except Exception:
+def _rfa25h_fetch_json(path, timeout=5):
+    try:
+        response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
+        if not response.ok:
             return {}
-
-    if shared_cache is None:
-        return _do_fetch()
-
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=120)
+        data = response.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _rfa25h_safe_list(value):
@@ -351,32 +278,11 @@ PURPLE    = "#a78bfa"; PURPLE_GLOW = "rgba(167,139,250,.15)"
 
 GLOBAL_CSS = f"""
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
-@keyframes sigmaAlertToast {{
-    0%   {{ opacity: 0; transform: translateY(-12px); }}
-    8%   {{ opacity: 1; transform: translateY(0); }}
-    88%  {{ opacity: 1; transform: translateY(0); }}
-    100% {{ opacity: 0; transform: translateY(-12px); }}
-}}
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0;}}
 body{{background:{NAVY};color:{WHITE};font-family:'DM Sans',ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}}
-::-webkit-scrollbar{{width:8px;height:4px;}}
+::-webkit-scrollbar{{width:4px;height:4px;}}
 ::-webkit-scrollbar-track{{background:{NAVY};}}
 ::-webkit-scrollbar-thumb{{background:{TEAL};border-radius:2px;}}
-/* FIX (2026-08-26, fourth follow-up): switched from the app's TEAL
-   scrollbar color (reported as reading like sea-foam, not a proper
-   green) to #4ade80 -- the same solid green already used for "up"
-   volume bars in this exact chart, so the slider color genuinely
-   matches something already establishedly green in this component,
-   not an unrelated app-wide accent. Width (8px) still matches the
-   main scrollbar, per the original request. */
-/* FIX (2026-08-26, fifth follow-up): switched from vertical to
-   horizontal sliders per explicit redesign -- a horizontal rail's
-   thickness is controlled by height, not width (the reverse of the
-   vertical case this replaced). */
-.weis-radar-vol-slider .rc-slider-rail{{height:8px;background:{NAVY};border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-track{{height:8px;background:#4ade80;border-radius:2px;}}
-.weis-radar-vol-slider .rc-slider-handle{{width:12px;height:12px;margin-top:-2px;background:#4ade80;border:2px solid #4ade80;}}
-.weis-radar-vol-slider .rc-slider-handle:hover,.weis-radar-vol-slider .rc-slider-handle:focus{{border-color:#4ade80;box-shadow:none;}}
 button{{font-family:inherit;cursor:pointer;border:none;outline:none;}}
 input,textarea,select{{font-family:inherit;outline:none;}}
 .Select-control,.Select-menu-outer,.Select--single>.Select-control .Select-value,
@@ -389,19 +295,6 @@ input,textarea,select{{font-family:inherit;outline:none;}}
 .Select-control{{border:1px solid {BORDER} !important;border-radius:10px !important;min-height:40px !important;}}
 .Select-control:hover{{border-color:{BORDER_T} !important;}}
 .is-open .Select-control{{border-color:{BORDER_T} !important;border-radius:10px 10px 0 0 !important;}}
-.sig-tooltip{{position:relative;display:inline-block;}}
-.sig-tooltip .sig-tooltip-text{{
-    visibility:hidden;opacity:0;position:absolute;z-index:1000;
-    bottom:125%;left:50%;transform:translateX(-50%);
-    background:{NAVY_MID};
-    border:1px solid {BORDER_T};color:{WHITE};
-    font-size:11px;font-weight:700;line-height:1.5;
-    white-space:pre-line;text-align:left;
-    padding:8px 10px;border-radius:8px;width:max-content;max-width:280px;
-    box-shadow:0 6px 20px rgba(0,0,0,.4);
-    transition:opacity .1s ease;pointer-events:none;
-}}
-.sig-tooltip:hover .sig-tooltip-text{{visibility:visible;opacity:1;}}
 """
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -535,67 +428,25 @@ def probability_metric_pills(row):
         html.Div([html.Span("Matches ", style={"color":WHITE}), html.B(_fmt_int(p["matches"]), style={"color":WHITE})], className="prob-pill"),
     ], style={"display":"flex","gap":"8px","flexWrap":"wrap","marginTop":"10px"})
 
-def _current_user_id(session=None):
-    """Real logged-in user id if available, else the shared demo id."""
-    return (session or {}).get("user_id") or USER_ID
-
-
-def _auth_headers(session=None):
-    """Authorization header for the logged-in user, or empty for demo/no session."""
-    token = (session or {}).get("access_token", "")
-    return {"Authorization": f"Bearer {token}"} if token else {}
-
-
 def _track(event_type, symbol, price=None, timeframe=None, regime=None,
-           decision_score=None, decision_status=None, metadata=None, session=None):
-    """Fire-and-forget behavioral event to backend.
-
-    SECURITY/CORRECTNESS FIX (2026-07-28): this used to always send the
-    hardcoded USER_ID constant ("demo_user_001") no matter who was actually
-    logged in -- meaning every real user's behavior events were being
-    written into the shared demo account instead of their own. Now takes
-    the caller's session and sends that user's real id and auth token
-    (the backend verifies the token independently either way, but sending
-    the right identity is what makes a logged-in user's own dashboard
-    show their own data).
-    """
+           decision_score=None, decision_status=None, metadata=None):
+    """Fire-and-forget behavioral event to backend."""
     try:
         req.post(f"{BACKEND_HTTP}/api/behavior/event", json={
-            "user_id": _current_user_id(session), "event_type": event_type, "symbol": symbol,
+            "user_id": USER_ID, "event_type": event_type, "symbol": symbol,
             "price": price, "timeframe": timeframe, "market_regime": regime,
             "decision_score": decision_score, "decision_status": decision_status,
             "metadata": metadata or {},
-        }, headers=_auth_headers(session), timeout=2)
+        }, timeout=2)
     except Exception:
         pass
 
-def _get(path, headers=None, ttl_seconds=90, timeout=15, **params):
-    def _do_fetch():
-        try:
-            r = req.get(f"{BACKEND_HTTP}{path}", params=params, headers=headers or {}, timeout=timeout)
-            if r.ok:
-                return r.json()
-            print(f"[GET_FAIL] {path}: backend returned {r.status_code}: {r.text[:200]}", flush=True)
-            return {}
-        except Exception as _get_exc:
-            # FIX (2026-08-13): same silent-failure pattern already
-            # found and fixed once tonight in on_tick() -- this
-            # shared function is used throughout the entire app, so
-            # this could have been masking real failures anywhere,
-            # not just the case (the Weis Analysis tab's PnF card
-            # showing "Data not available (UNKNOWN)" with zero trace
-            # in the logs) that surfaced it.
-            print(f"[GET_FAIL] {path}: {type(_get_exc).__name__}: {_get_exc}", flush=True)
-            return {}
-
-    if shared_cache is None or params or headers:
-        # Don't cache calls with extra query params or per-user auth headers --
-        # the cache key is just the path string, so a parameterized/authenticated
-        # call could silently return another call's (or another user's!)
-        # cached result. Rare in this codebase, but safer to just fetch fresh.
-        return _do_fetch()
-
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=ttl_seconds)
+def _get(path, **params):
+    try:
+        r = req.get(f"{BACKEND_HTTP}{path}", params=params, timeout=4)
+        return r.json() if r.ok else {}
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -629,82 +480,27 @@ def _d3f1b_guardrail_clean(data):
 
 
 def _d3f1b_row(label, value):
-    # FIX (2026-08-09): overflowWrap:"anywhere" broke long identifier
-    # strings at literally any character, splitting whole words like
-    # "SWEEP" into "S" on one line and "WEEP" on the next. Underscores
-    # in these values are the real, logical word boundaries -- insert
-    # an actual break opportunity (a zero-width space) only there, so
-    # wrapping only ever happens between words, never inside one.
-    value_text = str(value).replace("_", "_\u200b")
     return html.Div(
         [
-            html.Span(label, style={"color": "#94a3b8", "flexShrink": "0"}),
-            html.Span(value_text, style={
-                "fontWeight": "700", "textAlign": "right",
-                "overflowWrap": "break-word", "wordBreak": "normal",
-                "minWidth": "0",
-            }),
+            html.Span(label, style={"color": "#94a3b8"}),
+            html.Span(str(value), style={"fontWeight": "700", "textAlign": "right"}),
         ],
         style={
             "display": "flex",
             "justifyContent": "space-between",
-            "alignItems": "flex-start",
             "gap": "14px",
             "padding": "6px 0",
             "borderTop": "1px solid rgba(148,163,184,0.14)",
             "fontSize": "13px",
-            "minWidth": "0",
         },
     )
 
 
-def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
+def _build_d3f1b_controlled_persistence_lifecycle_panel():
     endpoint = "/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep"
 
-    # FIX (2026-08-09): _get() silently swallows any non-OK HTTP status
-    # (401/403/500/etc) into an empty {} -- confirmed directly as the
-    # root cause of every field on this panel showing "Unknown" with
-    # zero indication of why. Bypassed here with a direct request so
-    # this panel (whose entire purpose is showing accurate diagnostic
-    # status) can surface the real status code and response instead of
-    # silently looking like empty/missing data.
     try:
-        r = req.get(f"{BACKEND_HTTP}{endpoint}", headers=_auth_headers(session), timeout=15)
-        if r.status_code == 401:
-            data = {
-                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
-                "final_lifecycle_status": "D3F1B_NOT_SIGNED_IN",
-                "error": "Not signed in, or session expired. Please sign in again.",
-                "writes_to_supabase": False, "supabase_write_authorized": False,
-                "persistence_write_authorized": False, "mutates_campaigns": False,
-                "executes_d3d": False, "authorizes_d3d": False,
-                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
-                "not_a_trade_signal": True, "touches_stripe": False,
-            }
-        elif r.status_code == 403:
-            data = {
-                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
-                "final_lifecycle_status": "D3F1B_ADMIN_ACCESS_ONLY",
-                "error": "Admin access only.",
-                "writes_to_supabase": False, "supabase_write_authorized": False,
-                "persistence_write_authorized": False, "mutates_campaigns": False,
-                "executes_d3d": False, "authorizes_d3d": False,
-                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
-                "not_a_trade_signal": True, "touches_stripe": False,
-            }
-        elif not r.ok:
-            data = {
-                "ok": False, "d3e_phase": "D3E.9", "final_lifecycle_verified": False,
-                "final_lifecycle_status": "D3F1B_BACKEND_ERROR",
-                "error": f"Backend returned {r.status_code}: {r.text[:200]}",
-                "writes_to_supabase": False, "supabase_write_authorized": False,
-                "persistence_write_authorized": False, "mutates_campaigns": False,
-                "executes_d3d": False, "authorizes_d3d": False,
-                "operator_control_confirmed": False, "composite_operator_control_confirmed": False,
-                "not_a_trade_signal": True, "touches_stripe": False,
-            }
-        else:
-            data = r.json()
+        data = _get(endpoint)
     except Exception as exc:
         data = {
             "ok": False,
@@ -733,8 +529,8 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
 
     lifecycle_rows = [
         ("Phase", data.get("d3e_phase", "D3E.9")),
-        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified", data.get("lifecycle_verified")))),
-        ("Lifecycle status", data.get("final_lifecycle_status", data.get("lifecycle_status", "Unknown"))),
+        ("Final lifecycle verified", _d3f1b_bool_text(data.get("final_lifecycle_verified"))),
+        ("Lifecycle status", data.get("final_lifecycle_status", "Unknown")),
         ("Inserted audit row id", data.get("inserted_row_id", "Unknown")),
         ("Audit symbol", data.get("lifecycle_symbol", "Unknown")),
         ("Audit version", data.get("lifecycle_audit_version", "Unknown")),
@@ -808,7 +604,6 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
                             "border": "1px solid rgba(148,163,184,0.22)",
                             "borderRadius": "12px",
                             "padding": "14px",
-                            "minWidth": "0",
                         },
                     ),
                     html.Div(
@@ -828,7 +623,6 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
                             "border": "1px solid rgba(148,163,184,0.22)",
                             "borderRadius": "12px",
                             "padding": "14px",
-                            "minWidth": "0",
                         },
                     ),
                 ],
@@ -879,12 +673,8 @@ def _cached_campaign_summary(ttl_seconds: int = 30):
         data = _get("/api/campaign/status")
 
     if isinstance(data, dict):
-        # FIX (2026-08-06): now that threaded=True enables genuine
-        # concurrent request handling, two separate key writes here
-        # created a brief window where a concurrent read could see an
-        # updated as_of paired with stale data. A single, atomic dict
-        # reassignment removes that window entirely.
-        _WEIS_GAMMA_STATUS_CACHE.update({"as_of": now, "data": data})
+        _WEIS_GAMMA_STATUS_CACHE["as_of"] = now
+        _WEIS_GAMMA_STATUS_CACHE["data"] = data
         return data
 
     return {}
@@ -916,79 +706,41 @@ def _wg_metric_card(label, value, color=WHITE):
     })
 
 
-def _wg_label(value, category="gamma"):
-    """
-    FIX (2026-07-28): this used to be a single label dictionary shared
-    across five conceptually different metric categories (gamma status,
-    option-chain fetch status, fusion state, phase, rank bucket). Several
-    raw backend status codes happen to collide across categories (e.g.
-    both a gamma computation and an option-chain fetch can independently
-    report "OK"), so the *same* human-readable text -- "Gamma OK" -- was
-    appearing in unrelated panels like "Option Chain Status", where it
-    doesn't describe what that panel is actually showing. This reads as
-    duplicated output even though the underlying counts are genuinely
-    different fields. Each category now has its own accurate label set.
-    """
-    shared = {
+def _wg_label(value):
+    mapping = {
+        "OK": "Gamma OK",
         "NONE": "Missing Overlay",
         "EMPTY": "Empty",
+        "NO_OPTIONS_RETURNED": "No Options Returned",
+        "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
+        "NO_GAMMA_INPUT": "No Gamma Input",
         "NOT_PRESENT": "Not Present",
-    }
-
-    by_category = {
-        "gamma": {
-            "OK": "Gamma OK",
-            "NO_OPTIONS_RETURNED": "No Options Returned",
-            "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
-            "NO_GAMMA_INPUT": "No Gamma Input",
-            "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
-        },
-        "option_chain": {
-            "OK": "Chain Fetched OK",
-            "NO_OPTIONS_RETURNED": "No Options Returned",
-            "SKIPPED_FETCH_CAP_REACHED": "Skipped - Fetch Cap Reached",
-            "SKIPPED_SYMBOL_NOT_ALLOWED": "Skipped - Symbol Not Allowed",
-            "SKIPPED_NOT_DISCOVERED": "Skipped - Not Yet Discovered",
-            "DISABLED": "Option-Chain Fetch Disabled",
-            "ADAPTER_UNAVAILABLE": "Adapter Unavailable",
-            "FETCH_EXCEPTION": "Fetch Exception",
-        },
-        "fusion": {
-            "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
-            "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
-            "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
-            "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
-        },
-        "phase": {
-            "WEIS_EXPANSION": "Weis Expansion",
-            "WEIS_BASELINE": "Weis Baseline",
-            "WEIS_TEST": "Weis Test",
-            "WEIS_EXHAUSTION": "Weis Exhaustion",
-        },
-        "rank": {
-            "A_PLUS": "A+",
-            "LOW_PRIORITY": "Low Priority",
-            "WATCHLIST": "Watchlist",
-            "AVOID": "Avoid",
-        },
+        "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
+        "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
+        "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
+        "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
+        "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
+        "WEIS_EXPANSION": "Weis Expansion",
+        "WEIS_BASELINE": "Weis Baseline",
+        "WEIS_TEST": "Weis Test",
+        "WEIS_EXHAUSTION": "Weis Exhaustion",
+        "A_PLUS": "A+",
+        "LOW_PRIORITY": "Low Priority",
+        "WATCHLIST": "Watchlist",
+        "AVOID": "Avoid",
     }
 
     key = str(value or "NONE")
-    if key in shared:
-        return shared[key]
-    mapping = by_category.get(category, by_category["gamma"])
-    if key in mapping:
-        return mapping[key]
-    return key.replace("_", " ").title()
+    return mapping.get(key, key.replace("_", " ").title())
 
 
-def _wg_counts_text(counts, category="gamma"):
+def _wg_counts_text(counts):
     if not isinstance(counts, dict) or not counts:
         return "-"
 
     parts = []
     for key, value in counts.items():
-        parts.append(f"{_wg_label(key, category=category)}: {value}")
+        parts.append(f"{_wg_label(key)}: {value}")
 
     return " | ".join(parts)
 
@@ -999,6 +751,7 @@ def build_weis_gamma_status_center_panel():
 
     if not wg:
         return html.Div([
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
             html.Div(_rfa25h_command_center_freshness_title(), style={
                 "fontSize": "14px",
                 "fontWeight": "900",
@@ -1035,20 +788,8 @@ def build_weis_gamma_status_center_panel():
     fusion_counts = wg.get("fusion_state_counts") or {}
 
     transitions_off = int(transition_enabled or 0) == 0
-    # FIX (2026-07-29): this badge was labeled "TRANSITIONS OFF" /
-    # "TRANSITIONS ENABLED", which reads as if it reports whether your
-    # actual campaign lifecycle engine (BIRTH -> ... -> CLOSED, which
-    # genuinely runs nightly via campaign_state_engine.py) is active.
-    # It doesn't -- this flag comes from a read-only Weis-Gamma evidence
-    # *preview* (_build_transition_readiness_evidence in
-    # campaign_evidence_builder.py) that is explicitly documented as
-    # "does not change the campaign state engine, only explains what
-    # evidence would support" -- i.e. it's SUPPOSED to always read as
-    # off, as a safety self-check, and has no bearing on whether your
-    # real product is actually transitioning campaigns. Renamed so it
-    # can't be mistaken for the real engine's status.
     safety_color = TEAL_DIM if transitions_off else RED_DIM
-    safety_label = "GAMMA PREVIEW: READ-ONLY (EXPECTED)" if transitions_off else "⚠ GAMMA PREVIEW CLAIMS WRITE ACCESS"
+    safety_label = "TRANSITIONS OFF" if transitions_off else "TRANSITIONS ENABLED"
 
     stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
     no_input_color = TEAL_DIM if int(no_option_chain or 0) == 0 else YELLOW_DIM
@@ -1094,7 +835,7 @@ def build_weis_gamma_status_center_panel():
             _wg_metric_card("No Options Returned", no_options_returned, YELLOW_DIM),
             _wg_metric_card("No Option-Chain Input", no_option_chain, no_input_color),
             _wg_metric_card("Gamma Stale / Unconfirmed", stale, stale_color),
-            _wg_metric_card("Gamma Preview Read-Only", "YES" if transitions_off else "NO", safety_color),
+            _wg_metric_card("Transitions Off", "YES" if transitions_off else "NO", safety_color),
             _wg_metric_card("Missing Overlay", missing, YELLOW_DIM),
         ], style={
             "display": "grid",
@@ -1105,23 +846,23 @@ def build_weis_gamma_status_center_panel():
         html.Div([
             html.Div([
                 html.Div("Phase Counts", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(phase_counts, category="phase"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(phase_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Rank Buckets", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(rank_counts, category="rank"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(rank_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(gamma_counts, category="gamma"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(gamma_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(option_chain_counts, category="option_chain"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(option_chain_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
             html.Div([
                 html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(fusion_counts, category="fusion"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
+                html.Div(_wg_counts_text(fusion_counts), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
             ]),
         ], style={
             "display": "grid",
@@ -1139,9 +880,9 @@ def build_weis_gamma_status_center_panel():
     })
 
 
-def _post(path, body, headers=None):
+def _post(path, body):
     try:
-        r = req.post(f"{BACKEND_HTTP}{path}", json=body, headers=headers or {}, timeout=4)
+        r = req.post(f"{BACKEND_HTTP}{path}", json=body, timeout=4)
         return r.json() if r.ok else {}
     except Exception:
         return {}
@@ -1290,7 +1031,7 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
 def _regime_from_live(live: dict) -> str:
     score = live.get("decision", {}).get("score", 50)
     price = live.get("price", 100)
-    kl    = get_key_levels(price, count_guide=live.get("count_guide"))
+    kl    = get_key_levels(price)
     if score >= 80 and price >= kl.expansion: return "expansion"
     if score >= 70:                            return "trend_continuation"
     if score >= 45:                            return "neutral"
@@ -1362,63 +1103,6 @@ def brow(label, value, tone):
     ], style={"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
                "padding":"12px 14px","marginBottom":"8px"})
 
-def _render_probability_ladder_rows(real_gamma, price, kl, nodes, score):
-    """
-    Computes real, market-derived touch probabilities for the four
-    Probability Ladder levels (Upside Expansion=kl.breakout,
-    Liquidity Retest=kl.prior_high, Hold/Balance=kl.confirm,
-    Failure Gate=kl.fail) using the actual options chain's implied
-    volatility (shared.engine.touch_probability). Falls back to the
-    prior heuristic (nodes[]["score"]/score/100-score) ONLY if the
-    real inputs aren't available, and clearly labels that fallback
-    as an estimate rather than presenting it as equally real.
-    """
-    tpi = (real_gamma or {}).get("touch_probability_inputs") or {}
-    levels = [
-        ("Upside Expansion", kl.breakout),
-        ("Liquidity Retest", kl.prior_high),
-        ("Hold / Balance", kl.confirm),
-        ("Failure Gate", kl.fail),
-    ]
-
-    if tpi.get("available") and tpi.get("atm_implied_volatility") and tpi.get("days_to_expiration"):
-        sigma = tpi["atm_implied_volatility"]
-        dte = tpi["days_to_expiration"]
-        rows = []
-        for label, level in levels:
-            p = touch_probability(price, level, sigma, dte)
-            pct = round(p * 100) if p is not None else 0
-            tone = "up" if level >= price else "down"
-            if label == "Hold / Balance":
-                tone = "neutral"
-            rows.append(brow(label, pct, tone))
-            rows.append(html.P(f"Level ${level:.2f}",
-                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}))
-        rows.append(html.P(f"Real probability · {dte}d to {tpi.get('expiration_date','')} · {sigma*100:.1f}% IV",
-                            style={"fontSize":"8px","color":MUTED,"marginTop":"2px"}))
-        return rows
-
-    # Fallback: real options data wasn't available this tick -- old
-    # heuristic, but clearly labeled as an estimate, not silently
-    # presented as if it were the same real calculation.
-    rows = [
-        brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
-        html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
-               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-        brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
-        html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
-               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-        brow("Hold / Balance", score, "neutral"),
-        html.P(f"Level ${kl.confirm:.2f}",
-               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
-        brow("Failure Gate", 100-score, "down"),
-        html.P(f"Level ${kl.fail:.2f}",
-               style={"fontSize":"9px","color":WHITE,"marginTop":"-3px"}),
-        html.P("Estimated · real options data unavailable this tick",
-               style={"fontSize":"8px","color":MUTED,"marginTop":"2px"}),
-    ]
-    return rows
-
 def zcard(name, level, desc, color):
     return html.Div([
         html.P(name, style={"fontSize":"11px","color":WHITE,"margin":"0 0 6px","fontWeight":"600",
@@ -1447,169 +1131,11 @@ def _btn(label, id_, color=TEAL_DIM, bg=TEAL_GLOW, border=BORDER_T, extra=None):
 
 # ── Chart ──────────────────────────────────────────────────────────────────────
 
-def _build_time_axis_ticks(candles, tf, target_tick_count=7):
-    """
-    ADDED (2026-08-25): real, human-readable time labels for the
-    x-axis -- previously showticklabels=False entirely. The chart's
-    x-axis deliberately uses plain integer indices (0,1,2...), not
-    real datetime values, per this file's own earlier design note --
-    a genuine, intentional choice to avoid gaps for closed-market
-    periods (nights, weekends) that a true datetime axis would show as
-    blank space. Real labels are layered on top of that integer axis
-    via explicit tickvals/ticktext instead, computed here from each
-    candle's own real timestamp ("t"), so the axis stays gap-free
-    while still showing genuine times.
-
-    Format adapts to the timeframe -- "H:MM" for intraday bars (1m/5m/
-    15m/1H), "Mon D" for daily/weekly -- and tick spacing is computed
-    generally (evenly spread to hit roughly target_tick_count labels)
-    rather than a fixed interval hardcoded per timeframe, so this
-    stays sensible regardless of how many candles are actually shown.
-    """
-    from datetime import datetime
-
-    n = len(candles)
-    if n == 0:
-        return [], []
-
-    is_intraday = tf in ("1m", "5m", "15m", "1H")
-    month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-    try:
-        from zoneinfo import ZoneInfo
-    except ImportError:
-        from backports.zoneinfo import ZoneInfo
-    _ET = ZoneInfo("America/New_York")
-
-    def _to_et(ts_str):
-        try:
-            return datetime.fromisoformat(ts_str.replace("Z", "+00:00")).astimezone(_ET)
-        except Exception:
-            return None
-
-    et_dts = [_to_et(c.get("t", "")) for c in candles]
-
-    # FIX (2026-08-25, second follow-up): explicit request -- the date
-    # should sit BELOW the time (a real two-line tick label, via
-    # Plotly's own "<br>" line break in ticktext) and should appear
-    # exactly once per day, at that day's actual opening bar, not
-    # repeated under every regularly-spaced time tick. Previous
-    # version put date+time on one line, on every tick once a chart
-    # spanned multiple days -- correct information, wrong presentation.
-    #
-    # Two separate tick sets get merged here: a regular, evenly-spaced
-    # grid of TIME-only ticks (unchanged from before), plus the exact
-    # index of each new calendar day's first bar (found directly from
-    # the real ET-converted timestamps, not inferred from spacing) --
-    # only those specific indices get the second date line.
-    day_start_indices = set()
-    if is_intraday:
-        prev_date = None
-        for i, dt in enumerate(et_dts):
-            if dt is None:
-                continue
-            if prev_date is not None and dt.date() != prev_date:
-                day_start_indices.add(i)
-            prev_date = dt.date()
-
-    def _fmt(i):
-        dt = et_dts[i] if i < len(et_dts) else None
-        if dt is None:
-            return ""
-        if is_intraday:
-            time_part = f"{dt.hour}:{dt.minute:02d}"
-            if i in day_start_indices or i == 0:
-                return f"{time_part}<br>{month_abbr[dt.month]} {dt.day}"
-            return time_part
-        return f"{month_abbr[dt.month]} {dt.day}"
-
-    step = max(1, n // target_tick_count)
-    tickvals = sorted(set(range(0, n, step)) | day_start_indices)
-    ticktext = [_fmt(i) for i in tickvals]
-    return tickvals, ticktext
-
-
-def _compute_cumulative_wave_volume_local(candles, trend_length=2):
-    """
-    ADDED (2026-08-25): same confirmed-reversal Weis Wave volume logic
-    already built and validated twice this session (once in the
-    standalone scan tool's JS, once in the real backend's
-    WyckoffVerdictEngine.get_cumulative_wave_volume_series()) --
-    re-implemented locally here rather than imported, since frontend
-    and backend are separate deployed Render services and can't share
-    Python modules across that boundary at runtime. Requires
-    trend_length consecutive closes in the new direction before
-    confirming a reversal, not a single-bar wiggle -- confirmed
-    earlier this session this matters: without it, ordinary daily
-    noise fragments what's really one continuous wave into many.
-    """
-    n = len(candles)
-    cum_vol = [0.0] * n
-    wave_dir = [0] * n
-    current_dir = 0
-    up_count = dn_count = 0
-    running = 0.0
-    for i in range(1, n):
-        is_higher = candles[i]["c"] > candles[i - 1]["c"]
-        is_lower = candles[i]["c"] < candles[i - 1]["c"]
-        up_count = up_count + 1 if is_higher else 0
-        dn_count = dn_count + 1 if is_lower else 0
-        if up_count >= trend_length and current_dir != 1:
-            current_dir = 1
-            running = 0.0
-        elif dn_count >= trend_length and current_dir != -1:
-            current_dir = -1
-            running = 0.0
-        running += float(candles[i].get("v", 0))
-        cum_vol[i] = running
-        wave_dir[i] = current_dir
-    return cum_vol, wave_dir
-
-
-def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, gamma_pivot=None, count_guide=None):
+def build_chart(candles, price, nodes, tf="5m"):
     """Clean chart — integer index x-axis for proper candle rendering."""
-    kl = get_key_levels(price, count_guide=count_guide)
-    # FIX (2026-07-30): user-reported the candlesticks don't match the
-    # live price shown elsewhere on the page. Root cause: fetch_real_candles
-    # only returns bars the backend's Alpaca endpoint has already closed
-    # (its own docstring says "No synthetic candles are created here") --
-    # so the chart's rightmost candle can lag the live tick price by up
-    # to a full bar duration (up to 5 minutes on the 5m timeframe) even
-    # though the live price display updates every tick. Nothing anywhere
-    # between the fetch and this render function ever reconciled the two.
-    # Fixing this here, at render time only (not in fetch_real_candles,
-    # which deliberately stays fetch-only per its own docstring) --
-    # updating a copy of the last candle's close/high/low to reflect the
-    # live price, so the chart visually tracks real-time price movement
-    # between actual bar closes instead of only updating once per bar.
-    if candles and price and price > 0:
-        candles = candles[:-1] + [dict(candles[-1])]
-        last = candles[-1]
-        last["c"] = price
-        last["h"] = max(last["h"], price)
-        last["l"] = min(last["l"], price)
-    # FIX (2026-07-30): user clarified that Call Wall / Put Wall / Gamma
-    # Flip Point represent *current* options/gamma structure -- they
-    # should always be visible and always move with real, live options
-    # data, regardless of which historical timeframe the chart happens
-    # to be showing. Earlier tonight this was set to hide on 1D/1W,
-    # reasoning that short-term levels would visually cluster near the
-    # top when stretched across months of daily candles -- but that
-    # visual-clustering concern doesn't justify hiding genuinely current,
-    # real data. Always showing them now.
-    show_price_overlays = True
+    kl = get_key_levels(price)
     xs = list(range(len(candles)))
     fig = go.Figure()
-
-    if show_price_overlays:
-        _flip = gamma_pivot if gamma_pivot is not None else kl.confirm
-        _highs = [c["h"] for c in candles] if candles else [price]
-        _lows  = [c["l"] for c in candles] if candles else [price]
-        _y_top = max(max(_highs), _flip, price) * 1.02
-        _y_bot = min(min(_lows),  _flip, price) * 0.98
-        fig.add_hrect(y0=_flip, y1=_y_top, fillcolor=TEAL_DIM, opacity=0.06, layer="below", line_width=0)
-        fig.add_hrect(y0=_y_bot, y1=_flip, fillcolor=RED_DIM,  opacity=0.06, layer="below", line_width=0)
-
     fig.add_trace(go.Candlestick(
         x=xs,
         open=[c["o"] for c in candles],
@@ -1620,237 +1146,45 @@ def build_chart(candles, price, nodes, tf="5m", call_wall=None, put_wall=None, g
         increasing=dict(line=dict(color=TEAL_DIM, width=2), fillcolor=TEAL_DIM),
         decreasing=dict(line=dict(color=RED_DIM,  width=2), fillcolor=RED_DIM),
         whiskerwidth=1.0,
-        yaxis="y1",
     ))
-
-    # ADDED (2026-08-25): time-based volume + stacked cumulative
-    # (Weis Wave) volume beneath the price panel -- three panels
-    # sharing one x-axis via domain-based y-axes (y1/y2/y3), the same
-    # approach already used for the Weis Radar chart, rather than
-    # make_subplots, to keep this a minimal, contained change to an
-    # already-working, heavily-used chart.
-    #
-    # FIX (2026-08-25): swapped panel order per explicit request --
-    # cumulative (wave) volume now sits in the middle (y2), standard
-    # time-based volume at the bottom (y3). Only the axis assignment
-    # changed here; the layout's own y2/y3 domain definitions below
-    # didn't need to move.
-    if candles:
-        up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
-        cum_vol, wave_dir = _compute_cumulative_wave_volume_local(candles)
-        wave_colors = [up_color if d == 1 else down_color for d in wave_dir]
-        fig.add_trace(go.Bar(
-            x=xs, y=cum_vol, name="Cumulative (Wave) Volume",
-            marker_color=wave_colors, yaxis="y2",
-        ))
-
-        time_vol_colors = [up_color if c["c"] >= c["o"] else down_color for c in candles]
-        fig.add_trace(go.Bar(
-            x=xs, y=[c.get("v", 0) for c in candles], name="Volume",
-            marker_color=time_vol_colors, yaxis="y3",
-        ))
-
-    # Level lines — the 4 generic structural levels stay unlabeled (labels
-    # live in the Price Ladder panel), but Call Wall / Put Wall / Gamma
-    # Pivot are the exact same numbers shown in the Options Matrix widget
-    # below, and were previously indistinguishable from the other 4 faint
-    # lines -- same thin width, no text, easy to lose track of which line
-    # was which. These three now get their own clear, bolder, labeled
-    # lines so they're immediately identifiable on the chart itself.
-    if show_price_overlays:
-        for level,color,dash,width in [
-            (kl.prior_high, TEAL_DIM,   "dot",     1.0),
-            (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
-            (kl.trigger,    YELLOW_DIM, "dash",    1.0),
-            (kl.trap,       RED_DIM,    "dot",     1.0),
-        ]:
-            fig.add_hline(y=level, line_color=color, line_dash=dash,
-                          line_width=width, opacity=0.6)
-
-    # BUG FIX (2026-07-29): the label f-strings here were built as part of
-    # the list literal itself, which Python evaluates fully *before* the
-    # for-loop assigns `level` on each iteration -- so every label used
-    # whatever `level` was left over from the previous loop above (kl.trap)
-    # instead of each line's own value. All three labels were silently
-    # showing the same wrong number. Fixed by building the label text
-    # inside the loop body, after `level` is actually bound per-iteration.
-    if show_price_overlays:
-        for level,color,prefix in [
-            (call_wall   if call_wall   is not None else kl.breakout, TEAL_DIM,   "CALL WALL"),
-            (gamma_pivot if gamma_pivot is not None else kl.confirm,  YELLOW_DIM, "GAMMA FLIP POINT"),
-            (put_wall    if put_wall    is not None else kl.fail,     RED_DIM,    "PUT WALL"),
-        ]:
-            label = f"{prefix}  ${level:.0f}"
-            fig.add_hline(
-                y=level, line_color=color, line_dash="solid", line_width=2.5, opacity=0.95,
-                annotation_text=label,
-                annotation_position="top left",
-                annotation_font=dict(color=color, size=11, family="DM Mono, monospace"),
-                annotation_bgcolor="rgba(8,24,39,.85)",
-                annotation_bordercolor=color,
-                annotation_borderwidth=1,
-            )
+    # Level lines — no annotations (labels are in the Price Ladder panel)
+    for level,color,dash,width in [
+        (kl.breakout,   TEAL_DIM,   "dash",    1.0),
+        (kl.prior_high, TEAL_DIM,   "dot",     1.0),
+        (kl.expansion,  TEAL_DIM,   "dashdot", 1.0),
+        (kl.confirm,    YELLOW_DIM, "solid",   1.0),
+        (kl.trigger,    YELLOW_DIM, "dash",    1.0),
+        (kl.trap,       RED_DIM,    "dot",     1.0),
+        (kl.fail,       RED_DIM,    "dash",    1.0),
+    ]:
+        fig.add_hline(y=level, line_color=color, line_dash=dash,
+                      line_width=width, opacity=0.6)
     # Live price line
     fig.add_hline(y=price, line_color=BLUE_DIM, line_dash="solid", line_width=1.5, opacity=0.9)
-    # ADDED (2026-08-25): real time-axis labels, computed above via
-    # _build_time_axis_ticks() -- was showticklabels=False entirely.
-    tickvals, ticktext = _build_time_axis_ticks(candles, tf)
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor=NAVY,
         font=dict(family="DM Sans", color=WHITE, size=12),
         xaxis=dict(
             showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
             rangeslider=dict(visible=False),
-            showticklabels=True,
-            tickvals=tickvals, ticktext=ticktext,
-            tickfont=dict(color=MUTED, size=10, family="DM Mono, monospace"),
+            showticklabels=False,
             title=None,
             color=WHITE,
-            # ADDED (2026-08-25): explicit anchor -- with 3 stacked
-            # y-axes sharing one xaxis, Plotly doesn't reliably default
-            # to drawing tick labels below the bottom-most panel on
-            # its own. Anchoring directly to y3 (the standard volume
-            # panel, now the lowest one after the panel-order swap)
-            # guarantees the labels render there specifically, not
-            # left to implicit/default positioning.
-            anchor="y3",
         ),
         yaxis=dict(
             showgrid=True, gridcolor="rgba(255,255,255,.06)", zeroline=False,
             color=WHITE, side="right", tickformat=".2f",
             tickfont=dict(color=WHITE, size=12, family="DM Mono, monospace"),
-            # FIX (2026-08-09): without an explicit range, Plotly
-            # auto-expands the y-axis to fit every add_hline() on the
-            # figure -- including kl.breakout/kl.fail, which are now
-            # real, PnF-derived Count Guide targets that can sit far
-            # from the actual candles (e.g. 355/264 vs. candles
-            # clustered around 300-310). That stretched the axis
-            # dramatically, squeezing the candles and the Call
-            # Wall/Put Wall lines into an unreadable sliver. Pinning
-            # the range to the candles' own high/low (_y_top/_y_bot,
-            # already computed above with a small buffer) keeps the
-            # chart focused on actual price action; distant structural
-            # lines simply extend beyond the visible range instead of
-            # dictating it.
-            range=[_y_bot, _y_top],
-            # ADDED (2026-08-25): price panel now occupies the top
-            # ~58% of the figure, leaving room below for the two new
-            # volume panels -- domain-based stacking, same approach
-            # already used for the Weis Radar chart.
-            domain=[0.58, 1.0],
-        ),
-        # ADDED (2026-08-25): time-based volume (middle) and
-        # cumulative Weis Wave volume (bottom), each its own panel
-        # sharing the same x-axis as the price chart above.
-        yaxis2=dict(
-            showgrid=False, zeroline=False, color=WHITE, side="right",
-            tickfont=dict(color=MUTED, size=9, family="DM Mono, monospace"),
-            domain=[0.30, 0.54],
-        ),
-        yaxis3=dict(
-            showgrid=False, zeroline=False, color=WHITE, side="right",
-            tickfont=dict(color=MUTED, size=9, family="DM Mono, monospace"),
-            domain=[0.0, 0.24],
         ),
         # Enough right margin for y-axis labels, bottom for x-axis labels
-        # ADDED (2026-08-25): bumped from 24 to give the now-visible
-        # real time-axis labels enough room, not just the axis line.
-        margin=dict(l=0, r=60, t=8, b=32),
-        # ADDED (2026-08-25): taller now to properly fit 3 stacked
-        # panels instead of 1 -- was 480 for price alone.
-        height=640,
+        margin=dict(l=0, r=60, t=8, b=24),
+        height=480,
         showlegend=False,
         hovermode="x unified",
         hoverlabel=dict(bgcolor=NAVY_CARD, font_color=WHITE, bordercolor=BORDER, font_size=12),
         dragmode="pan",
     )
     return fig
-
-def _render_market_wire(items):
-    """
-    Top-of-page ticker: DJIA/S&P/Nasdaq/Russell 2000/Gold/Oil/Bitcoin,
-    plus currencies and FRED-sourced items (10yr yield, VIX, Dollar
-    Index -- see backend's own comment for why VIX was originally
-    excluded and how FRED resolved that).
-    """
-    if not items:
-        return html.Div()
-
-    pills = []
-    for item in items:
-        price = item.get("price")
-        change_pct = item.get("change_pct")
-        label = item.get("label", item.get("symbol", "—"))
-        symbol = item.get("symbol", "")
-
-        if price is None:
-            continue
-
-        if item.get("asset_class") == "crypto":
-            price_text = f"${price:,.0f}"
-        elif item.get("asset_class") == "currency":
-            # FIX (2026-08-21): currency rates aren't dollar amounts --
-            # showing "EUR/USD" as "$1.17" is actively misleading. Real
-            # currency quotes match the precision convention traders
-            # actually use: 4 decimals for most pairs, but yen pairs
-            # trade at a completely different scale (100+ per dollar)
-            # and are conventionally quoted to 2-3 decimals instead.
-            price_text = f"{price:,.2f}" if "JPY" in symbol else f"{price:,.4f}"
-        elif item.get("asset_class") == "yield":
-            # ADDED (2026-08-21): a yield/index level isn't a dollar
-            # amount -- "$4.74" would be actively wrong. Matches the
-            # plain-number convention from the user's own real
-            # WSJ-style reference example. Precision by symbol (3
-            # decimals for the 10yr yield matching FRED's own published
-            # precision; 2 for VIX/Dollar Index matching how those are
-            # conventionally quoted) rather than one fixed value for
-            # all three, since the backend already rounds each to its
-            # own correct precision -- forcing 3 decimals here would
-            # have shown VIX as "14.180" instead of "14.18".
-            decimals = 3 if symbol == "US10Y" else 2
-            price_text = f"{price:,.{decimals}f}"
-        else:
-            price_text = f"${price:,.2f}"
-
-        if change_pct is None:
-            change_text, change_color = "—", MUTED
-        elif item.get("asset_class") == "yield":
-            decimals = 3 if symbol == "US10Y" else 2
-            sign = "+" if change_pct > 0 else ""
-            change_text, change_color = f"{sign}{change_pct:.{decimals}f}", (TEAL_DIM if change_pct >= 0 else RED_DIM)
-        elif change_pct >= 0:
-            change_text, change_color = f"+{change_pct:.2f}%", TEAL_DIM
-        else:
-            change_text, change_color = f"{change_pct:.2f}%", RED_DIM
-
-        pill_children = [
-            html.Span(label, style={"color": WHITE, "fontSize": "11px", "fontWeight": "700", "marginRight": "6px"}),
-            html.Span(price_text, style={"color": WHITE, "fontSize": "11px", "fontWeight": "800", "marginRight": "6px"}),
-            html.Span(change_text, style={"color": change_color, "fontSize": "11px", "fontWeight": "800"}),
-        ]
-        # ADDED (2026-08-21): a clear "Daily" badge on every FRED-sourced
-        # item -- real, direct response to genuine confusion the first
-        # time the 10yr yield shipped without this. These update once
-        # per business day (the prior close), unlike everything else in
-        # this ticker, which is live/near-real-time -- this should never
-        # again look like stale/broken data to a subscriber who isn't
-        # told the difference upfront.
-        if item.get("update_frequency") == "daily":
-            pill_children.append(html.Span("DAILY", style={
-                "color": MUTED, "fontSize": "8px", "fontWeight": "700", "marginLeft": "6px",
-                "padding": "2px 5px", "border": f"1px solid {BORDER}", "borderRadius": "4px",
-                "letterSpacing": "0.5px",
-            }))
-
-        pills.append(html.Div(pill_children, style={"display": "flex", "alignItems": "center", "padding": "6px 12px",
-                   "background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "10px",
-                   "whiteSpace": "nowrap"}))
-
-    return html.Div(pills, style={
-        "display": "flex", "gap": "8px", "overflowX": "auto",
-        "justifyContent": "center", "flexWrap": "wrap",
-    })
-
 
 def _build_clock_inline():
     EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
@@ -1868,318 +1202,12 @@ def _build_clock_inline():
 # The INPUT components (buttons, fields) live in the permanent layout via their IDs.
 # This function only builds the card SHELL — the inputs are defined once in the layout.
 
-# ── Behavioral Analysis Panel ────────────────────────────────────────────────
-def _score_tier(score):
-    """Matches the exact thresholds used in build_direction_panel's Score Tier."""
-    if score < 35:
-        return "Trap Door"
-    elif score < 55:
-        return "Monitoring"
-    elif score < 80:
-        return "Score Tier B"
-    else:
-        return "Score Tier A"
-
-
-def _build_behavioral_analysis(live):
-    """
-    Interprets the app's own current, real data for whatever symbol is
-    loaded -- not generic trading advice, a live reading of this specific
-    tool's own logic (Bias/Confidence/Status/Grade/Mode/Score/Volume),
-    matching the style of a manual walkthrough of these exact metrics.
-    Rule-based and deterministic (no LLM call), so it can run on every
-    live-price tick without added latency or external dependencies.
-    """
-    symbol   = live.get("symbol", "—")
-    price    = live.get("price", 0)
-    decision = live.get("decision", {}) or {}
-    rel_vol  = live.get("rel_volume")
-
-    bias       = str(decision.get("bias", "Neutral"))
-    status     = str(decision.get("status", "Watching"))
-    grade      = str(decision.get("grade", "—"))
-    mode       = str(decision.get("mode", "Standard"))
-    confidence = str(decision.get("confidence", ""))
-    score      = decision.get("score", 0) or 0
-    tier       = _score_tier(score)
-
-    bias_lower = bias.lower()
-    is_directional = bias_lower in ("bullish", "bearish")
-    is_qualified_status = status.upper() not in ("PROBE", "WATCHING")
-    is_qualified_grade = grade.upper() in ("A", "B")
-    is_expanding = rel_vol is not None and rel_vol >= 1.5
-    tier_actionable = tier in ("Score Tier A", "Score Tier B")
-
-    bullets = []
-
-    # Bias/Confidence line
-    if is_directional:
-        bullets.append(
-            f"Bias: {bias.upper()}, Confidence: {confidence or 'n/a'} — the Decision Engine "
-            f"has committed to a {bias_lower} read on {symbol}."
-        )
-    else:
-        bullets.append(
-            f"Bias: {bias.upper()}, Confidence: {confidence or 'LOW'} — the Decision Engine "
-            f"hasn't picked a direction yet for {symbol}."
-        )
-
-    # Status/Grade line
-    if is_qualified_status and is_qualified_grade:
-        bullets.append(
-            f"Status - Grade: {status} - {grade} — a qualified status with a strong grade means "
-            f"the engine sees this as a real, actionable setup, not just an exploratory read."
-        )
-    else:
-        bullets.append(
-            f"Status - Grade: {status} - {grade} — "
-            f"{'a low-conviction status' if not is_qualified_status else 'a weak grade'} means "
-            f"the engine sees this as an exploratory read, not a qualified setup yet."
-        )
-
-    # Mode line
-    bullets.append(
-        f"Mode: {mode} — "
-        + ("the app is explicitly flagging this as a consolidation/absorption phase, not a trending one."
-           if "digestion" in mode.lower() or "caution" in mode.lower()
-           else "the app is reading current conditions as tradeable, not just noise.")
-    )
-
-    # Score/Tier line
-    if tier == "Trap Door":
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — a warning-style zone; conditions look deteriorating, not building.")
-    elif tier == "Monitoring":
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — sits in the \"watch, don't act\" middle zone (35-54), below the 55+ needed to reach Score Tier B.")
-    else:
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — real conviction behind the move, not just noise.")
-
-    # Volume line
-    if rel_vol is None:
-        bullets.append("Volume: data unavailable right now — can't confirm whether real participation is behind this move.")
-    elif is_expanding:
-        bullets.append(
-            f"Volume: {rel_vol:.2f}x average, met — real, elevated participation is happening. "
-            f"But volume alone just means \"something's happening\" — it doesn't tell you which direction."
-        )
-    else:
-        bullets.append(f"Volume: {rel_vol:.2f}x average, not met — no unusual participation behind the current move yet.")
-
-    # Overall verdict + gates
-    fully_actionable = is_directional and is_qualified_status and is_qualified_grade and tier_actionable
-    if fully_actionable:
-        verdict = (
-            f"What the current combination says: {symbol} is showing a qualified, actionable "
-            f"{bias_lower} setup right now — Bias, Status, Grade, and Score Tier are all "
-            f"aligned. This is the kind of alignment a disciplined trader using this framework "
-            f"would treat as a real, engine-confirmed opportunity, not just a possibility."
-        )
-        gates = None
-    else:
-        verdict = (
-            f"What the current combination says: right now, nothing here is actionable yet"
-            + (f", despite {'strong' if is_expanding else 'available'} volume" if rel_vol is not None else "")
-            + f". The honest summary: {'you have fuel but no direction and no conviction' if is_expanding and not is_directional else 'the engine has not yet confirmed a real, qualified setup'}. "
-            f"A disciplined trader using this framework would treat this as \"stand aside, wait "
-            f"for the engine to actually commit\" rather than force a trade off any single signal "
-            f"alone — the whole point of Confidence/Grade/Status existing separately from raw "
-            f"score is to catch exactly this situation."
-        )
-        long_gates = []
-        if bias_lower != "bullish":
-            long_gates.append("Bias shifts from Neutral/Bearish → Bullish")
-        if not tier_actionable or tier == "Trap Door":
-            long_gates.append(f"Engine Score climbs out of {tier} into Score Tier B (55+) or Score Tier A (80+)")
-        if not is_qualified_status:
-            long_gates.append(f"Status upgrades out of \"{status}\" into a qualified state like Armed or Setting Up")
-        if not is_qualified_grade:
-            long_gates.append(f"Grade improves from {grade} to B or A")
-        if not long_gates:
-            long_gates.append("Price clears a defined trigger level, confirming the move is real")
-
-        short_gates = []
-        if bias_lower != "bearish":
-            short_gates.append("Bias shifts from Neutral/Bullish → Bearish")
-        short_gates.append("Score Tier moves toward Trap Door (below 35) rather than up")
-        short_gates.append("Price breaks down through a defined invalidation/support level")
-
-        gates = (long_gates, short_gates)
-
-    return symbol, price, bullets, verdict, gates
-
-
-def _render_behavioral_analysis_panel(live):
-    if not live:
-        return card([html.Div("Behavioral Analysis will appear once live data loads.",
-                               style={"color": MUTED, "fontSize": "13px"})])
-
-    symbol, price, bullets, verdict, gates = _build_behavioral_analysis(live)
-
-    children = [
-        html.Div([
-            html.H2("Behavioral Analysis", style={"fontSize": "16px", "fontWeight": "800", "color": WHITE, "margin": "0"}),
-            html.Span(f"{symbol} · ${price:.2f}", style={"fontSize": "12px", "color": WHITE}),
-        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "12px"}),
-        html.P(verdict, style={"fontSize": "12px", "color": WHITE, "lineHeight": "1.6", "marginBottom": "12px"}),
-        html.Ul([
-            html.Li(b, style={"fontSize": "12px", "color": WHITE, "lineHeight": "1.6", "marginBottom": "6px"})
-            for b in bullets
-        ], style={"paddingLeft": "18px", "marginBottom": "12px"}),
-    ]
-
-    if gates:
-        long_gates, short_gates = gates
-        children.append(html.Div([
-            slabel("Gates for Long"),
-            html.Ul([html.Li(g, style={"fontSize": "11px", "color": TEAL_DIM, "lineHeight": "1.6"}) for g in long_gates],
-                    style={"paddingLeft": "18px", "marginBottom": "10px"}),
-            slabel("Gates for Short"),
-            html.Ul([html.Li(g, style={"fontSize": "11px", "color": RED_DIM, "lineHeight": "1.6"}) for g in short_gates],
-                    style={"paddingLeft": "18px"}),
-        ]))
-
-    # Real, validated Phase 10 position sizing -- first time this
-    # research output is shown anywhere in the UI, not just the backend
-    # endpoint added earlier tonight.
-    sizing = live.get("sizing_data")
-    if sizing and sizing.get("sized"):
-        result = sizing.get("result", {})
-        if result.get("approved"):
-            children.append(html.Div([
-                slabel("Validated Position Sizing (Phase 10 research)"),
-                html.P(result.get("summary", ""), style={"fontSize": "11px", "color": TEAL_DIM,
-                                                            "lineHeight": "1.6", "marginTop": "6px"}),
-            ], style={"marginTop": "12px"}))
-        else:
-            children.append(html.Div([
-                slabel("Validated Position Sizing (Phase 10 research)"),
-                html.P(f"Not sized — {result.get('blocked_reason', 'blocked')}",
-                       style={"fontSize": "11px", "color": RED_DIM, "lineHeight": "1.6", "marginTop": "6px"}),
-            ], style={"marginTop": "12px"}))
-    elif sizing and not sizing.get("sized"):
-        children.append(html.Div([
-            slabel("Validated Position Sizing (Phase 10 research)"),
-            html.P(sizing.get("reason", "Not enough data to size."),
-                   style={"fontSize": "11px", "color": MUTED, "lineHeight": "1.6", "marginTop": "6px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real Livermore/ODS-style operator control score -- only present
-    # once an active campaign record exists for this symbol (Layer 5).
-    dominance = live.get("dominance_data")
-    if dominance:
-        score = dominance.get("score", {})
-        children.append(html.Div([
-            slabel("Operator Control Score"),
-            html.P(
-                f"{score.get('livermore_score', '—')}/100 — campaign state: {dominance.get('current_state', 'Unknown')}",
-                style={"fontSize": "11px", "color": BLUE_DIM, "lineHeight": "1.6", "marginTop": "6px"},
-            ),
-        ], style={"marginTop": "12px"}))
-
-    # Real, read-only transition preview -- what state this campaign
-    # is likely to move to next, with a specific rationale, without
-    # mutating anything.
-    tp = live.get("transition_preview_data")
-    if tp:
-        current = tp.get("current_state", "—")
-        proposed = tp.get("proposed_next_state")
-        rationale_list = tp.get("rationale") or []
-        rationale_text = rationale_list[0] if rationale_list else ""
-        if proposed and proposed != current:
-            preview_text = f"{current} → {proposed}"
-            preview_color = TEAL_DIM
-        else:
-            preview_text = f"{current} (no transition previewed)"
-            preview_color = MUTED
-        children.append(html.Div([
-            slabel("Transition Preview"),
-            html.P(preview_text, style={"fontSize": "11px", "color": preview_color,
-                                          "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700"}),
-            html.P(rationale_text, style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real, per-symbol evidence diagnostics -- confirmed genuine,
-    # database-only diagnostic (found via full audit of campaign_api.py,
-    # confirmed never called from the frontend at all).
-    ed = live.get("evidence_diagnostics_data")
-    if ed:
-        summary = ed.get("single_symbol_summary", {})
-        tier = summary.get("diagnostic_priority_tier", "—")
-        tier_color = TEAL_DIM if str(tier).startswith("A_") else (BLUE_DIM if str(tier).startswith("B_") else MUTED)
-        children.append(html.Div([
-            slabel("Evidence Diagnostics"),
-            html.P(f"{tier} — score {summary.get('diagnostic_priority_score', '—')}",
-                   style={"fontSize": "11px", "color": tier_color, "lineHeight": "1.6",
-                          "marginTop": "6px", "fontWeight": "700"}),
-            html.P(summary.get("campaign_explanation", ""),
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real, validated research classification (Layer 1/2) -- the ACTUAL
-    # winning formula from the original research (OBS_Q4+PROG_Q4+
-    # SPD=Y|DEI=N), not the different, disconnected setup_type/bucket
-    # system used elsewhere in the app.
-    vc = live.get("validated_classification")
-    if vc:
-        state = vc.get("behavioral_state", "—")
-        is_optimal = vc.get("is_validated_optimal_entry", False)
-        state_color = TEAL_DIM if is_optimal else WHITE
-        state_text = (
-            f"{state} — the validated research's optimal entry window (SPD=Y, DEI=N)"
-            if is_optimal else
-            f"{state} (SPD={'Y' if vc.get('spd') else 'N'}, DEI={'Y' if vc.get('dei') else 'N'})"
-        )
-        children.append(html.Div([
-            slabel("Validated Research Classification"),
-            html.P(state_text, style={"fontSize": "11px", "color": state_color,
-                                        "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700" if is_optimal else "400"}),
-            html.P(f"Obstacle score: {vc.get('obstacle_score', '—')} (raw; population quartile not computed live)",
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real Wyckoff Verdict Engine -- stopping climax, supply absorption,
-    # spring, sign of strength, survival score, all computed from real
-    # daily bars.
-    wv = live.get("wyckoff_verdict")
-    if wv and wv.get("verdict"):
-        v = wv["verdict"]
-        verdict_color = TEAL_DIM if v.get("birth_eligible") else MUTED
-        children.append(html.Div([
-            slabel("Wyckoff Verdict"),
-            html.P(f"{v.get('verdict', '—')} — {v.get('phase', '—')}"
-                   f"{' (birth eligible)' if v.get('birth_eligible') else ''}",
-                   style={"fontSize": "11px", "color": verdict_color, "lineHeight": "1.6",
-                          "marginTop": "6px", "fontWeight": "700" if v.get("birth_eligible") else "400"}),
-            html.P(f"Score {v.get('wyckoff_score', '—')} · Survival {v.get('survival_score', '—')} · "
-                   f"Spring {v.get('spring_score', '—')} · SOS {v.get('sign_of_strength_score', '—')}",
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real Historical Analog Engine -- matched against actual closed
-    # campaigns from this app's own database, with honest confidence
-    # labeling and graceful fallback to research benchmarks.
-    an = live.get("campaign_analogs")
-    if an and an.get("analog"):
-        a = an["analog"]
-        source_label = "Live analogs" if a.get("source") == "LIVE_ANALOGS" else "Research benchmark (insufficient live analogs)"
-        children.append(html.Div([
-            slabel("Historical Analogs"),
-            html.P(f"{source_label} — {a.get('confidence_level', '—')} confidence"
-                   f"{(' · n=' + str(a.get('analog_count'))) if a.get('analog_count') else ''}",
-                   style={"fontSize": "11px", "color": WHITE, "lineHeight": "1.6", "marginTop": "6px"}),
-            html.P(f"Success rate {a.get('success_rate', '—')}% · Avg MFE90 {a.get('avg_mfe90', '—')}% · "
-                   f"Median {a.get('median_days', '—')} days",
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    return card(children, sx={"height": "640px", "overflowY": "auto", "boxSizing": "border-box"})
-
-
 def _build_trade_plan_contents(live):
     """Only updates the header label — buttons/inputs are permanent in layout."""
     price  = live.get("price", 0)
     symbol = live.get("symbol", "")
     return html.Div([
-        html.H2("Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
+        html.H2("🎯 Plan Trade", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0"}),
         html.Span(f"{symbol} · ${price:.2f}", style={"fontSize":"12px","color":WHITE}),
     ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"})
 
@@ -2207,7 +1235,7 @@ def build_active_trade_panel(trade: dict, current_price: float):
 
     return card([
         html.Div([
-            html.H2("Active Trade", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
+            html.H2("📈 Active Trade", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0"}),
             badge(direction.upper(), "teal" if direction=="long" else "red"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"14px"}),
 
@@ -2242,12 +1270,9 @@ def build_active_trade_panel(trade: dict, current_price: float):
                 style={**_input_style(),"height":"50px","resize":"vertical"}),
         ], style={"borderTop":f"1px solid {BORDER}","paddingTop":"12px","marginBottom":"12px"}),
 
-        _btn("Exit Trade", "btn-exit-trade",
+        _btn("🏁 Exit Trade", "btn-exit-trade",
              color=RED_DIM, bg=RED_GLOW, border="rgba(239,68,68,.35)"),
-        dcc.Loading(
-            html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
-            type="dot", color=RED_DIM,
-        ),
+        html.Div(id="exit-status", style={"marginTop":"8px","fontSize":"12px","color":TEAL_DIM}),
 
         dcc.Store(id="s-active-trade-id", data=trade.get("trade_id")),
     ])
@@ -2256,12 +1281,12 @@ def build_active_trade_panel(trade: dict, current_price: float):
 # ── CSV Import Tab ─────────────────────────────────────────────────────────────
 
 BROKER_INFO = {
-    "alpaca":       {"name": "Alpaca",                  "icon": "", "priority": "HIGH",   "color": TEAL_DIM},
-    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "", "priority": "HIGH",   "color": TEAL_DIM},
-    "ibkr":         {"name": "Interactive Brokers",     "icon": "", "priority": "HIGH",   "color": TEAL_DIM},
-    "robinhood":    {"name": "Robinhood",               "icon": "", "priority": "HIGH",   "color": TEAL_DIM},
-    "webull":       {"name": "Webull",                  "icon": "", "priority": "MEDIUM", "color": YELLOW_DIM},
-    "generic":      {"name": "Generic CSV",             "icon": "", "priority": "ALWAYS", "color": BLUE_DIM},
+    "alpaca":       {"name": "Alpaca",                  "icon": "📊", "priority": "HIGH",   "color": TEAL_DIM},
+    "tdameritrade": {"name": "TD Ameritrade / Schwab",  "icon": "🏦", "priority": "HIGH",   "color": TEAL_DIM},
+    "ibkr":         {"name": "Interactive Brokers",     "icon": "🌐", "priority": "HIGH",   "color": TEAL_DIM},
+    "robinhood":    {"name": "Robinhood",               "icon": "🪶", "priority": "HIGH",   "color": TEAL_DIM},
+    "webull":       {"name": "Webull",                  "icon": "🐂", "priority": "MEDIUM", "color": YELLOW_DIM},
+    "generic":      {"name": "Generic CSV",             "icon": "📄", "priority": "ALWAYS", "color": BLUE_DIM},
 }
 
 EXPORT_INSTRUCTIONS = {
@@ -2304,16 +1329,7 @@ EXPORT_INSTRUCTIONS = {
 
 def build_import_tab():
     # Fetch latest analysis if exists
-    # FIX (2026-07-28): this previously called /api/import/analysis/{USER_ID},
-    # which has no matching backend route (confirmed via full route audit) and
-    # always silently returned {}. The working endpoint that actually returns
-    # this data is /api/trades/history in import_history_restore_api.py.
-    # Its payload nests the actual numbers (total_trades, win_rate, etc.)
-    # under an "analysis" key rather than at the top level, so unwrap that
-    # here -- the rest of this function reads analysis.get("total_trades"),
-    # analysis.get("win_rate"), etc. directly.
-    _history_payload = _get("/api/trades/history")
-    analysis = (_history_payload or {}).get("analysis") or {}
+    analysis = _get(f"/api/import/analysis/{USER_ID}")
 
     ROW = {"display":"flex","gap":"16px","marginBottom":"16px"}
 
@@ -2342,7 +1358,7 @@ def build_import_tab():
 
     # ── Upload section ────────────────────────────────────────────────────────
     upload_section = card([
-        html.H2("Upload Brokerage History",
+        html.H2("📤 Upload Brokerage History",
                 style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
         html.P("Upload your brokerage trade export and we'll instantly build your behavioral profile.",
                style={"fontSize":"12px","color":WHITE,"marginBottom":"16px"}),
@@ -2356,7 +1372,7 @@ def build_import_tab():
             html.Div([
                 html.Div("Upload Brokerage Statement",
                          style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
-                html.Button("️ Clear All Trades", id="btn-reset-imports", n_clicks=0,
+                html.Button("🗑️ Clear All Trades", id="btn-reset-imports", n_clicks=0,
                     style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                            "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                            "fontSize":"12px","fontWeight":"700","padding":"6px 14px",
@@ -2369,7 +1385,7 @@ def build_import_tab():
             dcc.Upload(
                 id="csv-upload",
                 children=html.Div([
-                    html.Div("", style={"fontSize":"32px","marginBottom":"8px"}),
+                    html.Div("📂", style={"fontSize":"32px","marginBottom":"8px"}),
                     html.Div("Drag & drop your CSV here, or click to browse",
                              style={"fontSize":"14px","fontWeight":"700","color":WHITE,"marginBottom":"4px"}),
                     html.Div("Supports: Alpaca · TD Ameritrade · Schwab · IBKR · Robinhood · Webull · Generic CSV",
@@ -2386,11 +1402,8 @@ def build_import_tab():
                 accept=".csv",
                 multiple=False,
             ),
-            dcc.Loading(
-                html.Div(id="csv-upload-status",
-                         style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
-                type="dot", color=TEAL,
-            ),
+            html.Div(id="csv-upload-status",
+                     style={"fontSize":"13px","color":TEAL_DIM,"minHeight":"20px"}),
         ]),
     ])
 
@@ -2443,7 +1456,7 @@ def build_import_tab():
         analysis_section = html.Div([
             # Score cards
             card([
-                html.H2("Historical Behavioral Snapshot",
+                html.H2("📊 Historical Behavioral Snapshot",
                         style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
                 html.Div([
                     metric_tile("Total Trades",    str(total),          WHITE),
@@ -2458,7 +1471,7 @@ def build_import_tab():
 
                 # Mathematical edge
                 html.Div([
-                    html.Span("Mathematical Edge: ",
+                    html.Span("⚡ Mathematical Edge: ",
                               style={"fontWeight":"800","color":edge_color,"fontSize":"13px"}),
                     html.Span(edge_insight, style={"color":WHITE,"fontSize":"12px"}),
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
@@ -2467,15 +1480,15 @@ def build_import_tab():
                 # Best/worst
                 html.Div([
                     html.Div([
-                        html.Span("Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span("🟢 Best Day: ",   style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
                         html.Span(best_d or "—",      style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span("   🔴 Worst Day: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
                         html.Span(worst_d or "—",     style={"color":WHITE,"fontSize":"12px"}),
                     ]),
                     html.Div([
-                        html.Span("Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
+                        html.Span("🟢 Best Symbol: ",  style={"color":TEAL_DIM,"fontWeight":"700","fontSize":"12px"}),
                         html.Span(best_s or "—",        style={"color":WHITE,"fontSize":"12px"}),
-                        html.Span("   Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
+                        html.Span("   🔴 Worst Symbol: ",style={"color":RED_DIM,"fontWeight":"700","fontSize":"12px","marginLeft":"16px"}),
                         html.Span(worst_s or "—",       style={"color":WHITE,"fontSize":"12px"}),
                     ], style={"marginTop":"6px"}),
                 ], style={"background":"rgba(0,0,0,.2)","borderRadius":"12px","padding":"12px 16px",
@@ -2487,11 +1500,11 @@ def build_import_tab():
             html.Div([
                 # Behavioral flags
                 card([
-                    html.H2("Behavioral Flags",
+                    html.H2("🚩 Behavioral Flags",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
                     *([html.Div([
-                        html.Span("" if any(w in f for w in ["Strong","Above","positive","discipline"])
-                                  else "",
+                        html.Span("✅ " if any(w in f for w in ["Strong","Above","positive","discipline"])
+                                  else "⚠️ ",
                                   style={"fontSize":"14px"}),
                         html.Span(f, style={"fontSize":"12px","color":WHITE,"lineHeight":"1.6"}),
                     ], style={"padding":"8px 12px","borderRadius":"10px","marginBottom":"6px",
@@ -2502,7 +1515,7 @@ def build_import_tab():
 
                 # Symbol performance table
                 card([
-                    html.H2("Symbol Performance",
+                    html.H2("📈 Symbol Performance",
                             style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
                     html.Table([
                         html.Thead(html.Tr([
@@ -2526,17 +1539,15 @@ def build_import_tab():
 
 def _behavior_empty_state():
     return card([
-        html.H2("Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+        html.H2("🧠 Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
         note_box("Behavioral tracking activates after your first trade upload. Go to Import History to upload a brokerage statement.", "blue"),
         html.Div(style={"height":"12px"}),
         note_box("Once trades are imported, your decision scores, regime memory, and behavioral patterns will appear here.", "yellow"),
     ])
 
 
-def build_behavior_tab(session=None):
-    # FIX (2026-07-28): was always fetching demo_user_001's dashboard
-    # regardless of who was actually logged in.
-    dash_data = _get(f"/api/behavior/dashboard/{_current_user_id(session)}", headers=_auth_headers(session))
+def build_behavior_tab():
+    dash_data = _get(f"/api/behavior/dashboard/{USER_ID}")
     if not dash_data:
         return card([note_box("No behavioral data yet. Start tracking trades to build your profile.", "blue")])
 
@@ -2566,7 +1577,7 @@ def build_behavior_tab(session=None):
 
     # Section 1 — Profile scores
     section1 = card([
-        html.H2("Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
+        html.H2("🧠 Behavioral Profile", style={"fontSize":"16px","fontWeight":"800","color":WHITE,"marginBottom":"16px"}),
         html.Div([
             metric_tile("Total Trades",    str(total),          WHITE),
             metric_tile("Composite Score", f"{comp}%",          score_color(comp)),
@@ -2591,11 +1602,11 @@ def build_behavior_tab(session=None):
     # Section 2 — Adaptive warnings
     def warn_box(w):
         variant = "teal" if w["type"]=="strength" else "yellow"
-        icon    = "" if w["type"]=="strength" else ""
+        icon    = "✅" if w["type"]=="strength" else "⚠️"
         return note_box(f"{icon}  {w['message']}", variant)
 
     section2 = card([
-        html.H2("Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        html.H2("🔔 Adaptive Guidance", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
         *([warn_box(w) for w in warnings] if warnings
           else [note_box("No active warnings. Keep trading to build your profile.", "blue")]),
         html.Div(style={"height":"8px"}),
@@ -2632,7 +1643,7 @@ def build_behavior_tab(session=None):
         ], style={"borderBottom":f"1px solid {BORDER}"}))
 
     section3 = card([
-        html.H2("Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
+        html.H2("📊 Regime Performance Memory", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"14px"}),
         html.Table([
             html.Thead(html.Tr([
                 html.Th("Regime",           style={"color":WHITE,"fontSize":"10px","fontWeight":"800","textTransform":"uppercase","letterSpacing":".12em","padding":"8px 12px","textAlign":"left"}),
@@ -2674,7 +1685,7 @@ def build_behavior_tab(session=None):
                    "borderRadius":"10px","background":"rgba(0,0,0,.15)","marginBottom":"6px"})
 
     section4 = card([
-        html.H2("Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
+        html.H2("📋 Recent Decision Scorecards", style={"fontSize":"15px","fontWeight":"800","color":WHITE,"marginBottom":"12px"}),
         *([scorecard_row(s) for s in cards_] if cards_
           else [note_box("No scorecards yet. Complete a trade to generate your first scorecard.", "blue")]),
     ])
@@ -2712,7 +1723,7 @@ def build_login_page(error=""):
                                          "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
                                          "outline":"none","fontFamily":"DM Sans, sans-serif"}),
                     ], style={"marginBottom":"24px"}),
-                    dcc.Loading(html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}), type="dot", color=TEAL),
+                    html.Div(id="login-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
                     html.Button("Sign In", id="login-btn", n_clicks=0,
                         style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
                                "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
@@ -2722,42 +1733,13 @@ def build_login_page(error=""):
                         html.Span("or", style={"color":WHITE,"fontSize":"12px","padding":"0 12px"}),
                         html.Div(style={"flex":"1","height":"1px","background":BORDER}),
                     ], style={"display":"flex","alignItems":"center","marginBottom":"16px"}),
-                    html.Button("Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
+                    html.Button("🎯 Try Demo — No Sign Up Required", id="demo-btn", n_clicks=0,
                         style={"width":"100%","background":"rgba(45,143,111,.15)","color":TEAL_DIM,
                                "border":f"1px solid {BORDER_T}","borderRadius":"8px","padding":"14px",
                                "fontSize":"13px","fontWeight":"700","cursor":"pointer","marginBottom":"24px"}),
                     html.Div([
                         html.Span("Don't have an account? ", style={"color":WHITE,"fontSize":"12px"}),
                         html.Button("Sign Up", id="goto-signup-btn", n_clicks=0,
-                            style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
-                                   "fontWeight":"700","cursor":"pointer","padding":"0"}),
-                    ], style={"textAlign":"center", "marginBottom": "12px"}),
-                    html.Div([
-                        html.Button("Forgot your password?", id="goto-forgot-btn", n_clicks=0,
-                            style={"background":"none","border":"none","color":MUTED,"fontSize":"12px",
-                                   "fontWeight":"600","cursor":"pointer","padding":"0","textDecoration":"underline"}),
-                    ], style={"textAlign":"center"}),
-                ]),
-
-                # Forgot-password section (hidden initially) -- request a reset email
-                html.Div(id="forgot-section", style={"display":"none"}, children=[
-                    html.H2("Reset Password", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"12px","textAlign":"center"}),
-                    html.P("Enter your account email and we'll send you a link to set a new password.",
-                           style={"fontSize":"12px","color":WHITE,"marginBottom":"20px","textAlign":"center"}),
-                    html.Div([
-                        html.Label("Email", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="forgot-email", type="email", placeholder="you@example.com",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"20px"}),
-                    dcc.Loading(html.Div(id="forgot-message", style={"color":TEAL_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}), type="dot", color=TEAL),
-                    html.Button("Send Reset Link", id="forgot-submit-btn", n_clicks=0,
-                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
-                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
-                               "cursor":"pointer","marginBottom":"16px"}),
-                    html.Div([
-                        html.Button("Back to Sign In", id="goto-login-from-forgot-btn", n_clicks=0,
                             style={"background":"none","border":"none","color":TEAL_DIM,"fontSize":"12px",
                                    "fontWeight":"700","cursor":"pointer","padding":"0"}),
                     ], style={"textAlign":"center"}),
@@ -2780,24 +1762,7 @@ def build_login_page(error=""):
                                          "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
                                          "outline":"none","fontFamily":"DM Sans, sans-serif"}),
                     ], style={"marginBottom":"24px"}),
-                    dcc.Loading(html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}), type="dot", color=TEAL),
-                    html.Div([
-                        dcc.Checklist(
-                            id="signup-agree-terms",
-                            options=[{"label": "", "value": "agreed"}],
-                            value=[],
-                            style={"display":"inline-block","marginRight":"8px","verticalAlign":"middle"},
-                            inputStyle={"marginRight":"8px"},
-                        ),
-                        html.Span([
-                            "I agree to the ",
-                            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
-                                   style={"color":TEAL_DIM,"textDecoration":"underline"}),
-                            " and ",
-                            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
-                                   style={"color":TEAL_DIM,"textDecoration":"underline"}),
-                        ], style={"fontSize":"12px","color":WHITE}),
-                    ], style={"display":"flex","alignItems":"center","marginBottom":"20px"}),
+                    html.Div(id="signup-error", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}),
                     html.Button("Create Account", id="signup-btn", n_clicks=0,
                         style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
                                "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
@@ -2810,75 +1775,14 @@ def build_login_page(error=""):
                     ], style={"textAlign":"center"}),
                 ]),
 
-                # Set-new-password section (hidden initially) -- shown when a
-                # Supabase recovery token is detected in the URL fragment
-                # (see the client-side script in index_string that extracts it).
-                html.Div(id="set-password-section", style={"display":"none"}, children=[
-                    html.H2("Set New Password", style={"fontSize":"20px","fontWeight":"800","color":WHITE,"marginBottom":"24px","textAlign":"center"}),
-                    html.Div([
-                        html.Label("New Password", style={"fontSize":"11px","fontWeight":"700","color":WHITE,"textTransform":"uppercase","letterSpacing":".1em","marginBottom":"6px","display":"block"}),
-                        dcc.Input(id="set-password-new", type="password", placeholder="Min 6 characters",
-                                  style={"width":"100%","background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
-                                         "borderRadius":"8px","padding":"12px 16px","color":WHITE,"fontSize":"14px",
-                                         "outline":"none","fontFamily":"DM Sans, sans-serif"}),
-                    ], style={"marginBottom":"24px"}),
-                    dcc.Loading(html.Div(id="set-password-message", style={"color":RED_DIM,"fontSize":"12px","marginBottom":"16px","textAlign":"center"}), type="dot", color=TEAL),
-                    html.Button("Set Password", id="set-password-btn", n_clicks=0,
-                        style={"width":"100%","background":TEAL,"color":WHITE,"border":"none",
-                               "borderRadius":"8px","padding":"14px","fontSize":"14px","fontWeight":"700",
-                               "cursor":"pointer"}),
-                ]),
-
             ], style={"background":NAVY_CARD,"border":f"1px solid {BORDER}","borderRadius":"20px",
                       "padding":"40px","width":"400px","boxShadow":"0 20px 60px rgba(0,0,0,.4)"}),
-
-            html.Div([
-                html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
-                       style={"color":MUTED,"fontSize":"11px","textDecoration":"underline","marginRight":"16px"}),
-                html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
-                       style={"color":MUTED,"fontSize":"11px","textDecoration":"underline"}),
-            ], style={"marginTop":"20px","textAlign":"center"}),
-
         ], style={"display":"flex","flexDirection":"column","alignItems":"center",
                   "justifyContent":"center","minHeight":"100vh","padding":"20px"}),
     ], style={"background":NAVY})
 
-def _build_volume_expansion_note(price, rel_volume):
-    """
-    FIX (2026-08-04): this note used to be a static, always-identical
-    disclaimer ("A-grade requires live-volume expansion.") that never
-    reflected the actual current volume condition for the symbol being
-    viewed. Now shows the real, live relative-volume reading (from the
-    radar engine's own computed rel_volume, via the new
-    /api/radar/symbol/{symbol} endpoint) and whether the expansion
-    condition is genuinely met right now -- 1.5x average volume is a
-    common, standard threshold for "unusual"/expanding volume.
-    """
-    EXPANSION_THRESHOLD = 1.5
-
-    if rel_volume is None:
-        return note_box(
-            f"Ref: ${price:.2f}  ·  Volume data unavailable for this symbol right now.",
-            "yellow",
-        )
-
-    is_expanding = rel_volume >= EXPANSION_THRESHOLD
-    variant = "teal" if is_expanding else "yellow"
-    status_text = "met" if is_expanding else "not met"
-    return note_box(
-        f"Ref: ${price:.2f}  ·  Live volume: {rel_volume:.2f}x average "
-        f"({status_text} — Score Tier A requires ≥{EXPANSION_THRESHOLD:.1f}x).",
-        variant,
-    )
-
-
-def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None):
-    """Compact, user-readable Direction & Confidence panel.
-
-    FIX (2026-08-04): merged in the previously-separate Symbol/Live
-    Price/Engine Score/Regime tile per request, so all of this related
-    context lives in one place instead of two side-by-side cards.
-    """
+def build_direction_panel(decision, score):
+    """Compact, user-readable Direction & Confidence panel."""
     bias = decision.get("bias", "Neutral")
     status = decision.get("status", "Watching")
     confidence = decision.get("confidence", f"{score}%")
@@ -2887,34 +1791,13 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
 
     if str(bias).lower() == "bullish":
         color = TEAL_DIM
-        icon = ""
+        icon = "🟢"
     elif str(bias).lower() == "bearish":
         color = RED_DIM
-        icon = ""
+        icon = "🔴"
     else:
         color = YELLOW_DIM
-        icon = ""
-
-    extra_tiles = []
-    if symbol is not None:
-        extra_tiles.append(metric_tile("Symbol", symbol, WHITE))
-    if price is not None:
-        extra_tiles.append(metric_tile("Live Price", f"${price:.2f}", WHITE))
-    extra_tiles.append(metric_tile("Engine Score", f"{score}%", color))
-    if regime is not None:
-        extra_tiles.append(metric_tile("Regime", regime.replace("_", " ").title(), YELLOW_DIM))
-
-    # Persistent alert-tier indicator -- shows the CURRENT state at all
-    # times (not just a transient banner on a crossing), per request.
-    if score < 35:
-        tier_label, tier_color = "Trap Door", RED_DIM
-    elif score < 55:
-        tier_label, tier_color = "Monitoring", MUTED
-    elif score < 80:
-        tier_label, tier_color = "Score Tier B — Audio Active", BLUE_DIM
-    else:
-        tier_label, tier_color = "Score Tier A — Audio Active", TEAL_DIM
-    extra_tiles.append(metric_tile("Score Tier", tier_label, tier_color))
+        icon = "🟡"
 
     return html.Div([
         slabel("Direction Intelligence"),
@@ -2931,407 +1814,16 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
         ),
         html.Div([
             metric_tile("Confidence", confidence, color),
-            metric_tile("Status - Grade", f"{status} - {grade}", color),
+            metric_tile("Status", status, color),
+            metric_tile("Grade", grade, color),
             metric_tile("Mode", mode, BLUE_DIM),
-            *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
-        html.Div(
-            "Score Tier (below) is a separate alert system based on Engine Score -- not the same as Status - Grade above.",
-            style={"fontSize": "9px", "color": MUTED, "marginTop": "10px", "fontStyle": "italic"},
-        ),
-        html.Div([
-            html.Span("Below 35: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Trap Door\" (warning-style zone)", style={"color": RED_DIM}),
-            html.Span("  ·  ", style={"color": WHITE}),
-            html.Span("55-79: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Score Tier B — Audio Active\"", style={"color": BLUE_DIM}),
-            html.Span("  ·  ", style={"color": WHITE}),
-            html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Score Tier A — Audio Active\"", style={"color": TEAL_DIM}),
-        ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
-        html.Div(_build_volume_expansion_note(price, rel_volume), style={"marginTop": "10px"}) if price is not None else None,
     ])
-
-
-# ── Weis Analysis Tab ────────────────────────────────────────────────────────
-# Real, live version of the three-engine layout the user shared as a mockup.
-# Extended with a fourth section (Spring/Upthrust/SOS/Cause-Effect from
-# WyckoffVerdictEngine) per explicit instruction -- Weis's own book frames
-# his volume-wave work as an adaptation OF Wyckoff, not a separate
-# methodology, so the broader Wyckoff signals belong alongside it. All four
-# stay genuinely separate, unblended readings -- no combined score.
-
-def _weis_pace_color(condition):
-    if condition == "ABSORPTION":
-        return RED_DIM
-    if condition == "EASE_OF_MOVEMENT":
-        return TEAL_DIM
-    return MUTED
-
-def _weis_effort_color(effort):
-    if effort == "BUILDING":
-        return TEAL_DIM
-    if effort == "EXHAUSTING":
-        return RED_DIM
-    return MUTED
-
-def _weis_engine_card(title, subtitle, engine_status, current_wave, verdict_data, unit_label, extra_content=None):
-    """
-    Renders one Weis engine column. Shared by all three (time-bar,
-    Renko, PnF) since they now expose an identical structure (Effort
-    vs. Result, Structural Pace, Climax, Confirmed Setup Gate) --
-    only the labels/unit ("bar"/"brick"/"box") and engine-specific
-    extras (e.g. PnF's Count Guide) differ.
-    """
-    if engine_status != "OK":
-        body = html.Div(
-            f"Data not available ({engine_status}).",
-            style={"fontSize":"12px","color":MUTED,"padding":"20px 0"})
-        return html.Div([
-            html.Div(title, style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"2px"}),
-            html.Div(subtitle, style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
-            body,
-        ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
-                   "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px"})
-
-    cw = current_wave or {}
-    available = cw.get("available")
-    direction = cw.get("direction", "—")
-    effort = cw.get("effort_vs_result", "INSUFFICIENT_HISTORY")
-    pace_condition = cw.get("market_condition", "INSUFFICIENT_HISTORY")
-    pace_ratio = cw.get("relative_pace_ratio")
-    climax = cw.get("climax") or {}
-    climax_detected = climax.get("detected", False)
-
-    long_score = verdict_data.get("weis_score", 0)
-    long_verdict = verdict_data.get("verdict", "NO_WEIS_SIGNAL")
-    short_score = verdict_data.get("weis_score_bearish", 0)
-    short_verdict = verdict_data.get("verdict_bearish", "NO_WEIS_SIGNAL")
-    gate_fired = long_score >= 90 or short_score >= 90
-    gate_side = "LONG" if long_score >= 90 else ("SHORT" if short_score >= 90 else None)
-
-    header_badge = html.Span(
-        f"{direction}-WAVE" if available else "NO DATA",
-        style={"fontSize":"10px","fontWeight":"900","padding":"3px 8px","borderRadius":"6px",
-               "background": "rgba(52,211,153,.12)" if direction == "UP" else ("rgba(251,113,133,.12)" if direction == "DOWN" else "rgba(148,163,184,.12)"),
-               "color": TEAL_DIM if direction == "UP" else (RED_DIM if direction == "DOWN" else MUTED),
-               "border": f"1px solid {TEAL_DIM if direction=='UP' else (RED_DIM if direction=='DOWN' else BORDER)}"})
-
-    effort_row = html.Div([
-        html.Div([
-            html.Span("EFFORT VS. RESULT", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
-            html.Span(effort.replace("_"," ").title(), style={"fontSize":"11px","fontWeight":"900","color":_weis_effort_color(effort),
-                                                                 "float":"right"}),
-        ]),
-        html.Div(cw.get("reading", "No data yet."), style={"fontSize":"11px","color":MUTED,"marginTop":"6px","lineHeight":"1.5"}),
-    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
-
-    pace_bar_pct = min(100, abs((pace_ratio or 1.0) - 1.0) * 60 + 15) if pace_ratio else 15
-    pace_row = html.Div([
-        html.Div([
-            html.Span("STRUCTURAL PACE", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
-            html.Span(pace_condition.replace("_"," ").title(), style={"fontSize":"11px","fontWeight":"900","color":_weis_pace_color(pace_condition),
-                                                                        "float":"right"}),
-        ]),
-        html.Div([
-            html.Span(f"Vol per {unit_label}:", style={"fontSize":"10px","color":MUTED}),
-            html.Span(f"{cw.get('avg_volume_per_' + unit_label.lower(), 0):,.0f}", style={"fontSize":"10px","color":WHITE,"fontWeight":"800","float":"right"}),
-        ], style={"marginTop":"6px","marginBottom":"4px"}),
-        html.Div(html.Div(style={"width":f"{pace_bar_pct}%","height":"100%","borderRadius":"3px",
-                                   "background": _weis_pace_color(pace_condition)}),
-                 style={"width":"100%","height":"5px","background":"rgba(148,163,184,.15)","borderRadius":"3px","overflow":"hidden"}),
-    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
-
-    climax_row = html.Div([
-        html.Span("CLIMAX DETECTION", style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
-        html.Span([
-            html.Span("● ", style={"color": YELLOW_DIM if climax_detected else MUTED}),
-            html.Span("Climax Spike" if climax_detected else "No Climax",
-                      style={"color": YELLOW_DIM if climax_detected else MUTED, "fontWeight":"900" if climax_detected else "700"}),
-        ], style={"fontSize":"11px","float":"right"}),
-        html.Div(climax.get("reading", ""), style={"fontSize":"10px","color":MUTED,"marginTop":"6px","lineHeight":"1.4","clear":"both"}),
-    ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"10px"})
-
-    gate_row = html.Div([
-        html.Div("STRICT SETUP GATE STATUS", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
-        html.Div([
-            html.Span(f"{gate_side} CONFIRMED" if gate_fired else "NO ACTIVE GATE",
-                      style={"fontSize":"11px","fontWeight":"900",
-                             "color": TEAL_DIM if gate_side=="LONG" else (RED_DIM if gate_side=="SHORT" else MUTED)}),
-            html.Span("SOT → Exh → Conf", style={"fontSize":"9px","color":MUTED,"background":"rgba(148,163,184,.1)",
-                                                    "padding":"2px 6px","borderRadius":"4px","float":"right"}),
-        ]),
-    ], style={"background":"rgba(2,10,20,.7)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginTop":"auto"})
-
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Div(title, style={"fontSize":"13px","fontWeight":"900","color":WHITE}),
-                html.Div(subtitle, style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
-            ]),
-            header_badge,
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"12px"}),
-        effort_row, pace_row, climax_row,
-        extra_content if extra_content else None,
-        gate_row,
-    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
-               "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px",
-               "display":"flex","flexDirection":"column"})
-
-
-def _wyckoff_card(wyckoff_status, wyckoff_data):
-    """
-    The broader Wyckoff signals (Spring, Upthrust, Sign of Strength,
-    cause/effect) -- structurally different from the three Weis wave
-    engines, so its own layout rather than reusing _weis_engine_card.
-    """
-    if wyckoff_status != "OK" or not wyckoff_data:
-        body = html.Div("Data not available.", style={"fontSize":"12px","color":MUTED,"padding":"20px 0"})
-        return html.Div([
-            html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"2px"}),
-            html.Div("Spring · Upthrust · SOS · SOW · AR · LPS/LPSY · ST", style={"fontSize":"10px","color":MUTED,"marginBottom":"10px"}),
-            body,
-        ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
-                   "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px"})
-
-    v = wyckoff_data.get("verdict", {}) if "verdict" in wyckoff_data else wyckoff_data
-    spring = v.get("spring_score", 0)
-    upthrust = v.get("upthrust_score", 0)
-    sos = v.get("sign_of_strength_score", 0)
-    sow = v.get("sign_of_weakness_score", 0)
-    absorption = v.get("supply_absorption_score", 0)
-    ar_score = v.get("automatic_rally_score", 0)
-    ar_high = v.get("ar_high")
-    ar_low = v.get("ar_low")
-    lps = v.get("last_point_of_support_score", 0)
-    lpsy = v.get("last_point_of_supply_score", 0)
-    st = v.get("secondary_test_score", 0)
-    resistance = v.get("resistance_level")
-    support = v.get("support_level")
-    cause_width = v.get("cause_width_pct")
-    trend_context = v.get("trend_context", "unknown")
-    verdict_label = v.get("verdict", "NO_ACCUMULATION")
-
-    def _metric_row(label, value, color=WHITE):
-        return html.Div([
-            html.Span(label, style={"fontSize":"10px","color":MUTED,"fontWeight":"800"}),
-            html.Span(f"{value:.0f}" if isinstance(value,(int,float)) else str(value),
-                      style={"fontSize":"11px","fontWeight":"900","color":color,"float":"right"}),
-        ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px",
-                   "padding":"10px","marginBottom":"8px"})
-
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Div("4. Wyckoff Structural Engine", style={"fontSize":"13px","fontWeight":"900","color":WHITE}),
-                html.Div("Spring · Upthrust · SOS · SOW · AR · LPS/LPSY · ST", style={"fontSize":"10px","color":MUTED,"marginTop":"1px"}),
-            ]),
-            html.Span(verdict_label.replace("_"," "), style={"fontSize":"10px","fontWeight":"900","padding":"3px 8px","borderRadius":"6px",
-                       "background":"rgba(148,163,184,.12)","color":MUTED,"border":f"1px solid {BORDER}"}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"12px"}),
-
-        _metric_row("SPRING SCORE", spring, TEAL_DIM if spring >= 60 else MUTED),
-        _metric_row("UPTHRUST SCORE", upthrust, RED_DIM if upthrust >= 60 else MUTED),
-        _metric_row("SIGN OF STRENGTH (SOS)", sos, TEAL_DIM if sos >= 60 else MUTED),
-        _metric_row("SIGN OF WEAKNESS (SOW)", sow, RED_DIM if sow >= 60 else MUTED),
-        _metric_row("SUPPLY ABSORPTION", absorption, TEAL_DIM if absorption >= 60 else MUTED),
-        _metric_row("LAST POINT OF SUPPORT (LPS)", lps, TEAL_DIM if lps >= 60 else MUTED),
-        _metric_row("LAST POINT OF SUPPLY (LPSY)", lpsy, RED_DIM if lpsy >= 60 else MUTED),
-        _metric_row("SECONDARY TEST (ST)", st, TEAL_DIM if st >= 60 else MUTED),
-        _metric_row("AUTOMATIC RALLY (AR)", ar_score, TEAL_DIM if ar_score >= 60 else MUTED),
-
-        html.Div([
-            html.Div("AR RANGE (creek / ice)", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
-            html.Div([
-                html.Span(f"AR Low: ${ar_low:.2f}" if ar_low else "AR Low: —", style={"fontSize":"10px","color":MUTED}),
-                html.Span(f"AR High: ${ar_high:.2f}" if ar_high else "AR High: —", style={"fontSize":"10px","color":MUTED,"float":"right"}),
-            ]),
-        ], style={"background":"rgba(2,10,20,.5)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginBottom":"8px"}) if (ar_high or ar_low) else None,
-
-        html.Div([
-            html.Div("CAUSE / EFFECT", style={"fontSize":"9px","color":MUTED,"fontWeight":"800","marginBottom":"6px"}),
-            html.Div([
-                html.Span(f"Support: ${support:.2f}" if support else "Support: —", style={"fontSize":"10px","color":MUTED}),
-                html.Span(f"Resistance: ${resistance:.2f}" if resistance else "Resistance: —", style={"fontSize":"10px","color":MUTED,"float":"right"}),
-            ], style={"marginBottom":"4px"}),
-            html.Div(f"Cause width: {cause_width*100:.1f}% of range · Trend context: {trend_context}" if cause_width else f"Trend context: {trend_context}",
-                      style={"fontSize":"10px","color":MUTED}),
-        ], style={"background":"rgba(2,10,20,.7)","border":f"1px solid {BORDER}","borderRadius":"10px","padding":"10px","marginTop":"auto"}),
-    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px",
-               "background":"rgba(8,24,39,.60)","flex":"1","minWidth":"280px",
-               "display":"flex","flexDirection":"column"})
-
-
-def _weis_cross_engine_synthesis(time_cw, renko_cw, pnf_cw, wyckoff_data):
-    """
-    Rule-based, generated directly from the real data's actual
-    agreement/divergence -- never a pre-scripted note. No combined
-    score; states plainly where the engines agree or diverge.
-    """
-    directions = {}
-    for name, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]:
-        if cw and cw.get("available"):
-            directions[name] = cw.get("direction")
-
-    if not directions:
-        return "Insufficient live data across the three Weis engines to synthesize a reading right now."
-
-    unique_dirs = set(directions.values())
-    lines = []
-
-    if len(unique_dirs) == 1:
-        d = next(iter(unique_dirs))
-        lines.append(f"Full directional alignment: all {len(directions)} available Weis engines currently show an active {d} wave.")
-    else:
-        agree = [n for n, d in directions.items() if d == max(unique_dirs, key=lambda x: list(directions.values()).count(x))]
-        lines.append(
-            f"Directional divergence present: " +
-            ", ".join(f"{n} shows {d}" for n, d in directions.items()) +
-            ". This mismatch is itself informative -- each engine's own reversal threshold reacts to price movement differently, not an error."
-        )
-
-    exhausting = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
-                  if cw and cw.get("available") and cw.get("effort_vs_result") == "EXHAUSTING"]
-    building = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
-                if cw and cw.get("available") and cw.get("effort_vs_result") == "BUILDING"]
-    if exhausting and building:
-        lines.append(f"Effort split: {', '.join(exhausting)} showing exhausting effort while {', '.join(building)} still building -- a genuine mixed signal, not smoothed into one number.")
-    elif exhausting:
-        lines.append(f"{', '.join(exhausting)} showing exhausting effort -- fading participation on the current move.")
-    elif building:
-        lines.append(f"{', '.join(building)} showing building effort -- fresh, genuine participation.")
-
-    climaxes = [n for n, cw in [("Time-Bar", time_cw), ("Renko", renko_cw), ("PnF", pnf_cw)]
-                if cw and cw.get("available") and (cw.get("climax") or {}).get("detected")]
-    if climaxes:
-        lines.append(f"Climax detected on: {', '.join(climaxes)} -- a sudden, concentrated volume spike within the current wave, a real warning sign of an immediate structural roadblock.")
-
-    if wyckoff_data:
-        v = wyckoff_data.get("verdict", wyckoff_data)
-        spring = v.get("spring_score", 0)
-        upthrust = v.get("upthrust_score", 0)
-        if spring >= 60:
-            lines.append(f"Wyckoff Spring score is elevated ({spring:.0f}) -- some real shakeout-and-reclaim structure present at support.")
-        if upthrust >= 60:
-            lines.append(f"Wyckoff Upthrust score is elevated ({upthrust:.0f}) -- some real false-breakout structure present at resistance.")
-
-    return " ".join(lines)
-
-
-def _fetch_weis_raw_data(symbol):
-    """
-    Pure fetch, no rendering -- the 4 real, independent backend calls
-    that make up the Weis Analysis tab's data. Split out from
-    build_weis_analysis_tab() (2026-08-13) so this can run inside a
-    background thread while the request/response cycle itself never
-    blocks on it -- see the "weis" branch of render_main() and
-    _weis_poll() for how the two are connected via shared_cache.
-    """
-    endpoints = {
-        "time": f"/api/research/weis-wave/{symbol}",
-        "renko": f"/api/research/renko-weis/{symbol}",
-        "pnf": f"/api/research/pnf-weis/{symbol}",
-        "wyckoff": f"/api/radar/symbol/{symbol}/wyckoff-verdict",
-    }
-    # FIX (2026-08-13): user reported the PnF card specifically
-    # showing "Data not available (UNKNOWN)" -- confirmed the raw
-    # backend endpoint itself was genuinely healthy and fast when
-    # fetched directly. All 4 of these fire simultaneously against a
-    # 2-worker backend, so at least 2 must genuinely queue; PnF's own
-    # extra Count Guide computation on top of everything the other
-    # three already do likely makes it the one most often pushed past
-    # the default 15s timeout under that contention. Widened
-    # specifically here (not the shared _get() default, which many
-    # other, more latency-sensitive callers use) since this whole
-    # fetch already runs in a non-blocking background thread.
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {key: pool.submit(_get, path, ttl_seconds=1800, timeout=30) for key, path in endpoints.items()}
-        return {key: fut.result() for key, fut in futures.items()}
-
-
-def build_weis_analysis_tab(symbol, results):
-    """
-    Real, live version of the four-engine layout: the three Weis wave
-    engines (time-bar, Renko, PnF) plus the broader Wyckoff structural
-    engine, per explicit instruction that Weis's own book frames his
-    work as an adaptation of Wyckoff, not a separate methodology.
-    Zero blended scores -- every reading stays genuinely separate.
-
-    Pure rendering only -- takes already-fetched `results` (from
-    _fetch_weis_raw_data()) rather than fetching itself, so this
-    function is fast and safe to call directly from the main
-    request/response cycle.
-    """
-    time_resp = results["time"]
-    renko_resp = results["renko"]
-    pnf_resp = results["pnf"]
-    wyckoff_resp = results["wyckoff"]
-
-    time_status = time_resp.get("status", "UNKNOWN")
-    renko_status = renko_resp.get("status", "UNKNOWN")
-    pnf_status = pnf_resp.get("status", "UNKNOWN")
-    wyckoff_status = "OK" if wyckoff_resp.get("ok") else "UNKNOWN"
-
-    columns = html.Div([
-        _weis_engine_card("1. Time-Bar Weis Engine", "Original Engine · Validated Close-to-Close",
-                            time_status, time_resp.get("current_wave"), time_resp, "Bar"),
-        _weis_engine_card("2. Renko-Weis Engine", "Brick-Based · Wave Momentum Decay",
-                            renko_status, renko_resp.get("current_wave"), renko_resp, "Brick"),
-        _weis_engine_card("3. PnF-Weis Engine", "Column-Based · Structural Boundaries",
-                            pnf_status, pnf_resp.get("current_column"), pnf_resp, "Box",
-                            extra_content=_pnf_count_guide_block(pnf_resp.get("count_guide"))),
-        _wyckoff_card(wyckoff_status, wyckoff_resp),
-    ], style={"display":"flex","gap":"16px","flexWrap":"wrap","marginBottom":"16px"})
-
-    synthesis_text = _weis_cross_engine_synthesis(
-        time_resp.get("current_wave"), renko_resp.get("current_wave"),
-        pnf_resp.get("current_column"), wyckoff_resp if wyckoff_status == "OK" else None,
-    )
-
-    synthesis = html.Div([
-        html.Div("Honest Cross-Engine Synthesis", style={"fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"10px"}),
-        html.Div(synthesis_text, style={"fontSize":"12px","color":WHITE,"lineHeight":"1.6","background":"rgba(2,10,20,.5)",
-                                          "border":f"1px solid {BORDER}","borderRadius":"10px","padding":"14px"}),
-        html.Div([
-            html.Span("• Zero blended scores or numeric averages", style={"fontSize":"10px","color":MUTED,"marginRight":"20px"}),
-            html.Span("• Isolated data streams preserved side-by-side", style={"fontSize":"10px","color":MUTED,"marginRight":"20px"}),
-            html.Span("• No behavior grades or external bias injection", style={"fontSize":"10px","color":MUTED}),
-        ], style={"marginTop":"10px"}),
-    ], style={"border":f"1px solid {BORDER}","borderRadius":"14px","padding":"16px","background":"rgba(8,24,39,.72)"})
-
-    return html.Div([
-        html.Div([
-            html.Div(f"WEIS WAVE MODERN ADAPTATION — {symbol}", style={"fontSize":"15px","fontWeight":"900","color":WHITE}),
-            html.Div("Wyckoff-derived multi-engine structural analysis panel", style={"fontSize":"11px","color":MUTED,"marginTop":"2px"}),
-        ], style={"marginBottom":"16px"}),
-        columns,
-        synthesis,
-    ])
-
-
-def _pnf_count_guide_block(count_guide):
-    if not count_guide or not count_guide.get("available"):
-        return None
-    return html.Div([
-        html.Div("PNF COUNT GUIDE PROJECTION", style={"fontSize":"9px","color":BLUE_DIM,"fontWeight":"800","marginBottom":"6px"}),
-        html.Div([
-            html.Div([
-                html.Div("MEASURED CAUSE", style={"fontSize":"9px","color":MUTED}),
-                html.Div(f"{count_guide.get('horizontal_count','—')} boxes wide", style={"fontSize":"11px","color":WHITE,"fontWeight":"800"}),
-            ], style={"flex":"1"}),
-            html.Div([
-                html.Div("EFFECT TARGET (UP)", style={"fontSize":"9px","color":MUTED}),
-                html.Div(f"${count_guide.get('upside_conservative_target',0):.2f} – ${count_guide.get('upside_aggressive_target',0):.2f}",
-                          style={"fontSize":"11px","color":TEAL_DIM,"fontWeight":"800"}),
-            ], style={"flex":"1"}),
-        ], style={"display":"flex","gap":"10px"}),
-    ], style={"background":"rgba(8,24,39,.9)","border":f"1px solid rgba(147,197,253,.25)","borderRadius":"10px",
-               "padding":"10px","marginBottom":"10px"})
 
 
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
-    nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
+    nodes    = live["confluence"]; kl = get_key_levels(price)
     seq      = live["sequence"]; score = decision["score"]
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
@@ -3340,90 +1832,13 @@ def build_command_tab(live, candles, symbol, tf):
     sc   = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
     top  = nodes[0] if nodes else {"public_label":"—","score":0}
-
-    # FIX (2026-07-29): the Options Matrix widget below only ever showed
-    # synthetic price-percentage numbers, even though real Alpaca options
-    # data is already wired up and working elsewhere in the app (the
-    # Campaign Intelligence gamma overlay). Now fetches the same real
-    # gamma-exposure-based call/put walls for the currently loaded symbol,
-    # falling back to the synthetic model only if no real options data is
-    # available for this symbol right now (e.g. options aren't listed, or
-    # the chain snapshot came back empty).
-    real_gamma = _get(f"/api/options/gamma-matrix/{symbol}", spot_price=price)
-    has_real_options = bool(real_gamma.get("has_real_data"))
-    real_call_walls = real_gamma.get("top_call_walls") or []
-    real_put_walls  = real_gamma.get("top_put_walls") or []
-
-    # First wiring of the new, parallel "pure Weis" engine (non-
-    # repainting Renko brick generation -> wave grouping -> scoring)
-    # into a live tab. Own daily-bar fetch inside the endpoint, not
-    # tied to this chart's own (5-minute default) candles timeframe.
-    # FIX (2026-08-12): user reported "PnF-Weis data not available"
-    # with no further detail, while a direct fetch of the same
-    # endpoint worked fine -- confirmed the same root cause already
-    # fixed once tonight for the D3E.9 Lifecycle panel: _get()
-    # silently swallows any failure (timeout, non-200 status, genuine
-    # exception) into {}, so a transient issue produced empty data
-    # with zero diagnostic information. Direct requests.get() calls
-    # here distinguish the actual reason instead.
-    def _fetch_weis_engine(path: str) -> dict:
-        try:
-            r = req.get(f"{BACKEND_HTTP}{path}", timeout=20)
-            if r.ok:
-                return r.json()
-            return {"status": "BACKEND_ERROR", "error": f"Backend returned {r.status_code}: {r.text[:200]}"}
-        except Exception as exc:
-            return {"status": "FRONTEND_FETCH_ERROR", "error": f"Fetch failed: {str(exc)[:200]}"}
-
-    renko_weis = _fetch_weis_engine(f"/api/research/renko-weis/{symbol}")
-    renko_weis_status = renko_weis.get("status", "UNKNOWN")
-
-    pnf_weis = _fetch_weis_engine(f"/api/research/pnf-weis/{symbol}")
-    pnf_weis_status = pnf_weis.get("status", "UNKNOWN")
-
-    _REGIME_LABELS = {
-        "DEEP_POSITIVE": "Deep positive gamma — strong pinning",
-        "POSITIVE":      "Positive gamma — pinning likely",
-        "NEUTRAL":       "Neutral gamma regime",
-        "NEGATIVE":      "Negative gamma — moves can accelerate",
-        "DEEP_NEGATIVE": "Deep negative gamma — high volatility risk",
-    }
-
-    if has_real_options and real_call_walls and real_put_walls:
-        call_wall_level = real_call_walls[0]["strike"]
-        put_wall_level  = real_put_walls[0]["strike"]
-        gamma_pivot_level = real_gamma.get("zero_gamma_level") or price
-        _cs = max(0.0, float(real_call_walls[0].get("call_wall_strength") or 0))
-        _ps = max(0.0, float(real_put_walls[0].get("put_wall_strength") or 0))
-        cp = round(_cs / (_cs + _ps) * 100) if (_cs + _ps) > 0 else 50
-        pp = 100 - cp
-        _regime = real_gamma.get("net_gamma_regime") or "NEUTRAL"
-        gamma_flip_subtitle = _REGIME_LABELS.get(_regime, _regime.replace("_"," ").title())
-        vs = max(18, min(96, round(abs(price - gamma_pivot_level) * 18 + (seq % 9) * 4)))
-        fb = _regime
-        options_note = f"Live options data — Alpaca chain snapshot, {real_gamma.get('contract_count', 0)} contracts."
-    else:
-        call_wall_level, put_wall_level, gamma_pivot_level = kl.breakout, kl.fail, kl.confirm
-        vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
-        cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
-        pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
-        gamma_flip_subtitle = f"{gp}% dealer sensitivity (synthetic)"
-        fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
-        # BUG FIX (2026-07-29): this only checked `has_real_options`, but
-        # we reach this branch whenever has_real_options is True AND the
-        # wall lists are empty (chain data came back, just no qualifying
-        # gamma walls near the current price) -- that case was wrongly
-        # showing "connect Tradier or CBOE", which implies no options
-        # data exists at all. That's misleading when real data genuinely
-        # was received; now distinguishes the two cases correctly.
-        if has_real_options:
-            options_note = "Live options chain received, but no active gamma walls found near the current price — showing the synthetic model instead."
-        else:
-            _reason = real_gamma.get("error") or real_gamma.get("status") or "unknown_reason"
-            options_note = f"Synthetic options layer — no live options data available ({_reason})."
+    vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
+    cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
+    pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
+    fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
-    fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level, count_guide=live.get("count_guide"))
+    fig  = build_chart(candles, price, nodes, tf)
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -3488,7 +1903,7 @@ def build_command_tab(live, candles, symbol, tf):
         # Header row
         html.Div([
             html.Div([
-                html.Span(f"{symbol}  ·  Smart Chart",
+                html.Span(f"📊 {symbol}  ·  Smart Chart",
                           style={"fontSize":"13px","fontWeight":"800","color":WHITE}),
                 html.Span(f"  {live_age}  ·  {tf}  ·  {regime.replace('_',' ').title()}",
                           style={"fontSize":"10px","color":WHITE}),
@@ -3509,7 +1924,10 @@ def build_command_tab(live, candles, symbol, tf):
 
         # Footer — aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}",
+            html.Span(f"{tf}  ·  {len(candles)} candles",
+                      style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
+                             "fontFamily":"DM Mono, monospace"}),
+            html.Span(f"Vol {live['volume']:,}",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
@@ -3529,24 +1947,49 @@ def build_command_tab(live, candles, symbol, tf):
 
             # Column A — Direction & Confidence Panel
             html.Div([
-                build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime,
-                                       rel_volume=live.get("rel_volume")),
+                build_direction_panel(decision, score),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
+            # Column B — Trade Card
+            html.Div([
+                slabel("Trade Card"),
+                html.Div(style={"height":"6px"}),
+                html.Div([
+                    html.Span("Bias  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
+                                              "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(decision["bias"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"8px"}),
+                html.Div([
+                    html.Span("Setup  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
+                                               "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(decision["status"],style={"fontSize":"13px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"8px"}),
+                html.Div([
+                    html.Span("Size  ",style={"fontSize":"10px","color":WHITE,"fontWeight":"700",
+                                              "textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Span(size,style={"fontSize":"22px","fontWeight":"900","color":sc}),
+                ], style={"marginBottom":"10px"}),
+                note_box(f"Ref: ${price:.2f}  ·  A-grade requires live-volume expansion.","yellow"),
+            ], style={"flex":"1","minWidth":"140px",
+                       "borderRight":f"1px solid {BORDER}","padding":"0 16px"}),
+
             # Column C — Probability Ladder
-            # FIX (2026-08-12): the four percentages here were a
-            # heuristic (fixed base score + ad-hoc bonuses) dressed up
-            # as probabilities. Now computed as real, market-derived
-            # touch probabilities from the actual options chain's
-            # implied volatility (shared.engine.touch_probability),
-            # using the nearest monthly expiration's ATM IV -- falls
-            # back to the old heuristic, honestly labeled as such,
-            # only if the real inputs genuinely aren't available.
             html.Div([
                 slabel("Probability Ladder"),
                 html.Div(style={"height":"6px"}),
-                *_render_probability_ladder_rows(real_gamma, price, kl, nodes, score),
+                brow("Upside Expansion", nodes[0]["score"] if nodes else 63, "up"),
+                html.P(f"Level ${nodes[0]['level']:.2f}" if nodes else "",
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+                brow("Liquidity Retest", nodes[1]["score"] if len(nodes)>1 else 60, "up"),
+                html.P(f"Level ${nodes[1]['level']:.2f}" if len(nodes)>1 else "",
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+                brow("Hold / Balance", score, "neutral"),
+                html.P(f"Level ${kl.confirm:.2f}",
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px","marginBottom":"6px"}),
+                brow("Failure Gate", 100-score, "down"),
+                html.P(f"Level ${kl.fail:.2f}",
+                       style={"fontSize":"9px","color":WHITE,"marginTop":"-3px"}),
             ], style={"flex":"1.5","minWidth":"180px","paddingLeft":"16px"}),
 
         ], style={"display":"flex","gap":"0","alignItems":"flex-start","flexWrap":"wrap"}),
@@ -3556,22 +1999,20 @@ def build_command_tab(live, candles, symbol, tf):
     row3 = card([
         html.Div([
             html.Div([
-                html.H2("Dynamic Options Matrix + Flow Map",
+                html.H2("🧱 Dynamic Options Matrix + Flow Map",
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
-                html.P(
-                    "Live gamma-exposure data from your Alpaca options chain." if has_real_options
-                    else "Synthetic intelligence from price, volume, volatility proxy, and decision score.",
-                    style={"fontSize":"12px","color":WHITE})]),
+                html.P("Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                       style={"fontSize":"12px","color":WHITE})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
                    "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
         html.Div([
-            zcard("Call Wall",   f"${round(call_wall_level):.0f}",   f"{cp}% call-side pressure", TEAL_DIM),
-            zcard("Put Wall",    f"${round(put_wall_level):.0f}",    f"{pp}% put-side pressure",  RED_DIM),
-            zcard("Gamma Flip Point", f"${round(gamma_pivot_level):.0f}", gamma_flip_subtitle, YELLOW_DIM),
+            zcard("Call Wall",   f"${round(kl.breakout):.0f}",  f"{cp}% call-side pressure", TEAL_DIM),
+            zcard("Put Wall",    f"${round(kl.fail):.0f}",     f"{pp}% put-side pressure",  RED_DIM),
+            zcard("Gamma Pivot", f"${round(kl.confirm):.0f}",  f"{gp}% dealer sensitivity", YELLOW_DIM),
             zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
         ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
-        note_box(options_note, "blue"),
+        note_box("Synthetic options layer — connect Tradier or CBOE for live institutional flow data.","blue"),
     ], sx={"marginBottom":"16px"})
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
@@ -3584,7 +2025,7 @@ def build_command_tab(live, candles, symbol, tf):
 
     row4 = html.Div([
         card([
-            html.H2("️ Time Engine",
+            html.H2("⏱️ Time Engine",
                     style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0 0 12px"}),
             html.Div(now.strftime("%I:%M:%S %p")+" ET",
                      style={"fontSize":"22px","fontWeight":"900","color":WHITE,
@@ -3596,9 +2037,9 @@ def build_command_tab(live, candles, symbol, tf):
 
         card([
             html.Div([
-                html.H2("Visual + Audio Alerts",
+                html.H2("🔔 Visual + Audio Alerts",
                         style={"fontSize":"14px","fontWeight":"800","color":WHITE,"margin":"0"}),
-                html.Button("ON", id="btn-alerts-toggle", n_clicks=0,
+                html.Button("🔔 ON", id="btn-alerts-toggle", n_clicks=0,
                     style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                            "borderRadius":"20px","padding":"4px 12px","fontSize":"11px",
                            "fontWeight":"800","cursor":"pointer"}),
@@ -3613,486 +2054,59 @@ def build_command_tab(live, candles, symbol, tf):
                 html.Span(f"Score: {score}",
                           style={"fontSize":"11px","color":WHITE,"marginTop":"8px","display":"block","fontWeight":"700"}),
                 html.Span(
-                    "Trap Door" if score<35 else
-                    ("Score Tier A — Audio Active" if score>=80 else
-                     "Score Tier B — Audio Active" if score>=55 else "Monitoring"),
+                    "🔴 Trap Door" if score<35 else
+                    ("🟢 A-Grade — Audio Active" if score>=80 else
+                     "🟡 B-Grade — Audio Active" if score>=55 else "⚪ Monitoring"),
                     style={"fontSize":"11px","fontWeight":"700","marginTop":"3px","display":"block",
                            "color":RED_DIM if score<35 else (TEAL_DIM if score>=55 else MUTED)}),
             ]),
         ], sx={"flex":"1"}),
 
+        card([html.Div([
+            metric_tile("Symbol",       symbol,                           WHITE),
+            metric_tile("Live Price",   f"${price:.2f}",                 WHITE),
+            metric_tile("Engine Score", f"{score}%",                     sc),
+            metric_tile("Regime",       regime.replace("_"," ").title(), YELLOW_DIM),
+        ], style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"10px"})], sx={"flex":"1"}),
+
     ], style={**ROW,"alignItems":"start","marginBottom":"16px"})
 
-    # First live display of the new, parallel "pure Weis" engine
-    # (non-repainting Renko structure -> waves -> scoring), built and
-    # verified earlier tonight. Genuinely separate from the existing
-    # Weis-Gamma panel above (different engine, different methodology).
-    if renko_weis_status == "OK":
-        rw_score = renko_weis.get("weis_score", 0)
-        rw_verdict = renko_weis.get("verdict", "NO_WEIS_SIGNAL")
-        rw_score_b = renko_weis.get("weis_score_bearish", 0)
-        rw_verdict_b = renko_weis.get("verdict_bearish", "NO_WEIS_SIGNAL")
-        rw_waves = renko_weis.get("wave_count", 0)
-        cw = renko_weis.get("current_wave") or {}
-
-        if cw.get("available"):
-            evr = cw.get("effort_vs_result", "INSUFFICIENT_HISTORY")
-            evr_color = TEAL_DIM if evr == "BUILDING" else (RED_DIM if evr == "EXHAUSTING" else MUTED)
-            evr_label = {"BUILDING": "Building", "EXHAUSTING": "Exhausting",
-                         "UNCHANGED": "Unchanged", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(evr, evr)
-
-            mc = cw.get("market_condition", "INSUFFICIENT_HISTORY")
-            mc_color = RED_DIM if mc == "ABSORPTION" else (TEAL_DIM if mc == "EASE_OF_MOVEMENT" else MUTED)
-            mc_label = {"ABSORPTION": "Absorption", "EASE_OF_MOVEMENT": "Ease of Movement",
-                        "SYMMETRICAL": "Symmetrical", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(mc, mc)
-
-            current_wave_block = html.Div([
-                html.Div([
-                    html.Span(f"Current swing: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(cw.get("direction", "—"), style={
-                        "fontSize":"12px","fontWeight":"900",
-                        "color": TEAL_DIM if cw.get("direction") == "UP" else RED_DIM,
-                    }),
-                    html.Span(f"  ·  Effort vs. Result: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(evr_label, style={"fontSize":"12px","fontWeight":"900","color":evr_color}),
-                    html.Span(f"  ·  Structural Pace: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(mc_label, style={"fontSize":"12px","fontWeight":"900","color":mc_color}),
-                ], style={"marginBottom":"6px"}),
-                html.Div(cw.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px"}),
-                html.Div(cw.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px" if (cw.get("climax") or {}).get("detected") else "10px"}),
-                html.Div(f"⚡ {(cw.get('climax') or {}).get('reading', '')}", style={
-                    "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"800","lineHeight":"1.5","marginBottom":"10px",
-                }) if (cw.get("climax") or {}).get("detected") else None,
-            ])
-        else:
-            current_wave_block = html.Div(cw.get("reason", "No wave data available yet."),
-                                            style={"fontSize":"12px","color":MUTED,"marginBottom":"10px"})
-
-        rw_body = html.Div([
-            current_wave_block,
-            html.Div([
-                html.Span("Confirmed setup (Long): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-                html.Span(f"{rw_score:.0f} — {rw_verdict.replace('_',' ').title()}",
-                          style={"fontSize":"11px","color":TEAL_DIM if rw_score>=60 else MUTED,"fontWeight":"800"}),
-            ], style={"marginBottom":"3px"}),
-            html.Div([
-                html.Span("Confirmed setup (Short): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-                html.Span(f"{rw_score_b:.0f} — {rw_verdict_b.replace('_',' ').title()}",
-                          style={"fontSize":"11px","color":RED_DIM if rw_score_b>=60 else MUTED,"fontWeight":"800"}),
-            ], style={"marginBottom":"3px"}),
-            html.Div(f"{rw_waves} Renko waves detected (non-repainting, daily bars)",
-                      style={"fontSize":"11px","color":MUTED}),
-        ])
-    elif renko_weis_status == "INSUFFICIENT_HISTORY":
-        rw_body = html.Div(
-            f"Not enough daily history yet ({renko_weis.get('bars_available', 0)} bars available, 20+ needed).",
-            style={"fontSize":"12px","color":MUTED})
-    else:
-        rw_body = html.Div(
-            renko_weis.get("error") or "Renko-Weis data not available for this symbol right now.",
-            style={"fontSize":"12px","color":MUTED})
-
-    row5 = html.Div([
-        html.Div("Renko-Weis Wave (Non-Repainting)", style={
-            "fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"8px",
-        }),
-        rw_body,
-    ], style={
-        "border": f"1px solid {BORDER}", "borderRadius": "14px", "padding": "14px",
-        "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
-    })
-
-    # PnF counterpart to row5 above, mirroring its structure exactly.
-    if pnf_weis_status == "OK":
-        pw_score = pnf_weis.get("weis_score", 0)
-        pw_verdict = pnf_weis.get("verdict", "NO_WEIS_SIGNAL")
-        pw_score_b = pnf_weis.get("weis_score_bearish", 0)
-        pw_verdict_b = pnf_weis.get("verdict_bearish", "NO_WEIS_SIGNAL")
-        pw_columns = pnf_weis.get("column_count", 0)
-        cc = pnf_weis.get("current_column") or {}
-
-        if cc.get("available"):
-            evr2 = cc.get("effort_vs_result", "INSUFFICIENT_HISTORY")
-            evr2_color = TEAL_DIM if evr2 == "BUILDING" else (RED_DIM if evr2 == "EXHAUSTING" else MUTED)
-            evr2_label = {"BUILDING": "Building", "EXHAUSTING": "Exhausting",
-                          "UNCHANGED": "Unchanged", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(evr2, evr2)
-
-            mc2 = cc.get("market_condition", "INSUFFICIENT_HISTORY")
-            mc2_color = RED_DIM if mc2 == "ABSORPTION" else (TEAL_DIM if mc2 == "EASE_OF_MOVEMENT" else MUTED)
-            mc2_label = {"ABSORPTION": "Absorption", "EASE_OF_MOVEMENT": "Ease of Movement",
-                         "SYMMETRICAL": "Symmetrical", "INSUFFICIENT_HISTORY": "Not enough data yet"}.get(mc2, mc2)
-
-            current_column_block = html.Div([
-                html.Div([
-                    html.Span(f"Current column: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(cc.get("direction", "—"), style={
-                        "fontSize":"12px","fontWeight":"900",
-                        "color": TEAL_DIM if cc.get("direction") == "UP" else RED_DIM,
-                    }),
-                    html.Span(f"  ·  Effort vs. Result: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(evr2_label, style={"fontSize":"12px","fontWeight":"900","color":evr2_color}),
-                    html.Span(f"  ·  Structural Pace: ", style={"fontSize":"12px","color":MUTED,"fontWeight":"700"}),
-                    html.Span(mc2_label, style={"fontSize":"12px","fontWeight":"900","color":mc2_color}),
-                ], style={"marginBottom":"6px"}),
-                html.Div(cc.get("reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px"}),
-                html.Div(cc.get("pace_reading", ""), style={"fontSize":"12px","color":WHITE,"lineHeight":"1.5","marginBottom":"4px" if (cc.get("climax") or {}).get("detected") else "10px"}),
-                html.Div(f"⚡ {(cc.get('climax') or {}).get('reading', '')}", style={
-                    "fontSize":"12px","color":YELLOW_DIM,"fontWeight":"800","lineHeight":"1.5","marginBottom":"10px",
-                }) if (cc.get("climax") or {}).get("detected") else None,
-            ])
-        else:
-            current_column_block = html.Div(cc.get("reason", "No column data available yet."),
-                                              style={"fontSize":"12px","color":MUTED,"marginBottom":"10px"})
-
-        pw_body = html.Div([
-            current_column_block,
-            html.Div([
-                html.Span("Confirmed setup (Long): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-                html.Span(f"{pw_score:.0f} — {pw_verdict.replace('_',' ').title()}",
-                          style={"fontSize":"11px","color":TEAL_DIM if pw_score>=60 else MUTED,"fontWeight":"800"}),
-            ], style={"marginBottom":"3px"}),
-            html.Div([
-                html.Span("Confirmed setup (Short): ", style={"fontSize":"11px","color":MUTED,"fontWeight":"700"}),
-                html.Span(f"{pw_score_b:.0f} — {pw_verdict_b.replace('_',' ').title()}",
-                          style={"fontSize":"11px","color":RED_DIM if pw_score_b>=60 else MUTED,"fontWeight":"800"}),
-            ], style={"marginBottom":"3px"}),
-            html.Div(f"{pw_columns} PnF columns detected (non-repainting, daily bars)",
-                      style={"fontSize":"11px","color":MUTED}),
-        ])
-    elif pnf_weis_status == "INSUFFICIENT_HISTORY":
-        pw_body = html.Div(
-            f"Not enough daily history yet ({pnf_weis.get('bars_available', 0)} bars available, 20+ needed).",
-            style={"fontSize":"12px","color":MUTED})
-    else:
-        pw_body = html.Div(
-            pnf_weis.get("error") or "PnF-Weis data not available for this symbol right now.",
-            style={"fontSize":"12px","color":MUTED})
-
-    row6 = html.Div([
-        html.Div("PnF-Weis Column (Non-Repainting)", style={
-            "fontSize":"13px","fontWeight":"900","color":WHITE,"marginBottom":"8px",
-        }),
-        pw_body,
-    ], style={
-        "border": f"1px solid {BORDER}", "borderRadius": "14px", "padding": "14px",
-        "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
-    })
-
-    return html.Div([row1, row2, row3, row4, row5, row6],
+    return html.Div([row1, row2, row3, row4],
                     style={"display":"flex","flexDirection":"column"})
 
 
-def _build_heatmap_treemap(timeframe: str = "daily"):
-    """
-    Builds the Plotly treemap figure for the Sector/Industry Heat Map --
-    sector -> industry -> symbol hierarchy, sized by volume, colored by
-    real % change at the requested time frame. Similar in concept to
-    Barchart's Industry Heat Map (barchart.com/stocks/sectors/industry-heat-map),
-    adapted with an hourly option given this app already tracks intraday
-    data, on top of Barchart's own daily/weekly/monthly-style granularity.
-    """
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/heatmap/data", params={"timeframe": timeframe}, timeout=90)
-        if r.ok:
-            payload = r.json()
-            request_error = ""
-        else:
-            payload = {}
-            request_error = f"HTTP {r.status_code}: {r.text[:200]}"
-    except Exception as exc:
-        payload = {}
-        request_error = f"request failed: {exc}"
-
-    symbols = payload.get("symbols") or []
-    if not symbols:
-        detail = request_error or payload.get("reason") or "no details available"
-        fig = go.Figure()
-        fig.add_annotation(
-            text=f"Heat map data unavailable for this time frame.<br><span style='font-size:12px'>{detail}</span>",
-            showarrow=False, font=dict(color=WHITE, size=16), align="center",
-        )
-        fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=600)
-        return fig
-
-    ids, labels, parents, values, colors, hovertext = [], [], [], [], [], []
-    sectors_seen = set()
-    industries_seen = set()
-
-    for s in symbols:
-        sector = s.get("sector") or "Unknown"
-        industry = s.get("industry") or "Unknown"
-        ticker = s.get("ticker")
-        change = s.get("change_pct") or 0
-        volume = max(s.get("volume") or 0, 1)
-
-        sector_id = f"sector::{sector}"
-        industry_id = f"industry::{sector}::{industry}"
-        symbol_id = f"symbol::{sector}::{industry}::{ticker}"
-
-        if sector_id not in sectors_seen:
-            ids.append(sector_id); labels.append(sector); parents.append(""); values.append(0); colors.append(0)
-            hovertext.append(sector)
-            sectors_seen.add(sector_id)
-
-        if industry_id not in industries_seen:
-            ids.append(industry_id); labels.append(industry); parents.append(sector_id); values.append(0); colors.append(0)
-            hovertext.append(f"{industry} ({sector})")
-            industries_seen.add(industry_id)
-
-        ids.append(symbol_id)
-        labels.append(ticker)
-        parents.append(industry_id)
-        values.append(volume)
-        colors.append(change)
-        hovertext.append(f"{ticker} — {change:+.2f}%<br>{industry}")
-
-    fig = go.Figure(go.Treemap(
-        ids=ids,
-        labels=labels,
-        parents=parents,
-        values=values,
-        marker=dict(
-            colors=colors,
-            colorscale=[[0, RED_DIM], [0.5, "#1e2a3d"], [1, TEAL_DIM]],
-            cmid=0,
-            line=dict(width=1, color=NAVY),
-        ),
-        text=hovertext,
-        hoverinfo="text",
-        textfont=dict(color=WHITE, size=13),
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=4, r=4, t=4, b=4),
-        height=650,
-    )
-    return fig
-
-
-def build_heatmap_tab(timeframe: str = "daily"):
-    """
-    Sector/Industry Heat Map tab -- groups the tracked Russell 1000
-    universe by real sector and industry classification (sourced
-    directly from iShares' own official fund holdings export), colored
-    by real price performance, with a selectable time frame. Similar in
-    concept to Barchart's Industry Heat Map, adapted for this app's own
-    universe and with an hourly option on top of the daily/weekly/
-    monthly granularity Barchart itself offers.
-    """
-    timeframes = [("hourly", "Hourly"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly")]
-
-    def _tf_button(key, label):
-        active = key == timeframe
-        return html.Button(
-            label,
-            id=f"heatmap-tf-{key}",
-            n_clicks=0,
-            style={
-                "background": TEAL_GLOW if active else "transparent",
-                "border": f"1px solid {TEAL if active else BORDER}",
-                "borderRadius": "10px",
-                "color": TEAL_DIM if active else "rgba(255,255,255,.7)",
-                "cursor": "pointer",
-                "fontSize": "13px",
-                "fontWeight": "800",
-                "padding": "8px 16px",
-                "marginRight": "8px",
-            },
-        )
-
+def build_feed_tab(live, live_mode):
+    price = live["price"]
     return card([
         html.Div([
-            html.Div([
-                html.H2("Sector / Industry Heat Map", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
-                html.P("Real Russell 1000 sector and industry groupings, colored by price performance. Box size reflects trading volume.",
-                       style={"fontSize": "13px", "color": WHITE, "margin": "0"}),
-            ]),
-            html.Div([_tf_button(k, l) for k, l in timeframes], id="heatmap-tf-row"),
-        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
-        dcc.Graph(
-            id="heatmap-treemap",
-            figure=_build_heatmap_treemap(timeframe),
-            config={"displayModeBar": False},
-            style={"height": "650px", "width": "100%"},
-        ),
-        dcc.Store(id="heatmap-selected-tf", data=timeframe),
-    ])
-
-
-def build_reports_tab(selected_date=None, session=None):
-    """
-    Reports tab -- lets subscribers browse and read the daily
-    subscriber intelligence report (backend/reports_engine.py), one
-    per calendar date, generated once daily by a Render cron job.
-
-    selected_date: the date the user currently has selected, if any.
-    This callback gets re-invoked on every ~20s live-price tick (needed
-    for the Command Center tab), so without this, the date picker would
-    silently reset to the most recent date on every rebuild, out from
-    under a user actively reading an older report.
-    """
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-        dates = (r.json().get("dates") or []) if r.ok else []
-    except Exception:
-        dates = []
-
-    _generate_control = html.Div([
-        html.Label("Generate report for date:", style={"fontSize": "12px", "color": WHITE, "marginRight": "8px"}),
-        dcc.Input(id="reports-generate-date", type="text", placeholder="YYYY-MM-DD",
-                  style={"width": "130px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
-                         "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
-                         "marginRight": "8px"}),
-        html.Button("Generate Report", id="reports-generate-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        dcc.Loading(
-            html.Div(id="reports-generate-message", style={"fontSize": "12px", "color": TEAL_DIM, "marginTop": "8px"}),
-            type="dot", color=TEAL,
-        ),
-        # FIX (2026-08-20): the generation itself now runs in a backend
-        # background thread (see generate_report_now()'s own fix note) --
-        # these two components are what let the frontend poll for the
-        # real result instead of holding one long HTTP request open and
-        # freezing/timing out. Interval starts disabled; the button-click
-        # callback enables it, the polling callback disables it again once
-        # the job reaches "done" or "error". Store just remembers which
-        # date is currently being polled, since Interval itself carries no
-        # payload of its own.
-        dcc.Interval(id="reports-generate-poll", interval=4000, disabled=True, n_intervals=0),
-        dcc.Store(id="reports-generate-job-date", data=None),
-    ], style={"marginTop": "16px", "padding": "16px", "border": f"1px solid {BORDER}", "borderRadius": "12px"}) if is_admin(session) else None
-
-    if not dates:
-        return card([
-            html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "marginBottom": "8px"}),
-            html.P("No daily reports are available yet. The first report is generated once daily; check back after the next scheduled run.",
-                   style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
-            _generate_control,
-            # FIX (2026-08-20): handle_generate_report()'s callback
-            # declares Output("reports-date-picker","options"/"value"),
-            # but this empty-state branch previously never rendered that
-            # dropdown at all (it only existed in the non-empty branch
-            # below) -- confirmed via a real Dash ReferenceError
-            # ("A nonexistent object was used in an Output... id is
-            # reports-date-picker") when a user with zero existing
-            # reports clicked Generate Report. Dash can't resolve a
-            # missing Output target, so the callback failed instantly,
-            # client-side, before ever sending the request -- the
-            # button appeared to "freeze" but was actually failing
-            # silently in under a second, well before the real 180s
-            # backend timeout ever had a chance to matter. This was a
-            # genuine chicken-and-egg bug: generating your first report
-            # was broken specifically because no report existed yet.
-            # display:none since there's nothing meaningful to show
-            # here -- this exists purely so the Output id resolves.
-            dcc.Dropdown(id="reports-date-picker", options=[], value=None,
-                         clearable=False, style={"display": "none"}),
-        ])
-
-    most_recent = selected_date if selected_date in dates else dates[0]
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/{most_recent}", timeout=20)
-        payload = r.json() if r.ok else {}
-        html_doc = payload.get("html") if payload.get("ok") else None
-    except Exception:
-        html_doc = None
-
-    return card([
+            html.Div([html.H2("🔌 Live Feed Monitor",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
+                      html.P(f"Backend: {BACKEND_HTTP}",style={"fontSize":"12px","color":WHITE})]),
+            badge("Connected", "teal"),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start","marginBottom":"16px"}),
         html.Div([
-            html.Div([
-                html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
-                html.P("Daily subscriber intelligence report, generated once per day from the live full-universe campaign engine.",
-                       style={"fontSize": "13px", "color": WHITE, "margin": "0"}),
-            ]),
-            html.Div([
-                dcc.Dropdown(
-                    id="reports-date-picker",
-                    options=[{"label": d, "value": d} for d in dates],
-                    value=most_recent,
-                    clearable=False,
-                    style={"width": "220px", "color": "#111"},
-                ),
-                html.A(
-                    "⬇ Download PDF",
-                    id="reports-download-btn",
-                    href=f"{BACKEND_HTTP}/api/reports/{most_recent}/pdf?download=true",
-                    download=f"Sigmalytic_Daily_Report_{most_recent}.pdf",
-                    style={"background": TEAL_GLOW, "border": f"1px solid {BORDER_T}", "borderRadius": "10px",
-                           "color": TEAL_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
-                           "padding": "10px 18px", "textDecoration": "none", "whiteSpace": "nowrap",
-                           "marginLeft": "10px"},
-                ),
-                html.Button("🗑 Delete Report", id="reports-delete-btn", n_clicks=0,
-                    style={"background": "transparent", "border": f"1px solid {RED_DIM}", "borderRadius": "10px",
-                           "color": RED_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
-                           "padding": "10px 18px", "whiteSpace": "nowrap", "marginLeft": "10px"},
-                ) if is_admin(session) else None,
-                dcc.ConfirmDialog(
-                    id="reports-delete-confirm",
-                    message="",
-                ) if is_admin(session) else None,
-            ], style={"display": "flex", "alignItems": "center"}),
-        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
-        html.Div(id="reports-delete-message", style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}) if is_admin(session) else None,
-        _generate_control,
-        html.Iframe(
-            id="reports-iframe",
-            srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
-            style={"width": "100%", "height": "85vh", "border": f"1px solid {BORDER}", "borderRadius": "14px"},
-        ),
+            metric_tile("Feed Mode","Live Alpaca"),
+            metric_tile("Symbol",live["symbol"]),
+            metric_tile("Price",f"${price:.2f}",TEAL_DIM),
+            metric_tile("Volume",f"{live['volume']:,}"),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"16px"}),
+        html.Pre(json.dumps(live,indent=2),style={"margin":"0","maxHeight":"460px","overflow":"auto","borderRadius":"14px",
+            "border":f"1px solid {BORDER}","background":"rgba(0,0,0,.35)","padding":"16px",
+            "color":TEAL_DIM,"fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.6"}),
     ])
 
-
-def build_guide_tab():
-    """
-    User Guide tab -- serves the PDF version of the Sigmalytic V2 User
-    Guide directly from the frontend's assets folder (Dash serves
-    everything under frontend/assets/ automatically at /assets/<file>).
-    """
-    guide_path = "/assets/Sigmalytic_V2_User_Guide.pdf"
+def build_performance_tab(live):
+    price=live["price"]; decision=live["decision"]; score=decision["score"]
+    sc=TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     return card([
+        html.H2("📈 Performance Logger",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
         html.Div([
-            html.Div([
-                html.H2("User Guide", style={"fontSize":"18px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"}),
-                html.P("The complete Sigmalytic V2 user guide -- every tab explained, a daily/weekly routine, worked examples, and a full glossary.",
-                       style={"fontSize":"13px","color":"rgba(255,255,255,.6)","margin":"0"}),
-            ]),
-            html.Div([
-                html.A(
-                    "Open Full Guide ↗",
-                    href=guide_path,
-                    target="_blank",
-                    style={"background":"transparent","border":f"1px solid {BORDER_T}","borderRadius":"10px",
-                           "color":WHITE,"cursor":"pointer","fontSize":"13px","fontWeight":"800",
-                           "padding":"10px 18px","textDecoration":"none","whiteSpace":"nowrap",
-                           "marginRight":"10px"},
-                ),
-                html.A(
-                    "⬇ Download PDF",
-                    href=guide_path,
-                    download="Sigmalytic_V2_User_Guide.pdf",
-                    style={"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"10px",
-                           "color":TEAL_DIM,"cursor":"pointer","fontSize":"13px","fontWeight":"800",
-                           "padding":"10px 18px","textDecoration":"none","whiteSpace":"nowrap"},
-                ),
-            ], style={"display":"flex","alignItems":"center"}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"16px"}),
-        html.Div(
-            "On mobile, tap \"Open Full Guide\" above for the best reading experience -- PDFs don't scroll properly inside this preview on phones. To return to the app afterward, look for a \"Done\" button in the top corner of the screen.",
-            id="guide-mobile-note",
-            style={"display":"none","fontSize":"13px","color":"rgba(255,255,255,.7)",
-                   "padding":"14px","border":f"1px solid {BORDER_T}","borderRadius":"10px",
-                   "marginBottom":"12px"},
-        ),
-        html.Iframe(
-            id="guide-pdf-iframe",
-            src=guide_path,
-            style={"width":"100%","height":"85vh","border":f"1px solid {BORDER}","borderRadius":"14px"},
-        ),
+            metric_tile("Current Price",f"${price:.2f}",TEAL_DIM),
+            metric_tile("Setup",decision["status"],sc),
+            metric_tile("Score",f"{score}%",sc),
+            metric_tile("Bias",decision["bias"],BLUE_DIM),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"14px"}),
+        note_box("Trade logging reconnects automatically once live feed stabilizes."),
     ])
-
 
 def build_stub_tab(title, description):
     """Placeholder for tabs under development."""
@@ -4108,291 +2122,13 @@ def build_stub_tab(title, description):
 # REAL TAB FUNCTIONS — injected from source files
 # ═══════════════════════════════════════════════════════════════════════════════
 
-
-
-PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
-                    "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
-
-
-def _format_weis_radar_hit(h):
-    t = h.get("type")
-    color = PATTERN_COLORS.get(t, MUTED)
-    if t in ("SPRING", "UPTHRUST"):
-        detail = f"score {h.get('score')}, level ${h.get('level')}"
-    elif t in ("SPRING_BUILDING", "UPTHRUST_BUILDING"):
-        detail = f"level ${h.get('level')} -- still forming, market open"
-    else:
-        held_txt = "HOLDING" if h.get("held") else "not holding"
-        detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
-    return html.Span([html.Span(t, style={"color": color, "fontWeight": "800"}), f" ({detail})"])
-
-
-def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
-    """
-    ADDED (2026-08-25): extracted from build_weis_radar_tab() so the
-    same rendering logic can be reused both on initial tab load and
-    from the filter/sort callback, without a second API round-trip --
-    the full, unfiltered results are kept client-side in
-    s-weis-radar-raw-results and re-rendered locally on every
-    filter/sort change.
-
-    Filtering by a specific pattern type does two things: only
-    symbols with at least one matching hit are shown, AND only that
-    symbol's matching hits are displayed (not its unrelated hits) --
-    "filter by breakdowns" should show breakdowns, not every pattern
-    that symbol happens to also have.
-
-    Sorting by date uses each hit's own days_back (0 = today) rather
-    than parsing date strings -- SPRING/UPTHRUST/BUILDING hits have no
-    "date" field at all (always today, by this scan's own design), so
-    they naturally sort as "newest" using this same field, no special
-    case needed.
-    """
-    if filter_type and filter_type != "all":
-        filtered = []
-        for r_ in results:
-            matching_hits = [h for h in r_.get("hits", []) if h.get("type") == filter_type]
-            if matching_hits:
-                filtered.append({**r_, "hits": matching_hits})
-    else:
-        filtered = list(results)
-
-    if sort_by == "newest":
-        filtered.sort(key=lambda r_: min((h.get("days_back", 0) for h in r_.get("hits", [])), default=0))
-    elif sort_by == "oldest":
-        filtered.sort(key=lambda r_: max((h.get("days_back", 0) for h in r_.get("hits", [])), default=0), reverse=True)
-    elif sort_by == "symbol_az":
-        filtered.sort(key=lambda r_: r_.get("symbol", ""))
-    else:  # "most_hits" -- matches the original default behavior
-        filtered.sort(key=lambda r_: len(r_.get("hits", [])), reverse=True)
-
-    rows = []
-    for r_ in filtered:
-        hit_spans = []
-        for h in r_.get("hits", []):
-            hit_spans.append(_format_weis_radar_hit(h))
-            hit_spans.append(html.Br())
-        symbol = r_.get("symbol")
-        rows.append(html.Tr([
-            html.Td(symbol, style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
-            html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
-            html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
-        ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,
-           style={"borderBottom": f"1px solid {BORDER}", "cursor": "pointer"}))
-
-    if not rows:
-        return html.Div("No symbols match this filter.", style={"color": MUTED, "padding": "12px"})
-
-    return html.Table([
-        html.Thead(html.Tr([
-            html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-            html.Th("Price", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-            html.Th("Patterns Found", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
-        ])),
-        html.Tbody(rows),
-    ], style={"width": "100%", "borderCollapse": "collapse"})
-
-
-def build_weis_radar_tab(session=None):
-    """
-    ADDED (2026-08-24): Weis Radar -- shows the results of the daily
-    Russell 1000 Spring/Upthrust/Breakout/Breakdown scan (see
-    backend/weis_radar_scan.py, run once daily by the isolated worker
-    process -- see that module's own docstring for the full
-    architecture). This tab only ever reads the already-computed
-    cached results; it never triggers the scan itself, same
-    read/compute separation already used for the Reports tab.
-
-    ADDED (2026-08-25): an admin-only "Run Scan Now" manual trigger,
-    same reasoning as Reports' own manual generate button -- waiting
-    up to 24 hours for the next scheduled scan isn't reasonable when
-    verifying a fix.
-
-    ADDED (2026-08-25): filter (by pattern type) and sort (by
-    recency, symbol, or hit count) controls -- see
-    _render_weis_radar_table() for the actual logic.
-    """
-    import requests as _rq
-
-    try:
-        r = _rq.get(f"{BACKEND_HTTP}/api/weis-radar/results", timeout=15)
-        data = r.json() if r.ok else {}
-    except Exception as e:
-        data = {"ok": False, "error": str(e)}
-
-    def _header_row():
-        children = [html.H3("Weis Radar", style={"color": WHITE, "marginBottom": "4px", "display": "inline-block", "marginRight": "12px"})]
-        if is_admin(session):
-            children.append(html.Button("Run Scan Now", id="btn-run-weis-radar", n_clicks=0,
-                style={"background": "rgba(96,165,250,.1)", "border": "1px solid rgba(96,165,250,.3)",
-                       "borderRadius": "8px", "color": "#60a5fa", "cursor": "pointer",
-                       "fontSize": "11px", "fontWeight": "700", "padding": "6px 12px",
-                       "fontFamily": "DM Sans, sans-serif", "verticalAlign": "middle"}))
-            children.append(html.Div(id="weis-radar-run-message", style={"color": MUTED, "fontSize": "11px", "marginTop": "6px"}))
-            children.append(dcc.Interval(id="i-weis-radar-poll", interval=4000, disabled=True))
-        return html.Div(children)
-
-    if not data.get("ok"):
-        return html.Div([
-            _header_row(),
-            html.Div(f"Could not load scan results: {data.get('error', 'unknown error')}",
-                      style={"color": RED_DIM, "marginTop": "12px"}),
-        ], style={"padding": "20px"})
-
-    results = data.get("results") or []
-    generated_at = data.get("generated_at")
-
-    if not results:
-        return html.Div([
-            _header_row(),
-            html.Div(data.get("note") or "No patterns found in the most recent scan.",
-                      style={"color": MUTED, "marginTop": "12px"}),
-        ], style={"padding": "20px"})
-
-    FILTER_OPTIONS = [
-        {"label": "All Patterns", "value": "all"},
-        {"label": "Spring", "value": "SPRING"},
-        {"label": "Upthrust", "value": "UPTHRUST"},
-        {"label": "Breakout", "value": "BREAKOUT"},
-        {"label": "Breakdown", "value": "BREAKDOWN"},
-        {"label": "Spring Building", "value": "SPRING_BUILDING"},
-        {"label": "Upthrust Building", "value": "UPTHRUST_BUILDING"},
-    ]
-    SORT_OPTIONS = [
-        {"label": "Most Patterns", "value": "most_hits"},
-        {"label": "Newest Alert First", "value": "newest"},
-        {"label": "Oldest Alert First", "value": "oldest"},
-        {"label": "Symbol (A-Z)", "value": "symbol_az"},
-    ]
-
-    return html.Div([
-        _header_row(),
-        html.Div(f"Daily Russell 1000 scan for Spring, Upthrust, Breakout, and Breakdown patterns. "
-                  f"{data.get('scanned', 0)} symbols scanned, {len(results)} with a hit."
-                  + (f" Last run: {generated_at}" if generated_at else "")
-                  + " Click any row to see its chart.",
-                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
-        # ADDED (2026-08-25): the full, unfiltered scan results, kept
-        # client-side so filter/sort changes re-render locally instead
-        # of hitting the backend again.
-        dcc.Store(id="s-weis-radar-raw-results", data=results),
-        html.Div([
-            html.Div([
-                html.Span("Filter: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
-                dcc.Dropdown(id="weis-radar-filter-type", options=FILTER_OPTIONS, value="all", clearable=False,
-                              style={"width": "220px", "display": "inline-block", "color": "#111"}),
-            ], style={"display": "inline-block", "marginRight": "20px"}),
-            html.Div([
-                html.Span("Sort: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
-                dcc.Dropdown(id="weis-radar-sort-by", options=SORT_OPTIONS, value="most_hits", clearable=False,
-                              style={"width": "220px", "display": "inline-block", "color": "#111"}),
-            ], style={"display": "inline-block"}),
-        ], style={"marginBottom": "16px"}),
-        # ADDED (2026-08-25): a Store remembering which symbol is
-        # currently charted, so control changes can redraw the SAME
-        # symbol's chart without requiring another row click.
-        #
-        # REDESIGNED (2026-08-26): the old Standard/Cumulative toggle
-        # is gone -- both volume views are now permanent, separate
-        # panels (see _build_weis_radar_chart_figure()). Replaced with
-        # real timeframe, lookback, and volume-MA-period controls, all
-        # wired through to the now-selectable backend endpoint.
-        dcc.Store(id="s-weis-radar-current-symbol", data=None),
-        html.Div([
-            html.Div([
-                html.Span("Timeframe: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
-                dcc.Dropdown(
-                    id="weis-radar-chart-timeframe",
-                    options=[{"label": lbl, "value": val} for lbl, val in [
-                        ("1 Min", "1Min"), ("5 Min", "5Min"), ("15 Min", "15Min"),
-                        ("30 Min", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"), ("1 Week", "1Week"),
-                    ]],
-                    value="1Day", clearable=False,
-                    style={"width": "130px", "display": "inline-block", "color": "#111"},
-                ),
-            ], style={"display": "inline-block", "marginRight": "16px"}),
-            html.Div([
-                html.Span("Lookback: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
-                dcc.Dropdown(
-                    id="weis-radar-chart-lookback",
-                    options=[{"label": f"{n} bars", "value": n} for n in [100, 150, 252, 500]],
-                    value=252, clearable=False,
-                    style={"width": "110px", "display": "inline-block", "color": "#111"},
-                ),
-            ], style={"display": "inline-block", "marginRight": "16px"}),
-            html.Div([
-                html.Span("Volume MA: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
-                dcc.Dropdown(
-                    id="weis-radar-chart-ma",
-                    options=[{"label": "Off", "value": 0}] + [{"label": f"{n}-bar", "value": n} for n in [10, 20, 50]],
-                    value=20, clearable=False,
-                    style={"width": "100px", "display": "inline-block", "color": "#111"},
-                ),
-            ], style={"display": "inline-block"}),
-            html.Button("✕ Close Chart", id="btn-close-weis-radar-chart", n_clicks=0,
-                style={"background": "rgba(239,68,68,.1)", "border": "1px solid rgba(239,68,68,.3)",
-                       "borderRadius": "8px", "color": "#f87171", "cursor": "pointer",
-                       "fontSize": "11px", "fontWeight": "700", "padding": "4px 10px",
-                       "float": "right"}),
-        ], style={"display": "flex", "alignItems": "center", "marginBottom": "6px"}),
-        # ADDED (2026-08-26): raw chart data (bars/hits) kept
-        # client-side once fetched, so moving either volume slider
-        # rebuilds the figure locally instead of hitting the backend
-        # again -- the data itself doesn't change, only the y-axis
-        # range displayed.
-        dcc.Store(id="s-weis-radar-chart-rawdata", data=None),
-        # the chart's title lives here, outside the Plotly figure,
-        # specifically so the figure's own top margin is a small,
-        # fixed, known value.
-        html.Div(id="weis-radar-chart-title", style={"color": WHITE, "fontSize": "13px",
-                  "fontWeight": "700", "marginBottom": "4px", "display": "none"}),
-        dcc.Loading(dcc.Graph(
-            id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
-            config={"responsive": True},
-        )),
-        # REDESIGNED (2026-08-26, fifth follow-up): the two vertical,
-        # pixel-aligned sliders (independently anchored beside each
-        # volume panel) were reported as unreadable -- overlapping and
-        # indistinguishable from one another. Replaced entirely with
-        # two horizontal sliders in a single row directly below the
-        # chart's own legend, cumulative on the left and standard on
-        # the right, separated by a small fixed gap. This is a much
-        # simpler, more robust layout than the vertical version: two
-        # normal-flow flex children with flex:1 each naturally share
-        # the available width in proportion, so "the ratio" requested
-        # is handled by flexbox itself rather than hardcoded pixel
-        # math tied to the figure's internal domains.
-        html.Div([
-            html.Div(dcc.RangeSlider(
-                id="weis-radar-cumvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
-                marks=None, tooltip=None, className="weis-radar-vol-slider",
-            ), title="Cumulative Volume scale", style={"flex": "1"}),
-            html.Div(style={"width": "16px"}),  # small fixed gap between the two sliders
-            html.Div(dcc.RangeSlider(
-                id="weis-radar-stdvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
-                marks=None, tooltip=None, className="weis-radar-vol-slider",
-            ), title="Standard Volume scale", style={"flex": "1"}),
-        ], id="weis-radar-volume-sliders-row",
-           style={"display": "none", "flexDirection": "row", "alignItems": "center",
-                   "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}),
-        html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
-    ], style={"padding": "20px"})
-
-
 def build_radar_tab(session=None):
     """Opportunity Dashboard — behavioral transition radar."""
     import requests as _rq
 
     try:
-        def _do_fetch_radar():
-            r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=15)
-            return r.json() if r.ok else {}
-
-        data = (
-            shared_cache.get_or_fetch("/api/radar/scores", _do_fetch_radar, ttl_seconds=90)
-            if shared_cache is not None
-            else _do_fetch_radar()
-        )
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=8)
+        data = r.json() if r.ok else {}
 
         if isinstance(data, list):
             signals = data
@@ -4490,25 +2226,6 @@ def build_radar_tab(session=None):
         t = _safe_text(text)
         return t.replace(" to ", " → ").replace(" / ", " / ")
 
-    def _score_grade(score):
-        """
-        Genuine composite_score-based letter grade -- matches the
-        exact same established thresholds already used in backend/
-        main.py's _compat_grade() and backend/intelligence_api.py's
-        _grade(), a real, in-production convention. Applied here to
-        the genuine, symbol-specific composite_score, not the removed,
-        probability-engine-derived probability_grade.
-        """
-        if score >= 85:
-            return "A+"
-        if score >= 75:
-            return "A"
-        if score >= 65:
-            return "B"
-        if score >= 50:
-            return "C"
-        return "W"
-
     def _opportunity_card(s, rank):
         symbol = _safe_text(s.get("symbol"), "")
         price = s.get("price")
@@ -4528,11 +2245,19 @@ def build_radar_tab(session=None):
         regime = _safe_text(s.get("regime"), "—")
         status = _safe_text(s.get("status"), "—")
         alert_type = _safe_text(s.get("alert_type"), "—")
-        setup_risk_reward = s.get("setup_risk_reward")
-        wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
-        livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
-        weis_verdict = s.get("weis_verdict") if isinstance(s.get("weis_verdict"), dict) else None
-        score_color = TEAL_DIM if score >= 75 else (YELLOW_DIM if score >= 60 else RED_DIM)
+
+        # Historical probability / edge fields from backend probability engine
+        hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
+        hist_matches = _safe_float(s.get("historical_matches"))
+        exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
+        edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "Unrated")
+        prob_conf = _safe_text(s.get("probability_confidence", s.get("historical_confidence")), "—")
+        prob_score = _safe_float(s.get("expected_opportunity_score"))
+        edge_score = _safe_float(s.get("edge_score", prob_score))
+        prob_setup = _safe_text(s.get("probability_setup_type", setup), setup)
+        prob_weekly = _safe_text(s.get("probability_weekly_regime", s.get("weekly_regime", "—")), "—")
+        grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
 
         color = _state_color(state, readiness)
         side_color = _side_color(side)
@@ -4556,11 +2281,11 @@ def build_radar_tab(session=None):
                 ], style={"flex":"1"}),
 
                 html.Div([
-                    html.Div(f"{score:.0f}", style={
-                        "fontSize":"30px","fontWeight":"950","color":score_color,
+                    html.Div(prob_grade, style={
+                        "fontSize":"30px","fontWeight":"950","color":grade_color,
                         "lineHeight":"1","textAlign":"right"
                     }),
-                    html.Div("Score", style={
+                    html.Div("Opportunity", style={
                         "fontSize":"10px","fontWeight":"950","color":WHITE,
                         "textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"
                     }),
@@ -4600,46 +2325,28 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.Div("Risk/Reward", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                    html.Div(
-                        f"{setup_risk_reward:.2f}" if isinstance(setup_risk_reward, (int, float)) else "—",
-                        style={"fontSize":"18px","fontWeight":"950",
-                               "color": (TEAL_DIM if setup_risk_reward >= 2.0 else YELLOW_DIM) if isinstance(setup_risk_reward, (int, float)) else MUTED},
-                    ),
+                    html.Div("Probability", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(hist_success, 1), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if hist_success >= 55 else YELLOW_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Edge Ratio", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(f"{edge_ratio:.2f}", style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if edge_ratio >= 1.2 else YELLOW_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Expected Return", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(_fmt_pct(exp_return, 2, signed=True), style={"fontSize":"18px","fontWeight":"950","color":TEAL_DIM if exp_return >= 0 else RED_DIM}),
+                ], style={"flex":"1"}),
+                html.Div([
+                    html.Div("Grade", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
+                    html.Div(prob_grade, style={"fontSize":"18px","fontWeight":"950","color":grade_color}),
                 ], style={"flex":"1"}),
             ], style={"display":"flex","gap":"10px","padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.035)"}),
 
-            html.Div(style={"height":"12px"}) if (wyckoff_verdict or livermore_verdict or weis_verdict) else None,
-
             html.Div([
-                html.Div("Methodology Breakdown", style={
-                    "fontSize":"10px","fontWeight":"950","color":WHITE,
-                    "textTransform":"uppercase","letterSpacing":".08em","marginBottom":"6px"
-                }),
-                html.Div([
-                    html.Div([
-                        html.Div("Wyckoff", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
-                        html.Div(f"{wyckoff_verdict.get('wyckoff_score', 0):.0f}" if wyckoff_verdict else "—",
-                                 style={"fontSize":"16px","fontWeight":"950","color":TEAL_DIM}),
-                        html.Div(_safe_text(wyckoff_verdict.get("verdict") if wyckoff_verdict else None, "—"),
-                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
-                    ], style={"flex":"1"}),
-                    html.Div([
-                        html.Div("Livermore", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
-                        html.Div(f"{livermore_verdict.get('livermore_score', 0):.0f}" if livermore_verdict else "—",
-                                 style={"fontSize":"16px","fontWeight":"950","color":BLUE_DIM}),
-                        html.Div(_safe_text(livermore_verdict.get("verdict") if livermore_verdict else None, "—"),
-                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
-                    ], style={"flex":"1"}),
-                    html.Div([
-                        html.Div("Weis", style={"fontSize":"9px","fontWeight":"900","color":WHITE,"textTransform":"uppercase"}),
-                        html.Div(f"{weis_verdict.get('weis_score', 0):.0f}" if weis_verdict else "—",
-                                 style={"fontSize":"16px","fontWeight":"950","color":YELLOW_DIM}),
-                        html.Div(_safe_text(weis_verdict.get("verdict") if weis_verdict else None, "—"),
-                                 style={"fontSize":"9px","color":MUTED,"fontWeight":"700"}),
-                    ], style={"flex":"1"}),
-                ], style={"display":"flex","gap":"10px"}),
-            ], style={"padding":"10px","border":f"1px solid {BORDER}","borderRadius":"12px","background":"rgba(255,255,255,.02)"}) if (wyckoff_verdict or livermore_verdict or weis_verdict) else html.Div(),
+                html.Span(f"Matches {hist_matches:,.0f}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(f"Confidence {prob_conf}", style={"fontSize":"11px","fontWeight":"850","color":WHITE,"marginRight":"10px"}),
+                html.Span(prob_weekly, style={"fontSize":"11px","fontWeight":"850","color":WHITE}),
+            ], style={"marginTop":"7px"}),
 
             html.Div(style={"height":"12px"}),
 
@@ -4688,14 +2395,14 @@ def build_radar_tab(session=None):
 
             html.Div([
                 html.Div("Setup", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em"}),
-                html.Div(setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
+                html.Div(prob_setup, style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"800"}),
                 html.Div(f"{status} · {regime}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","marginTop":"3px"}),
             ]),
 
             html.Div([
                 html.Div("Evidence", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"10px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"{e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
+                    html.Div(f"✓ {e}", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850","lineHeight":"1.35","marginBottom":"3px"})
                     for e in evidence[:4]
                 ] if evidence else [
                     html.Div("No evidence details returned yet.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
@@ -4705,7 +2412,7 @@ def build_radar_tab(session=None):
             html.Div([
                 html.Div("Risk Notes", style={"fontSize":"10px","fontWeight":"950","color":WHITE,"textTransform":"uppercase","letterSpacing":".08em","marginTop":"8px","marginBottom":"4px"}),
                 html.Div([
-                    html.Div(f"{r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
+                    html.Div(f"⚠ {r}", style={"fontSize":"12px","color":YELLOW_DIM,"fontWeight":"900","lineHeight":"1.45","marginBottom":"4px"})
                     for r in risk_notes[:3]
                 ] if risk_notes else [
                     html.Div("Risk defined by setup invalidation.", style={"fontSize":"12px","color":WHITE,"fontWeight":"850","fontWeight":"850"})
@@ -4737,26 +2444,7 @@ def build_radar_tab(session=None):
         hist_success = _safe_float(s.get("historical_success", s.get("historical_success_rate")))
         exp_return = _safe_float(s.get("expected_return", s.get("historical_expected_return")))
         edge_ratio = _safe_float(s.get("edge_ratio", s.get("historical_edge_ratio")))
-        # FIX (2026-08-09): replaced the pooled-history probability_grade
-        # (confirmed to leave most real symbols "Unrated" -- matched
-        # against a fixed, unrelated 50-symbol historical backtest, not
-        # this specific symbol) with the new, genuine, per-symbol
-        # setup_grade -- built from the real sweep/exhaustion/reclaim
-        # sequence plus range maturity for this exact symbol. Falls
-        # back to the old value only if setup_grade wasn't computed at
-        # all for this row (e.g. bar fetch failed for this symbol).
-        setup_grade = s.get("setup_grade")
-        setup_grade_reason = _safe_text(s.get("setup_grade_reason"), "")
-        prob_grade = _safe_text(setup_grade or s.get("probability_grade", s.get("historical_grade")), "—")
-        grade_tooltip = setup_grade_reason if setup_grade else "Legacy pooled-history grade (no setup-specific data available for this symbol)."
-        setup_risk_reward = s.get("setup_risk_reward")
-        wyckoff_verdict = s.get("wyckoff_verdict") if isinstance(s.get("wyckoff_verdict"), dict) else None
-        livermore_verdict = s.get("livermore_verdict") if isinstance(s.get("livermore_verdict"), dict) else None
-        weis_verdict = s.get("weis_verdict") if isinstance(s.get("weis_verdict"), dict) else None
-        row_evidence = s.get("evidence") if isinstance(s.get("evidence"), list) else []
-        row_risk_notes = s.get("risk_notes") if isinstance(s.get("risk_notes"), list) else []
-        readiness_tooltip_lines = [f"+ {e}" for e in row_evidence] + [f"- {r}" for r in row_risk_notes]
-        readiness_tooltip = "\n".join(readiness_tooltip_lines) if readiness_tooltip_lines else "No readiness evidence available yet."
+        prob_grade = _safe_text(s.get("probability_grade", s.get("historical_grade")), "—")
         color = _state_color(state, readiness)
         side_color = _side_color(side)
         grade_color = TEAL_DIM if str(prob_grade).startswith("A") else (BLUE_DIM if str(prob_grade).startswith("B") else (YELLOW_DIM if str(prob_grade).startswith("C") else RED_DIM))
@@ -4771,25 +2459,17 @@ def build_radar_tab(session=None):
                 "flex":"0 0 74px","fontSize":"12px","fontWeight":"900",
                 "color":TEAL_DIM if chg >= 0 else RED_DIM
             }),
-            html.Span([
-                html.Span(f"{readiness:.0f}"),
-                html.Span(readiness_tooltip, className="sig-tooltip-text"),
-            ], className="sig-tooltip", style={
+            html.Span(f"{readiness:.0f}", style={
                 "flex":"0 0 72px","fontSize":"14px","fontWeight":"950",
-                "color":color,"textAlign":"center","cursor":"help",
-                "borderBottom":"1px dotted currentColor"
+                "color":color,"textAlign":"center"
             }),
             html.Span(f"{score:.0f}", style={
                 "flex":"0 0 58px","fontSize":"12px","fontWeight":"900",
                 "color":YELLOW_DIM,"textAlign":"center"
             }),
-            html.Span([
-                html.Span(prob_grade),
-                html.Span(grade_tooltip, className="sig-tooltip-text"),
-            ], className="sig-tooltip", style={
+            html.Span(prob_grade, style={
                 "flex":"0 0 62px","fontSize":"12px","fontWeight":"950",
-                "color":grade_color,"textAlign":"center","cursor":"help",
-                "borderBottom":"1px dotted currentColor"
+                "color":grade_color,"textAlign":"center"
             }),
             html.Span(_fmt_pct(hist_success, 1), style={
                 "flex":"0 0 86px","fontSize":"12px","fontWeight":"900",
@@ -4835,42 +2515,10 @@ def build_radar_tab(session=None):
                 "flex":"0 0 86px","fontSize":"10px","fontWeight":"900",
                 "color":RED_DIM,"textAlign":"right"
             }),
-            html.Span(
-                f"{setup_risk_reward:.2f}" if isinstance(setup_risk_reward, (int, float)) else "—",
-                style={
-                    "flex":"0 0 66px","fontSize":"12px","fontWeight":"900",
-                    "color": (TEAL_DIM if setup_risk_reward >= 2.0 else YELLOW_DIM) if isinstance(setup_risk_reward, (int, float)) else MUTED,
-                    "textAlign":"center"
-                },
-            ),
-            html.Span(
-                f"{wyckoff_verdict.get('wyckoff_score', 0):.0f}" if wyckoff_verdict else "—",
-                style={
-                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
-                    "color": TEAL_DIM if wyckoff_verdict else MUTED,
-                    "textAlign":"center"
-                },
-            ),
-            html.Span(
-                f"{livermore_verdict.get('livermore_score', 0):.0f}" if livermore_verdict else "—",
-                style={
-                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
-                    "color": BLUE_DIM if livermore_verdict else MUTED,
-                    "textAlign":"center"
-                },
-            ),
-            html.Span(
-                f"{weis_verdict.get('weis_score', 0):.0f}" if weis_verdict else "—",
-                style={
-                    "flex":"0 0 60px","fontSize":"11px","fontWeight":"900",
-                    "color": YELLOW_DIM if weis_verdict else MUTED,
-                    "textAlign":"center"
-                },
-            ),
         ], style={
             "display":"flex","alignItems":"center","gap":"10px",
             "padding":"11px 0","borderBottom":f"1px solid {BORDER}",
-            "minWidth":"1900px"
+            "minWidth":"1630px"
         })
 
     header = html.Div([
@@ -4891,14 +2539,10 @@ def build_radar_tab(session=None):
         html.Span("Status", style={"flex":"0 0 82px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
         html.Span("Trigger", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
         html.Span("Invalid", style={"flex":"0 0 86px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"right"}),
-        html.Span("R:R", style={"flex":"0 0 66px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
-        html.Span("Wyckoff", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
-        html.Span("Livermore", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
-        html.Span("Weis", style={"flex":"0 0 60px","fontSize":"9px","color":WHITE,"fontWeight":"900","textTransform":"uppercase","letterSpacing":".08em","textAlign":"center"}),
     ], style={
         "display":"flex","gap":"10px","paddingBottom":"8px",
         "borderBottom":f"1px solid {BORDER}","marginBottom":"4px",
-        "minWidth":"1900px"
+        "minWidth":"1630px"
     })
 
     # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
@@ -4912,7 +2556,7 @@ def build_radar_tab(session=None):
         card([
             html.Div([
                 html.Div([
-                    html.H2("Opportunity Dashboard", style={
+                    html.H2("🎯 Opportunity Dashboard", style={
                         "color":WHITE,"fontSize":"20px","fontWeight":"950","margin":"0 0 4px"
                     }),
                     html.P("Pre-trigger trade discovery — ranked by opportunity state, readiness, and behavioral transition.",
@@ -4949,9 +2593,7 @@ def build_radar_tab(session=None):
                     "color":WHITE,"fontSize":"15px","fontWeight":"950","margin":"0 0 4px"
                 }),
                 html.Div("Sorted by Armed → Setting Up → Historical Probability → Readiness. Use this table to see what may move next, not what already moved.",
-                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"4px"}),
-                html.Div("⟷ Scroll right for more columns, including Trigger, Invalid, R:R, Wyckoff, Livermore, and Weis",
-                         style={"fontSize":"11px","color":YELLOW_DIM,"fontWeight":"800","marginBottom":"12px"}),
+                         style={"fontSize":"12px","color":WHITE,"fontWeight":"850","marginBottom":"12px"}),
                 html.Div([
                     header,
                     html.Div([_row(s) for s in signals] if signals else [
@@ -4968,15 +2610,8 @@ def build_scoreboard_tab(session=None):
     import requests as _rq
 
     try:
-        def _do_fetch_scoreboard():
-            r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=15)
-            return r.json() if r.ok else {}
-
-        board = (
-            shared_cache.get_or_fetch("/api/scoreboard", _do_fetch_scoreboard, ttl_seconds=120)
-            if shared_cache is not None
-            else _do_fetch_scoreboard()
-        )
+        r = _rq.get(f"{BACKEND_HTTP}/api/scoreboard", timeout=8)
+        board = r.json() if r.ok else {}
     except Exception:
         board = {}
 
@@ -5102,9 +2737,9 @@ def build_scoreboard_tab(session=None):
             outcome_color = TEAL_DIM if _safe_float(outcome_pct) >= 0 else RED_DIM
 
         if direction_correct is True:
-            dir_text, dir_color = "", TEAL_DIM
+            dir_text, dir_color = "✓", TEAL_DIM
         elif direction_correct is False:
-            dir_text, dir_color = "", RED_DIM
+            dir_text, dir_color = "✕", RED_DIM
         else:
             dir_text, dir_color = "—", MUTED
 
@@ -5314,7 +2949,7 @@ def build_scoreboard_tab(session=None):
         card([
             html.Div([
                 html.Div([
-                    html.H2("Scoreboard", style={
+                    html.H2("🏆 Scoreboard", style={
                         "color":WHITE,"fontSize":"18px","fontWeight":"900",
                         "margin":"0 0 4px"
                     }),
@@ -5354,7 +2989,7 @@ def build_scoreboard_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.H3("Intelligence Agreement Validation", style={
+                    html.H3("🧠 Intelligence Agreement Validation", style={
                         "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
                     }),
                     html.Div("Shows whether deeper intelligence agreement improves direction accuracy and path edge.",
@@ -5404,7 +3039,7 @@ def build_scoreboard_tab(session=None):
 
             html.Div([
                 html.Div([
-                    html.H3("Live Performance Attribution", style={
+                    html.H3("📊 Live Performance Attribution", style={
                         "fontSize":"15px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"
                     }),
                     html.Div("Ranks which parts of the engine are producing direction, edge, and tradeable opportunity.",
@@ -5491,42 +3126,42 @@ def classify_transition(old_status, new_status, delta):
     # No state change should remain a monitor, even if the score delta is negative.
     # This prevents Watching -> Watching rows from being counted as downgrades.
     if old_status_l == new_status_l and old_status_l:
-        return "MONITOR", "yellow"
+        return "🟡 MONITOR", "yellow"
 
     # Explicit improvement transitions first.
     if old_status_l == "building" and new_status_l == "watching":
-        return "IMPROVING", "teal"
+        return "🟢 IMPROVING", "teal"
 
     if old_status_l == "building" and new_status_l in high_states:
-        return "STRONG UPGRADE", "teal"
+        return "🟢 STRONG UPGRADE", "teal"
 
     if old_status_l == "avoid" and new_status_l in upgrade_states:
-        return "UPGRADE", "teal"
+        return "🟢 UPGRADE", "teal"
 
     if old_status_l == "watching" and new_status_l in high_states:
-        return "STRONG UPGRADE", "teal"
+        return "🟢 STRONG UPGRADE", "teal"
 
     # Explicit deterioration transitions.
     if old_status_l in high_states and new_status_l == "watching":
-        return "DOWNGRADE", "red"
+        return "🔴 DOWNGRADE", "red"
 
     if old_status_l in ("building", "watching", "armed", "triggered", "opportunity") and new_status_l == "avoid":
-        return "MAJOR DOWNGRADE", "red"
+        return "🔴 MAJOR DOWNGRADE", "red"
 
     # Score-delta interpretation only applies when the state transition is not definitive.
     if delta >= 20:
-        return "INTELLIGENCE LEAD", "teal"
+        return "🟢 INTELLIGENCE LEAD", "teal"
 
     if delta >= 10:
-        return "MODEST UPGRADE", "teal"
+        return "🟢 MODEST UPGRADE", "teal"
 
     if delta <= -20:
-        return "INTELLIGENCE WARNING", "red"
+        return "🔴 INTELLIGENCE WARNING", "red"
 
     if delta <= -10:
-        return "MODEST DOWNGRADE", "red"
+        return "🔴 MODEST DOWNGRADE", "red"
 
-    return "MONITOR", "yellow"
+    return "🟡 MONITOR", "yellow"
 
 def build_divergence_tab(session=None):
     """
@@ -5539,15 +3174,8 @@ def build_divergence_tab(session=None):
     import requests as _rq
 
     try:
-        def _do_fetch_divergence():
-            r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=15)
-            return r.json() if r.ok else {}
-
-        data = (
-            shared_cache.get_or_fetch("/api/radar/divergence", _do_fetch_divergence, ttl_seconds=90)
-            if shared_cache is not None
-            else _do_fetch_divergence()
-        )
+        r = _rq.get(f"{BACKEND_HTTP}/api/radar/divergence", timeout=8)
+        data = r.json() if r.ok else {}
     except Exception:
         data = {}
 
@@ -5657,7 +3285,7 @@ def build_divergence_tab(session=None):
         html.Div([
             html.Div([
                 html.H2(
-                    "Intelligence Change Detector",
+                    "🧠 Intelligence Change Detector",
                     style={"color": WHITE, "fontSize": "20px", "fontWeight": "900", "margin": "0 0 4px"}
                 ),
                 html.P(
@@ -5669,9 +3297,9 @@ def build_divergence_tab(session=None):
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "flex-start", "gap": "16px", "marginBottom": "16px"}),
 
         html.Div([
-            metric_tile("Upgrades", str(upgrades), TEAL_DIM),
-            metric_tile("Monitoring", str(monitoring), YELLOW_DIM),
-            metric_tile("Downgrades", str(downgrades), RED_DIM),
+            metric_tile("🟢 Upgrades", str(upgrades), TEAL_DIM),
+            metric_tile("🟡 Monitoring", str(monitoring), YELLOW_DIM),
+            metric_tile("🔴 Downgrades", str(downgrades), RED_DIM),
             metric_tile("Last Audit", str(audit_label)[:22], BLUE_DIM),
         ], style={"display": "grid", "gridTemplateColumns": "repeat(4,1fr)", "gap": "10px", "marginBottom": "14px"}),
 
@@ -5798,7 +3426,7 @@ def build_billing_tab(session=None, perms=None):
         return _build(session=session, perms=perms)
     except Exception as e:
         return card([
-            html.H2("Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+            html.H2("💳 Billing & Plans", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
             note_box(f"Billing error: {str(e)[:120]}", "yellow"),
         ])
 
@@ -5808,12 +3436,7 @@ def register_billing_callbacks_from_module(app):
         import sys, os
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from billing_ui import register_billing_callbacks
-        # FIX: was calling itself (register_billing_callbacks_from_module),
-        # an unconditional self-call that would raise RecursionError the
-        # moment this function is actually invoked. Currently dead code
-        # (never called anywhere in this file), but fixed so it isn't a
-        # landmine if it gets wired up later.
-        register_billing_callbacks(app)
+        register_billing_callbacks_from_module(app)
     except Exception as e:
         print(f"Warning: billing callbacks: {e}")
 
@@ -5860,9 +3483,9 @@ def build_preferences_tab(user_id="", session=None):
             r = _preqs.patch(url, json=payload, timeout=8)
             if r.status_code == 404:
                 r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
-            return ("Saved", "teal") if r.ok else (f"Error", "red")
+            return ("✅ Saved", "teal") if r.ok else (f"❌ Error", "red")
         except Exception as e:
-            return (f"{str(e)[:60]}", "red")
+            return (f"❌ {str(e)[:60]}", "red")
 
 
     """
@@ -5925,14 +3548,11 @@ def build_preferences_tab(user_id="", session=None):
         ], style={"marginBottom":"24px"}),
 
         # Status message
-        dcc.Loading(
-            html.Div(id="prefs-status", style={"textAlign":"center","fontSize":"13px",
-                     "minHeight":"24px","marginBottom":"8px","color":TEAL_DIM}),
-            type="dot", color=TEAL,
-        ),
+        html.Div(id="prefs-status", style={"textAlign":"center","fontSize":"13px",
+                 "minHeight":"24px","marginBottom":"8px","color":TEAL_DIM}),
 
         # Delivery Mode
-        _card([_stitle("Delivery Mode"), _label("How often do you want alerts?"),
+        _card([_stitle("📬 Delivery Mode"), _label("How often do you want alerts?"),
             html.Div([
                 html.Button("Real-time",     id="pref-btn-realtime", n_clicks=0,
                             style=_on() if mode=="realtime" else _off()),
@@ -5943,7 +3563,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
 
         # Minimum Score
-        _card([_stitle("Minimum Confluence Score"), _label("Only alert when score is at least:"),
+        _card([_stitle("🎯 Minimum Confluence Score"), _label("Only alert when score is at least:"),
             dcc.Slider(id="prefs-score-slider", min=0, max=100, step=5, value=score,
                 marks={0:"0",25:"25",50:"50",75:"75",100:"100"},
                 tooltip={"placement":"bottom","always_visible":True}),
@@ -5956,7 +3576,7 @@ def build_preferences_tab(user_id="", session=None):
                 "fontSize":"12px","fontWeight":"700","padding":"8px 16px","cursor":"pointer"})]),
 
         # Alert Types
-        _card([_stitle("Alert Types"), _label("Click to toggle — saves instantly:"),
+        _card([_stitle("⚡ Alert Types"), _label("Click to toggle — saves instantly:"),
             html.Div([
                 html.Button("Structure Alerts", id="pref-btn-wyckoff",   n_clicks=0,
                             style=_on() if types.get("wyckoff")   else _off()),
@@ -5971,7 +3591,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
 
         # Watchlist
-        _card([_stitle("Watchlist"), _label("Only alert on these symbols (leave empty for all)"),
+        _card([_stitle("📋 Watchlist"), _label("Only alert on these symbols (leave empty for all)"),
             html.Div([
                 dcc.Input(id="prefs-sym-input", type="text", placeholder="e.g. AAPL", maxLength=5,
                     style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
@@ -5986,7 +3606,7 @@ def build_preferences_tab(user_id="", session=None):
             html.Div(id="prefs-wl-display", children=_render_watchlist(watchlist))]),
 
         # Market Hours
-        _card([_stitle("Market Hours"),
+        _card([_stitle("🕐 Market Hours"),
             html.Div([
                 html.Div([
                     html.Div("Market hours only", style={"color":WHITE,"fontSize":"13px","fontWeight":"600"}),
@@ -5998,7 +3618,7 @@ def build_preferences_tab(user_id="", session=None):
             ], style={"display":"flex","alignItems":"center","gap":"16px"})]),
 
         # Hurst Cycle Profile
-        _card([_stitle("Hurst Cycle Profile"),
+        _card([_stitle("🔄 Hurst Cycle Profile"),
             _label("Lookback horizon for cycle timing analysis"),
             html.Div([
                 html.Button("Short (90d)",   id="pref-btn-hurst-short",  n_clicks=0,
@@ -6047,7 +3667,7 @@ def register_preferences_callbacks(app):
         t = ctx.triggered[0]["prop_id"].split(".")[0]
         mode_map = {"pref-btn-realtime":"realtime","pref-btn-hourly":"hourly","pref-btn-daily":"daily"}
         mode = mode_map.get(t, cur)
-        if not uid: return "Not logged in",_msg_style("yellow"),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
         msg, color = _save(uid, email, {"delivery_mode": mode})
         return msg,_msg_style(color),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
 
@@ -6080,7 +3700,7 @@ def register_preferences_callbacks(app):
               "pref-btn-elliott":"elliott","pref-btn-fibonacci":"fibonacci"}
         if t in km: types[km[t]] = not types.get(km[t], False)
         styles = [_on() if types.get(k) else _off() for k in ["wyckoff","gann","ab_score","elliott","fibonacci"]]
-        if not uid: return "Not logged in",_msg_style("yellow"),*styles,types
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*styles,types
         msg, color = _save(uid, email, {"alert_types": types})
         return msg,_msg_style(color),*styles,types
 
@@ -6101,7 +3721,7 @@ def register_preferences_callbacks(app):
         new = not cur
         label = "ON" if new else "OFF"
         style = _on() if new else _off()
-        if not uid: return "Not logged in",_msg_style("yellow"),label,style,new
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),label,style,new
         msg, color = _save(uid, email, {"market_hours_only": new})
         return msg,_msg_style(color),label,style,new
 
@@ -6117,7 +3737,7 @@ def register_preferences_callbacks(app):
         prevent_initial_call=True,
     )
     def save_score(n, val, uid, email):
-        if not uid: return "Not logged in",_msg_style("yellow"),val
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),val
         msg, color = _save(uid, email, {"min_score": val})
         return msg,_msg_style(color),val
 
@@ -6144,7 +3764,7 @@ def register_preferences_callbacks(app):
         hmap = {"pref-btn-hurst-short":"SHORT","pref-btn-hurst-medium":"MEDIUM","pref-btn-hurst-long":"LONG"}
         hurst = hmap.get(t, cur)
         styles = [_on() if h==hurst else _off() for h in ["SHORT","MEDIUM","LONG"]]
-        if not uid: return "Not logged in",_msg_style("yellow"),*styles,hurst
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),*styles,hurst
         msg, color = _save(uid, email, {"hurst_profile": hurst})
         return msg,_msg_style(color),*styles,hurst
 
@@ -6160,7 +3780,7 @@ def register_preferences_callbacks(app):
         prevent_initial_call=True,
     )
     def save_weis(n, val, uid, email):
-        if not uid: return "Not logged in",_msg_style("yellow"),val
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),val
         msg, color = _save(uid, email, {"weis_threshold": val})
         return msg,_msg_style(color),val
 
@@ -6183,7 +3803,7 @@ def register_preferences_callbacks(app):
         s = sym.strip().upper()
         wl = list(wl or [])
         if s and s not in wl: wl.append(s)
-        if not uid: return "Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
+        if not uid: return "⚠️ Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
         msg, color = _save(uid, email, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
@@ -6200,15 +3820,6 @@ GOLD = "#F5C842"
 # never match a real session email (NOT an empty string) -- otherwise a
 # session with no email set would incorrectly be treated as admin.
 ADMIN_EMAIL = os.getenv("SIGMALYTIC_ADMIN_EMAIL") or "no-admin-configured@invalid"
-
-# SECURITY FIX (2026-08-03): user wants staff (not just a single owner) to
-# have admin access. The single ADMIN_EMAIL check above can't support that
-# at all -- extended to also support a comma-separated list, matching the
-# backend's require_admin dependency (backend/main.py) exactly, so both
-# sides agree on who counts as admin/staff.
-def _get_admin_emails() -> set:
-    raw = os.getenv("SIGMALYTIC_ADMIN_EMAILS") or os.getenv("SIGMALYTIC_ADMIN_EMAIL") or ""
-    return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
 def _admin_tile(label, value, color=None, sub=None):
@@ -6269,68 +3880,7 @@ def _admin_card(children, sx=None):
 
 
 def is_admin(session: dict) -> bool:
-    email = (session or {}).get("email", "").strip().lower()
-    return bool(email) and email in _get_admin_emails()
-
-
-def build_cache_diagnostics_panel():
-    """
-    Shows real, measured data about the background cache-refresh system:
-    which backend is active (redis vs memory), and per-key last-refresh
-    timestamp/duration/success. Built so future slow-spike reports can be
-    diagnosed with actual evidence instead of guessing from browser
-    Network-tab timings alone.
-    """
-    if shared_cache is None:
-        return _admin_card([
-            html.Div("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900","marginBottom":"8px"}),
-            html.Div("shared_cache module did not import -- caching is fully disabled.", style={"color":RED_DIM,"fontSize":"12px"}),
-        ])
-
-    try:
-        diag = shared_cache.get_diagnostics()
-    except Exception as e:
-        return _admin_card([
-            html.Div("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900","marginBottom":"8px"}),
-            html.Div(f"Error reading diagnostics: {e}", style={"color":RED_DIM,"fontSize":"12px"}),
-        ])
-
-    backend = diag.get("backend", "unknown")
-    backend_color = TEAL_DIM if backend == "redis" else YELLOW_DIM
-
-    rows = []
-    for key, meta in sorted(diag.get("keys", {}).items()):
-        success = meta.get("last_refresh_success")
-        refreshed_at = meta.get("last_refreshed_at") or "never yet"
-        duration = meta.get("last_refresh_duration_ms")
-        error = meta.get("last_refresh_error")
-
-        status_color = TEAL_DIM if success else (RED_DIM if success is False else YELLOW_DIM)
-        status_text = "OK" if success else ("FAILED" if success is False else "PENDING")
-
-        rows.append(html.Div([
-            html.Span(key, style={"color":WHITE,"fontSize":"11px","flex":"2","fontFamily":"DM Mono, monospace"}),
-            html.Span(status_text, style={"color":status_color,"fontSize":"11px","fontWeight":"800","flex":"0.6"}),
-            html.Span(refreshed_at, style={"color":TEXT,"fontSize":"11px","flex":"1.2"}),
-            html.Span(f"{duration}ms" if duration is not None else "-", style={"color":TEXT,"fontSize":"11px","flex":"0.6"}),
-            html.Span(error or "", style={"color":RED_DIM,"fontSize":"10px","flex":"1.5"}),
-        ], style={"display":"flex","gap":"8px","padding":"6px 0","borderBottom":f"1px solid {BORDER}"}))
-
-    return _admin_card([
-        html.Div([
-            html.Span("Cache Diagnostics", style={"color":WHITE,"fontSize":"16px","fontWeight":"900"}),
-            html.Span(f"  backend: {backend}", style={"color":backend_color,"fontSize":"12px","fontWeight":"800","marginLeft":"10px"}),
-        ], style={"marginBottom":"12px"}),
-        html.Div([
-            html.Span("Key", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"2","textTransform":"uppercase"}),
-            html.Span("Status", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"0.6","textTransform":"uppercase"}),
-            html.Span("Last Refreshed", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"1.2","textTransform":"uppercase"}),
-            html.Span("Duration", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"0.6","textTransform":"uppercase"}),
-            html.Span("Error", style={"color":MUTED,"fontSize":"10px","fontWeight":"800","flex":"1.5","textTransform":"uppercase"}),
-        ], style={"display":"flex","gap":"8px","paddingBottom":"6px","borderBottom":f"2px solid {BORDER}"}),
-        html.Div(rows if rows else [html.Div("No background-refreshed keys registered yet.", style={"color":MUTED,"fontSize":"12px","padding":"12px 0"})]),
-    ])
-
+    return (session or {}).get("email","") == ADMIN_EMAIL
 
 def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
@@ -6339,7 +3889,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     if not is_admin(session):
         return html.Div([
-            html.Div("", style={"fontSize":"48px","marginBottom":"16px"}),
+            html.Div("🔒", style={"fontSize":"48px","marginBottom":"16px"}),
             html.Div("Admin Access Only", style={"fontSize":"18px","fontWeight":"800","color":WHITE}),
             html.Div("This page is only accessible to the system administrator.",
                      style={"fontSize":"13px","color":WHITE,"marginTop":"8px"}),
@@ -6353,389 +3903,19 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         # this function (it only exists as a local import inside two other,
         # unrelated functions). This module already imports requests as `req`
         # at the top of the file; use that instead.
-        def _do_fetch_admin_report():
-            r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
-            return r.json() if r.ok else {}
-
-        data = (
-            shared_cache.get_or_fetch("/api/admin/report", _do_fetch_admin_report, ttl_seconds=90)
-            if shared_cache is not None
-            else _do_fetch_admin_report()
-        )
+        r = req.get(f"{backend_url}/api/admin/report", headers=headers, timeout=15)
+        data = r.json() if r.ok else {}
     except Exception as e:
         data = {}
-
-    # ── Setup & Deployment (merged in from the removed Setup tab) ──────────
-    # Defined here, before the early-return check below, and unconditionally
-    # appended in both the early-return and full-assembly paths further down
-    # -- this is static config info that shouldn't depend on whether the
-    # admin report data itself loads successfully.
-    setup_deployment_block = _admin_card([
-        html.Div("SETUP & DEPLOYMENT", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "12px"}),
-        html.Pre(
-            f"Frontend  : Dash (Python)  →  Render\n"
-            f"Backend   : FastAPI        →  Render\n"
-            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
-            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
-            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
-            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
-            f"Env vars:\n"
-            f"  ALPACA_API_KEY     — Alpaca key ID\n"
-            f"  ALPACA_API_SECRET  — Alpaca secret\n"
-            f"  BACKEND_URL        — HTTP base URL\n"
-            f"  BACKEND_WS_URL     — WebSocket base URL\n"
-            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
-            style={"margin": "0", "borderRadius": "14px", "border": f"1px solid {BORDER}",
-                   "background": "rgba(0,0,0,.35)", "padding": "16px", "color": TEAL_DIM,
-                   "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
-    ], sx={"marginBottom": "16px"})
-
-    # ── Symbol Backtest -- single-symbol, full-history check against the
-    # production lookup table's own profile definitions, powered by the
-    # new /api/admin/symbol-backtest/{symbol} endpoint. Defined here,
-    # unconditionally appended like setup_deployment_block above, so it's
-    # available regardless of whether the admin report data itself loads.
-    symbol_backtest_block = _admin_card([
-        html.Div("SYMBOL BACKTEST", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Runs a real, single-symbol backtest against the full available "
-            "Alpaca history, using the same production classification logic "
-            "as the live radar scan -- for checking whether a specific "
-            "profile (Compression Breakout Candidate / Compression to "
-            "Expansion Attempt / 90+ Elite readiness) holds up over a longer "
-            "timeframe than the current 2-year production lookup table. Can "
-            "take a minute or more to run.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Div([
-            dcc.Input(id="backtest-symbol", type="text", placeholder="Symbol (e.g. TDY)",
-                      style={"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
-                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
-                             "marginRight": "8px"}),
-            dcc.Input(id="backtest-years", type="number", placeholder="Years", value=5, min=1, max=6,
-                      style={"width": "80px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
-                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
-                             "marginRight": "8px"}),
-            html.Button("Run Backtest", id="backtest-run-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="backtest-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    # ── Portfolio Rankings + Decay Monitor -- same pattern as Generate
-    # Report and Symbol Backtest above: real, working admin actions that
-    # previously required dev tools/manual fetch() calls to trigger.
-    # No symbol/date inputs needed -- both operate across the full
-    # active-campaign set, not a single symbol.
-    portfolio_rankings_block = _admin_card([
-        html.Div("PORTFOLIO RANKINGS (Layer 4)", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Deduplicates active campaigns down to one current record per "
-            "symbol, scores each on strength/analog/risk, and writes "
-            "priority-banded rankings to the campaigns database. Runs "
-            "across the full active-campaign set.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Run Portfolio Rankings", id="portfolio-rankings-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="portfolio-rankings-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    decay_monitor_block = _admin_card([
-        html.Div("DECAY MONITOR (Layer 7)", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Scores every active campaign into HEALTHY/MONITOR/WEAKENING/"
-            "EXIT_CANDIDATE bands per the research's own decay methodology, "
-            "and persists results back to the campaigns database.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Run Decay Monitor", id="decay-monitor-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="decay-monitor-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    # ── Subscriber Alerts -- distinct from the other admin actions above:
-    # this genuinely sends real emails to real subscribers, not an
-    # internal-only batch operation. Clearly warned in the UI itself.
-    closure_engine_block = _admin_card([
-        html.Div("CLOSURE ENGINE", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Evaluates active campaigns for closure (target reached, stop "
-            "hit, operator exit, timeout, or invalidation) and closes them "
-            "in the campaigns database. This endpoint was already correctly "
-            "wired on the backend -- just missing a way to trigger it "
-            "without dev tools.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Run Closure Engine", id="closure-engine-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="closure-engine-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    state_transition_block = _admin_card([
-        html.Div("STATE TRANSITION ENGINE", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Computes calibrated advance/failure probabilities for every "
-            "active campaign, blending each lifecycle state's base "
-            "expectation with real historical rates. A direct dependency "
-            "of Campaign Outcome Engine below -- run this first for "
-            "genuinely calibrated results.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Run State Transition Engine", id="state-transition-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="state-transition-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    campaign_outcome_block = _admin_card([
-        html.Div("CAMPAIGN OUTCOME ENGINE", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Computes Expected Return using a live blend of campaign lifecycle "
-            "state, operator dominance, decay, and real current evidence -- "
-            "not the static historical average discussed earlier tonight. "
-            "Writes results back to the campaigns database.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Run Campaign Outcome Engine", id="campaign-outcome-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="campaign-outcome-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    real_scoreboard_stats_block = _admin_card([
-        html.Div("REAL TRACK RECORD STATISTICS", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Genuine win rates, hit rates, MFE/MAE, and direction "
-            "accuracy computed from the app's own actual logged signal "
-            "history and outcomes -- not the campaign-intelligence "
-            "compatibility view already shown in the Scoreboard tab. "
-            "Confirmed this real data was never surfaced anywhere "
-            "until now.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Load Real Stats", id="real-stats-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="real-stats-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    scoreboard_maintenance_block = _admin_card([
-        html.Div("SCOREBOARD MAINTENANCE", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Two real, working maintenance utilities directly supporting "
-            "the real track record data above. Repair backfills missing "
-            "grades/path metrics on older rows (explicitly documented as "
-            "safe to run repeatedly). Clear Duplicates removes duplicate "
-            "signal rows, keeping only the most recent per symbol per day.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Div([
-            html.Button("Repair History", id="repair-scoreboard-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                       "marginRight": "10px"}),
-            html.Button("Clear Duplicates", id="clear-duplicates-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="scoreboard-maintenance-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    journal_correction_block = _admin_card([
-        html.Div("JOURNAL ENTRY CORRECTION", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "For support use when a subscriber reports a mistake in "
-            "their journal entry (wrong symbol, price, or shares "
-            "typed in). Deletes the specified entry so the subscriber "
-            "can simply re-log a corrected one. Requires the exact "
-            "journal_id -- ask the subscriber for it, or look it up "
-            "via their trade history.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Div([
-            dcc.Input(id="journal-delete-id", type="text", placeholder="journal_id (e.g. jrn_...)",
-                      style={"width": "260px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
-                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
-                             "marginRight": "8px"}),
-            html.Button("Delete Entry", id="journal-delete-btn", n_clicks=0,
-                style={"background": RED_DIM, "color": NAVY, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="journal-delete-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=RED_DIM,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    bme_memory_status_block = _admin_card([
-        html.Div("BME MEMORY BANK STATUS", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Real, direct check of the Behavioral Memory Engine's "
-            "actual current state -- how many symbols have genuinely "
-            "been trained. If a symbol shows 'Deep engine confirms "
-            "radar (+0.0)' on the Radar Screen, this tells you whether "
-            "that's expected (the symbol simply isn't trained yet) or "
-            "a real, ongoing problem (it's trained but still showing "
-            "the neutral default).",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Check Memory Status", id="bme-status-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="bme-status-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    operator_footprint_block = _admin_card([
-        html.Div("EARLY OPERATOR FOOTPRINT REVIEW", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Real, read-only diagnostic (confirmed database-only, never "
-            "called from the frontend until now) showing early Composite "
-            "Operator footprint evidence across all active campaigns -- "
-            "distributions by archetype, risk context, and footprint "
-            "count, sorted by footprint strength.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Load Footprint Review", id="operator-footprint-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="operator-footprint-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    enriched_campaign_table_block = _admin_card([
-        html.Div("ENRICHED CAMPAIGN TABLE (7-Year ODS Evidence)", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "A real, already-built endpoint (confirmed live but never called "
-            "from the frontend until now) that formally confirms Operator "
-            "Dominance/Control only from direct evidence in 7 years of real "
-            "price/volume history -- supply exhaustion, demand/support "
-            "validation, structural location, absence of contrary failure. "
-            "Fetches real Alpaca bars for each symbol, so this can take a "
-            "while for larger limits.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Div([
-            dcc.Input(id="enriched-table-limit", type="number", placeholder="Limit", value=25, min=1, max=250,
-                      style={"width": "80px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
-                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
-                             "marginRight": "8px"}),
-            html.Button("Load Enriched Table", id="enriched-table-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="enriched-table-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
-
-    subscriber_alerts_block = _admin_card([
-        html.Div("SEND SUBSCRIBER ALERTS", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Sends real email alerts to real subscribers for currently-active "
-            "TIER_1/TIER_2 campaigns. This genuinely sends live emails -- "
-            "not a preview or dry run.",
-            style={"fontSize": "11px", "color": YELLOW_DIM, "marginBottom": "14px",
-                   "lineHeight": "1.6", "fontWeight": "700"},
-        ),
-        html.Button("Send Subscriber Alerts", id="subscriber-alerts-btn", n_clicks=0,
-            style={"background": RED_DIM, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px", "marginRight": "8px"}),
-        html.Button("Review Drafts", id="subscriber-alerts-preview-btn", n_clicks=0,
-            style={"background": "transparent", "color": BLUE_DIM, "border": f"1px solid {BLUE_DIM}",
-                   "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700",
-                   "cursor": "pointer", "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="subscriber-alerts-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-        dcc.Loading(
-            html.Div(id="subscriber-alerts-preview-result", style={"marginTop": "12px"}),
-            type="dot", color=BLUE_DIM,
-        ),
-    ], sx={"marginBottom": "16px"})
 
     if not data:
         # FIX: was `_admin_card([...])` -- _card only exists as a local nested
         # function inside build_preferences_tab and is not visible here.
         # _admin_card is the real module-level equivalent already defined above.
-        return html.Div([
-            _admin_card([
-                html.Div("Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
-                html.Div("Backend may be initializing. Refresh in 30 seconds.",
-                         style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
-            ], sx={"marginBottom": "16px"}),
-            setup_deployment_block,
-            symbol_backtest_block,
-            portfolio_rankings_block,
-            decay_monitor_block,
-            closure_engine_block,
-            state_transition_block,
-            campaign_outcome_block,
-            real_scoreboard_stats_block,
-            scoreboard_maintenance_block,
-            journal_correction_block,
-            bme_memory_status_block,
-            operator_footprint_block,
-            enriched_campaign_table_block,
-            subscriber_alerts_block,
+        return _admin_card([
+            html.Div("⚠️ Could not load admin report.", style={"color":YELLOW_DIM,"fontSize":"14px"}),
+            html.Div("Backend may be initializing. Refresh in 30 seconds.",
+                     style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
         ])
 
     live          = data.get("live_stats", {})
@@ -6762,7 +3942,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Div([
             html.Div([
                 html.Div([
-                    html.Span("", style={"fontSize":"18px"}),
+                    html.Span("🔒 ", style={"fontSize":"18px"}),
                     html.Span("ADMIN PERFORMANCE MONITOR",
                               style={"fontSize":"16px","fontWeight":"900","color":GOLD,
                                      "letterSpacing":".08em"}),
@@ -6811,7 +3991,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # ── Snapshot writer health ────────────────────────────────────────────
     snap_block = _admin_card([
         html.Div([
-            html.Div("SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
+            html.Div("📸 SNAPSHOT WRITER", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"4px"}),
             html.Div([
                 html.Span("Status: ", style={"color":WHITE,"fontSize":"11px"}),
@@ -6874,12 +4054,12 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
     anomaly_block = _admin_card([
         html.Div([
-            html.Div("ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
+            html.Div("🚨 ANOMALY FLAGS", style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
             html.Div(f"{len(anomalies)} issues detected",
                      style={"fontSize":"11px","color": RED_DIM if anomalies else TEAL_DIM}),
         ], style={"display":"flex","justifyContent":"space-between","marginBottom":"12px"}),
         html.Div(anomaly_rows if anomaly_rows else [
-            html.Div("No anomalies detected — system running clean.",
+            html.Div("✅ No anomalies detected — system running clean.",
                      style={"color":TEAL_DIM,"fontSize":"13px","padding":"12px 0"})
         ]),
     ], sx={"marginBottom":"16px"})
@@ -6919,7 +4099,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _admin_card([
-        html.Div("TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("🏆 TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
@@ -6989,7 +4169,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
         grade_grid = _admin_card([
             html.Div([
-                html.Div("CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
+                html.Div("📋 CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
                          style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
                 html.Div("Grade / Score · A=Full target · B=Partial · C=Neutral · F=Miss",
                          style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}),
@@ -7011,7 +4191,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], sx={"marginBottom":"16px"})
     else:
         grade_grid = _admin_card([
-            html.Div("CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
+            html.Div("📋 CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
                       "color":WHITE,"marginBottom":"8px"}),
             html.Div("No daily close snapshots yet. The grade grid will populate automatically "
                      "after 4:15 PM ET on the first trading day with the snapshot writer active.",
@@ -7032,20 +4212,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
         score_table,
         grade_grid,
-        setup_deployment_block,
-        symbol_backtest_block,
-        portfolio_rankings_block,
-        decay_monitor_block,
-        closure_engine_block,
-        state_transition_block,
-        campaign_outcome_block,
-        real_scoreboard_stats_block,
-        scoreboard_maintenance_block,
-        journal_correction_block,
-        bme_memory_status_block,
-        operator_footprint_block,
-        enriched_campaign_table_block,
-        subscriber_alerts_block,
 
         # Footer
         html.Div("SIGMALYTIC QUANT CORPORATION  ·  PROPRIETARY & CONFIDENTIAL  ·  INTERNAL USE ONLY",
@@ -7055,6 +4221,27 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
 
 
+
+def build_setup_tab():
+    return card([
+        html.H2("🧩 Setup & Deployment",style={"fontSize":"16px","fontWeight":"800","color":WHITE,"margin":"0 0 16px"}),
+        html.Pre(
+            f"Frontend  : Dash (Python)  →  Render\n"
+            f"Backend   : FastAPI        →  Render\n"
+            f"Data      : Alpaca IEX (free) / SIP (paid)\n"
+            f"WebSocket : {BACKEND_WS}/ws/{{symbol}}\n"
+            f"REST      : {BACKEND_HTTP}/api/stock/{{symbol}}\n"
+            f"Behavior  : {BACKEND_HTTP}/api/behavior/*\n\n"
+            f"Env vars:\n"
+            f"  ALPACA_API_KEY     — Alpaca key ID\n"
+            f"  ALPACA_API_SECRET  — Alpaca secret\n"
+            f"  BACKEND_URL        — HTTP base URL\n"
+            f"  BACKEND_WS_URL     — WebSocket base URL\n"
+            f"  BEHAVIOR_DB        — SQLite path (default: behavior.db)",
+            style={"margin":"0","borderRadius":"14px","border":f"1px solid {BORDER}",
+                   "background":"rgba(0,0,0,.35)","padding":"16px","color":TEAL_DIM,
+                   "fontSize":"12px","fontFamily":"DM Mono, monospace","lineHeight":"1.7"}),
+    ])
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -7073,1642 +4260,22 @@ app = dash.Dash(__name__, title="Sigmalytic Quant Corporation — Decision Intel
                            {"name":"theme-color","content":NAVY}])
 server = app.server
 
-# ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
-# narration, browser TTS based. See the i-radio/s-radio-* component
-# comments near i-clock for the full design rationale.
-
-def _radio_narrate_market_wire(wire_data):
-    """
-    Turns real market-wire data (already fetched elsewhere, reused
-    here -- no new backend load) into short spoken lines. Time-bucketed
-    IDs (changes every 5 minutes) give a natural, predictable "periodic
-    market update" cadence, like a real radio station, without needing
-    any extra server-side state to track what was last announced.
-
-    FIX (2026-08-20): wire_data is the raw list of items directly
-    (confirmed against the real fetch_market_wire() callback, which
-    stores payload.get("items", []) straight into s-market-wire.data)
-    -- not a dict wrapping an "items" key as first assumed. Caught by
-    checking the real populating callback before shipping this, not by
-    trusting the assumption.
-    """
-    if not wire_data or not isinstance(wire_data, list):
-        return []
-    items = wire_data
-    if not items:
-        return []
-
-    bucket = int(datetime.now(timezone.utc).timestamp() // 300)  # changes every 5 minutes
-    parts = []
-    for it in items:
-        label = it.get("label")
-        chg = it.get("change_pct")
-        if label is None or chg is None:
-            continue
-        direction = "up" if chg >= 0 else "down"
-        parts.append(f"{label} {direction} {abs(chg):.1f} percent")
-
-    if not parts:
-        return []
-    text = "Market update. " + ", ".join(parts) + "."
-    return [{"id": f"market_snapshot_{bucket}", "text": text}]
-
-
-def _radio_narrate_alerts_headline(signals):
-    """
-    Cheap, every-30s headline: just counts, from data already fetched
-    for the radar tab -- no additional backend calls. Bucketed to a
-    5-minute window (same pattern as the market snapshot) so the same
-    counts aren't repeated every single 30-second tick.
-    """
-    if not signals:
-        return []
-    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
-    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
-    if not armed and not setting_up:
-        return []
-    bucket = int(datetime.now(timezone.utc).timestamp() // 300)
-    text = f"{len(armed)} symbols armed, {len(setting_up)} setting up."
-    return [{"id": f"headline_{bucket}", "text": text}]
-
-
-def _radio_narrate_detailed(signals):
-    """
-    ADDED (2026-08-20): real structural detail for the strongest
-    symbols, reusing the already-live, already-tested
-    /api/research/trap-door-check/{symbol} endpoint (which returns
-    is_trap_door_alert, weis_exhaustion_tag, and gamma_wall_tag --
-    real work verified earlier this same session, not new/unverified
-    logic).
-
-    HONEST SCOPE NOTE: Spring/Upthrust specifically live in a separate
-    engine (confluence_engine.py) not yet wired into this endpoint or
-    verified today -- deliberately left out of this version rather
-    than bolted on unverified, given the real cost of the ordering bug
-    caught earlier this session. This version covers Trap Door,
-    exhaustion, and gamma-wall proximity only.
-
-    Real per-symbol backend cost (bar fetches + PnF + live options) is
-    why this only runs once every 5 minutes (gated by the caller on
-    n_intervals), not every 30-second tick like the headline above --
-    up to 12 of these every 30s would be real, avoidable backend load.
-    """
-    if not signals:
-        return []
-
-    def _safe_float_local(x, key):
-        try:
-            v = x.get(key)
-            return float(v) if v not in (None, "") else 0.0
-        except Exception:
-            return 0.0
-
-    # FIX (2026-08-20): confirmed against the real, exact ranking
-    # logic the backend itself uses (backend/radar_service.py's own
-    # _rank_key, which genuinely determines what order the real Radar
-    # screen displays) -- previously sorted by composite_score alone,
-    # which can produce a real, different "top 10" than what's
-    # actually visible on the live screen. This is the SAME 4-part
-    # tuple the real screen sorts by: Armed status first, then Setting
-    # Up status, then readiness_score, then composite_score as the
-    # final tiebreaker -- not an approximation.
-    def _real_rank_key(x):
-        opportunity_state = str(x.get("opportunity_state", ""))
-        return (
-            opportunity_state == "Armed",
-            opportunity_state == "Setting Up",
-            _safe_float_local(x, "readiness_score"),
-            _safe_float_local(x, "composite_score"),
-        )
-
-    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
-    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
-    armed.sort(key=_real_rank_key, reverse=True)
-    detail_targets = armed[:10] + setting_up
-
-    import requests as _rq
-    bucket = int(datetime.now(timezone.utc).timestamp() // 300)
-    items = []
-
-    if armed:
-        items.append({"id": f"top10_intro_{bucket}", "text": "Top 10 by radar score."})
-
-    for s in detail_targets:
-        symbol = s.get("symbol")
-        if not symbol:
-            continue
-        score = s.get("composite_score") or s.get("score")
-        score_txt = f", score {int(float(score))}" if score not in (None, "") else ""
-
-        structural_bits = []
-        try:
-            r = _rq.get(f"{BACKEND_HTTP}/api/research/trap-door-check/{symbol}", timeout=20)
-            detail = r.json() if r.ok else {}
-            if detail.get("is_trap_door_alert"):
-                structural_bits.append("trap door active")
-            exhaustion = (detail.get("weis_exhaustion_tag") or {}).get("reading")
-            if exhaustion == "EXHAUSTED":
-                structural_bits.append("exhausted selling")
-            elif exhaustion == "CONTESTED":
-                structural_bits.append("contested volume")
-            gamma = (detail.get("gamma_wall_tag") or {}).get("reading")
-            if gamma == "AT_GUARD_RAIL":
-                structural_bits.append("at a gamma guard rail")
-        except Exception as e:
-            print(f"[RADIO] detail fetch failed for {symbol}: {e}", flush=True)
-
-        detail_txt = f" {', '.join(structural_bits)}." if structural_bits else ""
-        text = f"{symbol}{score_txt}.{detail_txt}"
-        items.append({"id": f"detail_{symbol}_{bucket}", "text": text})
-
-    return items
-
-
-@app.callback(
-    Output("s-radio-script", "data"),
-    Input("i-radio", "n_intervals"),
-    State("s-radio-enabled", "data"),
-    State("s-market-wire", "data"),
-    prevent_initial_call=True,
-)
-def generate_radio_script(n_intervals, enabled, market_wire_data):
-    """
-    Python side of Market Radio: prepares narration TEXT only. The
-    actual browser speech playback happens client-side (see the
-    matching clientside_callback below) -- Dash callbacks run
-    server-side and can't call the browser's speechSynthesis API
-    directly, so this hands off real text through s-radio-script and
-    lets JS take it from there.
-
-    Two cadences, deliberately: the cheap market snapshot + headline
-    count run every tick (30s), reusing data already being fetched
-    elsewhere -- no new backend load. The expensive, real per-symbol
-    structural detail (_radio_narrate_detailed) only runs once every 5
-    minutes (n_intervals % 10 == 0, at interval=30s) since it makes a
-    real backend call per symbol -- see that function's own docstring
-    for the full reasoning.
-    """
-    if not enabled:
-        return no_update
-
-    import requests as _rq
-    items = []
-    items.extend(_radio_narrate_market_wire(market_wire_data))
-
-    try:
-        # FIX (2026-08-20): confirmed against the real Radar tab
-        # (build_radar_tab) that it calls this endpoint with NO limit
-        # param at all -- this call previously added ?limit=25, which
-        # silently capped the radio's view of the universe far below
-        # what the actual Radar screen shows. Root cause of a real,
-        # reported mismatch: radio said "2 armed, 0 setting up" while
-        # the real screen showed 37 armed, 13 setting up. Now matches
-        # the real tab's call exactly, so counts genuinely agree.
-        r = _rq.get(f"{BACKEND_HTTP}/api/radar/scores", timeout=15)
-        data = r.json() if r.ok else {}
-        signals = data.get("symbols") or data.get("signals") or data.get("scores") or data.get("data") or []
-        if isinstance(signals, list):
-            items.extend(_radio_narrate_alerts_headline(signals))
-            if n_intervals % 10 == 0:
-                items.extend(_radio_narrate_detailed(signals))
-    except Exception as e:
-        print(f"[RADIO] alert fetch failed: {e}", flush=True)
-
-    return items
-
-
-@app.callback(
-    Output("s-radio-enabled", "data"),
-    Output("i-radio", "disabled"),
-    Output("btn-radio-toggle", "children"),
-    Output("btn-radio-toggle", "style"),
-    Input("btn-radio-toggle", "n_clicks"),
-    State("s-radio-enabled", "data"),
-    prevent_initial_call=True,
-)
-def toggle_radio(n_clicks, currently_enabled):
-    new_state = not currently_enabled
-    label = "🔊 Market Radio (On)" if new_state else "🔊 Market Radio"
-    # ADDED (2026-08-20): real color feedback on the button itself --
-    # green when actually narrating, red when off -- rather than only
-    # a small text-label change that's easy to miss at a glance.
-    base_style = {"borderRadius":"10px","cursor":"pointer","fontSize":"11px","fontWeight":"700",
-                  "padding":"6px 12px","fontFamily":"DM Sans, sans-serif"}
-    if new_state:
-        style = {**base_style, "background":"rgba(34,197,94,.15)","border":"1px solid rgba(34,197,94,.4)","color":"#4ade80"}
-    else:
-        style = {**base_style, "background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)","color":"#f87171"}
-    return new_state, (not new_state), label, style
-
-
-# ADDED (2026-08-21): Morning Report -- see the layout comments near
-# morning-report-admin-panel / btn-morning-report-play for the full
-# design rationale (real macro/news content, admin-pasted since no
-# automated news source exists, playback independent of the ambient
-# radio's own on/off state).
-
-@app.callback(
-    Output("morning-report-admin-panel", "style"),
-    Input("s-session", "data"),
-)
-def toggle_morning_report_admin_visibility(session):
-    base = {"width": "100%", "marginBottom": "8px"}
-    return {**base, "display": "block"} if is_admin(session) else {**base, "display": "none"}
-
-
-# ADDED (2026-08-25): Weis Radar manual "Run Scan Now" trigger --
-# same enqueue-then-poll pattern already proven for Generate Report.
-@app.callback(
-    Output("weis-radar-run-message", "children"),
-    Output("i-weis-radar-poll", "disabled"),
-    Input("btn-run-weis-radar", "n_clicks"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def handle_run_weis_radar(n_clicks, session):
-    try:
-        r = req.post(f"{BACKEND_HTTP}/api/admin/weis-radar/run-now",
-                      headers=_auth_headers(session), timeout=15)
-        payload = r.json() if r.ok else {"ok": False, "error": f"HTTP {r.status_code}"}
-        if payload.get("ok"):
-            return "Scan started -- this can take several minutes for the full Russell 1000.", False
-        return f"Could not start scan: {payload.get('error', 'unknown error')}", True
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}", True
-
-
-@app.callback(
-    Output("weis-radar-run-message", "children", allow_duplicate=True),
-    Output("i-weis-radar-poll", "disabled", allow_duplicate=True),
-    Input("i-weis-radar-poll", "n_intervals"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def poll_weis_radar_status(n_intervals, session):
-    """Same 4s polling pattern as Reports' own status check, capped at
-    ~200 polls (~13 minutes) since a full Russell 1000 scan genuinely
-    takes longer than a report generation does."""
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/admin/weis-radar/status",
-                     headers=_auth_headers(session), timeout=15)
-        payload = r.json() if r.ok else {"status": "unknown"}
-    except Exception:
-        payload = {"status": "unknown"}
-
-    status = payload.get("status", "unknown")
-    if status == "done":
-        return (f"Scan complete -- {payload.get('hits', 0)} hits out of {payload.get('scanned', 0)} scanned. "
-                f"Refresh or switch tabs to see updated results.", True)
-    if status == "error":
-        return f"Scan failed: {payload.get('error', 'unknown error')}", True
-    if n_intervals and n_intervals >= 200:
-        return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True
-    return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
-
-
-def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, yaxis3_range=None):
-    """
-    ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
-    for the symbol clicked -- a genuine upgrade over the standalone
-    tool's hand-rolled canvas drawing (built and validated earlier
-    this session), using Plotly's own native, well-tested candlestick
-    support instead. Same annotation concept as before: a horizontal
-    line at each hit's level, a marker at its actual event date.
-
-    REDESIGNED (2026-08-26): per explicit request, both volume views
-    are now permanent, separate panels (no toggle) -- cumulative Weis
-    Wave volume and standard time-based volume, mirroring the exact
-    3-panel domain-based layout already used for the Command Center
-    chart in this same file (see build_chart()), for visual
-    consistency across the app. Also adds an adjustable moving-average
-    line over the standard volume panel (ma_period, a real, user-
-    controlled parameter -- not hardcoded).
-
-    ADDED (2026-08-26, second follow-up): yaxis2_range/yaxis3_range let
-    a caller explicitly set the visible y-axis range for the
-    cumulative and standard volume panels respectively -- the real
-    mechanism behind the two vertical sliders next to the chart. None
-    (the default) leaves Plotly's own auto-range in place, unchanged
-    from before this was added.
-    """
-    bars = chart_data.get("bars", [])
-    hits = chart_data.get("hits", [])
-    symbol = chart_data.get("symbol", "")
-    dates = [b["date"] for b in bars]
-
-    # a Spring/Upthrust genuinely "building" on the still-forming
-    # current bar gets its own separate, yellow-colored trace layered
-    # on top of the main series -- go.Candlestick doesn't support
-    # per-bar color overrides directly, so the only clean way to
-    # highlight just the last bar differently is a second trace
-    # covering only that one point.
-    building_types = {"SPRING_BUILDING", "UPTHRUST_BUILDING"}
-    is_building = any(h.get("type") in building_types for h in hits)
-
-    fig = go.Figure()
-    if is_building and bars:
-        fig.add_trace(go.Candlestick(
-            x=dates[:-1], open=[b["open"] for b in bars[:-1]], high=[b["high"] for b in bars[:-1]],
-            low=[b["low"] for b in bars[:-1]], close=[b["close"] for b in bars[:-1]],
-            name="Price", yaxis="y1",
-        ))
-        fig.add_trace(go.Candlestick(
-            x=[dates[-1]], open=[bars[-1]["open"]], high=[bars[-1]["high"]],
-            low=[bars[-1]["low"]], close=[bars[-1]["close"]],
-            name="Building (in progress)", yaxis="y1",
-            increasing_line_color="#facc15", increasing_fillcolor="#facc15",
-            decreasing_line_color="#facc15", decreasing_fillcolor="#facc15",
-        ))
-    else:
-        fig.add_trace(go.Candlestick(
-            x=dates, open=[b["open"] for b in bars], high=[b["high"] for b in bars],
-            low=[b["low"] for b in bars], close=[b["close"] for b in bars],
-            name="Price", yaxis="y1",
-        ))
-
-    up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
-
-    # Middle panel: cumulative Weis Wave volume, colored by wave
-    # direction (confirmed earlier this session: coloring by a bar's
-    # own candle instead of its wave produced a real, reported bug --
-    # a normal red daily candle inside a genuine green up-wave
-    # rendered red, contradicting the price action above it).
-    cum_values = [b.get("cumulative_volume", b["volume"]) for b in bars]
-    cum_colors = [up_color if b.get("wave_dir", 0) == 1 else down_color for b in bars]
-    fig.add_trace(go.Bar(
-        x=dates, y=cum_values, name="Cumulative (Wave) Volume", marker_color=cum_colors, yaxis="y2",
-    ))
-
-    # Bottom panel: standard time-based volume, colored by that bar's
-    # own open/close, plus an adjustable moving average line.
-    std_values = [b["volume"] for b in bars]
-    std_colors = [up_color if b["close"] >= b["open"] else down_color for b in bars]
-    fig.add_trace(go.Bar(
-        x=dates, y=std_values, name="Volume", marker_color=std_colors, yaxis="y3",
-    ))
-    if ma_period and ma_period > 1 and len(std_values) >= ma_period:
-        # FIX: pandas is not imported anywhere in this file -- avoided
-        # adding a new top-level import to an already very large file
-        # for one simple rolling mean; plain Python is just as correct
-        # here and safer as a minimal, contained change.
-        ma_values = [None] * (ma_period - 1) + [
-            sum(std_values[i - ma_period + 1:i + 1]) / ma_period
-            for i in range(ma_period - 1, len(std_values))
-        ]
-        fig.add_trace(go.Scatter(
-            x=dates, y=ma_values, name=f"{ma_period}-bar Volume MA", mode="lines",
-            line=dict(color="#facc15", width=1.5), yaxis="y3",
-        ))
-
-    # FIX (2026-08-27): colors corrected per explicit clarification --
-    # should indicate bullish/bearish direction, not four arbitrary
-    # distinct colors. Spring and Breakout are both bullish resolutions
-    # (a support-level shakeout that reclaims, and a resistance-level
-    # break that holds) -- both green. Upthrust and Breakdown are both
-    # bearish resolutions (a resistance-level sweep that fails, and a
-    # support-level break that holds) -- both red. Building states stay
-    # yellow regardless of direction, since that color specifically
-    # means "still forming/uncertain," not a resolved bullish or
-    # bearish outcome.
-    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#4ade80", "BREAKDOWN": "#f87171",
-                       "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
-    # FIX (2026-08-27): confirmed a real, reported readability bug --
-    # annotation text had no explicit position, so Plotly defaulted to
-    # placing it directly on the line itself, which for a level near
-    # the actual traded price range visually blended into the
-    # candlesticks. Support-type patterns (a breach/breakdown BELOW a
-    # level) now label below their line; resistance-type patterns (a
-    # sweep/breakout ABOVE a level) label above theirs -- matching the
-    # real, physical direction each pattern actually represents, not
-    # just an arbitrary readability choice.
-    SUPPORT_TYPES = {"SPRING", "BREAKDOWN", "SPRING_BUILDING"}
-    last_date = dates[-1] if dates else None
-    for h in hits:
-        color = pattern_colors.get(h.get("type"), "#94a3b8")
-        level = h.get("level")
-        event_date = h.get("date") or last_date  # Spring/Upthrust have no "date" -- always "today" by design
-        if level is not None:
-            is_support = h.get("type") in SUPPORT_TYPES
-            # FIX (2026-08-27): confirmed a real, reported readability
-            # bug -- annotation_position alone only sets which SIDE of
-            # the line the text anchors to, not how FAR from it. A
-            # breach/breakdown level sits, by definition, right where
-            # price recently was (that's what makes it a genuine
-            # support/resistance level in the first place), so "below
-            # the line" could still land directly on nearby candle
-            # bodies. Adding an explicit pixel offset (independent of
-            # the data's own price scale) gives the text real
-            # breathing room regardless of how close candles are.
-            position = "bottom right" if is_support else "top right"
-            yshift = -18 if is_support else 18
-            fig.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.6,
-                           annotation_text=h.get("type"), annotation_font_color=color,
-                           annotation_position=position, annotation_yshift=yshift)
-        if event_date:
-            fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
-
-    fig.update_layout(
-        # FIX (2026-08-26, third follow-up): title moved OUT of the
-        # figure into a separate html.Div above it -- Plotly's title
-        # consumes an unpredictable amount of vertical space depending
-        # on text length/wrapping, which made it impossible to
-        # calculate exact pixel positions for the two vertical volume
-        # sliders. With no title inside the figure, margin.t is a
-        # small, fixed, known value, so the domain fractions below
-        # translate to exact, predictable pixel offsets -- see the
-        # matching calculation in build_weis_radar_tab()'s layout.
-        #
-        # FIX (2026-08-26, fourth follow-up): volume panels were
-        # explicitly reported as too tall -- reduced from 24% each
-        # (48% combined) to 12% each (24% combined), giving price
-        # significantly more room (35%-100% now, was 58%-100%). The
-        # matching slider position/height math in build_weis_radar_
-        # tab() was recalculated for these new domains, not just
-        # scaled proportionally by eye.
-        yaxis=dict(domain=[0.35, 1.0], title="Price"),
-        # ADDED (2026-08-26): explicit range override, driven by the
-        # two vertical sliders next to the chart -- None leaves
-        # Plotly's own auto-range untouched.
-        yaxis2=dict(domain=[0.17, 0.29], title="Cum. Vol", range=yaxis2_range),
-        yaxis3=dict(domain=[0.0, 0.12], title="Volume", range=yaxis3_range),
-        xaxis_rangeslider_visible=False,
-        legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5,
-                     font=dict(color=WHITE, size=10)),
-        template="plotly_dark",
-        height=640,
-        autosize=True,
-        # FIX (2026-08-26, third follow-up): top margin reduced from
-        # 50 to 10 now that the title no longer lives inside the
-        # figure -- this exact value is reused in the slider position
-        # math, so it must stay in sync with build_weis_radar_tab().
-        margin=dict(l=40, r=20, t=10, b=30),
-        paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
-    )
-    return fig
-
-
-@app.callback(
-    Output("weis-radar-chart", "figure"),
-    Output("weis-radar-chart", "style"),
-    Output("s-weis-radar-current-symbol", "data"),
-    Output("s-weis-radar-chart-rawdata", "data"),
-    Output("weis-radar-chart-title", "children"),
-    Output("weis-radar-chart-title", "style"),
-    Output("weis-radar-volume-sliders-row", "style"),
-    Output("weis-radar-cumvol-slider", "min"),
-    Output("weis-radar-cumvol-slider", "max"),
-    Output("weis-radar-cumvol-slider", "value"),
-    Output("weis-radar-stdvol-slider", "min"),
-    Output("weis-radar-stdvol-slider", "max"),
-    Output("weis-radar-stdvol-slider", "value"),
-    Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
-    Input("weis-radar-chart-timeframe", "value"),
-    Input("weis-radar-chart-lookback", "value"),
-    Input("weis-radar-chart-ma", "value"),
-    Input("btn-close-weis-radar-chart", "n_clicks"),
-    State("s-weis-radar-current-symbol", "data"),
-    prevent_initial_call=True,
-)
-def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
-    """
-    Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
-    architecture doesn't support passive hover-triggered callbacks the
-    way raw JS does -- click is the robust, native equivalent).
-    callback_context.triggered_id gives the exact {"type":...,
-    "symbol":...} dict of whichever row was actually clicked, out of
-    however many rows exist.
-
-    REDESIGNED (2026-08-26): the old Standard/Cumulative volume toggle
-    is gone (both are now permanent panels -- see
-    _build_weis_radar_chart_figure()). Now fires on real timeframe,
-    lookback, and volume-MA controls instead, all using the STORED
-    current symbol so changing any control redraws the same chart
-    without requiring another row click. Timeframe/lookback are real
-    query params on the backend endpoint now, not hardcoded.
-
-    Also fires on the explicit "Close Chart" button -- hides the chart
-    and clears the stored symbol.
-
-    ADDED (2026-08-26, second follow-up): also computes real min/max
-    bounds for the two volume-scale sliders from the actual fetched
-    data, and stores the raw chart data client-side so moving either
-    slider can rebuild the figure without a second backend fetch.
-
-    REDESIGNED (2026-08-26, fifth follow-up): the two sliders were
-    switched from vertical (independently pixel-aligned beside each
-    volume panel -- reported as overlapping/unreadable) to horizontal,
-    sharing one row below the chart's legend. Both now show/hide
-    together as a single row (weis-radar-volume-sliders-row) instead
-    of two separately-positioned wrappers, since there's no longer any
-    per-panel vertical alignment to preserve.
-    """
-    ROW_VISIBLE = {"display": "flex", "flexDirection": "row", "alignItems": "center",
-                    "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}
-    ROW_HIDDEN = {"display": "none"}
-
-    triggered = callback_context.triggered_id
-    if triggered == "btn-close-weis-radar-chart":
-        return ({}, {"display": "none", "width": "100%"}, None, None,
-                "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100])
-    control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
-    if isinstance(triggered, dict):
-        symbol = triggered.get("symbol")
-    elif triggered in control_ids:
-        symbol = current_symbol
-    else:
-        symbol = None
-    if not symbol:
-        return (no_update,) * 13
-
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
-                     params={"timeframe": timeframe or "1Day", "limit": lookback or 252}, timeout=20)
-        data = r.json() if r.ok else {"ok": False}
-    except Exception as e:
-        data = {"ok": False, "error": str(e)}
-
-    if not data.get("ok"):
-        fig = go.Figure()
-        fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
-                            template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
-        return (fig, {"display": "block", "width": "100%"}, symbol, None,
-                "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100])
-
-    bars = data.get("bars", [])
-    hits = data.get("hits", [])
-    cum_max = max([b.get("cumulative_volume", 0) for b in bars], default=100) * 1.05 or 100
-    std_max = max([b.get("volume", 0) for b in bars], default=100) * 1.05 or 100
-    title_text = f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}" if hits else symbol
-
-    fig = _build_weis_radar_chart_figure(data, ma_period=ma_period or 0)
-    return (fig, {"display": "block", "width": "100%"}, symbol, data,
-            title_text, {"display": "block", "color": WHITE, "fontSize": "13px",
-                          "fontWeight": "700", "marginBottom": "4px"},
-            ROW_VISIBLE,
-            0, cum_max, [0, cum_max], 0, std_max, [0, std_max])
-
-
-@app.callback(
-    Output("weis-radar-chart", "figure", allow_duplicate=True),
-    Input("weis-radar-cumvol-slider", "value"),
-    Input("weis-radar-stdvol-slider", "value"),
-    State("s-weis-radar-chart-rawdata", "data"),
-    State("weis-radar-chart-ma", "value"),
-    prevent_initial_call=True,
-)
-def rescale_weis_radar_volume_panels(cumvol_range, stdvol_range, raw_data, ma_period):
-    """
-    ADDED (2026-08-26): moving either vertical volume-scale slider
-    rebuilds the figure from the ALREADY-FETCHED raw data (stored in
-    s-weis-radar-chart-rawdata by show_weis_radar_chart) rather than
-    hitting the backend again -- the underlying bars/hits don't
-    change when adjusting bar-height scale, only the y-axis range
-    displayed for that one panel.
-    """
-    if not raw_data:
-        return no_update
-    fig = _build_weis_radar_chart_figure(
-        raw_data, ma_period=ma_period or 0,
-        yaxis2_range=cumvol_range, yaxis3_range=stdvol_range,
-    )
-    return fig
-
-
-@app.callback(
-    Output("weis-radar-table-container", "children"),
-    Input("weis-radar-filter-type", "value"),
-    Input("weis-radar-sort-by", "value"),
-    State("s-weis-radar-raw-results", "data"),
-    prevent_initial_call=True,
-)
-def update_weis_radar_table(filter_type, sort_by, raw_results):
-    """
-    ADDED (2026-08-25): re-renders the table locally from the full,
-    already-fetched results (s-weis-radar-raw-results) whenever either
-    dropdown changes -- no backend round-trip needed, since filtering
-    and sorting are both pure client-visible operations on data
-    already in the page.
-    """
-    if not raw_results:
-        return no_update
-    return _render_weis_radar_table(raw_results, filter_type=filter_type, sort_by=sort_by)
-
-
-@app.callback(
-    Output("morning-report-save-message", "children"),
-    Input("btn-save-morning-report", "n_clicks"),
-    State("morning-report-text", "value"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def save_morning_report_callback(n_clicks, text, session):
-    if not text or not text.strip():
-        return "Please enter report text first."
-    try:
-        r = req.post(f"{BACKEND_HTTP}/api/admin/morning-report",
-                      json={"text": text}, headers=_auth_headers(session), timeout=15)
-        payload = r.json() if r.ok else {"ok": False, "error": f"HTTP {r.status_code}"}
-        if payload.get("ok"):
-            return f"Saved at {datetime.now(timezone.utc).strftime('%H:%M UTC')}."
-        return f"Save failed: {payload.get('error', 'unknown error')}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-
-@app.callback(
-    Output("s-morning-report-play-request", "data"),
-    Input("btn-morning-report-play", "n_clicks"),
-    prevent_initial_call=True,
-)
-def request_morning_report_playback(n_clicks):
-    """
-    Deliberately NOT gated on s-radio-enabled (the ambient radio's own
-    on/off state) or session/admin status -- any signed-in subscriber
-    can play today's morning report regardless of whether they've
-    turned on the separate ambient radio feature. A fresh timestamp on
-    every click means clicking again always re-speaks it, rather than
-    being silently deduped the way ambient radio content is.
-    """
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/morning-report", timeout=15)
-        payload = r.json() if r.ok else {}
-        text = payload.get("text")
-    except Exception:
-        text = None
-
-    if not text:
-        text = "No morning report has been posted yet today."
-    return {"text": text, "ts": datetime.now(timezone.utc).isoformat()}
-
-
-app.clientside_callback(
-    """
-    function(request) {
-        if (!request || !request.text) {
-            return window.dash_clientside.no_update;
-        }
-        var utter = new SpeechSynthesisUtterance(request.text);
-        utter.rate = 1.0;
-        window.speechSynthesis.speak(utter);
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output("morning-report-audio-sink", "children"),
-    Input("s-morning-report-play-request", "data"),
-    prevent_initial_call=True,
-)
-
-
-app.clientside_callback(
-    """
-    function(scriptItems, enabled) {
-        if (!enabled || !scriptItems || !scriptItems.length) {
-            return window.dash_clientside.no_update;
-        }
-        if (!window._radioSpokenIds) {
-            window._radioSpokenIds = new Set();
-        }
-        if (!window._radioQueue) {
-            window._radioQueue = [];
-        }
-        if (!window._radioSpeaking) {
-            window._radioSpeaking = false;
-        }
-
-        function processQueue() {
-            if (window._radioSpeaking || window._radioQueue.length === 0) return;
-            window._radioSpeaking = true;
-            var text = window._radioQueue.shift();
-            var utter = new SpeechSynthesisUtterance(text);
-            utter.rate = 1.0;
-            utter.onend = function() {
-                window._radioSpeaking = false;
-                processQueue();
-            };
-            utter.onerror = function() {
-                window._radioSpeaking = false;
-                processQueue();
-            };
-            window.speechSynthesis.speak(utter);
-        }
-
-        for (var i = 0; i < scriptItems.length; i++) {
-            var item = scriptItems[i];
-            if (!window._radioSpokenIds.has(item.id)) {
-                window._radioSpokenIds.add(item.id);
-                window._radioQueue.push(item.text);
-            }
-        }
-        processQueue();
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output("radio-audio-sink", "children"),
-    Input("s-radio-script", "data"),
-    State("s-radio-enabled", "data"),
-    prevent_initial_call=True,
-)
-
-
 # Allow Stripe scripts and iframes via CSP
 @server.after_request
 def add_csp_headers(response):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; "
-        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://sigmalytic-backend.onrender.com; "
-        "connect-src 'self' https://api.stripe.com https://sigmalytic-backend.onrender.com; "
+        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
+        "connect-src 'self' https://api.stripe.com; "
         "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:;"
     )
     return response
 
-
-# Extracts a Supabase password-recovery access_token from the URL
-# fragment (e.g. #access_token=...&type=recovery). This MUST run
-# client-side: the fragment is never sent to the server at all, so no
-# Python/server-side code can read it -- only JavaScript in the
-# browser can. Runs once per page load, triggered by the existing
-# dcc.Location component's href updating.
-app.clientside_callback(
-    """
-    function(href) {
-        if (!href) { return null; }
-        var hash = window.location.hash;
-        if (!hash || hash.indexOf('type=recovery') === -1) { return null; }
-        var params = new URLSearchParams(hash.substring(1));
-        var token = params.get('access_token');
-        return token || null;
-    }
-    """,
-    Output("s-recovery-token", "data"),
-    Input("url", "href"),
-)
-
-
-@app.callback(
-    Output("reports-iframe", "srcDoc"),
-    Output("reports-download-btn", "href"),
-    Output("reports-download-btn", "download"),
-    Input("reports-date-picker", "value"),
-    prevent_initial_call=True,
-)
-def update_report_view(selected_date):
-    if not selected_date:
-        return no_update, no_update, no_update
-    download_href = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf?download=true"
-    download_name = f"Sigmalytic_Daily_Report_{selected_date}.pdf"
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
-        payload = r.json() if r.ok else {}
-        if payload.get("ok"):
-            return payload.get("html"), download_href, download_name
-    except Exception:
-        pass
-    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name
-
-
-@app.callback(Output("reports-generate-message","children"),
-              Output("reports-generate-poll","disabled"),
-              Output("reports-generate-poll","n_intervals"),
-              Output("reports-generate-job-date","data"),
-              Input("reports-generate-btn","n_clicks"),
-              State("reports-generate-date","value"),
-              State("s-session","data"),
-              prevent_initial_call=True)
-def handle_generate_report(n_clicks, date_str, session):
-    """
-    Admin-only 'Generate Report' button. Replaces the direct-URL-visit
-    workflow (visiting /api/admin/generate-report?date=... in a browser)
-    now that that endpoint requires a proper Bearer token -- a plain
-    browser navigation can't attach one, so this needed a real in-app
-    control that sends the auth header via a normal HTTP request instead.
-
-    FIX (2026-08-20): this used to make one long, synchronous HTTP call
-    (timeout=180) and wait for the entire report to finish generating
-    before returning anything -- confirmed root cause of a real,
-    reported freeze followed by a raw 502 (the underlying computation
-    grew heavy enough over time, through several genuine feature
-    additions, that a cold-cache run now regularly exceeds both this
-    call's own timeout and the backend's worker timeout, killing the
-    worker mid-request). Now just starts the job (the backend returns
-    almost immediately, having only kicked off a background thread) and
-    hands off to poll_report_generation() below via the Interval this
-    enables, instead of blocking here for minutes.
-    """
-    if not date_str:
-        return "Please enter a date in YYYY-MM-DD format.", True, 0, None
-
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/admin/generate-report",
-            params={"date": date_str},
-            headers=_auth_headers(session),
-            timeout=20,  # just starts a background job now; should return almost immediately
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again.", True, 0, None
-        if r.status_code == 403:
-            return "Admin access only.", True, 0, None
-        if not r.ok:
-            return f"Could not start generation (error {r.status_code}): {r.text[:200]}", True, 0, None
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Could not start generation: {payload.get('error', 'unknown error')}", True, 0, None
-
-        return (
-            f"Generating report for {date_str}... this can take a few minutes. "
-            f"You can keep using the app while it works.",
-            False,   # enable polling
-            0,       # reset interval count
-            date_str,
-        )
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}", True, 0, None
-
-
-@app.callback(Output("reports-generate-message","children", allow_duplicate=True),
-              Output("reports-generate-poll","disabled", allow_duplicate=True),
-              Output("reports-date-picker","options"),
-              Output("reports-date-picker","value"),
-              Input("reports-generate-poll","n_intervals"),
-              State("reports-generate-job-date","data"),
-              State("s-session","data"),
-              prevent_initial_call=True)
-def poll_report_generation(n_intervals, job_date, session):
-    """
-    Polling companion to handle_generate_report() above -- see that
-    callback's 2026-08-20 fix note for the full context. Fires every 4s
-    while the Interval is enabled, checking the real job status the
-    backend is tracking in Redis, until it reaches done/error (at which
-    point polling is disabled again) or a safety cap is hit (12
-    attempts, ~48s past the point Redis itself would have to be
-    unreachable for status to still read "unknown" -- distinct from
-    "running," which is expected and keeps polling normally).
-    """
-    if not job_date:
-        return no_update, True, no_update, no_update
-
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/admin/generate-report-status",
-            params={"date": job_date},
-            headers=_auth_headers(session),
-            timeout=15,
-        )
-        payload = r.json() if r.ok else {"status": "unknown", "error": f"HTTP {r.status_code}"}
-    except Exception as exc:
-        payload = {"status": "unknown", "error": f"could not reach backend: {exc}"}
-
-    status = payload.get("status", "unknown")
-
-    if status == "running":
-        return no_update, False, no_update, no_update  # keep polling, message unchanged
-
-    if status == "unknown":
-        if n_intervals >= 12:
-            # FIX (2026-08-20): this used to show only a generic message,
-            # discarding whatever real error the backend's
-            # get_report_generation_status() had already captured
-            # (e.g. a genuine Redis exception) -- confirmed a real gap
-            # after a report generation genuinely failed to appear and
-            # this message gave no actual diagnostic to work from. Now
-            # surfaces the real underlying reason when the backend
-            # provided one, falling back to the generic explanation
-            # only when it genuinely has nothing more specific (a
-            # truly-missing key, not a caught exception).
-            reason = payload.get("error")
-            detail = f" (real reason: {reason})" if reason else ""
-            return (f"Lost track of the report's progress{detail}. "
-                    f"Check the Reports list in a few minutes, or try again.", True, no_update, no_update)
-        return no_update, False, no_update, no_update  # keep polling briefly -- job may not be visible yet
-
-    # status is "done" or "error" -- either way, stop polling and refresh the list
-    try:
-        list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-        dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
-    except Exception:
-        dates = []
-
-    if status == "done":
-        if job_date not in dates:
-            dates = [job_date] + dates
-        options = [{"label": d, "value": d} for d in dates]
-        return f"Report generated successfully for {job_date}.", True, options, job_date
-
-    # status == "error"
-    options = [{"label": d, "value": d} for d in dates] if dates else no_update
-    return f"Generation failed: {payload.get('error', 'unknown error')}", True, options, no_update
-
-
-@app.callback(Output("reports-delete-confirm", "message"),
-              Output("reports-delete-confirm", "displayed"),
-              Input("reports-delete-btn", "n_clicks"),
-              State("reports-date-picker", "value"),
-              prevent_initial_call=True)
-def handle_delete_report_confirm(n_clicks, selected_date):
-    """
-    FIX (2026-08-09): user asked how to remove a report -- there was
-    no way to at all. First step of the delete flow: shows a real
-    confirmation dialog naming the specific, currently-selected date,
-    since this is a permanent, irreversible action.
-    """
-    if not selected_date:
-        return "No report is currently selected.", True
-    return (
-        f"Permanently delete the report for {selected_date}? This cannot be undone.",
-        True,
-    )
-
-@app.callback(Output("reports-delete-message", "children"),
-              Output("reports-date-picker", "options", allow_duplicate=True),
-              Output("reports-date-picker", "value", allow_duplicate=True),
-              Input("reports-delete-confirm", "submit_n_clicks"),
-              State("reports-date-picker", "value"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_delete_report(submit_n_clicks, selected_date, session):
-    """
-    Second step of the delete flow -- fires only after the user
-    actually confirms the dialog above (submit_n_clicks, not the
-    button's own n_clicks). Calls the real DELETE endpoint, then
-    re-fetches the current date list and updates the dropdown, same
-    pattern as handle_generate_report()'s post-action refresh.
-    """
-    if not selected_date:
-        return "No report is currently selected.", no_update, no_update
-
-    try:
-        r = req.delete(
-            f"{BACKEND_HTTP}/api/admin/reports/{selected_date}",
-            headers=_auth_headers(session),
-            timeout=30,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again.", no_update, no_update
-        if r.status_code == 403:
-            return "Admin access only.", no_update, no_update
-        if not r.ok:
-            return f"Delete failed (error {r.status_code}): {r.text[:200]}", no_update, no_update
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Delete failed: {payload.get('error', 'unknown error')}", no_update, no_update
-
-        try:
-            list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-            dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
-        except Exception:
-            dates = []
-
-        options = [{"label": d, "value": d} for d in dates]
-        new_value = dates[0] if dates else None
-        return (
-            f"Deleted the report for {selected_date}.",
-            options,
-            new_value,
-        )
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}", no_update, no_update
-
-@app.callback(Output("backtest-result", "children"),
-              Input("backtest-run-btn", "n_clicks"),
-              State("backtest-symbol", "value"),
-              State("backtest-years", "value"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_symbol_backtest(n_clicks, symbol, years, session):
-    """
-    Admin-only 'Run Backtest' button, calling the new
-    /api/admin/symbol-backtest/{symbol} endpoint -- follows the same
-    pattern as handle_generate_report (proper Bearer auth header via a
-    normal callback-driven request, generous timeout since this
-    genuinely takes a while: roughly one classification call per
-    trading day in the lookback window).
-    """
-    if not symbol:
-        return "Please enter a symbol."
-
-    sym = symbol.strip().upper()
-    yrs = years or 5
-
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/admin/symbol-backtest/{sym}",
-            params={"years": yrs},
-            headers=_auth_headers(session),
-            timeout=180,  # genuinely slow -- ~1250 classification calls for 5 years
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Backtest failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Backtest failed: {payload.get('error', 'unknown error')}"
-
-        matches = payload.get("profile_matches_found", 0)
-        if matches == 0:
-            return (
-                f"{sym}: no matches found for this profile across "
-                f"{payload.get('total_daily_bars', 0)} trading days "
-                f"({yrs} years) of history."
-            )
-
-        return html.Div([
-            html.Div(f"{sym} — {yrs} year(s), {payload.get('total_daily_bars', 0)} trading days scanned",
-                     style={"fontWeight": "700", "marginBottom": "8px"}),
-            html.Div(f"Profile matches found: {matches}", style={"marginBottom": "6px"}),
-            html.Div(f"Avg return — 5d: {payload.get('avg_return_5d')}%  ·  "
-                     f"10d: {payload.get('avg_return_10d')}%  ·  "
-                     f"20d: {payload.get('avg_return_20d')}%  ·  "
-                     f"90d: {payload.get('avg_return_90d')}%", style={"marginBottom": "6px"}),
-            html.Div(f"Avg 90d MFE: {payload.get('avg_mfe_90d')}%  ·  "
-                     f"Avg 90d MAE: {payload.get('avg_mae_90d')}%", style={"marginBottom": "6px"}),
-            html.Div(f"Match dates: {', '.join(payload.get('match_dates', [])[:20])}",
-                     style={"fontSize": "10px", "color": MUTED}),
-        ])
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("enriched-table-result", "children"),
-              Input("enriched-table-btn", "n_clicks"),
-              State("enriched-table-limit", "value"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_enriched_table(n_clicks, limit, session):
-    """
-    Calls the real, already-live /api/campaigns/read-only/full-universe-
-    enriched-campaign-table endpoint (found via audit -- genuinely
-    mounted and working, but confirmed never called from the frontend
-    at all). Fetches real Alpaca bars per symbol, so kept on-demand
-    with an admin-set limit rather than run automatically.
-    """
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/campaigns/read-only/full-universe-enriched-campaign-table",
-            params={"limit": limit or 25},
-            headers=_auth_headers(session),
-            timeout=120,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        rows = payload.get("rows", [])
-        coverage = payload.get("coverage", {})
-
-        if not rows:
-            return f"No rows returned. Coverage: {coverage}"
-
-        header = html.Tr([
-            html.Th(h, style={"textAlign": "left", "padding": "6px 10px", "fontSize": "10px",
-                               "color": MUTED, "borderBottom": f"1px solid {BORDER}"})
-            for h in ["Symbol", "State", "Score", "ODS Status", "ODS Label", "Price"]
-        ])
-        body_rows = []
-        for row in rows[:100]:
-            body_rows.append(html.Tr([
-                html.Td(row.get("symbol", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-                html.Td(row.get("state", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-                html.Td(str(row.get("score", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-                html.Td(row.get("ods_status", "—"), style={"padding": "6px 10px", "fontSize": "11px",
-                        "color": TEAL_DIM if row.get("ods_status") == "CONFIRMED" else MUTED}),
-                html.Td(row.get("ods_label", "—"), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
-                html.Td(f"${row.get('price', 0):,.2f}" if row.get("price") else "—",
-                        style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-            ]))
-
-        return html.Div([
-            html.Div(f"{coverage.get('enriched_rows', len(rows))} rows · "
-                     f"{coverage.get('coverage_pct', '—')}% coverage",
-                     style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
-            html.Table([html.Thead(header), html.Tbody(body_rows)],
-                       style={"width": "100%", "borderCollapse": "collapse"}),
-        ], style={"maxHeight": "500px", "overflowY": "auto"})
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("operator-footprint-result", "children"),
-              Input("operator-footprint-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_operator_footprint(n_clicks, session):
-    """
-    Calls the real, already-mounted /api/campaign/early-operator-
-    footprint-review endpoint (found via full audit of campaign_api.py
-    -- confirmed database-only, genuinely mounted, but never called
-    from the frontend at all).
-    """
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/campaign/early-operator-footprint-review",
-            headers=_auth_headers(session),
-            timeout=30,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-
-        rows = payload.get("review_rows", [])[:20]
-        if not rows:
-            return f"No footprint rows found. {payload.get('total_campaigns', 0)} total campaigns reviewed."
-
-        header = html.Tr([
-            html.Th(h, style={"textAlign": "left", "padding": "6px 10px", "fontSize": "10px",
-                               "color": MUTED, "borderBottom": f"1px solid {BORDER}"})
-            for h in ["Symbol", "Footprint Count", "Archetype", "Risk Context", "State"]
-        ])
-        body_rows = [
-            html.Tr([
-                html.Td(row.get("symbol", "—"), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-                html.Td(str(row.get("footprint_count", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": TEAL_DIM}),
-                html.Td(str(row.get("archetype", "—")), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
-                html.Td(str(row.get("risk_context", "—")), style={"padding": "6px 10px", "fontSize": "10px", "color": MUTED}),
-                html.Td(str(row.get("campaign_state", "—")), style={"padding": "6px 10px", "fontSize": "11px", "color": WHITE}),
-            ])
-            for row in rows
-        ]
-
-        return html.Div([
-            html.Div(f"{payload.get('total_campaigns', 0)} campaigns reviewed · "
-                     f"{payload.get('review_rows_count', 0)} with footprint evidence",
-                     style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
-            html.Table([html.Thead(header), html.Tbody(body_rows)],
-                       style={"width": "100%", "borderCollapse": "collapse"}),
-        ], style={"maxHeight": "500px", "overflowY": "auto"})
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("real-stats-result", "children"),
-              Input("real-stats-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_real_stats(n_clicks, session):
-    """
-    Calls the real, honest scoreboard statistics endpoint (found via
-    audit tonight -- confirmed genuinely never surfaced anywhere,
-    distinct from the campaign-intelligence compatibility view already
-    shown in the Scoreboard tab).
-    """
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/scoreboard/real-stats", timeout=30)
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        stats = payload.get("stats", {})
-
-        total = stats.get("total_signals", 0)
-        if not total:
-            return "No signals logged yet, or DATABASE_URL isn't configured on this environment."
-
-        metrics = [
-            ("Total signals", total),
-            ("With outcomes", stats.get("with_outcomes")),
-            ("Grade A / B / C / W", f"{stats.get('grade_a', 0)} / {stats.get('grade_b', 0)} / {stats.get('grade_c', 0)} / {stats.get('grade_w', 0)}"),
-            ("High confidence (A+B) rate", f"{stats.get('high_confidence', 0)}%"),
-            ("Direction correct rate", f"{stats.get('direction_correct_rate', 0)}%"),
-            ("Hit target 1 / target 2 rate", f"{stats.get('hit_target1_rate', 0)}% / {stats.get('hit_target2_rate', 0)}%"),
-            ("Avg MFE / MAE", f"{stats.get('avg_mfe_pct', 0)}% / {stats.get('avg_mae_pct', 0)}%"),
-            ("Edge ratio (MFE:MAE)", stats.get("edge_ratio", "—")),
-            ("Edge accuracy rate", f"{stats.get('edge_accuracy_rate', 0)}%"),
-            ("Avg long / short return", f"{stats.get('avg_long_pct', 0)}% / {stats.get('avg_short_pct', 0)}%"),
-            ("Avg days to outcome", stats.get("avg_days", 0)),
-        ]
-
-        rows = [
-            html.Tr([
-                html.Td(label, style={"padding": "6px 10px", "fontSize": "11px", "color": MUTED}),
-                html.Td(str(value), style={"padding": "6px 10px", "fontSize": "12px", "color": WHITE, "fontWeight": "700"}),
-            ])
-            for label, value in metrics
-        ]
-
-        return html.Table([html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"})
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("scoreboard-maintenance-result", "children"),
-              Input("repair-scoreboard-btn", "n_clicks"),
-              Input("clear-duplicates-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_scoreboard_maintenance(repair_clicks, clear_clicks, session):
-    """
-    Admin-only maintenance buttons sharing one output -- uses
-    callback_context to determine which button was actually clicked,
-    calling the corresponding real backend endpoint.
-    """
-    trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-    try:
-        if trigger.startswith("repair-scoreboard-btn"):
-            r = req.post(f"{BACKEND_HTTP}/api/admin/repair-scoreboard-history",
-                         headers=_auth_headers(session), timeout=60)
-        elif trigger.startswith("clear-duplicates-btn"):
-            r = req.post(f"{BACKEND_HTTP}/api/admin/clear-duplicate-signals",
-                         headers=_auth_headers(session), timeout=60)
-        else:
-            return no_update
-
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        return f"Complete: {payload}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("journal-delete-result", "children"),
-              Input("journal-delete-btn", "n_clicks"),
-              State("journal-delete-id", "value"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_journal_delete_entry(n_clicks, journal_id, session):
-    """
-    For support use when a subscriber reports a mistake in their
-    journal entry. Calls the new, admin-only
-    DELETE /api/journal/entry/{journal_id} endpoint.
-    """
-    if not n_clicks:
-        return no_update
-    if not journal_id or not str(journal_id).strip():
-        return "Please enter a journal_id."
-    try:
-        r = req.delete(
-            f"{BACKEND_HTTP}/api/journal/entry/{journal_id.strip()}",
-            headers=_auth_headers(session), timeout=15,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if r.status_code == 404:
-            return f"No journal entry found with id: {journal_id}"
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        deleted = payload.get("deleted", {})
-        return (f"Deleted: {deleted.get('symbol', '—')} entry "
-                f"(entered {deleted.get('entry_date', '—')}, journal_id={journal_id})")
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("bme-status-result", "children"),
-              Input("bme-status-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_bme_status(n_clicks, session):
-    """
-    Real, authenticated call to the BME memory status diagnostic --
-    a plain browser URL visit can't attach the required admin auth
-    token, so this button provides the actual way to check it.
-    """
-    if not n_clicks:
-        return no_update
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/admin/bme-memory-status",
-            headers=_auth_headers(session), timeout=15,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        trained = payload.get("symbols_trained", 0)
-        symbols = payload.get("symbols", [])
-        if trained == 0:
-            return "0 symbols trained. Every symbol will show the neutral (+0.0) default until training accumulates."
-        preview = ", ".join(symbols[:20])
-        more = f" (+{len(symbols) - 20} more)" if len(symbols) > 20 else ""
-        return f"{trained} symbols trained: {preview}{more}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("portfolio-rankings-result", "children"),
-              Input("portfolio-rankings-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_portfolio_rankings(n_clicks, session):
-    """
-    Admin-only 'Run Portfolio Rankings' button, calling the real
-    POST /api/admin/run-portfolio-rankings endpoint -- same pattern as
-    Generate Report / Run Backtest: proper Bearer auth header via a
-    normal callback-driven request, generous timeout since this scores
-    the full active-campaign set, not a single symbol.
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/run-portfolio-rankings",
-            headers=_auth_headers(session),
-            timeout=180,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        result = payload.get("result", {})
-        return f"Complete: {result}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("campaign-outcome-result", "children"),
-              Input("campaign-outcome-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_campaign_outcome(n_clicks, session):
-    """
-    Admin-only 'Run Campaign Outcome Engine' button, calling the real
-    POST /api/admin/run-campaign-outcome endpoint -- same pattern as
-    the other admin action buttons.
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/run-campaign-outcome",
-            headers=_auth_headers(session),
-            timeout=180,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        result = payload.get("result", {})
-        return f"Complete: {result}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("state-transition-result", "children"),
-              Input("state-transition-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_state_transition(n_clicks, session):
-    """
-    Admin-only 'Run State Transition Engine' button, calling the real
-    POST /api/admin/run-state-transition endpoint -- same pattern as
-    the other admin action buttons.
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/run-state-transition",
-            headers=_auth_headers(session),
-            timeout=180,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        result = payload.get("result", {})
-        return f"Complete: {result}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("closure-engine-result", "children"),
-              Input("closure-engine-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_closure_engine(n_clicks, session):
-    """
-    Admin-only 'Run Closure Engine' button, calling the real
-    POST /api/admin/run-closure-engine endpoint -- this backend
-    endpoint was already correctly wired; this adds the missing
-    frontend trigger, same pattern as the other admin action buttons.
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/run-closure-engine",
-            headers=_auth_headers(session),
-            timeout=180,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        return f"Complete: {payload}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("decay-monitor-result", "children"),
-              Input("decay-monitor-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_decay_monitor(n_clicks, session):
-    """
-    Admin-only 'Run Decay Monitor' button, calling the real
-    POST /api/admin/run-decay-monitor endpoint -- same pattern as the
-    other admin action buttons.
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/run-decay-monitor",
-            headers=_auth_headers(session),
-            timeout=180,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        result = payload.get("result", {})
-        return f"Complete: {result}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("subscriber-alerts-result", "children"),
-              Input("subscriber-alerts-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_subscriber_alerts(n_clicks, session):
-    """
-    Admin-only 'Send Subscriber Alerts' button, calling the real
-    POST /api/admin/send-subscriber-alerts endpoint -- this genuinely
-    sends real emails to real subscribers, unlike the other admin
-    action buttons above (all internal-only batch operations).
-    """
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/admin/send-subscriber-alerts",
-            headers=_auth_headers(session),
-            timeout=60,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        eligible = payload.get("eligible_campaigns", 0)
-        result = payload.get("result", {})
-        return f"{eligible} eligible campaign(s). Result: {result}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-@app.callback(Output("subscriber-alerts-preview-result", "children"),
-              Input("subscriber-alerts-preview-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_subscriber_alerts_preview(n_clicks, session):
-    """
-    FIX (2026-08-09): user asked whether a way to review drafts before
-    the real send exists. Admin-only 'Review Drafts' button, calling
-    the new, genuinely read-only GET /api/admin/preview-subscriber-alerts
-    endpoint -- builds the exact same real email content the send
-    button would actually email out, without sending or touching any
-    subscriber data. Each draft's real HTML is rendered in its own
-    isolated iframe (via srcDoc) so the email's own inline styles and
-    table-based layout can't conflict with the app's own CSS.
-    """
-    try:
-        r = req.get(
-            f"{BACKEND_HTTP}/api/admin/preview-subscriber-alerts",
-            headers=_auth_headers(session),
-            timeout=60,
-        )
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        drafts = payload.get("drafts", [])
-        if not drafts:
-            diag = payload.get("diagnostics") or {}
-            total = diag.get("total_active_campaigns", 0)
-            breakdown = diag.get("tier_breakdown", {})
-            if total == 0:
-                detail = "There are currently zero active campaigns of any tier."
-            else:
-                breakdown_text = ", ".join(f"{v} {k}" for k, v in breakdown.items())
-                detail = f"{total} active campaign(s) exist, but none are TIER_1/TIER_2 right now: {breakdown_text}."
-            return html.Div([
-                html.Div("No TIER_1/TIER_2 campaigns currently eligible for an alert.",
-                         style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"}),
-                html.Div(detail, style={"fontSize": "11px", "color": WHITE, "opacity": ".7"}),
-            ])
-        return html.Div([
-            html.Div(f"{len(drafts)} draft(s) -- exactly what \"Send Subscriber Alerts\" would email out, not sent:",
-                      style={"fontSize": "12px", "color": WHITE, "fontWeight": "800", "marginBottom": "10px"}),
-            *[
-                html.Div([
-                    html.Div(f"{d['symbol']} — {d['tier']} (Layer {d['layer']})",
-                              style={"fontSize": "12px", "color": WHITE, "fontWeight": "800",
-                                     "marginBottom": "6px"}),
-                    html.Iframe(srcDoc=d["html"], style={
-                        "width": "100%", "height": "480px", "border": f"1px solid {BORDER}",
-                        "borderRadius": "10px", "background": WHITE,
-                    }),
-                ], style={"marginBottom": "20px"})
-                for d in drafts
-            ],
-        ])
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
-
-
-@app.callback(
-    Output("heatmap-treemap", "figure"),
-    Output("heatmap-selected-tf", "data"),
-    Output("heatmap-tf-row", "children"),
-    Input("heatmap-tf-hourly", "n_clicks"),
-    Input("heatmap-tf-daily", "n_clicks"),
-    Input("heatmap-tf-weekly", "n_clicks"),
-    Input("heatmap-tf-monthly", "n_clicks"),
-    prevent_initial_call=True,
-)
-def update_heatmap_timeframe(n_hourly, n_daily, n_weekly, n_monthly):
-    ctx = callback_context
-    if not ctx.triggered:
-        return no_update, no_update, no_update
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    timeframe = trigger_id.replace("heatmap-tf-", "")
-    if timeframe not in ("hourly", "daily", "weekly", "monthly"):
-        return no_update, no_update, no_update
-
-    timeframes = [("hourly", "Hourly"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly")]
-
-    def _tf_button(key, label):
-        active = key == timeframe
-        return html.Button(
-            label,
-            id=f"heatmap-tf-{key}",
-            n_clicks=0,
-            style={
-                "background": TEAL_GLOW if active else "transparent",
-                "border": f"1px solid {TEAL if active else BORDER}",
-                "borderRadius": "10px",
-                "color": TEAL_DIM if active else "rgba(255,255,255,.7)",
-                "cursor": "pointer",
-                "fontSize": "13px",
-                "fontWeight": "800",
-                "padding": "8px 16px",
-                "marginRight": "8px",
-            },
-        )
-
-    return _build_heatmap_treemap(timeframe), timeframe, [_tf_button(k, l) for k, l in timeframes]
-
-
-
 app.index_string = f"""<!DOCTYPE html>
 <html><head>{{%metas%}}<title>{{%title%}}</title>{{%favicon%}}{{%css%}}
-<link rel="manifest" href="/assets/manifest.json">
-<meta name="theme-color" content="#0F766E">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Sigmalytic">
-<link rel="apple-touch-icon" href="/assets/icon-192.png">
 <style>{GLOBAL_CSS}
 .prob-pill {{
     border: 1px solid rgba(148,163,184,.24);
@@ -8762,211 +4329,38 @@ function sigmaAlert(level) {{
 // Called by Dash clientside callback
 window.dash_clientside = window.dash_clientside || {{}};
 window.dash_clientside.sigmalytic = {{
-    fireAlert: function(live_data, prev_score, alerts_on) {{
-        // FIX (2026-08-04): this used to receive the WHOLE live-data
-        // object here (Input("s-live","data") passes the full
-        // {{price, decision: {{score, ...}}, ...}} dict, not a plain
-        // number), then compared that object directly against numbers
-        // like `score >= 80`. In JavaScript that always evaluates to
-        // false (an object coerces to NaN), so this alert logic never
-        // actually fired correctly despite looking fully built. Now
-        // extracts the real numeric score from the object first.
-        var score = (live_data && live_data.decision && typeof live_data.decision.score === 'number')
-            ? live_data.decision.score : null;
-        if (score === null || !alerts_on) {{
-            return [window.dash_clientside.no_update, window.dash_clientside.no_update];
-        }}
-        var banner = null;
-        if (score >= 80 && prev_score < 80) {{
-            sigmaAlert('A');
-            banner = {{level: 'A', text: 'Score Tier A — Audio Active', ts: Date.now()}};
-        }} else if (score >= 55 && score < 80 && prev_score < 55) {{
-            sigmaAlert('B');
-            banner = {{level: 'B', text: 'Score Tier B — Audio Active', ts: Date.now()}};
-        }} else if (score < 35 && prev_score >= 35) {{
-            sigmaAlert('warn');
-            banner = {{level: 'warn', text: 'Trap Door', ts: Date.now()}};
-        }}
-        return [score, banner || window.dash_clientside.no_update];
+    fireAlert: function(score, prev_score, alerts_on) {{
+        if (!alerts_on) return window.dash_clientside.no_update;
+        if (score >= 80 && prev_score < 80) {{ sigmaAlert('A'); }}
+        else if (score >= 55 && prev_score < 55) {{ sigmaAlert('B'); }}
+        else if (score < 35 && prev_score >= 35) {{ sigmaAlert('warn'); }}
+        return score;
     }}
 }};
-if ('serviceWorker' in navigator) {{
-    window.addEventListener('load', function() {{
-        navigator.serviceWorker.register('/assets/sw.js').catch(function(err) {{
-            console.warn('Sigmalytic: service worker registration failed', err);
-        }});
-    }});
-}}
-// FIX (2026-08-07): confirmed, precisely-diagnosed root cause of a
-// long-standing (predates this entire session, confirmed present as
-// early as midnight) "Inputs do not match callback definition" error.
-// Traced to Dash's own source (_validate.py's
-// validate_and_group_input_args): it raises this exact error whenever
-// the number of values a client sends doesn't match what the server's
-// callback map currently expects for that callback. Since Dash's
-// callback map is fixed once at server startup, any browser tab whose
-// page load predates the server's current process (e.g. left open
-// across a deploy or a worker restart) can carry a stale, mismatched
-// count and will keep failing this exact way on every tick until
-// manually refreshed. Rather than leaving affected users stuck
-// silently failing, this intercepts fetch() specifically on Dash's
-// own callback endpoint, detects this exact failure, and forces a
-// clean, automatic reload -- the browser then loads fresh markup
-// that genuinely matches the current server, resolving it immediately
-// instead of requiring the user to notice and refresh manually.
-(function() {{
-    var _origFetch = window.fetch;
-    var _reloading = false;
-    window.fetch = function() {{
-        return _origFetch.apply(this, arguments).then(function(response) {{
-            if (!_reloading && response && response.status === 500
-                && typeof response.url === 'string'
-                && response.url.indexOf('_dash-update-component') !== -1) {{
-                response.clone().text().then(function(body) {{
-                    if (!_reloading && body && body.indexOf('Inputs do not match callback definition') !== -1) {{
-                        _reloading = true;
-                        console.warn('Sigmalytic: stale session detected (server restarted since this page loaded) -- reloading automatically.');
-                        window.location.reload();
-                    }}
-                }}).catch(function() {{}});
-            }}
-            return response;
-        }});
-    }};
-}})();
-
-// FIX (2026-08-09): user reported the hover tooltip (Ready/Grade
-// cells in the Full Opportunity Radar table) "bleeds out of the
-// frame" -- confirmed root cause: the tooltip uses position:absolute,
-// but it's nested inside the table's horizontally-scrolling container
-// (overflowX:auto), which clips any absolutely-positioned child at
-// its own boundary regardless of z-index. A pure CSS fix isn't
-// possible without escaping that container. Solution: on click of any
-// .sig-tooltip element, show its .sig-tooltip-text content in a
-// fixed, screen-centered modal appended directly to document.body --
-// entirely outside the scrolling table, so it can't be clipped.
-(function() {{
-    var modalEl = null;
-    function closeSigModal() {{
-        if (modalEl) {{ modalEl.remove(); modalEl = null; }}
-    }}
-    document.addEventListener('click', function(e) {{
-        var trigger = e.target.closest ? e.target.closest('.sig-tooltip') : null;
-        if (trigger) {{
-            var textEl = trigger.querySelector('.sig-tooltip-text');
-            var text = textEl ? textEl.textContent : '';
-            closeSigModal();
-            modalEl = document.createElement('div');
-            modalEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;' +
-                'background:rgba(0,0,0,.6);z-index:100000;display:flex;' +
-                'align-items:center;justify-content:center;padding:24px;';
-            var box = document.createElement('div');
-            box.style.cssText = 'background:{NAVY_MID};border:1px solid {BORDER_T};' +
-                'border-radius:12px;padding:20px;max-width:420px;max-height:70vh;' +
-                'overflow-y:auto;color:{WHITE};font-size:13px;font-weight:700;' +
-                'line-height:1.6;white-space:pre-line;box-shadow:0 12px 40px rgba(0,0,0,.5);';
-            box.textContent = text;
-            box.addEventListener('click', function(e) {{ e.stopPropagation(); }});
-            modalEl.appendChild(box);
-            modalEl.addEventListener('click', closeSigModal);
-            document.body.appendChild(modalEl);
-            e.stopPropagation();
-        }} else if (modalEl) {{
-            closeSigModal();
-        }}
-    }});
-    document.addEventListener('keydown', function(e) {{
-        if (e.key === 'Escape') closeSigModal();
-    }});
-}})();
 </script>
 </body></html>"""
 
 _init_live    = create_live_update("AAPL", 280.15, 750_000, 0).to_dict()
-
-# FIX (2026-08-13): tracks which Weis-tab cache keys already have a
-# background fetch in flight, so a second, redundant thread is never
-# started for the same key (e.g. rapid tab clicks, or multiple poll
-# ticks firing before the first fetch finishes). Deliberately a
-# one-shot trigger, not shared_cache's start_background_refresh() --
-# that mechanism is built for a small, fixed set of keys refreshed
-# forever, which would accumulate an unbounded number of never-
-# stopped threads for a dynamic, user-chosen symbol -- a real, new
-# leak risk on a service with confirmed prior memory-leak history.
-_weis_fetch_in_progress = set()
-_weis_fetch_lock = threading.Lock()
-
-
-def _trigger_weis_background_fetch(symbol, cache_key):
-    with _weis_fetch_lock:
-        if cache_key in _weis_fetch_in_progress:
-            return
-        _weis_fetch_in_progress.add(cache_key)
-
-    def _run():
-        try:
-            results = _fetch_weis_raw_data(symbol)
-            if shared_cache:
-                # FIX (2026-08-13): user reported the PnF card stuck
-                # on "Data not available" indefinitely, even after
-                # switching tabs and confirming no [GET_FAIL] log ever
-                # appeared -- meaning the fetch wasn't even retriggering
-                # at all, not just failing silently again. Root cause:
-                # this cached the entire combined `results` dict as one
-                # atomic unit with a full 30-minute TTL, regardless of
-                # whether every individual sub-fetch inside it actually
-                # succeeded. A single, transient sub-failure (e.g. one
-                # request genuinely timing out under contention) got
-                # "locked in" as if it were a complete, healthy result,
-                # for the same 30 minutes a genuine success would get --
-                # with zero further attempts and zero visible trace,
-                # since the cache itself looked perfectly warm.
-                all_succeeded = all(
-                    isinstance(r, dict) and (r.get("ok") or r.get("status") == "OK")
-                    for r in results.values()
-                )
-                ttl = 1800 if all_succeeded else 60
-                shared_cache.get_or_fetch(cache_key, lambda: results, ttl_seconds=ttl)
-        except Exception as _bg_exc:
-            print(f"[WEIS_BG_FAIL] {symbol}: {type(_bg_exc).__name__}: {_bg_exc}", flush=True)
-        finally:
-            with _weis_fetch_lock:
-                _weis_fetch_in_progress.discard(cache_key)
-
-    threading.Thread(target=_run, daemon=True, name=f"weis-fetch-{symbol}").start()
-
-# FIX (2026-08-05): was `fetch_real_candles("AAPL", "5m")` here -- a
-# blocking, synchronous HTTP call to the backend made unconditionally
-# at MODULE IMPORT TIME, on every single process start. This runs
-# before the frontend has even finished loading, with no way to skip
-# it if the backend isn't ready yet -- exactly the scenario right
-# after a coordinated hard reset/redeploy of both services. The
-# existing live-tick callback already fetches and populates real
-# candles within seconds of the first page load regardless, so this
-# initial value only needs to be a safe, empty placeholder, not a
-# real network call that can delay or risk startup.
-_init_candles = []
+_init_candles = fetch_real_candles("AAPL", "5m")
 
 ALL_TABS = [
     ("home",        "Home"),
     ("command",     "Command Center"),
-    ("weis_radar",  "Weis Radar"),
-    ("weis",        "Weis Analysis"),
-    ("heatmap",     "Heat Map"),
-    ("radar",       "Radar Screen"),
-    ("divergence",  "Intelligence Change Detector"),
-    ("scoreboard",  "Scoreboard"),
     ("campaign",    "Campaign Intelligence"),
+    ("feed",        "Live Feed"),
+    ("performance", "Performance"),
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
+    ("radar",       "Radar Screen"),
+    ("scoreboard",  "Scoreboard"),
+    ("divergence",  "🧠 Intelligence Change Detector"),
     ("portfolio",   "Portfolio"),
     ("journal",     "Journal"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
-    ("status",      "Status"),
-    ("reports",     "Reports"),
-    ("guide",       "User Guide"),
     ("admin",       "Admin"),
+    ("setup",       "Setup"),
+    ("status",      "Status"),
 ]
 
 app.layout = html.Div([
@@ -8976,7 +4370,6 @@ app.layout = html.Div([
                     "zIndex":9999,"background":"#0a1628","overflowY":"auto"}),
     dcc.Store(id="s-live",      data=_init_live),
     dcc.Store(id="s-session",    data=None, storage_type="session"),
-    dcc.Store(id="s-recovery-token", data=None),
     dcc.Store(id="s-page",       data="login"), 
     dcc.Store(id="s-candles",   data=_init_candles),
     dcc.Store(id="s-seq",       data=0),
@@ -8985,76 +4378,16 @@ app.layout = html.Div([
     dcc.Store(id="s-tf",        data="5m"),
     dcc.Store(id="s-tab",       data="home"),
     dcc.Store(id="s-alert-score",    data=0),
-    dcc.Store(id="s-alert-banner",   data=None),
-    html.Div(id="alert-banner", style={"display": "none"}),
     dcc.Store(id="s-alerts-on",      data=True),
     dcc.Store(id="s-current-plan-id",data=None),
     dcc.Store(id="s-plan-score",     data=0),
     dcc.Store(id="s-plan-regime",    data="neutral"),
     dcc.Store(id="tp-direction",     data="long"),
     html.Div(id="audio-trigger", style={"display":"none"}),
-    html.Div(id="radio-audio-sink", style={"display":"none"}),
-    # FIX (2026-08-04): shortened aggressively (20s->2s, 30s->2s) per
-    # request, given user confirmed they're currently the only
-    # subscriber. Each of i-alpaca and i-market-wire makes 2 Alpaca API
-    # calls per tick, so at 2s this is ~120 calls/min total from a
-    # single browser tab -- comfortable headroom under Alpaca's typical
-    # ~200 calls/min limit for one user, but this should be revisited
-    # (likely lengthened, or made per-user-aware) once there are
-    # multiple concurrent subscribers, since it multiplies linearly
-    # with active sessions.
-    # URGENT (2026-08-06): reduced from 2000ms back toward a safer
-    # interval as an immediate, protective measure given a confirmed,
-    # recurring (roughly hourly) production OOM crash on this service.
-    # The 2s interval was a 10x increase from the original 20s, with
-    # several new backend calls added to every tick since -- a real,
-    # plausible driver of accumulating memory pressure over time even
-    # without a classic, single-object leak. Root cause not yet fully,
-    # definitively confirmed -- this is a direct, conservative lever to
-    # reduce load while investigation continues, not a claim that this
-    # alone fully explains the crash.
-    dcc.Interval(id="i-alpaca", interval=10_000, n_intervals=0),
+    dcc.Interval(id="i-alpaca", interval=20_000, n_intervals=0),
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
-    dcc.Interval(id="i-market-wire", interval=15_000, n_intervals=0),
-    dcc.Store(id="s-market-wire", data=None),
-    # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
-    # narration of live market context and radar alerts, via the
-    # browser's own built-in text-to-speech (no third-party service,
-    # no per-subscriber cost). Deliberately opt-in and disabled by
-    # default (i-radio starts disabled) given this service's own
-    # documented, recurring OOM history just above -- this must never
-    # add background load for subscribers who haven't turned it on.
-    # 30s cadence (not the more aggressive 5s/10s intervals elsewhere)
-    # since narration doesn't need sub-minute freshness for a genuine
-    # "radio" feel, and /api/radar/scores already has its own 90s
-    # server-side cache regardless.
-    dcc.Interval(id="i-radio", interval=30_000, n_intervals=0, disabled=True),
-    dcc.Store(id="s-radio-script", data=[]),
-    dcc.Store(id="s-radio-enabled", data=False),
-    # ADDED (2026-08-21): Morning Report support components. Playback
-    # request/sink are deliberately separate from s-radio-script /
-    # radio-audio-sink above -- morning report playback must work
-    # regardless of whether the ambient radio toggle is on, so it
-    # can't share that pipeline's enabled-state gate.
-    dcc.Store(id="s-morning-report-play-request", data=None),
-    html.Div(id="morning-report-audio-sink", style={"display":"none"}),
-    # FIX (2026-08-13): the Weis Analysis tab's 4 real backend fetches
-    # were blocking the single gunicorn worker for their entire
-    # duration, taking the whole app down for every user at once --
-    # confirmed directly, not assumed. Rather than increase worker
-    # count (real risk given this service's own confirmed prior OOM
-    # history, documented just above) or add new infrastructure
-    # (Dash's official background=True needs a Celery/Redis manager
-    # not currently set up), this reuses the already-proven,
-    # already-thread-safe shared_cache as the handoff between a
-    # background thread (which does the real, slow fetch without
-    # blocking the request/response cycle) and a short poll that
-    # picks up the result once ready.
-    dcc.Store(id="s-weis-status", data=None),
-    dcc.Interval(id="i-weis-poll", interval=2000, n_intervals=0, disabled=True),
 
     html.Div([html.Div([
-        html.Div(id="market-wire", style={"marginBottom": "10px"}),
         html.Header([
             # ── Compact single-row header ──────────────────────────────────
             html.Div([
@@ -9071,24 +4404,7 @@ app.layout = html.Div([
                 ], style={"textAlign":"center"}),
                 html.Div([
                     html.Div(id="sim-label", style={"display":"none"}),
-                    html.Button("🔊 Market Radio", id="btn-radio-toggle", n_clicks=0,
-                        style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
-                               "borderRadius":"10px","color":"#f87171","cursor":"pointer",
-                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
-                               "fontFamily":"DM Sans, sans-serif"}),
-                    # ADDED (2026-08-21): Morning Report -- a real macro/news
-                    # briefing (distinct from the ambient radio's own
-                    # structural narration), pasted in by an admin each
-                    # morning since no automated news-fetching exists in
-                    # this codebase. Playback is independent of whether the
-                    # ambient radio toggle above is on -- these are two
-                    # separate features, not one gating the other.
-                    html.Button("☀️ Morning Report", id="btn-morning-report-play", n_clicks=0,
-                        style={"background":"rgba(251,191,36,.1)","border":"1px solid rgba(251,191,36,.3)",
-                               "borderRadius":"10px","color":"#fbbf24","cursor":"pointer",
-                               "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
-                               "fontFamily":"DM Sans, sans-serif"}),
-                    html.Button("Log Out", id="btn-logout", n_clicks=0,
+                    html.Button("⏻ Log Out", id="btn-logout", n_clicks=0,
                         style={"background":"rgba(239,68,68,.1)","border":"1px solid rgba(239,68,68,.3)",
                                "borderRadius":"10px","color":"#f87171","cursor":"pointer",
                                "fontSize":"11px","fontWeight":"700","padding":"6px 12px",
@@ -9096,26 +4412,6 @@ app.layout = html.Div([
                 ], style={"display":"flex","alignItems":"center","gap":"8px"}),
             ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                        "width":"100%","marginBottom":"8px"}),
-
-            # ADDED (2026-08-21): Morning Report admin paste-in panel.
-            # Hidden by default (display:none) -- the base layout here
-            # is global/session-independent (built once, not per-request
-            # like build_reports_tab(session)), so admin-only visibility
-            # can't be decided at layout-build time the way it is
-            # elsewhere in this app. Shown/hidden instead via a small,
-            # dedicated callback keyed off s-session, right below.
-            html.Div(id="morning-report-admin-panel", style={"display":"none","width":"100%","marginBottom":"8px"}, children=[
-                dcc.Textarea(id="morning-report-text", placeholder="Paste today's morning report text here...",
-                    style={"width":"100%","minHeight":"100px","background":"rgba(0,0,0,.3)",
-                           "border":f"1px solid {BORDER}","borderRadius":"8px","padding":"10px",
-                           "color":WHITE,"fontSize":"12px","fontFamily":"DM Sans, sans-serif"}),
-                html.Button("Save Morning Report", id="btn-save-morning-report", n_clicks=0,
-                    style={"background":"rgba(251,191,36,.1)","border":"1px solid rgba(251,191,36,.3)",
-                           "borderRadius":"8px","color":"#fbbf24","cursor":"pointer","marginTop":"6px",
-                           "fontSize":"11px","fontWeight":"700","padding":"8px 14px",
-                           "fontFamily":"DM Sans, sans-serif"}),
-                html.Div(id="morning-report-save-message", style={"fontSize":"11px","color":TEAL_DIM,"marginTop":"6px"}),
-            ]),
 
             # ── Controls row ───────────────────────────────────────────────
             html.Div([
@@ -9147,27 +4443,18 @@ app.layout = html.Div([
                                "padding":"10px 20px","fontSize":"13px","fontWeight":"700","whiteSpace":"nowrap"})
             for key, label in ALL_TABS
         ], style={"display":"flex","gap":"4px","padding":"4px","borderRadius":"14px",
-                   "background":NAVY_MID,"border":f"1px solid {BORDER}",
-                   # FIX (2026-07-25): was justifyContent:"center". With 17 tabs
-                   # (~2200px of button width) exceeding any real viewport, centering
-                   # pushed the FIRST tabs (Home, Command Center) off-screen to the
-                   # left by default -- the browser centers the whole overflowing row,
-                   # not just what fits. flex-start makes the tab bar begin at Home/
-                   # Command Center as expected, with horizontal scroll available to
-                   # reach later tabs -- the standard pattern for overflowing tab bars.
-                   "justifyContent":"flex-start","overflowX":"auto"}),
+                   "background":NAVY_MID,"border":f"1px solid {BORDER}","justifyContent":"center","overflowX":"auto"}),
 
+        # D3F.1B INITIAL DASH LAYOUT MOUNT REPAIR
+        # Mode: read-only display mount. GET only through existing helper. No write. No D3D. No Stripe.
+        html.Div(
+            _build_d3f1b_controlled_persistence_lifecycle_panel(),
+            id="d3f1b-initial-layout-controlled-persistence-mount",
+            style={"margin": "0 0 16px 0"},
+        ),
         html.Main(id="main-content"),
 
-        # ── Trade plan + Behavioral Analysis — clean 2-column row, exactly
-        # matching row4's Time Engine + Visual/Audio Alerts structure above
-        # (both flex:1, same alignItems:stretch), per explicit request for
-        # matching proportions. Active Trade Panel moved to its own separate
-        # row below -- with 3 siblings sharing this row, no combination of
-        # flex ratios could give Plan Trade and Behavioral Analysis a true,
-        # exact 50/50 split while Active Trade Panel (typically empty) still
-        # took up real space; splitting it out entirely is the only way to
-        # match row4's proportions precisely rather than approximately.
+        # ── Trade plan + active trade — ALL inputs permanent, never recreated ──
         html.Div([
             # Trade plan card — header updates, inputs are static
             html.Div([
@@ -9212,28 +4499,18 @@ app.layout = html.Div([
                         style={**_input_style(),"height":"60px","resize":"vertical","lineHeight":"1.5"}),
                 ], style={"marginBottom":"16px"}),
                 html.Div([
-                    _btn("Save Plan",   "btn-save-plan"),
-                    _btn("Enter Trade", "btn-enter-trade",
+                    _btn("💾 Save Plan",   "btn-save-plan"),
+                    _btn("🚀 Enter Trade", "btn-enter-trade",
                          color=WHITE, bg=WHITE, border=BORDER, extra={"color":NAVY}),
                 ], style={"display":"flex","gap":"10px"}),
-                dcc.Loading(
-                    html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
-                    type="dot", color=TEAL,
-                ),
-            ], style={"flex":"1","minWidth":"0","height":"640px","overflowY":"auto",
-                       "background":NAVY_CARD,"border":f"1px solid {BORDER}",
+                html.Div(id="tp-status", style={"marginTop":"10px","fontSize":"12px","color":TEAL_DIM}),
+            ], style={"flex":"1","minWidth":"0","background":NAVY_CARD,"border":f"1px solid {BORDER}",
                        "borderRadius":"20px","padding":"20px","boxShadow":"0 8px 32px rgba(0,0,0,.32)"}),
 
-            # Behavioral Analysis panel -- updates on the same live-tick
-            # cycle as the rest of Command Center, independent of the
-            # main tab-switching callback.
-            html.Div(id="behavioral-analysis-panel", style={"flex":"1","minWidth":"0","height":"640px"}),
+            # Active trade panel
+            html.Div(id="active-trade-panel", style={"flex":"1","minWidth":"0"}),
         ], id="trade-panels-row",
-           style={"display":"none","gap":"16px","alignItems":"stretch"}),
-
-        # Active trade panel -- separate, full-width row below, only
-        # meaningfully visible when there's an actual open trade
-        html.Div(id="active-trade-panel", style={"marginTop":"16px"}),
+           style={"display":"none","gap":"16px","alignItems":"start"}),
 
     ], style={"maxWidth":"1440px","margin":"0 auto","display":"flex","flexDirection":"column","gap":"16px"})],
     style={"minHeight":"100vh","background":NAVY,"padding":"24px"}),
@@ -9248,9 +4525,9 @@ app.layout = html.Div([
     Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
     Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
-    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
+    State("s-live","data"), prevent_initial_call=True,
 )
-def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
+def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live):
     ctx = callback_context
     if not ctx.triggered:
         return (no_update,)*9
@@ -9264,7 +4541,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
                regime=_regime_from_live(live),
                decision_score=live.get("decision",{}).get("score"),
-               decision_status=live.get("decision",{}).get("status"), session=session)
+               decision_status=live.get("decision",{}).get("status"))
     s0=_tf_btn_style("1m",new_tf); s1=_tf_btn_style("5m",new_tf); s2=_tf_btn_style("15m",new_tf)
     s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
     return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
@@ -9275,61 +4552,35 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
     Output("s-symbol","data"),
     Output("ticker-input","value"),
     Output("s-candles","data", allow_duplicate=True),
-    Output("s-live","data", allow_duplicate=True),
     Input("btn-load","n_clicks"),
     State("ticker-input","value"),
     State("s-live","data"),
     State("s-tf","data"),
-    State("s-session","data"),
     prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live, tf, session):
+def load_symbol(_, ticker, live, tf):
     clean = sanitize_symbol(ticker or "")
     if not clean:
-        return no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
-           decision_score=live.get("decision",{}).get("score") if live else None, session=session)
+           decision_score=live.get("decision",{}).get("score") if live else None)
 
     fresh = fetch_real_candles(clean, tf or "5m")
-
-    # FIX (2026-08-13): previously never touched s-live at all --
-    # switching symbols left the PRIOR symbol's price/decision
-    # visible under the new symbol's label until whichever tick
-    # happened to fire next (up to 10s later), confirmed directly:
-    # user switched to GE and saw AAPL's own price shown under it.
-    # Immediately fetches the new symbol's real, current price so
-    # this is correct the instant the symbol actually changes.
-    new_live = no_update
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
-        r.raise_for_status()
-        d = r.json()
-        new_price = float(d["price"])
-        new_volume = int(d.get("volume", 0) or 0)
-        new_live = create_live_update(clean, new_price, new_volume, 0, candles=fresh).to_dict()
-        new_live["symbol"] = clean
-        new_live["timestamp"] = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
-    except Exception as _load_exc:
-        print(f"[SYMBOL_LOAD_FAIL] load_symbol {clean}: {type(_load_exc).__name__}: {_load_exc}", flush=True)
-
-    return clean, clean, fresh, new_live
+    return clean, clean, fresh
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
-    Input("tab-weis_radar","n_clicks"),
-    Input("tab-weis","n_clicks"),
-    Input("tab-behavior","n_clicks"),
+    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-feed","n_clicks"),
+    Input("tab-performance","n_clicks"),  Input("tab-behavior","n_clicks"),
     Input("tab-import","n_clicks"),       Input("tab-radar","n_clicks"),
     Input("tab-scoreboard","n_clicks"),   Input("tab-divergence","n_clicks"),
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
-    Input("tab-admin","n_clicks"),
+    Input("tab-admin","n_clicks"),        Input("tab-setup","n_clicks"),
     Input("tab-status","n_clicks"),
-    Input("tab-reports","n_clicks"),
-    Input("tab-guide","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
@@ -9394,312 +4645,39 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     - Updates only the active candle's high/low/close while the selected timeframe is still open.
     - Appends a new candle only when the selected timeframe rolls over.
     """
-    # DIAGNOSTIC (2026-08-06): confirmed real, recurring (~hourly) OOM
-    # crashes on this service; root cause not yet definitively proven
-    # from static code reading alone. Logs actual process RSS so the
-    # next crash's logs show the real memory trajectory over time --
-    # the same approach that directly revealed the actual backend OOM
-    # cause earlier tonight, rather than continuing to infer from code
-    # alone.
-    # FIX: lowered from every 30 ticks (~5 min) to every 5 ticks
-    # (~50s) -- confirmed the worker now recycles roughly every 20
-    # requests (~3.3 min) given the aggressive max-requests=20
-    # stopgap, meaning the original 30-tick interval could rarely or
-    # never fire within a single worker's actual lifespan. This gives
-    # several real readings across a worker's life instead of
-    # possibly none.
-    try:
-        if (seq or 0) % 5 == 0:
-            import psutil as _psutil, os as _os_mem
-            rss_mb = _psutil.Process(_os_mem.getpid()).memory_info().rss / (1024 * 1024)
-            print(f"[MEM] on_tick seq={seq}: {rss_mb:.1f} MB RSS", flush=True)
-    except Exception as _mem_exc:
-        print(f"[MEM] on_tick: failed to read memory ({_mem_exc})", flush=True)
-
     clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
 
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
+        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=4)
         r.raise_for_status()
         d      = r.json()
         price  = float(d["price"])
         volume = int(d.get("volume", 0) or 0)
         tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
-    except Exception as _tick_exc:
-        # FIX (2026-08-13): user reported the live price stuck at the
-        # exact module-load placeholder ($280.15) indefinitely, even
-        # after ruling out browser caching entirely (confirmed via
-        # incognito). [MEM] logs showed on_tick() genuinely executing
-        # repeatedly, meaning this except block -- previously fully
-        # silent -- was very likely firing every single time, with no
-        # trace of it anywhere. Also widened the timeout from 4s,
-        # which is tight enough that even a normally-fast backend call
-        # could occasionally miss it under any momentary delay on this
-        # service's own single gunicorn worker.
-        print(f"[TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_tick_exc).__name__}: {_tick_exc}", flush=True)
+    except Exception:
         return no_update, no_update, no_update
-
-    # Real, live relative-volume check -- powers the "A-grade requires
-    # live-volume expansion" indicator on Command Center with actual
-    # data instead of a static, always-the-same disclaimer. Best-effort:
-    # if this fails or the symbol isn't in the radar universe, the
-    # indicator falls back to an honest "data unavailable" state rather
-    # than blocking the whole live-tick update over optional data.
-    rel_volume = None
-    try:
-        rv_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}", timeout=4)
-        if rv_r.ok:
-            rv_payload = rv_r.json()
-            if rv_payload.get("ok"):
-                rel_volume = rv_payload.get("data", {}).get("rel_volume")
-    except Exception:
-        pass
-
-    # Real, validated Phase 10 position sizing -- powers Behavioral
-    # Analysis's sizing guidance with actual research output instead of
-    # nothing at all. Same best-effort pattern as rel_volume above.
-    sizing_data = None
-    try:
-        sz_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/sizing", timeout=4)
-        if sz_r.ok:
-            sz_payload = sz_r.json()
-            if sz_payload.get("ok"):
-                sizing_data = sz_payload
-    except Exception:
-        pass
-
-    # Real Livermore/ODS-style operator control score -- only present
-    # once an active campaign record exists for this symbol (Layer 5).
-    dominance_data = None
-    try:
-        dom_r = req.get(f"{BACKEND_HTTP}/api/campaigns/{clean}/dominance", timeout=4)
-        if dom_r.ok:
-            dom_payload = dom_r.json()
-            if dom_payload.get("ok") and dom_payload.get("has_active_campaign"):
-                dominance_data = dom_payload
-    except Exception:
-        pass
-
-    # Real, read-only transition preview -- lightweight (computation
-    # only on already-fetched campaign data, no external API calls),
-    # so kept in the fast tier rather than throttled.
-    transition_preview_data = None
-    try:
-        tp_r = req.get(f"{BACKEND_HTTP}/api/campaigns/transition-preview",
-                        params={"symbol": clean, "limit": 50}, timeout=6)
-        if tp_r.ok:
-            tp_payload = tp_r.json()
-            if tp_payload.get("ok") and tp_payload.get("transitions"):
-                transition_preview_data = tp_payload["transitions"][0]
-    except Exception:
-        pass
-
-    # Real, per-symbol evidence diagnostics -- confirmed database-only
-    # (no live Alpaca calls anywhere in this chain), so kept in the
-    # fast tier too.
-    evidence_diagnostics_data = None
-    try:
-        ed_r = req.get(f"{BACKEND_HTTP}/api/campaign/evidence-diagnostics/{clean}", timeout=6)
-        if ed_r.ok:
-            ed_payload = ed_r.json()
-            if ed_payload.get("found"):
-                evidence_diagnostics_data = ed_payload
-    except Exception:
-        pass
-
-    # Real, validated obstacle score / SPD-DEI behavioral state (Layer
-    # 1/2) -- meaningfully heavier than the other live-tick fetches
-    # above (fetches 500+ daily bars, runs real wave-variable
-    # computation), so throttled to roughly once every 5 minutes
-    # (30 ticks at the current 10s interval) rather than every tick.
-    # Carries forward the previous value from `current` between
-    # refreshes so it doesn't flicker to empty.
-    validated_classification = (current or {}).get("validated_classification")
-    if (seq or 0) % 30 == 0:
-        try:
-            vc_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/validated-classification", timeout=8)
-            if vc_r.ok:
-                vc_payload = vc_r.json()
-                if vc_payload.get("ok"):
-                    validated_classification = vc_payload
-        except Exception:
-            pass
-
-    # Real Wyckoff Verdict Engine -- also fetches bar data, same
-    # throttle as validated_classification above.
-    wyckoff_verdict = (current or {}).get("wyckoff_verdict")
-    if (seq or 0) % 30 == 0:
-        try:
-            wv_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/wyckoff-verdict", timeout=8)
-            if wv_r.ok:
-                wv_payload = wv_r.json()
-                if wv_payload.get("ok"):
-                    wyckoff_verdict = wv_payload
-        except Exception:
-            pass
-
-    # Real Historical Analog Engine -- lighter than the two above (no
-    # bar fetching, just a database query), but still throttled for
-    # consistency and to avoid an unnecessary query on every tick.
-    campaign_analogs_data = (current or {}).get("campaign_analogs")
-    if (seq or 0) % 30 == 0:
-        try:
-            an_r = req.get(f"{BACKEND_HTTP}/api/campaigns/{clean}/analogs", timeout=8)
-            if an_r.ok:
-                an_payload = an_r.json()
-                if an_payload.get("ok") and an_payload.get("has_active_campaign"):
-                    campaign_analogs_data = an_payload
-        except Exception:
-            pass
 
     new_seq = (seq or 0) + 1
 
-    # FIX (2026-08-09): the Decision Engine's key levels previously
-    # used a fixed-percentage synthetic formula regardless of any real
-    # market structure -- confirmed to have no documented rationale,
-    # genuinely leftover placeholder code. Now fetches the real
-    # Wyckoff Count Guide projection (PnFWeisEngine) so the base score
-    # driving Bias/Confidence/Grade/Status/Mode reflects genuine PnF
-    # structure. Falls back to the old synthetic levels only if this
-    # fetch fails (still better than no data at all in that case).
-    # TTL shortened 30min -> 5min (2026-08-12): a stale cached value
-    # from just before a deploy fix went live kept serving the old,
-    # broken levels for up to 30 minutes afterward -- still well above
-    # this file's other caches (90-120s), since this data is derived
-    # from daily bars and doesn't change intraday, but a smaller
-    # window to notice next time something like this happens.
-    #
-    # FIX (2026-08-13): the manual refresh button (added 2026-08-12)
-    # was removed entirely -- confirmed causing a genuine, repeated
-    # client-side Dash error on every tab other than "command", since
-    # it lived inside dynamically-rendered tab content but was
-    # referenced as an Input by the always-active on_tick() callback.
-    # suppress_callback_exceptions=True does not cover this specific
-    # client-side renderer issue (same limitation already documented
-    # once elsewhere in this file, for a different scenario). The
-    # 5-minute TTL above remains as the sole freshness mechanism.
-    # FIX (2026-08-17): found while investigating a previously-unresolved
-    # intermittency (documented in the Aug 15 investigation record,
-    # Section 4.17.1: the live frontend's displayed trap level was
-    # observed to intermittently diverge from the live backend
-    # endpoint's own output at the same moment, with the backend
-    # independently confirmed correct when checked directly).
-    #
-    # Root cause, confirmed by tracing every caller of this exact
-    # endpoint path: this key (f"/api/research/pnf-weis/{clean}") was
-    # being used as the cache key by THREE independent call sites at
-    # once, sharing one underlying cache slot despite disagreeing on
-    # both TTL and data shape:
-    #   1. This function's own outer wrapper (below) -- stores just
-    #      the EXTRACTED count_guide sub-dict, TTL 300s.
-    #   2. _get()'s own internal caching, triggered by the bare
-    #      _get(f"/api/research/pnf-weis/{clean}") call inside
-    #      _fetch_count_guide() below -- stores the FULL raw envelope
-    #      ({"status":..., "count_guide": {...}, ...}), default TTL 90s.
-    #   3. The Weis Analysis tab's background fetch
-    #      (_fetch_weis_raw_data(), same path) -- ALSO stores the full
-    #      raw envelope, but with a 1800s (30-minute) TTL.
-    # SharedCache's freshness check uses whatever ttl_seconds the
-    # CURRENT reader passes, independent of which TTL the data was
-    # originally written under -- so if the Weis Analysis tab had been
-    # viewed for this symbol recently, this wrapper's read (ttl=300)
-    # could silently receive #2/#3's full raw envelope instead of the
-    # extracted sub-dict it expects. count_guide.get("available") on
-    # that mismatched shape returns None (dict.get() never raises),
-    # so this doesn't even hit the except block below -- it silently
-    # produces a wrong-shaped value that get_key_levels() then
-    # silently treats as "count guide unavailable," falling through to
-    # the synthetic formula. That exactly reproduces the reported
-    # symptom: a stale/wrong displayed trap level with zero trace in
-    # the logs, while the backend itself is genuinely fine.
-    #
-    # Fix: give this wrapper's cache entry its own distinct key so it
-    # can never collide with the plain-path key _get() and the Weis
-    # Analysis tab's fetch both use for the (differently-shaped) raw
-    # envelope. Those two can continue sharing the plain-path key
-    # safely, since they agree on shape (both store the full envelope)
-    # -- only this wrapper's extracted-sub-dict shape needed isolating.
-    #
-    # NOTE (2026-08-17): this fetch is intentionally hardcoded to the
-    # daily-alert use case and does not take a timeframe. The backend
-    # endpoint (get_pnf_weis_verdict) now accepts a real timeframe
-    # parameter for the general, timeframe-selectable chart engine --
-    # if a future caller here ever needs a non-daily chart view, it
-    # MUST build its own separate cache key that includes the
-    # timeframe (e.g. f"...::chart_view::{timeframe}"), never reusing
-    # this trap_door-specific key or the plain-path key. Two callers
-    # requesting different timeframes for the same symbol sharing one
-    # cache slot is the exact bug this key isolation exists to prevent.
-    count_guide_key = f"/api/research/pnf-weis/{clean}::trap_door_count_guide"
-
-    count_guide = None
-    try:
-        def _fetch_count_guide():
-            resp = _get(f"/api/research/pnf-weis/{clean}")
-            return resp.get("count_guide") if resp.get("status") == "OK" else None
-        if shared_cache:
-            count_guide = shared_cache.get_or_fetch(
-                count_guide_key, _fetch_count_guide, ttl_seconds=300)
-        else:
-            count_guide = _fetch_count_guide()
-    except Exception:
-        count_guide = None
-
     # Preserve backend decision/confluence if present. Fall back to local engine output.
-    fallback_live = create_live_update(clean, price, volume, new_seq, count_guide=count_guide).to_dict()
+    fallback_live = create_live_update(clean, price, volume, new_seq).to_dict()
     new_live = {
         **fallback_live,
         "symbol": clean,
         "price": price,
         "volume": volume,
-        "rel_volume": rel_volume,
-        "sizing_data": sizing_data,
-        "dominance_data": dominance_data,
-        "transition_preview_data": transition_preview_data,
-        "evidence_diagnostics_data": evidence_diagnostics_data,
-        "validated_classification": validated_classification,
-        "wyckoff_verdict": wyckoff_verdict,
-        "campaign_analogs": campaign_analogs_data,
         "timestamp": tick_time,
         "sequence": new_seq,
         "source": d.get("source", "alpaca"),
-        "count_guide": count_guide,
     }
     if d.get("decision"):
         new_live["decision"] = d.get("decision")
     if d.get("confluence"):
         new_live["confluence"] = d.get("confluence")
 
-    # FIX (2026-07-30): user-reported the chart's candlesticks didn't
-    # match the live price, by a large and persistent margin that a hard
-    # browser refresh never fixed. Root cause: the module-level
-    # _init_candles = fetch_real_candles("AAPL", "5m") at the bottom of
-    # this file runs exactly once, at Python process boot -- not per
-    # session, not per page load. Every user's chart started from that
-    # one frozen snapshot (whatever AAPL's price was whenever this
-    # server process last restarted, possibly hours or days ago), and
-    # this "if not candles" check only ever re-fetched full history if
-    # the store was completely empty -- which it never was after that
-    # one boot-time fetch. From then on, only the single most recent
-    # candle's high/low/close ever got nudged (below); the rest of the
-    # historical series stayed frozen indefinitely, which is also why a
-    # hard refresh never helped -- this was a server-side Python
-    # variable, not anything cached in the browser.
-    #
-    # FIX (2026-07-30, follow-up): confirmed the ~5-minute version of
-    # this self-heal window still wasn't tight enough -- it's keyed to
-    # server uptime (every 15th tick since this process booted), not to
-    # when an individual user loads the page. Given this backend
-    # restarted many times tonight, a freshly-opened page can easily
-    # land within that first ~5-minute window and still see a stale
-    # snapshot, confirmed directly: user reported a mismatch on a page
-    # they'd "just opened fresh." Tightened to every 3 ticks (~1 minute)
-    # to substantially shrink the worst-case staleness window, while
-    # still not re-fetching full history on every single 20-second tick.
-    if not candles or (new_seq % 3 == 0):
-        fresh_history = fetch_real_candles(clean, tf or "5m")
-        if fresh_history:
-            candles = fresh_history
+    # If the candle store is empty, fetch real history once.
+    if not candles:
+        candles = fetch_real_candles(clean, tf or "5m")
 
     new_candles = update_current_candle(
         candles=candles or [],
@@ -9733,57 +4711,19 @@ def update_badges(live):
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(
-    Output("behavioral-analysis-panel", "children"),
-    Input("s-live", "data"),
-)
-def update_behavioral_analysis(live):
-    return _render_behavioral_analysis_panel(live)
-
-@app.callback(
-    Output("s-market-wire", "data"),
-    Input("i-market-wire", "n_intervals"),
-    prevent_initial_call=False,
-)
-def fetch_market_wire(_):
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/market-wire", timeout=15)
-        if r.ok:
-            payload = r.json()
-            if payload.get("ok"):
-                return payload.get("items", [])
-    except Exception:
-        pass
-    return no_update
-
-@app.callback(
-    Output("market-wire", "children"),
-    Input("s-market-wire", "data"),
-)
-def render_market_wire(items):
-    return _render_market_wire(items)
-
-@app.callback(
     Output("main-content",       "children"),
     Output("trade-panels-row",   "style"),
     Output("trade-plan-panel",   "children"),
     Output("active-trade-panel", "children"),
     Input("s-tab","data"),
-    # FIX (2026-07-29): these were States, not Inputs -- meaning this entire
-    # main content area (chart, Trade Card, Price Ladder, decision panel,
-    # Options Matrix) only ever re-rendered when the user switched tabs.
-    # New live price ticks (i-alpaca fires every 20s) updated s-live in the
-    # background, but nothing told this callback to react to it, so the
-    # whole dashboard sat frozen on stale/placeholder data (visibly the
-    # startup default, $280.15) while only the small top badge -- which
-    # correctly already used Input("s-live","data") -- updated live.
-    Input("s-live","data"),
-    Input("s-candles","data"),
-    Input("s-symbol","data"),
+    State("s-live","data"),
+    State("s-candles","data"),
     State("s-live-mode","data"),
+    State("s-symbol","data"),
     State("s-tf","data"),
     State("s-session","data"),
 )
-def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
+def render_main(tab,live,candles,live_mode,symbol,tf,session=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -9818,11 +4758,19 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     "opacity": ".9",
                 },
             ),
+            html.Div("Fast-load shell only. No campaign fetch, no backend write, no Supabase mutation, no D3D, no Stripe.", style={
+                "color": TEAL_DIM,
+                "fontSize": "11px",
+                "fontWeight": "800",
+                "marginTop": "14px",
+                "textTransform": "uppercase",
+                "letterSpacing": ".08em",
+            }),
         ])
         return main, HIDDEN, no_update, no_update
 
     if tab == "command":
-        open_trade  = _get(f"/api/behavior/open-trade/{_current_user_id(session)}", headers=_auth_headers(session))
+        open_trade  = _get(f"/api/behavior/open-trade/{USER_ID}")
         trade_plan  = _build_trade_plan_contents(live)
         active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
         return (html.Div([
@@ -9831,72 +4779,7 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
-    if tab == "weis":
-        # FIX (2026-08-13): proper fix, replacing the temporary full
-        # disable. Root cause remained: even with parallelized fetches
-        # and a 30-min cache, ANY cold-cache request still blocked the
-        # single gunicorn worker for the full duration of 4 real
-        # backend calls -- taking the whole app down for every user at
-        # once, confirmed directly. This never blocks: peek() checks
-        # the cache without ever fetching; if data isn't ready, a
-        # one-shot background thread is triggered (see
-        # _trigger_weis_background_fetch()) and a loading state is
-        # returned immediately. The dedicated i-weis-poll interval
-        # (enabled only while on this tab, via a separate small
-        # callback) picks up the result once the background thread
-        # finishes -- see _weis_poll() below.
-        #
-        # Defensive fallback: if shared_cache itself failed to import
-        # (rare), the background thread would have nowhere to store
-        # its result and the poll could never find it -- a permanently
-        # stuck loading state. A direct, blocking fetch here is worse
-        # than the non-blocking path but still recoverable, unlike that.
-        if not shared_cache:
-            return (build_weis_analysis_tab(symbol, _fetch_weis_raw_data(symbol)), HIDDEN, no_update, no_update)
-
-        cache_key = f"weis-combined:{symbol}"
-        cached = shared_cache.peek(cache_key, ttl_seconds=1800)
-        if cached is not None:
-            return (build_weis_analysis_tab(symbol, cached), HIDDEN, no_update, no_update)
-
-        _trigger_weis_background_fetch(symbol, cache_key)
-        loading = html.Div([
-            html.Div(f"Loading Weis Analysis for {symbol}...", style={
-                "color": WHITE, "fontSize": "14px", "fontWeight": "700", "padding": "20px",
-            }),
-            html.Div("Fetching four independent engine readings in the background -- this page stays responsive while it loads.",
-                      style={"color": MUTED, "fontSize": "12px", "padding": "0 20px"}),
-        ])
-        return (loading, HIDDEN, no_update, no_update)
-
-    if tab == "heatmap":
-        # FIX (2026-08-03): same bug class already fixed for the Reports
-        # tab -- this callback rebuilds every tab from scratch on every
-        # ~20s live-price tick (needed for the Command Center), and
-        # build_heatmap_tab() always defaults back to "daily" on every
-        # rebuild, with no memory of what the user had selected. Only
-        # rebuild on a genuine tab switch (s-tab), so a live-tick while
-        # already on this tab doesn't reset the user's timeframe choice.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
-            main = build_heatmap_tab()
-        else:
-            return no_update, no_update, no_update, no_update
-    elif tab == "weis_radar":
-        # FIX (2026-08-25): the original comment here said this tab had
-        # "no per-user state to preserve" -- true when this was written,
-        # but wrong once click-to-chart was added on top: this tab
-        # rebuilds from scratch on every ~20s live-price tick, the same
-        # way build_heatmap_tab() was already fixed to stop doing,
-        # wiping whichever chart was open (and its volume-mode choice)
-        # every single tick. Same fix, same reason: only rebuild on a
-        # genuine tab switch (s-tab).
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
-            main = build_weis_radar_tab(session)
-        else:
-            return no_update, no_update, no_update, no_update
-    elif tab=="campaign":
+    if tab=="campaign":
         if build_campaign_tab is None:
             main = card([
                 html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
@@ -9918,7 +4801,9 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                     note_box("Campaign module loading error: " + str(e), "blue"),
                 ])
-    elif tab=="behavior":    main = build_behavior_tab(session=session)
+    elif tab=="feed":          main = build_feed_tab(live,live_mode)
+    elif tab=="performance": main = build_performance_tab(live)
+    elif tab=="behavior":    main = build_behavior_tab()
     elif tab=="import":      main = build_import_tab()
     elif tab=="radar":       main = build_radar_tab(session=session)
     elif tab=="scoreboard":  main = build_scoreboard_tab(session=None)
@@ -9938,17 +4823,6 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     note_box("Portfolio tab error: " + str(e), "blue"),
                 ])
     elif tab=="journal":
-        # FIX (2026-08-06): same bug class already fixed for Heatmap,
-        # Reports, and Admin tonight -- this callback rebuilds every tab
-        # from scratch on every ~2s live-price tick, and
-        # build_trade_journal_tab() has real trade-entry form fields
-        # (symbol, entry date/price, shares, notes) with no memory of
-        # what the user had typed. A user actively logging a new trade
-        # could have their input wiped mid-keystroke. Only rebuild on a
-        # genuine tab switch.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
-            return no_update, no_update, no_update, no_update
         if build_trade_journal_tab is None:
             main = card([
                 html.H2("Journal", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
@@ -9981,55 +4855,27 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
             main = build_billing_tab(session=None, perms=None)
         except Exception as e:
             main = card([
-                html.H2("Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                html.H2("💳 Billing", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box(f"Billing module loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="preferences":
-        # FIX (2026-08-06): same bug class already fixed for Heatmap,
-        # Reports, Admin, and Journal tonight -- build_preferences_tab()
-        # has a real watchlist symbol input field (prefs-sym-input) with
-        # no guard against this callback's every-~2s live-tick rebuild.
-        # Only rebuild on a genuine tab switch.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
-            return no_update, no_update, no_update, no_update
         try:
             main = build_preferences_tab(user_id="", session=None)
         except Exception as e:
             main = card([
-                html.H2("️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                html.H2("⚙️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box("Preferences loading. Please refresh in a moment.", "blue"),
             ])
     elif tab=="admin":
-        # FIX (2026-08-04): same bug class already fixed for Heatmap and
-        # Reports -- this callback rebuilds every tab from scratch on every
-        # live-price tick (now 2s, shortened earlier tonight, making this
-        # especially aggressive), and a fresh rebuild recreates the Symbol
-        # Backtest input with no value, wiping out whatever the user just
-        # typed almost as fast as they can type it. Only rebuild on a
-        # genuine tab switch (s-tab), so a live-tick while already on this
-        # tab doesn't reset form inputs.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
-            return no_update, no_update, no_update, no_update
         try:
             admin_session = session if isinstance(session, dict) else {}
             main = html.Div([
-                # D3F.1B: developer/audit-only safety verification panel.
-                # Moved here from a global page-wide mount (was showing on
-                # every tab) since this is an internal diagnostic tool, not
-                # customer-facing content.
-                _build_d3f1b_controlled_persistence_lifecycle_panel(admin_session),
-                # Weis-Gamma Status Center panel intentionally NOT repeated
-                # here -- it already lives on Command Center. Showing it
-                # twice was redundant, not intentional. (Re-applied here --
-                # this exact fix was lost once already during an earlier
-                # file handoff tonight.)
-                build_cache_diagnostics_panel(),
+                build_weis_gamma_status_center_panel(),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
         except Exception as e:
             main = html.Div([
+                build_weis_gamma_status_center_panel(),
                 html.Div([
                     html.Div("Admin tab error", style={
                         "color": WHITE,
@@ -10049,87 +4895,9 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     "padding": "18px",
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
-    elif tab=="reports":
-        # FIX (2026-07-31): user reported the Reports tab kept "switching"
-        # back to the latest date while reading an older one. Root cause:
-        # this callback rebuilds every tab from scratch on every ~20s
-        # live-price tick (needed for the Command Center), and
-        # build_reports_tab() always defaulted to the most recent date on
-        # every rebuild. First attempted fix (reading the date picker's
-        # current value back in via State) broke the callback entirely --
-        # confirmed via the actual browser console error -- because that
-        # component is created by this same callback's own output, a
-        # circular dependency Dash's client-side renderer can't resolve,
-        # even with suppress_callback_exceptions=True (which only covers
-        # server-side Python validation, not this).
-        #
-        # Correct fix: don't rebuild this tab's content at all on a
-        # live-tick-only trigger -- only rebuild it on a genuine tab
-        # switch. That preserves whatever the user has on screen
-        # (including their date selection) untouched between real
-        # navigation events, without needing to read anything back from
-        # a component this same callback creates.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
-            main = build_reports_tab(session=session)
-        else:
-            return no_update, no_update, no_update, no_update
-    elif tab=="guide":       main = build_guide_tab()
+    elif tab=="setup":       main = build_setup_tab()
     else:                    main = html.Div("Unknown tab")
-
-    # Persistent copyright footer -- appears at the bottom of every tab's
-    # content, regardless of which tab is active, without needing to
-    # modify the large static app.layout structure.
-    main = html.Div([
-        main,
-        html.Div([
-            html.Span(f"© {datetime.now().year} Sigmalytic Quant Corporation. All rights reserved.",
-                      style={"fontSize":"11px","color":"rgba(255,255,255,.35)"}),
-            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
-                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
-            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
-                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
-        ], style={"textAlign":"center","padding":"24px 0 8px","marginTop":"24px"}),
-    ])
-
     return main, HIDDEN, no_update, no_update
-
-# FIX (2026-08-13): dedicated, separate callbacks for the Weis tab's
-# non-blocking loading pattern -- deliberately NOT added as new
-# Outputs on render_main() itself, which would require updating every
-# single return statement across its many tab branches. Keeping these
-# separate is lower-risk and fully independent.
-
-@app.callback(
-    Output("i-weis-poll", "disabled"),
-    Input("s-tab", "data"),
-)
-def _weis_poll_toggle(tab):
-    # Only ever polls while genuinely on this tab -- never runs in
-    # the background for a tab the user isn't looking at.
-    return tab != "weis"
-
-
-@app.callback(
-    Output("main-content", "children", allow_duplicate=True),
-    Output("i-weis-poll", "disabled", allow_duplicate=True),
-    Input("i-weis-poll", "n_intervals"),
-    State("s-tab", "data"),
-    State("s-symbol", "data"),
-    prevent_initial_call=True,
-)
-def _weis_poll(_, tab, symbol):
-    # Stale poll tick landing after the user already left the tab --
-    # do nothing rather than overwrite whatever's now showing.
-    if tab != "weis":
-        return no_update, no_update
-
-    cache_key = f"weis-combined:{symbol}"
-    cached = shared_cache.peek(cache_key, ttl_seconds=1800) if shared_cache else None
-    if cached is None:
-        return no_update, no_update  # still loading, keep polling
-
-    return build_weis_analysis_tab(symbol, cached), True  # done -- stop polling
 
 # ── Trade plan / entry / exit callbacks ───────────────────────────────────────
 
@@ -10140,9 +4908,9 @@ def _weis_poll(_, tab, symbol):
     State("tp-direction","data"), State("tp-entry","value"),
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"), State("tp-notes","value"),
-    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
+    State("s-live","data"), prevent_initial_call=True,
 )
-def save_plan(n,direction,entry,stop,target,size,notes,live,session):
+def save_plan(n,direction,entry,stop,target,size,notes,live):
     if not n: return no_update, no_update
     try:
         price  = live["price"] if live else 0
@@ -10150,17 +4918,17 @@ def save_plan(n,direction,entry,stop,target,size,notes,live,session):
         score  = live.get("decision",{}).get("score",0) if live else 0
         regime = _regime_from_live(live) if live else "neutral"
         resp = _post("/api/behavior/trade-plan",{
-            "user_id":_current_user_id(session),"symbol":symbol,"direction":direction,
+            "user_id":USER_ID,"symbol":symbol,"direction":direction,
             "planned_entry":float(entry),"planned_stop":float(stop),
             "planned_target":float(target),"planned_size":float(size),
             "setup_reason":notes or "","signal_score_at_plan":score,"regime_at_plan":regime,
-        }, headers=_auth_headers(session))
+        })
         plan_id = resp.get("plan_id")
         _track("trade_planned",symbol,price=price,regime=regime,decision_score=score,
-               metadata={"plan_id":plan_id,"direction":direction}, session=session)
-        return f"Plan saved: {plan_id}", plan_id
+               metadata={"plan_id":plan_id,"direction":direction})
+        return f"✅ Plan saved: {plan_id}", plan_id
     except Exception as e:
-        return f"Error: {e}", no_update
+        return f"❌ Error: {e}", no_update
 
 @app.callback(
     Output("tp-status","children",allow_duplicate=True),
@@ -10169,9 +4937,9 @@ def save_plan(n,direction,entry,stop,target,size,notes,live,session):
     State("tp-stop","value"), State("tp-target","value"),
     State("tp-size","value"),
     State("s-current-plan-id","data"),
-    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
+    State("s-live","data"), prevent_initial_call=True,
 )
-def enter_trade(n,direction,entry,stop,target,size,plan_id,live,session):
+def enter_trade(n,direction,entry,stop,target,size,plan_id,live):
     if not n: return no_update
     try:
         price  = live["price"] if live else 0
@@ -10179,17 +4947,17 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live,session):
         score  = live.get("decision",{}).get("score",0) if live else 0
         regime = _regime_from_live(live) if live else "neutral"
         resp = _post("/api/behavior/trade-entry",{
-            "user_id":_current_user_id(session),"symbol":symbol,"direction":direction,
+            "user_id":USER_ID,"symbol":symbol,"direction":direction,
             "entry_price":float(entry),"stop_price":float(stop) if stop else None,
             "target_price":float(target) if target else None,"size":float(size),
             "plan_id":plan_id,"market_regime_entry":regime,"signal_score_entry":score,
-        }, headers=_auth_headers(session))
+        })
         trade_id = resp.get("trade_id")
         _track("trade_entered",symbol,price=float(entry),regime=regime,decision_score=score,
-               metadata={"trade_id":trade_id,"direction":direction}, session=session)
-        return f"Trade entered: {trade_id}"
+               metadata={"trade_id":trade_id,"direction":direction})
+        return f"🚀 Trade entered: {trade_id}"
     except Exception as e:
-        return f"Error: {e}"
+        return f"❌ Error: {e}"
 
 @app.callback(
     Output("exit-status","children"),
@@ -10197,9 +4965,9 @@ def enter_trade(n,direction,entry,stop,target,size,plan_id,live,session):
     State("s-active-trade-id","data"),
     State("exit-flags","value"),
     State("exit-notes","value"),
-    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
+    State("s-live","data"), prevent_initial_call=True,
 )
-def exit_trade(n,trade_id,flags,notes,live,session):
+def exit_trade(n,trade_id,flags,notes,live):
     if not n or not trade_id: return no_update
     try:
         price  = live["price"] if live else 0
@@ -10215,14 +4983,14 @@ def exit_trade(n,trade_id,flags,notes,live,session):
             "premature_exit":     "premature_exit"      in flags,
             "added_size_adverse": "added_size_adverse"  in flags,
             "timeframe_changed":  "timeframe_changed"   in flags,
-        }, headers=_auth_headers(session))
+        })
         scores = resp.get("scores",{})
         _track("trade_exited",live.get("symbol",""),price=price,regime=regime,decision_score=score,
-               metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")}, session=session)
-        return (f"Exited · P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) · "
+               metadata={"trade_id":trade_id,"pnl":resp.get("pnl"),"flag":resp.get("behavior_flag")})
+        return (f"🏁 Exited · P&L: ${resp.get('pnl',0):+.2f} ({resp.get('pnl_percent',0):+.2f}%) · "
                 f"Score: {scores.get('composite',0):.0f} · Flag: {resp.get('behavior_flag','—')}")
     except Exception as e:
-        return f"Error: {e}"
+        return f"❌ Error: {e}"
 
 # ── Direction toggle buttons ─────────────────────────────────────────────────
 def _dir_styles(active):
@@ -10285,16 +5053,8 @@ def handle_csv_upload(contents, filename):
         content_type, content_string = contents.split(",")
         decoded = base64.b64decode(content_string)
         # POST to backend
-        # FIX (2026-07-28): this posted to /api/import/upload, which has no
-        # matching backend route (confirmed via full route audit) -- every
-        # CSV upload was silently 404ing, so nothing was ever actually
-        # imported. The real, working endpoint is /api/import/upload-generic
-        # in import_history_restore_api.py. Its response also uses different
-        # key names than this code was reading (trades_imported, not
-        # trades_closed; no broker_name field at all), so those are
-        # corrected below too.
         resp = req.post(
-            f"{BACKEND_HTTP}/api/import/upload-generic",
+            f"{BACKEND_HTTP}/api/import/upload",
             files={"file": (filename, _io.BytesIO(decoded), "text/csv")},
             timeout=30,
         )
@@ -10302,9 +5062,10 @@ def handle_csv_upload(contents, filename):
             data = resp.json()
             a    = data.get("analysis", {})
             return html.Div([
-                html.Span(f"{data.get('trades_imported',0)} trades imported · ",
+                html.Span(f"✅ {data.get('broker_name','Unknown')} detected · ",
                           style={"color":TEAL_DIM,"fontWeight":"800"}),
-                html.Span(f"Win rate: {a.get('win_rate',0)}% · "
+                html.Span(f"{data.get('trades_closed',0)} trades imported · "
+                          f"Win rate: {a.get('win_rate',0)}% · "
                           f"Total P&L: ${a.get('total_pnl',0):+,.2f}",
                           style={"color":WHITE}),
                 html.Br(),
@@ -10312,23 +5073,22 @@ def handle_csv_upload(contents, filename):
                           style={"color":WHITE,"fontSize":"11px"}),
             ])
         else:
-            return f"Upload failed: {resp.text[:200]}"
+            return f"❌ Upload failed: {resp.text[:200]}"
     except Exception as e:
-        return f"Error: {str(e)[:200]}"
+        return f"❌ Error: {str(e)[:200]}"
 
 
-# ── Audio + Visual alert clientside callback ─────────────────────────────────
+# ── Audio alert clientside callback ──────────────────────────────────────────
 app.clientside_callback(
     """
     function(score, prev_score, alerts_on) {
         if (window.dash_clientside && window.dash_clientside.sigmalytic) {
             return window.dash_clientside.sigmalytic.fireAlert(score, prev_score, alerts_on);
         }
-        return [score, window.dash_clientside.no_update];
+        return score;
     }
     """,
     Output("s-alert-score", "data"),
-    Output("s-alert-banner", "data"),
     Input("s-live", "data"),
     State("s-alert-score", "data"),
     State("s-alerts-on", "data"),
@@ -10344,58 +5104,12 @@ app.clientside_callback(
 )
 def toggle_alerts(n, currently_on):
     new_on = not currently_on
-    label  = "ON"  if new_on else "OFF"
+    label  = "🔔 ON"  if new_on else "🔕 OFF"
     style  = {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","color":TEAL_DIM,
                "borderRadius":"20px","padding":"4px 12px","fontSize":"11px","fontWeight":"800","cursor":"pointer"}
     if not new_on:
         style.update({"background":"rgba(100,116,139,.12)","border":f"1px solid {BORDER}","color":WHITE})
     return new_on, label, style
-
-
-@app.callback(Output("alert-banner", "children"),
-              Output("alert-banner", "style"),
-              Input("s-alert-banner", "data"),
-              prevent_initial_call=True)
-def show_alert_banner(banner):
-    """
-    Renders the visual half of "Visual + Audio Alerts" -- this panel's
-    name implied both existed, but only the audio side (sigmaAlert in
-    index_string) was ever built. A brief, auto-fading toast banner
-    now shows the same score-tier labels alongside the sound:
-      - Below 35: "Trap Door" (warning-style zone)
-      - 55-79: "Score Tier B — Audio Active"
-      - 80+: "Score Tier A — Audio Active"
-    """
-    if not banner:
-        return no_update, {"display": "none"}
-
-    level = banner.get("level")
-    text = banner.get("text", "")
-    ts = banner.get("ts", 0)
-
-    if level == "A":
-        color, glow = TEAL_DIM, "rgba(45,143,111,.9)"
-    elif level == "B":
-        color, glow = BLUE_DIM, "rgba(59,130,246,.9)"
-    else:  # "warn" / Trap Door
-        color, glow = RED_DIM, "rgba(239,68,68,.9)"
-
-    outer_style = {"position": "fixed", "top": "18px", "left": "0", "width": "100%",
-                   "textAlign": "center", "zIndex": 99999, "pointerEvents": "none"}
-    inner_style = {
-        "display": "inline-block",
-        "background": NAVY_CARD, "border": f"2px solid {color}",
-        "borderRadius": "14px", "padding": "14px 28px", "color": color,
-        "fontSize": "15px", "fontWeight": "900", "letterSpacing": ".04em",
-        "boxShadow": f"0 8px 32px {glow}",
-        "animation": "sigmaAlertToast 4s ease-in-out forwards",
-    }
-    # key forces React to genuinely unmount and remount this specific
-    # inner element on every new alert (even repeats of the same
-    # level within the same window), so the CSS animation applied to
-    # it reliably restarts each time rather than silently no-op'ing
-    # on an element React decides to reuse.
-    return html.Div(text, key=str(ts), style=inner_style), outer_style
 
 
 @app.callback(Output("auth-overlay","style"),
@@ -10408,111 +5122,16 @@ def route_page(session):
         return hidden
     return overlay_base
 
-@app.callback(Output("login-section","style"), Output("signup-section","style"), Output("forgot-section","style"),
+@app.callback(Output("login-section","style"), Output("signup-section","style"),
               Input("goto-signup-btn","n_clicks"), Input("goto-login-btn","n_clicks"),
-              Input("goto-forgot-btn","n_clicks"), Input("goto-login-from-forgot-btn","n_clicks"),
               prevent_initial_call=True)
-def toggle_auth_section(to_signup, to_login, to_forgot, to_login2):
+def toggle_auth_section(to_signup, to_login):
     ctx = callback_context
-    if not ctx.triggered: return no_update, no_update, no_update
+    if not ctx.triggered: return no_update, no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
     if trigger == "goto-signup-btn":
-        return {"display":"none"}, {"display":"block"}, {"display":"none"}
-    if trigger == "goto-forgot-btn":
-        return {"display":"none"}, {"display":"none"}, {"display":"block"}
-    # goto-login-btn or goto-login-from-forgot-btn -- both go back to Sign In
-    return {"display":"block"}, {"display":"none"}, {"display":"none"}
-
-
-@app.callback(Output("forgot-message","children"),
-              Input("forgot-submit-btn","n_clicks"),
-              State("forgot-email","value"),
-              prevent_initial_call=True)
-def handle_forgot_password(n_clicks, email):
-    if not email:
-        return "Please enter your email address."
-
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        return "Password reset is not configured on this server. Contact support."
-
-    import requests as _req
-    try:
-        r = _req.post(
-            f"{SUPABASE_URL}/auth/v1/recover",
-            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
-            json={"email": email, "options": {"redirect_to": FRONTEND_URL}},
-            timeout=10,
-        )
-        # Supabase returns 200 regardless of whether the email exists, by
-        # design (prevents leaking which emails are registered) -- so a
-        # generic success message here is correct, not a bug.
-        if r.ok:
-            return f"If an account exists for {email}, a reset link has been sent. Check your inbox."
-        return f"Could not send reset email (error {r.status_code}). Please try again."
-    except Exception as exc:
-        return f"Could not reach the reset service: {exc}"
-
-
-@app.callback(Output("login-section","style", allow_duplicate=True),
-              Output("signup-section","style", allow_duplicate=True),
-              Output("forgot-section","style", allow_duplicate=True),
-              Output("set-password-section","style"),
-              Input("s-recovery-token","data"),
-              prevent_initial_call=True)
-def show_set_password_section(recovery_token):
-    if not recovery_token:
-        return no_update, no_update, no_update, no_update
-    # A recovery token was found in the URL -- hide every other auth
-    # section and show only the set-new-password form.
-    return {"display":"none"}, {"display":"none"}, {"display":"none"}, {"display":"block"}
-
-
-@app.callback(Output("set-password-message","children"),
-              Output("s-session","data", allow_duplicate=True),
-              Output("s-page","data", allow_duplicate=True),
-              Input("set-password-btn","n_clicks"),
-              State("set-password-new","value"),
-              State("s-recovery-token","data"),
-              prevent_initial_call=True)
-def handle_set_new_password(n_clicks, new_password, recovery_token):
-    if not new_password or len(new_password) < 6:
-        return "Password must be at least 6 characters.", no_update, no_update
-
-    if not recovery_token:
-        return "Recovery link has expired or is invalid. Please request a new one.", no_update, no_update
-
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        return "Password reset is not configured on this server. Contact support.", no_update, no_update
-
-    import requests as _req
-    auth_headers = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {recovery_token}",
-        "Content-Type": "application/json",
-    }
-    try:
-        r = _req.put(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers=auth_headers,
-            json={"password": new_password},
-            timeout=10,
-        )
-        if not r.ok:
-            return f"Could not set new password (error {r.status_code}). The link may have expired -- request a new one.", no_update, no_update
-
-        # Password updated -- the recovery token is itself a valid access
-        # token, so log the user straight into the app rather than making
-        # them re-enter the password they just set.
-        user = r.json() or {}
-        return ("", {
-            "user_id": user.get("id", ""),
-            "email": user.get("email", ""),
-            "access_token": recovery_token,
-            "is_demo": False,
-        }, "app")
-
-    except Exception as exc:
-        return f"Could not reach the reset service: {exc}", no_update, no_update
+        return {"display":"none"}, {"display":"block"}
+    return {"display":"block"}, {"display":"none"}
 
 @app.callback(Output("s-session","data"),Output("s-page","data"),
               Output("login-error","children"), Output("signup-error","children"),
@@ -10520,11 +5139,9 @@ def handle_set_new_password(n_clicks, new_password, recovery_token):
               Input("signup-btn","n_clicks"),
               State("login-email","value"),State("login-password","value"),
               State("signup-email","value"),State("signup-password","value"),
-              State("signup-agree-terms","value"),
               prevent_initial_call=True)
 def handle_auth(login_clicks, demo_clicks, signup_clicks,
-                login_email, login_password, signup_email, signup_password,
-                signup_agree_terms):
+                login_email, login_password, signup_email, signup_password):
     ctx = callback_context
     if not ctx.triggered: return no_update, no_update, no_update, no_update
     trigger = ctx.triggered[0]["prop_id"].split(".")[0]
@@ -10585,10 +5202,6 @@ def handle_auth(login_clicks, demo_clicks, signup_clicks,
         if not signup_email or not signup_password:
             return no_update, no_update, no_update, "Please enter both email and password."
 
-        if not signup_agree_terms or "agreed" not in signup_agree_terms:
-            return (no_update, no_update, no_update,
-                    "Please agree to the Terms of Service and Privacy Policy to create an account.")
-
         if not SUPABASE_URL or not SUPABASE_ANON_KEY:
             return (no_update, no_update, no_update,
                     "Sign-up is not configured on this server. Try Demo mode, or contact support.")
@@ -10634,222 +5247,7 @@ def logout(n):
     return no_update, no_update
 
 
-
-@app.callback(
-    Output("jrn-submit-result", "children"),
-    Input("jrn-submit", "n_clicks"),
-    State("jrn-symbol", "value"),
-    State("jrn-entry-date", "value"),
-    State("jrn-entry-price", "value"),
-    State("jrn-shares", "value"),
-    State("jrn-direction", "value"),
-    State("jrn-tier", "value"),
-    State("jrn-notes", "value"),
-    State("jrn-portfolio-value", "value"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def handle_journal_submit(
-    n_clicks,
-    symbol,
-    entry_date,
-    entry_price,
-    shares,
-    direction,
-    tier,
-    notes,
-    portfolio_value,
-    session,
-):
-    if not n_clicks:
-        return no_update
-
-    symbol = (symbol or "").strip().upper()
-    direction = (direction or "LONG").strip().upper()
-    tier = tier or "MANUAL"
-    notes = (notes or "").strip()
-
-    if not symbol:
-        return note_box("Journal entry blocked: symbol is required.", "yellow")
-
-    if direction not in {"LONG", "SHORT"}:
-        return note_box("Journal entry blocked: direction must be LONG or SHORT.", "yellow")
-
-    if not entry_date:
-        return note_box("Journal entry blocked: entry date is required.", "yellow")
-
-    try:
-        entry_price = float(entry_price)
-        shares = float(shares)
-        portfolio_value = float(portfolio_value or 0)
-    except Exception:
-        return note_box("Journal entry blocked: entry price, shares, and portfolio value must be numeric.", "yellow")
-
-    if entry_price <= 0:
-        return note_box("Journal entry blocked: entry price must be greater than zero.", "yellow")
-
-    if shares <= 0:
-        return note_box("Journal entry blocked: shares must be greater than zero.", "yellow")
-
-    payload = {
-        "symbol": symbol,
-        "entry_date": entry_date,
-        "entry_price": entry_price,
-        "shares": shares,
-        "direction": direction,
-        "signal_id": None,
-        "campaign_id": "manual_journal_entry",
-        "tier": tier,
-        "notes": notes,
-        "portfolio_value": portfolio_value,
-    }
-
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/journal/entry",
-            json=payload,
-            headers=_auth_headers(session),
-            timeout=20,
-        )
-        try:
-            resp = r.json()
-        except Exception:
-            resp = {"raw": r.text}
-    except Exception as exc:
-        return note_box(
-            f"Journal entry failed: request exception: {type(exc).__name__}: {exc}",
-            "yellow",
-        )
-
-    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
-        journal_id = resp.get("journal_id", "")
-        return html.Div([
-            note_box(f"Journal entry saved for {symbol}. Journal ID: {journal_id}. Auto-refreshing journal table.", "green"),
-            dcc.Interval(id="jrn-entry-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
-        ])
-
-    detail = resp.get("detail") if isinstance(resp, dict) else None
-    error = resp.get("error") if isinstance(resp, dict) else None
-    raw = resp.get("raw") if isinstance(resp, dict) else None
-    return note_box(f"Journal entry failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
-
-
-@app.callback(
-    Output("jrn-exit-result", "children"),
-    Input("jrn-exit-submit", "n_clicks"),
-    State("jrn-exit-id", "value"),
-    State("jrn-exit-date", "value"),
-    State("jrn-exit-price", "value"),
-    State("jrn-exit-reason", "value"),
-    State("jrn-exit-notes", "value"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def handle_journal_exit(
-    n_clicks,
-    journal_id,
-    exit_date,
-    exit_price,
-    exit_reason,
-    notes,
-    session,
-):
-    if not n_clicks:
-        return no_update
-
-    journal_id = (journal_id or "").strip()
-    exit_reason = (exit_reason or "MANUAL").strip().upper()
-    notes = (notes or "").strip()
-
-    if not journal_id:
-        return note_box("Journal exit blocked: select an open journal trade.", "yellow")
-
-    if not exit_date:
-        return note_box("Journal exit blocked: exit date is required.", "yellow")
-
-    try:
-        exit_price = float(exit_price)
-    except Exception:
-        return note_box("Journal exit blocked: exit price must be numeric.", "yellow")
-
-    if exit_price <= 0:
-        return note_box("Journal exit blocked: exit price must be greater than zero.", "yellow")
-
-    payload = {
-        "exit_date": exit_date,
-        "exit_price": exit_price,
-        "exit_reason": exit_reason,
-        "notes": notes,
-    }
-
-    try:
-        r = req.post(
-            f"{BACKEND_HTTP}/api/journal/exit/{journal_id}",
-            json=payload,
-            headers=_auth_headers(session),
-            timeout=20,
-        )
-        try:
-            resp = r.json()
-        except Exception:
-            resp = {"raw": r.text}
-    except Exception as exc:
-        return note_box(
-            f"Journal exit failed: request exception: {type(exc).__name__}: {exc}",
-            "yellow",
-        )
-
-    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
-        return html.Div([
-            note_box(f"Journal exit saved for {journal_id}. Auto-refreshing journal table.", "green"),
-            dcc.Interval(id="jrn-exit-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
-        ])
-
-    detail = resp.get("detail") if isinstance(resp, dict) else None
-    error = resp.get("error") if isinstance(resp, dict) else None
-    raw = resp.get("raw") if isinstance(resp, dict) else None
-    return note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
-
-
-# JOURNAL_AUTO_REFRESH_CLIENTSIDE_CALLBACK
-app.clientside_callback(
-    """
-    function(entry_ticks, exit_ticks) {
-        const entry = entry_ticks || 0;
-        const exit = exit_ticks || 0;
-        if (entry > 0 || exit > 0) {
-            window.location.reload();
-        }
-        return "";
-    }
-    """,
-    Output("jrn-auto-refresh-dummy", "children"),
-    Input("jrn-entry-auto-refresh", "n_intervals"),
-    Input("jrn-exit-auto-refresh", "n_intervals"),
-    prevent_initial_call=True,
-)
-
 if __name__ == "__main__":
-    # URGENT REVERT (2026-08-06): threaded=True was added earlier
-    # tonight as a "standard, low-risk fix" for the frontend being
-    # single-threaded by default. A real OOM crash was then reported
-    # on this exact service, timed directly after that change went
-    # live. Reverting immediately -- same lesson as the backend's
-    # earlier OOM crash tonight: stop a confirmed, active production
-    # risk first, investigate the actual root cause properly second,
-    # rather than assume a change was safe just because it's a
-    # commonly-recommended pattern in general. The real, underlying
-    # "one request blocks everyone" problem this was meant to fix is
-    # real and still unsolved -- but a crashing service is strictly
-    # worse than a slow one. See the follow-up investigation for
-    # whether this was the genuine cause or a coincidence, before
-    # re-attempting any concurrency fix here.
-    try:
-        import psutil as _psutil_startup, os as _os_startup
-        _startup_rss_mb = _psutil_startup.Process(_os_startup.getpid()).memory_info().rss / (1024 * 1024)
-        print(f"[MEM] STARTUP baseline: {_startup_rss_mb:.1f} MB RSS", flush=True)
-    except Exception as _startup_mem_exc:
-        print(f"[MEM] STARTUP: failed to read memory ({_startup_mem_exc})", flush=True)
     app.run(debug=False, host="0.0.0.0", port=8050)
 
 # SIGMALYTIC_HIGH_CONTRAST_TEXT_PATCH
