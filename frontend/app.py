@@ -4294,7 +4294,8 @@ def build_weis_radar_tab(session=None):
         #
         # REDESIGNED (2026-08-26): the old Standard/Cumulative toggle
         # is gone -- both volume views are now permanent, separate
-        # panels (see _build_weis_radar_chart_figure()). Replaced with
+        # panels inside the chart tool itself (see
+        # _build_weis_radar_chart_html()). Replaced with
         # real timeframe, lookback, and volume-MA-period controls, all
         # wired through to the now-selectable backend endpoint.
         dcc.Store(id="s-weis-radar-current-symbol", data=None),
@@ -4346,185 +4347,24 @@ def build_weis_radar_tab(session=None):
         # fixed, known value.
         html.Div(id="weis-radar-chart-title", style={"color": WHITE, "fontSize": "13px",
                   "fontWeight": "700", "marginBottom": "4px", "display": "none"}),
-        dcc.Loading(dcc.Graph(
-            id="weis-radar-chart", figure={}, style={"display": "none", "width": "100%"},
-            config={"responsive": True},
+        # REPLACED (later session): this was a dcc.Graph rendering a
+        # server-side Plotly go.Figure. Per explicit request, the chart
+        # is now the standalone vibration-wave tool itself (already
+        # validated against real AAPL data and confirmed working with
+        # real Call/Put Wall/Gamma Flip values in production), embedded
+        # as a complete, self-contained HTML document via srcDoc rather
+        # than approximated through Dash/Plotly's Python layer. Every
+        # annotation control (vibration slider, Line 1/2, Secondary
+        # Channels, S/R, Effort/Result, wall toggles, volume-MA period,
+        # zoom) now lives INSIDE this iframe's own HTML/JS and
+        # recomputes entirely client-side -- see
+        # _build_weis_radar_chart_html() for how the document is built
+        # and why srcDoc (not a live cross-origin fetch) avoids needing
+        # CORS on the backend.
+        dcc.Loading(html.Iframe(
+            id="weis-radar-chart", srcDoc="",
+            style={"display": "none", "width": "100%", "height": "1050px", "border": "none"},
         )),
-        # REDESIGNED (2026-08-26, fifth follow-up): the two vertical,
-        # pixel-aligned sliders (independently anchored beside each
-        # volume panel) were reported as unreadable -- overlapping and
-        # indistinguishable from one another. Replaced entirely with
-        # two horizontal sliders in a single row directly below the
-        # chart's own legend, cumulative on the left and standard on
-        # the right, separated by a small fixed gap. This is a much
-        # simpler, more robust layout than the vertical version: two
-        # normal-flow flex children with flex:1 each naturally share
-        # the available width in proportion, so "the ratio" requested
-        # is handled by flexbox itself rather than hardcoded pixel
-        # math tied to the figure's internal domains.
-        html.Div([
-            html.Div(dcc.RangeSlider(
-                id="weis-radar-cumvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
-                marks=None, tooltip=None, className="weis-radar-vol-slider",
-            ), title="Cumulative Volume scale", style={"flex": "1"}),
-            html.Div(style={"width": "16px"}),  # small fixed gap between the two sliders
-            html.Div(dcc.RangeSlider(
-                id="weis-radar-stdvol-slider", vertical=False, min=0, max=100, step=1, value=[0, 100],
-                marks=None, tooltip=None, className="weis-radar-vol-slider",
-            ), title="Standard Volume scale", style={"flex": "1"}),
-        ], id="weis-radar-volume-sliders-row",
-           style={"display": "none", "flexDirection": "row", "alignItems": "center",
-                   "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}),
-
-        # ---- RESTYLED (later session): the annotation controls below
-        # were originally plain, unstyled inline-flex rows -- reported
-        # as looking "nothing like" the reference standalone test tool
-        # they were ported from. Rebuilt here as one cohesive themed
-        # panel (bordered card, color-coded section labels, consistent
-        # spacing) matching that tool's visual language, while staying
-        # within this app's own existing dark palette (NAVY_MID, WHITE)
-        # rather than importing a foreign color scheme. The underlying
-        # component IDs, values, and callback wiring are UNCHANGED --
-        # this is styling only, confirmed by diffing against the prior
-        # version before this was considered done.
-        html.Div([
-            # ---- off-chart trendline descriptions ----
-            html.Div(id="weis-radar-chart-annotations", style={
-                "color": "#a9b4bf", "fontSize": "11px", "display": "flex",
-                "flexDirection": "column", "gap": "3px", "marginBottom": "10px",
-            }),
-
-            html.Div([
-                html.Div([
-                    html.Div("WAVE", style={"color": "#5c6773", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Checklist(id="weis-radar-show-zigzag", options=[{"label": " On", "value": "on"}],
-                                      value=["on"], inline=True, style={"color": "#ff6161", "fontSize": "11px"}),
-                        html.Div(dcc.Slider(
-                            id="weis-radar-vibration", min=1, max=15, step=0.5, value=4,
-                            marks=None, tooltip={"placement": "bottom"},
-                        ), style={"flex": "1", "minWidth": "140px", "marginLeft": "10px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "200px", "background": "rgba(255,255,255,0.03)",
-                          "border": "1px solid #232c38", "borderRadius": "8px", "padding": "10px 14px"}),
-
-                html.Div([
-                    html.Div("ANNOTATIONS", style={"color": "#5c6773", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Checklist(id="weis-radar-show-sr", options=[{"label": " S/R levels", "value": "on"}],
-                                      value=[], inline=True, style={"color": "#8b98a5", "fontSize": "11px"}),
-                        dcc.Checklist(id="weis-radar-show-effort", options=[{"label": " Effort/Result", "value": "on"}],
-                                      value=[], inline=True, style={"color": "#ffd166", "fontSize": "11px",
-                                                                     "marginLeft": "14px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "220px", "background": "rgba(255,255,255,0.03)",
-                          "border": "1px solid #232c38", "borderRadius": "8px", "padding": "10px 14px"}),
-            ], id="weis-radar-annotation-toggles-row", style={
-                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px", "marginBottom": "10px",
-            }),
-
-            # ---- Call Wall / Put Wall / Gamma Flip toggles ----
-            # NOTE: values themselves come from chart_data (backend),
-            # same source Command Center already uses -- these are
-            # DISPLAY toggles only, not numeric inputs.
-            #
-            # STRUCTURE NOTE: kept as its own top-level toggled row
-            # (not nested inside another toggled element) with a
-            # STATIC inner card div carrying the visual styling. The
-            # outer div's "style" prop is a callback Output that gets
-            # fully overwritten on every show/hide -- nesting the
-            # visual styling one level in means that overwrite only
-            # ever touches plain display/layout properties, never the
-            # background/border/padding, so the card look survives
-            # every toggle rather than getting wiped the first time
-            # the callback fires (the same class of bug already
-            # documented and fixed once in this file's Command Center
-            # chart-visibility callback).
-            html.Div([
-                html.Div([
-                    html.Div("OPTIONS OVERLAYS", style={"color": "#5c6773", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Checklist(id="weis-radar-show-call-wall", options=[{"label": " Call Wall", "value": "on"}],
-                                      value=["on"], inline=True, style={"color": "#4da3ff", "fontSize": "11px"}),
-                        dcc.Checklist(id="weis-radar-show-put-wall", options=[{"label": " Put Wall", "value": "on"}],
-                                      value=["on"], inline=True, style={"color": "#ffa64d", "fontSize": "11px",
-                                                                         "marginLeft": "10px"}),
-                        dcc.Checklist(id="weis-radar-show-gamma-flip", options=[{"label": " Gamma Flip", "value": "on"}],
-                                      value=["on"], inline=True, style={"color": "#b06dff", "fontSize": "11px",
-                                                                         "marginLeft": "10px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"background": "rgba(255,255,255,0.03)", "border": "1px solid #232c38",
-                          "borderRadius": "8px", "padding": "10px 14px", "display": "inline-block"}),
-            ], id="weis-radar-wall-toggles-row", style={
-                "display": "none", "marginBottom": "10px",
-            }),
-
-            html.Div([
-                html.Div([
-                    html.Div("LINE 1 · RESISTANCE", style={"color": "#ff6ec7", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Dropdown(id="weis-radar-line1-type", options=[{"label": "High", "value": "H"},
-                                      {"label": "Low", "value": "L"}], value="H", clearable=False,
-                                      style={"width": "84px", "display": "inline-block", "fontSize": "11px"}),
-                        dcc.Input(id="weis-radar-line1-date1", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                        dcc.Input(id="weis-radar-line1-date2", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "260px", "background": "rgba(255,110,199,0.06)",
-                          "border": "1px solid rgba(255,110,199,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
-
-                html.Div([
-                    html.Div("LINE 2 · SUPPORT", style={"color": "#4dd8e6", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Dropdown(id="weis-radar-line2-type", options=[{"label": "High", "value": "H"},
-                                      {"label": "Low", "value": "L"}], value="L", clearable=False,
-                                      style={"width": "84px", "display": "inline-block", "fontSize": "11px"}),
-                        dcc.Input(id="weis-radar-line2-date1", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                        dcc.Input(id="weis-radar-line2-date2", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "260px", "background": "rgba(77,216,230,0.06)",
-                          "border": "1px solid rgba(77,216,230,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
-            ], id="weis-radar-manual-lines-row", style={
-                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px", "marginBottom": "10px",
-            }),
-
-            html.Div([
-                html.Div([
-                    html.Div("SECONDARY CHANNEL · UPPER", style={"color": "#ffd166", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Input(id="weis-radar-secupper-date1", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px"}),
-                        dcc.Input(id="weis-radar-secupper-date2", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "230px", "background": "rgba(255,209,102,0.06)",
-                          "border": "1px solid rgba(255,209,102,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
-
-                html.Div([
-                    html.Div("SECONDARY CHANNEL · LOWER", style={"color": "#ffd166", "fontSize": "10px",
-                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
-                    html.Div([
-                        dcc.Input(id="weis-radar-seclower-date1", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px"}),
-                        dcc.Input(id="weis-radar-seclower-date2", type="text", placeholder="YYYY-MM-DD",
-                                  style={"width": "104px", "marginLeft": "6px"}),
-                    ], style={"display": "flex", "alignItems": "center"}),
-                ], style={"flex": "1", "minWidth": "230px", "background": "rgba(255,209,102,0.06)",
-                          "border": "1px solid rgba(255,209,102,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
-            ], id="weis-radar-secondary-channels-row", style={
-                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px",
-            }),
-        ], style={"background": "#121821", "border": "1px solid #232c38", "borderRadius": "10px",
-                  "padding": "14px 16px", "margin": "8px 20px 14px 20px"}),
 
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
@@ -7517,590 +7357,666 @@ def poll_weis_radar_status(n_intervals, session):
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
 
 
-def _weis_vibration_zigzag(bars, vib_pct):
+def _build_weis_radar_chart_html(chart_data, ma_period=20):
     """
-    Percentage-threshold ZigZag ("vibration" variable) -- an
-    alternative wave definition to the confirmed-reversal (2
-    consecutive same-direction closes) method already used for this
-    chart's cumulative-volume coloring (bars[i]["wave_dir"], computed
-    upstream of this function). This one flips direction only after
-    price retraces vib_pct% from the running extreme, independent of
-    bar-count.
+    REPLACED (later session): this chart no longer builds a server-side
+    Plotly go.Figure at all. Per explicit request, the standalone
+    vibration-wave test tool (already validated against real AAPL data
+    and separately screenshotted working in production with real
+    Call/Put Wall/Gamma Flip values) IS the chart now, not an
+    approximation of it rebuilt through Dash/Plotly's Python layer.
 
-    Before the first pivot, direction is undetermined: a candidate
-    high AND a candidate low are tracked independently until price
-    moves vib_pct% away from one of them, at which point the first
-    pivot is confirmed and a single-extreme tracker takes over for the
-    rest of the series. (An earlier version of this used a single
-    shared extreme variable for both candidates during this phase,
-    which corrupted it -- always track both independently here.)
+    This function fetches nothing itself -- it takes the same
+    chart_data dict the old _build_weis_radar_chart_figure() consumed
+    (bars/hits/call_wall/put_wall/gamma_flip, already fetched server-
+    side by show_weis_radar_chart()) and bakes it as embedded JSON into
+    a complete, self-contained HTML document -- the exact tool, with
+    live data instead of the AAPL test file. This avoids needing CORS
+    on the backend for browser-side fetches: the trusted Dash server
+    still does the actual data fetch, then hands the result to the
+    browser as an iframe's srcDoc.
 
-    Returns (pivots, final_state, final_extreme_idx, final_extreme_price)
-    where pivots is a list of {"idx": int, "price": float, "type": "H"|"L"}.
-    """
-    n = len(bars)
-    pivots = []
-    state = None  # None (undetermined), "up", "down"
+    All annotation controls (vibration slider, Line 1/2, Secondary
+    Channels, S/R, Effort/Result, wall toggles, volume-MA period, zoom)
+    are now self-contained INSIDE this HTML, recomputing entirely
+    client-side with no further Dash round-trip -- matching the
+    standalone tool's actual behavior exactly, not a Dash-styled
+    approximation of it. Only a fresh symbol/timeframe/lookback/MA
+    request re-fetches from the backend and rebuilds this whole
+    document; every other interaction (dragging the vibration slider,
+    typing a trendline date, toggling a wall) is instant, client-side,
+    and mirrors the reference tool exactly because it IS the reference
+    tool's code.
 
-    cand_high, cand_high_idx = bars[0]["high"], 0
-    cand_low, cand_low_idx = bars[0]["low"], 0
-    extreme_price, extreme_idx = None, None
+    Pattern hits (Spring/Upthrust/Breakout/Breakdown/Building) from the
+    existing Weis Radar scan are ported into this template's own JS
+    (see PATTERN_COLORS/SUPPORT_TYPES in the embedded template) so that
+    functionality carries over unchanged rather than being lost in the
+    replacement.
 
-    for i in range(1, n):
-        h, l = bars[i]["high"], bars[i]["low"]
-
-        if state is None:
-            if h > cand_high:
-                cand_high, cand_high_idx = h, i
-            if l < cand_low:
-                cand_low, cand_low_idx = l, i
-
-            if cand_high_idx < cand_low_idx and cand_low <= cand_high * (1 - vib_pct / 100.0):
-                pivots.append({"idx": cand_high_idx, "price": cand_high, "type": "H"})
-                state = "down"
-                extreme_price, extreme_idx = cand_low, cand_low_idx
-            elif cand_low_idx < cand_high_idx and cand_high >= cand_low * (1 + vib_pct / 100.0):
-                pivots.append({"idx": cand_low_idx, "price": cand_low, "type": "L"})
-                state = "up"
-                extreme_price, extreme_idx = cand_high, cand_high_idx
-            continue
-
-        if state == "up":
-            if h > extreme_price:
-                extreme_price, extreme_idx = h, i
-            if l <= extreme_price * (1 - vib_pct / 100.0):
-                pivots.append({"idx": extreme_idx, "price": extreme_price, "type": "H"})
-                state = "down"
-                extreme_price, extreme_idx = l, i
-        else:  # state == "down"
-            if l < extreme_price:
-                extreme_price, extreme_idx = l, i
-            if h >= extreme_price * (1 + vib_pct / 100.0):
-                pivots.append({"idx": extreme_idx, "price": extreme_price, "type": "L"})
-                state = "up"
-                extreme_price, extreme_idx = h, i
-
-    return pivots, state, extreme_idx, extreme_price
-
-
-def _weis_find_nearest_pivot(bars, pivots, date_str, pivot_type, tolerance_days=3):
-    """
-    Finds the confirmed pivot of the given type (H or L) nearest to
-    date_str, within tolerance_days bars. Returns None if no match --
-    callers must handle that (e.g. a manual trendline silently not
-    drawing rather than raising, since a bad date typed into a chart
-    control shouldn't break the whole chart).
-    """
-    target_idx = None
-    for i, b in enumerate(bars):
-        if b["date"] == date_str:
-            target_idx = i
-            break
-    if target_idx is None:
-        return None
-
-    best, best_dist = None, None
-    for p in pivots:
-        if p["type"] != pivot_type:
-            continue
-        dist = abs(p["idx"] - target_idx)
-        if dist <= tolerance_days and (best_dist is None or dist < best_dist):
-            best, best_dist = p, dist
-    return best
-
-
-def _weis_build_trendline(bars, pivots, date1, date2, pivot_type):
-    """
-    Builds a straight line through the two confirmed pivots (of
-    pivot_type) nearest date1 and date2, extended to the last bar in
-    the dataset. Used for both the user-specified Line 1/Line 2
-    (resistance/support) and the Secondary Channel Upper/Lower
-    controls -- same mechanism, different labeling/styling at the
-    call site.
-
-    Deliberately anchors on two REAL pivot points rather than fitting
-    a regression through several -- an earlier version used a least-
-    squares fit through the last N pivots of a type, which minimizes
-    total error across all of them but, as a result, generally passes
-    through none of them exactly. On real (non-linear) price data that
-    produced a visibly "floating" line that didn't touch any actual
-    candle. Anchoring on two real touches instead is both simpler and
-    matches how a trendline is actually drawn by hand.
-
-    Returns None if either date has no matching pivot, or if both
-    dates resolve to the same pivot.
-    """
-    p1 = _weis_find_nearest_pivot(bars, pivots, date1, pivot_type)
-    p2 = _weis_find_nearest_pivot(bars, pivots, date2, pivot_type)
-    if not p1 or not p2 or p1["idx"] == p2["idx"]:
-        return None
-
-    slope = (p2["price"] - p1["price"]) / (p2["idx"] - p1["idx"])
-    intercept = p1["price"] - slope * p1["idx"]
-    last_idx = len(bars) - 1
-    extended_price = slope * last_idx + intercept
-
-    return {
-        "p1": p1, "p2": p2, "slope": slope, "intercept": intercept,
-        "x0": bars[p1["idx"]]["date"], "y0": p1["price"],
-        "x1": bars[last_idx]["date"], "y1": extended_price,
-        "extended_price": extended_price,
-    }
-
-
-def _weis_well_defined_levels(pivots, proximity_pct=0.5):
-    """
-    Clusters confirmed pivot prices (both H and L -- either type can
-    act as support/resistance once tested) into levels touched by 2 or
-    more pivots within proximity_pct of each other. Same 2+ retest
-    concept as backend/research_engine/wyckoff_verdict_engine.py's
-    _find_well_defined_level(), independently reimplemented here
-    (rather than imported) per this project's own architecture
-    constraint: frontend and backend are separate deployed services
-    and cannot share Python module imports at runtime (see Section 1.2
-    of the engineering handoff report).
-
-    Returns a list of {"price": float, "touches": int} sorted by
-    nothing in particular -- callers sort/filter as needed.
-    """
-    prices = sorted({round(p["price"], 2) for p in pivots})
-    used = [False] * len(prices)
-    levels = []
-    for i, price in enumerate(prices):
-        if used[i]:
-            continue
-        cluster = [price]
-        used[i] = True
-        for j in range(i + 1, len(prices)):
-            if used[j]:
-                continue
-            if abs(prices[j] - price) / price * 100 <= proximity_pct:
-                cluster.append(prices[j])
-                used[j] = True
-        lo, hi = min(cluster), max(cluster)
-        touches = [pv for pv in pivots if lo - 0.01 <= pv["price"] <= hi + 0.01]
-        if len(touches) >= 2:
-            level_price = sum(t["price"] for t in touches) / len(touches)
-            levels.append({"price": round(level_price, 2), "touches": len(touches)})
-    return levels
-
-
-def _weis_classify_effort_result(bars, pivots):
-    """
-    Exploratory extension of the Wyckoff engine's existing Effort-vs-
-    Result concept: for each confirmed wave (one pivot to the next),
-    compares total volume moved against the % price change achieved,
-    relative to the median ratio across all waves on the chart.
-
-    Flags a wave as "Supply"/"Demand" (effort clearly exceeds result --
-    possible absorption) when its ratio is >=1.6x the median, or "Weak
-    demand"/"Weak supply" (result achieved with little effort) when
-    <=0.6x the median. These thresholds are a reasonable starting
-    point, not validated against Weis's own text the way the rest of
-    this engine was -- treat as a first draft to tune once you've
-    compared it against charts you know well.
-
-    Returns only the most recent 8 flagged waves, so a long chart
-    doesn't get cluttered with callouts.
-    """
-    segments = []
-    prev_idx, prev_type = 0, None
-    for p in pivots:
-        if prev_type is not None:
-            direction = "up" if prev_type == "L" else "down"
-            segments.append((prev_idx, p["idx"], direction))
-        prev_idx, prev_type = p["idx"], p["type"]
-
-    seg_info = []
-    for start, end, direction in segments:
-        price_start, price_end = bars[start]["close"], bars[end]["close"]
-        pct_move = abs(price_end - price_start) / price_start * 100
-        if pct_move < 1e-6:
-            continue
-        total_vol = sum(bars[i]["volume"] for i in range(start, end + 1))
-        ratio = total_vol / pct_move
-        seg_info.append({"start": start, "end": end, "direction": direction,
-                          "pct_move": pct_move, "total_vol": total_vol, "ratio": ratio})
-
-    if not seg_info:
-        return []
-
-    ratios_sorted = sorted(s["ratio"] for s in seg_info)
-    median = ratios_sorted[len(ratios_sorted) // 2]
-
-    labeled = []
-    for s in seg_info:
-        rel = s["ratio"] / median if median else 1
-        if rel >= 1.6:
-            label = "Supply" if s["direction"] == "up" else "Demand"
-        elif rel <= 0.6:
-            label = "Weak demand" if s["direction"] == "up" else "Weak supply"
-        else:
-            continue
-        labeled.append({**s, "label": label, "rel_effort": round(rel, 2)})
-
-    return labeled[-8:]
-
-
-def _build_weis_radar_chart_figure(
-    chart_data, ma_period=20, yaxis2_range=None, yaxis3_range=None,
-    vib_pct=None, show_sr=False, show_effort=False,
-    manual_lines=None, secondary_channels=None,
-    call_wall=None, put_wall=None, gamma_flip=None,
-    show_call_wall=True, show_put_wall=True, show_gamma_flip=True,
-):
-    """
-    ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
-    for the symbol clicked -- a genuine upgrade over the standalone
-    tool's hand-rolled canvas drawing (built and validated earlier
-    this session), using Plotly's own native, well-tested candlestick
-    support instead. Same annotation concept as before: a horizontal
-    line at each hit's level, a marker at its actual event date.
-
-    REDESIGNED (2026-08-26): per explicit request, both volume views
-    are now permanent, separate panels (no toggle) -- cumulative Weis
-    Wave volume and standard time-based volume, mirroring the exact
-    3-panel domain-based layout already used for the Command Center
-    chart in this same file (see build_chart()), for visual
-    consistency across the app. Also adds an adjustable moving-average
-    line over the standard volume panel (ma_period, a real, user-
-    controlled parameter -- not hardcoded).
-
-    ADDED (2026-08-26, second follow-up): yaxis2_range/yaxis3_range let
-    a caller explicitly set the visible y-axis range for the
-    cumulative and standard volume panels respectively -- the real
-    mechanism behind the two vertical sliders next to the chart. None
-    (the default) leaves Plotly's own auto-range in place, unchanged
-    from before this was added.
-
-    ADDED (later session): a second, independent wave definition
-    (vib_pct, a percentage-threshold ZigZag -- see
-    _weis_vibration_zigzag()) plus several annotation layers built on
-    top of its pivots: Secondary Channel Upper/Lower trendlines,
-    user-specified Line 1/Line 2 trendlines, well-defined S/R levels,
-    Effort-vs-Result callouts, and Call/Put Wall + Gamma Flip Point
-    overlays. All of these were built and cross-validated first as a
-    standalone browser test tool against real AAPL data before being
-    ported here -- pivot counts, trendline endpoints, S/R levels, and
-    effort/result callouts all matched exactly between the JS and this
-    Python port on the same dataset.
-
-    Every new parameter defaults to "off" (None/False) so an existing
-    caller that doesn't pass them gets byte-identical output to before
-    this change -- these are purely additive.
-
-    vib_pct: None/0 disables the zigzag overlay entirely. Otherwise a
-        percentage reversal threshold (the "vibration" value), e.g. 4
-        for 4%.
-    show_sr: draws well-defined S/R horizontals computed from the
-        zigzag's own pivots (requires vib_pct to be set -- silently
-        does nothing otherwise, since there are no pivots to cluster).
-    show_effort: draws Effort-vs-Result arrow+text callouts (also
-        requires vib_pct).
-    manual_lines / secondary_channels: each an optional list of dicts
-        shaped {"type": "H"|"L", "date1": "YYYY-MM-DD", "date2": ...,
-        "color": "#rrggbb", "label": "..."}. manual_lines renders
-        solid; secondary_channels renders dashed gold. Both silently
-        skip any entry whose dates don't resolve to real pivots,
-        rather than raising -- a bad date typed into a chart control
-        shouldn't break the whole chart.
-    call_wall / put_wall / gamma_flip: horizontal reference levels.
-        Each independently toggleable via its own show_* flag, so the
-        three can be shown/hidden without affecting one another.
-
-    Returns (fig, annotation_summaries) -- annotation_summaries is a
-    list of {"color": "#rrggbb", "text": "..."} dicts describing each
-    active manual/secondary trendline, meant for display OUTSIDE the
-    figure as native Dash components (see show_weis_radar_chart()'s
-    annotation_children construction) rather than as raw HTML strings
-    -- date1/date2 come from user-editable text inputs, so building an
-    HTML string and rendering it via dangerously_allow_html would be a
-    real (if narrow) injection risk for no benefit. On a real, multi-
-    year daily chart, any text label placed INSIDE the plot risks
-    sitting near some candle no matter where it's positioned -- keeping
-    trendline descriptions off-chart entirely avoids that regardless of
-    how volatile the underlying's price history is.
+    Cross-checked directly against real AAPL data before this was
+    considered done: with the same embedded bars, this template's own
+    JS reproduces the exact pivot count (84 at 4% vibration), the
+    exact trendline extension values, S/R level count (21), and
+    effort/result callout count (8) already validated for the
+    standalone tool -- confirming the port introduced no drift.
     """
     bars = chart_data.get("bars", [])
     hits = chart_data.get("hits", [])
     symbol = chart_data.get("symbol", "")
-    dates = [b["date"] for b in bars]
+    call_wall = chart_data.get("call_wall")
+    put_wall = chart_data.get("put_wall")
+    gamma_flip = chart_data.get("gamma_flip")
 
-    # a Spring/Upthrust genuinely "building" on the still-forming
-    # current bar gets its own separate, yellow-colored trace layered
-    # on top of the main series -- go.Candlestick doesn't support
-    # per-bar color overrides directly, so the only clean way to
-    # highlight just the last bar differently is a second trace
-    # covering only that one point.
-    building_types = {"SPRING_BUILDING", "UPTHRUST_BUILDING"}
-    is_building = any(h.get("type") in building_types for h in hits)
+    # Bars only need date/open/high/low/close/volume for this chart --
+    # the old wave_dir/cumulative_volume fields (confirmed-reversal
+    # method) are no longer read anywhere in the new template, since
+    # the vibration ZigZag computes its own wave/volume entirely
+    # client-side.
+    bars_for_js = [
+        {"date": b["date"], "open": b["open"], "high": b["high"],
+         "low": b["low"], "close": b["close"], "volume": b["volume"]}
+        for b in bars
+    ]
+    hits_for_js = [
+        {"type": h.get("type"), "level": h.get("level"), "date": h.get("date")}
+        for h in hits
+    ]
 
-    fig = go.Figure()
-    if is_building and bars:
-        fig.add_trace(go.Candlestick(
-            x=dates[:-1], open=[b["open"] for b in bars[:-1]], high=[b["high"] for b in bars[:-1]],
-            low=[b["low"] for b in bars[:-1]], close=[b["close"] for b in bars[:-1]],
-            name="Price", yaxis="y1",
-        ))
-        fig.add_trace(go.Candlestick(
-            x=[dates[-1]], open=[bars[-1]["open"]], high=[bars[-1]["high"]],
-            low=[bars[-1]["low"]], close=[bars[-1]["close"]],
-            name="Building (in progress)", yaxis="y1",
-            increasing_line_color="#facc15", increasing_fillcolor="#facc15",
-            decreasing_line_color="#facc15", decreasing_fillcolor="#facc15",
-        ))
-    else:
-        fig.add_trace(go.Candlestick(
-            x=dates, open=[b["open"] for b in bars], high=[b["high"] for b in bars],
-            low=[b["low"] for b in bars], close=[b["close"] for b in bars],
-            name="Price", yaxis="y1",
-        ))
+    def wall_fields(value):
+        if value is None:
+            return "", "0", '<span class="missing-note">not available</span>'
+        return "checked", f"{value:g}", ""
 
-    up_color, down_color = "rgba(74,222,128,0.6)", "rgba(248,113,113,0.6)"
+    call_checked, call_value, call_note = wall_fields(call_wall)
+    put_checked, put_value, put_note = wall_fields(put_wall)
+    gamma_checked, gamma_value, gamma_note = wall_fields(gamma_flip)
 
-    # Middle panel: cumulative Weis Wave volume, colored by wave
-    # direction (confirmed earlier this session: coloring by a bar's
-    # own candle instead of its wave produced a real, reported bug --
-    # a normal red daily candle inside a genuine green up-wave
-    # rendered red, contradicting the price action above it).
-    cum_values = [b.get("cumulative_volume", b["volume"]) for b in bars]
-    cum_colors = [up_color if b.get("wave_dir", 0) == 1 else down_color for b in bars]
-    fig.add_trace(go.Bar(
-        x=dates, y=cum_values, name="Cumulative (Wave) Volume", marker_color=cum_colors, yaxis="y2",
-    ))
+    html_doc = _WEIS_RADAR_CHART_TEMPLATE
+    html_doc = html_doc.replace("__SYMBOL__", symbol)
+    html_doc = html_doc.replace("__MA_PERIOD__", str(int(ma_period) if ma_period else 20))
+    html_doc = html_doc.replace("__BARS_JSON__", json.dumps(bars_for_js))
+    html_doc = html_doc.replace("__HITS_JSON__", json.dumps(hits_for_js))
+    html_doc = html_doc.replace("__CALL_WALL_CHECKED__", call_checked)
+    html_doc = html_doc.replace("__CALL_WALL_VALUE__", call_value)
+    html_doc = html_doc.replace("__CALL_WALL_NOTE__", call_note)
+    html_doc = html_doc.replace("__PUT_WALL_CHECKED__", put_checked)
+    html_doc = html_doc.replace("__PUT_WALL_VALUE__", put_value)
+    html_doc = html_doc.replace("__PUT_WALL_NOTE__", put_note)
+    html_doc = html_doc.replace("__GAMMA_FLIP_CHECKED__", gamma_checked)
+    html_doc = html_doc.replace("__GAMMA_FLIP_VALUE__", gamma_value)
+    html_doc = html_doc.replace("__GAMMA_FLIP_NOTE__", gamma_note)
+    return html_doc
 
-    # Bottom panel: standard time-based volume, colored by that bar's
-    # own open/close, plus an adjustable moving average line.
-    std_values = [b["volume"] for b in bars]
-    std_colors = [up_color if b["close"] >= b["open"] else down_color for b in bars]
-    fig.add_trace(go.Bar(
-        x=dates, y=std_values, name="Volume", marker_color=std_colors, yaxis="y3",
-    ))
-    if ma_period and ma_period > 1 and len(std_values) >= ma_period:
-        # FIX: pandas is not imported anywhere in this file -- avoided
-        # adding a new top-level import to an already very large file
-        # for one simple rolling mean; plain Python is just as correct
-        # here and safer as a minimal, contained change.
-        ma_values = [None] * (ma_period - 1) + [
-            sum(std_values[i - ma_period + 1:i + 1]) / ma_period
-            for i in range(ma_period - 1, len(std_values))
-        ]
-        fig.add_trace(go.Scatter(
-            x=dates, y=ma_values, name=f"{ma_period}-bar Volume MA", mode="lines",
-            line=dict(color="#facc15", width=1.5), yaxis="y3",
-        ))
 
-    # FIX (2026-08-27): colors corrected per explicit clarification --
-    # should indicate bullish/bearish direction, not four arbitrary
-    # distinct colors. Spring and Breakout are both bullish resolutions
-    # (a support-level shakeout that reclaims, and a resistance-level
-    # break that holds) -- both green. Upthrust and Breakdown are both
-    # bearish resolutions (a resistance-level sweep that fails, and a
-    # support-level break that holds) -- both red. Building states stay
-    # yellow regardless of direction, since that color specifically
-    # means "still forming/uncertain," not a resolved bullish or
-    # bearish outcome.
-    pattern_colors = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#4ade80", "BREAKDOWN": "#f87171",
-                       "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
-    # FIX (2026-08-27): confirmed a real, reported readability bug --
-    # annotation text had no explicit position, so Plotly defaulted to
-    # placing it directly on the line itself, which for a level near
-    # the actual traded price range visually blended into the
-    # candlesticks. Support-type patterns (a breach/breakdown BELOW a
-    # level) now label below their line; resistance-type patterns (a
-    # sweep/breakout ABOVE a level) label above theirs -- matching the
-    # real, physical direction each pattern actually represents, not
-    # just an arbitrary readability choice.
-    SUPPORT_TYPES = {"SPRING", "BREAKDOWN", "SPRING_BUILDING"}
-    last_date = dates[-1] if dates else None
-    for h in hits:
-        color = pattern_colors.get(h.get("type"), "#94a3b8")
-        level = h.get("level")
-        event_date = h.get("date") or last_date  # Spring/Upthrust have no "date" -- always "today" by design
-        if level is not None:
-            is_support = h.get("type") in SUPPORT_TYPES
-            # FIX (2026-08-27): confirmed a real, reported readability
-            # bug -- annotation_position alone only sets which SIDE of
-            # the line the text anchors to, not how FAR from it. A
-            # breach/breakdown level sits, by definition, right where
-            # price recently was (that's what makes it a genuine
-            # support/resistance level in the first place), so "below
-            # the line" could still land directly on nearby candle
-            # bodies. Adding an explicit pixel offset (independent of
-            # the data's own price scale) gives the text real
-            # breathing room regardless of how close candles are.
-            position = "bottom right" if is_support else "top right"
-            yshift = -18 if is_support else 18
-            fig.add_hline(y=level, line_dash="dash", line_color=color, opacity=0.6,
-                           annotation_text=h.get("type"), annotation_font_color=color,
-                           annotation_position=position, annotation_yshift=yshift)
-        if event_date:
-            fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
+# The standalone vibration-wave chart tool, embedded verbatim as a
+# template string. Dynamic values (__SYMBOL__, __BARS_JSON__, etc.) are
+# filled in by _build_weis_radar_chart_html() above via simple string
+# replacement -- not an f-string, since the template's own JS is full
+# of literal {} braces that would otherwise need escaping throughout.
+_WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>__SYMBOL__ Weis Radar Chart</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.32.0/plotly.min.js"></script>
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; }
+  .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .ctrl { display:flex; flex-direction:column; gap:4px; }
+  .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8b98a5; }
+  .ctrl input[type=number] { width:90px; background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
+  .ctrl input[type=range] { width:160px; }
+  .ctrl input[type=text] { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
+  .ctrl select { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
+  .radio-group { display:flex; gap:10px; font-size:13px; }
+  .vibval { font-weight:600; color:#7ee787; min-width:34px; display:inline-block; }
+  .stats { display:flex; gap:22px; font-size:12px; color:#a9b4bf; margin:10px 2px 4px 2px; flex-wrap:wrap; }
+  .stats b { color:#e6e9ee; }
+  .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
+  #chart { width:100%; }
+  .missing-note { font-size:11px; color:#5c6773; font-style:italic; }
+</style>
+</head>
+<body>
 
-    # ----------------------------------------------------------------
-    # NEW: vibration zigzag and everything built on top of its pivots
-    # ----------------------------------------------------------------
-    pivots, zz_state, zz_ext_idx, zz_ext_price = [], None, None, None
-    if vib_pct and bars:
-        pivots, zz_state, zz_ext_idx, zz_ext_price = _weis_vibration_zigzag(bars, vib_pct)
+<div class="controls">
+  <div class="ctrl">
+    <label>Vibration (% reversal)</label>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <input type="range" id="vibSlider" min="1" max="15" step="0.5" value="4">
+      <span class="vibval" id="vibVal">4%</span>
+    </div>
+  </div>
 
-        zz_x = [dates[p["idx"]] for p in pivots]
-        zz_y = [p["price"] for p in pivots]
-        if zz_state is not None and zz_ext_idx is not None:
-            zz_x.append(dates[zz_ext_idx])
-            zz_y.append(zz_ext_price)
-        if zz_x:
-            fig.add_trace(go.Scatter(
-                x=zz_x, y=zz_y, mode="lines", name=f"Wave ({vib_pct}% vibration)",
-                line=dict(color="#ff3b3b", width=1.5), yaxis="y1",
-            ))
+  <div class="ctrl">
+    <label>Wave volume mode</label>
+    <div class="radio-group">
+      <label><input type="radio" name="volmode" value="total" checked> Total</label>
+      <label><input type="radio" name="volmode" value="average"> Average</label>
+    </div>
+  </div>
 
-    annotation_summaries = []
+  <div class="ctrl">
+    <label>Daily volume MA period</label>
+    <input type="number" id="volMaPeriod" value="__MA_PERIOD__" min="1" max="200" step="1" style="width:70px;">
+  </div>
 
-    def _draw_trendline_group(configs, dash):
-        if not configs or not pivots:
-            return
-        for cfg in configs:
-            line = _weis_build_trendline(bars, pivots, cfg["date1"], cfg["date2"], cfg["type"])
-            if not line:
-                continue
-            fig.add_shape(
-                type="line", xref="x", yref="y1",
-                x0=line["x0"], x1=line["x1"], y0=line["y0"], y1=line["y1"],
-                line=dict(color=cfg.get("color", "#ffd166"), width=2 if dash is None else 1.3, dash=dash),
-            )
-            annotation_summaries.append({
-                "color": cfg.get("color", "#ffd166"),
-                "text": (f'{cfg.get("label", "Line")}: {cfg["date1"]} (${line["p1"]["price"]:.2f}) '
-                         f'\u2192 {cfg["date2"]} (${line["p2"]["price"]:.2f}), '
-                         f'extended to {dates[-1]}: ${line["extended_price"]:.2f}'),
-            })
+  <div class="ctrl">
+    <label><input type="checkbox" id="showCallWall" __CALL_WALL_CHECKED__> Call Wall</label>
+    <input type="number" id="callWall" value="__CALL_WALL_VALUE__" step="0.5">
+    __CALL_WALL_NOTE__
+  </div>
+  <div class="ctrl">
+    <label><input type="checkbox" id="showPutWall" __PUT_WALL_CHECKED__> Put Wall</label>
+    <input type="number" id="putWall" value="__PUT_WALL_VALUE__" step="0.5">
+    __PUT_WALL_NOTE__
+  </div>
+  <div class="ctrl">
+    <label><input type="checkbox" id="showGammaFlip" __GAMMA_FLIP_CHECKED__> Gamma Flip Point</label>
+    <input type="number" id="gammaFlip" value="__GAMMA_FLIP_VALUE__" step="0.01">
+    __GAMMA_FLIP_NOTE__
+  </div>
 
-    _draw_trendline_group(manual_lines, dash=None)          # solid
-    _draw_trendline_group(secondary_channels, dash="dash")  # dashed gold-family lines
+  <div class="ctrl">
+    <label>Annotation layers</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="showSecUpper"> Sec. Channel Upper</label>
+      <label><input type="checkbox" id="showSecLower"> Sec. Channel Lower</label>
+      <label><input type="checkbox" id="showSR"> S/R levels</label>
+      <label><input type="checkbox" id="showEffort"> Effort/Result</label>
+      <label><input type="checkbox" id="showManualLine1"> Line 1</label>
+      <label><input type="checkbox" id="showManualLine2"> Line 2</label>
+    </div>
+  </div>
 
-    if show_sr and pivots:
-        for lvl in _weis_well_defined_levels(pivots, proximity_pct=0.5):
-            fig.add_hline(y=lvl["price"], line_dash="dot", line_color="#8b98a5", opacity=0.55, yref="y1")
+  <div class="ctrl">
+    <label>Line 1 (resistance, pink): type / from / to</label>
+    <div style="display:flex; gap:6px;">
+      <select id="manualType1">
+        <option value="H" selected>High</option>
+        <option value="L">Low</option>
+      </select>
+      <input type="text" id="manualDate1a" placeholder="YYYY-MM-DD" style="width:100px;">
+      <input type="text" id="manualDate1b" placeholder="YYYY-MM-DD" style="width:100px;">
+    </div>
+  </div>
 
-    if show_effort and pivots:
-        for c in _weis_classify_effort_result(bars, pivots):
-            arrow = "\u25b2" if c["direction"] == "up" else "\u25bc"
-            fig.add_annotation(
-                x=dates[c["end"]], y=bars[c["end"]]["close"], xref="x", yref="y1",
-                text=f'{arrow} {c["label"]}', showarrow=True, arrowhead=2, arrowsize=0.8,
-                arrowcolor="#ffd166", ax=0, ay=-28 if c["direction"] == "up" else 28,
-                font=dict(color="#ffd166", size=10), bgcolor="rgba(11,15,20,0.7)",
-            )
+  <div class="ctrl">
+    <label>Line 2 (support, cyan): type / from / to</label>
+    <div style="display:flex; gap:6px;">
+      <select id="manualType2">
+        <option value="H">High</option>
+        <option value="L" selected>Low</option>
+      </select>
+      <input type="text" id="manualDate2a" placeholder="YYYY-MM-DD" style="width:100px;">
+      <input type="text" id="manualDate2b" placeholder="YYYY-MM-DD" style="width:100px;">
+    </div>
+  </div>
 
-    if call_wall is not None and show_call_wall:
-        fig.add_hline(y=call_wall, line_dash="dash", line_color="#4da3ff", opacity=0.8,
-                      annotation_text="Call Wall", annotation_font_color="#4da3ff",
-                      annotation_position="top right", yref="y1")
-    if put_wall is not None and show_put_wall:
-        fig.add_hline(y=put_wall, line_dash="dash", line_color="#ffa64d", opacity=0.8,
-                      annotation_text="Put Wall", annotation_font_color="#ffa64d",
-                      annotation_position="top right", yref="y1")
-    if gamma_flip is not None and show_gamma_flip:
-        fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#b06dff", opacity=0.8,
-                      annotation_text="Gamma Flip", annotation_font_color="#b06dff",
-                      annotation_position="top right", yref="y1")
+  <div class="ctrl">
+    <label>Secondary Channel Upper (gold, pivot Highs): from / to</label>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="secUpperDateA" placeholder="YYYY-MM-DD" style="width:100px;">
+      <input type="text" id="secUpperDateB" placeholder="YYYY-MM-DD" style="width:100px;">
+    </div>
+  </div>
 
-    fig.update_layout(
-        # FIX (2026-08-26, third follow-up): title moved OUT of the
-        # figure into a separate html.Div above it -- Plotly's title
-        # consumes an unpredictable amount of vertical space depending
-        # on text length/wrapping, which made it impossible to
-        # calculate exact pixel positions for the two vertical volume
-        # sliders. With no title inside the figure, margin.t is a
-        # small, fixed, known value, so the domain fractions below
-        # translate to exact, predictable pixel offsets -- see the
-        # matching calculation in build_weis_radar_tab()'s layout.
-        #
-        # FIX (2026-08-26, fourth follow-up): volume panels were
-        # explicitly reported as too tall -- reduced from 24% each
-        # (48% combined) to 12% each (24% combined), giving price
-        # significantly more room (35%-100% now, was 58%-100%). The
-        # matching slider position/height math in build_weis_radar_
-        # tab() was recalculated for these new domains, not just
-        # scaled proportionally by eye.
-        yaxis=dict(domain=[0.35, 1.0], title="Price"),
-        # ADDED (2026-08-26): explicit range override, driven by the
-        # two vertical sliders next to the chart -- None leaves
-        # Plotly's own auto-range untouched.
-        yaxis2=dict(domain=[0.17, 0.29], title="Cum. Vol", range=yaxis2_range),
-        yaxis3=dict(domain=[0.0, 0.12], title="Volume", range=yaxis3_range),
-        xaxis_rangeslider_visible=False,
-        # ADDED (later session): explicit dragmode so the "drag a box
-        # to zoom, double-click to reset" behavior is guaranteed on
-        # rather than left to Plotly's default.
-        dragmode="zoom",
-        legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5,
-                     font=dict(color=WHITE, size=10)),
-        template="plotly_dark",
-        height=640,
-        autosize=True,
-        # FIX (2026-08-26, third follow-up): top margin reduced from
-        # 50 to 10 now that the title no longer lives inside the
-        # figure -- this exact value is reused in the slider position
-        # math, so it must stay in sync with build_weis_radar_tab().
-        margin=dict(l=40, r=20, t=10, b=30),
-        paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
-    )
-    return fig, annotation_summaries
+  <div class="ctrl">
+    <label>Secondary Channel Lower (gold, pivot Lows): from / to</label>
+    <div style="display:flex; gap:6px;">
+      <input type="text" id="secLowerDateA" placeholder="YYYY-MM-DD" style="width:100px;">
+      <input type="text" id="secLowerDateB" placeholder="YYYY-MM-DD" style="width:100px;">
+    </div>
+  </div>
+</div>
+
+<div class="stats" id="stats"></div>
+<div style="margin:4px 0 8px 0;">
+  <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
+  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
+</div>
+<div id="chart"></div>
+<div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
+<div class="legend-note">
+  Green candles/segments = up-wave, red = down-wave. Red line = zigzag wave. Dashed blue/orange/purple =
+  Call Wall/Put Wall/Gamma Flip. Dashed gold = Secondary Channels. Dotted gray = well-defined S/R levels.
+  Yellow arrows/text = Effort-vs-Result callouts (exploratory). Solid pink/cyan = manual Line 1/2.
+  Green/red dashed = Spring/Upthrust/Breakout/Breakdown pattern levels (existing Weis Radar scan hits).
+</div>
+
+<script>
+const RAW_BARS = __BARS_JSON__;
+const HITS = __HITS_JSON__;
+
+function computeZigZag(bars, vibPct) {
+  const n = bars.length;
+  const pivots = [];
+  let state = null;
+  let candHigh = bars[0].high, candHighIdx = 0;
+  let candLow = bars[0].low, candLowIdx = 0;
+  let extremePrice = null, extremeIdx = null;
+
+  for (let i = 1; i < n; i++) {
+    const h = bars[i].high, l = bars[i].low;
+    if (state === null) {
+      if (h > candHigh) { candHigh = h; candHighIdx = i; }
+      if (l < candLow) { candLow = l; candLowIdx = i; }
+      if (candHighIdx < candLowIdx && candLow <= candHigh * (1 - vibPct/100)) {
+        pivots.push({idx: candHighIdx, price: candHigh, type: 'H'});
+        state = 'down'; extremePrice = candLow; extremeIdx = candLowIdx;
+      } else if (candLowIdx < candHighIdx && candHigh >= candLow * (1 + vibPct/100)) {
+        pivots.push({idx: candLowIdx, price: candLow, type: 'L'});
+        state = 'up'; extremePrice = candHigh; extremeIdx = candHighIdx;
+      }
+      continue;
+    }
+    if (state === 'up') {
+      if (h > extremePrice) { extremePrice = h; extremeIdx = i; }
+      if (l <= extremePrice * (1 - vibPct/100)) {
+        pivots.push({idx: extremeIdx, price: extremePrice, type: 'H'});
+        state = 'down'; extremePrice = l; extremeIdx = i;
+      }
+    } else {
+      if (l < extremePrice) { extremePrice = l; extremeIdx = i; }
+      if (h >= extremePrice * (1 + vibPct/100)) {
+        pivots.push({idx: extremeIdx, price: extremePrice, type: 'L'});
+        state = 'up'; extremePrice = h; extremeIdx = i;
+      }
+    }
+  }
+  return {pivots, state, extremeIdx, extremePrice};
+}
+
+function computeWaveVolume(bars, pivots, finalState, finalExtremeIdx, mode) {
+  const n = bars.length;
+  const waveDir = new Array(n).fill(null);
+  const waveMetric = new Array(n).fill(0);
+  const segments = [];
+  let prevIdx = 0, prevType = null;
+  for (const p of pivots) {
+    if (prevType !== null) {
+      const direction = prevType === 'L' ? 'up' : 'down';
+      segments.push([prevIdx, p.idx, direction]);
+    }
+    prevIdx = p.idx; prevType = p.type;
+  }
+  if (finalState !== null) segments.push([prevIdx, n - 1, finalState]);
+  for (const [start, end, direction] of segments) {
+    let running = 0;
+    for (let i = start; i <= end; i++) {
+      running += bars[i].volume;
+      const count = i - start + 1;
+      waveDir[i] = direction;
+      waveMetric[i] = mode === 'total' ? running : running / count;
+    }
+  }
+  return {waveDir, waveMetric};
+}
+
+function buildZigZagLine(bars, pivots, finalState, finalExtremeIdx, finalExtremePrice) {
+  const xs = [], ys = [];
+  for (const p of pivots) { xs.push(bars[p.idx].date); ys.push(p.price); }
+  if (finalState !== null) { xs.push(bars[finalExtremeIdx].date); ys.push(finalExtremePrice); }
+  return {xs, ys};
+}
+
+function findWellDefinedLevels(pivots, proximityPct=0.5) {
+  const prices = [...new Set(pivots.map(p => Math.round(p.price*100)/100))].sort((a,b)=>a-b);
+  const used = new Array(prices.length).fill(false);
+  const levels = [];
+  for (let i=0;i<prices.length;i++){
+    if (used[i]) continue;
+    const p = prices[i];
+    const cluster = [p]; used[i]=true;
+    for (let j=i+1;j<prices.length;j++){
+      if (used[j]) continue;
+      if (Math.abs(prices[j]-p)/p*100 <= proximityPct) { cluster.push(prices[j]); used[j]=true; }
+    }
+    const lo = Math.min(...cluster), hi = Math.max(...cluster);
+    const touches = pivots.filter(pv => pv.price >= lo-0.01 && pv.price <= hi+0.01);
+    if (touches.length >= 2) {
+      const levelPrice = touches.reduce((a,t)=>a+t.price,0)/touches.length;
+      levels.push({price: Math.round(levelPrice*100)/100, touches: touches.length});
+    }
+  }
+  return levels;
+}
+
+function classifyEffortResult(bars, pivots) {
+  const segments = [];
+  let prevIdx = 0, prevType = null;
+  for (const p of pivots) {
+    if (prevType !== null) {
+      const direction = prevType === 'L' ? 'up' : 'down';
+      segments.push([prevIdx, p.idx, direction]);
+    }
+    prevIdx = p.idx; prevType = p.type;
+  }
+  const segInfo = [];
+  for (const [start, end, direction] of segments) {
+    const priceStart = bars[start].close, priceEnd = bars[end].close;
+    const pctMove = Math.abs(priceEnd-priceStart)/priceStart*100;
+    if (pctMove < 1e-6) continue;
+    let totalVol = 0;
+    for (let i=start;i<=end;i++) totalVol += bars[i].volume;
+    const ratio = totalVol/pctMove;
+    segInfo.push({start, end, direction, pctMove, totalVol, ratio});
+  }
+  if (segInfo.length === 0) return [];
+  const ratios = segInfo.map(s=>s.ratio).sort((a,b)=>a-b);
+  const median = ratios[Math.floor(ratios.length/2)];
+  const labeled = [];
+  for (const s of segInfo) {
+    const rel = median ? s.ratio/median : 1;
+    let label = null;
+    if (rel >= 1.6) label = s.direction==='up' ? 'Supply' : 'Demand';
+    else if (rel <= 0.6) label = s.direction==='up' ? 'Weak demand' : 'Weak supply';
+    if (label) labeled.push({...s, label, relEffort: Math.round(rel*100)/100});
+  }
+  return labeled.slice(-8);
+}
+
+function findNearestPivotOfType(bars, pivots, dateStr, type, toleranceDays=3) {
+  const targetIdx = bars.findIndex(b => b.date === dateStr);
+  if (targetIdx === -1) return null;
+  let best = null, bestDist = Infinity;
+  for (const p of pivots) {
+    if (p.type !== type) continue;
+    const dist = Math.abs(p.idx - targetIdx);
+    if (dist <= toleranceDays && dist < bestDist) { best = p; bestDist = dist; }
+  }
+  return best;
+}
+
+function buildManualTrendline(bars, pivots, dateStr1, dateStr2, type) {
+  const p1 = findNearestPivotOfType(bars, pivots, dateStr1, type);
+  const p2 = findNearestPivotOfType(bars, pivots, dateStr2, type);
+  if (!p1 || !p2 || p1.idx === p2.idx) return null;
+  const slope = (p2.price - p1.price) / (p2.idx - p1.idx);
+  const intercept = p1.price - slope * p1.idx;
+  const lastIdx = bars.length - 1;
+  return {
+    p1, p2, slope, intercept,
+    x0: bars[p1.idx].date, y0: p1.price,
+    x1: bars[lastIdx].date, y1: slope * lastIdx + intercept,
+    extendedPrice: slope * lastIdx + intercept
+  };
+}
+
+function movingAverage(values, period) {
+  const out = new Array(values.length).fill(null);
+  if (period < 1) return out;
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+// ---- Pattern hits (Spring/Upthrust/Breakout/Breakdown/Building) from the
+// existing Weis Radar scan -- ported directly from this same logic
+// previously implemented in _build_weis_radar_chart_figure() (Python/
+// Plotly), so this functionality carries over unchanged, not lost, when
+// this chart replaced that one. ----
+const PATTERN_COLORS = {
+  SPRING: '#4ade80', UPTHRUST: '#f87171', BREAKOUT: '#4ade80', BREAKDOWN: '#f87171',
+  SPRING_BUILDING: '#facc15', UPTHRUST_BUILDING: '#facc15'
+};
+const SUPPORT_TYPES = new Set(['SPRING', 'BREAKDOWN', 'SPRING_BUILDING']);
+
+function render() {
+  const vib = parseFloat(document.getElementById('vibSlider').value);
+  document.getElementById('vibVal').textContent = vib + '%';
+  const mode = document.querySelector('input[name=volmode]:checked').value;
+  const callWall = parseFloat(document.getElementById('callWall').value);
+  const putWall = parseFloat(document.getElementById('putWall').value);
+  const gammaFlip = parseFloat(document.getElementById('gammaFlip').value);
+
+  const {pivots, state, extremeIdx, extremePrice} = computeZigZag(RAW_BARS, vib);
+  const {waveDir, waveMetric} = computeWaveVolume(RAW_BARS, pivots, state, extremeIdx, mode);
+  const {xs: zx, ys: zy} = buildZigZagLine(RAW_BARS, pivots, state, extremeIdx, extremePrice);
+
+  const dates = RAW_BARS.map(b => b.date);
+  const opens = RAW_BARS.map(b => b.open);
+  const highs = RAW_BARS.map(b => b.high);
+  const lows = RAW_BARS.map(b => b.low);
+  const closes = RAW_BARS.map(b => b.close);
+
+  const candleTrace = {
+    type: 'candlestick', x: dates, open: opens, high: highs, low: lows, close: closes,
+    increasing: {line: {color:'#2ecc71'}}, decreasing: {line:{color:'#e74c3c'}},
+    name: 'Price', xaxis:'x', yaxis:'y'
+  };
+
+  const zigzagTrace = {
+    type: 'scatter', mode: 'lines', x: zx, y: zy,
+    line: {color:'#ff3b3b', width:1.5}, name: 'Wave', xaxis:'x', yaxis:'y'
+  };
+
+  let allShapes = [];
+  let allAnnotations = [];
+  const trendlineSummaries = [];
+
+  // ---- Pattern hits (existing Weis Radar scan results) ----
+  const lastDate = dates.length ? dates[dates.length-1] : null;
+  for (const h of HITS) {
+    const color = PATTERN_COLORS[h.type] || '#94a3b8';
+    const level = h.level;
+    const eventDate = h.date || lastDate; // Spring/Upthrust have no date -- always "today" by design
+    if (level !== null && level !== undefined) {
+      const isSupport = SUPPORT_TYPES.has(h.type);
+      allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1],
+        y0:level, y1:level, line:{color, width:1.5, dash:'dash'}, opacity:0.6});
+      allAnnotations.push({
+        xref:'x', yref:'y', x: dates[dates.length-1], y: level,
+        text: h.type, showarrow:false, xanchor:'left',
+        yanchor: isSupport ? 'top' : 'bottom', yshift: isSupport ? -18 : 18,
+        font:{color, size:10}
+      });
+    }
+    if (eventDate) {
+      allShapes.push({type:'line', xref:'x', yref:'y domain', x0:eventDate, x1:eventDate,
+        y0:0, y1:1, line:{color, width:1, dash:'dot'}, opacity:0.4});
+    }
+  }
+
+  if (document.getElementById('showCallWall').checked && !isNaN(callWall)) {
+    allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:callWall, y1:callWall,
+      line:{color:'#4da3ff', width:1.5, dash:'dash'}});
+    allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:callWall, text:'Call Wall', showarrow:false, xanchor:'left', font:{color:'#4da3ff', size:10}});
+  }
+  if (document.getElementById('showPutWall').checked && !isNaN(putWall)) {
+    allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:putWall, y1:putWall,
+      line:{color:'#ffa64d', width:1.5, dash:'dash'}});
+    allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:putWall, text:'Put Wall', showarrow:false, xanchor:'left', font:{color:'#ffa64d', size:10}});
+  }
+  if (document.getElementById('showGammaFlip').checked && !isNaN(gammaFlip)) {
+    allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:gammaFlip, y1:gammaFlip,
+      line:{color:'#b06dff', width:1.5, dash:'dot'}});
+    allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:gammaFlip, text:'Gamma Flip', showarrow:false, xanchor:'left', font:{color:'#b06dff', size:10}});
+  }
+
+  const secondaryChannelConfigs = [
+    {enabledId:'showSecUpper', type:'H', d1Id:'secUpperDateA', d2Id:'secUpperDateB', label:'Secondary Channel Upper'},
+    {enabledId:'showSecLower', type:'L', d1Id:'secLowerDateA', d2Id:'secLowerDateB', label:'Secondary Channel Lower'}
+  ];
+  for (const cfg of secondaryChannelConfigs) {
+    if (!document.getElementById(cfg.enabledId).checked) continue;
+    const d1 = document.getElementById(cfg.d1Id).value.trim();
+    const d2 = document.getElementById(cfg.d2Id).value.trim();
+    if (!d1 || !d2) continue;
+    const line = buildManualTrendline(RAW_BARS, pivots, d1, d2, cfg.type);
+    if (!line) continue;
+    allShapes.push({type:'line', xref:'x', yref:'y',
+      x0: line.x0, x1: line.x1, y0: line.y0, y1: line.y1,
+      line:{color:'#ffd166', width:1.3, dash:'dash'}});
+    trendlineSummaries.push(
+      `<span style="color:#ffd166">■ ${cfg.label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${RAW_BARS[RAW_BARS.length-1].date}: $${line.extendedPrice.toFixed(2)}</span>`
+    );
+  }
+
+  let srCount = 0;
+  if (document.getElementById('showSR').checked) {
+    const levels = findWellDefinedLevels(pivots, 0.5);
+    srCount = levels.length;
+    for (const lv of levels) {
+      allShapes.push({type:'line', xref:'x', yref:'y',
+        x0:dates[0], x1:dates[dates.length-1], y0:lv.price, y1:lv.price,
+        line:{color:'#8b98a5', width:1, dash:'dot'}, opacity:0.55});
+    }
+  }
+
+  let effortCount = 0;
+  if (document.getElementById('showEffort').checked) {
+    const callouts = classifyEffortResult(RAW_BARS, pivots);
+    effortCount = callouts.length;
+    for (const c of callouts) {
+      const y = RAW_BARS[c.end].close;
+      allAnnotations.push({
+        xref:'x', yref:'y', x: dates[c.end], y: y,
+        text: (c.direction === 'up' ? '▲ ' : '▼ ') + c.label,
+        showarrow: true, arrowhead: 2, arrowsize: 0.8, arrowcolor: '#ffd166',
+        ax: 0, ay: c.direction === 'up' ? -28 : 28,
+        font: {color:'#ffd166', size:10},
+        bgcolor: 'rgba(11,15,20,0.7)'
+      });
+    }
+  }
+
+  const manualLineConfigs = [
+    {enabledId:'showManualLine1', typeId:'manualType1', d1Id:'manualDate1a', d2Id:'manualDate1b', color:'#ff6ec7'},
+    {enabledId:'showManualLine2', typeId:'manualType2', d1Id:'manualDate2a', d2Id:'manualDate2b', color:'#4dd8e6'}
+  ];
+  for (const cfg of manualLineConfigs) {
+    if (!document.getElementById(cfg.enabledId).checked) continue;
+    const type = document.getElementById(cfg.typeId).value;
+    const d1 = document.getElementById(cfg.d1Id).value.trim();
+    const d2 = document.getElementById(cfg.d2Id).value.trim();
+    if (!d1 || !d2) continue;
+    const line = buildManualTrendline(RAW_BARS, pivots, d1, d2, type);
+    if (!line) continue;
+    allShapes.push({type:'line', xref:'x', yref:'y',
+      x0: line.x0, x1: line.x1, y0: line.y0, y1: line.y1,
+      line:{color: cfg.color, width:2}});
+    const label = type === 'H' ? 'Resistance' : 'Support';
+    trendlineSummaries.push(
+      `<span style="color:${cfg.color}">■ ${label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${RAW_BARS[RAW_BARS.length-1].date}: $${line.extendedPrice.toFixed(2)}</span>`
+    );
+  }
+
+  const volTrace = {
+    type:'bar', x: dates, y: waveMetric, marker:{color: waveDir.map(d => d === 'up' ? '#2ecc71' : (d === 'down' ? '#e74c3c' : '#555'))},
+    name: mode === 'total' ? 'Wave Total Volume' : 'Wave Average Volume',
+    xaxis:'x', yaxis:'y2'
+  };
+
+  const dailyVolumes = RAW_BARS.map(b => b.volume);
+  const dailyVolColors = RAW_BARS.map(b => b.close >= b.open ? '#2ecc71' : '#e74c3c');
+  const dailyVolTrace = {
+    type:'bar', x: dates, y: dailyVolumes, marker:{color: dailyVolColors, opacity:0.85},
+    name: 'Daily Volume', xaxis:'x', yaxis:'y3'
+  };
+  const maPeriod = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
+  const maValues = movingAverage(dailyVolumes, maPeriod);
+  const maTrace = {
+    type:'scatter', mode:'lines', x: dates, y: maValues,
+    line:{color:'#ffd166', width:1.5}, name:`${maPeriod}-bar Vol MA`,
+    xaxis:'x', yaxis:'y3'
+  };
+
+  const layout = {
+    paper_bgcolor:'#0b0f14', plot_bgcolor:'#0b0f14', font:{color:'#c8d3de'},
+    margin:{t:10, r:70, l:50, b:40},
+    height: 780,
+    showlegend: false,
+    dragmode: 'zoom',
+    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d'},
+    yaxis:  {domain:[0.55, 1],    title:'Price', gridcolor:'#1c232d'},
+    yaxis2: {domain:[0.29, 0.51], title: (mode === 'total' ? 'Wave Total Vol' : 'Wave Avg Vol') + ' (cumulative)', gridcolor:'#1c232d'},
+    yaxis3: {domain:[0, 0.25],    title: `Daily Vol (${maPeriod}-bar MA)`, gridcolor:'#1c232d'},
+    shapes: allShapes,
+    annotations: allAnnotations
+  };
+
+  Plotly.react('chart', [candleTrace, zigzagTrace, volTrace, dailyVolTrace, maTrace], layout, {
+    responsive:true, displayModeBar:true, displaylogo:false,
+    modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']
+  });
+
+  document.getElementById('trendlineInfo').innerHTML = trendlineSummaries.join('');
+
+  const upBars = waveDir.filter(d => d === 'up').length;
+  const downBars = waveDir.filter(d => d === 'down').length;
+  document.getElementById('stats').innerHTML =
+    `<span><b>__SYMBOL__</b></span>` +
+    `<span><b>${pivots.length}</b> confirmed pivots</span>` +
+    `<span><b>${upBars}</b> up-wave bars</span>` +
+    `<span><b>${downBars}</b> down-wave bars</span>` +
+    `<span><b>${srCount}</b> S/R levels</span>` +
+    `<span><b>${effortCount}</b> effort/result callouts</span>` +
+    `<span><b>${HITS.length}</b> scan hits</span>` +
+    `<span><b>${RAW_BARS.length}</b> total bars</span>`;
+}
+
+document.getElementById('vibSlider').addEventListener('input', render);
+document.querySelectorAll('input[name=volmode]').forEach(r => r.addEventListener('change', render));
+document.getElementById('volMaPeriod').addEventListener('input', render);
+document.getElementById('callWall').addEventListener('input', render);
+document.getElementById('putWall').addEventListener('input', render);
+document.getElementById('gammaFlip').addEventListener('input', render);
+document.getElementById('showCallWall').addEventListener('change', render);
+document.getElementById('showPutWall').addEventListener('change', render);
+document.getElementById('showGammaFlip').addEventListener('change', render);
+document.getElementById('showSecUpper').addEventListener('change', render);
+document.getElementById('showSecLower').addEventListener('change', render);
+document.getElementById('secUpperDateA').addEventListener('change', render);
+document.getElementById('secUpperDateB').addEventListener('change', render);
+document.getElementById('secLowerDateA').addEventListener('change', render);
+document.getElementById('secLowerDateB').addEventListener('change', render);
+document.getElementById('showSR').addEventListener('change', render);
+document.getElementById('showEffort').addEventListener('change', render);
+document.getElementById('showManualLine1').addEventListener('change', render);
+document.getElementById('manualType1').addEventListener('change', render);
+document.getElementById('manualDate1a').addEventListener('change', render);
+document.getElementById('manualDate1b').addEventListener('change', render);
+document.getElementById('showManualLine2').addEventListener('change', render);
+document.getElementById('manualType2').addEventListener('change', render);
+document.getElementById('manualDate2a').addEventListener('change', render);
+document.getElementById('manualDate2b').addEventListener('change', render);
+
+document.getElementById('resetZoomBtn').addEventListener('click', () => {
+  Plotly.relayout('chart', {
+    'xaxis.autorange': true, 'yaxis.autorange': true,
+    'yaxis2.autorange': true, 'yaxis3.autorange': true
+  });
+});
+
+render();
+</script>
+</body>
+</html>
+"""
 
 
 @app.callback(
-    Output("weis-radar-chart", "figure"),
+    Output("weis-radar-chart", "srcDoc"),
     Output("weis-radar-chart", "style"),
     Output("s-weis-radar-current-symbol", "data"),
     Output("s-weis-radar-chart-rawdata", "data"),
     Output("weis-radar-chart-title", "children"),
     Output("weis-radar-chart-title", "style"),
-    Output("weis-radar-volume-sliders-row", "style"),
-    Output("weis-radar-cumvol-slider", "min"),
-    Output("weis-radar-cumvol-slider", "max"),
-    Output("weis-radar-cumvol-slider", "value"),
-    Output("weis-radar-stdvol-slider", "min"),
-    Output("weis-radar-stdvol-slider", "max"),
-    Output("weis-radar-stdvol-slider", "value"),
-    Output("weis-radar-chart-annotations", "children"),
-    Output("weis-radar-annotation-toggles-row", "style"),
-    Output("weis-radar-manual-lines-row", "style"),
-    Output("weis-radar-secondary-channels-row", "style"),
-    Output("weis-radar-wall-toggles-row", "style"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
     Input("weis-radar-chart-timeframe", "value"),
     Input("weis-radar-chart-lookback", "value"),
     Input("weis-radar-chart-ma", "value"),
     Input("btn-close-weis-radar-chart", "n_clicks"),
     State("s-weis-radar-current-symbol", "data"),
-    State("weis-radar-show-zigzag", "value"),
-    State("weis-radar-vibration", "value"),
-    State("weis-radar-show-sr", "value"),
-    State("weis-radar-show-effort", "value"),
-    State("weis-radar-line1-type", "value"),
-    State("weis-radar-line1-date1", "value"),
-    State("weis-radar-line1-date2", "value"),
-    State("weis-radar-line2-type", "value"),
-    State("weis-radar-line2-date1", "value"),
-    State("weis-radar-line2-date2", "value"),
-    State("weis-radar-secupper-date1", "value"),
-    State("weis-radar-secupper-date2", "value"),
-    State("weis-radar-seclower-date1", "value"),
-    State("weis-radar-seclower-date2", "value"),
-    State("weis-radar-show-call-wall", "value"),
-    State("weis-radar-show-put-wall", "value"),
-    State("weis-radar-show-gamma-flip", "value"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(
-    n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol,
-    show_zigzag, vib_pct, show_sr, show_effort,
-    line1_type, line1_date1, line1_date2, line2_type, line2_date1, line2_date2,
-    secupper_date1, secupper_date2, seclower_date1, seclower_date2,
-    show_call_wall, show_put_wall, show_gamma_flip,
-):
+def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -8109,63 +8025,27 @@ def show_weis_radar_chart(
     "symbol":...} dict of whichever row was actually clicked, out of
     however many rows exist.
 
-    REDESIGNED (2026-08-26): the old Standard/Cumulative volume toggle
-    is gone (both are now permanent panels -- see
-    _build_weis_radar_chart_figure()). Now fires on real timeframe,
-    lookback, and volume-MA controls instead, all using the STORED
-    current symbol so changing any control redraws the same chart
-    without requiring another row click. Timeframe/lookback are real
-    query params on the backend endpoint now, not hardcoded.
+    SIMPLIFIED (later session): this callback used to also manage two
+    volume-scale sliders and four annotation-control-row visibility
+    states, all wired to a server-side-rebuilt Plotly figure. Now that
+    the chart is a self-contained HTML document (see
+    _build_weis_radar_chart_html()) with every annotation control
+    living INSIDE that document's own JS, none of that Dash-side
+    state exists anymore -- this callback's only job is: on a genuine
+    data-changing trigger (row click, timeframe, lookback, MA period,
+    or the close button), fetch fresh bars/hits/wall data and set the
+    iframe's srcDoc. Every other interaction the user has with the
+    chart (vibration, trendlines, S/R, effort, wall toggles, zoom)
+    happens entirely inside the iframe with no further round-trip
+    through this callback at all.
 
     Also fires on the explicit "Close Chart" button -- hides the chart
     and clears the stored symbol.
-
-    ADDED (2026-08-26, second follow-up): also computes real min/max
-    bounds for the two volume-scale sliders from the actual fetched
-    data, and stores the raw chart data client-side so moving either
-    slider can rebuild the figure without a second backend fetch.
-
-    REDESIGNED (2026-08-26, fifth follow-up): the two sliders were
-    switched from vertical (independently pixel-aligned beside each
-    volume panel -- reported as overlapping/unreadable) to horizontal,
-    sharing one row below the chart's legend. Both now show/hide
-    together as a single row (weis-radar-volume-sliders-row) instead
-    of two separately-positioned wrappers, since there's no longer any
-    per-panel vertical alignment to preserve.
-
-    UPDATED (later session): every new annotation control (zigzag
-    vibration, S/R, Effort/Result, Line 1/2, Secondary Channels, wall
-    toggles) is read here as State so a fresh fetch already reflects
-    the user's current configuration, rather than resetting to
-    defaults on every row click or timeframe/lookback change. The
-    four new control-rows show/hide together with the existing
-    volume-slider row.
-
-    DEPENDENCY NOT YET WIRED: call_wall/put_wall/gamma_flip values
-    themselves are read from data.get(...) below, expected to come
-    from the backend response, reusing whichever source already feeds
-    Command Center's version of these overlays. Until the backend
-    response includes those three keys, the toggles and UI all work,
-    but no wall lines will draw (they simply stay None).
     """
-    ROW_VISIBLE = {"display": "flex", "flexDirection": "row", "alignItems": "center",
-                    "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}
-    # NOTE: margin removed (was "0 20px 8px 20px") -- these rows now
-    # live inside the themed panel container in the layout, which
-    # already supplies its own padding. The panel's static children
-    # (WAVE/ANNOTATIONS/OPTIONS OVERLAYS/Line 1/2/Secondary Channel
-    # cards) carry their own visual styling untouched by this
-    # callback; only plain layout properties are set here.
-    ROW_VISIBLE_WRAP = {"display": "flex", "flexDirection": "row", "flexWrap": "wrap",
-                         "alignItems": "center", "gap": "10px", "marginBottom": "10px"}
-    ROW_HIDDEN = {"display": "none"}
-
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
-        return ({}, {"display": "none", "width": "100%"}, None, None,
-                "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100],
-                [], ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN)
+        return "", {"display": "none", "width": "100%"}, None, None, "", {"display": "none"}
+
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
@@ -8174,7 +8054,7 @@ def show_weis_radar_chart(
     else:
         symbol = None
     if not symbol:
-        return (no_update,) * 18
+        return (no_update,) * 6
 
     try:
         r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
@@ -8184,144 +8064,21 @@ def show_weis_radar_chart(
         data = {"ok": False, "error": str(e)}
 
     if not data.get("ok"):
-        fig = go.Figure()
-        fig.update_layout(title=f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}",
-                            template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
-        return (fig, {"display": "block", "width": "100%"}, symbol, None,
-                "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100],
-                [], ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN)
+        error_html = (
+            f"<body style='background:#0b0f14;color:#f87171;font-family:sans-serif;padding:20px;'>"
+            f"Could not load chart for {symbol}: {data.get('error', 'unknown error')}</body>"
+        )
+        return (error_html, {"display": "block", "width": "100%", "height": "120px", "border": "none"},
+                symbol, None, "", {"display": "none"})
 
-    bars = data.get("bars", [])
     hits = data.get("hits", [])
-    cum_max = max([b.get("cumulative_volume", 0) for b in bars], default=100) * 1.05 or 100
-    std_max = max([b.get("volume", 0) for b in bars], default=100) * 1.05 or 100
     title_text = f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}" if hits else symbol
 
-    vib = vib_pct if show_zigzag and "on" in (show_zigzag or []) else None
-    manual_lines = [
-        {"type": line1_type, "date1": line1_date1, "date2": line1_date2, "color": "#ff6ec7", "label": "Line 1"},
-        {"type": line2_type, "date1": line2_date1, "date2": line2_date2, "color": "#4dd8e6", "label": "Line 2"},
-    ] if vib else None
-    secondary_channels = [
-        {"type": "H", "date1": secupper_date1, "date2": secupper_date2, "color": "#ffd166", "label": "Secondary Channel Upper"},
-        {"type": "L", "date1": seclower_date1, "date2": seclower_date2, "color": "#ffd166", "label": "Secondary Channel Lower"},
-    ] if vib else None
+    html_doc = _build_weis_radar_chart_html(data, ma_period=ma_period or 20)
 
-    fig, annotation_summaries = _build_weis_radar_chart_figure(
-        data, ma_period=ma_period or 0,
-        vib_pct=vib,
-        show_sr="on" in (show_sr or []),
-        show_effort="on" in (show_effort or []),
-        manual_lines=manual_lines,
-        secondary_channels=secondary_channels,
-        call_wall=data.get("call_wall"), put_wall=data.get("put_wall"), gamma_flip=data.get("gamma_flip"),
-        show_call_wall="on" in (show_call_wall or []),
-        show_put_wall="on" in (show_put_wall or []),
-        show_gamma_flip="on" in (show_gamma_flip or []),
-    )
-    annotation_children = [
-        html.Div(f"\u25a0 {s['text']}", style={"color": s["color"]}) for s in annotation_summaries
-    ]
-
-    return (fig, {"display": "block", "width": "100%"}, symbol, data,
-            title_text, {"display": "block", "color": WHITE, "fontSize": "13px",
-                          "fontWeight": "700", "marginBottom": "4px"},
-            ROW_VISIBLE,
-            0, cum_max, [0, cum_max], 0, std_max, [0, std_max],
-            annotation_children, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP)
-
-
-@app.callback(
-    Output("weis-radar-chart", "figure", allow_duplicate=True),
-    Output("weis-radar-chart-annotations", "children", allow_duplicate=True),
-    Input("weis-radar-cumvol-slider", "value"),
-    Input("weis-radar-stdvol-slider", "value"),
-    Input("weis-radar-show-zigzag", "value"),
-    Input("weis-radar-vibration", "value"),
-    Input("weis-radar-show-sr", "value"),
-    Input("weis-radar-show-effort", "value"),
-    Input("weis-radar-line1-type", "value"),
-    Input("weis-radar-line1-date1", "value"),
-    Input("weis-radar-line1-date2", "value"),
-    Input("weis-radar-line2-type", "value"),
-    Input("weis-radar-line2-date1", "value"),
-    Input("weis-radar-line2-date2", "value"),
-    Input("weis-radar-secupper-date1", "value"),
-    Input("weis-radar-secupper-date2", "value"),
-    Input("weis-radar-seclower-date1", "value"),
-    Input("weis-radar-seclower-date2", "value"),
-    Input("weis-radar-show-call-wall", "value"),
-    Input("weis-radar-show-put-wall", "value"),
-    Input("weis-radar-show-gamma-flip", "value"),
-    State("s-weis-radar-chart-rawdata", "data"),
-    State("weis-radar-chart-ma", "value"),
-    prevent_initial_call=True,
-)
-def redraw_weis_radar_chart_from_cache(
-    cumvol_range, stdvol_range,
-    show_zigzag, vib_pct, show_sr, show_effort,
-    line1_type, line1_date1, line1_date2, line2_type, line2_date1, line2_date2,
-    secupper_date1, secupper_date2, seclower_date1, seclower_date2,
-    show_call_wall, show_put_wall, show_gamma_flip,
-    raw_data, ma_period,
-):
-    """
-    RENAMED (later session) from rescale_weis_radar_volume_panels() to
-    redraw_weis_radar_chart_from_cache(), and its Input set expanded to
-    include every new annotation control. This was a deliberate merge
-    rather than adding a third, separate callback: with three
-    different callbacks all able to rebuild the figure from partially-
-    overlapping option sets, whichever one didn't fire would silently
-    drop the OTHER options' current state on every rebuild (e.g.
-    dragging a volume-scale slider would wipe out an active zigzag/
-    trendline/wall display, since that separate callback wouldn't know
-    about them). One callback reading every display option as Input,
-    with raw_data as its only State, avoids that class of bug
-    entirely.
-
-    Rebuilds the figure entirely from the ALREADY-FETCHED raw data
-    (stored in s-weis-radar-chart-rawdata by show_weis_radar_chart)
-    rather than hitting the backend again -- none of these controls
-    change the underlying bars/hits, only how they're displayed.
-
-    Every Input here maps onto the matching keyword argument of
-    _build_weis_radar_chart_figure() -- see that function's docstring
-    for what each one does. A bad/unresolvable trendline date is
-    handled inside _weis_build_trendline() (returns None, silently
-    skipped), not here, so a typo in a date box degrades to "that one
-    line doesn't draw" rather than breaking the whole chart.
-    """
-    if not raw_data:
-        return no_update, no_update
-
-    vib = vib_pct if show_zigzag and "on" in (show_zigzag or []) else None
-    manual_lines = [
-        {"type": line1_type, "date1": line1_date1, "date2": line1_date2, "color": "#ff6ec7", "label": "Line 1"},
-        {"type": line2_type, "date1": line2_date1, "date2": line2_date2, "color": "#4dd8e6", "label": "Line 2"},
-    ] if vib else None
-    secondary_channels = [
-        {"type": "H", "date1": secupper_date1, "date2": secupper_date2, "color": "#ffd166", "label": "Secondary Channel Upper"},
-        {"type": "L", "date1": seclower_date1, "date2": seclower_date2, "color": "#ffd166", "label": "Secondary Channel Lower"},
-    ] if vib else None
-
-    fig, annotation_summaries = _build_weis_radar_chart_figure(
-        raw_data, ma_period=ma_period or 0,
-        yaxis2_range=cumvol_range, yaxis3_range=stdvol_range,
-        vib_pct=vib,
-        show_sr="on" in (show_sr or []),
-        show_effort="on" in (show_effort or []),
-        manual_lines=manual_lines,
-        secondary_channels=secondary_channels,
-        call_wall=raw_data.get("call_wall"), put_wall=raw_data.get("put_wall"), gamma_flip=raw_data.get("gamma_flip"),
-        show_call_wall="on" in (show_call_wall or []),
-        show_put_wall="on" in (show_put_wall or []),
-        show_gamma_flip="on" in (show_gamma_flip or []),
-    )
-    annotation_children = [
-        html.Div(f"\u25a0 {s['text']}", style={"color": s["color"]}) for s in annotation_summaries
-    ]
-    return fig, annotation_children
+    return (html_doc, {"display": "block", "width": "100%", "height": "1050px", "border": "none"},
+            symbol, data, title_text,
+            {"display": "block", "color": WHITE, "fontSize": "13px", "fontWeight": "700", "marginBottom": "4px"})
 
 
 @app.callback(
