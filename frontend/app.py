@@ -7459,7 +7459,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <title>__SYMBOL__ Weis Radar Chart</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.32.0/plotly.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js@2.32.0/dist/plotly.min.js"></script>
 <style>
   body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; }
   .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
