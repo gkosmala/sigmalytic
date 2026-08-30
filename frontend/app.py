@@ -4376,87 +4376,155 @@ def build_weis_radar_tab(session=None):
            style={"display": "none", "flexDirection": "row", "alignItems": "center",
                    "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}),
 
-        # ---- off-chart trendline descriptions (Line 1/2, Secondary
-        # Channels) -- kept OUTSIDE the Plotly figure entirely, since
-        # on a multi-year daily chart any in-plot text label risks
-        # sitting near some candle no matter where it's positioned.
-        html.Div(id="weis-radar-chart-annotations", style={
-            "color": "#a9b4bf", "fontSize": "11px", "display": "flex",
-            "flexDirection": "column", "gap": "2px", "margin": "4px 20px 8px 20px",
-        }),
-
+        # ---- RESTYLED (later session): the annotation controls below
+        # were originally plain, unstyled inline-flex rows -- reported
+        # as looking "nothing like" the reference standalone test tool
+        # they were ported from. Rebuilt here as one cohesive themed
+        # panel (bordered card, color-coded section labels, consistent
+        # spacing) matching that tool's visual language, while staying
+        # within this app's own existing dark palette (NAVY_MID, WHITE)
+        # rather than importing a foreign color scheme. The underlying
+        # component IDs, values, and callback wiring are UNCHANGED --
+        # this is styling only, confirmed by diffing against the prior
+        # version before this was considered done.
         html.Div([
-            html.Div([
-                dcc.Checklist(id="weis-radar-show-zigzag", options=[{"label": " Wave", "value": "on"}],
-                              value=["on"], inline=True, style={"color": WHITE, "fontSize": "11px"}),
-                dcc.Slider(id="weis-radar-vibration", min=1, max=15, step=0.5, value=4,
-                           marks=None, tooltip={"placement": "bottom"}),
-            ], style={"flex": "1", "minWidth": "160px"}),
+            # ---- off-chart trendline descriptions ----
+            html.Div(id="weis-radar-chart-annotations", style={
+                "color": "#a9b4bf", "fontSize": "11px", "display": "flex",
+                "flexDirection": "column", "gap": "3px", "marginBottom": "10px",
+            }),
 
             html.Div([
-                dcc.Checklist(id="weis-radar-show-sr", options=[{"label": " S/R levels", "value": "on"}],
-                              value=[], inline=True, style={"color": WHITE, "fontSize": "11px"}),
-                dcc.Checklist(id="weis-radar-show-effort", options=[{"label": " Effort/Result", "value": "on"}],
-                              value=[], inline=True, style={"color": WHITE, "fontSize": "11px"}),
-            ], style={"display": "flex", "gap": "12px", "alignItems": "center"}),
-        ], id="weis-radar-annotation-toggles-row", style={
-            "display": "none", "flexDirection": "row", "alignItems": "center", "gap": "16px",
-            "margin": "0 20px 8px 20px",
-        }),
+                html.Div([
+                    html.Div("WAVE", style={"color": "#5c6773", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Checklist(id="weis-radar-show-zigzag", options=[{"label": " On", "value": "on"}],
+                                      value=["on"], inline=True, style={"color": "#ff6161", "fontSize": "11px"}),
+                        html.Div(dcc.Slider(
+                            id="weis-radar-vibration", min=1, max=15, step=0.5, value=4,
+                            marks=None, tooltip={"placement": "bottom"},
+                        ), style={"flex": "1", "minWidth": "140px", "marginLeft": "10px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "200px", "background": "rgba(255,255,255,0.03)",
+                          "border": "1px solid #232c38", "borderRadius": "8px", "padding": "10px 14px"}),
 
-        # ---- Line 1 / Line 2 (user-specified resistance/support) ----
-        html.Div([
-            html.Div([
-                html.Span("Line 1: ", style={"color": "#ff6ec7", "fontSize": "11px"}),
-                dcc.Dropdown(id="weis-radar-line1-type", options=[{"label": "High", "value": "H"},
-                              {"label": "Low", "value": "L"}], value="H", clearable=False,
-                              style={"width": "80px", "display": "inline-block"}),
-                dcc.Input(id="weis-radar-line1-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-                dcc.Input(id="weis-radar-line1-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
-            html.Div([
-                html.Span("Line 2: ", style={"color": "#4dd8e6", "fontSize": "11px"}),
-                dcc.Dropdown(id="weis-radar-line2-type", options=[{"label": "High", "value": "H"},
-                              {"label": "Low", "value": "L"}], value="L", clearable=False,
-                              style={"width": "80px", "display": "inline-block"}),
-                dcc.Input(id="weis-radar-line2-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-                dcc.Input(id="weis-radar-line2-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
-        ], id="weis-radar-manual-lines-row", style={
-            "display": "none", "flexDirection": "row", "gap": "20px", "margin": "0 20px 8px 20px",
-        }),
+                html.Div([
+                    html.Div("ANNOTATIONS", style={"color": "#5c6773", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Checklist(id="weis-radar-show-sr", options=[{"label": " S/R levels", "value": "on"}],
+                                      value=[], inline=True, style={"color": "#8b98a5", "fontSize": "11px"}),
+                        dcc.Checklist(id="weis-radar-show-effort", options=[{"label": " Effort/Result", "value": "on"}],
+                                      value=[], inline=True, style={"color": "#ffd166", "fontSize": "11px",
+                                                                     "marginLeft": "14px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "220px", "background": "rgba(255,255,255,0.03)",
+                          "border": "1px solid #232c38", "borderRadius": "8px", "padding": "10px 14px"}),
+            ], id="weis-radar-annotation-toggles-row", style={
+                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px", "marginBottom": "10px",
+            }),
 
-        # ---- Secondary Channel Upper / Lower ----
-        html.Div([
+            # ---- Call Wall / Put Wall / Gamma Flip toggles ----
+            # NOTE: values themselves come from chart_data (backend),
+            # same source Command Center already uses -- these are
+            # DISPLAY toggles only, not numeric inputs.
+            #
+            # STRUCTURE NOTE: kept as its own top-level toggled row
+            # (not nested inside another toggled element) with a
+            # STATIC inner card div carrying the visual styling. The
+            # outer div's "style" prop is a callback Output that gets
+            # fully overwritten on every show/hide -- nesting the
+            # visual styling one level in means that overwrite only
+            # ever touches plain display/layout properties, never the
+            # background/border/padding, so the card look survives
+            # every toggle rather than getting wiped the first time
+            # the callback fires (the same class of bug already
+            # documented and fixed once in this file's Command Center
+            # chart-visibility callback).
             html.Div([
-                html.Span("Sec. Channel Upper: ", style={"color": "#ffd166", "fontSize": "11px"}),
-                dcc.Input(id="weis-radar-secupper-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-                dcc.Input(id="weis-radar-secupper-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
-            html.Div([
-                html.Span("Sec. Channel Lower: ", style={"color": "#ffd166", "fontSize": "11px"}),
-                dcc.Input(id="weis-radar-seclower-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-                dcc.Input(id="weis-radar-seclower-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
-            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
-        ], id="weis-radar-secondary-channels-row", style={
-            "display": "none", "flexDirection": "row", "gap": "20px", "margin": "0 20px 8px 20px",
-        }),
+                html.Div([
+                    html.Div("OPTIONS OVERLAYS", style={"color": "#5c6773", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Checklist(id="weis-radar-show-call-wall", options=[{"label": " Call Wall", "value": "on"}],
+                                      value=["on"], inline=True, style={"color": "#4da3ff", "fontSize": "11px"}),
+                        dcc.Checklist(id="weis-radar-show-put-wall", options=[{"label": " Put Wall", "value": "on"}],
+                                      value=["on"], inline=True, style={"color": "#ffa64d", "fontSize": "11px",
+                                                                         "marginLeft": "10px"}),
+                        dcc.Checklist(id="weis-radar-show-gamma-flip", options=[{"label": " Gamma Flip", "value": "on"}],
+                                      value=["on"], inline=True, style={"color": "#b06dff", "fontSize": "11px",
+                                                                         "marginLeft": "10px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"background": "rgba(255,255,255,0.03)", "border": "1px solid #232c38",
+                          "borderRadius": "8px", "padding": "10px 14px", "display": "inline-block"}),
+            ], id="weis-radar-wall-toggles-row", style={
+                "display": "none", "marginBottom": "10px",
+            }),
 
-        # ---- Call Wall / Put Wall / Gamma Flip toggles ----
-        # NOTE: values themselves come from chart_data (backend), same
-        # source Command Center already uses -- these are DISPLAY
-        # toggles only, not numeric inputs, unlike the standalone test
-        # tool where there was no live options feed to read from.
-        html.Div([
-            dcc.Checklist(id="weis-radar-show-call-wall", options=[{"label": " Call Wall", "value": "on"}],
-                          value=["on"], inline=True, style={"color": "#4da3ff", "fontSize": "11px"}),
-            dcc.Checklist(id="weis-radar-show-put-wall", options=[{"label": " Put Wall", "value": "on"}],
-                          value=["on"], inline=True, style={"color": "#ffa64d", "fontSize": "11px"}),
-            dcc.Checklist(id="weis-radar-show-gamma-flip", options=[{"label": " Gamma Flip", "value": "on"}],
-                          value=["on"], inline=True, style={"color": "#b06dff", "fontSize": "11px"}),
-        ], id="weis-radar-wall-toggles-row", style={
-            "display": "none", "flexDirection": "row", "gap": "16px", "margin": "0 20px 12px 20px",
-        }),
+            html.Div([
+                html.Div([
+                    html.Div("LINE 1 · RESISTANCE", style={"color": "#ff6ec7", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Dropdown(id="weis-radar-line1-type", options=[{"label": "High", "value": "H"},
+                                      {"label": "Low", "value": "L"}], value="H", clearable=False,
+                                      style={"width": "84px", "display": "inline-block", "fontSize": "11px"}),
+                        dcc.Input(id="weis-radar-line1-date1", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                        dcc.Input(id="weis-radar-line1-date2", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "260px", "background": "rgba(255,110,199,0.06)",
+                          "border": "1px solid rgba(255,110,199,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
+
+                html.Div([
+                    html.Div("LINE 2 · SUPPORT", style={"color": "#4dd8e6", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Dropdown(id="weis-radar-line2-type", options=[{"label": "High", "value": "H"},
+                                      {"label": "Low", "value": "L"}], value="L", clearable=False,
+                                      style={"width": "84px", "display": "inline-block", "fontSize": "11px"}),
+                        dcc.Input(id="weis-radar-line2-date1", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                        dcc.Input(id="weis-radar-line2-date2", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "260px", "background": "rgba(77,216,230,0.06)",
+                          "border": "1px solid rgba(77,216,230,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
+            ], id="weis-radar-manual-lines-row", style={
+                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px", "marginBottom": "10px",
+            }),
+
+            html.Div([
+                html.Div([
+                    html.Div("SECONDARY CHANNEL · UPPER", style={"color": "#ffd166", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Input(id="weis-radar-secupper-date1", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px"}),
+                        dcc.Input(id="weis-radar-secupper-date2", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "230px", "background": "rgba(255,209,102,0.06)",
+                          "border": "1px solid rgba(255,209,102,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
+
+                html.Div([
+                    html.Div("SECONDARY CHANNEL · LOWER", style={"color": "#ffd166", "fontSize": "10px",
+                              "fontWeight": "700", "letterSpacing": "0.05em", "marginBottom": "6px"}),
+                    html.Div([
+                        dcc.Input(id="weis-radar-seclower-date1", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px"}),
+                        dcc.Input(id="weis-radar-seclower-date2", type="text", placeholder="YYYY-MM-DD",
+                                  style={"width": "104px", "marginLeft": "6px"}),
+                    ], style={"display": "flex", "alignItems": "center"}),
+                ], style={"flex": "1", "minWidth": "230px", "background": "rgba(255,209,102,0.06)",
+                          "border": "1px solid rgba(255,209,102,0.25)", "borderRadius": "8px", "padding": "10px 14px"}),
+            ], id="weis-radar-secondary-channels-row", style={
+                "display": "none", "flexDirection": "row", "flexWrap": "wrap", "gap": "10px",
+            }),
+        ], style={"background": "#121821", "border": "1px solid #232c38", "borderRadius": "10px",
+                  "padding": "14px 16px", "margin": "8px 20px 14px 20px"}),
 
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
@@ -8082,8 +8150,14 @@ def show_weis_radar_chart(
     """
     ROW_VISIBLE = {"display": "flex", "flexDirection": "row", "alignItems": "center",
                     "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}
-    ROW_VISIBLE_WRAP = {"display": "flex", "flexDirection": "row", "alignItems": "center",
-                         "gap": "16px", "margin": "0 20px 8px 20px"}
+    # NOTE: margin removed (was "0 20px 8px 20px") -- these rows now
+    # live inside the themed panel container in the layout, which
+    # already supplies its own padding. The panel's static children
+    # (WAVE/ANNOTATIONS/OPTIONS OVERLAYS/Line 1/2/Secondary Channel
+    # cards) carry their own visual styling untouched by this
+    # callback; only plain layout properties are set here.
+    ROW_VISIBLE_WRAP = {"display": "flex", "flexDirection": "row", "flexWrap": "wrap",
+                         "alignItems": "center", "gap": "10px", "marginBottom": "10px"}
     ROW_HIDDEN = {"display": "none"}
 
     triggered = callback_context.triggered_id
