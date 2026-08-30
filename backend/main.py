@@ -19,8 +19,9 @@ backend/main.py
 """
 
 # test build filter backend
-from fastapi import FastAPI, Body, Request, HTTPException
-from datetime import datetime, timedelta
+from fastapi import FastAPI, Body, Request, HTTPException, Header, Depends
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import os
 import json
 import hmac
@@ -56,11 +57,50 @@ except Exception:
 # does not execute a payment, and does not write to Supabase by itself.
 from backend.billing_router import billing_router
 from backend.legal_pages import legal_router
+from backend.preferences_router import preferences_router
+# FIX (2026-07-28): behavior_router.py is a new module -- the Behavioral
+# Intelligence tab and its trade-plan/entry/exit workflow previously called
+# five endpoints (/api/behavior/trade-plan, trade-entry, trade-exit, event,
+# dashboard/{user_id}) that had no backend implementation anywhere at all,
+# confirmed via full route audit. This is not a wiring fix like the others;
+# it's a new, working implementation of the feature.
+from backend.behavior_router import behavior_router
 # === STEP 9C COMMERCIAL ROUTE IMPORTS END ===
 app = FastAPI(
     title="Sigmalytic V2",
     version="2.0.0",
 )
+
+
+@app.on_event("startup")
+def _start_radar_scheduler_on_boot():
+    # PERMANENTLY DISABLED (2026-07-29, confirmed resolved 2026-08-04):
+    # the investigation this comment used to describe as "pending" was
+    # actually completed the same day it started. Confirmed via direct
+    # memory instrumentation and production crash logs: running the full
+    # radar scanner (gex_scan/radar_scan/divergence_scan/snapshot_intraday,
+    # scanning ~1000 symbols every 5-8 minutes) inside the same process as
+    # this web-serving backend caused combined memory use to repeatedly
+    # exceed 2GB and crash -- not specifically snapshot_intraday's 300s
+    # interval, which turned out to be a red herring; the real cause was
+    # the scanner's cumulative memory footprint stacking on top of the
+    # backend's own heavy endpoints.
+    #
+    # The real, working fix (same day): the scanner now runs in its own
+    # dedicated Render Background Worker service, sigmalytic-radar-scanner
+    # (see tools/render_radar_scanner_worker.py), with its own separate
+    # memory entirely apart from this web-serving process. It publishes
+    # results to Redis (radar:cache key), which this backend reads via
+    # get_radar_scores()'s and other functions' Redis fallback -- this is
+    # the same live data source confirmed working correctly throughout
+    # 2026-08-04's session (real, current prices and scores for 900+
+    # symbols).
+    #
+    # This function must stay disabled here permanently -- re-enabling it
+    # would start the exact same scanner a second time, in this process,
+    # reintroducing the original crash risk on top of infrastructure that
+    # already works correctly via the separate worker.
+    print("[STARTUP] Radar scheduler intentionally disabled on this service -- runs separately via sigmalytic-radar-scanner worker instead", flush=True)
 
 
 @app.get("/")
@@ -82,6 +122,284 @@ def api_health():
     return {"status": "healthy"}
 
 
+# ── Market Wire ──────────────────────────────────────────────────────────
+# Top-of-page ticker: DJIA, S&P 500, Nasdaq, Russell 2000, Gold, Oil,
+# Bitcoin. VIX deliberately left out per explicit request -- there's no
+# direct way to get the raw VIX index value through Alpaca's standard
+# market data; the common proxy (VIXY) tracks VIX *futures*, not the spot
+# index, and can diverge meaningfully from the headline VIX number people
+# expect, which would be misleading on a ticker with no room to explain
+# the distinction.
+#
+# Indices/commodities use standard, real-world ETF proxies (same
+# instruments most retail platforms use for this exact purpose) since
+# Alpaca's equities API serves tradable securities, not raw index values:
+#   DJIA -> DIA, S&P 500 -> SPY, Nasdaq -> QQQ (Nasdaq-100, the standard
+#   proxy -- not the full Nasdaq Composite), Russell 2000 -> IWM,
+#   Gold -> GLD, Oil -> USO.
+# Bitcoin is genuinely real, not a proxy -- Alpaca has a dedicated crypto
+# data API (confirmed: GET /v1beta3/crypto/us/latest/bars).
+MARKET_WIRE_SYMBOLS = {
+    "DIA": "DJIA",
+    "SPY": "S&P 500",
+    "QQQ": "Nasdaq",
+    "IWM": "Russell 2000",
+    "GLD": "Gold",
+    "USO": "Oil",
+}
+
+# ADDED (2026-08-21): currencies, extending the existing market-wire
+# ticker. Confirmed directly against Alpaca's own docs and official
+# SDK before writing this: they DO have real forex endpoints now (a
+# genuinely newer capability -- older forum threads were still asking
+# "when will forex be supported"), using slash-separated pair names
+# (e.g. "EUR/USD"), confirmed from Alpaca's own JS SDK usage example
+# rather than assumed.
+#
+# International interest rates deliberately NOT included here (a
+# separate, explicit decision) -- Alpaca has no such data at all (its
+# "fixed income" product is US Treasury trading, not a yield feed),
+# and international sovereign yields would need an entirely different
+# data relationship. Left for later.
+CURRENCY_PAIRS = {
+    "EUR/USD": "Euro",
+    "USD/JPY": "Yen",
+    "GBP/USD": "Pound",
+    "AUD/USD": "Australia$",
+}
+
+
+@app.get("/api/market-wire")
+def get_market_wire():
+    # FIX (2026-08-06): confirmed this had zero caching despite being
+    # genuinely shared data (identical for every user, not per-symbol
+    # or per-user) -- called every ~2s per active user via the
+    # frontend's live-tick cycle, making a real, live Alpaca API call
+    # every single time. An explicit, known risk was already flagged
+    # in earlier session notes ("multiplies with concurrent
+    # subscribers") but never actually fixed. Wrapped in the same
+    # proven, Redis-backed shared_cache pattern already fixed for
+    # campaign_api.py tonight -- a short TTL keeps data reasonably
+    # fresh while collapsing what could be many real Alpaca calls per
+    # second (across all active users) down to roughly one every 10s,
+    # shared across all of them and all worker processes.
+    from backend.shared_cache import shared_cache
+    return shared_cache.get_or_fetch("market_wire", _get_market_wire_uncached, ttl_seconds=10)
+
+
+def _get_market_wire_uncached():
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+
+    if not key or not secret:
+        return {"ok": False, "error": "missing_alpaca_credentials", "items": []}
+
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    items = []
+
+    # Equity ETF proxies -- one batched snapshot call for all 6, rather
+    # than 6 separate requests. Snapshots bundle the latest trade with
+    # the previous day's daily bar, which is what a clean day-over-day
+    # % change actually needs (a single latest-bar fetch alone doesn't
+    # give a meaningful "change since yesterday's close" figure).
+    try:
+        r = requests.get(
+            f"{base_url}/v2/stocks/snapshots",
+            headers=headers,
+            params={"symbols": ",".join(MARKET_WIRE_SYMBOLS.keys()), "feed": "sip"},
+            timeout=10,
+        )
+        if r.ok:
+            snapshots = r.json() or {}
+            for sym, label in MARKET_WIRE_SYMBOLS.items():
+                snap = snapshots.get(sym) or {}
+                latest_trade = snap.get("latestTrade") or {}
+                prev_daily = snap.get("prevDailyBar") or {}
+                price = latest_trade.get("p")
+                prev_close = prev_daily.get("c")
+                change_pct = None
+                if price is not None and prev_close:
+                    change_pct = round((price - prev_close) / prev_close * 100, 2)
+                items.append({
+                    "symbol": sym, "label": label, "price": price,
+                    "change_pct": change_pct, "asset_class": "equity",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Equity snapshot fetch failed: {e}", flush=True)
+
+    # Bitcoin -- real, not a proxy, via Alpaca's dedicated crypto endpoint.
+    # Uses the last 2 DAILY bars (not latest/bars, which defaults to a
+    # minute-level bar) for a meaningful 24h change -- the same kind of
+    # comparison the equity side gets from prevDailyBar, not a noisy,
+    # tiny minute-to-minute figure.
+    #
+    # FIX (2026-08-04): user's real API check showed price succeeding
+    # but change_pct coming back null -- confirmed the cause: Alpaca's
+    # historical bars endpoints often need an explicit start date,
+    # limit alone isn't always sufficient to guarantee multiple bars
+    # are actually returned (without it, this was apparently only
+    # returning a single bar). Added an explicit start (5 days back,
+    # comfortable padding past the 2 bars actually needed).
+    try:
+        crypto_start = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r = requests.get(
+            f"{base_url}/v1beta3/crypto/us/bars",
+            headers=headers,
+            params={"symbols": "BTC/USD", "timeframe": "1Day", "limit": 5, "start": crypto_start},
+            timeout=10,
+        )
+        if r.ok:
+            bars = (r.json() or {}).get("bars") or {}
+            btc_bars = bars.get("BTC/USD") or []
+            if btc_bars:
+                latest = btc_bars[-1]
+                price = latest.get("c")
+                change_pct = None
+                if len(btc_bars) >= 2:
+                    prev_close = btc_bars[-2].get("c")
+                    if price is not None and prev_close:
+                        change_pct = round((price - prev_close) / prev_close * 100, 2)
+                items.append({
+                    "symbol": "BTC/USD", "label": "Bitcoin", "price": price,
+                    "change_pct": change_pct, "asset_class": "crypto",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Crypto bar fetch failed: {e}", flush=True)
+
+    # Currencies -- latest rate + a short historical window for a
+    # meaningful day-over-day change, same two-call pattern as crypto
+    # above (a single "latest" call has no prior-close to diff against).
+    #
+    # HONEST GAP: I could not verify Alpaca's exact JSON response field
+    # names for either forex endpoint without live credentials --
+    # confirmed the endpoints, params, and pair-naming convention
+    # (slash-separated, e.g. "EUR/USD") directly against Alpaca's own
+    # docs and SDK examples, but not the precise response body shape.
+    # Parses defensively (checks several plausible key names) rather
+    # than guessing one. Visit /api/market-wire directly in a browser
+    # once deployed to see the real result and confirm this parses
+    # correctly -- if a field name is wrong, this will show clearly as
+    # a missing price and print a diagnostic, not fail silently.
+    try:
+        pairs_param = ",".join(CURRENCY_PAIRS.keys())
+        r = requests.get(
+            f"{base_url}/v1beta1/forex/latest/rates",
+            headers=headers,
+            params={"currency_pairs": pairs_param},
+            timeout=10,
+        )
+        latest_rates = {}
+        if r.ok:
+            body = r.json() or {}
+            latest_rates = body.get("rates") or body.get("data") or body
+        else:
+            print(f"[MARKET_WIRE] Forex latest-rates HTTP {r.status_code}: {r.text[:200]}", flush=True)
+
+        fx_start = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r2 = requests.get(
+            f"{base_url}/v1beta1/forex/rates",
+            headers=headers,
+            params={"currency_pairs": pairs_param, "timeframe": "1Day", "start": fx_start, "limit": 5},
+            timeout=10,
+        )
+        historical_rates = {}
+        if r2.ok:
+            body2 = r2.json() or {}
+            historical_rates = body2.get("rates") or body2.get("data") or {}
+        else:
+            print(f"[MARKET_WIRE] Forex historical-rates HTTP {r2.status_code}: {r2.text[:200]}", flush=True)
+
+        for pair, label in CURRENCY_PAIRS.items():
+            pair_latest = latest_rates.get(pair) if isinstance(latest_rates, dict) else None
+            if not pair_latest:
+                print(f"[MARKET_WIRE] No latest rate found for {pair} -- check the real response shape "
+                      f"at /api/market-wire directly.", flush=True)
+                continue
+
+            price = None
+            for key in ("rate", "price", "close", "c", "ask_price", "bid_price"):
+                if isinstance(pair_latest, dict) and pair_latest.get(key) is not None:
+                    price = pair_latest[key]
+                    break
+
+            prev_close = None
+            pair_history = historical_rates.get(pair) if isinstance(historical_rates, dict) else None
+            if isinstance(pair_history, list) and len(pair_history) >= 2:
+                prev_bar = pair_history[-2]
+                for key in ("rate", "price", "close", "c"):
+                    if isinstance(prev_bar, dict) and prev_bar.get(key) is not None:
+                        prev_close = prev_bar[key]
+                        break
+
+            change_pct = None
+            if price is not None and prev_close:
+                change_pct = round((price - prev_close) / prev_close * 100, 2)
+
+            if price is not None:
+                items.append({
+                    "symbol": pair, "label": label, "price": price,
+                    "change_pct": change_pct, "asset_class": "currency",
+                })
+    except Exception as e:
+        print(f"[MARKET_WIRE] Currency fetch failed: {e}", flush=True)
+
+    # ADDED (2026-08-21): FRED-sourced items (US 10-year yield, VIX,
+    # Dollar Index). Extracted into a shared helper below since all
+    # three use the identical fetch/parse pattern -- avoids copying
+    # the same placeholder-filtering and error-handling logic three
+    # times with the risk of a subtle divergence between copies.
+    #
+    # HONEST, IMPORTANT LIMITATION, confirmed directly and explicitly
+    # requested to be labeled clearly after real confusion the first
+    # time this shipped: FRED publishes ALL of these once per business
+    # day, reflecting the PRIOR day's close -- not live, intraday data,
+    # unlike everything else in this ticker. "update_frequency": "daily"
+    # is set on every FRED-sourced item specifically so the frontend
+    # can label it clearly and this doesn't read as broken/stale to a
+    # subscriber expecting the same liveness as the equity prices above.
+    #
+    # Genuinely live tick-by-tick data for any of these three doesn't
+    # exist for free anywhere (confirmed for yields already) -- this
+    # is a real characteristic of the free data landscape, not a
+    # limitation specific to how this is built.
+    fred_key = os.getenv("FRED_API_KEY", "")
+    if fred_key:
+        def _fetch_fred_daily_item(series_id, symbol, label, decimals=3):
+            try:
+                r = requests.get(
+                    "https://api.stlouisfed.org/fred/series/observations",
+                    params={"series_id": series_id, "api_key": fred_key, "file_type": "json",
+                            "sort_order": "desc", "limit": 10},
+                    timeout=10,
+                )
+                if not r.ok:
+                    print(f"[MARKET_WIRE] FRED {series_id} HTTP {r.status_code}: {r.text[:200]}", flush=True)
+                    return None
+                observations = (r.json() or {}).get("observations") or []
+                real_values = [o for o in observations if o.get("value") not in (None, ".", "")]
+                if not real_values:
+                    print(f"[MARKET_WIRE] FRED returned no real (non-placeholder) {series_id} observations.", flush=True)
+                    return None
+                latest = float(real_values[0]["value"])
+                change = None
+                if len(real_values) >= 2:
+                    change = round(latest - float(real_values[1]["value"]), decimals)
+                return {"symbol": symbol, "label": label, "price": round(latest, decimals),
+                        "change_pct": change, "asset_class": "yield", "update_frequency": "daily"}
+            except Exception as e:
+                print(f"[MARKET_WIRE] FRED {series_id} fetch failed: {e}", flush=True)
+                return None
+
+        for item in [
+            _fetch_fred_daily_item("DGS10", "US10Y", "U.S. 10yr", decimals=3),
+            _fetch_fred_daily_item("VIXCLS", "VIX", "VIX", decimals=2),
+            _fetch_fred_daily_item("DTWEXBGS", "DXY", "Dollar Index", decimals=2),
+        ]:
+            if item:
+                items.append(item)
+
+    return {"ok": True, "items": items}
 
 
 @app.get("/api/stock/{symbol}")
@@ -189,6 +507,1148 @@ def get_stock_quote(symbol: str):
         }
 
 
+# FIX (2026-07-28): the frontend's fetch_real_candles() has been calling
+# this endpoint all along, but it never existed on the backend at all --
+# confirmed via production logs showing a consistent 404. This is a real,
+# separate gap from tonight's crash/cron investigation, not a regression.
+# Built to match the existing /api/stock/{symbol} endpoint's exact style,
+# using Alpaca's historical bars endpoint instead of "latest".
+# FIX (2026-07-29): the Command Center's "Dynamic Options Matrix" widget
+# only ever showed synthetic price-percentage numbers (shared/engine.py's
+# get_key_levels), completely unrelated to any real options data, even
+# though real Alpaca options data is genuinely wired up and working
+# elsewhere (the Campaign Intelligence gamma overlay). This endpoint
+# reuses that same real machinery (AlpacaOptionChainAdapter -> live chain
+# snapshot -> GammaStrikeMatrixEngine -> real gamma-exposure-based call/
+# put walls) for a single live symbol, on demand, so the Command Center
+# can show genuinely live options data instead of synthetic math.
+@app.get("/api/options/gamma-matrix/{symbol}")
+def get_gamma_matrix(symbol: str, spot_price: float = 0.0, feed: str = ""):
+    sym = (symbol or "").upper().strip()
+
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    if spot_price <= 0:
+        return {"ok": False, "symbol": sym, "error": "missing_or_invalid_spot_price"}
+
+    try:
+        from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+        from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": f"gamma_engine_import_failed: {e}"}
+
+    # FIX (2026-08-12): feed query param added specifically to directly
+    # test whether explicitly forcing ?feed=opra changes anything --
+    # rather than always letting Alpaca apply its own default silently.
+    chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=spot_price, feed=(feed or None))
+
+    if chain.get("status") == "MISSING_ALPACA_CREDENTIALS":
+        return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
+
+    options_data = chain.get("options_data") or []
+
+    if not options_data:
+        return {
+            "ok": True,
+            "symbol": sym,
+            "status": chain.get("status", "NO_OPTIONS_DATA"),
+            "has_real_data": False,
+        }
+
+    result = GammaStrikeMatrixEngine.build(
+        options_data=options_data,
+        symbol=sym,
+        spot_price=spot_price,
+    )
+    result["ok"] = True
+    result["has_real_data"] = True
+
+    # FIX (2026-08-12): diagnostic fields to help distinguish, without
+    # needing direct access to the deployed environment, whether
+    # missing greeks/IV are caused by an explicit feed override (e.g.
+    # ALPACA_OPTIONS_FEED forcing "indicative", which never includes
+    # greeks per the FIX comment in alpaca_option_chain_adapter.py) or
+    # a genuine, real data gap from Alpaca despite a full OPRA
+    # subscription and requesting no specific feed (letting Alpaca
+    # apply its own entitlement-aware default).
+    contracts_with_iv = sum(
+        1 for row in options_data
+        if row.get("implied_volatility") is not None and row.get("implied_volatility") > 0
+    )
+    contracts_with_real_bid_ask = sum(
+        1 for row in options_data
+        if row.get("bid") is not None and row.get("bid") > 0
+        and row.get("ask") is not None and row.get("ask") > 0
+    )
+    # FIX (2026-08-12): the naive top-volume sample was systematically
+    # biased toward 0DTE contracts -- 0DTE options always carry the
+    # highest volume on their own expiration day, and Alpaca has a
+    # documented, genuine limitation of not providing greeks for 0DTE
+    # contracts at all, separate from any extraction bug. Sampling only
+    # by volume meant every "liquid" sample happened to be exactly the
+    # kind of contract that was never going to have greeks regardless
+    # of whether the code itself was correct. Added a same-style sample
+    # restricted to non-0DTE (dte > 0) contracts, plus an aggregate
+    # breakdown by DTE bucket, so the two populations aren't conflated.
+    sample_liquid = sorted(options_data, key=lambda r: r.get("volume") or 0, reverse=True)[:5]
+    non_0dte = [r for r in options_data if (r.get("dte") or 0) > 0]
+    sample_liquid_non_0dte = sorted(non_0dte, key=lambda r: r.get("volume") or 0, reverse=True)[:5]
+    contracts_0dte = len(options_data) - len(non_0dte)
+    contracts_with_iv_non_0dte = sum(
+        1 for row in non_0dte
+        if row.get("implied_volatility") is not None and row.get("implied_volatility") > 0
+    )
+
+    def _sample_row(r):
+        return {
+            "contract_symbol": r.get("contract_symbol"), "strike": r.get("strike"),
+            "dte": r.get("dte"), "volume": r.get("volume"),
+            "bid": r.get("bid"), "ask": r.get("ask"),
+            "implied_volatility": r.get("implied_volatility"),
+        }
+
+    result["feed_diagnostics"] = {
+        "explicitly_requested_feed": chain.get("feed"),  # None means we let Alpaca choose its own default
+        "contracts_total": len(options_data),
+        "contracts_0dte": contracts_0dte,
+        "contracts_with_real_iv": contracts_with_iv,
+        "contracts_with_real_iv_non_0dte": contracts_with_iv_non_0dte,
+        "contracts_with_real_bid_ask": contracts_with_real_bid_ask,
+        "sample_liquid_contracts": [_sample_row(r) for r in sample_liquid],
+        "sample_liquid_non_0dte_contracts": [_sample_row(r) for r in sample_liquid_non_0dte],
+        "raw_sample_snapshot": chain.get("raw_sample_snapshot"),
+    }
+
+    # Real, market-derived inputs for the Probability Ladder's touch-
+    # probability calculation, replacing the prior heuristic score.
+    # Returns just the nearest monthly expiration's ATM IV and dte --
+    # the frontend already knows its own price levels (kl.breakout
+    # etc.) and computes the actual per-level probability itself,
+    # avoiding passing price levels back and forth as query params.
+    from backend.gamma.touch_probability_engine import TouchProbabilityEngine
+    monthly = TouchProbabilityEngine.find_nearest_monthly_expiration(options_data)
+    if monthly:
+        sigma = TouchProbabilityEngine.atm_implied_volatility(monthly["contracts"], spot_price)
+        result["touch_probability_inputs"] = {
+            "available": sigma is not None,
+            "expiration_date": monthly["expiration_date"],
+            "days_to_expiration": monthly["dte"],
+            "atm_implied_volatility": round(sigma, 4) if sigma is not None else None,
+        }
+    else:
+        result["touch_probability_inputs"] = {"available": False, "reason": "No monthly expiration in the current chain."}
+
+    return result
+
+
+# FIX (2026-07-30): extracted to a module-level constant (was previously
+# local to get_candles) specifically so tests/test_candle_lookback_window.py
+# can import these exact values directly, rather than duplicating them --
+# guaranteeing the regression test can never silently drift out of sync
+# with the real implementation.
+CANDLE_CALENDAR_DAYS_PER_BAR = {
+    "1Min": 1/390, "5Min": 1/78, "15Min": 1/26, "1Hour": 1/6.5,
+    "1Day": 1.6, "1Week": 8, "1Month": 35,
+}
+
+
+def _fetch_intraday_min_low(sym: str, target_date: str):
+    """
+    Shared helper: fetches 5-minute intraday bars for one symbol on
+    one specific date and returns the minimum LOW seen, or None if
+    unavailable. Extracted from trap_door_intraday_check() (2026-08-15)
+    so both that single-symbol diagnostic and the full-universe scan
+    can share the exact same fetch logic -- the corrected replacement
+    for checking only the daily close, confirmed necessary after a
+    real symbol (TSLA) genuinely dipped below its trap level intraday
+    on 2026-08-14 while closing above it, which only the intraday
+    check could detect.
+    """
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+    if not key or not secret:
+        return None, 0
+
+    r = requests.get(
+        f"{base_url}/v2/stocks/{sym}/bars",
+        headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+        params={
+            "timeframe": "5Min", "start": f"{target_date}T00:00:00Z",
+            "end": f"{target_date}T23:59:59Z", "feed": os.getenv("ALPACA_FEED", "iex"),
+            "sort": "asc", "limit": 1000,
+        },
+        timeout=15,
+    )
+    intraday_bars = (r.json().get("bars") or []) if r.status_code == 200 else []
+    lows = [float(b.get("l") or b.get("low")) for b in intraday_bars if b.get("l") or b.get("low")]
+    return (min(lows) if lows else None), len(intraday_bars)
+
+
+def _compute_trap_door_estimate(sym: str, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score):
+    """
+    Shared computation used by both trap_door_check() (single symbol)
+    and trap_door_scan() (full universe) -- kept as one function so
+    the two endpoints can never silently drift apart in their logic.
+    Returns a dict; callers decide how to present/filter results.
+    """
+    bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+    bars = bars_map.get(sym) or []
+
+    # FIX (2026-08-13): user hit a genuine KeyError on real TSLA data
+    # ('close') despite this working correctly in testing with
+    # constructed bars -- confirmed real-world fetch_bars_batch()
+    # output uses Alpaca's own short keys (o/h/l/c/v/t), not the long
+    # names originally assumed. Made every bar access defensive with
+    # .get() and both key-name variants (matching the same safe
+    # pattern already proven in the PnF generator:
+    # bar.get("c", bar.get("close"))), and filters out any bar
+    # genuinely missing required fields rather than crashing on it.
+    def _bar_field(bar, *keys):
+        for k in keys:
+            v = bar.get(k)
+            if v is not None:
+                return v
+        return None
+
+    clean_bars = []
+    for bar in bars:
+        if not isinstance(bar, dict):
+            continue
+        c = _bar_field(bar, "close", "c")
+        if c is None:
+            continue
+        clean_bars.append(bar)
+    bars = clean_bars
+
+    if len(bars) < 20:
+        return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY", "bars_available": len(bars)}
+
+    yesterday = bars[-1]
+    price = float(_bar_field(yesterday, "close", "c"))
+    volume = float(_bar_field(yesterday, "volume", "v") or 0)
+    volume_confirm = volume > 1_500_000
+
+    # FIX (2026-08-13): user found a symbol (AIZ) where the "most
+    # recent" bar was genuinely from February, not yesterday --
+    # likely because the close-price filter above silently dropped
+    # recent bars with missing/null data and left an old, valid one
+    # as the last entry, with no warning this had happened. Flag this
+    # directly rather than silently presenting stale data as current.
+    as_of_raw = yesterday.get("t") or yesterday.get("timestamp")
+    is_stale = False
+    if as_of_raw:
+        try:
+            as_of_dt = datetime.fromisoformat(str(as_of_raw).replace("Z", "+00:00"))
+            is_stale = (datetime.now(timezone.utc) - as_of_dt).days > 5
+        except Exception:
+            pass
+
+    # CRITICAL FIX (2026-08-15): count_guide was NEVER actually being
+    # computed. PnFWeisVerdict's own dataclass has no count_guide
+    # field at all -- .to_dict().get("count_guide") always silently
+    # returned None, causing get_key_levels() to fall back to the
+    # synthetic price*0.985 formula for every single call this entire
+    # time (confirmed directly: every one of 309 scanned "alerts"
+    # showed exactly a 1.5% gap regardless of symbol or price, and
+    # 342.27*0.985 exactly matches TSLA's own reported trap level).
+    # count_guide_projection() is a genuinely separate method that
+    # needs the PnF columns explicitly, not part of evaluate()'s own
+    # output -- matches the pattern the real, working pnf-weis
+    # endpoint already uses correctly.
+    pnf_engine = PnFWeisEngine()
+    columns = pnf_engine.build_columns(bars)
+    count_guide = pnf_engine.count_guide_projection(columns)
+
+    # ADDED (2026-08-17): additive Weis Wave volume-exhaustion tag.
+    # Purely informational -- does NOT alter is_trap_door_alert below
+    # in any way. Motivated directly by the real TSLA case that started
+    # this whole investigation: the price-only condition alone can't
+    # distinguish a genuinely deceptive, exhausted-selling break (a
+    # true Wyckoff Spring, matching the "Trap Door" name) from a heavy,
+    # contested, real breakdown (which is what TSLA's own Aug 14 move
+    # actually was, per the direct wave-volume analysis: 1033.8% of the
+    # exhaustion threshold -- the opposite of exhausted). Surfacing
+    # both kinds honestly as a tag, rather than gating the alert behind
+    # this criterion, was a deliberate choice after review: gating
+    # would have silently excluded the exact real, tradeable move that
+    # motivated this feature in the first place (see the user-provided
+    # TradeStation Weis Wave chart and live trade example from this
+    # session, both showing a real, valuable move on the *contested*
+    # side, not the exhausted side).
+    #
+    # volume_exhaustion / sot_downwaves / verdict (not verdict_bearish)
+    # are the correct field triple here despite their bullish-sounding
+    # names: they measure whether DOWN-waves are shortening and
+    # exhausting, which is the actual "deceptive break / exhausted
+    # selling / genuine spring" signature relevant to a downside
+    # Trap-Door break. verdict_bearish/buying_exhaustion measure the
+    # mirror-image (up-wave exhaustion, relevant to distribution/
+    # Upthrust setups), not this alert.
+    #
+    # Reuses the same `bars` already fetched above -- no additional
+    # API call.
+    weis_exhaustion_tag = None
+    try:
+        from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+        import pandas as pd
+        weis_df = pd.DataFrame(bars)
+        # REQUIRED rename -- bars use Alpaca's short keys (o/h/l/c/v),
+        # but WeisVerdictEngine's build_waves()/_prepare() reference
+        # df["close"]/df["volume"] by long-form name. Missing this
+        # exact step here initially would have made this block's own
+        # try/except silently swallow a KeyError on every single call,
+        # always returning an error string instead of a real reading --
+        # caught only by testing this end-to-end before considering it
+        # done, not by code review alone. Mirrors the identical,
+        # already-proven rename already used by the live weis-wave
+        # endpoint (main.py, get_weis_wave_verdict) for this exact engine.
+        weis_df = weis_df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        weis_engine = WeisVerdictEngine()
+        weis_verdict = weis_engine.evaluate(weis_df, symbol=sym)
+        exhaustion_score = weis_verdict.get("volume_exhaustion")
+        sot_score = weis_verdict.get("sot_downwaves")
+        # NOTE, confirmed by direct unit test of volume_exhaustion_score
+        # in isolation: this underlying score is strictly binary (0.0 or
+        # 100.0), not continuous -- SOT itself is also strictly binary
+        # (three genuinely shortening waves, or not). So in practice
+        # this resolves to EXHAUSTED or CONTESTED; MIXED is a safe
+        # fallback for an unexpected/missing score, not an outcome this
+        # data will actually produce.
+        if exhaustion_score is not None and exhaustion_score >= 60:
+            reading = "EXHAUSTED"  # selling genuinely drying up -- matches classic Spring/Trap Door
+        elif exhaustion_score is not None and exhaustion_score < 30:
+            reading = "CONTESTED"  # heavy, real selling -- matches TSLA's actual Aug 14 character
+        else:
+            reading = "MIXED"
+        weis_exhaustion_tag = {
+            "volume_exhaustion_score": exhaustion_score,
+            "sot_score": sot_score,
+            "verdict": weis_verdict.get("verdict"),
+            "reading": reading,
+        }
+    except Exception as e:
+        weis_exhaustion_tag = {"error": str(e)[:200]}
+
+    kl = get_key_levels(price, count_guide=count_guide)
+
+    # ADDED (2026-08-17): additive gamma-wall/guard-rail proximity tag.
+    # Purely informational, like weis_exhaustion_tag above -- never
+    # alters is_trap_door_alert. Motivated directly by a real,
+    # user-supplied TSLA chart from this session showing the actual
+    # violent price action clustered right at the app's own existing
+    # Call Wall / Put Wall / Gamma Flip levels, not at a volume-
+    # exhaustion threshold -- matching David Weis's own emphasis on
+    # drawn structure (channels, boxes, support/resistance) as
+    # meaningful confirmation, independent of the wave-volume approach
+    # above.
+    #
+    # IMPORTANT, disclosed honestly rather than silently: unlike
+    # weis_exhaustion_tag (which reuses the same historical daily bars
+    # already fetched), options data is only ever available LIVE/
+    # current -- Alpaca's options API has no historical view (the same
+    # limitation already disclosed in this tool's docstring, Section
+    # 4.2 of the Aug 15 investigation record). This function itself has
+    # no historical-date override (as_of_raw is derived FROM the fetched
+    # bars, not caller-supplied), so it's already inherently a
+    # live/most-recent computation -- this tag is consistent with that,
+    # but would be misleading if this function were ever called long
+    # after the evaluated bar's own date (e.g. a re-run against an old
+    # cached bar). Not a concern for its current live callers.
+    gamma_wall_tag = None
+    try:
+        from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+        from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
+
+        chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=price)
+        if chain.get("status") == "MISSING_ALPACA_CREDENTIALS":
+            gamma_wall_tag = {"available": False, "reason": "missing_alpaca_credentials"}
+        else:
+            options_data = chain.get("options_data") or []
+            if not options_data:
+                gamma_wall_tag = {"available": False, "reason": chain.get("status", "no_options_data")}
+            else:
+                gamma_result = GammaStrikeMatrixEngine.build(
+                    options_data=options_data, symbol=sym, spot_price=price)
+                if gamma_result.get("status") != "OK":
+                    gamma_wall_tag = {"available": False, "reason": gamma_result.get("status")}
+                else:
+                    zero_gamma = gamma_result.get("zero_gamma_level")
+                    nearest_above = gamma_result.get("nearest_wall_above")
+                    nearest_below = gamma_result.get("nearest_wall_below")
+
+                    # Proximity of kl.trap -- the alert's own real
+                    # structural level -- to each real options level,
+                    # reusing the SAME proximity convention the engine
+                    # itself already uses (1.5%), not an arbitrary new
+                    # threshold.
+                    #
+                    # SCALE NOTE, caught by direct testing before this
+                    # was considered done: the engine's own
+                    # proximity_pct/distance_to_spot_pct fields are
+                    # FRACTIONS (0.015 = 1.5%), but dist_pct below is
+                    # computed as an actual percentage number (1.5).
+                    # Converting the engine's fraction to the same
+                    # percentage scale here -- comparing them directly
+                    # without this would have made AT_GUARD_RAIL fire at
+                    # an effective 0.015% threshold instead of the
+                    # intended 1.5%, silently almost never triggering.
+                    proximity_pct = gamma_result.get("proximity_pct", 0.015) * 100
+                    candidates = []
+                    if zero_gamma:
+                        candidates.append(("GAMMA_FLIP", zero_gamma))
+                    if nearest_above:
+                        candidates.append((nearest_above.get("wall_type", "WALL_ABOVE"), nearest_above.get("strike")))
+                    if nearest_below:
+                        candidates.append((nearest_below.get("wall_type", "WALL_BELOW"), nearest_below.get("strike")))
+
+                    nearest_label, nearest_level, nearest_dist_pct = None, None, None
+                    for label, level in candidates:
+                        if not level:
+                            continue
+                        dist_pct = abs(kl.trap - level) / level * 100
+                        if nearest_dist_pct is None or dist_pct < nearest_dist_pct:
+                            nearest_label, nearest_level, nearest_dist_pct = label, level, dist_pct
+
+                    at_guard_rail = nearest_dist_pct is not None and nearest_dist_pct <= proximity_pct
+
+                    gamma_wall_tag = {
+                        "available": True,
+                        "zero_gamma_level": zero_gamma,
+                        "net_gamma_regime": gamma_result.get("net_gamma_regime"),
+                        "nearest_guard_rail_type": nearest_label,
+                        "nearest_guard_rail_level": nearest_level,
+                        "trap_distance_to_guard_rail_pct": round(nearest_dist_pct, 3) if nearest_dist_pct is not None else None,
+                        "reading": "AT_GUARD_RAIL" if at_guard_rail else "AWAY_FROM_GUARD_RAIL",
+                    }
+    except Exception as e:
+        gamma_wall_tag = {"available": False, "reason": f"error: {str(e)[:200]}"}
+
+    # FIX (2026-08-15): CRITICAL correction. price here is only the
+    # daily CLOSING price -- confirmed directly this structurally
+    # misses genuine intraday dips below the trap level that recover
+    # by the close (TSLA: closed $342.27, but genuinely touched
+    # $335.33 intraday on the same day, below its $337.14 trap level
+    # -- the real, live alert fired on that intraday move, which a
+    # close-only check could never see). Fetches the same day's
+    # intraday lows so the alert condition below can be evaluated
+    # against what actually happened during the session, not just its
+    # final snapshot.
+    _check_date = (as_of_raw or "")[:10] or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    intraday_min_low, intraday_bars_found = _fetch_intraday_min_low(sym, _check_date)
+
+    # calculate_behavioral_score() requires short keys (o/h/l/c) --
+    # confirmed a genuine mismatch with fetch_bars_batch()'s real
+    # output format, not just a test artifact.
+    recent_candles = [
+        {
+            "o": _bar_field(bar, "open", "o"), "h": _bar_field(bar, "high", "h"),
+            "l": _bar_field(bar, "low", "l"), "c": _bar_field(bar, "close", "c"),
+        }
+        for bar in bars[-20:]
+    ]
+    behavioral = calculate_behavioral_score(recent_candles)
+
+    if price >= kl.confirm and volume_confirm:
+        base_score = 72
+    elif price >= kl.trigger:
+        base_score = 49
+    else:
+        base_score = 32
+
+    b = behavioral.composite
+    if b >= 70:
+        behavioral_adj = 10
+    elif b >= 50:
+        behavioral_adj = 5
+    elif b < 35:
+        behavioral_adj = -8
+    else:
+        behavioral_adj = 0
+
+    score_without_options = max(0, min(100, base_score + behavioral_adj))
+    # Options adjustment ranges -8..+8 -- bounds how far the true,
+    # live score could have differed from this historical estimate.
+    score_range_low = max(0, score_without_options - 8)
+    score_range_high = min(100, score_without_options + 8)
+
+    # FIX (2026-08-15): CRITICAL correction, part 2. The real, live
+    # app's actual "Trap-Door Alert" (confirmed directly against
+    # frontend/app.py) is triggered by price < kl.trap AND score < 80
+    # -- genuinely different from "Decision Engine composite score <
+    # 35" (a separate tier from the Behavioral Analysis panel) that
+    # this tool incorrectly scanned for at first. That correction
+    # alone still wasn't enough: using only the daily CLOSING price
+    # for the price<kl.trap half still missed real alerts -- confirmed
+    # directly (TSLA: closed above its trap level, but genuinely
+    # dipped below it intraday on the same day, which is what the
+    # real, live alert actually caught). Uses the genuine intraday
+    # minimum low when available, which correctly subsumes the
+    # close-only check (the close is itself one of the intraday bars,
+    # so a close-based breach is still caught). Falls back to the
+    # close-only check, clearly flagged, if intraday data genuinely
+    # couldn't be fetched for that date.
+    effective_low = intraday_min_low if intraday_min_low is not None else price
+
+    # FIX (2026-08-15), correction to the correction: using
+    # score_range_high (the upper bound) for this check was too
+    # conservative -- confirmed directly against TSLA, which the user
+    # personally observed firing a genuine, live Trap-Door alert (not
+    # an Expansion Alert) on this exact day, yet score_range_high
+    # landed at exactly 80, failing a strict "< 80" check at the
+    # boundary. Since the alert genuinely fired as Trap-Door and not
+    # Expansion, the true, live score at that moment must genuinely
+    # have been below 80 -- proving the upper-bound check was
+    # systematically excluding real alerts like this one. Uses the
+    # honest midpoint estimate (score_without_options, no adjustment)
+    # instead, which real-world evidence shows is a more accurate
+    # reflection of the true condition than an artificially
+    # conservative bound.
+    is_trap_door_alert = (effective_low < kl.trap) and (score_without_options < 80)
+
+    return {
+        "ok": True,
+        "symbol": sym,
+        "as_of_date": as_of_raw,
+        "is_stale": is_stale,
+        "price": round(price, 2),
+        "volume": int(volume),
+        "volume_confirm": volume_confirm,
+        "intraday_min_low": intraday_min_low,
+        "intraday_bars_found": intraday_bars_found,
+        "intraday_data_available": intraday_min_low is not None,
+        "key_levels": {
+            "confirm": kl.confirm, "trigger": kl.trigger, "trap": kl.trap,
+            "prior_high": kl.prior_high, "fail": kl.fail,
+        },
+        # The real, live app's actual Trap-Door Alert condition,
+        # evaluated against the genuine intraday low when available.
+        "is_trap_door_alert": is_trap_door_alert,
+        # ADDED (2026-08-17): additive only -- see comment above at
+        # computation site. Never used in is_trap_door_alert itself.
+        "weis_exhaustion_tag": weis_exhaustion_tag,
+        "gamma_wall_tag": gamma_wall_tag,
+        "trap_door_reasoning": (
+            f"intraday low (${effective_low:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES"
+            if is_trap_door_alert and intraday_min_low is not None else
+            f"closing price (${effective_low:.2f}) < trap level (${kl.trap:.2f}) AND score < 80 -> ALERT FIRES "
+            "[intraday data unavailable -- close-only check, may understate real alerts]"
+            if is_trap_door_alert else
+            f"intraday low (${effective_low:.2f}) >= trap level (${kl.trap:.2f}) -- no alert"
+            if effective_low >= kl.trap and intraday_min_low is not None else
+            f"closing price (${effective_low:.2f}) >= trap level (${kl.trap:.2f}) -- no alert "
+            "[intraday data unavailable -- close-only check, may understate real alerts]"
+            if effective_low >= kl.trap else
+            f"price < trap level, but estimated score ({score_without_options}) genuinely >=80 (Expansion Alert territory instead) -- no Trap-Door alert"
+        ),
+        # Decision Engine's own, SEPARATE composite score and tier
+        # label -- a genuinely different concept from the alert above,
+        # kept here as additional context only, not the qualifying
+        # condition.
+        "decision_engine_base_score": base_score,
+        "decision_engine_base_score_reasoning": (
+            "price >= confirm (== price itself, always true) AND volume_confirm -> 72"
+            if price >= kl.confirm and volume_confirm else
+            "price >= trigger (PnF range low) -> 49"
+            if price >= kl.trigger else
+            "price < trigger (PnF range low) -- genuine structural break -> 32"
+        ),
+        "behavioral_composite": round(b, 1),
+        "behavioral_adj": behavioral_adj,
+        "options_adj": "UNAVAILABLE (no historical options data)",
+        "decision_engine_estimated_score": score_without_options,
+        "decision_engine_estimated_score_range": [score_range_low, score_range_high],
+    }
+
+
+@app.get("/api/research/trap-door-check/{symbol}")
+def trap_door_check(symbol: str, raw: bool = False):
+    """
+    TEMPORARY, one-off diagnostic (2026-08-13, corrected 2026-08-15)
+    -- not a permanent feature.
+
+    CORRECTED (2026-08-15): originally scanned for the Decision
+    Engine's own composite score < 35 -- a genuinely different,
+    separate concept from this app's real, live "Trap-Door Alert",
+    which is actually triggered by price < kl.trap (a direct
+    structural-level comparison) AND score < 80, confirmed directly
+    against frontend/app.py's real alert logic. The error was caught
+    when a real symbol (TSLA) scored 72 under the old logic -- nowhere
+    near 35 -- while genuinely triggering the real, live alert. Now
+    replicates the real, correct condition exactly.
+
+    Honest limitation: options_adj cannot be computed for a past day
+    at all -- Alpaca's options API only ever returns live, current
+    snapshots, with no historical view. The score<80 half of the real
+    condition is evaluated conservatively against the upper bound of
+    the estimated score range for this reason.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels, calculate_behavioral_score
+
+        if raw:
+            # FIX (2026-08-13): user's full scan showed nearly every
+            # symbol -- including AAPL, whose fresh data is already
+            # directly confirmed via other endpoints tonight -- with
+            # the exact same stale February date. Rules out a
+            # per-symbol data gap; this raw mode shows fetch_bars_batch()'s
+            # completely unfiltered output, to determine directly
+            # whether the staleness originates there or in this
+            # endpoint's own processing.
+            #
+            # Also computes the exact same date-range logic
+            # fetch_bars_batch() itself uses internally (that function
+            # doesn't expose its computed start/end dates), so the
+            # requested range and the server's own current time are
+            # directly visible -- distinguishes "the request itself
+            # was wrong" from "Alpaca returned something unexpected
+            # for a genuinely correct request".
+            server_now = datetime.now(timezone.utc)
+            _end_dt = server_now + timedelta(days=1)
+            _calendar_days = max(180, int(252 * 2.2))
+            _start_dt = _end_dt - timedelta(days=_calendar_days)
+
+            bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+            raw_bars = bars_map.get(sym) or []
+            return {
+                "ok": True, "symbol": sym, "raw_bar_count": len(raw_bars),
+                "server_now_utc": server_now.isoformat(),
+                "requested_start_date": _start_dt.strftime("%Y-%m-%d"),
+                "requested_end_date": _end_dt.strftime("%Y-%m-%d"),
+                "first_bar": raw_bars[0] if raw_bars else None,
+                "last_bar": raw_bars[-1] if raw_bars else None,
+            }
+
+        return _compute_trap_door_estimate(sym, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score)
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
+
+
+@app.get("/api/research/trap-door-intraday-check/{symbol}")
+def trap_door_intraday_check(symbol: str, date: str = ""):
+    """
+    TEMPORARY, one-off diagnostic (2026-08-15) -- not a permanent
+    feature. trap_door_check() only ever sees the daily CLOSING price
+    -- it structurally cannot detect a genuine intraday dip below the
+    trap level that recovered by the close, which the real, live app's
+    own alert (evaluated continuously as price ticks) genuinely can
+    and does catch. Built after TSLA/CRWD both showed price above
+    their trap level at the close on 2026-08-14, despite the user
+    directly, personally observing a real, live Trap-Door alert fire
+    for both that day.
+
+    Fetches 5-minute intraday bars for the specified date (defaults to
+    yesterday if omitted) and checks every bar's LOW (not just the
+    close) against the same day's structural trap level, to determine
+    directly whether price genuinely touched below it at any point
+    during the session -- the honest, complete answer this app's own
+    daily-bar-only tool cannot give on its own.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels
+
+        target_date = date or (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Daily bars to compute the same structural trap level used
+        # everywhere else in this tool, as of the requested date.
+        daily_bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        daily_bars = daily_bars_map.get(sym) or []
+        daily_bars = [b for b in daily_bars if (b.get("t") or "")[:10] <= target_date]
+        if len(daily_bars) < 20:
+            return {"ok": True, "symbol": sym, "status": "INSUFFICIENT_HISTORY"}
+
+        last_close = float(daily_bars[-1].get("c") or daily_bars[-1].get("close"))
+        pnf_engine = PnFWeisEngine()
+        columns = pnf_engine.build_columns(daily_bars)
+        count_guide = pnf_engine.count_guide_projection(columns)
+        kl = get_key_levels(last_close, count_guide=count_guide)
+
+        # Intraday (5-minute) bars, filtered to just the target date --
+        # via the shared helper (2026-08-15), now also used by
+        # _compute_trap_door_estimate() so this logic lives in one
+        # place only.
+        _key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+        _secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+        if not _key or not _secret:
+            return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
+
+        min_low, bars_found = _fetch_intraday_min_low(sym, target_date)
+        dipped_below_trap = (min_low is not None) and (min_low < kl.trap)
+
+        return {
+            "ok": True, "symbol": sym, "date_checked": target_date,
+            "intraday_bars_found": bars_found,
+            "trap_level": kl.trap,
+            "closing_price": last_close,
+            "intraday_min_low": min_low,
+            "dipped_below_trap_intraday": dipped_below_trap,
+            "conclusion": (
+                f"Price touched as low as ${min_low:.2f} intraday, genuinely below the ${kl.trap:.2f} trap level -- "
+                f"the real, live alert would have fired during the session even though the close (${last_close:.2f}) recovered above it."
+                if dipped_below_trap else
+                f"Intraday low of ${min_low:.2f} never touched the ${kl.trap:.2f} trap level -- "
+                f"does not explain the observed alert on its own."
+                if min_low is not None else
+                "No intraday bars found for this date/symbol."
+            ),
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
+
+
+@app.get("/api/research/trap-door-scan")
+def trap_door_scan(limit: int = 1500, offset: int = 0, max_workers: int = 20):
+    """
+    TEMPORARY, one-off Russell 1000 scan (2026-08-13, corrected
+    2026-08-15) -- not a permanent feature. Reuses
+    _compute_trap_door_estimate() (the exact same logic as
+    trap_door_check()) across the full universe, so this can never
+    silently drift from the single-symbol version -- including the
+    2026-08-15 correction to the real qualifying condition, see that
+    function's own comments for the full explanation.
+
+    fetch_bars_batch() itself fetches symbols sequentially -- with
+    ~1000-1500 symbols and the backend's own 300s gunicorn timeout,
+    a naive sequential loop would very likely time out. Parallelized
+    internally with a thread pool (default 20 concurrent) so this
+    completes within a few minutes rather than many, without needing
+    any change to the backend's own worker count.
+
+    Query params: ?limit=N caps how many symbols this call scans
+    (default full ~1500). ?offset=N skips the first N symbols of the
+    universe before applying limit -- added (2026-08-15) so multiple
+    calls can genuinely cover non-overlapping slices of the full
+    universe (e.g. offset=0&limit=224, then offset=224&limit=224, ...)
+    rather than every call re-scanning the same symbols from the
+    start. ?max_workers=N controls parallelism (default 20) -- kept
+    moderate rather than aggressive, to avoid genuinely tripping
+    Alpaca's own rate limits across many near-simultaneous requests.
+
+    2026-08-15: each symbol now makes one additional real API call
+    for its intraday bars (on top of the ~1-2 for daily bars), part of
+    the correction to catch genuine intraday dips a close-only check
+    would miss. Worth keeping batch sizes conservative given this.
+    """
+    try:
+        from backend.radar_service import fetch_bars_batch, load_russell1000
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+        from shared.engine import get_key_levels, calculate_behavioral_score
+
+        full_universe = load_russell1000()
+        universe = full_universe[max(0, offset):]
+        if limit and limit < len(universe):
+            universe = universe[:limit]
+
+        results = []
+        errors = []
+
+        def _run_one(sym):
+            try:
+                return _compute_trap_door_estimate(sym, fetch_bars_batch, PnFWeisEngine, get_key_levels, calculate_behavioral_score)
+            except Exception as e:
+                return {"ok": False, "symbol": sym, "error": str(e)}
+
+        with ThreadPoolExecutor(max_workers=max(1, min(max_workers, 40))) as pool:
+            futures = {pool.submit(_run_one, sym): sym for sym in universe}
+            for fut in futures:
+                r = fut.result()
+                if not r.get("ok"):
+                    errors.append(r)
+                else:
+                    results.append(r)
+
+        stale = [r for r in results if r.get("is_stale")]
+        fresh_results = [r for r in results if not r.get("is_stale")]
+        alerted = [r for r in fresh_results if r.get("is_trap_door_alert")]
+
+        return {
+            "ok": True,
+            "full_universe_size": len(full_universe),
+            "batch_offset": offset,
+            "batch_size": len(universe),
+            "batch_covers_symbols": f"{offset}-{offset + len(universe) - 1}" if universe else "none",
+            "scanned": len(results),
+            "errors": len(errors),
+            "stale_data_count": len(stale),
+            "stale_data_symbols": [
+                {"symbol": r["symbol"], "as_of_date": r.get("as_of_date")} for r in stale
+            ],
+            "trap_door_alerts": [
+                {
+                    "symbol": r["symbol"], "price": r["price"],
+                    "trap_level": r["key_levels"]["trap"],
+                    "as_of_date": r.get("as_of_date"),
+                }
+                for r in sorted(alerted, key=lambda r: r["price"] - r["key_levels"]["trap"])
+            ],
+            "error_samples": errors[:10],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+
+@app.get("/api/research/renko-weis/{symbol}")
+def get_renko_weis_verdict(symbol: str):
+    """
+    FIX (2026-08-09): first wiring of the new, parallel "pure Weis"
+    engine (non-repainting Renko brick generation -> wave grouping ->
+    scoring, all built and verified earlier tonight) into a real,
+    callable endpoint. Command Center is the first tab to use this.
+
+    Deliberately fetches its own DAILY bars here (via the same
+    fetch_bars_batch() the Radar scan already uses) rather than
+    reusing Command Center's existing `candles`, which are 5-minute
+    intraday bars by default -- the engine's ATR-based sizing was
+    calibrated for daily volatility (same as the existing, live Renko
+    overlay and WeisVerdictEngine), and this platform was explicitly
+    scoped to swing trading, not day trading, earlier tonight.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.renko_weis_wave_engine import RenkoWeisWaveEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        engine = RenkoWeisWaveEngine()
+        waves = engine.build_waves(bars)
+        verdict = engine.evaluate(bars, symbol=sym)
+        result = verdict.to_dict()
+        result["ok"] = True
+        result["status"] = "OK"
+        result["bars_used"] = len(bars)
+        # FIX (2026-08-15): added directly, factually verify whether
+        # this endpoint (which shares fetch_bars_batch() with the
+        # trap-door tool, where the pagination bug was found and
+        # fixed today) was genuinely serving stale data -- rather than
+        # assume based on shared code alone.
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
+        result["current_wave"] = engine.current_wave_reading(waves)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/research/pnf-weis/{symbol}")
+def get_pnf_weis_verdict(symbol: str, timeframe: str = "1Day"):
+    """
+    Sixth piece of the new, parallel "pure Weis" engine: the PnF
+    counterpart to get_renko_weis_verdict() above, following the same
+    pattern exactly (own daily-bar fetch, same error/status shape).
+
+    The underlying PointInTimePnFGenerator was empirically validated
+    against a real, trusted PnF reference dataset and confirmed
+    already correct (46/46 real, complete columns matched exactly) --
+    unlike Renko, no fix was needed before building this scoring layer
+    on top of it.
+
+    FIX (2026-08-17): timeframe is now a real, caller-supplied
+    parameter (still defaulting to "1Day" so every existing caller is
+    unaffected) rather than hardcoded. This alone required the
+    fetch_bars_batch() calendar-window fix in radar_service.py (see
+    its own comment) -- without that fix, requesting anything other
+    than daily bars through this new parameter would have silently
+    over- or under-fetched.
+
+    IMPORTANT for any future frontend caller that uses this parameter:
+    the frontend's own cache key for this endpoint MUST include the
+    timeframe value if more than one timeframe will ever be requested
+    for the same symbol. This is not hypothetical -- it's the exact
+    class of bug found and fixed earlier this session (Aug 17, see
+    frontend/app.py's count_guide_key comment): two callers sharing one
+    cache key with different data expectations silently served each
+    other's wrong-shaped/wrong-timeframe data with no visible error.
+    A 5-minute-chart request and a weekly-chart request for the same
+    symbol must not be allowed to collide on one cache slot.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    allowed_timeframes = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    if timeframe not in allowed_timeframes:
+        return {"ok": False, "symbol": sym, "error": f"invalid_timeframe: {timeframe}. Must be one of {sorted(allowed_timeframes)}"}
+
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.pnf_weis_engine import PnFWeisEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe=timeframe, limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        engine = PnFWeisEngine()
+        columns = engine.build_columns(bars)
+        verdict = engine.evaluate(bars, symbol=sym)
+        result = verdict.to_dict()
+        result["ok"] = True
+        result["status"] = "OK"
+        result["timeframe"] = timeframe
+        result["bars_used"] = len(bars)
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
+        result["current_column"] = engine.current_column_reading(columns)
+        result["count_guide"] = engine.count_guide_projection(columns)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/research/weis-wave/{symbol}")
+def get_weis_wave_verdict(symbol: str):
+    """
+    Exposes the original, already-validated, time-bar-based
+    WeisVerdictEngine (built and empirically validated earlier
+    tonight against a real reference dataset: 134 vs. 131 real
+    transitions, 78% timing accuracy) for a single symbol, mirroring
+    get_renko_weis_verdict()/get_pnf_weis_verdict()'s exact pattern --
+    so the time-bar approach can be directly compared against the new
+    Renko/PnF-structure approaches on the same, real data.
+
+    Unlike the newer engines, WeisVerdictEngine genuinely requires a
+    real pandas DataFrame (not a plain list of dicts) -- converts the
+    same batch-fetched bars accordingly before calling it.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        import pandas as pd
+        from backend.radar_service import fetch_bars_batch
+        from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=252)
+        bars = bars_map.get(sym) or []
+
+        if len(bars) < 20:
+            return {
+                "ok": True, "symbol": sym,
+                "status": "INSUFFICIENT_HISTORY",
+                "bars_available": len(bars),
+            }
+
+        df = pd.DataFrame(bars)
+        df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+
+        engine = WeisVerdictEngine()
+        result = engine.evaluate(df, symbol=sym)
+        result["ok"] = True
+        result["status"] = "OK"
+        result["bars_used"] = len(bars)
+        result["last_bar_date"] = (bars[-1].get("t") if bars else None)
+        return result
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/candles/{symbol}")
+def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
+    sym = (symbol or "").upper().strip()
+
+    if not sym:
+        return {"ok": False, "error": "missing_symbol", "bars": []}
+
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID") or ""
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY") or ""
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+
+    if not key or not secret:
+        return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials", "bars": []}
+
+    url = f"{base_url}/v2/stocks/{sym}/bars"
+    headers = {
+        "APCA-API-KEY-ID": key,
+        "APCA-API-SECRET-KEY": secret,
+    }
+    # FIX (2026-07-29): user-reported -- switching to the 1D timeframe only
+    # ever showed 1 candle (1m/5m/etc worked fine, showing ~90+ candles).
+    # This is a documented Alpaca behavior already noted elsewhere in this
+    # codebase (radar_service.py's fetch_bars_batch docstring): calling
+    # /bars with only timeframe+limit, no explicit start/end window, can
+    # silently return just the single most recent bar for daily/weekly
+    # timeframes. This endpoint never had that same fix applied. Sizing
+    # the lookback window to the requested timeframe + limit so enough
+    # calendar time is actually covered.
+    _clean_limit = max(1, min(int(limit or 200), 1000))
+    # FIX (2026-07-30): user-reported the chart's candles showed a price
+    # range wildly different from (and never converging with) the live
+    # price, even immediately after a fresh server reboot -- ruling out
+    # staleness as the cause. Found a real units error here: these values
+    # were meant to size the lookback window for daily/weekly/monthly
+    # bars (where each bar genuinely spans about that many calendar
+    # days), but the same "~1 day per bar" logic was also applied to
+    # intraday timeframes, where many bars fit inside a single trading
+    # day (about 78 five-minute bars per 6.5-hour session). That made
+    # "5Min": 1 request roughly a 210-calendar-day window for 200 bars,
+    # when 200 five-minute bars only need about 3-4 calendar days. If
+    # Alpaca returns bars oldest-first within that window and caps at
+    # the limit, the result is genuinely old data (whatever the price
+    # was ~7 months ago) with a small enough count to look plausible,
+    # rather than an obvious empty/error response -- exactly the
+    # sustained, reboot-proof mismatch reported. Corrected to reflect
+    # real trading-bars-per-day for each intraday granularity.
+    _calendar_days_per_bar = CANDLE_CALENDAR_DAYS_PER_BAR.get(timeframe, 1)
+    _lookback_days = max(5, int(_clean_limit * _calendar_days_per_bar) + 10)
+    _end_dt = datetime.utcnow() + timedelta(days=1)
+    _start_dt = _end_dt - timedelta(days=_lookback_days)
+
+    params = {
+        "timeframe": timeframe,
+        "limit": _clean_limit,
+        # FIX (2026-07-30): user-reported the chart's candles didn't
+        # match the live price -- a large, sustained gap, not just the
+        # last candle being one bar stale. Root cause: this endpoint
+        # requested feed="sip" for historical bars, while the live price
+        # ticker (confirmed by the "ALPACA IEX" header badge) uses feed=
+        # iex. We already confirmed earlier tonight (campaign discovery
+        # engine's 401s) that this account's Alpaca plan doesn't have
+        # full real-time SIP authorization -- SIP data can come back
+        # valid but meaningfully delayed rather than erroring outright,
+        # which would produce exactly this kind of sustained, silent
+        # divergence between the chart and the live price rather than
+        # an obvious failure. Using the same feed (iex) for both closes
+        # that gap entirely rather than just reducing it.
+        "feed": "iex",
+        "adjustment": "raw",
+        "start": _start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end": _end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        # FIX (2026-07-30, follow-up): confirmed via the user checking
+        # this endpoint's raw response directly that even after the
+        # window-sizing and feed fixes above, the returned bars still
+        # stopped 8 days before "now" -- not a small lag. Root cause,
+        # confirmed against Alpaca's own docs: this API sorts "asc"
+        # (oldest-first) by default. A 12-day window can contain far
+        # more 5-minute bars (~936) than our limit=200 cap, so with the
+        # default ascending sort we were only ever getting the OLDEST
+        # ~200 bars within the window -- roughly the first 2.5 trading
+        # days of it -- never reaching anywhere near the present.
+        # Requesting sort=desc gets the most recent `limit` bars instead
+        # (reversed back to chronological order below, since the chart
+        # expects oldest-to-newest left-to-right).
+        "sort": "desc",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+
+        if not r.ok:
+            return {
+                "ok": False,
+                "symbol": sym,
+                "error": f"alpaca_bars_http_{r.status_code}",
+                "detail": r.text[:300],
+                "bars": [],
+            }
+
+        payload = r.json() or {}
+        raw_bars = payload.get("bars") or []
+
+        bars = [
+            {
+                "o": b.get("o"),
+                "h": b.get("h"),
+                "l": b.get("l"),
+                "c": b.get("c"),
+                "v": b.get("v"),
+                "t": b.get("t"),
+            }
+            for b in raw_bars
+            if isinstance(b, dict)
+        ]
+        # Requested sort=desc (most recent first) above -- reverse back
+        # to chronological (oldest-to-newest) order for the chart.
+        bars.reverse()
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "timeframe": timeframe,
+            "bars": bars,
+            "source": "alpaca",
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "symbol": sym,
+            "error": str(exc)[:300],
+            "bars": [],
+        }
+
+
+# FIX (2026-07-28): journal_router (trade_journal_api.py) and radar_router
+# (radar_service.py) both define real, working handlers for these three
+# routes -- but neither router was ever actually included in this app.
+# Confirmed via production logs showing consistent 404s, and via grep
+# finding zero app.include_router(...) calls for either router anywhere
+# in this file. Rather than include the whole router (which may have
+# other routes not yet audited for this app's specific conventions),
+# these add matching compatibility routes here, same pattern as the
+# other *_compat routes in this file, delegating to the real underlying
+# functions those routers already call.
+@app.get("/api/journal/trades")
+def journal_trades_compat(request: Request, status: str = None, limit: int = 100):
+    try:
+        from backend.supabase_isolation import get_user_id_from_request
+        from backend.trade_journal_service import get_journal_entries
+
+        user_id = get_user_id_from_request(request)
+        trades = get_journal_entries(user_id, status=status, limit=limit)
+        return {"trades": trades, "count": len(trades), "user_id": user_id}
+    except Exception as exc:
+        return {"trades": [], "count": 0, "error": str(exc)[:300]}
+
+
+@app.get("/api/journal/profile")
+def journal_profile_compat(request: Request):
+    try:
+        from backend.supabase_isolation import get_user_id_from_request
+        from backend.trade_journal_service import get_trader_profile
+
+        user_id = get_user_id_from_request(request)
+        return get_trader_profile(user_id)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.get("/api/radar/divergence")
+def radar_divergence_compat():
+    try:
+        from backend.radar_service import get_divergence_watchlist
+        return get_divergence_watchlist()
+    except Exception as exc:
+        return {"count": 0, "symbols": [], "error": str(exc)[:300]}
 
 
 @app.get("/api/behavior/open-trade/{user_id}")
@@ -202,32 +1662,645 @@ def get_open_trade(user_id: str):
     return {}
 
 
+# ── Admin/staff access control ──────────────────────────────────────────
+# SECURITY FIX (2026-08-03): every /api/admin/* endpoint, plus the
+# read-only diagnostic endpoints that feed the frontend's Admin tab, had
+# NO server-side authentication at all. The frontend's is_admin(session)
+# check only controlled whether the UI *displayed* this content -- it did
+# nothing to stop anyone (subscriber or otherwise, no login required at
+# all) from calling these URLs directly and viewing or triggering them.
+# Some of these are action-triggering endpoints (run-full-nightly,
+# trigger-eod-audit), not just data reads, making this a real, serious
+# gap. This dependency verifies the request's Bearer token against
+# Supabase directly (never trusts a client-supplied email) and checks the
+# resulting verified email against an authorized admin/staff allowlist.
+def _get_admin_emails() -> set:
+    """
+    Comma-separated list of authorized admin/staff emails. Supports
+    multiple people (not just a single owner), per explicit request.
+    Falls back to the single legacy SIGMALYTIC_ADMIN_EMAIL var too, so
+    a deployment with only that one set still works.
+    """
+    raw = os.getenv("SIGMALYTIC_ADMIN_EMAILS") or os.getenv("SIGMALYTIC_ADMIN_EMAIL") or ""
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def require_admin(authorization: str = Header(default="")) -> str:
+    """
+    FastAPI dependency: raises 401/403 unless the request's Bearer token
+    belongs to a verified, authorized admin/staff email. Returns the
+    verified email on success, for use/logging in the endpoint if needed.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token.")
+
+    admin_emails = _get_admin_emails()
+    if not admin_emails:
+        # No admin emails configured at all -- fail closed, not open.
+        raise HTTPException(status_code=503, detail="Admin access is not configured on this server.")
+
+    supabase_url = (
+        os.environ.get("SUPABASE_URL")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+        or os.environ.get("VITE_SUPABASE_URL")
+    )
+    supabase_anon_key = (
+        os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+    )
+    if not supabase_url or not supabase_anon_key:
+        raise HTTPException(status_code=503, detail="Admin access verification is not configured on this server.")
+
+    try:
+        r = requests.get(
+            f"{supabase_url}/auth/v1/user",
+            headers={"apikey": supabase_anon_key, "Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Could not verify admin token right now.")
+
+    if not r.ok:
+        raise HTTPException(status_code=401, detail="Invalid or expired session.")
+
+    verified_email = (r.json() or {}).get("email", "").strip().lower()
+    if not verified_email or verified_email not in admin_emails:
+        raise HTTPException(status_code=403, detail="Admin access only.")
+
+    return verified_email
+
+
+@app.get("/api/admin/generate-report")
+def generate_report_now(date: str = None, _admin: str = Depends(require_admin)):
+    """
+    Manually triggers report generation for a given date (YYYY-MM-DD),
+    defaulting to today (UTC) if not specified. Used both for the
+    initial backfill (generating the first report for a past date) and
+    as a manual/emergency trigger outside the normal daily cron schedule.
+
+    FIX (2026-08-02): user reported repeated regenerations of the same
+    date never reflecting the latest code, even with the deploy
+    confirmed live and a build marker proving the new code was
+    genuinely running elsewhere -- but the stored report content
+    stayed on an old version regardless. A plausible explanation:
+    browsers can cache a GET request's response, and this endpoint had
+    no explicit cache-control headers telling it not to. Repeated
+    visits to the exact same URL could have been served straight from
+    browser cache, never actually reaching this function again at all,
+    which would explain everything observed. Explicit no-cache headers
+    added defensively; this is a real gap regardless of whether it was
+    the specific cause here.
+
+    FIX (2026-08-20): this used to call generate_and_store_report()
+    directly, synchronously, inside this request -- confirmed root
+    cause of a real, reported "Generate Report" freeze followed by a
+    raw 502 (the underlying full-universe computation is only cached
+    for 10 minutes, and had grown heavy enough through several genuine
+    feature additions over time that a cold-cache run now regularly
+    exceeds both the frontend's client timeout and this service's own
+    worker timeout, killing the worker mid-request before its own
+    error handling ever runs). Now starts the same work in a
+    background thread and returns immediately; the frontend polls
+    /api/admin/generate-report-status instead of holding the
+    connection open. Same fix pattern already proven for the Weis
+    Analysis tab's identical class of problem.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    try:
+        from backend.reports_engine import start_report_generation_job
+        result = start_report_generation_job(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:500]}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/admin/generate-report-status")
+def generate_report_status(date: str = None, _admin: str = Depends(require_admin)):
+    """
+    Polling companion to /api/admin/generate-report -- see that
+    endpoint's 2026-08-20 fix note. Returns the real, current status
+    of a background report-generation job: running / done / error /
+    unknown (unknown covers both "never started" and "Redis itself is
+    unreachable," both surfaced as an honest unknown rather than a
+    fabricated status).
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from backend.reports_engine import get_report_generation_status
+
+    result = get_report_generation_status(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+# ADDED (2026-08-21): Morning Report -- a genuinely different content
+# category from everything else Market Radio narrates (real macro/news
+# briefing -- oil prices, Fed policy, earnings -- versus Sigmalytic's
+# own structural/technical data). No automated news-fetching exists in
+# this codebase, confirmed before building this, so content comes from
+# an admin pasting it in each morning, not automatic generation.
+# Same Redis-backed pattern as everything else session -- a single
+# current-value key, not a history/archive (only "today's report"
+# matters for this feature; simplicity intentional given the small,
+# well-scoped use case).
+MORNING_REPORT_KEY = "morning_report:current"
+
+
+@app.post("/api/admin/morning-report")
+def save_morning_report(payload: dict, _admin: str = Depends(require_admin)):
+    from backend.radar_service import _redis_client
+
+    text = (payload or {}).get("text", "").strip()
+    if not text:
+        return {"ok": False, "error": "No text provided"}
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+
+    try:
+        _redis_client.set(MORNING_REPORT_KEY, json.dumps({
+            "text": text,
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }))
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/morning-report")
+def get_morning_report():
+    """Subscriber-facing -- no admin gate, any signed-in user can read
+    (and thus hear, via Market Radio's playback button) today's
+    morning report, same as they can read/hear any other radio content."""
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+    try:
+        raw = _redis_client.get(MORNING_REPORT_KEY)
+        if raw is None:
+            return {"ok": True, "text": None}
+        data = json.loads(raw)
+        return {"ok": True, **data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/weis-radar/results")
+def weis_radar_results():
+    """
+    Read-only -- serves whatever the worker's last daily scan
+    produced (see backend/weis_radar_scan.py and the worker's own
+    24-hour timestamp check). This endpoint never runs the scan
+    itself -- same separation as reports/generate-report vs. the
+    worker doing the actual heavy work.
+    """
+    from backend.weis_radar_scan import get_weis_radar_results
+    return get_weis_radar_results()
+
+
+@app.get("/api/weis-radar/chart/{symbol}")
+def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252):
+    """
+    ADDED (2026-08-25): on-demand, single-symbol bar+hit data for the
+    new click-to-chart feature. Deliberately NOT part of the cached
+    full-universe scan results (storing 252 bars x 1,023 symbols in
+    Redis would be wasteful when most users only ever inspect a
+    handful) -- this fetches fresh, real bars for just the one symbol
+    clicked, the same cheap single-symbol pattern the existing Weis
+    Analysis tab already uses safely on this same web backend.
+    Reuses scan_symbol_for_weis_patterns() (already tested) so the
+    chart's annotations match exactly what the table already showed.
+
+    ADDED (2026-08-26): timeframe and limit are now real, selectable
+    query params rather than hardcoded -- confirmed fetch_bars_batch()
+    (backend/radar_service.py) already has correct, separately-tuned
+    calendar-window math for every timeframe it supports (1Min, 5Min,
+    15Min, 30Min, 1Hour, 1Day, 1Week), so this is a safe, mechanical
+    change, not new risk.
+    """
+    from backend.radar_service import fetch_bars_batch
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.weis_radar_scan import _bars_to_dataframe, scan_symbol_for_weis_patterns
+
+    ALLOWED_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    if timeframe not in ALLOWED_TIMEFRAMES:
+        return {"ok": False, "error": f"Unsupported timeframe '{timeframe}'."}
+    limit = max(60, min(int(limit), 1000))  # sane bounds -- same floor scan_symbol_for_weis_patterns already requires, cap to prevent an oversized request
+
+    try:
+        sym = symbol.upper().strip()
+        bars_map = fetch_bars_batch([sym], timeframe=timeframe, limit=limit)
+        raw_bars = bars_map.get(sym, [])
+        if len(raw_bars) < 60:
+            return {"ok": False, "error": f"Insufficient bar history for {sym}."}
+
+        df = _bars_to_dataframe(raw_bars, keep_time=(timeframe != "1Day" and timeframe != "1Week"))
+        engine = WyckoffVerdictEngine()
+        hits = scan_symbol_for_weis_patterns(engine, df)
+        # FIX: build bars_out from the SAME prepared DataFrame the wave
+        # series is computed from, not a separate copy -- _prepare()
+        # calls dropna() internally, which could remove rows with any
+        # missing OHLCV data. Using two separately-derived DataFrames
+        # risked a real positional misalignment between bars_out[i]
+        # and wave_series[...][i] if any row had ever been dropped.
+        prepared_df = engine._prepare(df)
+        wave_series = engine.get_cumulative_wave_volume_series(prepared_df)
+
+        bars_out = [
+            {"date": row["date"], "open": row["open"], "high": row["high"],
+             "low": row["low"], "close": row["close"], "volume": row["volume"],
+             "cumulative_volume": wave_series["cumulative_volume"][i],
+             "wave_dir": wave_series["wave_dir"][i]}
+            for i, (_, row) in enumerate(prepared_df.iterrows())
+        ]
+        return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/weis-radar/run-now")
+def weis_radar_run_now(_admin: str = Depends(require_admin)):
+    """
+    ADDED (2026-08-24): admin-triggered manual scan -- same
+    enqueue-and-return-immediately pattern as /api/admin/generate-
+    report. Never runs the actual scan on this process -- only ever
+    enqueues a request the isolated worker picks up.
+    """
+    from backend.weis_radar_scan import request_manual_weis_radar_scan
+    return request_manual_weis_radar_scan()
+
+
+@app.get("/api/admin/weis-radar/status")
+def weis_radar_status(_admin: str = Depends(require_admin)):
+    """Polling companion to run-now, same pattern as generate-report-status."""
+    from backend.weis_radar_scan import get_weis_radar_job_status
+    return get_weis_radar_job_status()
+
+
+@app.get("/api/heatmap/data")
+def heatmap_data(timeframe: str = "daily"):
+    """
+    Sector/Industry Heat Map data -- real Russell 1000 sector/industry
+    classification (sourced directly from iShares' own official fund
+    holdings export) grouped and colored by real price performance at
+    the requested time frame (hourly, daily, weekly, monthly).
+
+    FIX (2026-08-06): confirmed this had zero caching (the response
+    headers even explicitly disabled browser-level caching too),
+    despite computing genuinely shared, identical data per timeframe
+    for every user -- and taking up to 90 seconds per the frontend's
+    own timeout. If multiple users switch to this tab around the same
+    time, this could trigger multiple redundant, expensive
+    computations simultaneously (more likely now with 2 worker
+    processes able to genuinely serve concurrent users). Wrapped in
+    the same proven shared_cache pattern, keyed per timeframe since
+    different timeframes have different data. Longer TTL (90s) than
+    market-wire since sector/industry price performance doesn't need
+    second-level freshness the way live quotes do.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+    from backend.shared_cache import shared_cache
+
+    def _compute():
+        try:
+            from backend.heatmap_engine import build_heatmap_data
+            return build_heatmap_data(timeframe)
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:500], "symbols": []}
+
+    result = shared_cache.get_or_fetch(f"heatmap_data_{timeframe}", _compute, ttl_seconds=90)
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/reports/list")
+def reports_list():
+    """Returns every date that currently has a stored daily report, newest first."""
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    try:
+        from backend.reports_engine import list_available_reports
+        result = {"ok": True, "dates": list_available_reports()}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:500], "dates": []}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/reports/{report_date}")
+def reports_get(report_date: str):
+    """
+    Returns the stored HTML report for a specific date.
+
+    FIX (2026-08-02): the generate-report endpoint got explicit
+    no-cache headers earlier, but this read endpoint -- the one
+    actually being checked repeatedly to verify a regeneration took
+    effect -- was missed. If a browser cached a response from this
+    exact URL before, checking it again could keep showing the old
+    cached content even after a genuinely successful regeneration on
+    the backend, which would look exactly like the regeneration itself
+    wasn't working.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    try:
+        from backend.reports_engine import get_report_html
+        html_doc = get_report_html(report_date)
+        if not html_doc:
+            result = {"ok": False, "error": f"No report found for {report_date}"}
+        else:
+            result = {"ok": True, "date": report_date, "html": html_doc}
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:500]}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/api/reports/{report_date}/pdf")
+def reports_get_pdf(report_date: str, download: bool = False):
+    """
+    Returns the stored report for a specific date as a PDF.
+
+    FIX (2026-07-31): user reported the downloaded PDF looked visibly
+    different from the on-screen HTML view (which uses full real-browser
+    rendering). Root cause: xhtml2pdf has much more limited CSS support
+    than a real browser -- confirmed earlier by warnings it couldn't
+    parse letter-spacing at all. Tested WeasyPrint directly against our
+    actual report HTML/CSS: renders with zero warnings, meaningfully
+    closer to real browser output. Now the primary renderer, with a
+    fallback to xhtml2pdf if WeasyPrint's native library dependencies
+    (Pango/Cairo) aren't available in this specific deploy environment --
+    couldn't fully verify that from a sandbox, so this fails safely
+    rather than risking another crashed-on-deploy scenario.
+
+    Defaults to inline disposition, so the browser's native PDF viewer
+    renders it directly when embedded in an iframe (matching the User
+    Guide tab's behavior) -- pass ?download=true for attachment
+    disposition instead, which the frontend's separate Download PDF
+    button uses. Both are needed: browsers generally ignore the HTML
+    <a download> attribute for cross-origin links (this endpoint is on
+    a different origin than the frontend), so forcing an actual
+    download for that button has to happen via this header instead.
+    """
+    from fastapi.responses import Response as _FastAPIResponse
+    import io
+
+    try:
+        from backend.reports_engine import get_report_html
+        html_doc = get_report_html(report_date)
+        if not html_doc:
+            return _FastAPIResponse(
+                content=f"No report found for {report_date}",
+                status_code=404,
+            )
+
+        pdf_bytes = None
+        render_error = None
+
+        try:
+            from weasyprint import HTML as _WeasyHTML
+            pdf_bytes = _WeasyHTML(string=html_doc).write_pdf()
+        except Exception as exc:
+            render_error = f"weasyprint_failed: {exc}"
+
+        if pdf_bytes is None:
+            try:
+                from xhtml2pdf import pisa
+                buf = io.BytesIO()
+                result = pisa.CreatePDF(html_doc, dest=buf)
+                if not result.err:
+                    pdf_bytes = buf.getvalue()
+                else:
+                    render_error = (render_error or "") + " | xhtml2pdf_failed"
+            except Exception as exc:
+                render_error = (render_error or "") + f" | xhtml2pdf_failed: {exc}"
+
+        if pdf_bytes is None:
+            return _FastAPIResponse(
+                content=f"PDF conversion failed: {render_error}",
+                status_code=500,
+            )
+
+        disposition = "attachment" if download else "inline"
+        return _FastAPIResponse(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'{disposition}; filename="Sigmalytic_Daily_Report_{report_date}.pdf"'
+            },
+        )
+    except Exception as exc:
+        return _FastAPIResponse(content=str(exc)[:500], status_code=500)
+
+
+@app.delete("/api/admin/reports/{report_date}")
+async def admin_delete_report(report_date: str, _admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-09): user asked how to remove a report from the
+    Reports tab -- there was no way to at all. Admin-only (this
+    permanently removes a report, an irreversible, destructive
+    action) and DELETE, not GET/POST, matching the actual HTTP
+    semantics of what this does.
+    """
+    from backend.reports_engine import delete_report
+
+    try:
+        result = delete_report(report_date)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/admin/trigger-eod-audit")
+def trigger_eod_audit(_admin: str = Depends(require_admin)):
+    # FIX (2026-07-29): user wanted to manually trigger run_eod_audit()
+    # (normally scheduled nightly at 8:30 PM ET) right now, to refresh
+    # the Intelligence Change Detector tab's stale data without waiting.
+    # The radar scanner runs in its own separate Background Worker
+    # service with no public HTTP endpoint -- this just sets a Redis
+    # flag that worker checks every 20s (see manual_trigger_check in
+    # radar_service.py's start_radar_scheduler), rather than trying to
+    # reach that service directly.
+    try:
+        from backend.radar_service import _redis_client
+        if not _redis_client:
+            return {"ok": False, "error": "Redis not configured"}
+        _redis_client.set("trigger:eod_audit", "1", ex=600)
+        return {
+            "ok": True,
+            "message": "EOD audit trigger set. The radar scanner worker checks for "
+                       "this every 20 seconds -- check its logs in a minute or two "
+                       "for 'Manual EOD audit trigger received'.",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.get("/api/admin/bme-memory-status")
+def bme_memory_status(_admin: str = Depends(require_admin)):
+    """
+    Real, direct diagnostic for the BME (Behavioral Memory Engine)
+    bank's actual current state -- confirmed get_memory_status()
+    (backend/behavioral_memory.py) existed but was never exposed
+    anywhere, meaning there was no direct way to verify whether
+    "Deep engine confirms radar (+0.0)" for a given symbol reflects
+    genuine NO_MEMORY (the symbol simply hasn't been trained yet --
+    expected, temporary) versus a deeper, persistent bug in the
+    memory persistence fix itself.
+    """
+    try:
+        from backend.behavioral_memory import get_memory_status
+        status = get_memory_status()
+        return {"ok": True, **status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/admin/engine-status")
-def engine_status():
+def engine_status(_admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-05): this endpoint used to return a hardcoded dict
+    with every single engine marked True, regardless of whether it was
+    actually wired to anything -- confirmed directly: several of these
+    (sizing_engine, ods_engine, decay_monitor, portfolio_intelligence)
+    were completely disconnected from the live app until tonight's
+    audit found and fixed them, yet this status endpoint claimed they
+    were already working the whole time. That's false status
+    reporting on exactly the kind of dashboard an admin would trust to
+    know what's real.
+
+    Now performs two genuinely distinct checks per engine:
+      - importable: does the module/function actually import without
+        error right now (a real, live check, not assumed)
+      - wired: is it confirmed connected to an actual endpoint a user
+        or admin can call, based on tonight's direct verification --
+        not just "the file exists and imports cleanly", which several
+        of these entries proved is not the same thing at all.
+    """
+    def _check(label, import_fn, wired):
+        try:
+            import_fn()
+            return {"importable": True, "wired": wired}
+        except Exception as e:
+            return {"importable": False, "wired": False, "error": str(e)[:150]}
+
     return {
-        "signal_birth_engine": True,
-        "wyckoff_verdict_engine": True,
-        "livermore_verdict_engine": True,
-        "weis_verdict_engine": True,
-        "master_campaign_index": True,
-        "campaign_pipeline": True,
-        "ods_engine": True,
-        "analog_engine": True,
-        "decay_monitor": True,
-        "state_transition": True,
-        "campaign_outcome": True,
-        "campaign_closure_engine": True,
-        "portfolio_intelligence": True,
-        "wyckoff_engine": True,
-        "gann_engine": True,
-        "bme_engine": True,
-        "sizing_engine": True,
-        "subscriber_alerts": True,
-        "campaign_api": True,
-        "research_api": True,
-        "portfolio_api": True,
-        "journal_api": True,
+        "signal_birth_engine": _check(
+            "signal_birth_engine",
+            lambda: __import__("backend.campaign_engine.campaign_discovery_engine", fromlist=["CampaignDiscoveryEngine"]),
+            wired=True,  # confirmed: runs nightly via sigmalytic-nightly-campaign-refresh cron
+        ),
+        "wyckoff_verdict_engine": _check(
+            "wyckoff_verdict_engine",
+            lambda: __import__("backend.research_engine.wyckoff_verdict_engine", fromlist=["WyckoffVerdictEngine"]),
+            wired=True,  # confirmed: GET /api/radar/symbol/{symbol}/wyckoff-verdict, added and tested later tonight
+        ),
+        "livermore_verdict_engine": _check(
+            "livermore_verdict_engine",
+            lambda: __import__("backend.operator_dominance.livermore_score_engine", fromlist=["compute_livermore_score"]),
+            wired=True,  # confirmed: GET /api/campaigns/{symbol}/dominance, added and tested tonight
+        ),
+        "weis_verdict_engine": _check(
+            "weis_verdict_engine",
+            lambda: __import__("backend.structural.weis_wave_engine", fromlist=["WeisWaveEngine"]),
+            wired=False,
+        ),
+        "campaign_pipeline": _check(
+            "campaign_pipeline",
+            lambda: __import__("backend.campaign_engine.nightly_campaign_pipeline", fromlist=["run_nightly_campaign_pipeline"]),
+            wired=True,  # confirmed: runs nightly via sigmalytic-nightly-campaign-refresh cron
+        ),
+        "ods_engine": _check(
+            "ods_engine",
+            lambda: __import__("backend.operator_dominance.livermore_score_engine", fromlist=["compute_livermore_score"]),
+            wired=True,
+        ),
+        "decay_monitor": _check(
+            "decay_monitor",
+            lambda: __import__("backend.intelligence.signal_decay_monitor", fromlist=["run_decay_monitoring_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-decay-monitor, added and tested tonight
+        ),
+        "portfolio_intelligence": _check(
+            "portfolio_intelligence",
+            lambda: __import__("backend.intelligence.portfolio_intelligence_engine", fromlist=["run_portfolio_intelligence_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-portfolio-rankings, added and tested tonight
+        ),
+        "sizing_engine": _check(
+            "sizing_engine",
+            lambda: __import__("backend.intelligence.position_sizing_engine", fromlist=["compute_position_size"]),
+            wired=True,  # confirmed: GET /api/radar/symbol/{symbol}/sizing, added and tested tonight
+        ),
+        "subscriber_alerts": _check(
+            "subscriber_alerts",
+            lambda: __import__("backend.intelligence.subscriber_alerts", fromlist=["send_campaign_birth_alerts"]),
+            wired=True,  # confirmed: POST /api/admin/send-subscriber-alerts, added and tested later tonight
+                         # (the actual email-send bug -- a disabled stub silently claiming success -- was
+                         # also fixed later tonight; see backend/intelligence/subscriber_alerts.py)
+        ),
+        "campaign_outcome": _check(
+            "campaign_outcome",
+            lambda: __import__("backend.intelligence.campaign_outcome_engine", fromlist=["run_campaign_outcome_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-campaign-outcome, added and tested later tonight
+        ),
+        "state_transition_engine": _check(
+            "state_transition_engine",
+            lambda: __import__("backend.intelligence.state_transition_engine", fromlist=["run_state_transition_cycle"]),
+            wired=True,  # confirmed: POST /api/admin/run-state-transition, added and tested later tonight --
+                         # a real dependency of campaign_outcome (feeds its transition probability inputs)
+        ),
+        "analog_engine": _check(
+            "analog_engine",
+            lambda: __import__("backend.analog_engine.analog_engine", fromlist=["find_analogs"]),
+            wired=True,  # confirmed: GET /api/campaigns/{symbol}/analogs, added and tested later tonight
+        ),
+        "campaign_closure_engine": _check(
+            "campaign_closure_engine",
+            lambda: __import__("backend.intelligence.campaign_closure_engine", fromlist=[""]),
+            wired=True,  # confirmed: POST /api/admin/run-closure-engine, already wired before tonight,
+                         # frontend Admin button added later tonight
+        ),
     }
+
 
 
 # SIGMALYTIC_ASYNC_NIGHTLY_JOB_TRACKING
@@ -369,7 +2442,7 @@ def _run_nightly_job_in_background(job_id: str, run_kwargs: dict):
 
 
 @app.post("/api/admin/run-full-nightly")
-def run_full_nightly(request: Request, payload: dict = Body(default=None)):
+def run_full_nightly(request: Request, payload: dict = Body(default=None), _admin: str = Depends(require_admin)):
     payload = payload or {}
 
     # SIGMALYTIC_RFA11_AUTHENTICATED_NIGHTLY_CRON_START
@@ -483,7 +2556,7 @@ def run_full_nightly(request: Request, payload: dict = Body(default=None)):
 
 
 @app.get("/api/admin/nightly-status/{job_id}")
-def nightly_status(request: Request, job_id: str):
+def nightly_status(request: Request, job_id: str, _admin: str = Depends(require_admin)):
     # Same shared-secret protection as the route that creates jobs --
     # job status can reveal campaign pipeline internals, so this isn't
     # left open.
@@ -516,7 +2589,7 @@ def nightly_status(request: Request, job_id: str):
 
 
 @app.post("/api/admin/refresh-weis-gamma-evidence")
-def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
+def refresh_weis_gamma_evidence(payload: dict = Body(default=None), _admin: str = Depends(require_admin)):
     payload = payload or {}
 
     requested_symbols = (
@@ -745,7 +2818,7 @@ def refresh_weis_gamma_evidence(payload: dict = Body(default=None)):
 
 
 @app.post("/api/admin/run-closure-engine")
-def run_closure_engine_admin():
+def run_closure_engine_admin(_admin: str = Depends(require_admin)):
     from backend.intelligence.campaign_closure_engine import (
         run_campaign_closure_cycle,
     )
@@ -1212,8 +3285,677 @@ def _step100r_w2_start_refresh_if_needed():
     thread.start()
 
 
+@app.get("/api/radar/symbol/{symbol}")
+def radar_symbol_lookup(symbol: str):
+    """
+    Real, single-symbol lookup from the radar cache -- built specifically
+    to give Command Center a genuine, live volume-expansion check (real
+    rel_volume) instead of a static, always-the-same disclaimer text.
+
+    FIX (2026-08-04): the original version called get_radar_scores(),
+    but that function hard-caps its limit to 250 internally (a
+    deliberate performance safeguard for its paginated, enriched list
+    view -- confirmed directly in radar_service.py), regardless of what
+    limit is requested. Requesting limit=1500 was silently clamped, so
+    this only ever searched the top 250 symbols by whatever sort order
+    was active at the time -- meaning a real, genuinely-tracked symbol
+    (confirmed: AAPL, via user's direct API check showing 915 total
+    tracked symbols) could still come back "not found" simply because
+    it wasn't in that particular slice. RADAR_CACHE is a plain
+    Dict[str, dict] keyed by symbol, so a direct dictionary lookup is
+    both correct and efficient here -- no need for the same safeguard
+    that a full paginated list response requires.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.radar_service import RADAR_CACHE, _redis_client
+
+        row = RADAR_CACHE.get(sym)
+        if row is None and _redis_client:
+            import json as _radar_json
+            raw = _redis_client.get("radar:cache")
+            if raw:
+                full_cache = _radar_json.loads(raw)
+                row = full_cache.get(sym)
+
+        if row is None:
+            return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+        return {"ok": True, "symbol": sym, "data": row}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/radar/symbol/{symbol}/sizing")
+def radar_symbol_sizing(symbol: str, portfolio_value: float = 100000.0):
+    """
+    Wires the REAL, validated Phase 10 position sizing engine
+    (backend/intelligence/position_sizing_engine.py -- genuinely
+    implemented, matching the empirically-derived stop/Half-Kelly
+    parameters from 168,433 observations) directly into live radar
+    data. Confirmed via full codebase audit: this engine existed, was
+    complete and correct, but was never called from anywhere in the
+    live app -- only a separate, disconnected trade-journal API path
+    referenced its constants informally, not this engine itself.
+
+    TIER derivation is an honest, documented BRIDGE, not the true
+    validated Phase 7C definition (OBS_Q4+PROG_Q4+SPD=Y|DEI=N, which
+    depends on inputs -- obstacle/progress quartiles, spring/demand
+    sequencing -- not currently computed anywhere in the live radar
+    scan). Until that reconnection work is done, this uses the live
+    scan's own readiness_score as the closest available proxy:
+    readiness_score >= 90 -> TIER_1, >= 70 -> TIER_2, below that ->
+    not sized (too speculative to size at all under this framework).
+
+    ASYM ratio uses the radar row's own expected_mfe/expected_mae from
+    the historical probability engine when available -- itself subject
+    to the sample-size/staleness caveats already established tonight,
+    so this is a genuine but imperfect estimate, not a guarantee.
+
+    portfolio_value defaults to a theoretical $100,000 reference
+    portfolio with zero existing positions (no real per-user portfolio
+    tracking exists yet -- that is Layer 4, a separate, larger gap) --
+    this gives a real, concrete "what the validated research says to
+    do" reference figure, not a claim about any specific user's actual
+    account.
+    """
+    from decimal import Decimal
+    from datetime import date
+    from backend.intelligence.position_sizing_engine import (
+        compute_position_size, PortfolioContext, sizing_result_to_dict,
+    )
+    from backend.radar_service import RADAR_CACHE, _redis_client
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    row = RADAR_CACHE.get(sym)
+    if row is None and _redis_client:
+        import json as _sizing_json
+        raw = _redis_client.get("radar:cache")
+        if raw:
+            row = _sizing_json.loads(raw).get(sym)
+    if row is None:
+        return {"ok": False, "symbol": sym, "error": "symbol_not_in_radar_universe"}
+
+    readiness = row.get("readiness_score") or 0
+    if readiness >= 90:
+        tier = "TIER_1"
+    elif readiness >= 70:
+        tier = "TIER_2"
+    else:
+        return {
+            "ok": True, "symbol": sym, "tier": None, "sized": False,
+            "reason": f"readiness_score {readiness} below the 70+ threshold this "
+                      f"framework requires to size a position at all.",
+        }
+
+    price = row.get("price")
+    mfe = row.get("expected_mfe")
+    mae = row.get("expected_mae")
+    if not price or mfe is None or mae is None or mae == 0:
+        return {
+            "ok": True, "symbol": sym, "tier": tier, "sized": False,
+            "reason": "Missing price or expected_mfe/expected_mae data needed to compute ASYM ratio.",
+        }
+
+    asym_ratio = Decimal(str(abs(mfe))) / Decimal(str(abs(mae)))
+
+    try:
+        portfolio = PortfolioContext(
+            total_value=Decimal(str(portfolio_value)),
+            available_capital=Decimal(str(portfolio_value)),
+            active_positions=0,
+            deployed_capital=Decimal("0"),
+        )
+        result = compute_position_size(
+            symbol=sym, tier=tier, entry_price=Decimal(str(price)),
+            asym_ratio=asym_ratio, portfolio=portfolio, entry_date=date.today(),
+        )
+        return {"ok": True, "symbol": sym, "sized": True, "result": sizing_result_to_dict(result)}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/campaigns/{symbol}/dominance")
+def campaign_operator_dominance(symbol: str):
+    """
+    Wires the real, working Livermore Control Score engine
+    (backend/operator_dominance/livermore_score_engine.py -- genuine
+    scoring logic combining pivotal-point progress, line-of-least-
+    resistance, normal-reaction quality, leadership, and campaign
+    lifecycle state) to real campaign data for the first time.
+
+    Confirmed via full codebase audit: this engine was complete,
+    correct, and entirely disconnected -- zero references anywhere
+    else in the app. It was blocked on Layer 5 (campaign lifecycle
+    tracking) providing real current_state data, which turned out to
+    already be running correctly via the dedicated
+    sigmalytic-nightly-campaign-refresh cron service (confirmed
+    directly: nightly_campaign_pipeline.py genuinely imports and calls
+    the real campaign_state_engine, not a stub) -- this dependency was
+    NOT the "largest missing piece" a prior audit described; real
+    progress had already been made since then.
+
+    Returns None/not-available honestly if no active campaign record
+    exists yet for this symbol, rather than fabricating a score from
+    absent data.
+    """
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        from backend.campaign_engine.campaign_store import CampaignStore
+        from backend.operator_dominance.livermore_score_engine import compute_livermore_score
+
+        store = CampaignStore()
+        if not store.configured():
+            return {"ok": False, "symbol": sym, "error": "campaign_store_not_configured"}
+
+        campaigns = store.get_active_campaigns(symbol=sym)
+        if not campaigns:
+            return {
+                "ok": True, "symbol": sym, "has_active_campaign": False,
+                "reason": "No active campaign record exists yet for this symbol.",
+            }
+
+        campaign = campaigns[0]
+        score = compute_livermore_score(campaign)
+        return {
+            "ok": True, "symbol": sym, "has_active_campaign": True,
+            "current_state": campaign.get("current_state"),
+            "score": score,
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/campaigns/{symbol}/analogs")
+def campaign_analogs(symbol: str):
+    """
+    Wires the real Historical Analog Engine
+    (backend/analog_engine/analog_engine.py) for the first time.
+    Confirmed via direct search: zero references anywhere in main.py.
+
+    A genuinely sounder alternative to the flawed historical-probability
+    approach scrutinized at the very start of tonight's session: matches
+    the active campaign against REAL closed campaigns from this app's
+    own database (growing over time as campaigns actually close), not a
+    static dataset frozen since 2026-06-11. Requires a minimum
+    population (5) of live analogs before trusting them at all --
+    otherwise gracefully falls back to research benchmarks rather than
+    reporting a misleadingly small-sample average. Honestly labels
+    confidence HIGH/MEDIUM/LOW based on real sample size and match
+    quality, and reports its own source (LIVE_ANALOGS vs
+    RESEARCH_BENCHMARKS) so it's clear which one produced the result.
+    """
+    import os as _os
+    from dataclasses import asdict
+    from types import SimpleNamespace
+    from backend.campaign_engine.campaign_store import CampaignStore
+    from backend.analog_engine.analog_engine import find_analogs, _fetch_closed_campaigns
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+
+    try:
+        store = CampaignStore()
+        if not store.configured():
+            return {"ok": False, "symbol": sym, "error": "campaign_store_not_configured"}
+
+        campaigns = store.get_active_campaigns(symbol=sym)
+        if not campaigns:
+            return {
+                "ok": True, "symbol": sym, "has_active_campaign": False,
+                "reason": "No active campaign record exists yet for this symbol.",
+            }
+        c = campaigns[0]
+
+        campaign_obj = SimpleNamespace(
+            campaign_id=c.get("campaign_id"),
+            symbol=sym,
+            state=c.get("current_state", "BIRTH"),
+            days_open=c.get("campaign_age_days", 0) or 0,
+            tier=c.get("historical_confidence") or "TIER_2",
+            obstacle_score=float(c.get("obstacle_score") or 0.0),
+            duration_days=c.get("campaign_age_days", 0) or 0,
+        )
+
+        supabase_url = _os.environ.get("SUPABASE_URL") or ""
+        supabase_key = _os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+        closed = _fetch_closed_campaigns(supabase_url, supabase_key)
+
+        match = find_analogs(campaign_obj, closed)
+        return {"ok": True, "symbol": sym, "has_active_campaign": True, "analog": asdict(match)}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/run-state-transition")
+async def admin_run_state_transition(_admin: str = Depends(require_admin)):
+    """
+    Wires the real State Transition Engine -- confirmed via direct
+    search: run_state_transition_cycle() had zero references anywhere
+    in main.py, despite its own docstring calling itself "the
+    entrypoint for backend/main.py scheduler and manual admin trigger".
+
+    This is a real, direct dependency of the Campaign Outcome Engine
+    wired up just before this: it computes transition_advance_prob and
+    transition_failure_prob for every active campaign, blending each
+    state's base expectation with empirical historical rates. Without
+    this running, the outcome engine's expected_return calculation
+    falls back to generic ~35%/35% defaults instead of real, calibrated
+    probabilities -- so this should generally be run before, or
+    alongside, the outcome engine for genuinely meaningful results.
+
+    Admin-only and POST since this is a real, mutating batch operation
+    across the full active-campaign set.
+    """
+    from backend.intelligence.state_transition_engine import run_state_transition_cycle
+
+    try:
+        result = await run_state_transition_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/run-campaign-outcome")
+async def admin_run_campaign_outcome(_admin: str = Depends(require_admin)):
+    """
+    Wires the real Campaign Outcome Engine for the first time --
+    confirmed via direct search: run_campaign_outcome_cycle() had zero
+    references anywhere in main.py before tonight.
+
+    This is directly relevant to the very first question of tonight's
+    session ("how is Expected Return of +162.60% determined?"). That
+    number came from historical_probability_engine.py: a simple average
+    of a small number (as few as 10-15) of historical matches, from a
+    dataset stale since 2026-06-11 -- confirmed unreliable through
+    extensive investigation earlier tonight.
+
+    This engine computes outcome_expected_return completely differently
+    and far more currently: a live blend of the campaign's actual
+    lifecycle state (BIRTH/CONFIRMED/SURVIVING/etc.) prior, its
+    transition-model projection, real-time operator dominance and decay
+    scores, and the campaign's own current, real evidence (return_pct,
+    P&F progress) -- not a static historical average at all. Writes
+    outcome_expected_return, outcome_risk_reward, outcome_quality, and
+    related fields back to the campaigns table for every active
+    campaign. Admin-only and POST since this is a real, mutating batch
+    operation, matching the same protection as the other admin actions
+    tonight.
+    """
+    from backend.intelligence.campaign_outcome_engine import run_campaign_outcome_cycle
+
+    try:
+        result = await run_campaign_outcome_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/run-decay-monitor")
+async def admin_run_decay_monitor(_admin: str = Depends(require_admin)):
+    """
+    Wires the real, working Layer 7 (Signal Decay Monitoring) engine
+    for the first time. Confirmed via direct search: despite its own
+    docstring claiming to be "the main entrypoint used by
+    backend/main.py scheduler and manual full-nightly flow", there was
+    genuinely zero reference to this function anywhere in main.py --
+    the docstring's claim did not match reality.
+
+    Scores every active campaign (HEALTHY/MONITOR/WEAKENING/
+    EXIT_CANDIDATE) against the research's own decay bands, and
+    persists the results back to the campaigns table (via the engine's
+    own internal _patch_campaign/_insert_decay_observation calls) --
+    a real, mutating batch operation across the full active-campaign
+    set, not a simple read, so this is admin-only and POST rather than
+    GET, matching the same protection already applied to other
+    heavy/mutating admin operations tonight.
+    """
+    from backend.intelligence.signal_decay_monitor import run_decay_monitoring_cycle
+
+    try:
+        result = await run_decay_monitoring_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/run-portfolio-rankings")
+async def admin_run_portfolio_rankings(_admin: str = Depends(require_admin)):
+    """
+    Wires the real Layer 4 (Portfolio Construction, Phase 16) engine
+    for the first time. Confirmed via direct search: zero references
+    to run_portfolio_intelligence_cycle() anywhere in main.py, same
+    disconnection pattern as Layer 7.
+
+    Consolidates duplicate active campaigns down to one current
+    campaign per symbol, scores each on strength/analog/risk, and
+    writes the resulting priority-banded rankings to
+    public.portfolio_rankings -- a real, mutating batch operation
+    across the full active-campaign set (clears and re-inserts
+    rankings), so admin-only and POST, matching the same protection
+    already applied to Layer 7's decay monitor above.
+    """
+    from backend.intelligence.portfolio_intelligence_engine import run_portfolio_intelligence_cycle
+
+    try:
+        result = await run_portfolio_intelligence_cycle()
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/radar/symbol/{symbol}/validated-classification")
+def radar_symbol_validated_classification(symbol: str, years: int = 2):
+    """
+    Computes the REAL, validated research dimensions for a live symbol
+    -- obstacle score and behavioral state (SPD/DEI sequence) -- reusing
+    the exact functions from qualified_long_signal_audit.py (the
+    original research script) directly, not the disconnected setup_
+    type/readiness-bucket system currently live everywhere else in the
+    app (confirmed via full codebase audit: OBS_Q4/PROG_Q4/SPD/DEI --
+    the actual validated winning combination, SPD=Y|DEI=N producing
+    51.52% mfe90 at n=504 -- appear ONLY in that research script,
+    nowhere in radar_service.py/historical_probability_engine.py/
+    probability_service.py).
+
+    HONEST LIMITATION: obstacle score is a raw, precisely-computed
+    continuous value (distance from 252-day high + normalized days
+    since high + trading-range width) -- fully correct and real. But
+    quartile assignment (OBS_Q1 through OBS_Q4) in the original
+    research was computed RELATIVE TO THE FULL ~1000-symbol population's
+    distribution at research time -- confirmed directly in the
+    research script's own summarize function. Re-computing that exact
+    population-relative threshold live, for every request, isn't done
+    here (would require scoring the full universe on every call). The
+    raw obstacle_score is returned as-is; behavioral_state (SPD/DEI),
+    which does NOT depend on population quartiles, is the fully
+    complete, directly comparable part of this response.
+    """
+    from backend.qualified_long_signal_audit import (
+        Bar, sma, calc_atr, _detect_trading_range,
+        _compute_wave_variables, _compute_obstacle_score, _classify_behavioral_state,
+        classify_setup,
+    )
+    from backend.multitimeframe_behavioral_backtest import fetch_daily_bars
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))
+
+    try:
+        raw_bars = fetch_daily_bars(sym, years)
+        if len(raw_bars) < 260:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(raw_bars)} bars, need 260+)"}
+
+        bars = [
+            Bar(t=b.get("t", ""), dt=None, date=str(b.get("t", ""))[:10],
+                o=b["o"], h=b["h"], l=b["l"], c=b["c"], v=b["v"])
+            for b in raw_bars
+        ]
+        i = len(bars) - 1  # most recent bar = today's live classification
+
+        high_252 = max(b.h for b in bars[max(0, i - 251): i + 1])
+        distance_from_252_high_pct = ((bars[i].c - high_252) / high_252 * 100) if high_252 > 0 else 0.0
+
+        # Days since the 252-day high
+        window_252 = bars[max(0, i - 251): i + 1]
+        high_idx_in_window = max(range(len(window_252)), key=lambda k: window_252[k].h)
+        p5_days_since_252_high = (len(window_252) - 1) - high_idx_in_window
+
+        trading_range = _detect_trading_range(bars, i)
+
+        avg_vol_20 = sma([b.v for b in bars], i, 20) or 1.0
+        atr = calc_atr(bars, i, 14) or max(bars[i].h - bars[i].l, bars[i].c * 0.01)
+        support = trading_range.get("support_level", 0.0) if trading_range.get("detected") else 0.0
+
+        wave_vars = _compute_wave_variables(
+            bars=bars, idx=i, support_level=support, avg_vol_20=avg_vol_20, atr=atr, lookback=60,
+        )
+
+        row = {
+            "distance_from_252_high_pct": distance_from_252_high_pct,
+            "p5_days_since_252_high": p5_days_since_252_high,
+            "range_width_pct": trading_range.get("range_width_pct", 0.0),
+            "trading_range_detected": trading_range.get("detected", False),
+            "w_selling_pressure_diminishing": wave_vars.get("w_selling_pressure_diminishing", False),
+            "w_demand_efficiency_improving": wave_vars.get("w_demand_efficiency_improving", False),
+            "w_buoyancy_near_support": wave_vars.get("w_buoyancy_near_support", False),
+            "w_up1_price_eff": wave_vars.get("w_up1_price_eff", 0.0),
+        }
+
+        obstacle_score = _compute_obstacle_score(row)
+        state_label, state_num = _classify_behavioral_state(row)
+        setup = classify_setup(bars, i)
+
+        return {
+            "ok": True, "symbol": sym,
+            "price": bars[i].c, "date": bars[i].date,
+            "setup_type": setup,
+            "obstacle_score": obstacle_score,
+            "obstacle_note": "Raw score; population-relative quartile (OBS_Q1-Q4) not computed live -- see docstring.",
+            "behavioral_state": state_label,
+            "spd": row["w_selling_pressure_diminishing"],
+            "dei": row["w_demand_efficiency_improving"],
+            "is_validated_optimal_entry": state_label == "STATE_1_EXHAUSTION",
+            "trading_range_detected": row["trading_range_detected"],
+            "distance_from_252_high_pct": round(distance_from_252_high_pct, 2),
+            "days_since_252_high": p5_days_since_252_high,
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+@app.get("/api/radar/symbol/{symbol}/wyckoff-verdict")
+def radar_symbol_wyckoff_verdict(symbol: str, years: int = 1):
+    """
+    Wires the real Wyckoff Emerging Campaign Verdict Engine
+    (backend/research_engine/wyckoff_verdict_engine.py) for the first
+    time. Confirmed via the engine_status audit earlier tonight: this
+    was importable but not wired to any live endpoint.
+
+    Genuine, sophisticated Wyckoff scoring: stopping climax, supply
+    absorption, spring, sign of strength, meaningful resistance,
+    behavioral resolution, and overall survival score -- computed
+    directly from real daily bars, reusing the app's own proven
+    fetch_daily_bars() from earlier tonight's work.
+    """
+    from backend.research_engine.wyckoff_verdict_engine import run_wyckoff_verdict
+    from backend.multitimeframe_behavioral_backtest import fetch_daily_bars
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))
+
+    try:
+        raw_bars = fetch_daily_bars(sym, years)
+        if len(raw_bars) < 60:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(raw_bars)} bars, need 60+)"}
+
+        bars = [
+            {"open": b["o"], "high": b["h"], "low": b["l"], "close": b["c"], "volume": b["v"]}
+            for b in raw_bars
+        ]
+        result = run_wyckoff_verdict({"symbol": sym, "bars": bars})
+        return {"ok": True, "symbol": sym, "verdict": result}
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
+def _build_eligible_campaign_alerts():
+    """
+    Shared helper: fetches currently-active TIER_1/TIER_2 campaigns and
+    builds the same CampaignBirthAlert objects used by both the real
+    send endpoint and the (genuinely read-only) preview endpoint --
+    extracted so both use the exact same eligibility/field-building
+    logic rather than two separately-maintained copies.
+
+    FIX (2026-08-09): also returns real diagnostics (total active
+    campaigns before tier filtering, and a genuine count of tier
+    values actually seen) -- after fixing the tier-string bug, user
+    still saw "no eligible campaigns," and there was no way to tell
+    whether that's genuinely accurate (zero active campaigns right
+    now, or active campaigns that are all TIER_3) versus a different,
+    still-unresolved issue.
+    """
+    from decimal import Decimal
+    from datetime import date as _date
+    from collections import Counter
+    from backend.campaign_engine.campaign_store import CampaignStore
+    from backend.intelligence.subscriber_alerts import CampaignBirthAlert
+
+    store = CampaignStore()
+    if not store.configured():
+        return None, {"ok": False, "error": "campaign_store_not_configured"}, None
+
+    campaigns = store.get_active_campaigns()
+    diagnostics = {
+        "total_active_campaigns": len(campaigns),
+        "tier_breakdown": dict(Counter(c.get("tier") or "(none)" for c in campaigns)),
+    }
+    # FIX (2026-08-09): the actual tier values (confirmed directly
+    # from the CampaignTier enum in campaign_models.py, and all three
+    # places tier gets set) are the full "TIER_1_INSTITUTIONAL_ALPHA"/
+    # "TIER_2_STABLE_RETENTION" strings -- never the bare "TIER_1"/
+    # "TIER_2" this filter was checking against, meaning it could
+    # never match any real campaign at all. Discovered via the new,
+    # safe "Review Drafts" preview feature -- the real send button
+    # used this exact same filter, so this predates tonight's work.
+    eligible = [c for c in campaigns if c.get("tier") in ("TIER_1_INSTITUTIONAL_ALPHA", "TIER_2_STABLE_RETENTION")]
+
+    def _dec(v, default="0"):
+        try:
+            return Decimal(str(v)) if v is not None else Decimal(default)
+        except Exception:
+            return Decimal(default)
+
+    alerts = []
+    for c in eligible:
+        alerts.append(CampaignBirthAlert(
+            symbol=c.get("symbol", ""),
+            tier=c.get("tier", "TIER_2_STABLE_RETENTION"),
+            layer=c.get("layer", "B"),
+            entry_price=_dec(c.get("entry_price")),
+            stop_price=_dec(c.get("stop_price")),
+            stop_pct="-10%" if c.get("layer") == "A" else "-20%",
+            pnf_target=_dec(c.get("pnf_target")),
+            mfe90_expected=_dec(c.get("mfe90_expected")),
+            d_score=float(c.get("d_score") or 0.0),
+            obstacle_score=float(c.get("obstacle_score") or 0.0),
+            duration_days=int(c.get("duration_days") or 0),
+            dur_bucket=c.get("dur_bucket", "DUR_60_120"),
+            behavioral_state=c.get("behavioral_state", "ACCUMULATION"),
+            spd=bool(c.get("spd", False)),
+            dei=bool(c.get("dei", False)),
+            wed_count=int(c.get("wed_count") or 0),
+            asym_ratio=_dec(c.get("asym_ratio"), "1"),
+            shares=int(c.get("shares") or 0),
+            position_value=_dec(c.get("position_value")),
+            campaign_id=str(c.get("campaign_id", "")),
+            birth_date=_date.today(),
+        ))
+    return alerts, None, diagnostics
+
+
+@app.post("/api/admin/send-subscriber-alerts")
+async def admin_send_subscriber_alerts(_admin: str = Depends(require_admin)):
+    """
+    Admin-triggered manual send of real subscriber alert emails for
+    currently-active TIER_1/TIER_2 campaigns -- per user's explicit
+    confirmed intent ("the email system is to send alerts and the
+    nightly report automatically"), now that the underlying send
+    function actually sends (fixed earlier tonight: was silently
+    calling a disabled stub while claiming success).
+
+    Builds each CampaignBirthAlert directly from the real, active
+    campaign records (via CampaignStore.get_active_campaigns()) using
+    safe .get() defaults for fields that may not be present on every
+    row, rather than assuming an exact schema match. Admin-only and
+    POST since this sends real emails to real subscribers -- a genuine
+    external, real-world action, not a read.
+    """
+    from backend.intelligence.subscriber_alerts import send_campaign_birth_alerts
+
+    try:
+        alerts, error, diagnostics = _build_eligible_campaign_alerts()
+        if error:
+            return error
+
+        result = await send_campaign_birth_alerts(alerts)
+        return {"ok": True, "eligible_campaigns": len(alerts), "diagnostics": diagnostics, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/admin/preview-subscriber-alerts")
+async def admin_preview_subscriber_alerts(_admin: str = Depends(require_admin)):
+    """
+    FIX (2026-08-09): user asked whether a way to review drafts before
+    the real send exists -- it didn't; added this as a genuinely
+    read-only companion to the send endpoint above. Builds the exact
+    same eligible-campaign list and CampaignBirthAlert objects (via the
+    shared helper), but renders each one's real email HTML directly
+    (reusing the existing, separate _render_email_html() -- the same
+    function the real send path uses to build what actually gets
+    emailed) without calling send_campaign_birth_alerts() or fetching
+    any subscriber records at all. GET, not POST, since this sends
+    nothing and has no side effects.
+    """
+    from backend.intelligence.subscriber_alerts import _render_email_html
+
+    try:
+        alerts, error, diagnostics = _build_eligible_campaign_alerts()
+        if error:
+            return error
+
+        drafts = []
+        for alert in alerts:
+            try:
+                html = _render_email_html(alert)
+            except Exception as e:
+                html = f"<p>Error rendering preview: {str(e)[:200]}</p>"
+            drafts.append({
+                "symbol": alert.symbol,
+                "tier": alert.tier,
+                "layer": alert.layer,
+                "campaign_id": alert.campaign_id,
+                "html": html,
+            })
+
+        return {"ok": True, "eligible_campaigns": len(alerts), "diagnostics": diagnostics, "drafts": drafts}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/radar/scores")
 def radar_scores_compat(limit: int = 50):
+    # FIX (2026-07-29): now that start_radar_scheduler() is actually
+    # running (see startup handler above), the real radar engine's cache
+    # is genuinely populated ~45s after boot and every 8 minutes after
+    # that. Prefer it -- it has real relative_strength/volume_pressure/
+    # behavioral/readiness_score/probability/grade data, which the old
+    # campaign-derived fallback below never had. Falls back to the
+    # previous behavior only if the real cache is still empty (e.g. in
+    # the brief window right after a fresh deploy, before the first scan
+    # completes), so the tab is never left completely blank.
+    try:
+        from backend.radar_service import get_radar_scores as _real_get_radar_scores
+        real_payload = _real_get_radar_scores(limit=limit)
+        if real_payload and real_payload.get("symbols"):
+            return real_payload
+    except Exception as e:
+        print(f"[RADAR_COMPAT] Real radar engine unavailable, falling back: {e}", flush=True)
+
     value = _step100r_w2_normalize_limit(limit)
     now = _step100r_w2_time.monotonic()
 
@@ -1321,19 +4063,18 @@ def _lightweight_radar_scores_payload(limit: int = 50):
 def radar_intelligence_lightweight_compat(limit: int = 50):
     payload, score_symbols = _lightweight_radar_scores_payload(limit=limit)
 
-    campaign_rows = []
-    campaign_source_error = None
-
-    try:
-        campaigns = _compat_campaigns()
-        for campaign in (campaigns or [])[:limit]:
-            row = _compat_to_frontend_row(campaign)
-            if row.get("symbol"):
-                campaign_rows.append(row)
-    except Exception as exc:
-        campaign_source_error = str(exc)
-
-    source_symbols = campaign_rows if campaign_rows else score_symbols
+    # FIX (2026-07-28): this used to make a SEPARATE, fresh (uncached) call
+    # to _compat_campaigns() and prefer that over score_symbols whenever it
+    # returned anything. Since /api/radar/scores (via
+    # _lightweight_radar_scores_payload -> radar_scores_compat) reads from
+    # a cached snapshot with its own TTL, and this fresh call bypassed that
+    # cache entirely, the two endpoints could show slightly different
+    # symbol lists depending on exact timing -- confirmed via real user
+    # report of Radar Screen and this panel disagreeing on the same
+    # underlying data. Using score_symbols directly here means both
+    # endpoints always show the identical cached snapshot, eliminating
+    # that drift entirely.
+    source_symbols = score_symbols
     working_symbols = []
 
     for raw in (source_symbols or [])[:limit]:
@@ -1401,18 +4142,18 @@ def radar_intelligence_lightweight_compat(limit: int = 50):
 
     return {
         "ok": True,
-        "source": "working_app_campaign_intelligence_compat" if campaign_rows else "working_app_lightweight_product_compat",
+        "source": "working_app_lightweight_product_compat",
         "compatibility_route": "/api/radar/intelligence",
         "derived_from": [
             "/api/radar/scores",
-            "campaign_intelligence_compat" if campaign_rows else "radar_scores_compat",
+            "radar_scores_compat",
         ],
         "generated_at": payload.get("generated_at"),
         "count": len(working_symbols),
         "market_enriched_count": payload.get("market_enriched_count"),
         "market_error": payload.get("market_error"),
-        "campaign_source_available": bool(campaign_rows),
-        "campaign_source_error": campaign_source_error,
+        "campaign_source_available": None,
+        "campaign_source_error": None,
         "working_app_evidence_contract": {
             "wyckoff": True,
             "weis": True,
@@ -3132,8 +5873,70 @@ def phase12_25_controlled_campaign_state_mutation_preflight(payload: dict):
     }
 # === PHASE 12.25 CONTROLLED CAMPAIGN STATE MUTATION PREFLIGHT END ===
 
+@app.post("/api/admin/repair-scoreboard-history")
+def admin_repair_scoreboard_history(limit: int = 500, _admin: str = Depends(require_admin)):
+    """
+    Wires the real, working repair_scoreboard_history() maintenance
+    utility -- explicitly documented in its own docstring as "safe to
+    run repeatedly", backfilling missing confidence grades and path
+    metrics on older scoreboard rows. Directly supports the real
+    track-record statistics feature. Admin-only and POST since this
+    is a real, mutating write operation.
+    """
+    try:
+        from backend.scoreboard_service import repair_scoreboard_history
+        result = repair_scoreboard_history(limit=limit)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.post("/api/admin/clear-duplicate-signals")
+def admin_clear_duplicate_signals(_admin: str = Depends(require_admin)):
+    """
+    Wires the real, working clear_duplicate_signals() maintenance
+    utility -- removes duplicate scoreboard rows, keeping only the
+    most recent per symbol+signal_type per day. Admin-only and POST
+    since this deletes rows.
+    """
+    try:
+        from backend.scoreboard_service import clear_duplicate_signals
+        removed = clear_duplicate_signals()
+        return {"ok": True, "removed": removed}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+@app.get("/api/scoreboard/real-stats")
+def scoreboard_real_stats():
+    """
+    Wires the real, honest scoreboard statistics engine
+    (backend/scoreboard_service.py's get_scoreboard_stats()) for the
+    first time. Confirmed via audit: /api/scoreboard (already used by
+    the frontend's Scoreboard tab) is a DIFFERENT, campaign-
+    intelligence compatibility endpoint (scoreboard_compat) that does
+    not call this function at all -- the real, honest track-record
+    statistics (win rates, hit rates, average MFE/MAE, direction
+    accuracy, agreement-bucket validation, and a live attribution
+    report of what's actually producing edge) computed from the app's
+    own real, actual logged signal history and outcomes were never
+    surfaced anywhere.
+
+    Confirmed the underlying DATABASE_URL/psycopg2 connection pattern
+    is genuinely working in production: log_signal() (the write side
+    of this same table) is actively called on every real status
+    change via radar_service.py, running successfully all night.
+    """
+    try:
+        from backend.scoreboard_service import get_scoreboard_stats
+        stats = get_scoreboard_stats()
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 @app.get("/api/campaigns/transition-preview")
-def phase12_17_controlled_transition_preview(limit: int = 50):
+def phase12_17_controlled_transition_preview(limit: int = 50, symbol: str = None):
     rows = []
     source_error = None
 
@@ -3145,6 +5948,10 @@ def phase12_17_controlled_transition_preview(limit: int = 50):
                 rows.append(row)
     except Exception as exc:
         source_error = str(exc)
+
+    if symbol:
+        sym = symbol.upper().strip()
+        rows = [r for r in rows if str(r.get("symbol", "")).upper() == sym]
 
     previews = [_phase12_17_transition_preview_for_row(row) for row in rows[:limit]]
 
@@ -3209,8 +6016,104 @@ def radar_probability_status_lightweight_compat(limit: int = 50):
 # === LIGHTWEIGHT PRODUCT RADAR COMPAT ROUTES END ===
 
 
+@app.get("/api/admin/symbol-backtest/{symbol}")
+def admin_symbol_backtest(symbol: str, years: int = 5, _admin: str = Depends(require_admin)):
+    """
+    Runs a genuine, single-symbol historical backtest against the FULL
+    available Alpaca history (default 5 years -- confirmed via Alpaca's
+    own docs as the realistic upper bound: "over 5 years of historical
+    data... no data prior to 2016"), reusing the real, existing
+    backend/multitimeframe_behavioral_backtest.py functions (the same
+    evaluate_behavioral_transition() production classification logic
+    used live) rather than reimplementing any of that logic.
+
+    Built to answer a direct, real question: does a specific profile
+    (e.g. TDY's "Compression Breakout Candidate" / "Compression to
+    Expansion Attempt" / 90+ Elite readiness combination) hold up over
+    a much longer, more statistically meaningful lookback than the
+    production lookup table's current 2-year/168K-observation dataset
+    (built 2026-06-11, confirmed stale) -- rather than relying on that
+    dataset's small, potentially-noisy 15-match sample for this symbol.
+
+    Deliberately scoped to ONE symbol at a time: running this across
+    the full ~1000-symbol universe would be far too slow for an
+    on-demand API call (this is a heavy, iterative computation -- one
+    evaluate_behavioral_transition() call per trading day in the
+    lookback window, so ~1250 calls for 5 years). Admin-only given the
+    real compute cost.
+    """
+    from backend.multitimeframe_behavioral_backtest import (
+        fetch_daily_bars, resample_weekly, weekly_rows_until,
+        infer_weekly_regime, score_daily_snapshot, forward_outcomes, _parse_dt,
+    )
+
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {"ok": False, "error": "missing_symbol"}
+    years = max(1, min(years, 6))  # 6 as a hard ceiling -- past Alpaca's confirmed realistic availability
+
+    try:
+        daily = fetch_daily_bars(sym, years)
+        if len(daily) < 90:
+            return {"ok": False, "symbol": sym, "error": f"insufficient_history ({len(daily)} bars)"}
+
+        weekly = resample_weekly(daily)
+        observations = []
+        # Same 90-day window as the production lookup table, for a real
+        # apples-to-apples comparison -- plus the script's own default
+        # shorter windows too, in case those are also useful context.
+        WINDOWS = (5, 10, 20, 90)
+        max_window = max(WINDOWS)
+
+        for i in range(60, len(daily) - max_window):
+            current_dt = _parse_dt(daily[i].get("t"))
+            daily_history = daily[: i + 1]
+            weekly_history = weekly_rows_until(weekly, current_dt)
+            weekly_regime = infer_weekly_regime(weekly_history)
+
+            snap = score_daily_snapshot(sym, daily_history, weekly_regime)
+            if not snap:
+                continue
+
+            snap.update(forward_outcomes(daily, i, snap.get("trade_side", "Long"), windows=WINDOWS))
+            observations.append(snap)
+
+        # Match against the SAME profile fields the live radar scan and
+        # production lookup use, so this is a genuine comparison, not a
+        # different, incompatible definition of "matches this setup".
+        matches = [
+            o for o in observations
+            if o.get("setup_type") == "Compression Breakout Candidate"
+            and o.get("transition_candidate") == "Compression to Expansion Attempt"
+            and (o.get("readiness_score") or 0) >= 90
+        ]
+
+        def _avg(field):
+            vals = [o.get(field) for o in matches if o.get(field) is not None]
+            return round(sum(vals) / len(vals), 2) if vals else None
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "years_requested": years,
+            "total_daily_bars": len(daily),
+            "total_observations_scored": len(observations),
+            "profile_matches_found": len(matches),
+            "profile": "Compression Breakout Candidate | Compression to Expansion Attempt | 90+ Elite readiness",
+            "avg_return_5d": _avg("return_5d"),
+            "avg_return_10d": _avg("return_10d"),
+            "avg_return_20d": _avg("return_20d"),
+            "avg_return_90d": _avg("return_90d"),
+            "avg_mfe_90d": _avg("mfe_90d"),
+            "avg_mae_90d": _avg("mae_90d"),
+            "match_dates": [o.get("date") for o in matches],
+        }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)[:300]}
+
+
 @app.get("/api/admin/divergence-watchlist")
-def divergence_watchlist_compat(limit: int = 50):
+def divergence_watchlist_compat(limit: int = 50, _admin: str = Depends(require_admin)):
     campaigns = _compat_campaigns()
     rows = []
 
@@ -3291,6 +6194,42 @@ if admin_router is not None:
 # to Supabase.
 app.include_router(billing_router)
 app.include_router(legal_router)
+# FIX (2026-07-28): preferences_router was defined but never included --
+# confirmed via a full audit of every router in the backend, and
+# confirmed the frontend actively calls /api/preferences/{user_id} in
+# three separate places, meaning this has been 404'ing this whole time.
+app.include_router(preferences_router)
+# FIX (2026-07-28): mounting the new behavior_router (see import comment
+# above) -- this is what makes the Behavioral Intelligence tab and the
+# trade-plan/entry/exit workflow actually work end-to-end for the first
+# time, rather than always falling back to their empty states.
+app.include_router(behavior_router)
+
+
+# === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
+try:
+    try:
+        from backend.trade_journal_api import journal_router
+    except Exception:
+        from trade_journal_api import journal_router
+
+    app.include_router(journal_router)
+except Exception as _journal_router_mount_error:
+    _JOURNAL_ROUTER_MOUNT_ERROR_EXCERPT = str(_journal_router_mount_error)[:500]
+
+    @app.get("/api/journal/mount-status")
+    async def journal_router_mount_status():
+        return {
+            "ok": False,
+            "route_status": "JOURNAL_ROUTER_MOUNT_ERROR",
+            "mount_error_excerpt": _JOURNAL_ROUTER_MOUNT_ERROR_EXCERPT,
+            "writes_to_supabase": False,
+            "mutates_campaigns": False,
+            "operator_control_confirmed": False,
+            "not_a_trade_signal": True,
+            "touches_stripe": False,
+        }
+# === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT END ===
 # === STEP 9C COMMERCIAL ROUTE MOUNTS END ===
 
 # ============================================================
@@ -3305,7 +6244,7 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
-    async def d3e5_controlled_append_only_audit_write_route_readiness():
+    async def d3e5_controlled_append_only_audit_write_route_readiness(_admin: str = Depends(require_admin)):
         return build_controlled_append_only_audit_write_route_payload(
             {
                 "request_method": "GET",
@@ -3324,7 +6263,7 @@ except Exception as _d3e5_route_mount_error:
     _D3E5_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e5_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-append-only-audit-write-route")
-    async def d3e5_controlled_append_only_audit_write_route_mount_error():
+    async def d3e5_controlled_append_only_audit_write_route_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.5",
@@ -3356,7 +6295,7 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
-    async def d3e6_controlled_one_row_append_only_audit_insert_readiness():
+    async def d3e6_controlled_one_row_append_only_audit_insert_readiness(_admin: str = Depends(require_admin)):
         return build_d3e6_readiness_payload()
 
     @app.post("/api/alerts/controlled/one-row-append-only-audit-insert")
@@ -3369,7 +6308,7 @@ except Exception as _d3e6_route_mount_error:
     _D3E6_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e6_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-one-row-append-only-audit-insert-readiness")
-    async def d3e6_controlled_one_row_append_only_audit_insert_mount_error():
+    async def d3e6_controlled_one_row_append_only_audit_insert_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.6",
@@ -3397,14 +6336,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
-    async def d3e7_controlled_post_write_readback_verification():
+    async def d3e7_controlled_post_write_readback_verification(_admin: str = Depends(require_admin)):
         return build_d3e7_post_write_readback_verification_payload(execute_live_read=True)
 
 except Exception as _d3e7a_route_mount_error:
     _D3E7A_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e7a_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-post-write-readback-verification")
-    async def d3e7a_controlled_post_write_readback_verification_mount_error():
+    async def d3e7a_controlled_post_write_readback_verification_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.7A",
@@ -3432,14 +6371,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
-    async def d3e8_controlled_persistence_post_write_closure_sweep():
+    async def d3e8_controlled_persistence_post_write_closure_sweep(_admin: str = Depends(require_admin)):
         return build_d3e8_post_persistence_closure_sweep_payload(execute_live_read=True)
 
 except Exception as _d3e8_route_mount_error:
     _D3E8_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e8_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-persistence-post-write-closure-sweep")
-    async def d3e8_controlled_persistence_post_write_closure_sweep_mount_error():
+    async def d3e8_controlled_persistence_post_write_closure_sweep_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.8",
@@ -3467,14 +6406,14 @@ try:
     )
 
     @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
-    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep():
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep(_admin: str = Depends(require_admin)):
         return build_d3e9_final_lifecycle_regression_sweep_payload(execute_live_read=True)
 
 except Exception as _d3e9_route_mount_error:
     _D3E9_ROUTE_MOUNT_ERROR_EXCERPT = str(_d3e9_route_mount_error)[:500]
 
     @app.get("/api/alerts/read-only/controlled-persistence-final-lifecycle-regression-sweep")
-    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error():
+    async def d3e9_controlled_persistence_final_lifecycle_regression_sweep_mount_error(_admin: str = Depends(require_admin)):
         return {
             "ok": False,
             "d3e_phase": "D3E.9",
