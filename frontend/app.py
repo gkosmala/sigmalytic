@@ -4375,6 +4375,89 @@ def build_weis_radar_tab(session=None):
         ], id="weis-radar-volume-sliders-row",
            style={"display": "none", "flexDirection": "row", "alignItems": "center",
                    "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}),
+
+        # ---- off-chart trendline descriptions (Line 1/2, Secondary
+        # Channels) -- kept OUTSIDE the Plotly figure entirely, since
+        # on a multi-year daily chart any in-plot text label risks
+        # sitting near some candle no matter where it's positioned.
+        html.Div(id="weis-radar-chart-annotations", style={
+            "color": "#a9b4bf", "fontSize": "11px", "display": "flex",
+            "flexDirection": "column", "gap": "2px", "margin": "4px 20px 8px 20px",
+        }),
+
+        html.Div([
+            html.Div([
+                dcc.Checklist(id="weis-radar-show-zigzag", options=[{"label": " Wave", "value": "on"}],
+                              value=["on"], inline=True, style={"color": WHITE, "fontSize": "11px"}),
+                dcc.Slider(id="weis-radar-vibration", min=1, max=15, step=0.5, value=4,
+                           marks=None, tooltip={"placement": "bottom"}),
+            ], style={"flex": "1", "minWidth": "160px"}),
+
+            html.Div([
+                dcc.Checklist(id="weis-radar-show-sr", options=[{"label": " S/R levels", "value": "on"}],
+                              value=[], inline=True, style={"color": WHITE, "fontSize": "11px"}),
+                dcc.Checklist(id="weis-radar-show-effort", options=[{"label": " Effort/Result", "value": "on"}],
+                              value=[], inline=True, style={"color": WHITE, "fontSize": "11px"}),
+            ], style={"display": "flex", "gap": "12px", "alignItems": "center"}),
+        ], id="weis-radar-annotation-toggles-row", style={
+            "display": "none", "flexDirection": "row", "alignItems": "center", "gap": "16px",
+            "margin": "0 20px 8px 20px",
+        }),
+
+        # ---- Line 1 / Line 2 (user-specified resistance/support) ----
+        html.Div([
+            html.Div([
+                html.Span("Line 1: ", style={"color": "#ff6ec7", "fontSize": "11px"}),
+                dcc.Dropdown(id="weis-radar-line1-type", options=[{"label": "High", "value": "H"},
+                              {"label": "Low", "value": "L"}], value="H", clearable=False,
+                              style={"width": "80px", "display": "inline-block"}),
+                dcc.Input(id="weis-radar-line1-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+                dcc.Input(id="weis-radar-line1-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
+            html.Div([
+                html.Span("Line 2: ", style={"color": "#4dd8e6", "fontSize": "11px"}),
+                dcc.Dropdown(id="weis-radar-line2-type", options=[{"label": "High", "value": "H"},
+                              {"label": "Low", "value": "L"}], value="L", clearable=False,
+                              style={"width": "80px", "display": "inline-block"}),
+                dcc.Input(id="weis-radar-line2-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+                dcc.Input(id="weis-radar-line2-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
+        ], id="weis-radar-manual-lines-row", style={
+            "display": "none", "flexDirection": "row", "gap": "20px", "margin": "0 20px 8px 20px",
+        }),
+
+        # ---- Secondary Channel Upper / Lower ----
+        html.Div([
+            html.Div([
+                html.Span("Sec. Channel Upper: ", style={"color": "#ffd166", "fontSize": "11px"}),
+                dcc.Input(id="weis-radar-secupper-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+                dcc.Input(id="weis-radar-secupper-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
+            html.Div([
+                html.Span("Sec. Channel Lower: ", style={"color": "#ffd166", "fontSize": "11px"}),
+                dcc.Input(id="weis-radar-seclower-date1", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+                dcc.Input(id="weis-radar-seclower-date2", type="text", placeholder="YYYY-MM-DD", style={"width": "100px"}),
+            ], style={"display": "flex", "gap": "6px", "alignItems": "center"}),
+        ], id="weis-radar-secondary-channels-row", style={
+            "display": "none", "flexDirection": "row", "gap": "20px", "margin": "0 20px 8px 20px",
+        }),
+
+        # ---- Call Wall / Put Wall / Gamma Flip toggles ----
+        # NOTE: values themselves come from chart_data (backend), same
+        # source Command Center already uses -- these are DISPLAY
+        # toggles only, not numeric inputs, unlike the standalone test
+        # tool where there was no live options feed to read from.
+        html.Div([
+            dcc.Checklist(id="weis-radar-show-call-wall", options=[{"label": " Call Wall", "value": "on"}],
+                          value=["on"], inline=True, style={"color": "#4da3ff", "fontSize": "11px"}),
+            dcc.Checklist(id="weis-radar-show-put-wall", options=[{"label": " Put Wall", "value": "on"}],
+                          value=["on"], inline=True, style={"color": "#ffa64d", "fontSize": "11px"}),
+            dcc.Checklist(id="weis-radar-show-gamma-flip", options=[{"label": " Gamma Flip", "value": "on"}],
+                          value=["on"], inline=True, style={"color": "#b06dff", "fontSize": "11px"}),
+        ], id="weis-radar-wall-toggles-row", style={
+            "display": "none", "flexDirection": "row", "gap": "16px", "margin": "0 20px 12px 20px",
+        }),
+
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
     ], style={"padding": "20px"})
 
@@ -7366,7 +7449,238 @@ def poll_weis_radar_status(n_intervals, session):
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
 
 
-def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, yaxis3_range=None):
+def _weis_vibration_zigzag(bars, vib_pct):
+    """
+    Percentage-threshold ZigZag ("vibration" variable) -- an
+    alternative wave definition to the confirmed-reversal (2
+    consecutive same-direction closes) method already used for this
+    chart's cumulative-volume coloring (bars[i]["wave_dir"], computed
+    upstream of this function). This one flips direction only after
+    price retraces vib_pct% from the running extreme, independent of
+    bar-count.
+
+    Before the first pivot, direction is undetermined: a candidate
+    high AND a candidate low are tracked independently until price
+    moves vib_pct% away from one of them, at which point the first
+    pivot is confirmed and a single-extreme tracker takes over for the
+    rest of the series. (An earlier version of this used a single
+    shared extreme variable for both candidates during this phase,
+    which corrupted it -- always track both independently here.)
+
+    Returns (pivots, final_state, final_extreme_idx, final_extreme_price)
+    where pivots is a list of {"idx": int, "price": float, "type": "H"|"L"}.
+    """
+    n = len(bars)
+    pivots = []
+    state = None  # None (undetermined), "up", "down"
+
+    cand_high, cand_high_idx = bars[0]["high"], 0
+    cand_low, cand_low_idx = bars[0]["low"], 0
+    extreme_price, extreme_idx = None, None
+
+    for i in range(1, n):
+        h, l = bars[i]["high"], bars[i]["low"]
+
+        if state is None:
+            if h > cand_high:
+                cand_high, cand_high_idx = h, i
+            if l < cand_low:
+                cand_low, cand_low_idx = l, i
+
+            if cand_high_idx < cand_low_idx and cand_low <= cand_high * (1 - vib_pct / 100.0):
+                pivots.append({"idx": cand_high_idx, "price": cand_high, "type": "H"})
+                state = "down"
+                extreme_price, extreme_idx = cand_low, cand_low_idx
+            elif cand_low_idx < cand_high_idx and cand_high >= cand_low * (1 + vib_pct / 100.0):
+                pivots.append({"idx": cand_low_idx, "price": cand_low, "type": "L"})
+                state = "up"
+                extreme_price, extreme_idx = cand_high, cand_high_idx
+            continue
+
+        if state == "up":
+            if h > extreme_price:
+                extreme_price, extreme_idx = h, i
+            if l <= extreme_price * (1 - vib_pct / 100.0):
+                pivots.append({"idx": extreme_idx, "price": extreme_price, "type": "H"})
+                state = "down"
+                extreme_price, extreme_idx = l, i
+        else:  # state == "down"
+            if l < extreme_price:
+                extreme_price, extreme_idx = l, i
+            if h >= extreme_price * (1 + vib_pct / 100.0):
+                pivots.append({"idx": extreme_idx, "price": extreme_price, "type": "L"})
+                state = "up"
+                extreme_price, extreme_idx = h, i
+
+    return pivots, state, extreme_idx, extreme_price
+
+
+def _weis_find_nearest_pivot(bars, pivots, date_str, pivot_type, tolerance_days=3):
+    """
+    Finds the confirmed pivot of the given type (H or L) nearest to
+    date_str, within tolerance_days bars. Returns None if no match --
+    callers must handle that (e.g. a manual trendline silently not
+    drawing rather than raising, since a bad date typed into a chart
+    control shouldn't break the whole chart).
+    """
+    target_idx = None
+    for i, b in enumerate(bars):
+        if b["date"] == date_str:
+            target_idx = i
+            break
+    if target_idx is None:
+        return None
+
+    best, best_dist = None, None
+    for p in pivots:
+        if p["type"] != pivot_type:
+            continue
+        dist = abs(p["idx"] - target_idx)
+        if dist <= tolerance_days and (best_dist is None or dist < best_dist):
+            best, best_dist = p, dist
+    return best
+
+
+def _weis_build_trendline(bars, pivots, date1, date2, pivot_type):
+    """
+    Builds a straight line through the two confirmed pivots (of
+    pivot_type) nearest date1 and date2, extended to the last bar in
+    the dataset. Used for both the user-specified Line 1/Line 2
+    (resistance/support) and the Secondary Channel Upper/Lower
+    controls -- same mechanism, different labeling/styling at the
+    call site.
+
+    Deliberately anchors on two REAL pivot points rather than fitting
+    a regression through several -- an earlier version used a least-
+    squares fit through the last N pivots of a type, which minimizes
+    total error across all of them but, as a result, generally passes
+    through none of them exactly. On real (non-linear) price data that
+    produced a visibly "floating" line that didn't touch any actual
+    candle. Anchoring on two real touches instead is both simpler and
+    matches how a trendline is actually drawn by hand.
+
+    Returns None if either date has no matching pivot, or if both
+    dates resolve to the same pivot.
+    """
+    p1 = _weis_find_nearest_pivot(bars, pivots, date1, pivot_type)
+    p2 = _weis_find_nearest_pivot(bars, pivots, date2, pivot_type)
+    if not p1 or not p2 or p1["idx"] == p2["idx"]:
+        return None
+
+    slope = (p2["price"] - p1["price"]) / (p2["idx"] - p1["idx"])
+    intercept = p1["price"] - slope * p1["idx"]
+    last_idx = len(bars) - 1
+    extended_price = slope * last_idx + intercept
+
+    return {
+        "p1": p1, "p2": p2, "slope": slope, "intercept": intercept,
+        "x0": bars[p1["idx"]]["date"], "y0": p1["price"],
+        "x1": bars[last_idx]["date"], "y1": extended_price,
+        "extended_price": extended_price,
+    }
+
+
+def _weis_well_defined_levels(pivots, proximity_pct=0.5):
+    """
+    Clusters confirmed pivot prices (both H and L -- either type can
+    act as support/resistance once tested) into levels touched by 2 or
+    more pivots within proximity_pct of each other. Same 2+ retest
+    concept as backend/research_engine/wyckoff_verdict_engine.py's
+    _find_well_defined_level(), independently reimplemented here
+    (rather than imported) per this project's own architecture
+    constraint: frontend and backend are separate deployed services
+    and cannot share Python module imports at runtime (see Section 1.2
+    of the engineering handoff report).
+
+    Returns a list of {"price": float, "touches": int} sorted by
+    nothing in particular -- callers sort/filter as needed.
+    """
+    prices = sorted({round(p["price"], 2) for p in pivots})
+    used = [False] * len(prices)
+    levels = []
+    for i, price in enumerate(prices):
+        if used[i]:
+            continue
+        cluster = [price]
+        used[i] = True
+        for j in range(i + 1, len(prices)):
+            if used[j]:
+                continue
+            if abs(prices[j] - price) / price * 100 <= proximity_pct:
+                cluster.append(prices[j])
+                used[j] = True
+        lo, hi = min(cluster), max(cluster)
+        touches = [pv for pv in pivots if lo - 0.01 <= pv["price"] <= hi + 0.01]
+        if len(touches) >= 2:
+            level_price = sum(t["price"] for t in touches) / len(touches)
+            levels.append({"price": round(level_price, 2), "touches": len(touches)})
+    return levels
+
+
+def _weis_classify_effort_result(bars, pivots):
+    """
+    Exploratory extension of the Wyckoff engine's existing Effort-vs-
+    Result concept: for each confirmed wave (one pivot to the next),
+    compares total volume moved against the % price change achieved,
+    relative to the median ratio across all waves on the chart.
+
+    Flags a wave as "Supply"/"Demand" (effort clearly exceeds result --
+    possible absorption) when its ratio is >=1.6x the median, or "Weak
+    demand"/"Weak supply" (result achieved with little effort) when
+    <=0.6x the median. These thresholds are a reasonable starting
+    point, not validated against Weis's own text the way the rest of
+    this engine was -- treat as a first draft to tune once you've
+    compared it against charts you know well.
+
+    Returns only the most recent 8 flagged waves, so a long chart
+    doesn't get cluttered with callouts.
+    """
+    segments = []
+    prev_idx, prev_type = 0, None
+    for p in pivots:
+        if prev_type is not None:
+            direction = "up" if prev_type == "L" else "down"
+            segments.append((prev_idx, p["idx"], direction))
+        prev_idx, prev_type = p["idx"], p["type"]
+
+    seg_info = []
+    for start, end, direction in segments:
+        price_start, price_end = bars[start]["close"], bars[end]["close"]
+        pct_move = abs(price_end - price_start) / price_start * 100
+        if pct_move < 1e-6:
+            continue
+        total_vol = sum(bars[i]["volume"] for i in range(start, end + 1))
+        ratio = total_vol / pct_move
+        seg_info.append({"start": start, "end": end, "direction": direction,
+                          "pct_move": pct_move, "total_vol": total_vol, "ratio": ratio})
+
+    if not seg_info:
+        return []
+
+    ratios_sorted = sorted(s["ratio"] for s in seg_info)
+    median = ratios_sorted[len(ratios_sorted) // 2]
+
+    labeled = []
+    for s in seg_info:
+        rel = s["ratio"] / median if median else 1
+        if rel >= 1.6:
+            label = "Supply" if s["direction"] == "up" else "Demand"
+        elif rel <= 0.6:
+            label = "Weak demand" if s["direction"] == "up" else "Weak supply"
+        else:
+            continue
+        labeled.append({**s, "label": label, "rel_effort": round(rel, 2)})
+
+    return labeled[-8:]
+
+
+def _build_weis_radar_chart_figure(
+    chart_data, ma_period=20, yaxis2_range=None, yaxis3_range=None,
+    vib_pct=None, show_sr=False, show_effort=False,
+    manual_lines=None, secondary_channels=None,
+    call_wall=None, put_wall=None, gamma_flip=None,
+    show_call_wall=True, show_put_wall=True, show_gamma_flip=True,
+):
     """
     ADDED (2026-08-25): builds a real Plotly candlestick+volume chart
     for the symbol clicked -- a genuine upgrade over the standalone
@@ -7390,6 +7704,54 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
     mechanism behind the two vertical sliders next to the chart. None
     (the default) leaves Plotly's own auto-range in place, unchanged
     from before this was added.
+
+    ADDED (later session): a second, independent wave definition
+    (vib_pct, a percentage-threshold ZigZag -- see
+    _weis_vibration_zigzag()) plus several annotation layers built on
+    top of its pivots: Secondary Channel Upper/Lower trendlines,
+    user-specified Line 1/Line 2 trendlines, well-defined S/R levels,
+    Effort-vs-Result callouts, and Call/Put Wall + Gamma Flip Point
+    overlays. All of these were built and cross-validated first as a
+    standalone browser test tool against real AAPL data before being
+    ported here -- pivot counts, trendline endpoints, S/R levels, and
+    effort/result callouts all matched exactly between the JS and this
+    Python port on the same dataset.
+
+    Every new parameter defaults to "off" (None/False) so an existing
+    caller that doesn't pass them gets byte-identical output to before
+    this change -- these are purely additive.
+
+    vib_pct: None/0 disables the zigzag overlay entirely. Otherwise a
+        percentage reversal threshold (the "vibration" value), e.g. 4
+        for 4%.
+    show_sr: draws well-defined S/R horizontals computed from the
+        zigzag's own pivots (requires vib_pct to be set -- silently
+        does nothing otherwise, since there are no pivots to cluster).
+    show_effort: draws Effort-vs-Result arrow+text callouts (also
+        requires vib_pct).
+    manual_lines / secondary_channels: each an optional list of dicts
+        shaped {"type": "H"|"L", "date1": "YYYY-MM-DD", "date2": ...,
+        "color": "#rrggbb", "label": "..."}. manual_lines renders
+        solid; secondary_channels renders dashed gold. Both silently
+        skip any entry whose dates don't resolve to real pivots,
+        rather than raising -- a bad date typed into a chart control
+        shouldn't break the whole chart.
+    call_wall / put_wall / gamma_flip: horizontal reference levels.
+        Each independently toggleable via its own show_* flag, so the
+        three can be shown/hidden without affecting one another.
+
+    Returns (fig, annotation_summaries) -- annotation_summaries is a
+    list of {"color": "#rrggbb", "text": "..."} dicts describing each
+    active manual/secondary trendline, meant for display OUTSIDE the
+    figure as native Dash components (see show_weis_radar_chart()'s
+    annotation_children construction) rather than as raw HTML strings
+    -- date1/date2 come from user-editable text inputs, so building an
+    HTML string and rendering it via dangerously_allow_html would be a
+    real (if narrow) injection risk for no benefit. On a real, multi-
+    year daily chart, any text label placed INSIDE the plot risks
+    sitting near some candle no matter where it's positioned -- keeping
+    trendline descriptions off-chart entirely avoids that regardless of
+    how volatile the underlying's price history is.
     """
     bars = chart_data.get("bars", [])
     hits = chart_data.get("hits", [])
@@ -7507,6 +7869,75 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
         if event_date:
             fig.add_vline(x=event_date, line_dash="dot", line_color=color, opacity=0.4)
 
+    # ----------------------------------------------------------------
+    # NEW: vibration zigzag and everything built on top of its pivots
+    # ----------------------------------------------------------------
+    pivots, zz_state, zz_ext_idx, zz_ext_price = [], None, None, None
+    if vib_pct and bars:
+        pivots, zz_state, zz_ext_idx, zz_ext_price = _weis_vibration_zigzag(bars, vib_pct)
+
+        zz_x = [dates[p["idx"]] for p in pivots]
+        zz_y = [p["price"] for p in pivots]
+        if zz_state is not None and zz_ext_idx is not None:
+            zz_x.append(dates[zz_ext_idx])
+            zz_y.append(zz_ext_price)
+        if zz_x:
+            fig.add_trace(go.Scatter(
+                x=zz_x, y=zz_y, mode="lines", name=f"Wave ({vib_pct}% vibration)",
+                line=dict(color="#ff3b3b", width=1.5), yaxis="y1",
+            ))
+
+    annotation_summaries = []
+
+    def _draw_trendline_group(configs, dash):
+        if not configs or not pivots:
+            return
+        for cfg in configs:
+            line = _weis_build_trendline(bars, pivots, cfg["date1"], cfg["date2"], cfg["type"])
+            if not line:
+                continue
+            fig.add_shape(
+                type="line", xref="x", yref="y1",
+                x0=line["x0"], x1=line["x1"], y0=line["y0"], y1=line["y1"],
+                line=dict(color=cfg.get("color", "#ffd166"), width=2 if dash is None else 1.3, dash=dash),
+            )
+            annotation_summaries.append({
+                "color": cfg.get("color", "#ffd166"),
+                "text": (f'{cfg.get("label", "Line")}: {cfg["date1"]} (${line["p1"]["price"]:.2f}) '
+                         f'\u2192 {cfg["date2"]} (${line["p2"]["price"]:.2f}), '
+                         f'extended to {dates[-1]}: ${line["extended_price"]:.2f}'),
+            })
+
+    _draw_trendline_group(manual_lines, dash=None)          # solid
+    _draw_trendline_group(secondary_channels, dash="dash")  # dashed gold-family lines
+
+    if show_sr and pivots:
+        for lvl in _weis_well_defined_levels(pivots, proximity_pct=0.5):
+            fig.add_hline(y=lvl["price"], line_dash="dot", line_color="#8b98a5", opacity=0.55, yref="y1")
+
+    if show_effort and pivots:
+        for c in _weis_classify_effort_result(bars, pivots):
+            arrow = "\u25b2" if c["direction"] == "up" else "\u25bc"
+            fig.add_annotation(
+                x=dates[c["end"]], y=bars[c["end"]]["close"], xref="x", yref="y1",
+                text=f'{arrow} {c["label"]}', showarrow=True, arrowhead=2, arrowsize=0.8,
+                arrowcolor="#ffd166", ax=0, ay=-28 if c["direction"] == "up" else 28,
+                font=dict(color="#ffd166", size=10), bgcolor="rgba(11,15,20,0.7)",
+            )
+
+    if call_wall is not None and show_call_wall:
+        fig.add_hline(y=call_wall, line_dash="dash", line_color="#4da3ff", opacity=0.8,
+                      annotation_text="Call Wall", annotation_font_color="#4da3ff",
+                      annotation_position="top right", yref="y1")
+    if put_wall is not None and show_put_wall:
+        fig.add_hline(y=put_wall, line_dash="dash", line_color="#ffa64d", opacity=0.8,
+                      annotation_text="Put Wall", annotation_font_color="#ffa64d",
+                      annotation_position="top right", yref="y1")
+    if gamma_flip is not None and show_gamma_flip:
+        fig.add_hline(y=gamma_flip, line_dash="dot", line_color="#b06dff", opacity=0.8,
+                      annotation_text="Gamma Flip", annotation_font_color="#b06dff",
+                      annotation_position="top right", yref="y1")
+
     fig.update_layout(
         # FIX (2026-08-26, third follow-up): title moved OUT of the
         # figure into a separate html.Div above it -- Plotly's title
@@ -7532,6 +7963,10 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
         yaxis2=dict(domain=[0.17, 0.29], title="Cum. Vol", range=yaxis2_range),
         yaxis3=dict(domain=[0.0, 0.12], title="Volume", range=yaxis3_range),
         xaxis_rangeslider_visible=False,
+        # ADDED (later session): explicit dragmode so the "drag a box
+        # to zoom, double-click to reset" behavior is guaranteed on
+        # rather than left to Plotly's default.
+        dragmode="zoom",
         legend=dict(orientation="h", yanchor="top", y=-0.06, xanchor="center", x=0.5,
                      font=dict(color=WHITE, size=10)),
         template="plotly_dark",
@@ -7544,7 +7979,7 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
         margin=dict(l=40, r=20, t=10, b=30),
         paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID,
     )
-    return fig
+    return fig, annotation_summaries
 
 
 @app.callback(
@@ -7561,15 +7996,43 @@ def _build_weis_radar_chart_figure(chart_data, ma_period=20, yaxis2_range=None, 
     Output("weis-radar-stdvol-slider", "min"),
     Output("weis-radar-stdvol-slider", "max"),
     Output("weis-radar-stdvol-slider", "value"),
+    Output("weis-radar-chart-annotations", "children"),
+    Output("weis-radar-annotation-toggles-row", "style"),
+    Output("weis-radar-manual-lines-row", "style"),
+    Output("weis-radar-secondary-channels-row", "style"),
+    Output("weis-radar-wall-toggles-row", "style"),
     Input({"type": "weis-radar-row", "symbol": ALL}, "n_clicks"),
     Input("weis-radar-chart-timeframe", "value"),
     Input("weis-radar-chart-lookback", "value"),
     Input("weis-radar-chart-ma", "value"),
     Input("btn-close-weis-radar-chart", "n_clicks"),
     State("s-weis-radar-current-symbol", "data"),
+    State("weis-radar-show-zigzag", "value"),
+    State("weis-radar-vibration", "value"),
+    State("weis-radar-show-sr", "value"),
+    State("weis-radar-show-effort", "value"),
+    State("weis-radar-line1-type", "value"),
+    State("weis-radar-line1-date1", "value"),
+    State("weis-radar-line1-date2", "value"),
+    State("weis-radar-line2-type", "value"),
+    State("weis-radar-line2-date1", "value"),
+    State("weis-radar-line2-date2", "value"),
+    State("weis-radar-secupper-date1", "value"),
+    State("weis-radar-secupper-date2", "value"),
+    State("weis-radar-seclower-date1", "value"),
+    State("weis-radar-seclower-date2", "value"),
+    State("weis-radar-show-call-wall", "value"),
+    State("weis-radar-show-put-wall", "value"),
+    State("weis-radar-show-gamma-flip", "value"),
     prevent_initial_call=True,
 )
-def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol):
+def show_weis_radar_chart(
+    n_clicks_list, timeframe, lookback, ma_period, close_clicks, current_symbol,
+    show_zigzag, vib_pct, show_sr, show_effort,
+    line1_type, line1_date1, line1_date2, line2_type, line2_date1, line2_date2,
+    secupper_date1, secupper_date2, seclower_date1, seclower_date2,
+    show_call_wall, show_put_wall, show_gamma_flip,
+):
     """
     Click-to-chart, the Dash-idiomatic substitute for hover (Dash's
     architecture doesn't support passive hover-triggered callbacks the
@@ -7601,16 +8064,34 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     together as a single row (weis-radar-volume-sliders-row) instead
     of two separately-positioned wrappers, since there's no longer any
     per-panel vertical alignment to preserve.
+
+    UPDATED (later session): every new annotation control (zigzag
+    vibration, S/R, Effort/Result, Line 1/2, Secondary Channels, wall
+    toggles) is read here as State so a fresh fetch already reflects
+    the user's current configuration, rather than resetting to
+    defaults on every row click or timeframe/lookback change. The
+    four new control-rows show/hide together with the existing
+    volume-slider row.
+
+    DEPENDENCY NOT YET WIRED: call_wall/put_wall/gamma_flip values
+    themselves are read from data.get(...) below, expected to come
+    from the backend response, reusing whichever source already feeds
+    Command Center's version of these overlays. Until the backend
+    response includes those three keys, the toggles and UI all work,
+    but no wall lines will draw (they simply stay None).
     """
     ROW_VISIBLE = {"display": "flex", "flexDirection": "row", "alignItems": "center",
                     "marginTop": "8px", "marginBottom": "12px", "padding": "0 20px"}
+    ROW_VISIBLE_WRAP = {"display": "flex", "flexDirection": "row", "alignItems": "center",
+                         "gap": "16px", "margin": "0 20px 8px 20px"}
     ROW_HIDDEN = {"display": "none"}
 
     triggered = callback_context.triggered_id
     if triggered == "btn-close-weis-radar-chart":
         return ({}, {"display": "none", "width": "100%"}, None, None,
                 "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100])
+                0, 100, [0, 100], 0, 100, [0, 100],
+                [], ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN)
     control_ids = {"weis-radar-chart-timeframe", "weis-radar-chart-lookback", "weis-radar-chart-ma"}
     if isinstance(triggered, dict):
         symbol = triggered.get("symbol")
@@ -7619,7 +8100,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     else:
         symbol = None
     if not symbol:
-        return (no_update,) * 13
+        return (no_update,) * 18
 
     try:
         r = req.get(f"{BACKEND_HTTP}/api/weis-radar/chart/{symbol}",
@@ -7634,7 +8115,8 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
                             template="plotly_dark", paper_bgcolor=NAVY_MID, plot_bgcolor=NAVY_MID, height=200)
         return (fig, {"display": "block", "width": "100%"}, symbol, None,
                 "", {"display": "none"}, ROW_HIDDEN,
-                0, 100, [0, 100], 0, 100, [0, 100])
+                0, 100, [0, 100], 0, 100, [0, 100],
+                [], ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN, ROW_HIDDEN)
 
     bars = data.get("bars", [])
     hits = data.get("hits", [])
@@ -7642,38 +8124,130 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
     std_max = max([b.get("volume", 0) for b in bars], default=100) * 1.05 or 100
     title_text = f"{symbol} -- {', '.join(h.get('type', '') for h in hits)}" if hits else symbol
 
-    fig = _build_weis_radar_chart_figure(data, ma_period=ma_period or 0)
+    vib = vib_pct if show_zigzag and "on" in (show_zigzag or []) else None
+    manual_lines = [
+        {"type": line1_type, "date1": line1_date1, "date2": line1_date2, "color": "#ff6ec7", "label": "Line 1"},
+        {"type": line2_type, "date1": line2_date1, "date2": line2_date2, "color": "#4dd8e6", "label": "Line 2"},
+    ] if vib else None
+    secondary_channels = [
+        {"type": "H", "date1": secupper_date1, "date2": secupper_date2, "color": "#ffd166", "label": "Secondary Channel Upper"},
+        {"type": "L", "date1": seclower_date1, "date2": seclower_date2, "color": "#ffd166", "label": "Secondary Channel Lower"},
+    ] if vib else None
+
+    fig, annotation_summaries = _build_weis_radar_chart_figure(
+        data, ma_period=ma_period or 0,
+        vib_pct=vib,
+        show_sr="on" in (show_sr or []),
+        show_effort="on" in (show_effort or []),
+        manual_lines=manual_lines,
+        secondary_channels=secondary_channels,
+        call_wall=data.get("call_wall"), put_wall=data.get("put_wall"), gamma_flip=data.get("gamma_flip"),
+        show_call_wall="on" in (show_call_wall or []),
+        show_put_wall="on" in (show_put_wall or []),
+        show_gamma_flip="on" in (show_gamma_flip or []),
+    )
+    annotation_children = [
+        html.Div(f"\u25a0 {s['text']}", style={"color": s["color"]}) for s in annotation_summaries
+    ]
+
     return (fig, {"display": "block", "width": "100%"}, symbol, data,
             title_text, {"display": "block", "color": WHITE, "fontSize": "13px",
                           "fontWeight": "700", "marginBottom": "4px"},
             ROW_VISIBLE,
-            0, cum_max, [0, cum_max], 0, std_max, [0, std_max])
+            0, cum_max, [0, cum_max], 0, std_max, [0, std_max],
+            annotation_children, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP, ROW_VISIBLE_WRAP)
 
 
 @app.callback(
     Output("weis-radar-chart", "figure", allow_duplicate=True),
+    Output("weis-radar-chart-annotations", "children", allow_duplicate=True),
     Input("weis-radar-cumvol-slider", "value"),
     Input("weis-radar-stdvol-slider", "value"),
+    Input("weis-radar-show-zigzag", "value"),
+    Input("weis-radar-vibration", "value"),
+    Input("weis-radar-show-sr", "value"),
+    Input("weis-radar-show-effort", "value"),
+    Input("weis-radar-line1-type", "value"),
+    Input("weis-radar-line1-date1", "value"),
+    Input("weis-radar-line1-date2", "value"),
+    Input("weis-radar-line2-type", "value"),
+    Input("weis-radar-line2-date1", "value"),
+    Input("weis-radar-line2-date2", "value"),
+    Input("weis-radar-secupper-date1", "value"),
+    Input("weis-radar-secupper-date2", "value"),
+    Input("weis-radar-seclower-date1", "value"),
+    Input("weis-radar-seclower-date2", "value"),
+    Input("weis-radar-show-call-wall", "value"),
+    Input("weis-radar-show-put-wall", "value"),
+    Input("weis-radar-show-gamma-flip", "value"),
     State("s-weis-radar-chart-rawdata", "data"),
     State("weis-radar-chart-ma", "value"),
     prevent_initial_call=True,
 )
-def rescale_weis_radar_volume_panels(cumvol_range, stdvol_range, raw_data, ma_period):
+def redraw_weis_radar_chart_from_cache(
+    cumvol_range, stdvol_range,
+    show_zigzag, vib_pct, show_sr, show_effort,
+    line1_type, line1_date1, line1_date2, line2_type, line2_date1, line2_date2,
+    secupper_date1, secupper_date2, seclower_date1, seclower_date2,
+    show_call_wall, show_put_wall, show_gamma_flip,
+    raw_data, ma_period,
+):
     """
-    ADDED (2026-08-26): moving either vertical volume-scale slider
-    rebuilds the figure from the ALREADY-FETCHED raw data (stored in
-    s-weis-radar-chart-rawdata by show_weis_radar_chart) rather than
-    hitting the backend again -- the underlying bars/hits don't
-    change when adjusting bar-height scale, only the y-axis range
-    displayed for that one panel.
+    RENAMED (later session) from rescale_weis_radar_volume_panels() to
+    redraw_weis_radar_chart_from_cache(), and its Input set expanded to
+    include every new annotation control. This was a deliberate merge
+    rather than adding a third, separate callback: with three
+    different callbacks all able to rebuild the figure from partially-
+    overlapping option sets, whichever one didn't fire would silently
+    drop the OTHER options' current state on every rebuild (e.g.
+    dragging a volume-scale slider would wipe out an active zigzag/
+    trendline/wall display, since that separate callback wouldn't know
+    about them). One callback reading every display option as Input,
+    with raw_data as its only State, avoids that class of bug
+    entirely.
+
+    Rebuilds the figure entirely from the ALREADY-FETCHED raw data
+    (stored in s-weis-radar-chart-rawdata by show_weis_radar_chart)
+    rather than hitting the backend again -- none of these controls
+    change the underlying bars/hits, only how they're displayed.
+
+    Every Input here maps onto the matching keyword argument of
+    _build_weis_radar_chart_figure() -- see that function's docstring
+    for what each one does. A bad/unresolvable trendline date is
+    handled inside _weis_build_trendline() (returns None, silently
+    skipped), not here, so a typo in a date box degrades to "that one
+    line doesn't draw" rather than breaking the whole chart.
     """
     if not raw_data:
-        return no_update
-    fig = _build_weis_radar_chart_figure(
+        return no_update, no_update
+
+    vib = vib_pct if show_zigzag and "on" in (show_zigzag or []) else None
+    manual_lines = [
+        {"type": line1_type, "date1": line1_date1, "date2": line1_date2, "color": "#ff6ec7", "label": "Line 1"},
+        {"type": line2_type, "date1": line2_date1, "date2": line2_date2, "color": "#4dd8e6", "label": "Line 2"},
+    ] if vib else None
+    secondary_channels = [
+        {"type": "H", "date1": secupper_date1, "date2": secupper_date2, "color": "#ffd166", "label": "Secondary Channel Upper"},
+        {"type": "L", "date1": seclower_date1, "date2": seclower_date2, "color": "#ffd166", "label": "Secondary Channel Lower"},
+    ] if vib else None
+
+    fig, annotation_summaries = _build_weis_radar_chart_figure(
         raw_data, ma_period=ma_period or 0,
         yaxis2_range=cumvol_range, yaxis3_range=stdvol_range,
+        vib_pct=vib,
+        show_sr="on" in (show_sr or []),
+        show_effort="on" in (show_effort or []),
+        manual_lines=manual_lines,
+        secondary_channels=secondary_channels,
+        call_wall=raw_data.get("call_wall"), put_wall=raw_data.get("put_wall"), gamma_flip=raw_data.get("gamma_flip"),
+        show_call_wall="on" in (show_call_wall or []),
+        show_put_wall="on" in (show_put_wall or []),
+        show_gamma_flip="on" in (show_gamma_flip or []),
     )
-    return fig
+    annotation_children = [
+        html.Div(f"\u25a0 {s['text']}", style={"color": s["color"]}) for s in annotation_summaries
+    ]
+    return fig, annotation_children
 
 
 @app.callback(

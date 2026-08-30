@@ -1932,7 +1932,42 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
              "wave_dir": wave_series["wave_dir"][i]}
             for i, (_, row) in enumerate(prepared_df.iterrows())
         ]
-        return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits}
+
+        # ADDED (later session): Call Wall / Put Wall / Gamma Flip
+        # Point, reusing the SAME real options-data source and gamma
+        # engine already used for the alert-proximity tag elsewhere in
+        # this file (see the gamma_wall_tag block, ~line 858) -- not a
+        # second, independently-computed version. Wrapped in its own
+        # try/except and degrades to None on any failure (missing
+        # Alpaca options entitlement per the account limitation already
+        # disclosed for forex in the Aug engineering handoff report, no
+        # chain data for this symbol, etc.) rather than failing the
+        # whole chart request -- the frontend already treats these
+        # three fields as optional and simply doesn't draw a wall line
+        # when the value is None.
+        call_wall = put_wall = gamma_flip = None
+        try:
+            from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
+            from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
+
+            last_close = bars_out[-1]["close"] if bars_out else None
+            if last_close:
+                chain = AlpacaOptionChainAdapter.fetch_chain(sym, spot_price=last_close)
+                options_data = chain.get("options_data") or []
+                if options_data:
+                    gamma_result = GammaStrikeMatrixEngine.build(
+                        options_data=options_data, symbol=sym, spot_price=last_close)
+                    if gamma_result.get("status") == "OK":
+                        top_calls = gamma_result.get("top_call_walls") or []
+                        top_puts = gamma_result.get("top_put_walls") or []
+                        call_wall = top_calls[0]["strike"] if top_calls else None
+                        put_wall = top_puts[0]["strike"] if top_puts else None
+                        gamma_flip = gamma_result.get("zero_gamma_level")
+        except Exception:
+            pass  # call_wall/put_wall/gamma_flip stay None -- chart still renders fine without them
+
+        return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits,
+                "call_wall": call_wall, "put_wall": put_wall, "gamma_flip": gamma_flip}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
