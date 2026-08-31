@@ -8178,6 +8178,68 @@ const PATTERN_COLORS = {
 };
 const SUPPORT_TYPES = new Set(['SPRING', 'BREAKDOWN', 'SPRING_BUILDING']);
 
+// ADDED (later session): user-reported that every chart update (a new
+// bar closing, symbol/timeframe change -- anything that regenerates
+// this whole HTML document and reassigns the iframe's srcDoc) reset
+// every control back to its hardcoded default, forcing them to
+// "reset everything" each time. Reassigning srcDoc is equivalent to
+// loading a brand new page -- nothing about a prior page's DOM state
+// survives that on its own. sessionStorage does, though: a srcDoc
+// iframe inherits its embedding page's origin for storage purposes
+// (it isn't sandboxed here), so values written here persist across
+// this exact iframe being torn down and rebuilt within the same
+// browser tab/session, without needing any changes on the Dash/
+// Python side at all. Wrapped in try/catch throughout since some
+// browser configurations restrict storage access in embedded frames;
+// if that happens here, this silently no-ops and behaves exactly as
+// before (settings just won't persist) rather than breaking anything.
+const SETTINGS_KEY = 'sigmalytic_chart_settings_v1';
+const PERSISTED_CHECKBOX_IDS = [
+  'showCallWall','showPutWall','showGammaFlip','showSecUpper','showSecLower',
+  'showSR','showEffort','showSOSSOW','showSOT','showEOM','showMOC','showAbsorption',
+  'showManualLine1','showManualLine2',
+];
+const PERSISTED_TEXT_IDS = [
+  'manualType1','manualDate1a','manualDate1b','manualType2','manualDate2a','manualDate2b',
+  'secUpperDateA','secUpperDateB','secLowerDateA','secLowerDateB',
+];
+
+function saveSettings() {
+  try {
+    const settings = {
+      vib: document.getElementById('vibNumber').value,
+      volmode: document.querySelector('input[name=volmode]:checked').value,
+      maPeriod: document.getElementById('volMaPeriod').value,
+    };
+    for (const id of PERSISTED_CHECKBOX_IDS) settings[id] = document.getElementById(id).checked;
+    for (const id of PERSISTED_TEXT_IDS) settings[id] = document.getElementById(id).value;
+    sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) { /* storage unavailable -- settings simply won't persist, nothing else affected */ }
+}
+
+function restoreSettings() {
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.vib !== undefined) {
+      document.getElementById('vibNumber').value = s.vib;
+      document.getElementById('vibSlider').value = s.vib;
+    }
+    if (s.volmode) {
+      const radio = document.querySelector(`input[name=volmode][value="${s.volmode}"]`);
+      if (radio) radio.checked = true;
+    }
+    if (s.maPeriod !== undefined) document.getElementById('volMaPeriod').value = s.maPeriod;
+    for (const id of PERSISTED_CHECKBOX_IDS) {
+      if (s[id] !== undefined) document.getElementById(id).checked = s[id];
+    }
+    for (const id of PERSISTED_TEXT_IDS) {
+      if (s[id] !== undefined) document.getElementById(id).value = s[id];
+    }
+  } catch (e) { /* corrupt or missing data -- fall back to HTML defaults, no crash */ }
+}
+
 function render() {
   const vib = parseFloat(document.getElementById('vibNumber').value);
   document.getElementById('vibVal').textContent = vib + '%';
@@ -8494,6 +8556,14 @@ function render() {
     `<span><b>${mocCount}</b> meaning of close</span>` +
     `<span><b>${HITS.length}</b> scan hits</span>` +
     `<span><b>${RAW_BARS.length}</b> total bars</span>`;
+
+  // ADDED (later session): persist current control state on every
+  // render -- see saveSettings()/restoreSettings() above render(). This
+  // is what lets settings survive a genuine chart reload (new bar
+  // closing, symbol/timeframe change) instead of resetting to the
+  // hardcoded HTML defaults every time, which is what the user
+  // reported as "have to reset everything."
+  saveSettings();
 }
 
 document.getElementById('vibSlider').addEventListener('input', () => {
@@ -8569,6 +8639,7 @@ window.addEventListener('message', (event) => {
   render();
 });
 
+restoreSettings();
 render();
 </script>
 </body>
