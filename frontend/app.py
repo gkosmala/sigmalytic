@@ -3329,6 +3329,12 @@ def _pnf_count_guide_block(count_guide):
                "padding":"10px","marginBottom":"10px"})
 
 
+# ADDED (later session): per-symbol cache for the Command Center chart's
+# HTML string, keyed by symbol -> (fingerprint, html). See its use inside
+# build_command_tab() for why this exists (avoids reloading the chart's
+# iframe on every 10-second live tick when nothing meaningful changed).
+_CC_CHART_HTML_CACHE = {}
+
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
@@ -3449,11 +3455,43 @@ def build_command_tab(live, candles, symbol, tf):
          "low": c["l"], "close": c["c"], "volume": c.get("v", 0)}
         for i, c in enumerate(candles or [])
     ]
-    _cc_chart_data = {
-        "symbol": symbol, "bars": _cc_bars, "hits": [],
-        "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
-    }
-    command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
+    # FIX (later session): user-reported the whole screen "keeps
+    # blinking" on Command Center. Root cause: i-alpaca fires on_tick
+    # every 10 seconds, which updates s-live/s-candles, which re-fires
+    # render_main() for the whole tab -- rebuilding command_chart_html
+    # from scratch every single time, even though on_tick's own
+    # docstring says most ticks only update the CURRENT candle's live
+    # price in place, not append a genuinely new bar. Reassigning an
+    # iframe's srcDoc to a new string forces a full reload of its
+    # content (re-fetch Plotly.js, re-run all JS), so this was
+    # reloading the chart every 10 seconds regardless of whether
+    # anything meaningful had actually changed.
+    #
+    # Fixed with a simple fingerprint cache: only recompute (and thus
+    # only reassign srcDoc to an actually-different string) when the
+    # bar count changes, the last bar's own timestamp changes (a real
+    # new bar rolled over), or a wall level moved by a meaningful
+    # amount -- not on every live-price wiggle within the same
+    # still-forming candle. A module-level dict is adequate here since
+    # this is a single-operator dashboard, not a multi-tenant service;
+    # it would need to become session-scoped if that ever changes.
+    _cc_fingerprint = (
+        symbol, tf, len(_cc_bars),
+        _cc_bars[-1]["date"] if _cc_bars else None,
+        round(call_wall_level, 2) if call_wall_level is not None else None,
+        round(put_wall_level, 2) if put_wall_level is not None else None,
+        round(gamma_pivot_level, 2) if gamma_pivot_level is not None else None,
+    )
+    _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
+    if _cached_entry and _cached_entry[0] == _cc_fingerprint:
+        command_chart_html = _cached_entry[1]
+    else:
+        _cc_chart_data = {
+            "symbol": symbol, "bars": _cc_bars, "hits": [],
+            "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
+        }
+        command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
+        _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -3558,8 +3596,14 @@ def build_command_tab(live, candles, symbol, tf):
         # smaller footprint this panel previously allocated for the old
         # Plotly figure -- outer wrapper's overflow changed from hidden
         # to visible accordingly, so the taller chart isn't clipped.
+        #
+        # id ADDED (later session): needed so the new
+        # push_live_price_to_command_chart clientside_callback below can
+        # find this specific iframe and postMessage a live price update
+        # into it -- fixing the chart appearing to "blink" on every
+        # 10-second tick without going back to a frozen, non-live chart.
         html.Div(
-            html.Iframe(srcDoc=command_chart_html,
+            html.Iframe(id="cc-weis-chart", srcDoc=command_chart_html,
                         style={"width":"100%","height":"1050px","border":"none"}),
             style={"margin":"0 -20px -8px -20px","overflow":"visible"},
         ),
@@ -8410,7 +8454,16 @@ function render() {
     height: 780,
     showlegend: false,
     dragmode: 'zoom',
-    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d'},
+    // FIX (later session): user-reported visible gaps in the chart --
+    // root cause: dates like "2026-08-29T09:30:00" are auto-detected by
+    // Plotly as a continuous date/time axis, so every closed market
+    // hour (overnight, weekends) renders as literal blank horizontal
+    // space proportional to real elapsed time. Explicit 'category' type
+    // places bars at even, sequential positions regardless of the
+    // actual time gap between them -- the standard fix for financial
+    // charts, and consistent with how candlestick charts are normally
+    // expected to look (no dead space for market closures).
+    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d', type:'category'},
     yaxis:  {domain:[0.55, 1],    title:'Price', gridcolor:'#1c232d'},
     yaxis2: {domain:[0.29, 0.51], title: (mode === 'total' ? 'Wave Total Vol' : 'Wave Avg Vol') + ' (cumulative)', gridcolor:'#1c232d'},
     yaxis3: {domain:[0, 0.25],    title: `Daily Vol (${maPeriod}-bar MA)`, gridcolor:'#1c232d'},
@@ -8489,6 +8542,31 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
     'xaxis.autorange': true, 'yaxis.autorange': true,
     'yaxis2.autorange': true, 'yaxis3.autorange': true
   });
+});
+
+// ADDED (later session): receives live price pushes from the parent
+// Dash page (see push_live_price_to_command_chart clientside_callback)
+// and updates the CURRENT bar's close/high/low in place, then
+// re-renders via the existing render() function below -- which calls
+// Plotly.react(), an efficient in-place update, NOT a full page
+// reload. This is what lets Command Center's chart stay genuinely
+// live (price moves every ~10s) without ever reassigning this
+// iframe's srcDoc, which was the actual cause of the reported
+// "blinking" -- the whole iframe (Plotly.js re-fetch, every trace
+// rebuilt from scratch) was reloading just to reflect one bar's price
+// tick. Harmless no-op for Weis Radar's own chart, which never
+// receives this message since nothing posts to its iframe.
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  if (!msg || msg.type !== 'sigmalytic_live_price') return;
+  if (!RAW_BARS.length) return;
+  const price = msg.price;
+  if (typeof price !== 'number' || isNaN(price)) return;
+  const last = RAW_BARS[RAW_BARS.length - 1];
+  last.close = price;
+  last.high = Math.max(last.high, price);
+  last.low = Math.min(last.low, price);
+  render();
 });
 
 render();
@@ -8659,6 +8737,34 @@ app.clientside_callback(
     """,
     Output("morning-report-audio-sink", "children"),
     Input("s-morning-report-play-request", "data"),
+    prevent_initial_call=True,
+)
+
+
+# ADDED (later session): fixes the Command Center chart "blinking" on
+# every 10-second live tick, without freezing the price display in
+# between (the earlier fingerprint-cache alone stopped the blink but
+# also stopped the chart from reflecting genuinely live price movement
+# -- correctly called out as not actually solving the problem). Rather
+# than reload the whole iframe (which the cache was trying to avoid),
+# this posts just the current price INTO the already-loaded iframe;
+# its own message listener (see the embedded chart template) updates
+# the current bar in place and calls Plotly.react() -- fast, no
+# reload, and the price genuinely moves every tick. Silently does
+# nothing if the iframe isn't currently in the DOM (e.g. user isn't on
+# the Command Center tab) or s-live has no numeric price yet.
+app.clientside_callback(
+    """
+    function(live) {
+        var iframe = document.getElementById('cc-weis-chart');
+        if (iframe && iframe.contentWindow && live && typeof live.price === 'number') {
+            iframe.contentWindow.postMessage({type: 'sigmalytic_live_price', price: live.price}, '*');
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("cc-live-price-sink", "children"),
+    Input("s-live", "data"),
     prevent_initial_call=True,
 )
 
@@ -9940,6 +10046,7 @@ app.layout = html.Div([
     # can't share that pipeline's enabled-state gate.
     dcc.Store(id="s-morning-report-play-request", data=None),
     html.Div(id="morning-report-audio-sink", style={"display":"none"}),
+    html.Div(id="cc-live-price-sink", style={"display":"none"}),
     # FIX (2026-08-13): the Weis Analysis tab's 4 real backend fetches
     # were blocking the single gunicorn worker for their entire
     # duration, taking the whole app down for every user at once --
