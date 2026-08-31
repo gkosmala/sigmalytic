@@ -8112,7 +8112,14 @@ function render() {
     const level = h.level;
     const eventDate = h.date || lastDate; // Spring/Upthrust have no date -- always "today" by design
     if (level !== null && level !== undefined) {
-      const isSupport = SUPPORT_TYPES.has(h.type);
+      let isSupport = SUPPORT_TYPES.has(h.type);
+      // Explicit override, requested independently of the general
+      // support/resistance convention above: Breakdown's label sits
+      // ABOVE its line, Breakout's label sits BELOW its line -- the
+      // reverse of the default for just these two types. Spring/
+      // Upthrust/Building states are untouched.
+      if (h.type === 'BREAKOUT') isSupport = true;
+      if (h.type === 'BREAKDOWN') isSupport = false;
       allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1],
         y0:level, y1:level, line:{color, width:1.5, dash:'dash'}, opacity:0.6});
       allAnnotations.push({
