@@ -3336,6 +3336,15 @@ def _pnf_count_guide_block(count_guide):
 # iframe on every 10-second live tick when nothing meaningful changed).
 _CC_CHART_HTML_CACHE = {}
 
+# ADDED (later session): independent tracker for build_command_tab()'s
+# own new-bar detection (feeds the postMessage hidden div only) --
+# deliberately separate from _CC_CHART_HTML_CACHE above, which the new
+# dedicated update_command_center_chart callback owns exclusively. The
+# two callbacks share overlapping Inputs with no guaranteed execution
+# order, so having build_command_tab() read the OTHER callback's cache
+# would be a real race; this avoids that entirely.
+_CC_LAST_BAR_SEEN = {}
+
 # ADDED (later session): user reported Command Center "keeps blinking."
 # Network tab evidence (screenshot) ruled out the chart iframe itself --
 # no repeated plotly.min.js fetch -- and instead showed
@@ -3530,73 +3539,27 @@ def build_command_tab(live, candles, symbol, tf):
          "low": c["l"], "close": c["c"], "volume": c.get("v", 0)}
         for i, c in enumerate(candles or [])
     ]
-    # FIX (later session): user-reported the whole screen "keeps
-    # blinking" on Command Center. Root cause: i-alpaca fires on_tick
-    # every 10 seconds, which updates s-live/s-candles, which re-fires
-    # render_main() for the whole tab -- rebuilding command_chart_html
-    # from scratch every single time, even though on_tick's own
-    # docstring says most ticks only update the CURRENT candle's live
-    # price in place, not append a genuinely new bar. Reassigning an
-    # iframe's srcDoc to a new string forces a full reload of its
-    # content (re-fetch Plotly.js, re-run all JS), so this was
-    # reloading the chart every 10 seconds regardless of whether
-    # anything meaningful had actually changed.
-    #
-    # FIX, SECOND ROUND (later session): user reported the blink
-    # persisted regardless of timeframe (daily or 1-minute) even after
-    # the fingerprint above and the price-postMessage channel were
-    # added. Root cause: call_wall_level/put_wall_level/gamma_pivot_level
-    # are recomputed against the live, ticking price on every request
-    # (get_key_levels(price,...) in the synthetic-fallback path, and the
-    # real gamma engine also takes spot_price as an input) -- so these
-    # "wall" levels can drift slightly on every single tick regardless
-    # of which path is active, meaning the fingerprint below saw a
-    # "different" wall value roughly every 10 seconds regardless of
-    # whether a real bar had closed, on every timeframe equally.
-    #
-    # UPDATED (later session): user reported the blink persisted even
-    # after wall-level exclusion; Network tab evidence (plotly.min.js
-    # loading fresh from about:srcdoc) confirmed the iframe genuinely
-    # reloads whenever a real new bar closes -- expected by the
-    # fingerprint's own design, but on a 1m/5m chart that's still every
-    # 60-300 seconds, easily read as "constant" blinking by someone
-    # watching continuously. The one remaining routine (non-user-
-    # initiated) event still forcing a reload was exactly this: a new
-    # bar arriving.
-    #
-    # Fixed by detecting the SPECIFIC case of exactly one bar appended
-    # on top of the same prior series (same symbol/tf, count exactly
-    # +1, and the second-to-last bar's date matches what was last
-    # cached as the final bar) -- a routine live-tick rollover, not a
-    # symbol/timeframe/lookback change. In that one case, the cached
-    # HTML keeps serving (no reload) and the new bar rides the same
-    # postMessage channel as price/wall updates instead, appended to
-    # RAW_BARS client-side. Anything else (symbol change, timeframe
-    # change, a lookback change producing a differently-sized series,
-    # or a multi-bar jump if a tick was somehow missed) still falls
-    # through to a genuine rebuild -- the safe default.
-    _cc_fingerprint = (symbol, tf, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
-    _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
+    # RESTRUCTURED (later session): the chart itself moved to its own
+    # permanent component with a dedicated callback
+    # (update_command_center_chart, defined near the clientside
+    # callbacks below) -- this function no longer builds or caches
+    # chart HTML at all. It still needs to know whether a genuine new
+    # bar just rolled over, purely to populate the hidden div below
+    # (which the postMessage clientside callback reads to push that bar
+    # into the already-loaded chart). Uses its OWN small, independent
+    # tracker rather than peeking at the dedicated callback's
+    # _CC_CHART_HTML_CACHE, since the two callbacks share overlapping
+    # Inputs and Dash doesn't guarantee which runs first on a given
+    # tick -- reading a cache the other callback might not have updated
+    # yet would be a real race.
     _cc_new_bar_to_push = None
-    if _cached_entry and _cached_entry[0] == _cc_fingerprint:
-        command_chart_html = _cached_entry[1]
-    elif (_cached_entry and _cc_bars and len(_cached_entry[0]) == 4
-          and _cached_entry[0][0] == symbol and _cached_entry[0][1] == tf
-          and _cached_entry[0][2] == len(_cc_bars) - 1
-          and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][3]):
-        # Exactly one new bar appended -- reuse the cached HTML as-is
-        # (no reload) and hand the new bar to the hidden div below so
-        # it gets pushed into the already-loaded chart instead.
-        command_chart_html = _cached_entry[1]
+    _prev_seen = _CC_LAST_BAR_SEEN.get(symbol)
+    if (_prev_seen and _prev_seen[0] == tf and _cc_bars
+            and _prev_seen[1] == len(_cc_bars) - 1
+            and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _prev_seen[2]):
         _cc_new_bar_to_push = _cc_bars[-1]
-        _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
-    else:
-        _cc_chart_data = {
-            "symbol": symbol, "bars": _cc_bars, "hits": [],
-            "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
-        }
-        command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
-        _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
+    if _cc_bars:
+        _CC_LAST_BAR_SEEN[symbol] = (tf, len(_cc_bars), _cc_bars[-1]["date"])
     # ADDED (later session): current wall values (and, on a routine
     # single-bar rollover, the new bar itself -- see above) as plain
     # data attributes on a hidden div, part of this SAME returned tree
@@ -3690,9 +3653,17 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","flexWrap":"wrap","gap":"10px","alignItems":"stretch"}),
     ])
 
-    # ── CENTER: Chart — fills the card tile completely ────────────────────────
+    # ── Chart info strip -- the CHART ITSELF now lives in a permanent,
+    # independent component (cc-chart-container, in the static layout,
+    # updated by its own dedicated callback below) so it's never part
+    # of this function's returned tree at all -- see that callback's
+    # docstring for why. This strip keeps just the small, cheap
+    # symbol/price/volume header and footer that used to wrap it,
+    # since those genuinely are meant to update live along with the
+    # rest of this tab, and are far too small to meaningfully
+    # contribute to the "whole screen" repaint Paint-flashing
+    # confirmed was happening. ──────────────────────────────────────
     chart_panel = card([
-        # Header row
         html.Div([
             html.Div([
                 html.Span(f"{symbol}  ·  Smart Chart",
@@ -3703,30 +3674,8 @@ def build_command_tab(live, candles, symbol, tf):
             html.Span(f"${price:.2f}",
                       style={"fontSize":"14px","fontWeight":"900","color":WHITE,
                              "fontFamily":"DM Mono, monospace"}),
-        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
-                   "marginBottom":"6px"}),
+        ], style={"display":"flex","justifyContent":"space-between","alignItems":"center"}),
 
-        # Chart — fills remaining space
-        # REPLACED (later session): dcc.Graph(figure=fig) -> html.Iframe
-        # rendering the same embedded HTML/JS tool used by Weis Radar.
-        # Sized identically to that chart (1050px, matching the explicit
-        # "same size and format" request) rather than fit to whatever
-        # smaller footprint this panel previously allocated for the old
-        # Plotly figure -- outer wrapper's overflow changed from hidden
-        # to visible accordingly, so the taller chart isn't clipped.
-        #
-        # id ADDED (later session): needed so the new
-        # push_live_price_to_command_chart clientside_callback below can
-        # find this specific iframe and postMessage a live price update
-        # into it -- fixing the chart appearing to "blink" on every
-        # 10-second tick without going back to a frozen, non-live chart.
-        html.Div(
-            html.Iframe(id="cc-weis-chart", srcDoc=command_chart_html,
-                        style={"width":"100%","height":"1050px","border":"none"}),
-            style={"margin":"0 -20px -8px -20px","overflow":"visible"},
-        ),
-
-        # Footer — aligned with Distance box at bottom of price ladder
         html.Div([
             html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
@@ -3734,10 +3683,10 @@ def build_command_tab(live, candles, symbol, tf):
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
                    "padding":"8px 0 0 0","borderTop":f"1px solid {BORDER}","marginTop":"4px"}),
 
-    ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 12px 20px",
-            "overflow":"hidden","display":"flex","flexDirection":"column"})
+    ], sx={"padding":"12px 20px"})
 
-    # ── Row 1 -- chart now full-width; price_ladder moved to row1b below ──────
+    # ── Row 1 -- the small info strip above; the actual chart is the
+    # separate, permanent cc-chart-container (see the static layout) ──
     row1 = html.Div([chart_panel],
                     style={"display":"flex","gap":"16px","marginBottom":"16px",
                            "alignItems":"stretch"})
@@ -9109,6 +9058,113 @@ app.clientside_callback(
 )
 
 
+# ADDED (later session): lightweight, standalone visibility toggle for
+# the permanent cc-chart-container -- triggered ONLY by tab switches
+# (a genuinely infrequent, user-initiated event), completely decoupled
+# from s-live/s-candles. Deliberately not conditionally mounted/
+# unmounted by render_main(), since that would defeat the whole point
+# of giving the chart a stable, independent identity in the DOM.
+@app.callback(
+    Output("cc-chart-container", "style"),
+    Input("s-tab", "data"),
+)
+def toggle_cc_chart_visibility(tab):
+    base = {"margin": "0 auto 16px auto", "maxWidth": "1400px"}
+    return {**base, "display": "block" if tab == "command" else "none"}
+
+
+# ADDED (later session): the Command Center chart's own dedicated
+# callback, decoupled entirely from render_main()/build_command_tab().
+#
+# Root cause this fixes: Chrome DevTools Paint-flashing, at explicit
+# request, confirmed the WHOLE screen was repainting on every ~10s live
+# tick on Command Center -- not just the chart area. Even with the
+# chart's own string-level caching (previously computed inside
+# build_command_tab()), it was still a brand-new React element inside
+# main-content's much larger, wholesale-replaced tree every single
+# tick, forcing React to diff the ENTIRE tree regardless of whether the
+# chart's own content had actually changed.
+#
+# This callback targets ONLY cc-weis-chart's srcDoc directly and can
+# return no_update on routine ticks (identical fingerprint/single-bar-
+# append logic as before) -- which Dash honors by skipping this
+# component in React's diff ENTIRELY, not merely skipping a rebuild of
+# its content. This is the exact pattern Weis Radar's own chart has
+# used successfully since it was first built (its own dedicated
+# show_weis_radar_chart callback), which is why Weis Radar never had
+# this class of problem in the first place.
+#
+# Wall-value computation is duplicated here (not shared with
+# build_command_tab(), which still needs its own copy for the Options
+# Matrix widget) -- both call _cc_cached_background_fetch with the
+# SAME cache key, so this never causes a second, redundant network
+# fetch; whichever callback runs first on a given tick warms the cache
+# for both.
+@app.callback(
+    Output("cc-weis-chart", "srcDoc"),
+    Input("s-candles", "data"),
+    Input("s-symbol", "data"),
+    Input("s-tf", "data"),
+    prevent_initial_call=True,
+)
+def update_command_center_chart(candles, symbol, tf):
+    if not candles or not symbol:
+        return no_update
+
+    _cc_bars = [
+        {"date": c.get("t","") or f"bar-{i}", "open": c["o"], "high": c["h"],
+         "low": c["l"], "close": c["c"], "volume": c.get("v", 0)}
+        for i, c in enumerate(candles)
+    ]
+    if not _cc_bars:
+        return no_update
+
+    price = _cc_bars[-1]["close"]
+    real_gamma = _cc_cached_background_fetch(
+        f"cc-gamma:{symbol}",
+        lambda: _get(f"/api/options/gamma-matrix/{symbol}", spot_price=price),
+        ttl_seconds=15,
+        placeholder={"status": "LOADING_IN_BACKGROUND", "has_real_data": False,
+                     "top_call_walls": [], "top_put_walls": []},
+    )
+    has_real_options = bool(real_gamma.get("has_real_data"))
+    real_call_walls = real_gamma.get("top_call_walls") or []
+    real_put_walls = real_gamma.get("top_put_walls") or []
+    if has_real_options and real_call_walls and real_put_walls:
+        call_wall_level = real_call_walls[0]["strike"]
+        put_wall_level = real_put_walls[0]["strike"]
+        gamma_pivot_level = real_gamma.get("zero_gamma_level") or price
+    else:
+        kl = get_key_levels(price, count_guide=None)
+        call_wall_level, put_wall_level, gamma_pivot_level = kl.breakout, kl.fail, kl.confirm
+
+    _cc_fingerprint = (symbol, tf, len(_cc_bars), _cc_bars[-1]["date"])
+    _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
+
+    if _cached_entry and _cached_entry[0] == _cc_fingerprint:
+        return no_update
+
+    if (_cached_entry and len(_cached_entry[0]) == 4
+            and _cached_entry[0][0] == symbol and _cached_entry[0][1] == tf
+            and _cached_entry[0][2] == len(_cc_bars) - 1
+            and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][3]):
+        # Exactly one new bar appended -- it rides the postMessage
+        # channel (see build_command_tab()'s hidden cc-wall-values div)
+        # instead of a chart rebuild. Update the stored fingerprint so
+        # later ticks keep comparing against the correct baseline, but
+        # don't touch srcDoc.
+        _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, _cached_entry[1])
+        return no_update
+
+    _cc_chart_data = {
+        "symbol": symbol, "bars": _cc_bars, "hits": [],
+        "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
+    }
+    command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
+    _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
+    return command_chart_html
+
+
 app.clientside_callback(
     """
     function(scriptItems, enabled) {
@@ -10518,6 +10574,33 @@ app.layout = html.Div([
                    # Command Center as expected, with horizontal scroll available to
                    # reach later tabs -- the standard pattern for overflowing tab bars.
                    "justifyContent":"flex-start","overflowX":"auto"}),
+
+        # ADDED (later session): the Command Center chart, moved OUT of
+        # build_command_tab()'s returned tree entirely -- Paint-flashing
+        # confirmed the WHOLE screen was repainting on every ~10s live
+        # tick, not just the chart area, because main-content's ENTIRE
+        # children tree gets replaced with brand-new Python/React
+        # objects every time render_main() fires (which happens on
+        # every s-live/s-candles update, by original design, so the
+        # Price Ladder/Decision Panel/Options Matrix stay live). Even
+        # with the chart's OWN string-level caching, it was still a new
+        # element inside that much larger tree every tick, forcing
+        # React to diff the whole thing. A dedicated callback below
+        # (update_command_center_chart) can return no_update on routine
+        # ticks, which Dash honors by skipping this component in React's
+        # diff ENTIRELY -- not just skipping a rebuild of its content,
+        # skipping any comparison of it at all. Hidden via CSS
+        # (toggle_cc_chart_visibility below) rather than conditionally
+        # mounted, so it's never torn down by a tab switch either.
+        # Placed BEFORE main-content in source order so it renders at
+        # the top of Command Center, above the Price Ladder -- matching
+        # where the chart lived when it was still part of that tree.
+        html.Div(
+            html.Iframe(id="cc-weis-chart", srcDoc="",
+                        style={"width":"100%","height":"1050px","border":"none"}),
+            id="cc-chart-container",
+            style={"display":"none", "margin":"0 auto 16px auto", "maxWidth":"1400px"},
+        ),
 
         html.Main(id="main-content"),
 
