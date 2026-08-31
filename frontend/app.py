@@ -7528,6 +7528,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
       <label><input type="checkbox" id="showSOSSOW"> SOS/SOW</label>
       <label><input type="checkbox" id="showSOT"> Shortening of Thrust</label>
       <label><input type="checkbox" id="showEOM"> Ease of Movement</label>
+      <label><input type="checkbox" id="showMOC"> Meaning of Close</label>
+      <label><input type="checkbox" id="showAbsorption"> Absorption</label>
       <label><input type="checkbox" id="showManualLine1"> Line 1</label>
       <label><input type="checkbox" id="showManualLine2"> Line 2</label>
     </div>
@@ -7589,6 +7591,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   Green/red "SOS"/"SOW" = classic Wyckoff Sign of Strength/Weakness (breakout on rising spread+volume).
   Orange "SOT" = Shortening of the Thrust (David Weis, "Trades About to Happen," p.174).
   Small teal/salmon ▲▼ = Ease of Movement -- notably wide-range bars (Weis, same book, p.4/123).
+  Blue "Absorption" = Weis, Ch.7 -- rising supports/falling resistance with failed follow-through.
+  Tiny green/red ● dots = Meaning of the Close -- strong/weak closes on above-average volume (Weis, throughout).
 </div>
 
 <script>
@@ -7872,6 +7876,118 @@ function classifyEaseOfMovement(bars, window=20, threshold=2.0) {
   return events;
 }
 
+// ---- Meaning of the Close -- per David Weis's own book, used dozens of
+// times throughout (his own summary of core themes, p.4: "Consider the
+// meaning of the close within the range of a price bar"). His own
+// examples consistently pair close position WITH volume: "weak close
+// and large volume" (bearish warning), "close well off the low" +
+// heavy volume ("someone is taking all the supply" -- bullish). Neither
+// close position alone nor volume alone is treated as meaningful in his
+// examples -- always together.
+//
+// Operationalized as: a bar closing in the upper 25% of its own
+// high-low range (strong) or lower 25% (weak), on volume at least 1.3x
+// the trailing 20-bar median. Tested against real AAPL data: 52 events
+// over ~2 years (27 strong, 25 weak) -- a density deliberately similar
+// to Ease of Movement's, since both are meant as a frequent, recurring
+// lens rather than a rare structural signal (unlike SOS/SOW/SOT/
+// Absorption, which are genuinely meant to be uncommon). Rendered as
+// small dots, not full callouts, for the same reason. ----
+function classifyMeaningOfClose(bars, window=20, closeThresh=0.25, volMult=1.3) {
+  const events = [];
+  for (let i = window; i < bars.length; i++) {
+    const b = bars[i];
+    const range = b.high - b.low;
+    if (range <= 0) continue;
+    const closePct = (b.close - b.low) / range;
+    const recentVols = [];
+    for (let j = i - window; j < i; j++) recentVols.push(bars[j].volume);
+    const medVol = _median(recentVols);
+    if (b.volume < medVol * volMult) continue;
+    if (closePct >= (1 - closeThresh)) {
+      events.push({idx: i, type: 'strong', price: b.close});
+    } else if (closePct <= closeThresh) {
+      events.push({idx: i, type: 'weak', price: b.close});
+    }
+  }
+  return events;
+}
+
+// ---- Absorption -- per David Weis's own book, Chapter 7 (a full
+// dedicated chapter, but written narratively rather than with numbered
+// rules like Shortening of the Thrust). His own bulleted list of clues
+// for the bullish, top-of-range case: "Rising supports... Volume
+// increases around the top of the absorption area... Lack of downward
+// follow-through after a threatening price bar... prices tend to press
+// against the resistance line without giving ground." For the bearish,
+// bottom-of-range mirror: "the main characteristic of sellers
+// overcoming buyers is the repeated inability of prices to rally away
+// from the danger point... persistently heavy volume hammering against
+// the low."
+//
+// Operationalized as: a wide-range (>=1.5x trailing-20-bar median true
+// range), high-volume (>=1.3x trailing-20-bar median volume) DOWN bar
+// occurring within 5% of a recent pivot high, whose low is NOT broken
+// in the following 4 bars (the "lack of follow-through"), with the two
+// most recent confirmed pivot lows rising (the "rising supports") ->
+// bullish Absorption at a top. Exact mirror (UP bar near a recent low,
+// holds, with the two most recent pivot highs falling) -> bearish
+// Absorption at a bottom. This captures the most concrete, checkable
+// clues from his list; it does NOT capture every nuance he describes
+// (e.g. his "bag-holding" exception, where persistent selling at a low
+// that fails to break down can flip the read to bullish -- genuinely
+// discretionary judgment that resists a clean rule). Tested against
+// real AAPL data: 5 events over ~2 years (4 top, 1 bottom) -- sparse,
+// consistent with this being a real but not routine signal, not a
+// frequent lens like Ease of Movement or Meaning of the Close. ----
+function classifyAbsorption(bars, pivots, window=20, trWindow=20, followThroughBars=4, proximityPct=5) {
+  const events = [];
+  const highs = pivots.filter(p => p.type === 'H');
+  const lows = pivots.filter(p => p.type === 'L');
+
+  for (let i = trWindow; i < bars.length - followThroughBars; i++) {
+    const tr = trueRange(bars, i);
+    const recentTRs = [];
+    for (let j = i - trWindow; j < i; j++) recentTRs.push(trueRange(bars, j));
+    const medTR = _median(recentTRs);
+    const recentVols = [];
+    for (let j = i - window; j < i; j++) recentVols.push(bars[j].volume);
+    const medVol = _median(recentVols);
+    const isWide = tr >= medTR * 1.5;
+    const isHighVol = bars[i].volume >= medVol * 1.3;
+    if (!isWide || !isHighVol) continue;
+
+    if (bars[i].close < bars[i].open) {
+      const priorHighs = highs.filter(p => p.idx <= i).slice(-3);
+      if (priorHighs.length === 0) continue;
+      const recentHigh = Math.max(...priorHighs.map(p => p.price));
+      if ((recentHigh - bars[i].high) / recentHigh * 100 > proximityPct) continue;
+      let brokeLower = false;
+      for (let k = i + 1; k <= i + followThroughBars && k < bars.length; k++) {
+        if (bars[k].low < bars[i].low) { brokeLower = true; break; }
+      }
+      if (brokeLower) continue;
+      const priorLows = lows.filter(p => p.idx < i).slice(-2);
+      if (priorLows.length < 2 || !(priorLows[1].price > priorLows[0].price)) continue;
+      events.push({idx: i, type: 'top', price: bars[i].low});
+    } else if (bars[i].close > bars[i].open) {
+      const priorLows2 = lows.filter(p => p.idx <= i).slice(-3);
+      if (priorLows2.length === 0) continue;
+      const recentLow = Math.min(...priorLows2.map(p => p.price));
+      if ((bars[i].low - recentLow) / recentLow * 100 > proximityPct) continue;
+      let brokeHigher = false;
+      for (let k = i + 1; k <= i + followThroughBars && k < bars.length; k++) {
+        if (bars[k].high > bars[i].high) { brokeHigher = true; break; }
+      }
+      if (brokeHigher) continue;
+      const priorHighs2 = highs.filter(p => p.idx < i).slice(-2);
+      if (priorHighs2.length < 2 || !(priorHighs2[1].price < priorHighs2[0].price)) continue;
+      events.push({idx: i, type: 'bottom', price: bars[i].high});
+    }
+  }
+  return events;
+}
+
 function classifyEffortResult(bars, pivots) {
   const segments = [];
   let prevIdx = 0, prevType = null;
@@ -8111,6 +8227,18 @@ function render() {
     }
   }
 
+  let absorptionCount = 0;
+  if (document.getElementById('showAbsorption').checked) {
+    const events = classifyAbsorption(RAW_BARS, pivots);
+    absorptionCount = events.length;
+    for (const e of events) {
+      calloutQueue.push({
+        barIdx: e.idx, side: e.type === 'top' ? 'up' : 'down', color: '#38bdf8',
+        text: 'Absorption', fontSize: 10, baseGap: 26,
+      });
+    }
+  }
+
   function groupAndPlaceCallouts(queue) {
     const groups = {};
     for (const c of queue) {
@@ -8148,6 +8276,20 @@ function render() {
         text: e.direction === 'up' ? '▲' : '▼',
         showarrow: false, font: {color, size:9},
         yshift: e.direction === 'up' ? -12 : 12,
+      });
+    }
+  }
+
+  let mocCount = 0;
+  if (document.getElementById('showMOC').checked) {
+    const events = classifyMeaningOfClose(RAW_BARS);
+    mocCount = events.length;
+    for (const e of events) {
+      const color = e.type === 'strong' ? '#4ade80' : '#f87171';
+      allAnnotations.push({
+        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
+        text: '●', showarrow: false, font: {color, size:6},
+        yshift: e.type === 'strong' ? -8 : 8,
       });
     }
   }
@@ -8225,7 +8367,9 @@ function render() {
     `<span><b>${effortCount}</b> effort/result callouts</span>` +
     `<span><b>${sosSowCount}</b> SOS/SOW</span>` +
     `<span><b>${sotCount}</b> shortening of thrust</span>` +
+    `<span><b>${absorptionCount}</b> absorption</span>` +
     `<span><b>${eomCount}</b> ease of movement</span>` +
+    `<span><b>${mocCount}</b> meaning of close</span>` +
     `<span><b>${HITS.length}</b> scan hits</span>` +
     `<span><b>${RAW_BARS.length}</b> total bars</span>`;
 }
