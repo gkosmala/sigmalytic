@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import time
 from datetime import datetime, timezone, timedelta
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -3335,6 +3336,66 @@ def _pnf_count_guide_block(count_guide):
 # iframe on every 10-second live tick when nothing meaningful changed).
 _CC_CHART_HTML_CACHE = {}
 
+# ADDED (later session): user reported Command Center "keeps blinking."
+# Network tab evidence (screenshot) ruled out the chart iframe itself --
+# no repeated plotly.min.js fetch -- and instead showed
+# _dash-update-component requests taking up to 10+ seconds, repeating
+# on the live-tick cycle. Root cause: build_command_tab() makes THREE
+# blocking network calls on every single invocation (options gamma
+# matrix -- a 3000-contract chain snapshot per the user's own confirmed
+# diagnostic; renko-weis; pnf-weis), each potentially slow, entirely
+# synchronously, every ~10 seconds -- Dash's default loading-state UI
+# dimming the affected area while these resolve is almost certainly
+# the actual "blink."
+#
+# A flat TTL-reuse cache was proposed and correctly rejected ("that
+# won't work because it's not accurate") -- reusing a stale value for
+# up to N seconds trades freshness for speed. This does something
+# different: mirrors the EXISTING _trigger_weis_background_fetch
+# pattern (used by the Weis Analysis tab for this exact class of
+# problem) so the SLOW work happens on a background thread while the
+# render path only ever does a non-blocking shared_cache.peek() --
+# never waits on the network at all. TTL is set short (15s), close to
+# today's de-facto ~10s update cadence, so perceived freshness is
+# essentially unchanged; what changes is WHO waits for the fetch to
+# complete -- a background thread, not the user-facing render.
+_cc_bg_fetch_in_progress = set()
+_cc_bg_fetch_lock = threading.Lock()
+
+def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder=None):
+    if not shared_cache:
+        # No cache available at all (rare) -- fall back to the old
+        # blocking call rather than showing empty data forever.
+        return fetch_fn()
+
+    cached = shared_cache.peek(cache_key, ttl_seconds=ttl_seconds)
+    if cached is not None:
+        return cached
+
+    with _cc_bg_fetch_lock:
+        already_running = cache_key in _cc_bg_fetch_in_progress
+        if not already_running:
+            _cc_bg_fetch_in_progress.add(cache_key)
+
+    if not already_running:
+        def _run():
+            try:
+                result = fetch_fn()
+                shared_cache.get_or_fetch(cache_key, lambda: result, ttl_seconds=ttl_seconds)
+            except Exception as _exc:
+                print(f"[CC_BG_FETCH_FAIL] {cache_key}: {type(_exc).__name__}: {_exc}", flush=True)
+            finally:
+                with _cc_bg_fetch_lock:
+                    _cc_bg_fetch_in_progress.discard(cache_key)
+        threading.Thread(target=_run, daemon=True, name=f"cc-fetch-{cache_key}").start()
+
+    # First render after a symbol/timeframe switch (or the very first
+    # load) will hit this placeholder for one tick, at most, until the
+    # background fetch above completes -- every subsequent tick reads
+    # the now-warm cache instantly.
+    return placeholder if placeholder is not None else {"status": "LOADING_IN_BACKGROUND"}
+
+
 def build_command_tab(live, candles, symbol, tf):
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
@@ -3355,7 +3416,13 @@ def build_command_tab(live, candles, symbol, tf):
     # falling back to the synthetic model only if no real options data is
     # available for this symbol right now (e.g. options aren't listed, or
     # the chain snapshot came back empty).
-    real_gamma = _get(f"/api/options/gamma-matrix/{symbol}", spot_price=price)
+    real_gamma = _cc_cached_background_fetch(
+        f"cc-gamma:{symbol}",
+        lambda: _get(f"/api/options/gamma-matrix/{symbol}", spot_price=price),
+        ttl_seconds=15,
+        placeholder={"status": "LOADING_IN_BACKGROUND", "has_real_data": False,
+                     "top_call_walls": [], "top_put_walls": []},
+    )
     has_real_options = bool(real_gamma.get("has_real_data"))
     real_call_walls = real_gamma.get("top_call_walls") or []
     real_put_walls  = real_gamma.get("top_put_walls") or []
@@ -3381,10 +3448,18 @@ def build_command_tab(live, candles, symbol, tf):
         except Exception as exc:
             return {"status": "FRONTEND_FETCH_ERROR", "error": f"Fetch failed: {str(exc)[:200]}"}
 
-    renko_weis = _fetch_weis_engine(f"/api/research/renko-weis/{symbol}")
+    renko_weis = _cc_cached_background_fetch(
+        f"cc-renko:{symbol}",
+        lambda: _fetch_weis_engine(f"/api/research/renko-weis/{symbol}"),
+        ttl_seconds=15,
+    )
     renko_weis_status = renko_weis.get("status", "UNKNOWN")
 
-    pnf_weis = _fetch_weis_engine(f"/api/research/pnf-weis/{symbol}")
+    pnf_weis = _cc_cached_background_fetch(
+        f"cc-pnf:{symbol}",
+        lambda: _fetch_weis_engine(f"/api/research/pnf-weis/{symbol}"),
+        ttl_seconds=15,
+    )
     pnf_weis_status = pnf_weis.get("status", "UNKNOWN")
 
     _REGIME_LABELS = {
@@ -3467,21 +3542,25 @@ def build_command_tab(live, candles, symbol, tf):
     # reloading the chart every 10 seconds regardless of whether
     # anything meaningful had actually changed.
     #
-    # Fixed with a simple fingerprint cache: only recompute (and thus
-    # only reassign srcDoc to an actually-different string) when the
-    # bar count changes, the last bar's own timestamp changes (a real
-    # new bar rolled over), or a wall level moved by a meaningful
-    # amount -- not on every live-price wiggle within the same
-    # still-forming candle. A module-level dict is adequate here since
-    # this is a single-operator dashboard, not a multi-tenant service;
-    # it would need to become session-scoped if that ever changes.
-    _cc_fingerprint = (
-        symbol, tf, len(_cc_bars),
-        _cc_bars[-1]["date"] if _cc_bars else None,
-        round(call_wall_level, 2) if call_wall_level is not None else None,
-        round(put_wall_level, 2) if put_wall_level is not None else None,
-        round(gamma_pivot_level, 2) if gamma_pivot_level is not None else None,
-    )
+    # FIX, SECOND ROUND (later session): user reported the blink
+    # persisted regardless of timeframe (daily or 1-minute) even after
+    # the fingerprint above and the price-postMessage channel were
+    # added. Root cause: call_wall_level/put_wall_level/gamma_pivot_level
+    # are recomputed against the live, ticking price on every request
+    # (get_key_levels(price,...) in the synthetic-fallback path, and the
+    # real gamma engine also takes spot_price as an input) -- so these
+    # "wall" levels can drift slightly on every single tick regardless
+    # of which path is active, meaning the fingerprint below saw a
+    # "different" wall value roughly every 10 seconds regardless of
+    # whether a real bar had closed, on every timeframe equally.
+    #
+    # Wall levels are now EXCLUDED from the rebuild trigger entirely --
+    # only bar count and the last bar's own timestamp (i.e., a genuine
+    # new bar) still force a real rebuild/reload. Wall drift instead
+    # rides the same lightweight, no-reload channel already built for
+    # live price: see the hidden cc-wall-values div below and the
+    # updated push_live_price_to_command_chart clientside_callback.
+    _cc_fingerprint = (symbol, tf, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
     _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
     if _cached_entry and _cached_entry[0] == _cc_fingerprint:
         command_chart_html = _cached_entry[1]
@@ -3492,6 +3571,17 @@ def build_command_tab(live, candles, symbol, tf):
         }
         command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
+    # ADDED (later session): current wall values as plain data
+    # attributes on a hidden div, part of this SAME returned tree so it
+    # refreshes every render -- read directly by
+    # push_live_price_to_command_chart below via getElementById, no new
+    # Dash Store/Output needed (render_main()'s Output signature is
+    # shared across many other tabs; avoided touching it here).
+    cc_wall_values_div = html.Div(id="cc-wall-values", style={"display":"none"}, **{
+        "data-call-wall": "" if call_wall_level is None else f"{call_wall_level}",
+        "data-put-wall": "" if put_wall_level is None else f"{put_wall_level}",
+        "data-gamma-flip": "" if gamma_pivot_level is None else f"{gamma_pivot_level}",
+    })
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -3882,7 +3972,7 @@ def build_command_tab(live, candles, symbol, tf):
         "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
     })
 
-    return html.Div([row1, row1b, row2, row3, row4, row5, row6],
+    return html.Div([cc_wall_values_div, row1, row1b, row2, row3, row4, row5, row6],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -7708,6 +7798,14 @@ const HITS = __HITS_JSON__;
 function computeZigZag(bars, vibPct) {
   const n = bars.length;
   const pivots = [];
+  // FIX (later session): bars[0].high was accessed unconditionally
+  // before any length check -- if RAW_BARS is empty (no candle data
+  // yet for the current symbol/timeframe, e.g. Command Center loading
+  // before its fetch completes), this threw "Cannot read properties
+  // of undefined (reading 'high')" on every single render() call,
+  // which repeats every ~10s via the live price/wall postMessage
+  // updates -- a real, user-reported repeating console error.
+  if (n === 0) return {pivots: [], state: null, extremeIdx: null, extremePrice: null};
   let state = null;
   let candHigh = bars[0].high, candHighIdx = 0;
   let candLow = bars[0].low, candLowIdx = 0;
@@ -8241,6 +8339,19 @@ function restoreSettings() {
 }
 
 function render() {
+  // ADDED (later session): belt-and-suspenders alongside the
+  // computeZigZag fix above -- many other places in this function
+  // (dates[dates.length-1], RAW_BARS[RAW_BARS.length-1].close, etc.)
+  // also assume at least one bar exists. Rather than guard every one
+  // of those individually, bail out here with a clear on-chart message
+  // if there's simply no data yet, instead of a blank chart plus a
+  // repeating console error every ~10 seconds.
+  if (!RAW_BARS.length) {
+    document.getElementById('stats').innerHTML =
+      '<span style="color:#f87171;">No bar data available yet for this symbol/timeframe.</span>';
+    Plotly.purge('chart');
+    return;
+  }
   const vib = parseFloat(document.getElementById('vibNumber').value);
   document.getElementById('vibVal').textContent = vib + '%';
   const mode = document.querySelector('input[name=volmode]:checked').value;
@@ -8626,16 +8737,36 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
 // rebuilt from scratch) was reloading just to reflect one bar's price
 // tick. Harmless no-op for Weis Radar's own chart, which never
 // receives this message since nothing posts to its iframe.
+//
+// UPDATED (later session): also applies callWall/putWall/gammaFlip if
+// present on the message -- these used to be part of the Python-side
+// rebuild fingerprint, which meant wall drift (present on both the
+// real and synthetic options-data paths, since both are recomputed
+// against the live price) forced a full reload roughly every 10
+// seconds regardless of timeframe. They now update the same three
+// number inputs render() already reads from, so wall drift moves the
+// dashed lines in place exactly like a price tick moves the last
+// candle -- no reload either way.
 window.addEventListener('message', (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'sigmalytic_live_price') return;
   if (!RAW_BARS.length) return;
   const price = msg.price;
-  if (typeof price !== 'number' || isNaN(price)) return;
-  const last = RAW_BARS[RAW_BARS.length - 1];
-  last.close = price;
-  last.high = Math.max(last.high, price);
-  last.low = Math.min(last.low, price);
+  if (typeof price === 'number' && !isNaN(price)) {
+    const last = RAW_BARS[RAW_BARS.length - 1];
+    last.close = price;
+    last.high = Math.max(last.high, price);
+    last.low = Math.min(last.low, price);
+  }
+  if (typeof msg.callWall === 'number' && !isNaN(msg.callWall)) {
+    document.getElementById('callWall').value = msg.callWall;
+  }
+  if (typeof msg.putWall === 'number' && !isNaN(msg.putWall)) {
+    document.getElementById('putWall').value = msg.putWall;
+  }
+  if (typeof msg.gammaFlip === 'number' && !isNaN(msg.gammaFlip)) {
+    document.getElementById('gammaFlip').value = msg.gammaFlip;
+  }
   render();
 });
 
@@ -8824,13 +8955,44 @@ app.clientside_callback(
 # reload, and the price genuinely moves every tick. Silently does
 # nothing if the iframe isn't currently in the DOM (e.g. user isn't on
 # the Command Center tab) or s-live has no numeric price yet.
+# ADDED (later session): fixes the Command Center chart "blinking" on
+# every 10-second live tick, without freezing the price display in
+# between (the earlier fingerprint-cache alone stopped the blink but
+# also stopped the chart from reflecting genuinely live price movement
+# -- correctly called out as not actually solving the problem). Rather
+# than reload the whole iframe (which the cache was trying to avoid),
+# this posts just the current price INTO the already-loaded iframe;
+# its own message listener (see the embedded chart template) updates
+# the current bar in place and calls Plotly.react() -- fast, no
+# reload, and the price genuinely moves every tick. Silently does
+# nothing if the iframe isn't currently in the DOM (e.g. user isn't on
+# the Command Center tab) or s-live has no numeric price yet.
+#
+# UPDATED (later session): also reads the hidden cc-wall-values div
+# (see build_command_tab()) and includes call/put/gamma wall values in
+# the same message -- these were still forcing a full chart reload via
+# the fingerprint every ~10 seconds regardless of real vs. synthetic
+# options data, since wall levels are recomputed against the live
+# price either way. They're excluded from the fingerprint now and ride
+# this same no-reload channel instead.
 app.clientside_callback(
     """
     function(live) {
         var iframe = document.getElementById('cc-weis-chart');
-        if (iframe && iframe.contentWindow && live && typeof live.price === 'number') {
-            iframe.contentWindow.postMessage({type: 'sigmalytic_live_price', price: live.price}, '*');
+        if (!iframe || !iframe.contentWindow || !live || typeof live.price !== 'number') {
+            return window.dash_clientside.no_update;
         }
+        var msg = {type: 'sigmalytic_live_price', price: live.price};
+        var wallDiv = document.getElementById('cc-wall-values');
+        if (wallDiv) {
+            var cw = wallDiv.getAttribute('data-call-wall');
+            var pw = wallDiv.getAttribute('data-put-wall');
+            var gf = wallDiv.getAttribute('data-gamma-flip');
+            if (cw) msg.callWall = parseFloat(cw);
+            if (pw) msg.putWall = parseFloat(pw);
+            if (gf) msg.gammaFlip = parseFloat(gf);
+        }
+        iframe.contentWindow.postMessage(msg, '*');
         return window.dash_clientside.no_update;
     }
     """,
