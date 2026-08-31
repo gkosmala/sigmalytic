@@ -3554,16 +3554,42 @@ def build_command_tab(live, candles, symbol, tf):
     # "different" wall value roughly every 10 seconds regardless of
     # whether a real bar had closed, on every timeframe equally.
     #
-    # Wall levels are now EXCLUDED from the rebuild trigger entirely --
-    # only bar count and the last bar's own timestamp (i.e., a genuine
-    # new bar) still force a real rebuild/reload. Wall drift instead
-    # rides the same lightweight, no-reload channel already built for
-    # live price: see the hidden cc-wall-values div below and the
-    # updated push_live_price_to_command_chart clientside_callback.
+    # UPDATED (later session): user reported the blink persisted even
+    # after wall-level exclusion; Network tab evidence (plotly.min.js
+    # loading fresh from about:srcdoc) confirmed the iframe genuinely
+    # reloads whenever a real new bar closes -- expected by the
+    # fingerprint's own design, but on a 1m/5m chart that's still every
+    # 60-300 seconds, easily read as "constant" blinking by someone
+    # watching continuously. The one remaining routine (non-user-
+    # initiated) event still forcing a reload was exactly this: a new
+    # bar arriving.
+    #
+    # Fixed by detecting the SPECIFIC case of exactly one bar appended
+    # on top of the same prior series (same symbol/tf, count exactly
+    # +1, and the second-to-last bar's date matches what was last
+    # cached as the final bar) -- a routine live-tick rollover, not a
+    # symbol/timeframe/lookback change. In that one case, the cached
+    # HTML keeps serving (no reload) and the new bar rides the same
+    # postMessage channel as price/wall updates instead, appended to
+    # RAW_BARS client-side. Anything else (symbol change, timeframe
+    # change, a lookback change producing a differently-sized series,
+    # or a multi-bar jump if a tick was somehow missed) still falls
+    # through to a genuine rebuild -- the safe default.
     _cc_fingerprint = (symbol, tf, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
     _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
+    _cc_new_bar_to_push = None
     if _cached_entry and _cached_entry[0] == _cc_fingerprint:
         command_chart_html = _cached_entry[1]
+    elif (_cached_entry and _cc_bars and len(_cached_entry[0]) == 4
+          and _cached_entry[0][0] == symbol and _cached_entry[0][1] == tf
+          and _cached_entry[0][2] == len(_cc_bars) - 1
+          and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][3]):
+        # Exactly one new bar appended -- reuse the cached HTML as-is
+        # (no reload) and hand the new bar to the hidden div below so
+        # it gets pushed into the already-loaded chart instead.
+        command_chart_html = _cached_entry[1]
+        _cc_new_bar_to_push = _cc_bars[-1]
+        _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
     else:
         _cc_chart_data = {
             "symbol": symbol, "bars": _cc_bars, "hits": [],
@@ -3571,9 +3597,10 @@ def build_command_tab(live, candles, symbol, tf):
         }
         command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
-    # ADDED (later session): current wall values as plain data
-    # attributes on a hidden div, part of this SAME returned tree so it
-    # refreshes every render -- read directly by
+    # ADDED (later session): current wall values (and, on a routine
+    # single-bar rollover, the new bar itself -- see above) as plain
+    # data attributes on a hidden div, part of this SAME returned tree
+    # so it refreshes every render -- read directly by
     # push_live_price_to_command_chart below via getElementById, no new
     # Dash Store/Output needed (render_main()'s Output signature is
     # shared across many other tabs; avoided touching it here).
@@ -3581,6 +3608,7 @@ def build_command_tab(live, candles, symbol, tf):
         "data-call-wall": "" if call_wall_level is None else f"{call_wall_level}",
         "data-put-wall": "" if put_wall_level is None else f"{put_wall_level}",
         "data-gamma-flip": "" if gamma_pivot_level is None else f"{gamma_pivot_level}",
+        "data-new-bar": "" if _cc_new_bar_to_push is None else json.dumps(_cc_new_bar_to_push),
     })
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
@@ -8747,10 +8775,30 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
 // number inputs render() already reads from, so wall drift moves the
 // dashed lines in place exactly like a price tick moves the last
 // candle -- no reload either way.
+// UPDATED (later session): also appends msg.newBar if present -- set
+// by build_command_tab() only on the specific tick where exactly one
+// bar was appended to the same prior series (a routine live-tick
+// rollover, not a symbol/timeframe/lookback change). Without this, a
+// genuinely new 1m/5m/15m bar closing was the one remaining case still
+// forcing a full chart reload every time it happened -- confirmed via
+// Network-tab evidence (plotly.min.js loading fresh from about:srcdoc)
+// after price and wall drift had already been excluded from the
+// rebuild trigger. Appended BEFORE the price update below, so a price
+// arriving in the same message lands on the bar that's now actually
+// current, not the one it just replaced.
 window.addEventListener('message', (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'sigmalytic_live_price') return;
   if (!RAW_BARS.length) return;
+  if (msg.newBar && typeof msg.newBar === 'object') {
+    const nb = msg.newBar;
+    if (typeof nb.date === 'string' && typeof nb.close === 'number') {
+      RAW_BARS.push({
+        date: nb.date, open: nb.open, high: nb.high,
+        low: nb.low, close: nb.close, volume: nb.volume || 0,
+      });
+    }
+  }
   const price = msg.price;
   if (typeof price === 'number' && !isNaN(price)) {
     const last = RAW_BARS[RAW_BARS.length - 1];
@@ -8975,6 +9023,16 @@ app.clientside_callback(
 # options data, since wall levels are recomputed against the live
 # price either way. They're excluded from the fingerprint now and ride
 # this same no-reload channel instead.
+# UPDATED (later session): also reads data-new-bar off the same hidden
+# div -- set by build_command_tab() only on the specific tick where
+# exactly one bar was appended to the same prior series (a routine
+# live-tick rollover, not a symbol/timeframe/lookback change). Posting
+# it here instead of letting that new bar force a full chart rebuild
+# is what stops the iframe from reloading every time a 1m/5m bar
+# closes, which Network-tab evidence (plotly.min.js loading fresh from
+# about:srcdoc) confirmed was still happening and still visibly
+# "blinking" on short timeframes even after price/wall drift were
+# already excluded from the rebuild trigger.
 app.clientside_callback(
     """
     function(live) {
@@ -8988,9 +9046,13 @@ app.clientside_callback(
             var cw = wallDiv.getAttribute('data-call-wall');
             var pw = wallDiv.getAttribute('data-put-wall');
             var gf = wallDiv.getAttribute('data-gamma-flip');
+            var nb = wallDiv.getAttribute('data-new-bar');
             if (cw) msg.callWall = parseFloat(cw);
             if (pw) msg.putWall = parseFloat(pw);
             if (gf) msg.gammaFlip = parseFloat(gf);
+            if (nb) {
+                try { msg.newBar = JSON.parse(nb); } catch (e) { /* malformed -- ignore, price/walls still apply */ }
+            }
         }
         iframe.contentWindow.postMessage(msg, '*');
         return window.dash_clientside.no_update;
