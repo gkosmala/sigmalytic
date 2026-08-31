@@ -8033,19 +8033,30 @@ function render() {
     }
   }
 
+  // ---- Callout collision avoidance ----
+  // Effort/Result, SOS/SOW, and Shortening-of-Thrust can all legitimately
+  // fire on the SAME bar (a wave can simultaneously be high-effort-low-
+  // result AND a Sign of Weakness AND part of a shortening sequence).
+  // Each layer used to push its own annotation straight into
+  // allAnnotations with a fixed ax/ay, so when more than one fired on
+  // the same bar and side, their text boxes landed directly on top of
+  // each other -- unreadable except when zoomed in tight, which is
+  // exactly how this was originally reported. Instead, every callout is
+  // queued here first with just its bar index and side (up/down); once
+  // all three layers have queued theirs, groupAndPlaceCallouts() below
+  // fans out any bar+side that has more than one, increasing the arrow
+  // length AND staggering left/right, so every label stays readable and
+  // its own arrow still points at the exact candle it's about.
+  const calloutQueue = [];
+
   let effortCount = 0;
   if (document.getElementById('showEffort').checked) {
     const callouts = classifyEffortResult(RAW_BARS, pivots);
     effortCount = callouts.length;
     for (const c of callouts) {
-      const y = RAW_BARS[c.end].close;
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[c.end], y: y,
-        text: (c.direction === 'up' ? '▲ ' : '▼ ') + c.label,
-        showarrow: true, arrowhead: 2, arrowsize: 0.8, arrowcolor: '#ffd166',
-        ax: 0, ay: c.direction === 'up' ? -28 : 28,
-        font: {color:'#ffd166', size:10},
-        bgcolor: 'rgba(11,15,20,0.7)'
+      calloutQueue.push({
+        barIdx: c.end, side: c.direction, color: '#ffd166',
+        text: (c.direction === 'up' ? '▲ ' : '▼ ') + c.label, fontSize: 10, baseGap: 28,
       });
     }
   }
@@ -8056,11 +8067,9 @@ function render() {
     sosSowCount = events.length;
     for (const e of events) {
       const color = e.type === 'SOS' ? '#4ade80' : '#f87171';
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: e.type, showarrow: true, arrowhead: 2, arrowsize: 0.9, arrowcolor: color,
-        ax: 0, ay: e.type === 'SOS' ? -30 : 30,
-        font: {color, size:11}, bgcolor: 'rgba(11,15,20,0.75)'
+      calloutQueue.push({
+        barIdx: e.idx, side: e.type === 'SOS' ? 'up' : 'down', color,
+        text: e.type, fontSize: 11, baseGap: 30,
       });
     }
   }
@@ -8070,14 +8079,38 @@ function render() {
     const events = classifyShorteningOfThrust(RAW_BARS, pivots);
     sotCount = events.length;
     for (const e of events) {
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: 'SOT', showarrow: true, arrowhead: 2, arrowsize: 0.8, arrowcolor: '#ffa64d',
-        ax: 0, ay: e.direction === 'up' ? -22 : 22,
-        font: {color:'#ffa64d', size:10}, bgcolor: 'rgba(11,15,20,0.7)'
+      calloutQueue.push({
+        barIdx: e.idx, side: e.direction, color: '#ffa64d',
+        text: 'SOT', fontSize: 10, baseGap: 22,
       });
     }
   }
+
+  function groupAndPlaceCallouts(queue) {
+    const groups = {};
+    for (const c of queue) {
+      const key = c.barIdx + '_' + c.side;
+      (groups[key] = groups[key] || []).push(c);
+    }
+    for (const key in groups) {
+      const group = groups[key];
+      // Largest baseGap first, so the most "important"-looking callout
+      // (already given the biggest default clearance) stays closest and
+      // the rest stack further out beyond it, rather than in queue order.
+      group.sort((a, b) => b.baseGap - a.baseGap);
+      group.forEach((c, i) => {
+        const magnitude = c.baseGap + i * 20;
+        const ay = c.side === 'up' ? -magnitude : magnitude;
+        const ax = i === 0 ? 0 : (i % 2 === 1 ? 1 : -1) * Math.ceil(i / 2) * 26;
+        allAnnotations.push({
+          xref: 'x', yref: 'y', x: dates[c.barIdx], y: RAW_BARS[c.barIdx].close,
+          text: c.text, showarrow: true, arrowhead: 2, arrowsize: 0.8, arrowcolor: c.color,
+          ax, ay, font: {color: c.color, size: c.fontSize}, bgcolor: 'rgba(11,15,20,0.78)',
+        });
+      });
+    }
+  }
+  groupAndPlaceCallouts(calloutQueue);
 
   let eomCount = 0;
   if (document.getElementById('showEOM').checked) {
