@@ -8786,11 +8786,56 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
 // rebuild trigger. Appended BEFORE the price update below, so a price
 // arriving in the same message lands on the bar that's now actually
 // current, not the one it just replaced.
+// UPDATED (later session): user reported the blink was specifically
+// the PRESENT CANDLE, expecting it to "only be moving to match the
+// last trade." Root cause: even with the reload eliminated, EVERY
+// price tick still called the full render() below -- which recomputes
+// the entire zigzag, every overlay (SOS/SOW, Shortening of Thrust,
+// Absorption, Meaning of the Close, S/R levels, etc.), rebuilds every
+// trace from scratch, and hands it all to Plotly.react(). That's a lot
+// of redraw work happening every ~10 seconds even without a page
+// reload, and very plausibly what was visibly flickering the current
+// candle specifically.
+//
+// A pure price tick (no new bar, no wall change) now takes a much
+// lighter path instead: mutate just the last bar's close/high/low and
+// call Plotly.restyle() on only the candlestick trace -- a targeted
+// attribute patch that leaves every shape, annotation, and other
+// trace completely untouched, rather than recomputing and redrawing
+// the whole chart. The full render() is still used for the genuinely
+// structural cases (a new bar arriving, or a wall level moving),
+// since those really do need shapes/annotations to update.
+function updateLivePriceOnly(price) {
+  if (!RAW_BARS.length) return;
+  const last = RAW_BARS[RAW_BARS.length - 1];
+  last.close = price;
+  last.high = Math.max(last.high, price);
+  last.low = Math.min(last.low, price);
+  const closes = RAW_BARS.map(b => b.close);
+  const highs = RAW_BARS.map(b => b.high);
+  const lows = RAW_BARS.map(b => b.low);
+  Plotly.restyle('chart', {close: [closes], high: [highs], low: [lows]}, [0]);
+}
+
 window.addEventListener('message', (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'sigmalytic_live_price') return;
   if (!RAW_BARS.length) return;
-  if (msg.newBar && typeof msg.newBar === 'object') {
+
+  const hasNewBar = msg.newBar && typeof msg.newBar === 'object';
+  const hasWallChange = typeof msg.callWall === 'number' || typeof msg.putWall === 'number' || typeof msg.gammaFlip === 'number';
+
+  if (!hasNewBar && !hasWallChange) {
+    // Common case, every ~10s: pure price movement within the current
+    // bar. Lightweight path only -- no recompute, no reload, no
+    // full redraw of anything but the current candle's own position.
+    if (typeof msg.price === 'number' && !isNaN(msg.price)) {
+      updateLivePriceOnly(msg.price);
+    }
+    return;
+  }
+
+  if (hasNewBar) {
     const nb = msg.newBar;
     if (typeof nb.date === 'string' && typeof nb.close === 'number') {
       RAW_BARS.push({
