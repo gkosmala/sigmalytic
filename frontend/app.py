@@ -3423,7 +3423,37 @@ def build_command_tab(live, candles, symbol, tf):
             options_note = f"Synthetic options layer — no live options data available ({_reason})."
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
-    fig  = build_chart(candles, price, nodes, tf, call_wall=call_wall_level, put_wall=put_wall_level, gamma_pivot=gamma_pivot_level, count_guide=live.get("count_guide"))
+    # REPLACED (later session): build_chart() (Plotly go.Figure, ~200
+    # lines above) is no longer used here -- per explicit request, this
+    # chart is now a literal duplicate of the Weis Radar chart (same
+    # embedded HTML/JS tool, same vibration wave / SOS-SOW / Shortening
+    # of Thrust / Ease of Movement / Meaning of the Close / Absorption /
+    # Line 1-2 / Secondary Channels / S-R levels / Effort-Result / zoom),
+    # reusing _build_weis_radar_chart_html() directly rather than
+    # duplicating its ~25KB embedded template a second time in this file.
+    # Command Center has no Wyckoff scan ("hits") data source, so that
+    # list is empty here -- everything else in the tool works identically
+    # regardless. Call Wall/Put Wall/Gamma Flip reuse this function's OWN
+    # already-computed values (real Alpaca options chain when available,
+    # synthetic fallback otherwise, per the has_real_options branch
+    # above) rather than a second, separate fetch.
+    #
+    # CAVEAT left deliberately visible in code, not just chat: every
+    # threshold in the new heuristics (SOS/SOW, Shortening of Thrust,
+    # Ease of Movement, Meaning of the Close, Absorption) was tested and
+    # calibrated exclusively against DAILY bars. Command Center can show
+    # 1m/5m/15m/1H/1D/1W -- on intraday timeframes those thresholds are
+    # UNTESTED and may behave very differently than on daily data.
+    _cc_bars = [
+        {"date": c.get("t","") or f"bar-{i}", "open": c["o"], "high": c["h"],
+         "low": c["l"], "close": c["c"], "volume": c.get("v", 0)}
+        for i, c in enumerate(candles or [])
+    ]
+    _cc_chart_data = {
+        "symbol": symbol, "bars": _cc_bars, "hits": [],
+        "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
+    }
+    command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
 
@@ -3500,11 +3530,17 @@ def build_command_tab(live, candles, symbol, tf):
                    "marginBottom":"6px"}),
 
         # Chart — fills remaining space
+        # REPLACED (later session): dcc.Graph(figure=fig) -> html.Iframe
+        # rendering the same embedded HTML/JS tool used by Weis Radar.
+        # Sized identically to that chart (1050px, matching the explicit
+        # "same size and format" request) rather than fit to whatever
+        # smaller footprint this panel previously allocated for the old
+        # Plotly figure -- outer wrapper's overflow changed from hidden
+        # to visible accordingly, so the taller chart isn't clipped.
         html.Div(
-            dcc.Graph(figure=fig,
-                      config={"displayModeBar":False,"scrollZoom":True,"displaylogo":False},
-                      style={"height":"100%"}),
-            style={"flex":"1","margin":"0 -20px -8px -20px","overflow":"hidden"},
+            html.Iframe(srcDoc=command_chart_html,
+                        style={"width":"100%","height":"1050px","border":"none"}),
+            style={"margin":"0 -20px -8px -20px","overflow":"visible"},
         ),
 
         # Footer — aligned with Distance box at bottom of price ladder
@@ -9961,6 +9997,19 @@ app.layout = html.Div([
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
                            "border":f"1px solid {BORDER}","borderRadius":"12px"}),
+                # ADDED (later session): historical lookback control --
+                # fetch_real_candles() already accepted a `limit` param,
+                # but nothing in this UI ever exposed it; every timeframe
+                # change/symbol load silently used its 200-bar default.
+                # Read by select_tf and load_symbol below.
+                html.Div([
+                    html.Span("Lookback", style={"fontSize":"11px","color":MUTED,
+                               "textTransform":"uppercase","letterSpacing":".04em","marginRight":"6px"}),
+                    dcc.Input(id="cc-lookback", type="number", value=252, min=10, max=2000, step=1,
+                              style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
+                                     "borderRadius":"8px","padding":"8px 10px","width":"64px",
+                                     "fontSize":"13px","fontWeight":"700"}),
+                ], style={"display":"flex","alignItems":"center"}),
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center",
                        "justifyContent":"center","gap":"10px"}),
         ], style={"display":"flex","flexDirection":"column","alignItems":"center",
@@ -10073,9 +10122,10 @@ app.layout = html.Div([
     Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
     Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
-    State("s-live","data"), State("s-session","data"), prevent_initial_call=True,
+    State("s-live","data"), State("s-session","data"),
+    State("cc-lookback","value"), prevent_initial_call=True,
 )
-def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
+def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session, lookback):
     ctx = callback_context
     if not ctx.triggered:
         return (no_update,)*9
@@ -10083,7 +10133,7 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
     new_tf = btn_id.replace("tf-","")
     symbol = live.get("symbol", "AAPL") if live else "AAPL"
     price  = live.get("price", 0) if live else 0
-    fresh  = fetch_real_candles(symbol, new_tf)
+    fresh  = fetch_real_candles(symbol, new_tf, limit=lookback or 200)
     # Track event
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
@@ -10106,9 +10156,10 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session):
     State("s-live","data"),
     State("s-tf","data"),
     State("s-session","data"),
+    State("cc-lookback","value"),
     prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live, tf, session):
+def load_symbol(_, ticker, live, tf, session, lookback):
     clean = sanitize_symbol(ticker or "")
     if not clean:
         return no_update, no_update, no_update, no_update
@@ -10117,7 +10168,7 @@ def load_symbol(_, ticker, live, tf, session):
     _track("symbol_loaded", clean, price=price,
            decision_score=live.get("decision",{}).get("score") if live else None, session=session)
 
-    fresh = fetch_real_candles(clean, tf or "5m")
+    fresh = fetch_real_candles(clean, tf or "5m", limit=lookback or 200)
 
     # FIX (2026-08-13): previously never touched s-live at all --
     # switching symbols left the PRIOR symbol's price/decision
