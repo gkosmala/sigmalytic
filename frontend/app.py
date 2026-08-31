@@ -3476,42 +3476,63 @@ def build_command_tab(live, candles, symbol, tf):
                    "padding":"9px 12px","borderRadius":"10px","marginBottom":"5px",
                    "background":bg,"border":bdr})
 
-    # ── LEFT: Price Ladder ────────────────────────────────────────────────────
-    price_ladder = html.Div([
-        card([
-            slabel("Price Ladder"),
-            level_row("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
-            level_row("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
-            level_row("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
-            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
-            level_row("Live Price",price,          BLUE_DIM,  is_live=True),
-            html.Div(style={"height":"3px","background":BORDER,"borderRadius":"2px","margin":"5px 0"}),
-            level_row("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
-            level_row("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
-            level_row("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
-            html.Div(style={"flex":"1"}),  # pushes Distance to bottom
-            html.Hr(style={"border":"none","borderTop":f"1px solid {BORDER}","margin":"0 0 12px"}),
-            slabel("Distance"),
+    # ADDED (later session): horizontal counterpart to level_row, used
+    # now that the Price Ladder sits in its own band below the chart
+    # instead of a vertical sidebar beside it -- label stacked above
+    # value in a compact box, rather than label-left/value-right in a
+    # full-width row, since these now sit side by side instead of
+    # stacked.
+    def level_box(label, level, color, is_live=False, arrow=""):
+        bg  = "rgba(45,143,111,.15)" if is_live else "transparent"
+        bdr = f"1px solid {BORDER_T}" if is_live else f"1px solid {BORDER}"
+        return html.Div([
             html.Div([
-                html.Div([
-                    html.Span("↑ Breakout",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"+{((kl.breakout-price)/price*100):.2f}%",
-                              style={"fontSize":"14px","color":TEAL_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
-                html.Div([
-                    html.Span("↓ Fail Gate",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"-{((price-kl.fail)/price*100):.2f}%",
-                              style={"fontSize":"14px","color":RED_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between","marginBottom":"8px"}),
-                html.Div([
-                    html.Span("R/R Ratio",style={"fontSize":"13px","color":WHITE,"fontWeight":"600"}),
-                    html.Span(f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
-                              style={"fontSize":"14px","color":YELLOW_DIM,"fontWeight":"900"}),
-                ], style={"display":"flex","justifyContent":"space-between"}),
-            ], style={"background":"rgba(0,0,0,.2)","borderRadius":"10px","padding":"14px",
-                       "border":f"1px solid {BORDER}"}),
-        ], sx={"flex":"1","display":"flex","flexDirection":"column"}),
-    ], style={"flex":"0 0 230px","minWidth":"0","display":"flex","flexDirection":"column"})
+                html.Span(arrow+" " if arrow else "",
+                          style={"color":color,"fontWeight":"900","fontSize":"10px","marginRight":"2px"}),
+                html.Span(label,
+                          style={"fontSize":"10px","fontWeight":"700","color":WHITE,
+                                 "textTransform":"uppercase","letterSpacing":".06em"}),
+            ], style={"marginBottom":"4px","whiteSpace":"nowrap"}),
+            html.Span(f"${level:.2f}",
+                      style={"fontSize":"15px","fontWeight":"900","color":WHITE,
+                             "fontFamily":"DM Mono, monospace"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"flex-start",
+                   "padding":"9px 14px","borderRadius":"10px",
+                   "background":bg,"border":bdr,"minWidth":"96px"})
+
+    def distance_box(label, value_text, color):
+        return html.Div([
+            html.Span(label, style={"fontSize":"10px","fontWeight":"700","color":WHITE,
+                       "textTransform":"uppercase","letterSpacing":".06em","display":"block","marginBottom":"4px"}),
+            html.Span(value_text, style={"fontSize":"15px","fontWeight":"900","color":color,
+                       "fontFamily":"DM Mono, monospace"}),
+        ], style={"display":"flex","flexDirection":"column","alignItems":"flex-start",
+                   "padding":"9px 14px","borderRadius":"10px","background":"rgba(0,0,0,.2)",
+                   "border":f"1px solid {BORDER}","minWidth":"96px"})
+
+    # ── Price Ladder -- MOVED (later session) from a fixed-width left
+    # sidebar into its own horizontal band below the chart, per explicit
+    # request, so the chart itself can use the full width instead of
+    # sharing it with a 230px column. flexWrap lets it reflow onto a
+    # second line on narrower viewports rather than overflowing. ──────────
+    price_ladder = card([
+        slabel("Price Ladder"),
+        html.Div([
+            level_box("Breakout",  kl.breakout,   TEAL_DIM,  arrow="▲"),
+            level_box("Liquidity", kl.prior_high, TEAL_DIM,  arrow="▲"),
+            level_box("Expansion", kl.expansion,  TEAL_DIM,  arrow="▲"),
+            level_box("Live Price",price,          BLUE_DIM,  is_live=True),
+            level_box("Trigger",   kl.trigger,    YELLOW_DIM,arrow="▼"),
+            level_box("Trap Door", kl.trap,       RED_DIM,   arrow="▼"),
+            level_box("Fail Gate", kl.fail,       RED_DIM,   arrow="▼"),
+            html.Div(style={"width":"1px","alignSelf":"stretch","background":BORDER,"margin":"0 4px"}),
+            distance_box("↑ Breakout", f"+{((kl.breakout-price)/price*100):.2f}%", TEAL_DIM),
+            distance_box("↓ Fail Gate", f"-{((price-kl.fail)/price*100):.2f}%", RED_DIM),
+            distance_box("R/R Ratio",
+                         f"{((kl.breakout-price)/(price-kl.fail)):.1f}x" if price>kl.fail else "—",
+                         YELLOW_DIM),
+        ], style={"display":"flex","flexWrap":"wrap","gap":"10px","alignItems":"stretch"}),
+    ])
 
     # ── CENTER: Chart — fills the card tile completely ────────────────────────
     chart_panel = card([
@@ -3554,10 +3575,13 @@ def build_command_tab(live, candles, symbol, tf):
     ], sx={"flex":"1","minWidth":"0","padding":"16px 20px 12px 20px",
             "overflow":"hidden","display":"flex","flexDirection":"column"})
 
-    # ── Row 1 ─────────────────────────────────────────────────────────────────
-    row1 = html.Div([price_ladder, chart_panel],
+    # ── Row 1 -- chart now full-width; price_ladder moved to row1b below ──────
+    row1 = html.Div([chart_panel],
                     style={"display":"flex","gap":"16px","marginBottom":"16px",
                            "alignItems":"stretch"})
+
+    # ── Row 1b: Price Ladder, horizontal band underneath the chart ────────────
+    row1b = html.Div([price_ladder], style={"marginBottom":"16px"})
 
     # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
     row2 = card([
@@ -3814,7 +3838,7 @@ def build_command_tab(live, candles, symbol, tf):
         "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
     })
 
-    return html.Div([row1, row2, row3, row4, row5, row6],
+    return html.Div([row1, row1b, row2, row3, row4, row5, row6],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -7520,7 +7544,9 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <div class="ctrl">
     <label>Vibration (% reversal)</label>
     <div style="display:flex; align-items:center; gap:8px;">
-      <input type="range" id="vibSlider" min="1" max="15" step="0.5" value="4">
+      <input type="range" id="vibSlider" min="0.1" max="20" step="0.1" value="4">
+      <input type="number" id="vibNumber" min="0.01" max="100" step="0.01" value="4"
+             style="width:66px; background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:5px 6px; border-radius:6px;">
       <span class="vibval" id="vibVal">4%</span>
     </div>
   </div>
@@ -8109,7 +8135,7 @@ const PATTERN_COLORS = {
 const SUPPORT_TYPES = new Set(['SPRING', 'BREAKDOWN', 'SPRING_BUILDING']);
 
 function render() {
-  const vib = parseFloat(document.getElementById('vibSlider').value);
+  const vib = parseFloat(document.getElementById('vibNumber').value);
   document.getElementById('vibVal').textContent = vib + '%';
   const mode = document.querySelector('input[name=volmode]:checked').value;
   const callWall = parseFloat(document.getElementById('callWall').value);
@@ -8417,7 +8443,22 @@ function render() {
     `<span><b>${RAW_BARS.length}</b> total bars</span>`;
 }
 
-document.getElementById('vibSlider').addEventListener('input', render);
+document.getElementById('vibSlider').addEventListener('input', () => {
+  document.getElementById('vibNumber').value = document.getElementById('vibSlider').value;
+  render();
+});
+document.getElementById('vibNumber').addEventListener('input', () => {
+  const v = parseFloat(document.getElementById('vibNumber').value);
+  const slider = document.getElementById('vibSlider');
+  if (!isNaN(v)) {
+    // Clamp only the SLIDER's visual position to its own min/max -- the
+    // number input itself keeps whatever precise value was typed, even
+    // outside the slider's physical range (e.g. 0.03% for very granular
+    // intraday use, which the slider's 0.1 step can't represent at all).
+    slider.value = Math.min(Math.max(v, parseFloat(slider.min)), parseFloat(slider.max));
+  }
+  render();
+});
 document.querySelectorAll('input[name=volmode]').forEach(r => r.addEventListener('change', render));
 document.getElementById('volMaPeriod').addEventListener('input', render);
 document.getElementById('callWall').addEventListener('input', render);
