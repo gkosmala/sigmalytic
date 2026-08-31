@@ -7740,20 +7740,43 @@ function _median(arr) {
 //
 // Operationalized here as: a wave that closes beyond the highest/lowest
 // of the last N opposite-extreme pivots, with spread AND volume both at
-// or above the median of the last 3 same-direction waves. Tested against
-// real AAPL data: 11 events (9 SOS, 2 SOW) over ~2 years -- a plausible
-// density for a notable, confirming structural signal. ----
+// or above the median of the last 3 same-direction waves.
+//
+// UPDATED (later session): also requires the breakout to HOLD -- the
+// very next opposing-direction wave must not fully retrace back through
+// the broken level. This was added after a real, user-reported false
+// positive: a CAG "SOW" was flagged on a sharp single-day decline that
+// bounced back +2.63% the very next day (confirmed via real market-cap
+// history data), i.e. the breakdown never held -- that's the textbook
+// definition of a failed breakdown (Spring-like), not a confirmed Sign
+// of Weakness. Without this check, the algorithm couldn't distinguish
+// "broke through with big volume" from "broke through, big volume, AND
+// it stuck" -- exactly the distinction that separates SOS/SOW from
+// Spring/Upthrust in Wyckoff's own framework, and the same discipline
+// this app's own existing Breakout/Breakdown pattern already applies
+// ("days elapsed and whether the level has held continuously since").
+// A candidate with no next wave yet (i.e. it's the most recent wave on
+// the chart) is left unconfirmed and not flagged -- consistent with
+// real Wyckoff practice: you can't know a breakout is genuine until you
+// see it hold, so the most recent bar can't claim the signal yet.
+// Tested against real AAPL data: 11 candidate events before this check,
+// 6 after (9 SOS -> 5 SOS, 2 SOW -> 1 SOW) -- confirms this check does
+// genuinely filter out weaker/unconfirmed cases, not merely relabel. ----
 function classifySOSSOW(bars, pivots, lookback=5) {
   const segments = buildWaveSegments(bars, pivots);
   const upSegs = segments.filter(s => s.direction === 'up');
   const downSegs = segments.filter(s => s.direction === 'down');
   const events = [];
-  for (const seg of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const nextSeg = segments[i + 1]; // the immediately following opposite-direction wave
     if (seg.direction === 'up') {
       const priorHighs = pivots.filter(p => p.type === 'H' && p.idx < seg.startIdx).slice(-lookback);
       if (priorHighs.length === 0) continue;
       const priorMaxHigh = Math.max(...priorHighs.map(p => p.price));
       if (seg.endPrice <= priorMaxHigh) continue;
+      if (!nextSeg) continue; // unconfirmed -- no follow-through wave yet
+      if (nextSeg.endPrice <= priorMaxHigh) continue; // gave the breakout back -- failed, not SOS
       const recentUp = upSegs.filter(s => s.endIdx < seg.endIdx).slice(-3);
       if (recentUp.length === 0) continue;
       const medSpread = _median(recentUp.map(s => s.spread));
@@ -7766,6 +7789,8 @@ function classifySOSSOW(bars, pivots, lookback=5) {
       if (priorLows.length === 0) continue;
       const priorMinLow = Math.min(...priorLows.map(p => p.price));
       if (seg.endPrice >= priorMinLow) continue;
+      if (!nextSeg) continue; // unconfirmed -- no follow-through wave yet
+      if (nextSeg.endPrice >= priorMinLow) continue; // reclaimed the level -- failed, not SOW
       const recentDown = downSegs.filter(s => s.endIdx < seg.endIdx).slice(-3);
       if (recentDown.length === 0) continue;
       const medSpread = _median(recentDown.map(s => s.spread));
