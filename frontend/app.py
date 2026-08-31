@@ -7525,9 +7525,6 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
       <label><input type="checkbox" id="showSecLower"> Sec. Channel Lower</label>
       <label><input type="checkbox" id="showSR"> S/R levels</label>
       <label><input type="checkbox" id="showEffort"> Effort/Result</label>
-      <label><input type="checkbox" id="showSOSSOW"> SOS/SOW</label>
-      <label><input type="checkbox" id="showSOT"> Shortening of Thrust</label>
-      <label><input type="checkbox" id="showEOM"> Ease of Movement</label>
       <label><input type="checkbox" id="showManualLine1"> Line 1</label>
       <label><input type="checkbox" id="showManualLine2"> Line 2</label>
     </div>
@@ -7586,9 +7583,6 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   Call Wall/Put Wall/Gamma Flip. Dashed gold = Secondary Channels. Dotted gray = well-defined S/R levels.
   Yellow arrows/text = Effort-vs-Result callouts (exploratory). Solid pink/cyan = manual Line 1/2.
   Green/red dashed = Spring/Upthrust/Breakout/Breakdown pattern levels (existing Weis Radar scan hits).
-  Green/red "SOS"/"SOW" = classic Wyckoff Sign of Strength/Weakness (breakout on rising spread+volume).
-  Orange "SOT" = Shortening of the Thrust (David Weis, "Trades About to Happen," p.174).
-  Small teal/salmon ▲▼ = Ease of Movement -- notably wide-range bars (Weis, same book, p.4/123).
 </div>
 
 <script>
@@ -7687,164 +7681,6 @@ function findWellDefinedLevels(pivots, proximityPct=0.5) {
     }
   }
   return levels;
-}
-
-// ---- Shared wave-segment builder for SOS/SOW and Shortening-of-Thrust
-// below (classifyEffortResult above has its own inline version of this
-// same idea; left untouched rather than refactored to share this, since
-// it's already validated and there's no need to touch working code to
-// add these new, independent heuristics). ----
-function buildWaveSegments(bars, pivots) {
-  const segments = [];
-  let prevIdx = 0, prevType = null, prevPrice = bars[0].close;
-  for (const p of pivots) {
-    if (prevType !== null) {
-      const direction = prevType === 'L' ? 'up' : 'down';
-      let vol = 0;
-      for (let i = prevIdx; i <= p.idx; i++) vol += bars[i].volume;
-      segments.push({
-        startIdx: prevIdx, endIdx: p.idx, direction,
-        startPrice: prevPrice, endPrice: p.price,
-        spread: Math.abs(p.price - prevPrice), volume: vol,
-      });
-    }
-    prevIdx = p.idx; prevType = p.type; prevPrice = p.price;
-  }
-  return segments;
-}
-
-function _median(arr) {
-  const s = [...arr].sort((a,b)=>a-b);
-  return s[Math.floor(s.length/2)];
-}
-
-// ---- Sign of Strength / Sign of Weakness -- the CLASSIC Wyckoff Method
-// schematic definition (Wyckoff's own tape-reading course via Wyckoff
-// Associates/the Stock Market Institute, corroborated across multiple
-// independent modern sources), NOT from David Weis's own book -- his
-// "Trades About to Happen" was searched in full (222 pages, table of
-// contents, index, and his own summary of core themes) and does not use
-// this vocabulary; he builds his own distinct framework there (Springs,
-// Upthrusts, Effort/Result, Shortening of the Thrust, Ease of Movement).
-// SOS/SOW are, however, genuine, well-documented classic Wyckoff terms
-// that a Wyckoff-trained analyst like Weis would certainly know:
-//
-//   SOS: a price advance breaking above the trading range's resistance
-//   (the "Automatic Rally" level) on INCREASING spread AND INCREASING
-//   volume -- confirming demand has taken control. Classically follows
-//   a Spring, validating that shakeout as genuine accumulation ("Jump
-//   Across the Creek" in Wyckoff's own terminology).
-//   SOW: the mirror -- a decline breaking below range support (the
-//   "Automatic Reaction" level) on increasing spread/volume, confirming
-//   supply has taken control. Classically follows an Upthrust.
-//
-// Operationalized here as: a wave that closes beyond the highest/lowest
-// of the last N opposite-extreme pivots, with spread AND volume both at
-// or above the median of the last 3 same-direction waves. Tested against
-// real AAPL data: 11 events (9 SOS, 2 SOW) over ~2 years -- a plausible
-// density for a notable, confirming structural signal. ----
-function classifySOSSOW(bars, pivots, lookback=5) {
-  const segments = buildWaveSegments(bars, pivots);
-  const upSegs = segments.filter(s => s.direction === 'up');
-  const downSegs = segments.filter(s => s.direction === 'down');
-  const events = [];
-  for (const seg of segments) {
-    if (seg.direction === 'up') {
-      const priorHighs = pivots.filter(p => p.type === 'H' && p.idx < seg.startIdx).slice(-lookback);
-      if (priorHighs.length === 0) continue;
-      const priorMaxHigh = Math.max(...priorHighs.map(p => p.price));
-      if (seg.endPrice <= priorMaxHigh) continue;
-      const recentUp = upSegs.filter(s => s.endIdx < seg.endIdx).slice(-3);
-      if (recentUp.length === 0) continue;
-      const medSpread = _median(recentUp.map(s => s.spread));
-      const medVol = _median(recentUp.map(s => s.volume));
-      if (seg.spread >= medSpread && seg.volume >= medVol) {
-        events.push({idx: seg.endIdx, type: 'SOS', price: seg.endPrice});
-      }
-    } else {
-      const priorLows = pivots.filter(p => p.type === 'L' && p.idx < seg.startIdx).slice(-lookback);
-      if (priorLows.length === 0) continue;
-      const priorMinLow = Math.min(...priorLows.map(p => p.price));
-      if (seg.endPrice >= priorMinLow) continue;
-      const recentDown = downSegs.filter(s => s.endIdx < seg.endIdx).slice(-3);
-      if (recentDown.length === 0) continue;
-      const medSpread = _median(recentDown.map(s => s.spread));
-      const medVol = _median(recentDown.map(s => s.volume));
-      if (seg.spread >= medSpread && seg.volume >= medVol) {
-        events.push({idx: seg.endIdx, type: 'SOW', price: seg.endPrice});
-      }
-    }
-  }
-  return events;
-}
-
-// ---- Shortening of the Thrust -- per David Weis's own book, "Trades
-// About to Happen," p.174 (direct quotes): "Shortening of the thrust is
-// diminished progress as measured from high to high or low to low...
-// It requires a minimum of three impulses." His guideline #1: "After
-// three or four successive waves or impulses up or down, look for a
-// shortening of the thrust in the final wave. The wave usually makes
-// little progress and the volume declines... Sometimes the wave volume
-// is heavy, but the shortening of the thrust indicates the large effort
-// produced little reward." Guideline #4: "The shortening of the thrust
-// is determined mostly by the price bars' highs and lows rather than by
-// the waves' turning points" -- already satisfied here by construction,
-// since this zigzag's pivots ARE bar highs/lows, not closes.
-//
-// Operationalized as: the final wave in a same-direction sequence (3rd
-// wave onward) whose spread is less than 60% of the average spread of
-// the two preceding same-direction waves -- "makes little progress"
-// relative to the pattern the sequence had established, per his wording,
-// rather than requiring a strict wave-over-wave monotonic decline.
-// Tested against real AAPL data: 18 events over ~2 years, consistent
-// with a stricter monotonic-3-wave version tested first (17 events) --
-// confirms this is a stable threshold, not a fragile one. ----
-function classifyShorteningOfThrust(bars, pivots, ratioThresh=0.6) {
-  const segments = buildWaveSegments(bars, pivots);
-  const events = [];
-  for (const dir of ['up', 'down']) {
-    const segs = segments.filter(s => s.direction === dir);
-    for (let i = 2; i < segs.length; i++) {
-      const avgPrior = (segs[i-1].spread + segs[i-2].spread) / 2;
-      if (segs[i].spread < avgPrior * ratioThresh) {
-        events.push({idx: segs[i].endIdx, direction: dir, price: segs[i].endPrice});
-      }
-    }
-  }
-  return events;
-}
-
-// ---- Ease of Movement -- per David Weis's own book, p.4 (his summary
-// of the book's core themes): "Watch for ease of movement or lack of
-// movement (i.e., wide price bars versus narrow price bars)." And p.123:
-// "A range of this size or greater is used to define ease of movement"
-// (he sets a threshold by eye per chart in that example; here it's the
-// same idea applied relatively, per-symbol, via a trailing median rather
-// than a fixed number). A bar's TRUE range (high-low, or gap-inclusive
-// versus the prior close, whichever is larger) at or above 2x the
-// trailing 20-bar median true range is flagged, direction taken from
-// that bar's own close-vs-open. Tested against real AAPL data: 44 events
-// over ~2 years at this threshold (roughly one every 11 trading days) --
-// a genuinely recurring diagnostic, consistent with Weis applying this
-// lens throughout his book rather than treating it as a rare event. ----
-function trueRange(bars, i) {
-  if (i === 0) return bars[i].high - bars[i].low;
-  const prevClose = bars[i-1].close;
-  return Math.max(bars[i].high - bars[i].low, Math.abs(bars[i].high - prevClose), Math.abs(bars[i].low - prevClose));
-}
-function classifyEaseOfMovement(bars, window=20, threshold=2.0) {
-  const events = [];
-  for (let i = window; i < bars.length; i++) {
-    const tr = trueRange(bars, i);
-    const recentTRs = [];
-    for (let j = i - window; j < i; j++) recentTRs.push(trueRange(bars, j));
-    const medTR = _median(recentTRs);
-    if (medTR > 0 && tr >= medTR * threshold) {
-      const direction = bars[i].close >= bars[i].open ? 'up' : 'down';
-      events.push({idx: i, direction, price: bars[i].close});
-    }
-  }
-  return events;
 }
 
 function classifyEffortResult(bars, pivots) {
@@ -8050,50 +7886,6 @@ function render() {
     }
   }
 
-  let sosSowCount = 0;
-  if (document.getElementById('showSOSSOW').checked) {
-    const events = classifySOSSOW(RAW_BARS, pivots, 5);
-    sosSowCount = events.length;
-    for (const e of events) {
-      const color = e.type === 'SOS' ? '#4ade80' : '#f87171';
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: e.type, showarrow: true, arrowhead: 2, arrowsize: 0.9, arrowcolor: color,
-        ax: 0, ay: e.type === 'SOS' ? -30 : 30,
-        font: {color, size:11}, bgcolor: 'rgba(11,15,20,0.75)'
-      });
-    }
-  }
-
-  let sotCount = 0;
-  if (document.getElementById('showSOT').checked) {
-    const events = classifyShorteningOfThrust(RAW_BARS, pivots);
-    sotCount = events.length;
-    for (const e of events) {
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: 'SOT', showarrow: true, arrowhead: 2, arrowsize: 0.8, arrowcolor: '#ffa64d',
-        ax: 0, ay: e.direction === 'up' ? -22 : 22,
-        font: {color:'#ffa64d', size:10}, bgcolor: 'rgba(11,15,20,0.7)'
-      });
-    }
-  }
-
-  let eomCount = 0;
-  if (document.getElementById('showEOM').checked) {
-    const events = classifyEaseOfMovement(RAW_BARS);
-    eomCount = events.length;
-    for (const e of events) {
-      const color = e.direction === 'up' ? '#60d4a8' : '#e0785c';
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: e.direction === 'up' ? '▲' : '▼',
-        showarrow: false, font: {color, size:9},
-        yshift: e.direction === 'up' ? -12 : 12,
-      });
-    }
-  }
-
   const manualLineConfigs = [
     {enabledId:'showManualLine1', typeId:'manualType1', d1Id:'manualDate1a', d2Id:'manualDate1b', color:'#ff6ec7'},
     {enabledId:'showManualLine2', typeId:'manualType2', d1Id:'manualDate2a', d2Id:'manualDate2b', color:'#4dd8e6'}
@@ -8165,9 +7957,6 @@ function render() {
     `<span><b>${downBars}</b> down-wave bars</span>` +
     `<span><b>${srCount}</b> S/R levels</span>` +
     `<span><b>${effortCount}</b> effort/result callouts</span>` +
-    `<span><b>${sosSowCount}</b> SOS/SOW</span>` +
-    `<span><b>${sotCount}</b> shortening of thrust</span>` +
-    `<span><b>${eomCount}</b> ease of movement</span>` +
     `<span><b>${HITS.length}</b> scan hits</span>` +
     `<span><b>${RAW_BARS.length}</b> total bars</span>`;
 }
