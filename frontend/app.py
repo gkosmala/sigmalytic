@@ -9137,9 +9137,27 @@ app.clientside_callback(
         // clientside callbacks execute in the same browser window, so a
         // window-level assignment here is visible to them once this has
         // run at least once (each guards for the case it hasn't).
+        // FIX: user reported a middle chunk of the report vanishing
+        // during playback -- reproduced exactly: any period NOT
+        // followed by whitespace (e.g. the one inside "corp.com", as
+        // opposed to the sentence-ending period after it) broke the
+        // old [^.!?]+[.!?]+(\s+|$) pattern's matching entirely at that
+        // point, silently dropping the rest of that sentence up to the
+        // next successful match. Confirmed against the user's exact
+        // real script text: the old pattern turned "...opens.
+        // BEFORE...sigma lyticquantcorp.com. Let us know..." into just
+        // ["...opens.", "com.", "Let us know..."] -- the entire
+        // website-announcement sentence silently gone. This splits
+        // BETWEEN sentences instead of matching each one as a whole
+        // unit -- only at whitespace that is itself preceded by
+        // sentence-ending punctuation (a lookbehind), so a period with
+        // no following whitespace, like the one inside a domain name,
+        // is correctly left alone rather than being treated as a
+        // boundary at all.
         window.__briefingSplitSentences = window.__briefingSplitSentences || function(text) {
-            var parts = text.match(/[^.!?]+[.!?]+(\s+|$)/g);
-            if (!parts) return text.trim() ? [text.trim()] : [];
+            var trimmed = text.trim();
+            if (!trimmed) return [];
+            var parts = trimmed.split(/(?<=[.!?])\s+/);
             return parts.map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
         };
 
