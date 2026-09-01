@@ -10909,6 +10909,7 @@ def load_symbol(_, ticker, live, tf, session, lookback):
     Input("tab-status","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
+    Input("tab-briefing","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
