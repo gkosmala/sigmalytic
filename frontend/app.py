@@ -11655,7 +11655,24 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         else:
             return no_update, no_update, no_update, no_update
     elif tab=="guide":       main = build_guide_tab()
-    elif tab=="briefing":    main = build_briefing_tab()
+    elif tab=="briefing":
+        # FIX: same root cause already solved once for weis_radar above --
+        # this tab was rebuilding from scratch on every ~10s live-price
+        # tick (render_main()'s Inputs include s-live/s-candles, which
+        # update regardless of which tab is active). Each rebuild created
+        # a brand-new Play button with n_clicks=0 hardcoded, and Dash
+        # fires an Input's callback on ANY prop change -- including going
+        # backward to 0 -- so the Play button's own click-count silently
+        # resetting every ~10 seconds kept re-triggering playback from
+        # the beginning. User-reported symptom: stuck in a loop reading
+        # only the opening lines, and Stop appearing to do nothing since
+        # the next automatic restart followed almost immediately. Same
+        # fix, same reason: only rebuild on a genuine tab switch (s-tab).
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if _trigger.startswith("s-tab"):
+            main = build_briefing_tab()
+        else:
+            return no_update, no_update, no_update, no_update
     else:                    main = html.Div("Unknown tab")
 
     # Persistent copyright footer -- appears at the bottom of every tab's
