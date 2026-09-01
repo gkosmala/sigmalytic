@@ -4316,6 +4316,75 @@ def build_guide_tab():
     ])
 
 
+def _briefing_btn(label, id_, color="#fbbf24"):
+    return html.Button(label, id=id_, n_clicks=0, style={
+        "background": f"rgba({','.join(str(int(color.lstrip('#')[i:i+2],16)) for i in (0,2,4))},.12)",
+        "border": f"1px solid rgba({','.join(str(int(color.lstrip('#')[i:i+2],16)) for i in (0,2,4))},.35)",
+        "borderRadius": "10px", "color": color, "cursor": "pointer",
+        "fontSize": "13px", "fontWeight": "800", "padding": "10px 18px",
+        "fontFamily": "DM Sans, sans-serif", "marginRight": "8px",
+    })
+
+
+def build_briefing_tab():
+    """
+    Morning Report player -- a dedicated tab with real transport
+    controls, built on top of the existing header button's own
+    fetch-and-speak mechanism (btn-morning-report-play /
+    s-morning-report-play-request / the speak clientside_callback),
+    rather than replacing it -- that button still works exactly as
+    before from any tab.
+
+    Honest limitation, stated here and in the UI itself: the Web Speech
+    API (window.speechSynthesis) has no concept of a seekable timeline
+    the way a real audio file does -- it's live synthesis, not
+    pre-rendered audio, so there's no native "jump to 1:30" the way a
+    media player has. Pause/Resume/Stop are genuinely native
+    (speechSynthesis.pause/resume/cancel). "Rewind"/"Fast-forward" are
+    implemented as skip-to-previous/next-sentence instead, which is the
+    closest real equivalent -- the currently-read sentence is
+    highlighted below so it's clear where playback actually is.
+    """
+    return card([
+        html.H2("☀️ Morning Report Player", style={"fontSize":"18px","fontWeight":"900","color":WHITE,"margin":"0 0 4px"}),
+        html.P("Loads today's saved morning report and reads it aloud, with pause, stop, and skip-sentence "
+               "controls. Speech synthesis has no seekable timeline the way a recorded audio file does, so "
+               "\u201crewind\u201d and \u201cfast-forward\u201d skip to the previous/next sentence rather than "
+               "jumping by time -- the sentence currently being read is highlighted below.",
+               style={"fontSize":"12px","color":"rgba(255,255,255,.6)","margin":"0 0 18px","lineHeight":"1.6"}),
+
+        html.Div([
+            _briefing_btn("▶ Play", "btn-briefing-play"),
+            _briefing_btn("⏮ Previous", "btn-briefing-prev", color="#60a5fa"),
+            _briefing_btn("⏸ Pause / ▶ Resume", "btn-briefing-pauseresume", color="#60a5fa"),
+            _briefing_btn("⏭ Next", "btn-briefing-next", color="#60a5fa"),
+            _briefing_btn("⏹ Stop", "btn-briefing-stop", color="#f87171"),
+        ], style={"marginBottom":"12px"}),
+
+        html.Div(id="briefing-status", style={"fontSize":"12px","color":TEAL_DIM,"marginBottom":"14px"}),
+
+        html.Div(
+            id="briefing-text-display",
+            style={"fontSize":"14px","lineHeight":"1.8","color":"rgba(255,255,255,.75)",
+                   "padding":"16px","border":f"1px solid {BORDER}","borderRadius":"10px",
+                   "maxHeight":"60vh","overflowY":"auto","whiteSpace":"pre-wrap"},
+            children="Click Play to load today's morning report.",
+        ),
+
+        # Hidden sinks for the transport-control clientside callbacks below
+        # (Dash requires every callback to have an Output; these do nothing
+        # visible). Kept inside this SAME conditionally-rendered subtree as
+        # the buttons that trigger them, deliberately -- see
+        # request_morning_report_playback_from_briefing_tab's docstring for
+        # why a component tied to tab-specific buttons is never referenced
+        # from a callback that isn't itself scoped to this same subtree.
+        html.Div(id="briefing-pauseresume-sink", style={"display":"none"}),
+        html.Div(id="briefing-stop-sink", style={"display":"none"}),
+        html.Div(id="briefing-prev-sink", style={"display":"none"}),
+        html.Div(id="briefing-next-sink", style={"display":"none"}),
+    ])
+
+
 def build_stub_tab(title, description):
     """Placeholder for tabs under development."""
     return card([
@@ -9018,20 +9087,165 @@ def request_morning_report_playback(n_clicks):
     return {"text": text, "ts": datetime.now(timezone.utc).isoformat()}
 
 
+# ADDED (later session): the new Morning Report Player tab's own Play
+# button gets its own, completely separate callback rather than being
+# added as a second Input to request_morning_report_playback above.
+# This project has already hit a documented, real bug from exactly the
+# pattern being avoided here: a component living inside dynamically-
+# rendered tab content, referenced as an Input by a callback that isn't
+# itself scoped to that tab, caused a genuine repeated client-side
+# error that suppress_callback_exceptions=True did NOT cover (see the
+# 2026-08-13 fix note above, for the removed manual-refresh button).
+# That specific failure was driven by an always-firing timer callback;
+# this one only evaluates on an actual click, which can't happen while
+# btn-briefing-play doesn't exist -- but given the project's own
+# history with this exact class of bug, duplicating this small, simple
+# fetch rather than reusing it across two Inputs was the safer call.
+@app.callback(
+    Output("s-morning-report-play-request", "data", allow_duplicate=True),
+    Input("btn-briefing-play", "n_clicks"),
+    prevent_initial_call=True,
+)
+def request_morning_report_playback_from_briefing_tab(n_clicks):
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/morning-report", timeout=15)
+        payload = r.json() if r.ok else {}
+        text = payload.get("text")
+    except Exception:
+        text = None
+    if not text:
+        text = "No morning report has been posted yet today."
+    return {"text": text, "ts": datetime.now(timezone.utc).isoformat()}
+
+
 app.clientside_callback(
-    """
+    r"""
     function(request) {
         if (!request || !request.text) {
             return window.dash_clientside.no_update;
         }
-        var utter = new SpeechSynthesisUtterance(request.text);
-        utter.rate = 1.0;
-        window.speechSynthesis.speak(utter);
+
+        // ADDED (later session): the Morning Report Player tab needs
+        // pause/resume/stop/skip-sentence controls. window.speechSynthesis
+        // has no seekable timeline (it's live synthesis, not a decoded
+        // audio file), so "rewind"/"fast-forward" are implemented here as
+        // skip-to-previous/next-sentence -- the closest real equivalent.
+        // These helpers are attached to `window` (not local variables)
+        // specifically so the separate Pause/Stop/Previous/Next
+        // clientside_callbacks below -- each its own independent function
+        // string -- can reach the same shared player state; all
+        // clientside callbacks execute in the same browser window, so a
+        // window-level assignment here is visible to them once this has
+        // run at least once (each guards for the case it hasn't).
+        window.__briefingSplitSentences = window.__briefingSplitSentences || function(text) {
+            var parts = text.match(/[^.!?]+[.!?]+(\s+|$)/g);
+            if (!parts) return text.trim() ? [text.trim()] : [];
+            return parts.map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; });
+        };
+
+        window.__briefingUpdateDisplay = window.__briefingUpdateDisplay || function() {
+            var player = window.__briefingPlayer;
+            var display = document.getElementById('briefing-text-display');
+            var status = document.getElementById('briefing-status');
+            if (display && player.sentences.length) {
+                display.innerHTML = player.sentences.map(function(s, i) {
+                    return i === player.index ? '<mark>' + s + '</mark>' : s;
+                }).join(' ');
+            }
+            if (status) {
+                status.textContent = (player.sentences.length && player.index >= 0)
+                    ? ('Sentence ' + (player.index + 1) + ' of ' + player.sentences.length)
+                    : (player.sentences.length ? 'Stopped' : '');
+            }
+        };
+
+        window.__briefingPlaySentence = window.__briefingPlaySentence || function(idx) {
+            var player = window.__briefingPlayer;
+            if (!player || idx < 0 || idx >= player.sentences.length) return;
+            window.speechSynthesis.cancel();
+            player.index = idx;
+            window.__briefingUpdateDisplay();
+            var utter = new SpeechSynthesisUtterance(player.sentences[idx]);
+            utter.rate = 1.0;
+            utter.onend = function() {
+                if (player.index === idx && idx + 1 < player.sentences.length) {
+                    window.__briefingPlaySentence(idx + 1);
+                }
+            };
+            window.speechSynthesis.speak(utter);
+        };
+
+        window.__briefingPlayer = {sentences: window.__briefingSplitSentences(request.text), index: -1};
+        if (window.__briefingPlayer.sentences.length) {
+            window.__briefingPlaySentence(0);
+        }
         return window.dash_clientside.no_update;
     }
     """,
     Output("morning-report-audio-sink", "children"),
     Input("s-morning-report-play-request", "data"),
+    prevent_initial_call=True,
+)
+
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+            window.speechSynthesis.pause();
+        } else if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("briefing-pauseresume-sink", "children"),
+    Input("btn-briefing-pauseresume", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        window.speechSynthesis.cancel();
+        if (window.__briefingPlayer) {
+            window.__briefingPlayer.index = -1;
+            if (window.__briefingUpdateDisplay) window.__briefingUpdateDisplay();
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("briefing-stop-sink", "children"),
+    Input("btn-briefing-stop", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!window.__briefingPlayer || !window.__briefingPlaySentence) return window.dash_clientside.no_update;
+        window.__briefingPlaySentence(Math.max(0, window.__briefingPlayer.index - 1));
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("briefing-prev-sink", "children"),
+    Input("btn-briefing-prev", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!window.__briefingPlayer || !window.__briefingPlaySentence) return window.dash_clientside.no_update;
+        window.__briefingPlaySentence(window.__briefingPlayer.index + 1);
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("briefing-next-sink", "children"),
+    Input("btn-briefing-next", "n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -10313,6 +10527,7 @@ ALL_TABS = [
     ("preferences", "Preferences"),
     ("status",      "Status"),
     ("reports",     "Reports"),
+    ("briefing",    "☀️ Morning Report"),
     ("guide",       "User Guide"),
     ("admin",       "Admin"),
 ]
@@ -11439,6 +11654,7 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         else:
             return no_update, no_update, no_update, no_update
     elif tab=="guide":       main = build_guide_tab()
+    elif tab=="briefing":    main = build_briefing_tab()
     else:                    main = html.Div("Unknown tab")
 
     # Persistent copyright footer -- appears at the bottom of every tab's
