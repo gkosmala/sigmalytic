@@ -1826,42 +1826,76 @@ MORNING_REPORT_KEY = "morning_report:current"
 
 @app.post("/api/admin/morning-report")
 def save_morning_report(payload: dict, _admin: str = Depends(require_admin)):
+    from fastapi.responses import JSONResponse as _JSONResponse
     from backend.radar_service import _redis_client
 
     text = (payload or {}).get("text", "").strip()
     if not text:
-        return {"ok": False, "error": "No text provided"}
-    if not _redis_client:
-        return {"ok": False, "error": "Redis not configured"}
+        result = {"ok": False, "error": "No text provided"}
+    elif not _redis_client:
+        result = {"ok": False, "error": "Redis not configured"}
+    else:
+        try:
+            _redis_client.set(MORNING_REPORT_KEY, json.dumps({
+                "text": text,
+                "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }))
+            result = {"ok": True}
+        except Exception as e:
+            result = {"ok": False, "error": str(e)[:300]}
 
-    try:
-        _redis_client.set(MORNING_REPORT_KEY, json.dumps({
-            "text": text,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "saved_at": datetime.now(timezone.utc).isoformat(),
-        }))
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)[:300]}
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/morning-report")
 def get_morning_report():
     """Subscriber-facing -- no admin gate, any signed-in user can read
     (and thus hear, via Market Radio's playback button) today's
-    morning report, same as they can read/hear any other radio content."""
+    morning report, same as they can read/hear any other radio content.
+
+    FIX: user reported playback still using the old text after saving a
+    new one and getting a confirmed "Saved at ..." success message --
+    meaning the write side was genuinely working. This endpoint had
+    never been given the same no-cache treatment already proven
+    elsewhere in this file for the identical class of problem (see
+    /api/admin/generate-report-status above) -- a plain dict return has
+    no explicit Cache-Control, so a caching layer between here and the
+    browser could legitimately keep serving an old response after the
+    underlying Redis value had already changed. Matching that
+    established fix here.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
     from backend.radar_service import _redis_client
 
     if not _redis_client:
-        return {"ok": False, "error": "Redis not configured"}
-    try:
-        raw = _redis_client.get(MORNING_REPORT_KEY)
-        if raw is None:
-            return {"ok": True, "text": None}
-        data = json.loads(raw)
-        return {"ok": True, **data}
-    except Exception as e:
-        return {"ok": False, "error": str(e)[:300]}
+        result = {"ok": False, "error": "Redis not configured"}
+    else:
+        try:
+            raw = _redis_client.get(MORNING_REPORT_KEY)
+            if raw is None:
+                result = {"ok": True, "text": None}
+            else:
+                data = json.loads(raw)
+                result = {"ok": True, **data}
+        except Exception as e:
+            result = {"ok": False, "error": str(e)[:300]}
+
+    return _JSONResponse(
+        content=result,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/api/weis-radar/results")
