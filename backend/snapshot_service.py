@@ -133,6 +133,22 @@ def write_daily_close_snapshots(radar_cache: dict):
     """
     Write end-of-day snapshots with grades.
     Called by APScheduler at 4:15 PM ET (21:15 UTC).
+
+    UPDATED (later session, at explicit request): the grade stored here
+    -- the one the Closed-Loop Performance Audit actually reads -- now
+    comes strictly from the real Weis/Wyckoff setup_grade
+    (_attach_weis_wyckoff_setup_grade_only, above), not the old
+    composite_score-based _assign_eod_grade(). No fallback to that old
+    method if a symbol's engines fail for the day (bars unavailable,
+    an exception) -- that symbol's grade is left None for that day
+    rather than silently reintroducing the blended, non-Weis grading
+    this change was specifically meant to remove. One real, honest
+    consequence worth knowing: setup_grade only ever produces A/B/C
+    (per its own documented design, built directly from David Weis's
+    grading framework) -- there's no "F" concept in it the way the old
+    method had one, so the audit's f_grade/miss_rate will read 0 going
+    forward. That's not a bug; it's what strictly-Weis/Wyckoff grading
+    actually looks like.
     """
     if not DATABASE_URL:
         return
@@ -144,9 +160,15 @@ def write_daily_close_snapshots(radar_cache: dict):
         log.warning("Radar cache empty at close — skipping daily snapshot")
         return
 
+    try:
+        _attach_weis_wyckoff_setup_grade_only(symbols)
+    except Exception as e:
+        log.warning(f"Weis/Wyckoff setup grade enrichment failed for the full daily close pass (non-fatal): {e}")
+
     rows = []
     for s in symbols:
-        grade = _assign_eod_grade(s)
+        grade = s.get("setup_grade")  # None if that symbol's engines failed above -- no fallback, see docstring
+        grade_reason = s.get("setup_grade_reason", "")
         rows.append((
             s.get("symbol"),
             now_utc,
@@ -163,7 +185,7 @@ def write_daily_close_snapshots(radar_cache: dict):
             s.get("regime"),
             True,    # is_daily_close
             grade,
-            f"EOD · {s.get('setup_type','')} · {s.get('regime','')}",
+            f"EOD · {grade_reason}" if grade_reason else f"EOD · {s.get('setup_type','')} · {s.get('regime','')}",
         ))
 
     try:
@@ -189,6 +211,19 @@ def _assign_eod_grade(s: dict) -> str:
     """
     Assign letter grade based on EOD score + status.
     Mirrors the A/B/C/F grading from the manual scoreboard.
+
+    SUPERSEDED (later session, at explicit request): the Closed-Loop
+    Performance Audit was found to be grading purely on composite_score
+    -- a blend of generic technical analysis (moving averages, VWAP,
+    ATR, relative volume) plus an optional BME blend whose own Weis
+    Wave input was hardcoded to "NONE" in this code path, making the
+    "behavioral" component's Weis contribution effectively zero.
+    Confirmed a real, already-built, genuinely Weis/Wyckoff-based
+    grading system already existed (radar_service.py's
+    _compute_setup_grade(), built directly from David Weis's own
+    grading framework -- sweep/exhaustion/reclaim sequence at a mature
+    range) but was never wired into this daily snapshot writer. Kept
+    here, unused, only as a reference for what this replaced.
     """
     score   = s.get("composite_score", 0)
     status  = s.get("status", "")
@@ -212,6 +247,60 @@ def _assign_eod_grade(s: dict) -> str:
     if score >= 60:         return "B"
     if score >= 50:         return "C"
     return "F"
+
+
+def _attach_weis_wyckoff_setup_grade_only(rows: list) -> None:
+    """
+    ADDED (later session, at explicit request): the Closed-Loop
+    Performance Audit should be graded strictly on Weis Radar and Weis
+    Analysis, with no blending from any other methodology. Deliberately
+    a leaner version of radar_service.py's own
+    _attach_methodology_verdicts() -- that function also runs
+    LivermoreVerdictEngine alongside Wyckoff and Weis, but
+    _compute_setup_grade() (the actual grade computation, reused
+    unmodified here) never uses the Livermore verdict at all. Since
+    this now runs across the full symbol universe once daily rather
+    than for a single on-demand page view, skipping the unused engine
+    entirely -- rather than computing it and ignoring the result --
+    avoids real, unnecessary API/compute cost with no effect on the
+    grade either way.
+
+    Modifies rows in place, adding "wyckoff_verdict", "weis_verdict",
+    and the _compute_setup_grade() fields (including "setup_grade")
+    to each. Any row whose bars can't be fetched, or whose engines
+    raise, is left without these fields -- the caller must fall back
+    to a real default (see write_daily_close_snapshots below), not a
+    fabricated grade.
+    """
+    if not rows:
+        return
+
+    import pandas as pd
+    from backend.radar_service import fetch_bars_multi, _compute_setup_grade, _sanitize_numpy
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
+
+    symbols = [r.get("symbol") for r in rows if r.get("symbol")]
+    bars_by_symbol = fetch_bars_multi(symbols, timeframe="1Day", lookback_days=280)
+
+    wyckoff_engine = WyckoffVerdictEngine()
+    weis_engine = WeisVerdictEngine()
+
+    for row in rows:
+        symbol = row.get("symbol")
+        bars = bars_by_symbol.get(symbol) if isinstance(bars_by_symbol, dict) else None
+        if not bars:
+            continue
+        try:
+            df = pd.DataFrame(bars)
+            df = df.rename(columns={
+                "o": "open", "h": "high", "l": "low", "c": "close", "v": "volume",
+            })
+            row["wyckoff_verdict"] = _sanitize_numpy(wyckoff_engine.evaluate_bars(df, symbol=symbol))
+            row["weis_verdict"]    = _sanitize_numpy(weis_engine.evaluate(df, symbol=symbol))
+            row.update(_compute_setup_grade(row["wyckoff_verdict"], row["weis_verdict"]))
+        except Exception as e:
+            log.warning(f"Weis/Wyckoff setup grade failed for {symbol} (non-fatal): {e}")
 
 
 # ── Admin report builder ───────────────────────────────────────────────────
