@@ -15,13 +15,30 @@ To restore this tab later:
    branch in render_main()'s tab routing.
 4. Add back `Input("tab-scoreboard","n_clicks")` to the set_tab() callback's
    Input list.
-No other changes needed -- this file was never modified beyond the
-self-contained header below.
+
+ADDED (later session): the "Scoreboard Maintenance" panel (Repair
+History / Clear Duplicates buttons) also moved here from the Admin
+tab, at explicit request, since it exists specifically to maintain
+Scoreboard's own data -- it doesn't make sense for it to keep showing
+up in Admin once Scoreboard itself is archived. To restore BOTH
+together:
+5. In app.py, add: from scoreboard_tab import build_scoreboard_maintenance_block, register_scoreboard_maintenance_callbacks
+6. Call register_scoreboard_maintenance_callbacks(app) once, near where
+   the other extracted tabs' callbacks get registered (see
+   register_billing_callbacks(app) for the pattern).
+7. Add build_scoreboard_maintenance_block() back into the Admin tab's
+   layout (it was included in two places there -- the admin-report
+   success and fallback branches -- both times as the same pre-built
+   block, alongside setup_deployment_block, symbol_backtest_block, and
+   the other admin diagnostic blocks).
+No other changes needed -- none of this was modified beyond
+self-contained headers.
 """
 
 import os
 from datetime import datetime, timedelta, timezone
-from dash import html
+from dash import html, Input, Output, State, callback_context, no_update
+import requests as req
 
 try:
     from shared_cache import shared_cache
@@ -36,6 +53,7 @@ WHITE = "#FFFFFF"
 TEXT = WHITE
 MUTED = WHITE
 NAVY_CARD = "#111f35"
+TEAL = "#2d8f6f"
 TEAL_DIM = "#34d399"
 RED_DIM = "#f87171"
 YELLOW_DIM = "#fde68a"
@@ -587,3 +605,86 @@ def build_scoreboard_tab(session=None):
             }),
         ]),
     ])
+
+def _auth_headers(session=None):
+    """Authorization header for the logged-in user, or empty for demo/no session."""
+    token = (session or {}).get("access_token", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _admin_card(children, sx=None):
+    s = {"background": NAVY_CARD, "border": f"1px solid {BORDER}",
+         "borderRadius": "16px", "padding": "20px",
+         "boxShadow": "0 8px 32px rgba(0,0,0,.32)"}
+    if sx: s.update(sx)
+    return html.Div(children, style=s)
+
+
+def build_scoreboard_maintenance_block():
+    """The two Scoreboard maintenance utilities, moved here from the
+    Admin tab -- see this module's docstring for restore instructions."""
+    from dash import dcc
+    return _admin_card([
+        html.Div("SCOREBOARD MAINTENANCE", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Two real, working maintenance utilities directly supporting "
+            "the real track record data above. Repair backfills missing "
+            "grades/path metrics on older rows (explicitly documented as "
+            "safe to run repeatedly). Clear Duplicates removes duplicate "
+            "signal rows, keeping only the most recent per symbol per day.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Div([
+            html.Button("Repair History", id="repair-scoreboard-btn", n_clicks=0,
+                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                       "marginRight": "10px"}),
+            html.Button("Clear Duplicates", id="clear-duplicates-btn", n_clicks=0,
+                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="scoreboard-maintenance-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
+
+def register_scoreboard_maintenance_callbacks(app):
+    """Not called anywhere while Scoreboard is archived -- see this
+    module's docstring for how to wire this back in if restored."""
+    @app.callback(Output("scoreboard-maintenance-result", "children"),
+                  Input("repair-scoreboard-btn", "n_clicks"),
+                  Input("clear-duplicates-btn", "n_clicks"),
+                  State("s-session", "data"),
+                  prevent_initial_call=True)
+    def handle_scoreboard_maintenance(repair_clicks, clear_clicks, session):
+        """
+        Admin-only maintenance buttons sharing one output -- uses
+        callback_context to determine which button was actually clicked,
+        calling the corresponding real backend endpoint.
+        """
+        trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        try:
+            if trigger.startswith("repair-scoreboard-btn"):
+                r = req.post(f"{BACKEND_HTTP}/api/admin/repair-scoreboard-history",
+                             headers=_auth_headers(session), timeout=60)
+            elif trigger.startswith("clear-duplicates-btn"):
+                r = req.post(f"{BACKEND_HTTP}/api/admin/clear-duplicate-signals",
+                             headers=_auth_headers(session), timeout=60)
+            else:
+                return no_update
+
+            if r.status_code == 401:
+                return "Not signed in, or session expired. Please sign in again."
+            if r.status_code == 403:
+                return "Admin access only."
+            if not r.ok:
+                return f"Failed (error {r.status_code}): {r.text[:200]}"
+            payload = r.json()
+            if not payload.get("ok"):
+                return f"Failed: {payload.get('error', 'unknown error')}"
+            return f"Complete: {payload}"
+        except Exception as exc:
+            return f"Could not reach the backend: {exc}"

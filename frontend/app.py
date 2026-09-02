@@ -5433,31 +5433,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
-    scoreboard_maintenance_block = _admin_card([
-        html.Div("SCOREBOARD MAINTENANCE", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Two real, working maintenance utilities directly supporting "
-            "the real track record data above. Repair backfills missing "
-            "grades/path metrics on older rows (explicitly documented as "
-            "safe to run repeatedly). Clear Duplicates removes duplicate "
-            "signal rows, keeping only the most recent per symbol per day.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Div([
-            html.Button("Repair History", id="repair-scoreboard-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                       "marginRight": "10px"}),
-            html.Button("Clear Duplicates", id="clear-duplicates-btn", n_clicks=0,
-                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="scoreboard-maintenance-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
+    # ARCHIVED (later session, at explicit request): moved to
+    # scoreboard_tab.py alongside the archived Scoreboard tab it exists
+    # to maintain -- see that file's docstring to restore.
 
     journal_correction_block = _admin_card([
         html.Div("JOURNAL ENTRY CORRECTION", style={"fontSize": "12px", "fontWeight": "800",
@@ -5604,7 +5582,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             state_transition_block,
             campaign_outcome_block,
             real_scoreboard_stats_block,
-            scoreboard_maintenance_block,
             journal_correction_block,
             bme_memory_status_block,
             operator_footprint_block,
@@ -5914,7 +5891,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         state_transition_block,
         campaign_outcome_block,
         real_scoreboard_stats_block,
-        scoreboard_maintenance_block,
         journal_correction_block,
         bme_memory_status_block,
         operator_footprint_block,
@@ -8473,40 +8449,10 @@ def handle_real_stats(n_clicks, session):
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
-@app.callback(Output("scoreboard-maintenance-result", "children"),
-              Input("repair-scoreboard-btn", "n_clicks"),
-              Input("clear-duplicates-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_scoreboard_maintenance(repair_clicks, clear_clicks, session):
-    """
-    Admin-only maintenance buttons sharing one output -- uses
-    callback_context to determine which button was actually clicked,
-    calling the corresponding real backend endpoint.
-    """
-    trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-    try:
-        if trigger.startswith("repair-scoreboard-btn"):
-            r = req.post(f"{BACKEND_HTTP}/api/admin/repair-scoreboard-history",
-                         headers=_auth_headers(session), timeout=60)
-        elif trigger.startswith("clear-duplicates-btn"):
-            r = req.post(f"{BACKEND_HTTP}/api/admin/clear-duplicate-signals",
-                         headers=_auth_headers(session), timeout=60)
-        else:
-            return no_update
-
-        if r.status_code == 401:
-            return "Not signed in, or session expired. Please sign in again."
-        if r.status_code == 403:
-            return "Admin access only."
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        return f"Complete: {payload}"
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
+# ARCHIVED (later session, at explicit request): the scoreboard
+# maintenance callback moved to scoreboard_tab.py's
+# register_scoreboard_maintenance_callbacks(app) -- see that file's
+# docstring to restore.
 
 @app.callback(Output("journal-delete-result", "children"),
               Input("journal-delete-btn", "n_clicks"),
