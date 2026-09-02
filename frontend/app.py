@@ -5411,27 +5411,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ),
     ], sx={"marginBottom": "16px"})
 
-    real_scoreboard_stats_block = _admin_card([
-        html.Div("REAL TRACK RECORD STATISTICS", style={"fontSize": "12px", "fontWeight": "800",
-                  "color": WHITE, "marginBottom": "6px"}),
-        html.Div(
-            "Genuine win rates, hit rates, MFE/MAE, and direction "
-            "accuracy computed from the app's own actual logged signal "
-            "history and outcomes -- not the campaign-intelligence "
-            "compatibility view already shown in the Scoreboard tab. "
-            "Confirmed this real data was never surfaced anywhere "
-            "until now.",
-            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
-        ),
-        html.Button("Load Real Stats", id="real-stats-btn", n_clicks=0,
-            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
-                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
-                   "marginBottom": "14px"}),
-        dcc.Loading(
-            html.Div(id="real-stats-result", style={"fontSize": "12px", "color": WHITE}),
-            type="dot", color=TEAL,
-        ),
-    ], sx={"marginBottom": "16px"})
+    # ARCHIVED (later session, at explicit request): moved to
+    # scoreboard_tab.py alongside the archived Scoreboard tab it exists
+    # to maintain -- see that file's docstring to restore.
 
     # ARCHIVED (later session, at explicit request): moved to
     # scoreboard_tab.py alongside the archived Scoreboard tab it exists
@@ -5581,7 +5563,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             closure_engine_block,
             state_transition_block,
             campaign_outcome_block,
-            real_scoreboard_stats_block,
             journal_correction_block,
             bme_memory_status_block,
             operator_footprint_block,
@@ -5890,7 +5871,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         closure_engine_block,
         state_transition_block,
         campaign_outcome_block,
-        real_scoreboard_stats_block,
         journal_correction_block,
         bme_memory_status_block,
         operator_footprint_block,
@@ -8399,55 +8379,10 @@ def handle_operator_footprint(n_clicks, session):
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
-@app.callback(Output("real-stats-result", "children"),
-              Input("real-stats-btn", "n_clicks"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
-def handle_real_stats(n_clicks, session):
-    """
-    Calls the real, honest scoreboard statistics endpoint (found via
-    audit tonight -- confirmed genuinely never surfaced anywhere,
-    distinct from the campaign-intelligence compatibility view already
-    shown in the Scoreboard tab).
-    """
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/scoreboard/real-stats", timeout=30)
-        if not r.ok:
-            return f"Failed (error {r.status_code}): {r.text[:200]}"
-        payload = r.json()
-        if not payload.get("ok"):
-            return f"Failed: {payload.get('error', 'unknown error')}"
-        stats = payload.get("stats", {})
-
-        total = stats.get("total_signals", 0)
-        if not total:
-            return "No signals logged yet, or DATABASE_URL isn't configured on this environment."
-
-        metrics = [
-            ("Total signals", total),
-            ("With outcomes", stats.get("with_outcomes")),
-            ("Grade A / B / C / W", f"{stats.get('grade_a', 0)} / {stats.get('grade_b', 0)} / {stats.get('grade_c', 0)} / {stats.get('grade_w', 0)}"),
-            ("High confidence (A+B) rate", f"{stats.get('high_confidence', 0)}%"),
-            ("Direction correct rate", f"{stats.get('direction_correct_rate', 0)}%"),
-            ("Hit target 1 / target 2 rate", f"{stats.get('hit_target1_rate', 0)}% / {stats.get('hit_target2_rate', 0)}%"),
-            ("Avg MFE / MAE", f"{stats.get('avg_mfe_pct', 0)}% / {stats.get('avg_mae_pct', 0)}%"),
-            ("Edge ratio (MFE:MAE)", stats.get("edge_ratio", "—")),
-            ("Edge accuracy rate", f"{stats.get('edge_accuracy_rate', 0)}%"),
-            ("Avg long / short return", f"{stats.get('avg_long_pct', 0)}% / {stats.get('avg_short_pct', 0)}%"),
-            ("Avg days to outcome", stats.get("avg_days", 0)),
-        ]
-
-        rows = [
-            html.Tr([
-                html.Td(label, style={"padding": "6px 10px", "fontSize": "11px", "color": MUTED}),
-                html.Td(str(value), style={"padding": "6px 10px", "fontSize": "12px", "color": WHITE, "fontWeight": "700"}),
-            ])
-            for label, value in metrics
-        ]
-
-        return html.Table([html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"})
-    except Exception as exc:
-        return f"Could not reach the backend: {exc}"
+# ARCHIVED (later session, at explicit request): the real scoreboard
+# stats callback moved to scoreboard_tab.py's
+# register_real_stats_callbacks(app) -- see that file's docstring to
+# restore.
 
 # ARCHIVED (later session, at explicit request): the scoreboard
 # maintenance callback moved to scoreboard_tab.py's

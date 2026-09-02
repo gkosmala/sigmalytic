@@ -31,6 +31,15 @@ together:
    success and fallback branches -- both times as the same pre-built
    block, alongside setup_deployment_block, symbol_backtest_block, and
    the other admin diagnostic blocks).
+
+ADDED (later session): the "Real Track Record Statistics" block (the
+"Load Real Stats" button) also moved here, for the same reason --
+its own description explicitly compares itself against "the
+Scoreboard tab." To restore:
+8. In app.py, add: from scoreboard_tab import build_real_scoreboard_stats_block, register_real_stats_callbacks
+9. Call register_real_stats_callbacks(app) alongside step 6 above.
+10. Add build_real_scoreboard_stats_block() back into the Admin tab's
+    layout, same two places as step 7.
 No other changes needed -- none of this was modified beyond
 self-contained headers.
 """
@@ -686,5 +695,86 @@ def register_scoreboard_maintenance_callbacks(app):
             if not payload.get("ok"):
                 return f"Failed: {payload.get('error', 'unknown error')}"
             return f"Complete: {payload}"
+        except Exception as exc:
+            return f"Could not reach the backend: {exc}"
+
+
+def build_real_scoreboard_stats_block():
+    """The "Load Real Stats" utility, moved here from the Admin tab --
+    see this module's docstring for restore instructions."""
+    from dash import dcc
+    return _admin_card([
+        html.Div("REAL TRACK RECORD STATISTICS", style={"fontSize": "12px", "fontWeight": "800",
+                  "color": WHITE, "marginBottom": "6px"}),
+        html.Div(
+            "Genuine win rates, hit rates, MFE/MAE, and direction "
+            "accuracy computed from the app's own actual logged signal "
+            "history and outcomes -- not the campaign-intelligence "
+            "compatibility view already shown in the Scoreboard tab. "
+            "Confirmed this real data was never surfaced anywhere "
+            "until now.",
+            style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"},
+        ),
+        html.Button("Load Real Stats", id="real-stats-btn", n_clicks=0,
+            style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                   "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                   "marginBottom": "14px"}),
+        dcc.Loading(
+            html.Div(id="real-stats-result", style={"fontSize": "12px", "color": WHITE}),
+            type="dot", color=TEAL,
+        ),
+    ], sx={"marginBottom": "16px"})
+
+
+def register_real_stats_callbacks(app):
+    """Not called anywhere while Scoreboard is archived -- see this
+    module's docstring for how to wire this back in if restored."""
+    @app.callback(Output("real-stats-result", "children"),
+                  Input("real-stats-btn", "n_clicks"),
+                  State("s-session", "data"),
+                  prevent_initial_call=True)
+    def handle_real_stats(n_clicks, session):
+        """
+        Calls the real, honest scoreboard statistics endpoint (found via
+        audit tonight -- confirmed genuinely never surfaced anywhere,
+        distinct from the campaign-intelligence compatibility view already
+        shown in the Scoreboard tab).
+        """
+        try:
+            r = req.get(f"{BACKEND_HTTP}/api/scoreboard/real-stats", timeout=30)
+            if not r.ok:
+                return f"Failed (error {r.status_code}): {r.text[:200]}"
+            payload = r.json()
+            if not payload.get("ok"):
+                return f"Failed: {payload.get('error', 'unknown error')}"
+            stats = payload.get("stats", {})
+
+            total = stats.get("total_signals", 0)
+            if not total:
+                return "No signals logged yet, or DATABASE_URL isn't configured on this environment."
+
+            metrics = [
+                ("Total signals", total),
+                ("With outcomes", stats.get("with_outcomes")),
+                ("Grade A / B / C / W", f"{stats.get('grade_a', 0)} / {stats.get('grade_b', 0)} / {stats.get('grade_c', 0)} / {stats.get('grade_w', 0)}"),
+                ("High confidence (A+B) rate", f"{stats.get('high_confidence', 0)}%"),
+                ("Direction correct rate", f"{stats.get('direction_correct_rate', 0)}%"),
+                ("Hit target 1 / target 2 rate", f"{stats.get('hit_target1_rate', 0)}% / {stats.get('hit_target2_rate', 0)}%"),
+                ("Avg MFE / MAE", f"{stats.get('avg_mfe_pct', 0)}% / {stats.get('avg_mae_pct', 0)}%"),
+                ("Edge ratio (MFE:MAE)", stats.get("edge_ratio", "—")),
+                ("Edge accuracy rate", f"{stats.get('edge_accuracy_rate', 0)}%"),
+                ("Avg long / short return", f"{stats.get('avg_long_pct', 0)}% / {stats.get('avg_short_pct', 0)}%"),
+                ("Avg days to outcome", stats.get("avg_days", 0)),
+            ]
+
+            rows = [
+                html.Tr([
+                    html.Td(label, style={"padding": "6px 10px", "fontSize": "11px", "color": MUTED}),
+                    html.Td(str(value), style={"padding": "6px 10px", "fontSize": "12px", "color": WHITE, "fontWeight": "700"}),
+                ])
+                for label, value in metrics
+            ]
+
+            return html.Table([html.Tbody(rows)], style={"width": "100%", "borderCollapse": "collapse"})
         except Exception as exc:
             return f"Could not reach the backend: {exc}"
