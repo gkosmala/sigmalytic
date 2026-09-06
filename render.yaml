@@ -21,7 +21,36 @@ services:
     # issues again, verify the shared_cache fix itself first --
     # reverting to 1 worker should be a last resort, not the default
     # response to any future memory concern.
-    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 2 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 300
+    # UPDATE (2026-09-06): service was suspended by Render after
+    # repeated crashes over a 24-hour period, still on commit 5d200e47
+    # (i.e., crashing before any of tonight's Alpaca-streaming work was
+    # even added -- unrelated to it). Render's own Standard plan is 1
+    # CPU / 2 GB RAM total for the whole container, not per worker;
+    # logs from the live service showed each of the 2 workers
+    # independently sitting near 900-985 MB RSS on its own, meaning
+    # combined they were already consuming nearly the entire 2 GB
+    # ceiling with almost no headroom for OS/runtime overhead -- a very
+    # plausible mechanism for the OOM kills, though NOT confirmed
+    # against the live process itself (no profiler was attached to the
+    # actual running service; this is arithmetic on observed numbers,
+    # not a diagnosed root cause).
+    #
+    # Dropping to 1 worker specifically BECAUSE it's a config change
+    # with no dependency on first diagnosing the real cause -- the
+    # honest tradeoff is real: with only 1 worker, requests that arrive
+    # while it's busy on another one queue and wait rather than being
+    # handled in parallel, a genuine slowdown under load. Chosen over
+    # upgrading the compute plan (Standard -> Pro, more RAM) specifically
+    # because the cost increase was explicitly declined.
+    #
+    # The comment below (2026-08-06) called reverting to 1 worker "a
+    # last resort" -- this IS that last resort, arrived at deliberately,
+    # not casually. Revert to --workers 2 only after either (a) genuine,
+    # profiled evidence of what's actually consuming the ~900MB/worker
+    # baseline and a real fix for it, or (b) the compute plan is
+    # upgraded to give 2 workers real headroom -- not simply because
+    # this comment is inconvenient.
+    startCommand: gunicorn backend.main:app --worker-class uvicorn.workers.UvicornWorker --workers 1 --max-requests 75 --max-requests-jitter 20 --bind 0.0.0.0:$PORT --timeout 300
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
