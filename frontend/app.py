@@ -9939,8 +9939,12 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         open_trade  = _get(f"/api/behavior/open-trade/{_current_user_id(session)}", headers=_auth_headers(session))
         trade_plan  = _build_trade_plan_contents(live)
         active_pane = build_active_trade_panel(open_trade, live["price"]) if open_trade else html.Div()
+        # UPDATE (2026-09-06): build_weis_gamma_status_center_panel()
+        # moved to the Admin tab, at explicit request -- it's an
+        # internal safety self-check (see that function's own dated
+        # comment on the "GAMMA PREVIEW: READ-ONLY" badge), not
+        # something a subscriber needs to see or would understand.
         return (html.Div([
-                    build_weis_gamma_status_center_panel(),
                     build_command_tab(live, candles or _init_candles, symbol, tf),
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
@@ -10132,11 +10136,19 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                 # every tab) since this is an internal diagnostic tool, not
                 # customer-facing content.
                 _build_d3f1b_controlled_persistence_lifecycle_panel(admin_session),
-                # Weis-Gamma Status Center panel intentionally NOT repeated
-                # here -- it already lives on Command Center. Showing it
-                # twice was redundant, not intentional. (Re-applied here --
-                # this exact fix was lost once already during an earlier
-                # file handoff tonight.)
+                # UPDATE (2026-09-06, at explicit request): moved here
+                # FROM Command Center entirely -- this used to say it was
+                # deliberately NOT duplicated here because it "already
+                # lives on Command Center." That was true at the time,
+                # but the underlying decision changed: this is an
+                # internal safety self-check (see its own dated comment
+                # on the "GAMMA PREVIEW: READ-ONLY" badge -- confirms a
+                # read-only evidence preview isn't accidentally claiming
+                # write access), not something a subscriber needs to see
+                # or would understand. Command Center's own render no
+                # longer calls this function at all, so there's no
+                # duplication risk to guard against anymore either.
+                build_weis_gamma_status_center_panel(),
                 build_cache_diagnostics_panel(),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
