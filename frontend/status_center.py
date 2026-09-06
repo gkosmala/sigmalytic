@@ -450,10 +450,17 @@ def build_status_center(session=None) -> html.Div:
     # note), a slow backend response on any one of them made every tab
     # switch feel sluggish. Running them concurrently means total wait time
     # is roughly the slowest single call, not the sum of all five.
+    # DISABLED (2026-09-06): removed the /api/radar/intelligence fetch --
+    # its only source, radar_service.py's divergence_scan job, was turned
+    # off the same day (confirmed unused first; see that file's matching
+    # dated comment). No point spending a network round-trip fetching
+    # data that will never update again. To restore: re-add
+    # "radar_data": "/api/radar/intelligence?limit=8" here, restore the
+    # radar_items derivation below, and restore the Column 2 card further
+    # down (currently replaced with an honest "disabled" message).
     fetch_paths = {
         "intelligence_status": "/api/intelligence/status-center",
         "intelligence_opps": "/api/intelligence/opportunities?limit=25",
-        "radar_data": "/api/radar/intelligence?limit=8",
         "campaign_freshness_data": "/api/campaigns/active",
         "radar_freshness_data": "/api/radar/scores?limit=25",
     }
@@ -467,7 +474,6 @@ def build_status_center(session=None) -> html.Div:
 
     intelligence_status  = fetched["intelligence_status"]
     intelligence_opps    = fetched["intelligence_opps"]
-    radar_data           = fetched["radar_data"]
     campaign_freshness_data = fetched["campaign_freshness_data"]
     radar_freshness_data    = fetched["radar_freshness_data"]
 
@@ -503,23 +509,11 @@ def build_status_center(session=None) -> html.Div:
         if isinstance(c, dict)
     ]
 
-    if isinstance(radar_data, dict):
-        radar_items = (
-            radar_data.get("symbols")
-            or radar_data.get("signals")
-            or radar_data.get("rankings")
-            or []
-        )
-    elif isinstance(radar_data, list):
-        radar_items = radar_data
-    else:
-        radar_items = []
-
-    radar_items = [
-        _normalize_radar_row(item)
-        for item in _safe_list(radar_items)
-        if isinstance(item, dict)
-    ]
+    # DISABLED (2026-09-06): radar_items derivation removed along with
+    # the radar_data fetch above -- see that comment for why and how to
+    # restore. radar_items is no longer referenced anywhere below; the
+    # Column 2 card that used to render it now shows an honest "disabled"
+    # message instead.
 
     campaign_freshness_rows = []
     if isinstance(campaign_freshness_data, dict):
@@ -734,24 +728,38 @@ def build_status_center(session=None) -> html.Div:
             ], sx={"flex": "1.2"}),
 
             # Column 2 - Radar Intelligence
+            # DISABLED (2026-09-06): confirmed stale/unused; its only
+            # data source (radar_service.py's divergence_scan) was turned
+            # off the same day. Original markup preserved below in a
+            # comment for restoration -- see the matching dated comments
+            # above (fetch_paths, radar_items derivation) for the other
+            # two pieces that need restoring alongside this one.
+            # _card([
+            #     _section("Radar Intelligence"),
+            #     html.Div([
+            #         html.Div([
+            #             html.Span("Symbol", style={"fontSize": "9px", "color": MUTED,
+            #                                        "fontWeight": "700", "flex": "1",
+            #                                        "textTransform": "uppercase"}),
+            #             html.Span("Signal", style={"fontSize": "9px", "color": MUTED,
+            #                                        "fontWeight": "700", "flex": "2",
+            #                                        "textTransform": "uppercase"}),
+            #             html.Span("Score", style={"fontSize": "9px", "color": MUTED,
+            #                                       "fontWeight": "700",
+            #                                       "textTransform": "uppercase"}),
+            #         ], style={"display": "flex", "gap": "10px", "paddingBottom": "6px",
+            #                   "borderBottom": f"1px solid {BORDER}", "marginBottom": "2px"}),
+            #         *[_radar_mini(item) for item in radar_items[:8]],
+            #     ]) if radar_items else html.Div(
+            #         "Radar data loading...",
+            #         style={"color": MUTED, "fontSize": "12px", "padding": "20px 0",
+            #                "textAlign": "center"}
+            #     ),
+            # ], sx={"flex": "1"}),
             _card([
                 _section("Radar Intelligence"),
-                html.Div([
-                    html.Div([
-                        html.Span("Symbol", style={"fontSize": "9px", "color": MUTED,
-                                                   "fontWeight": "700", "flex": "1",
-                                                   "textTransform": "uppercase"}),
-                        html.Span("Signal", style={"fontSize": "9px", "color": MUTED,
-                                                   "fontWeight": "700", "flex": "2",
-                                                   "textTransform": "uppercase"}),
-                        html.Span("Score", style={"fontSize": "9px", "color": MUTED,
-                                                  "fontWeight": "700",
-                                                  "textTransform": "uppercase"}),
-                    ], style={"display": "flex", "gap": "10px", "paddingBottom": "6px",
-                              "borderBottom": f"1px solid {BORDER}", "marginBottom": "2px"}),
-                    *[_radar_mini(item) for item in radar_items[:8]],
-                ]) if radar_items else html.Div(
-                    "Radar data loading...",
+                html.Div(
+                    "Radar Intelligence is currently disabled.",
                     style={"color": MUTED, "fontSize": "12px", "padding": "20px 0",
                            "textAlign": "center"}
                 ),

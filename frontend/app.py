@@ -8956,6 +8956,22 @@ def _trigger_weis_background_fetch(symbol, cache_key):
             return
         _weis_fetch_in_progress.add(cache_key)
 
+    # Alpaca live streaming subscription: only requested here, at the
+    # point this tab's own existing cache-miss gate decides a genuine
+    # fetch is actually needed for `symbol` -- not on every global
+    # symbol change, per this tab's original design (only populate when
+    # this tab's own trigger fires). Same no-op-on-failure reasoning as
+    # Command Center's hook: streaming is an enhancement, never a hard
+    # dependency for Weis Analysis's existing fetch to keep working.
+    try:
+        from shared_cache import shared_cache
+        from subscription_manager import SubscriptionManager
+        redis_client = shared_cache.get_redis_client()
+        if redis_client is not None:
+            SubscriptionManager(redis_client).request("weis_analysis", symbol)
+    except Exception:
+        pass
+
     def _run():
         try:
             results = _fetch_weis_raw_data(symbol)
@@ -9363,6 +9379,28 @@ def load_symbol(_, ticker, live, tf, session, lookback):
     clean = sanitize_symbol(ticker or "")
     if not clean:
         return no_update, no_update, no_update, no_update
+
+    # Alpaca live streaming subscription: declares that Command Center
+    # now wants `clean` streamed. Doesn't touch Alpaca directly -- just
+    # writes the request into Redis; the separate, dedicated
+    # tools/render_alpaca_stream_worker.py service (running as its own
+    # Render worker, not part of this frontend process) reads this and
+    # reconciles its real subscriptions. Confirmed via
+    # SubscriptionManager's own tests: this naturally handles both
+    # unsubscribing the previous Command Center symbol and correctly
+    # keeping a symbol subscribed if Weis Analysis independently still
+    # wants it too. Fails silently (no-op) if Redis is unavailable --
+    # streaming is an enhancement layered on top of the existing
+    # REST-poll on_tick path, never a hard dependency for Command
+    # Center to keep working.
+    try:
+        from shared_cache import shared_cache
+        from subscription_manager import SubscriptionManager
+        redis_client = shared_cache.get_redis_client()
+        if redis_client is not None:
+            SubscriptionManager(redis_client).request("command_center", clean)
+    except Exception:
+        pass
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,

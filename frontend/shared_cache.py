@@ -76,6 +76,13 @@ class SharedCache:
         """Returns 'redis' or 'memory' -- useful for diagnostics/logging."""
         return "redis" if self._redis_client is not None else "memory"
 
+    def get_redis_client(self):
+        """Returns the underlying Redis client (or None if unavailable),
+        so other small utilities needing raw Redis access -- e.g.
+        SubscriptionManager -- can reuse this same connection instead of
+        opening a second, separate one to the same Redis instance."""
+        return self._redis_client
+
     def get_or_fetch(self, key: str, fetch_fn, ttl_seconds: int = 25):
         """
         Returns cached data for `key` if younger than ttl_seconds.

@@ -111,6 +111,30 @@ services:
         value: "wss://sigmalytic-backend.onrender.com"
 
   - type: worker
+    name: sigmalytic-alpaca-stream
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tools/render_alpaca_stream_worker.py
+    # Deliberately its own separate worker service, not folded into
+    # sigmalytic-radar-scanner -- see that script's own module docstring
+    # for the full reasoning (mixing this lightweight, always-on,
+    # latency-sensitive stream with that service's heavy periodic
+    # batch scans risks the same class of memory/stability problem
+    # that already motivated splitting the scanner out from the main
+    # backend in the first place).
+    # NOTE: also needs REDIS_URL set manually in Render's dashboard,
+    # same as sigmalytic-backend and sigmalytic-radar-scanner (not
+    # tracked here, per those services' own existing convention).
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_API_SECRET
+        sync: false
+
+  - type: worker
     name: sigmalytic-radar-scanner
     runtime: python
     region: oregon
