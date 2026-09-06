@@ -2146,16 +2146,30 @@ def start_radar_scheduler():
         next_run_time=datetime.now(timezone.utc) + timedelta(seconds=45),
     )
 
-    # Divergence watchlist intraday deep scan — runs alongside radar scan
-    if _INTELLIGENCE_AVAILABLE:
-        _scheduler.add_job(
-            lambda: threading.Thread(target=_instrumented("divergence_scan", run_divergence_scan), daemon=True).start(),
-            trigger="interval",
-            seconds=SCAN_INTERVAL_SECONDS,
-            id="divergence_scan",
-            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60),
-        )
-        log.info("Divergence watchlist scan scheduled every 8 minutes")
+    # DISABLED (2026-09-06): divergence_scan intraday job turned off.
+    # Confirmed via full dependency trace that its only two consumers
+    # were: (1) the "Intelligence Change Detector" frontend tab, already
+    # archived to frontend/divergence_tab.py earlier this engagement,
+    # and (2) Status Center's "Radar Intelligence" card (frontend/
+    # status_center.py), confirmed stale/unused by direct request.
+    # Ruled out first, not assumed: /api/intelligence/rankings,
+    # /status-center, and /opportunities are served entirely by the
+    # separate intelligence_api.py (tied to Campaign Intelligence) and
+    # do NOT depend on this job or INTELLIGENCE_CACHE at all -- those
+    # remain fully live and unaffected by this change.
+    # run_divergence_scan() itself is untouched below (still fully
+    # defined, just no longer scheduled) -- to restore, uncomment the
+    # add_job() block below and re-add status_center.py's "radar_data"
+    # fetch + card (see the matching dated comment there).
+    # if _INTELLIGENCE_AVAILABLE:
+    #     _scheduler.add_job(
+    #         lambda: threading.Thread(target=_instrumented("divergence_scan", run_divergence_scan), daemon=True).start(),
+    #         trigger="interval",
+    #         seconds=SCAN_INTERVAL_SECONDS,
+    #         id="divergence_scan",
+    #         next_run_time=datetime.now(timezone.utc) + timedelta(seconds=60),
+    #     )
+    #     log.info("Divergence watchlist scan scheduled every 8 minutes")
 
     # UPDATE (2026-08-07): changed from a once-daily cron (8:30 PM ET)
     # to a regular 30-minute interval. Root cause found: this function
