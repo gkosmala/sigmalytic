@@ -8960,17 +8960,22 @@ def _trigger_weis_background_fetch(symbol, cache_key):
     # point this tab's own existing cache-miss gate decides a genuine
     # fetch is actually needed for `symbol` -- not on every global
     # symbol change, per this tab's original design (only populate when
-    # this tab's own trigger fires). Same no-op-on-failure reasoning as
-    # Command Center's hook: streaming is an enhancement, never a hard
-    # dependency for Weis Analysis's existing fetch to keep working.
+    # this tab's own trigger fires). Same reasoning and same logging
+    # fix as Command Center's hook (2026-09-07): doesn't crash the
+    # existing fetch if Redis is unavailable, but now logs the real
+    # exception instead of a silent "except: pass" that made this
+    # undiagnosable.
     try:
         from shared_cache import shared_cache
         from subscription_manager import SubscriptionManager
         redis_client = shared_cache.get_redis_client()
         if redis_client is not None:
             SubscriptionManager(redis_client).request("weis_analysis", symbol)
-    except Exception:
-        pass
+            print(f"[STREAM_SUBSCRIBE] weis_analysis requested for {symbol}", flush=True)
+        else:
+            print("[STREAM_SUBSCRIBE_FAIL] weis_analysis: shared_cache.get_redis_client() returned None", flush=True)
+    except Exception as _sub_exc:
+        print(f"[STREAM_SUBSCRIBE_FAIL] weis_analysis for {symbol}: {type(_sub_exc).__name__}: {_sub_exc}", flush=True)
 
     def _run():
         try:
@@ -9389,18 +9394,25 @@ def load_symbol(_, ticker, live, tf, session, lookback):
     # SubscriptionManager's own tests: this naturally handles both
     # unsubscribing the previous Command Center symbol and correctly
     # keeping a symbol subscribed if Weis Analysis independently still
-    # wants it too. Fails silently (no-op) if Redis is unavailable --
-    # streaming is an enhancement layered on top of the existing
-    # REST-poll on_tick path, never a hard dependency for Command
-    # Center to keep working.
+    # wants it too. Doesn't crash symbol loading if Redis is
+    # unavailable -- streaming is an enhancement layered on top of the
+    # existing REST-poll on_tick path, never a hard dependency for
+    # Command Center to keep working -- but DOES log the real
+    # exception now (2026-09-07): the original silent "except: pass"
+    # made this completely undiagnosable when nothing downstream ever
+    # showed a subscribed symbol, with no way to tell whether Redis was
+    # unreachable, the import failed, or something else entirely.
     try:
         from shared_cache import shared_cache
         from subscription_manager import SubscriptionManager
         redis_client = shared_cache.get_redis_client()
         if redis_client is not None:
             SubscriptionManager(redis_client).request("command_center", clean)
-    except Exception:
-        pass
+            print(f"[STREAM_SUBSCRIBE] command_center requested for {clean}", flush=True)
+        else:
+            print("[STREAM_SUBSCRIBE_FAIL] command_center: shared_cache.get_redis_client() returned None", flush=True)
+    except Exception as _sub_exc:
+        print(f"[STREAM_SUBSCRIBE_FAIL] command_center for {clean}: {type(_sub_exc).__name__}: {_sub_exc}", flush=True)
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
