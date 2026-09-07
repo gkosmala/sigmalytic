@@ -243,6 +243,19 @@ def main() -> int:
         if stream is None:
             return
         desired = subs.get_desired_symbols()
+        # DIAGNOSTIC (2026-09-07, temporary, at explicit request while
+        # debugging why subscriptions written by the frontend never
+        # appear to reach this worker): logs exactly what THIS worker's
+        # Redis connection actually sees, every cycle. If this ever
+        # prints a symbol the frontend logged requesting (e.g. AAPL),
+        # the pipeline is connected correctly and any remaining problem
+        # is downstream, in subscribe_trades/quotes/bars itself. If this
+        # NEVER shows a requested symbol despite the frontend
+        # confirming it wrote one, that's definitive, direct evidence
+        # this worker's REDIS_URL points at a different Redis instance
+        # or database than the frontend's -- not something to keep
+        # guessing about via manually comparing URL strings.
+        print(f"[ALPACA_STREAM_DIAG] desired_symbols={desired}", flush=True)
         state["subscribed"] = reconcile_subscriptions(
             stream, desired, state["subscribed"], _on_trade, _on_quote, _on_bar
         )
