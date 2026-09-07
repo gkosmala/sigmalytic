@@ -9532,26 +9532,53 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
 
     clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
 
+    # ADDED (2026-09-06): try the Alpaca SIP stream's coherent tick
+    # first -- price, bid/ask, and volume all read together from the
+    # SAME moment, the same source. Deliberately all-or-nothing (see
+    # live_tick_reader.read_coherent_tick's own docstring): either the
+    # stream has a full, fresh tick and we use ALL of it, or it doesn't
+    # and we fall through to the exact original REST call below,
+    # unchanged. Never blends a fresh streamed field with a stale
+    # REST-polled one -- an earlier version of this change did exactly
+    # that (fresh price, stale bar-volume) and was caught and reverted
+    # specifically because price and volume describing different
+    # moments is a real inconsistency, not an improvement.
+    streamed = None
     try:
-        r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
-        r.raise_for_status()
-        d      = r.json()
-        price  = float(d["price"])
-        volume = int(d.get("volume", 0) or 0)
-        tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
-    except Exception as _tick_exc:
-        # FIX (2026-08-13): user reported the live price stuck at the
-        # exact module-load placeholder ($280.15) indefinitely, even
-        # after ruling out browser caching entirely (confirmed via
-        # incognito). [MEM] logs showed on_tick() genuinely executing
-        # repeatedly, meaning this except block -- previously fully
-        # silent -- was very likely firing every single time, with no
-        # trace of it anywhere. Also widened the timeout from 4s,
-        # which is tight enough that even a normally-fast backend call
-        # could occasionally miss it under any momentary delay on this
-        # service's own single gunicorn worker.
-        print(f"[TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_tick_exc).__name__}: {_tick_exc}", flush=True)
-        return no_update, no_update, no_update
+        from shared_cache import shared_cache
+        from live_tick_reader import read_coherent_tick
+        redis_client = shared_cache.get_redis_client()
+        if redis_client is not None:
+            streamed = read_coherent_tick(redis_client, clean)
+    except Exception as _stream_exc:
+        print(f"[STREAM_TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_stream_exc).__name__}: {_stream_exc}", flush=True)
+        streamed = None
+
+    if streamed is not None:
+        price = streamed["price"]
+        volume = streamed["volume"]
+        tick_time = streamed["timestamp"]
+    else:
+        try:
+            r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
+            r.raise_for_status()
+            d      = r.json()
+            price  = float(d["price"])
+            volume = int(d.get("volume", 0) or 0)
+            tick_time = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        except Exception as _tick_exc:
+            # FIX (2026-08-13): user reported the live price stuck at the
+            # exact module-load placeholder ($280.15) indefinitely, even
+            # after ruling out browser caching entirely (confirmed via
+            # incognito). [MEM] logs showed on_tick() genuinely executing
+            # repeatedly, meaning this except block -- previously fully
+            # silent -- was very likely firing every single time, with no
+            # trace of it anywhere. Also widened the timeout from 4s,
+            # which is tight enough that even a normally-fast backend call
+            # could occasionally miss it under any momentary delay on this
+            # service's own single gunicorn worker.
+            print(f"[TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_tick_exc).__name__}: {_tick_exc}", flush=True)
+            return no_update, no_update, no_update
 
     # Real, live relative-volume check -- powers the "A-grade requires
     # live-volume expansion" indicator on Command Center with actual

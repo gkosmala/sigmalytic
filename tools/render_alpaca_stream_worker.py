@@ -51,19 +51,50 @@ _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _repo_root)
 
 RECONCILE_INTERVAL_SECONDS = 5
-LIVE_PRICE_TTL_SECONDS = 30
-LIVE_PRICE_KEY_PREFIX = "live_price:"
+LIVE_TICK_KEY_PREFIX = "live_tick:"
+LIVE_TICK_TTL_SECONDS = 90  # covers a full ~60s bar interval plus margin
+
+
+def write_trade_to_hash(redis_client, symbol: str, price: float, size, ts: float):
+    """
+    Atomically updates only the trade-derived fields of this symbol's
+    tick hash -- never reads or rewrites the quote/bar fields another
+    handler owns, so there's no read-modify-write race between event
+    types arriving close together on the same symbol.
+    """
+    redis_client.hset(f"{LIVE_TICK_KEY_PREFIX}{symbol}", mapping={
+        "last_price": price, "last_size": size or 0, "last_ts": ts,
+    })
+    redis_client.expire(f"{LIVE_TICK_KEY_PREFIX}{symbol}", LIVE_TICK_TTL_SECONDS)
+
+
+def write_quote_to_hash(redis_client, symbol: str, bid_price, bid_size, ask_price, ask_size, ts: float):
+    redis_client.hset(f"{LIVE_TICK_KEY_PREFIX}{symbol}", mapping={
+        "bid_price": bid_price or 0, "bid_size": bid_size or 0,
+        "ask_price": ask_price or 0, "ask_size": ask_size or 0,
+        "quote_ts": ts,
+    })
+    redis_client.expire(f"{LIVE_TICK_KEY_PREFIX}{symbol}", LIVE_TICK_TTL_SECONDS)
+
+
+def write_bar_to_hash(redis_client, symbol: str, open_, high, low, close, volume, ts: float):
+    redis_client.hset(f"{LIVE_TICK_KEY_PREFIX}{symbol}", mapping={
+        "bar_open": open_, "bar_high": high, "bar_low": low, "bar_close": close,
+        "bar_volume": volume or 0, "bar_ts": ts,
+    })
+    redis_client.expire(f"{LIVE_TICK_KEY_PREFIX}{symbol}", LIVE_TICK_TTL_SECONDS)
 
 
 def reconcile_subscriptions(stream, desired_symbols: set, currently_subscribed: set,
-                             on_trade_handler, log=print) -> set:
+                             on_trade_handler, on_quote_handler, on_bar_handler, log=print) -> set:
     """
     Diffs desired vs. currently-subscribed symbols and calls
-    stream.subscribe_trades()/unsubscribe_trades() to match. Returns
-    the new, accurate set of subscribed symbols -- extracted as a
-    standalone function (rather than a closure inside main()) so it
-    can be tested directly against a fake stream object, without
-    needing a real Alpaca connection.
+    stream.subscribe_*()/unsubscribe_*() for all three event types
+    (trades, quotes, bars) together per symbol, since a coherent tick
+    needs all three -- there's no partial subscription to a symbol.
+    Extracted as a standalone function (rather than a closure inside
+    main()) so it can be tested directly against a fake stream object,
+    without needing a real Alpaca connection.
     """
     to_add = desired_symbols - currently_subscribed
     to_remove = currently_subscribed - desired_symbols
@@ -71,15 +102,19 @@ def reconcile_subscriptions(stream, desired_symbols: set, currently_subscribed: 
     if to_add:
         try:
             stream.subscribe_trades(on_trade_handler, *to_add)
-            log(f"[ALPACA_STREAM] Subscribed: {sorted(to_add)}")
+            stream.subscribe_quotes(on_quote_handler, *to_add)
+            stream.subscribe_bars(on_bar_handler, *to_add)
+            log(f"[ALPACA_STREAM] Subscribed (trades+quotes+bars): {sorted(to_add)}")
         except Exception as exc:
             log(f"[ALPACA_STREAM] Error subscribing to {to_add}: {exc}")
-            to_add = set()  # don't record as subscribed if it failed
+            to_add = set()  # don't record as subscribed if any part failed
 
     if to_remove:
         try:
             stream.unsubscribe_trades(*to_remove)
-            log(f"[ALPACA_STREAM] Unsubscribed: {sorted(to_remove)}")
+            stream.unsubscribe_quotes(*to_remove)
+            stream.unsubscribe_bars(*to_remove)
+            log(f"[ALPACA_STREAM] Unsubscribed (trades+quotes+bars): {sorted(to_remove)}")
         except Exception as exc:
             log(f"[ALPACA_STREAM] Error unsubscribing from {to_remove}: {exc}")
             to_remove = set()
@@ -126,19 +161,36 @@ def main() -> int:
 
     async def _on_trade(trade):
         # Called by the SDK on its own event-loop thread for every
-        # incoming trade. Kept intentionally minimal -- just the
-        # latest price, written with a short TTL so a dead stream
-        # naturally stops serving stale prices rather than serving
-        # them forever.
+        # incoming trade. Only ever writes the trade-owned fields (see
+        # write_trade_to_hash) -- never reads or touches the quote/bar
+        # fields another handler owns, so concurrent events for the
+        # same symbol can't race or clobber each other.
         try:
-            payload = {"price": float(trade.price), "ts": time.time(), "symbol": trade.symbol}
-            _redis_client.set(
-                f"{LIVE_PRICE_KEY_PREFIX}{trade.symbol}",
-                json.dumps(payload),
-                ex=LIVE_PRICE_TTL_SECONDS,
-            )
+            write_trade_to_hash(_redis_client, trade.symbol, float(trade.price),
+                                 getattr(trade, "size", None), time.time())
         except Exception as exc:
-            print(f"[ALPACA_STREAM] Error writing live price for {getattr(trade, 'symbol', '?')}: {exc}",
+            print(f"[ALPACA_STREAM] Error writing trade for {getattr(trade, 'symbol', '?')}: {exc}",
+                  flush=True)
+
+    async def _on_quote(quote):
+        try:
+            write_quote_to_hash(_redis_client, quote.symbol,
+                                 float(quote.bid_price) if quote.bid_price else None,
+                                 getattr(quote, "bid_size", None),
+                                 float(quote.ask_price) if quote.ask_price else None,
+                                 getattr(quote, "ask_size", None),
+                                 time.time())
+        except Exception as exc:
+            print(f"[ALPACA_STREAM] Error writing quote for {getattr(quote, 'symbol', '?')}: {exc}",
+                  flush=True)
+
+    async def _on_bar(bar):
+        try:
+            write_bar_to_hash(_redis_client, bar.symbol,
+                               float(bar.open), float(bar.high), float(bar.low), float(bar.close),
+                               getattr(bar, "volume", None), time.time())
+        except Exception as exc:
+            print(f"[ALPACA_STREAM] Error writing bar for {getattr(bar, 'symbol', '?')}: {exc}",
                   flush=True)
 
     def _start_stream():
@@ -175,7 +227,7 @@ def main() -> int:
             return
         desired = subs.get_desired_symbols()
         state["subscribed"] = reconcile_subscriptions(
-            stream, desired, state["subscribed"], _on_trade
+            stream, desired, state["subscribed"], _on_trade, _on_quote, _on_bar
         )
 
     was_leader = False
