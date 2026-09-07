@@ -132,10 +132,27 @@ def main() -> int:
               flush=True)
         return 2
 
+    # FIX (2026-09-07): originally imported _redis_client FROM
+    # backend.radar_service directly -- but that module's own
+    # top-level import chain transitively pulls in backend/
+    # email_service.py, which does RESEND_API_KEY = os.environ[...]
+    # (no default) at MODULE level, crashing this entire, otherwise-
+    # unrelated worker on import if that var isn't set. This worker
+    # only ever needs a bare Redis connection, never anything else
+    # radar_service.py provides -- building it directly here, using
+    # the exact same connection logic radar_service.py itself uses
+    # (see that file's own "Redis heartbeat client" block), avoids
+    # depending on that whole module's unrelated, heavier requirements
+    # entirely, rather than chasing down and adding each additional
+    # env var that heavy import chain might need one at a time.
+    import redis as _redis_module
     try:
-        from backend.radar_service import _redis_client
+        _redis_client = _redis_module.Redis.from_url(
+            os.environ["REDIS_URL"], decode_responses=True, socket_timeout=2
+        )
+        _redis_client.ping()
     except Exception as exc:
-        print(f"[ALPACA_STREAM] Failed to import shared Redis client: {exc}", flush=True)
+        print(f"[ALPACA_STREAM] Failed to connect to Redis: {exc}", flush=True)
         return 1
 
     if not _redis_client:
