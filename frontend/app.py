@@ -6315,6 +6315,13 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
   #chart { width:100%; }
   .missing-note { font-size:11px; color:#5c6773; font-style:italic; }
+  .calibration-box { background:#101722; border:1px solid #2b3b4e; border-radius:8px; padding:10px 12px; margin:0 0 12px 0; font-size:12px; color:#a9b4bf; display:none; }
+  .calibration-box b { color:#e6e9ee; }
+  .calib-high { color:#4ade80; font-weight:700; }
+  .calib-medium { color:#facc15; font-weight:700; }
+  .calib-low { color:#f87171; font-weight:700; }
+  .calib-btn { background:#17324f; border:1px solid #2f6aa3; color:#dbeafe; padding:7px 10px; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; }
+  .calib-btn:disabled { opacity:.45; cursor:not-allowed; }
 </style>
 </head>
 <body>
@@ -6328,6 +6335,18 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
              style="width:66px; background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:5px 6px; border-radius:6px;">
       <span class="vibval" id="vibVal">4%</span>
     </div>
+  </div>
+
+  <div class="ctrl" style="min-width:260px;">
+    <label>Vibration selection</label>
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <select id="vibrationMode">
+        <option value="auto" selected>Empirical Auto</option>
+        <option value="manual">Manual Override</option>
+      </select>
+      <button id="calibrateBtn" class="calib-btn" disabled>Calibrate from History</button>
+    </div>
+    <span id="calibrationStatus" style="font-size:11px; color:#8b98a5; margin-top:4px;">Auto-calibrates after data is activated.</span>
   </div>
 
   <div class="ctrl">
@@ -6418,6 +6437,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 </div>
 
 <div class="stats" id="stats"></div>
+<div id="calibrationPanel" class="calibration-box"></div>
 <div style="margin:4px 0 8px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
   <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
@@ -6486,6 +6506,271 @@ function computeZigZag(bars, vibPct) {
   }
   return {pivots, state, extremeIdx, extremePrice};
 }
+
+// ---- Empirical vibration calibration ---------------------------------------
+// PURPOSE: choose the LOWEST reversal threshold that preserves a stable
+// historical pivot topology for the specific instrument/timeframe, while
+// filtering bar-level price noise.  This does NOT optimize for the number of
+// signals.  It uses price history only; volume remains an interpretation layer.
+//
+// Ported (2026-09-09) from the standalone reference tool into the live
+// Weis Radar / Command Center chart -- both tabs share this exact
+// embedded template (_build_weis_radar_chart_html), confirmed via
+// backend code trace before this port began. Code below is otherwise
+// unchanged from the reference file, whose calibrateEmpiricalVibration
+// logic was independently verified working via direct testing earlier
+// this session.
+function _quantile(values, q) {
+  if (!values.length) return 0;
+  const s = [...values].sort((a,b)=>a-b);
+  const pos = (s.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  if (lo === hi) return s[lo];
+  return s[lo] + (s[hi] - s[lo]) * (pos - lo);
+}
+
+function _trueRangePctSeries(bars) {
+  const out = [];
+  for (let i = 1; i < bars.length; i++) {
+    const prevClose = bars[i-1].close;
+    if (!isFinite(prevClose) || prevClose <= 0) continue;
+    const tr = Math.max(
+      bars[i].high - bars[i].low,
+      Math.abs(bars[i].high - prevClose),
+      Math.abs(bars[i].low - prevClose)
+    );
+    if (isFinite(tr)) out.push(tr / prevClose * 100);
+  }
+  return out;
+}
+
+function _pivotSimilarity(a, b, toleranceBars=2) {
+  if (!a.length && !b.length) return 1;
+  if (!a.length || !b.length) return 0;
+  const used = new Set();
+  let matched = 0;
+  for (const p of a) {
+    let best = -1, bestDist = Infinity;
+    for (let j = 0; j < b.length; j++) {
+      if (used.has(j) || b[j].type !== p.type) continue;
+      const d = Math.abs(b[j].idx - p.idx);
+      if (d <= toleranceBars && d < bestDist) { best = j; bestDist = d; }
+    }
+    if (best >= 0) { used.add(best); matched++; }
+  }
+  // Jaccard-style topology similarity: penalizes both lost and extra pivots.
+  return matched / Math.max(1, a.length + b.length - matched);
+}
+
+function _waveCalibrationStats(pivots) {
+  if (pivots.length < 2) return {medianBars:Infinity, medianMovePct:Infinity};
+  const durations = [], moves = [];
+  for (let i = 1; i < pivots.length; i++) {
+    durations.push(Math.abs(pivots[i].idx - pivots[i-1].idx));
+    const base = Math.abs(pivots[i-1].price);
+    if (base > 0) moves.push(Math.abs(pivots[i].price - pivots[i-1].price) / base * 100);
+  }
+  return {
+    medianBars: durations.length ? _median(durations) : Infinity,
+    medianMovePct: moves.length ? _median(moves) : Infinity,
+  };
+}
+
+function calibrateEmpiricalVibration(bars) {
+  if (!bars || bars.length < 40) {
+    return {
+      ok:false, selected:null, stableMin:null, stableMax:null, confidence:'LOW',
+      reason:'At least 40 valid bars are required for empirical calibration.'
+    };
+  }
+
+  const trPct = _trueRangePctSeries(bars).filter(v => isFinite(v) && v > 0);
+  if (trPct.length < 20) {
+    return {
+      ok:false, selected:null, stableMin:null, stableMax:null, confidence:'LOW',
+      reason:'Not enough valid price ranges to estimate historical movement.'
+    };
+  }
+
+  const medianTRPct = _median(trPct);
+  const q95TRPct = _quantile(trPct, 0.95);
+
+  // Adaptive sweep spacing: quiet instruments get finer increments; volatile
+  // instruments do not waste hundreds of nearly identical computations.
+  let step = Math.max(0.05, Math.min(0.25, medianTRPct / 4));
+  step = Math.max(0.05, Math.round(step / 0.05) * 0.05);
+
+  let minV = Math.max(step, medianTRPct * 0.50);
+  minV = Math.ceil(minV / step) * step;
+  let maxV = Math.max(5, q95TRPct * 8, medianTRPct * 12);
+  maxV = Math.min(20, Math.ceil(maxV / step) * step);
+  if (maxV <= minV) maxV = Math.min(20, minV + step * 20);
+
+  const rows = [];
+  // Safety cap protects the browser on unusually tiny volatility series.
+  const maxCandidates = 240;
+  for (let k = 0, v = minV; v <= maxV + step/10 && k < maxCandidates; k++, v += step) {
+    const vv = Math.round(v * 10000) / 10000;
+    const z = computeZigZag(bars, vv);
+    const ws = _waveCalibrationStats(z.pivots);
+    rows.push({
+      vibration: vv,
+      pivots: z.pivots,
+      pivotCount: z.pivots.length,
+      medianBars: ws.medianBars,
+      medianMovePct: ws.medianMovePct,
+    });
+  }
+
+  // A plateau must be wide enough to be meaningful relative to the asset's
+  // own normal bar movement.  We compare pivot TOPOLOGY, not just counts.
+  const minPlateauWidth = Math.max(step * 4, medianTRPct * 1.25);
+  let chosen = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const anchor = rows[i];
+    if (anchor.pivotCount < 4) continue; // too little history to define structure
+    if (!isFinite(anchor.medianMovePct) || anchor.medianMovePct < medianTRPct * 4) continue;
+
+    let j = i;
+    while (j + 1 < rows.length) {
+      const nxt = rows[j + 1];
+      if (nxt.pivotCount < 4) break;
+      const countTol = Math.max(1, Math.round(anchor.pivotCount * 0.15));
+      if (Math.abs(nxt.pivotCount - anchor.pivotCount) > countTol) break;
+      if (_pivotSimilarity(anchor.pivots, nxt.pivots, 2) < 0.85) break;
+      j++;
+    }
+
+    const width = rows[j].vibration - anchor.vibration;
+    if (width + 1e-9 < minPlateauWidth) continue;
+
+    const stability = _pivotSimilarity(anchor.pivots, rows[j].pivots, 2);
+    chosen = {start:anchor, end:rows[j], width, stability, fallback:false};
+    break; // lowest qualifying stable threshold by design
+  }
+
+  // Fallback: if no full plateau exists (often a short dataset), choose the
+  // locally most stable candidate whose wave scale is materially above noise.
+  if (!chosen) {
+    let best = null;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.pivotCount < 3 || !isFinite(r.medianMovePct)) continue;
+      const prev = i > 0 ? _pivotSimilarity(r.pivots, rows[i-1].pivots, 2) : 0;
+      const next = i + 1 < rows.length ? _pivotSimilarity(r.pivots, rows[i+1].pivots, 2) : 0;
+      const localStability = (prev + next) / 2;
+      const scale = medianTRPct ? r.medianMovePct / medianTRPct : 0;
+      if (scale < 3) continue;
+      // Favor stable topology and historically significant wave size, with a
+      // mild penalty for unnecessarily large thresholds.
+      const score = localStability * 0.65 + Math.min(scale / 10, 1) * 0.30 - (r.vibration / Math.max(maxV, 0.01)) * 0.05;
+      if (!best || score > best.score) best = {r, score, localStability};
+    }
+    if (best) {
+      chosen = {start:best.r, end:best.r, width:0, stability:best.localStability, fallback:true};
+    }
+  }
+
+  if (!chosen) {
+    const fallbackV = Math.max(step, Math.round((medianTRPct * 4) / step) * step);
+    return {
+      ok:true, selected:+fallbackV.toFixed(2), stableMin:+fallbackV.toFixed(2), stableMax:+fallbackV.toFixed(2),
+      confidence:'LOW', medianTRPct, q95TRPct, step, pivotCount:computeZigZag(bars, fallbackV).pivots.length,
+      medianWaveBars:null, medianWavePct:null, stability:0, fallback:true,
+      reason:'No durable plateau was found; using a volatility-scaled fallback.'
+    };
+  }
+
+  const selected = chosen.start.vibration;
+  let confidence = 'LOW';
+  const widthVsTR = medianTRPct ? chosen.width / medianTRPct : 0;
+  if (!chosen.fallback && chosen.stability >= 0.85 && widthVsTR >= 1.5 && chosen.start.pivotCount >= 5) confidence = 'HIGH';
+  else if (chosen.stability >= 0.75 && (widthVsTR >= 0.75 || chosen.fallback)) confidence = 'MEDIUM';
+
+  return {
+    ok:true,
+    selected:+selected.toFixed(2),
+    stableMin:+chosen.start.vibration.toFixed(2),
+    stableMax:+chosen.end.vibration.toFixed(2),
+    confidence,
+    medianTRPct,
+    q95TRPct,
+    step,
+    pivotCount:chosen.start.pivotCount,
+    medianWaveBars:isFinite(chosen.start.medianBars) ? chosen.start.medianBars : null,
+    medianWavePct:isFinite(chosen.start.medianMovePct) ? chosen.start.medianMovePct : null,
+    stability:chosen.stability,
+    fallback:chosen.fallback,
+    reason: chosen.fallback
+      ? 'Short/irregular history: selected the most stable volatility-significant candidate.'
+      : 'Lowest threshold at the start of a durable historical pivot-stability plateau.'
+  };
+}
+
+function _setVibrationInputs(v) {
+  if (!isFinite(v)) return;
+  const num = document.getElementById('vibNumber');
+  const slider = document.getElementById('vibSlider');
+  num.value = Number(v).toFixed(2).replace(/\.00$/, '');
+  slider.value = Math.min(Math.max(v, parseFloat(slider.min)), parseFloat(slider.max));
+  document.getElementById('vibVal').textContent = Number(v).toFixed(2).replace(/0+$/, '').replace(/\.$/, '') + '%';
+}
+
+function showCalibrationResult(result) {
+  const panel = document.getElementById('calibrationPanel');
+  const status = document.getElementById('calibrationStatus');
+  if (!result || !result.ok) {
+    panel.style.display = 'block';
+    panel.innerHTML = `<span class="calib-low">Calibration unavailable.</span> ${result && result.reason ? result.reason : ''}`;
+    status.textContent = result && result.reason ? result.reason : 'Calibration unavailable.';
+    status.style.color = '#f87171';
+    return;
+  }
+  const cls = result.confidence === 'HIGH' ? 'calib-high' : (result.confidence === 'MEDIUM' ? 'calib-medium' : 'calib-low');
+  const rangeText = result.stableMin === result.stableMax
+    ? `${result.stableMin.toFixed(2)}%`
+    : `${result.stableMin.toFixed(2)}%\u2013${result.stableMax.toFixed(2)}%`;
+  const waveBars = result.medianWaveBars == null ? 'n/a' : Number(result.medianWaveBars).toFixed(1);
+  const wavePct = result.medianWavePct == null ? 'n/a' : Number(result.medianWavePct).toFixed(2) + '%';
+  panel.style.display = 'block';
+  panel.innerHTML =
+    `<b>Empirical Calibration:</b> <span style="color:#7ee787; font-weight:800;">${result.selected.toFixed(2)}%</span>` +
+    ` &nbsp; | &nbsp; Stable range: <b>${rangeText}</b>` +
+    ` &nbsp; | &nbsp; Confidence: <span class="${cls}">${result.confidence}</span>` +
+    ` &nbsp; | &nbsp; Median True Range: <b>${result.medianTRPct.toFixed(2)}%</b>` +
+    ` &nbsp; | &nbsp; Pivots: <b>${result.pivotCount}</b>` +
+    ` &nbsp; | &nbsp; Median wave: <b>${wavePct}</b> / <b>${waveBars} bars</b>` +
+    ` &nbsp; | &nbsp; Topology stability: <b>${(result.stability * 100).toFixed(0)}%</b>` +
+    `<br><span style="color:#7f8c99;">${result.reason} The calibrator does not optimize for signal count.</span>`;
+  status.textContent = `Empirical vibration ${result.selected.toFixed(2)}% (${result.confidence.toLowerCase()} confidence).`;
+  status.style.color = result.confidence === 'LOW' ? '#f87171' : (result.confidence === 'MEDIUM' ? '#facc15' : '#4ade80');
+}
+
+function applyEmpiricalCalibration(doRender=true) {
+  if (!RAW_BARS.length) return null;
+  CALIBRATION_RESULT = calibrateEmpiricalVibration(RAW_BARS);
+  if (CALIBRATION_RESULT.ok && isFinite(CALIBRATION_RESULT.selected)) _setVibrationInputs(CALIBRATION_RESULT.selected);
+  showCalibrationResult(CALIBRATION_RESULT);
+  if (doRender) render();
+  return CALIBRATION_RESULT;
+}
+
+function updateVibrationModeUI() {
+  const auto = document.getElementById('vibrationMode').value === 'auto';
+  document.getElementById('vibSlider').disabled = auto;
+  document.getElementById('vibNumber').disabled = auto;
+  document.getElementById('calibrateBtn').disabled = !RAW_BARS.length || !auto;
+  if (!auto) {
+    document.getElementById('calibrationStatus').textContent = 'Manual override active; empirical result remains shown for comparison.';
+    document.getElementById('calibrationStatus').style.color = '#8b98a5';
+  } else if (!RAW_BARS.length) {
+    document.getElementById('calibrationStatus').textContent = 'Auto-calibrates after data is activated.';
+    document.getElementById('calibrationStatus').style.color = '#8b98a5';
+  }
+}
+
+let CALIBRATION_RESULT = null;
 
 function computeWaveVolume(bars, pivots, finalState, finalExtremeIdx, mode) {
   const n = bars.length;
@@ -6951,6 +7236,7 @@ function saveSettings() {
   try {
     const settings = {
       vib: document.getElementById('vibNumber').value,
+      vibrationMode: document.getElementById('vibrationMode').value,
       volmode: document.querySelector('input[name=volmode]:checked').value,
       maPeriod: document.getElementById('volMaPeriod').value,
     };
@@ -6969,6 +7255,10 @@ function restoreSettings() {
       document.getElementById('vibNumber').value = s.vib;
       document.getElementById('vibSlider').value = s.vib;
     }
+    if (s.vibrationMode && ['auto','manual'].includes(s.vibrationMode)) {
+      document.getElementById('vibrationMode').value = s.vibrationMode;
+    }
+    updateVibrationModeUI();
     if (s.volmode) {
       const radio = document.querySelector(`input[name=volmode][value="${s.volmode}"]`);
       if (radio) radio.checked = true;
@@ -7338,6 +7628,19 @@ document.getElementById('vibNumber').addEventListener('input', () => {
   }
   render();
 });
+document.getElementById('vibrationMode').addEventListener('change', () => {
+  updateVibrationModeUI();
+  if (document.getElementById('vibrationMode').value === 'auto' && RAW_BARS.length) {
+    applyEmpiricalCalibration(true);
+  } else {
+    render();
+  }
+  saveSettings();
+});
+document.getElementById('calibrateBtn').addEventListener('click', () => {
+  if (document.getElementById('vibrationMode').value === 'auto') applyEmpiricalCalibration(true);
+  saveSettings();
+});
 document.querySelectorAll('input[name=volmode]').forEach(r => r.addEventListener('change', render));
 document.getElementById('volMaPeriod').addEventListener('input', render);
 document.getElementById('callWall').addEventListener('input', render);
@@ -7481,6 +7784,18 @@ window.addEventListener('message', (event) => {
 });
 
 restoreSettings();
+// Initial auto-calibration: unlike the standalone reference tool (which
+// triggers this from its "Activate" button after a CSV upload), this
+// live chart's RAW_BARS is already populated by the time this script
+// runs -- so calibration happens here instead, once, on load. Respects
+// a restored manual override (updateVibrationModeUI() above already
+// set vibrationMode from sessionStorage before this runs) -- only
+// auto-calibrates if the mode is genuinely 'auto'. doRender=false since
+// the render() call immediately below already covers it; no need to
+// render twice on every page load.
+if (document.getElementById('vibrationMode').value === 'auto' && RAW_BARS.length) {
+  applyEmpiricalCalibration(false);
+}
 render();
 </script>
 </body>
