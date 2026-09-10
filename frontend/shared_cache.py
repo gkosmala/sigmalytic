@@ -125,6 +125,38 @@ class SharedCache:
 
         return None
 
+    def peek_stale(self, key: str):
+        """
+        ADDED (2026-09-10): returns the last cached value for `key`
+        regardless of age, or None if this key has never been cached
+        at all. Confirmed a real bug via direct code inspection:
+        callers combining peek() with a background-refresh placeholder
+        (see _cc_cached_background_fetch() in frontend/app.py) relied
+        on "every subsequent tick reads the now-warm cache instantly"
+        per that code's own comment -- but peek()'s TTL cutoff means
+        the cache goes cold again on every single expiry, not just
+        once, silently falling back to a placeholder every cycle
+        rather than serving the still-good, only-slightly-stale real
+        value while a background refresh completes. This method lets
+        a caller explicitly choose "stale but real" over "placeholder"
+        as the fallback, matching the intended behavior.
+        """
+        if self._redis_client is not None:
+            try:
+                data_key = f"{self._key_prefix}data:{key}"
+                raw = self._redis_client.get(data_key)
+                if raw is not None:
+                    return json.loads(raw)
+            except Exception:
+                pass
+
+        with self._memory_lock:
+            entry = self._memory_store.get(key)
+            if entry is not None:
+                return entry["data"]
+
+        return None
+
     # ---- Redis backend: shared across all worker processes ----
 
     def _get_or_fetch_redis(self, key, fetch_fn, ttl_seconds):

@@ -3389,10 +3389,26 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
                     _cc_bg_fetch_in_progress.discard(cache_key)
         threading.Thread(target=_run, daemon=True, name=f"cc-fetch-{cache_key}").start()
 
-    # First render after a symbol/timeframe switch (or the very first
-    # load) will hit this placeholder for one tick, at most, until the
-    # background fetch above completes -- every subsequent tick reads
-    # the now-warm cache instantly.
+    # FIX (2026-09-10): confirmed a real, reported bug -- user directly
+    # observed Call Wall/Put Wall values swinging dramatically between
+    # two snapshots 60 seconds apart (a real options-derived value,
+    # then a synthetic price-clustered fallback value, then presumably
+    # back again). Root cause: this comment's own stated intent --
+    # "every subsequent tick reads the now-warm cache instantly" -- was
+    # never actually true once ttl_seconds elapsed, since peek() goes
+    # cold again on every single expiry, not just once. That silently
+    # re-triggered this placeholder every ttl_seconds (15s here) until
+    # the next background fetch completed, repeatedly and visibly
+    # flipping real options data to a synthetic fallback and back.
+    # Now checks for a stale-but-real cached value first -- serving
+    # slightly-old real data while the background refresh above
+    # completes is a far better fallback than a synthetic placeholder,
+    # and only genuinely falls through to the placeholder on a true
+    # cold start (this exact key has never been cached at all).
+    stale = shared_cache.peek_stale(cache_key)
+    if stale is not None:
+        return stale
+
     return placeholder if placeholder is not None else {"status": "LOADING_IN_BACKGROUND"}
 
 
