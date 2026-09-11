@@ -6504,6 +6504,25 @@ function isValidLevel(v, midpoint) {
 // isolation against synthetic data with deliberate, known breach
 // events before use here -- both a reclaiming and a holding breach
 // were correctly classified.
+// ADDED (2026-09-11): converts a raw UTC bar timestamp (e.g.
+// "2026-09-10T13:35:00Z") into Eastern Time for display in the
+// intelligence report -- matches this app's own existing convention
+// of showing Eastern Time elsewhere (see the Command Center chart's
+// own x-axis, fixed earlier this session for the same raw-UTC issue).
+// Uses the real "America/New_York" IANA timezone rather than a fixed
+// UTC offset, so this correctly reflects EST/EDT depending on the
+// actual date, rather than being wrong for half the year.
+function formatEasternTime(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr; // not a parseable timestamp -- show as-is rather than break
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZoneName: 'short'
+  }).format(d);
+}
+
 function scanHistoricalPatterns(bars, lookback = 40, reclaimWindow = 5) {
   const events = [];
   for (let i = lookback; i < bars.length; i++) {
@@ -7827,7 +7846,7 @@ function generateReport() {
       const medVol = priorSameDir.length ? _median(priorSameDir.map(s => s.volume)) : null;
       const volNote = medVol ? `on ${(seg.volume / medVol).toFixed(2)}x the usual volume` : 'with no prior same-direction wave to compare volume against';
       const pctMove = seg.startPrice > 0 ? Math.abs(seg.endPrice - seg.startPrice) / seg.startPrice * 100 : 0;
-      lines.push(`From ${seg.startPrice.toFixed(2)} (${RAW_BARS[seg.startIdx].date}) to ${seg.endPrice.toFixed(2)} (${RAW_BARS[seg.endIdx].date}), a ${seg.direction} move of ${pctMove.toFixed(2)}%, ${volNote}.`);
+      lines.push(`From ${seg.startPrice.toFixed(2)} (${formatEasternTime(RAW_BARS[seg.startIdx].date)}) to ${seg.endPrice.toFixed(2)} (${formatEasternTime(RAW_BARS[seg.endIdx].date)}), a ${seg.direction} move of ${pctMove.toFixed(2)}%, ${volNote}.`);
     }
   } else {
     lines.push('Not enough completed waves yet in the loaded history to build a wave-by-wave backstory.');
@@ -7882,7 +7901,7 @@ function generateReport() {
     lines.push(`${historicalEvents.length} level test(s) detected over the loaded history: ${held} held (confirmed Breakout/Breakdown), ${failed} failed (reverted as Spring/Upthrust).`);
     const recentEvents = historicalEvents.slice(-5);
     for (const e of recentEvents) {
-      lines.push(`- ${e.date}: ${e.type} at ${e.level.toFixed(2)}`);
+      lines.push(`- ${formatEasternTime(e.date)}: ${e.type} at ${e.level.toFixed(2)}`);
     }
   } else {
     lines.push('No level tests detected over the loaded history at the current lookback settings.');
@@ -7896,7 +7915,7 @@ function generateReport() {
   if (HITS.length) {
     for (const h of HITS) {
       const lvl = (h.level !== null && h.level !== undefined) ? ` at ${h.level.toFixed(2)}` : '';
-      lines.push(`- ${h.type}${lvl}${h.date ? ' (' + h.date + ')' : ' (current bar)'}`);
+      lines.push(`- ${h.type}${lvl}${h.date ? ' (' + formatEasternTime(h.date) + ')' : ' (current bar)'}`);
     }
   } else {
     lines.push('No Spring, Upthrust, Breakout, or Breakdown pattern currently active for this symbol.');
@@ -7911,7 +7930,7 @@ function generateReport() {
   if (effortEvents.length) {
     const recent = effortEvents.slice(-3);
     for (const e of recent) {
-      lines.push(`${RAW_BARS[e.end].date}: ${e.direction}-wave -- ${e.label} (relative effort ${e.relEffort}x median)`);
+      lines.push(`${formatEasternTime(RAW_BARS[e.end].date)}: ${e.direction}-wave -- ${e.label} (relative effort ${e.relEffort}x median)`);
     }
   } else {
     lines.push('No notable effort/result imbalance detected in the loaded history.');
