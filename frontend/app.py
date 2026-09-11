@@ -7856,7 +7856,24 @@ function generateReport() {
   }
 
   const panel = document.getElementById('reportPanel');
-  panel.textContent = lines.join('\n');
+  // FIX (2026-09-10): confirmed via direct browser console error
+  // ("Uncaught SyntaxError: Invalid or unexpected token") that this
+  // line was broken in the actual, live, executed output -- root
+  // cause was a subtle Python string-escaping issue, not a JS logic
+  // bug. This file's surrounding template is a PLAIN (non-raw) Python
+  // triple-quoted string, so a single backslash-n in the *source
+  // file* gets consumed by PYTHON's own string parser at import time,
+  // producing one literal newline BYTE in the resulting in-memory
+  // string -- not the two-character sequence "\n" the JS engine needs
+  // to see as its own newline escape. A literal newline byte sitting
+  // inside a single-quoted JS string literal is invalid JS syntax,
+  // exactly matching the reported error. Confirmed directly: reading
+  // the raw file bytes showed what looked like a correct two-character
+  // sequence, but actually executing the string literal (the same way
+  // Python does when this module is imported) proved it produces a
+  // real newline instead. Doubling the backslash here is what survives
+  // Python's own parsing to leave a genuine "\n" for the JS engine.
+  panel.textContent = lines.join('\\n');
   panel.style.display = 'block';
 }
 document.getElementById('generateReportBtn').addEventListener('click', generateReport);
