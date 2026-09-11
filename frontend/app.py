@@ -6494,6 +6494,41 @@ function isValidLevel(v, midpoint) {
   return Number.isFinite(v) && v > 0 && Math.abs(v - midpoint) < midpoint * 0.5;
 }
 
+// ADDED (2026-09-11): historical Spring/Upthrust/Breakout/Breakdown
+// scanner for the intelligence report -- distinct from HITS (which
+// only ever reflects the single most recent scan of the current bar).
+// Implements the exact detection rule already documented for this
+// tool: a breach of the recent trading range's floor/ceiling (default
+// a 40-bar lookback) that reclaims within 5 bars is a Spring/Upthrust
+// (a failed test); one that holds is a Breakdown/Breakout. Tested in
+// isolation against synthetic data with deliberate, known breach
+// events before use here -- both a reclaiming and a holding breach
+// were correctly classified.
+function scanHistoricalPatterns(bars, lookback = 40, reclaimWindow = 5) {
+  const events = [];
+  for (let i = lookback; i < bars.length; i++) {
+    if (i + reclaimWindow >= bars.length) break; // not enough bars yet to know the outcome
+    const window = bars.slice(i - lookback, i);
+    const floor = Math.min(...window.map(b => b.low));
+    const ceiling = Math.max(...window.map(b => b.high));
+
+    if (bars[i].low < floor) {
+      let reclaimed = false;
+      for (let k = i + 1; k <= i + reclaimWindow; k++) {
+        if (bars[k].close >= floor) { reclaimed = true; break; }
+      }
+      events.push({idx: i, date: bars[i].date, type: reclaimed ? 'SPRING' : 'BREAKDOWN', level: floor});
+    } else if (bars[i].high > ceiling) {
+      let reclaimed = false;
+      for (let k = i + 1; k <= i + reclaimWindow; k++) {
+        if (bars[k].close <= ceiling) { reclaimed = true; break; }
+      }
+      events.push({idx: i, date: bars[i].date, type: reclaimed ? 'UPTHRUST' : 'BREAKOUT', level: ceiling});
+    }
+  }
+  return events;
+}
+
 function computeZigZag(bars, vibPct) {
   const n = bars.length;
   const pivots = [];
@@ -7769,36 +7804,38 @@ function generateReport() {
   const priceMid = (priceMin + priceMax) / 2;
 
   const lines = [];
-  lines.push(`MARKET BEHAVIOR REPORT -- __SYMBOL__`);
+  lines.push(`MARKET INTELLIGENCE REPORT -- __SYMBOL__`);
   lines.push(`Generated ${new Date().toLocaleString()}`);
   lines.push(`Current price: ${price.toFixed(2)}  |  Range over loaded history: ${priceMin.toFixed(2)} - ${priceMax.toFixed(2)}`);
   lines.push('');
+  lines.push('This report describes what the data shows and how similar setups');
+  lines.push('have behaved historically for this symbol. It does not tell you');
+  lines.push('what to do -- treat it as information to weigh, not a signal to act on.');
+  lines.push('');
 
-  // -- Volatility behavior: recent (last 20 bars) range vs. the full
-  // loaded history's average bar range -- a simple, honest measure of
-  // whether this symbol is currently moving more or less than usual,
-  // not a claim about future movement.
-  const recentBars = RAW_BARS.slice(-20);
-  const recentRanges = recentBars.map(b => b.high - b.low);
-  const allRanges = RAW_BARS.map(b => b.high - b.low);
-  const avgRecentRange = recentRanges.reduce((a,b) => a+b, 0) / recentRanges.length;
-  const avgAllRange = allRanges.reduce((a,b) => a+b, 0) / allRanges.length;
-  const volRatio = avgAllRange > 0 ? avgRecentRange / avgAllRange : 1;
-  lines.push('VOLATILITY');
-  if (volRatio > 1.3) {
-    lines.push(`Recent bar ranges are running ${((volRatio-1)*100).toFixed(0)}% wider than this symbol's own average over the loaded history -- elevated movement right now, not necessarily directional.`);
-  } else if (volRatio < 0.7) {
-    lines.push(`Recent bar ranges are running ${((1-volRatio)*100).toFixed(0)}% narrower than this symbol's own average -- a quieter, more contracted period than usual.`);
+  // -- Backstory: reuses buildWaveSegments() (already used elsewhere
+  // in this file for SOS/SOW and Shortening of Thrust) to narrate the
+  // last few completed waves -- size, duration, and volume relative
+  // to the median of prior same-direction waves. Purely descriptive
+  // of what already happened, not a forecast of what happens next.
+  lines.push('BACKSTORY');
+  const allSegments = buildWaveSegments(RAW_BARS, pivots);
+  if (allSegments.length >= 2) {
+    const recentSegments = allSegments.slice(-4);
+    for (const seg of recentSegments) {
+      const priorSameDir = allSegments.filter(s => s.direction === seg.direction && s.endIdx < seg.endIdx).slice(-3);
+      const medVol = priorSameDir.length ? _median(priorSameDir.map(s => s.volume)) : null;
+      const volNote = medVol ? `on ${(seg.volume / medVol).toFixed(2)}x the usual volume` : 'with no prior same-direction wave to compare volume against';
+      const pctMove = seg.startPrice > 0 ? Math.abs(seg.endPrice - seg.startPrice) / seg.startPrice * 100 : 0;
+      lines.push(`From ${seg.startPrice.toFixed(2)} (${RAW_BARS[seg.startIdx].date}) to ${seg.endPrice.toFixed(2)} (${RAW_BARS[seg.endIdx].date}), a ${seg.direction} move of ${pctMove.toFixed(2)}%, ${volNote}.`);
+    }
   } else {
-    lines.push(`Recent bar ranges are broadly in line with this symbol's own average over the loaded history -- no unusual expansion or contraction right now.`);
+    lines.push('Not enough completed waves yet in the loaded history to build a wave-by-wave backstory.');
   }
   lines.push('');
 
-  // -- Wave behavior: reuses the exact same building/exhausting
-  // framing already used elsewhere in this app's Weis engines (see
-  // the Time-Bar/Renko/PnF "Effort vs. Result" panels) for
-  // consistency, not a new, separate vocabulary.
-  lines.push('CURRENT WAVE');
+  // -- Current status (previously "CURRENT WAVE") --
+  lines.push('CURRENT STATUS');
   if (waveMetric && waveMetric.length >= 2) {
     const current = waveMetric[waveMetric.length - 1];
     const prior = waveMetric[waveMetric.length - 2];
@@ -7815,9 +7852,47 @@ function generateReport() {
   }
   lines.push('');
 
-  // -- Pattern hits: the same Weis Radar scan results already shown
-  // on the chart itself, restated in plain language here.
-  lines.push('ACTIVE PATTERNS');
+  // -- Volatility (unchanged from the original report) --
+  const recentBars = RAW_BARS.slice(-20);
+  const recentRanges = recentBars.map(b => b.high - b.low);
+  const allRanges = RAW_BARS.map(b => b.high - b.low);
+  const avgRecentRange = recentRanges.reduce((a,b) => a+b, 0) / recentRanges.length;
+  const avgAllRange = allRanges.reduce((a,b) => a+b, 0) / allRanges.length;
+  const volRatio = avgAllRange > 0 ? avgRecentRange / avgAllRange : 1;
+  lines.push('VOLATILITY');
+  if (volRatio > 1.3) {
+    lines.push(`Recent bar ranges are running ${((volRatio-1)*100).toFixed(0)}% wider than this symbol's own average over the loaded history -- elevated movement right now, not necessarily directional.`);
+  } else if (volRatio < 0.7) {
+    lines.push(`Recent bar ranges are running ${((1-volRatio)*100).toFixed(0)}% narrower than this symbol's own average -- a quieter, more contracted period than usual.`);
+  } else {
+    lines.push(`Recent bar ranges are broadly in line with this symbol's own average over the loaded history -- no unusual expansion or contraction right now.`);
+  }
+  lines.push('');
+
+  // -- Historical pattern track record: uses scanHistoricalPatterns()
+  // (module-level, defined near isValidLevel above) to list every
+  // detected Spring/Upthrust/Breakout/Breakdown across the ENTIRE
+  // loaded history, not just the current bar -- distinct from the
+  // ACTIVE PATTERNS section below, which only reflects right now.
+  lines.push('HISTORICAL PATTERN TRACK RECORD');
+  const historicalEvents = scanHistoricalPatterns(RAW_BARS);
+  if (historicalEvents.length) {
+    const failed = historicalEvents.filter(e => e.type === 'SPRING' || e.type === 'UPTHRUST').length;
+    const held = historicalEvents.filter(e => e.type === 'BREAKOUT' || e.type === 'BREAKDOWN').length;
+    lines.push(`${historicalEvents.length} level test(s) detected over the loaded history: ${held} held (confirmed Breakout/Breakdown), ${failed} failed (reverted as Spring/Upthrust).`);
+    const recentEvents = historicalEvents.slice(-5);
+    for (const e of recentEvents) {
+      lines.push(`- ${e.date}: ${e.type} at ${e.level.toFixed(2)}`);
+    }
+  } else {
+    lines.push('No level tests detected over the loaded history at the current lookback settings.');
+  }
+  lines.push('');
+
+  // -- Active patterns (current bar only, from the existing Weis
+  // Radar scan) -- kept separate from the historical list above since
+  // they answer a genuinely different question (right now vs. ever).
+  lines.push('ACTIVE PATTERNS (current bar)');
   if (HITS.length) {
     for (const h of HITS) {
       const lvl = (h.level !== null && h.level !== undefined) ? ` at ${h.level.toFixed(2)}` : '';
@@ -7828,51 +7903,66 @@ function generateReport() {
   }
   lines.push('');
 
-  // -- Options positioning: only reports a level if it passed the
-  // same isValidLevel() check used for drawing the chart itself, so
-  // this can never repeat a bad value (like the reported Gamma Flip
-  // = 0 case) as if it were real.
-  lines.push('OPTIONS POSITIONING');
+  // -- Effort vs. Result: reuses classifyEffortResult() (already used
+  // to annotate the chart itself) to surface any notable effort/
+  // result imbalance in the most recent completed waves.
+  lines.push('EFFORT VS. RESULT');
+  const effortEvents = classifyEffortResult(RAW_BARS, pivots);
+  if (effortEvents.length) {
+    const recent = effortEvents.slice(-3);
+    for (const e of recent) {
+      lines.push(`${RAW_BARS[e.end].date}: ${e.direction}-wave -- ${e.label} (relative effort ${e.relEffort}x median)`);
+    }
+  } else {
+    lines.push('No notable effort/result imbalance detected in the loaded history.');
+  }
+  lines.push('');
+
+  // -- Risk/Reward: nearest well-defined support (below price) and
+  // resistance (above price) from findWellDefinedLevels() (already
+  // used to draw the chart's own S/R lines), with Call Wall/Put Wall
+  // explicitly noted alongside as additional, options-derived
+  // reference points -- per explicit request, structural distance
+  // only, never a recommendation of what to do with it.
+  lines.push('RISK / REWARD (structural distance only -- not a recommendation)');
+  const srLevels = findWellDefinedLevels(pivots, 0.5);
+  const supportLevels = srLevels.filter(l => l.price < price).sort((a,b) => b.price - a.price);
+  const resistanceLevels = srLevels.filter(l => l.price > price).sort((a,b) => a.price - b.price);
+  const nearestSupport = supportLevels.length ? supportLevels[0] : null;
+  const nearestResistance = resistanceLevels.length ? resistanceLevels[0] : null;
+
+  if (nearestSupport) {
+    lines.push(`Nearest well-defined support: ${nearestSupport.price.toFixed(2)} (${nearestSupport.touches} touches), ${(((price - nearestSupport.price) / price) * 100).toFixed(1)}% below current price.`);
+  } else {
+    lines.push('No well-defined support level found below current price in the loaded history.');
+  }
+  if (nearestResistance) {
+    lines.push(`Nearest well-defined resistance: ${nearestResistance.price.toFixed(2)} (${nearestResistance.touches} touches), ${(((nearestResistance.price - price) / price) * 100).toFixed(1)}% above current price.`);
+  } else {
+    lines.push('No well-defined resistance level found above current price in the loaded history.');
+  }
+  if (nearestSupport && nearestResistance) {
+    const risk = price - nearestSupport.price;
+    const reward = nearestResistance.price - price;
+    if (risk > 0) {
+      lines.push(`Structural risk/reward from current price to these two levels: ${(reward / risk).toFixed(2)}:1 (reward ${reward.toFixed(2)} vs. risk ${risk.toFixed(2)}).`);
+    }
+  }
+
   const callWall = parseFloat(document.getElementById('callWall').value);
   const putWall = parseFloat(document.getElementById('putWall').value);
   const gammaFlip = parseFloat(document.getElementById('gammaFlip').value);
-  let anyValidLevel = false;
   if (isValidLevel(callWall, priceMid)) {
-    const pct = ((callWall - price) / price * 100).toFixed(1);
-    lines.push(`Call Wall at ${callWall.toFixed(2)}, ${pct}% ${callWall > price ? 'above' : 'below'} current price.`);
-    anyValidLevel = true;
+    lines.push(`Also note: Call Wall at ${callWall.toFixed(2)}, ${(((callWall - price) / price) * 100).toFixed(1)}% ${callWall > price ? 'above' : 'below'} current price -- an options-derived level, not a price-structure one.`);
   }
   if (isValidLevel(putWall, priceMid)) {
-    const pct = ((putWall - price) / price * 100).toFixed(1);
-    lines.push(`Put Wall at ${putWall.toFixed(2)}, ${Math.abs(pct)}% ${putWall > price ? 'above' : 'below'} current price.`);
-    anyValidLevel = true;
+    lines.push(`Also note: Put Wall at ${putWall.toFixed(2)}, ${(Math.abs((putWall - price) / price * 100)).toFixed(1)}% ${putWall > price ? 'above' : 'below'} current price -- an options-derived level, not a price-structure one.`);
   }
   if (isValidLevel(gammaFlip, priceMid)) {
-    lines.push(`Gamma Flip at ${gammaFlip.toFixed(2)} -- price is currently ${price > gammaFlip ? 'above' : 'below'} this level.`);
-    anyValidLevel = true;
-  }
-  if (!anyValidLevel) {
-    lines.push('No valid options-derived levels currently available for this symbol.');
+    lines.push(`Also note: Gamma Flip at ${gammaFlip.toFixed(2)} -- price is currently ${price > gammaFlip ? 'above' : 'below'} this level.`);
   }
 
   const panel = document.getElementById('reportPanel');
-  // FIX (2026-09-10): confirmed via direct browser console error
-  // ("Uncaught SyntaxError: Invalid or unexpected token") that this
-  // line was broken in the actual, live, executed output -- root
-  // cause was a subtle Python string-escaping issue, not a JS logic
-  // bug. This file's surrounding template is a PLAIN (non-raw) Python
-  // triple-quoted string, so a single backslash-n in the *source
-  // file* gets consumed by PYTHON's own string parser at import time,
-  // producing one literal newline BYTE in the resulting in-memory
-  // string -- not the two-character backslash-n sequence the JS engine needs
-  // to see as its own newline escape. A literal newline byte sitting
-  // inside a single-quoted JS string literal is invalid JS syntax,
-  // exactly matching the reported error. Confirmed directly: reading
-  // the raw file bytes showed what looked like a correct two-character
-  // sequence, but actually executing the string literal (the same way
-  // Python does when this module is imported) proved it produces a
-  // real newline instead. Doubling the backslash here is what survives
-  // Python's own parsing to leave a genuine backslash-n for the JS engine.
   panel.textContent = lines.join('\\n');
   panel.style.display = 'block';
 }
