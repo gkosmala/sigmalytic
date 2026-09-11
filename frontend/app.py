@@ -7864,7 +7864,7 @@ function generateReport() {
   // triple-quoted string, so a single backslash-n in the *source
   // file* gets consumed by PYTHON's own string parser at import time,
   // producing one literal newline BYTE in the resulting in-memory
-  // string -- not the two-character sequence "\n" the JS engine needs
+  // string -- not the two-character backslash-n sequence the JS engine needs
   // to see as its own newline escape. A literal newline byte sitting
   // inside a single-quoted JS string literal is invalid JS syntax,
   // exactly matching the reported error. Confirmed directly: reading
@@ -7872,7 +7872,7 @@ function generateReport() {
   // sequence, but actually executing the string literal (the same way
   // Python does when this module is imported) proved it produces a
   // real newline instead. Doubling the backslash here is what survives
-  // Python's own parsing to leave a genuine "\n" for the JS engine.
+  // Python's own parsing to leave a genuine backslash-n for the JS engine.
   panel.textContent = lines.join('\\n');
   panel.style.display = 'block';
 }
