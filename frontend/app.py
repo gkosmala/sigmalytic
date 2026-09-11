@@ -6512,14 +6512,27 @@ function isValidLevel(v, midpoint) {
 // Uses the real "America/New_York" IANA timezone rather than a fixed
 // UTC offset, so this correctly reflects EST/EDT depending on the
 // actual date, rather than being wrong for half the year.
+//
+// FIX (2026-09-11): confirmed a real, reported readability issue --
+// daily bars showed as e.g. "07/16/2026, 00:00 EDT" for every single
+// entry. That's not wrong (a daily bar's raw timestamp genuinely does
+// convert to exactly midnight Eastern), but the repeated "00:00"
+// carries no real information and reads oddly, as if something
+// happened precisely at midnight. Now checks the converted Eastern
+// hour/minute and omits the time portion entirely when it's exactly
+// 00:00 -- a reliable signal this is a daily/weekly bar rather than a
+// genuine intraday timestamp, without needing to know the chart's
+// selected timeframe explicitly.
 function formatEasternTime(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr; // not a parseable timestamp -- show as-is rather than break
+  const hour = new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', hour: '2-digit', hour12: false}).format(d);
+  const minute = new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York', minute: '2-digit'}).format(d);
+  const isMidnight = (hour === '24' || hour === '00') && (minute === '0' || minute === '00');
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-    timeZoneName: 'short'
+    ...(isMidnight ? {} : {hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short'})
   }).format(d);
 }
 
