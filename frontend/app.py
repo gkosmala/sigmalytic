@@ -6456,8 +6456,15 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <div id="calibrationPanel" class="calibration-box"></div>
 <div style="margin:4px 0 8px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
+  <button id="generateReportBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; margin-left:8px;">📄 Generate Report</button>
   <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
 </div>
+<!-- ADDED (2026-09-10): on-screen report panel, per explicit request
+     -- no download, shown directly in the page. Hidden until the
+     button is clicked; built entirely from data already computed for
+     the chart itself (RAW_BARS, HITS, wave state, wall levels), so
+     no additional backend round-trip is needed to generate it. -->
+<div id="reportPanel" style="display:none; background:#11161d; border:1px solid #3a4a5f; border-radius:8px; padding:16px; margin:0 0 12px 0; font-size:13px; line-height:1.6; color:#c8d3de; white-space:pre-wrap;"></div>
 <div id="chart"></div>
 <div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
 <div class="legend-note">
@@ -6475,6 +6482,17 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <script>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
+
+// MOVED (2026-09-10): was previously defined inside render() itself,
+// which meant the new generateReport() function (a sibling, not a
+// nested function) could not call it at all -- a real scoping bug
+// caught before shipping, not after. Takes the price midpoint as an
+// explicit parameter instead of relying on it being in scope, so any
+// caller can compute its own midpoint from whatever bar range it's
+// working with and reuse the exact same validity rule.
+function isValidLevel(v, midpoint) {
+  return Number.isFinite(v) && v > 0 && Math.abs(v - midpoint) < midpoint * 0.5;
+}
 
 function computeZigZag(bars, vibPct) {
   const n = bars.length;
@@ -7320,6 +7338,21 @@ function render() {
   const lows = RAW_BARS.map(b => b.low);
   const closes = RAW_BARS.map(b => b.close);
 
+  // FIX (2026-09-10): confirmed a real, reported bug -- a genuinely
+  // invalid level (e.g. Gamma Flip reported as 0 when the backend's
+  // options data fetch failed) previously still got drawn as a
+  // horizontal shape line. Since the price y-axis has no explicit
+  // range (see below) and Plotly's autorange DOES include shapes, one
+  // wildly-wrong level like 0 stretched the entire visible range down
+  // to include it -- squeezing the real candles (which might only
+  // span a few dollars) into a tiny sliver near the top of the chart.
+  // isValidLevel() (module-level, defined near RAW_BARS above) rejects
+  // anything non-finite, non-positive, or further than 50% away from
+  // the actual recent price range -- a real wall/gamma level should
+  // never be that far from where the stock has actually been trading.
+  const priceMin = Math.min(...lows), priceMax = Math.max(...highs);
+  const priceMid = (priceMin + priceMax) / 2;
+
   const candleTrace = {
     type: 'candlestick', x: dates, open: opens, high: highs, low: lows, close: closes,
     increasing: {line: {color:'#2ecc71'}}, decreasing: {line:{color:'#e74c3c'}},
@@ -7365,17 +7398,23 @@ function render() {
     }
   }
 
-  if (document.getElementById('showCallWall').checked && !isNaN(callWall)) {
+  if (document.getElementById('showCallWall').checked && isValidLevel(callWall, priceMid)) {
     allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:callWall, y1:callWall,
       line:{color:'#4da3ff', width:1.5, dash:'dash'}});
     allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:callWall, text:'Call Wall', showarrow:false, xanchor:'left', font:{color:'#4da3ff', size:10}});
   }
-  if (document.getElementById('showPutWall').checked && !isNaN(putWall)) {
+  if (document.getElementById('showPutWall').checked && isValidLevel(putWall, priceMid)) {
     allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:putWall, y1:putWall,
       line:{color:'#ffa64d', width:1.5, dash:'dash'}});
     allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:putWall, text:'Put Wall', showarrow:false, xanchor:'left', font:{color:'#ffa64d', size:10}});
   }
-  if (document.getElementById('showGammaFlip').checked && !isNaN(gammaFlip)) {
+  // FIX (2026-09-10): now uses isValidLevel() instead of just isNaN()
+  // -- confirmed the reported "Gamma Flip at 0" case specifically:
+  // 0 passes isNaN() (it's a real number), so the old check let it
+  // through and drew a line at y=0, which is what stretched the
+  // y-axis autorange down to include it. isValidLevel() rejects this
+  // and any other implausible level explicitly.
+  if (document.getElementById('showGammaFlip').checked && isValidLevel(gammaFlip, priceMid)) {
     allShapes.push({type:'line', xref:'x', yref:'y', x0:dates[0], x1:dates[dates.length-1], y0:gammaFlip, y1:gammaFlip,
       line:{color:'#b06dff', width:1.5, dash:'dot'}});
     allAnnotations.push({xref:'x', yref:'y', x:dates[dates.length-1], y:gammaFlip, text:'Gamma Flip', showarrow:false, xanchor:'left', font:{color:'#b06dff', size:10}});
@@ -7574,7 +7613,7 @@ function render() {
 
   const layout = {
     paper_bgcolor:'#0b0f14', plot_bgcolor:'#0b0f14', font:{color:'#c8d3de'},
-    margin:{t:10, r:70, l:50, b:40},
+    margin:{t:10, r:70, l:50, b:70},  // FIX (2026-09-10): increased from 40 to accommodate the now-angled x-axis labels below
     height: 780,
     showlegend: false,
     dragmode: 'zoom',
@@ -7587,8 +7626,29 @@ function render() {
     // actual time gap between them -- the standard fix for financial
     // charts, and consistent with how candlestick charts are normally
     // expected to look (no dead space for market closures).
-    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d', type:'category'},
-    yaxis:  {domain:[0.55, 1],    title:'Price', gridcolor:'#1c232d'},
+    // FIX (2026-09-10): confirmed a real, reported readability issue --
+    // this axis has type:'category' (see the comment above explaining
+    // why), and with no tick configuration at all, Plotly's default
+    // behavior on a dense category axis is to attempt showing every
+    // single bar's raw timestamp, producing cluttered, overlapping
+    // labels. nticks caps how many are actually shown; tickangle
+    // rotates them so longer date/time strings don't overlap each
+    // other even at a reduced count.
+    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d', type:'category',
+      nticks: 12, tickangle: -45, tickfont:{size:10}},
+    // FIX (2026-09-10): confirmed a real, reported bug -- price
+    // structure was rendering squeezed near the top of the chart.
+    // Root cause: no explicit range here meant Plotly's autorange
+    // computed the visible range from BOTH the candles AND every
+    // shape (the wall/gamma lines), including a genuinely invalid one
+    // in the reported case (Gamma Flip = 0). isValidLevel() above now
+    // prevents implausible levels from being drawn at all, but even a
+    // real, valid wall level can legitimately sit far from where the
+    // stock is actually trading -- so this also sets an explicit
+    // range centered on the real candle data (10% padding) rather
+    // than relying on autorange to guess a sensible view.
+    yaxis:  {domain:[0.55, 1], title:'Price', gridcolor:'#1c232d',
+      range: [priceMin - (priceMax - priceMin) * 0.1, priceMax + (priceMax - priceMin) * 0.1]},
     yaxis2: {domain:[0.29, 0.51], title: (mode === 'total' ? 'Wave Total Vol' : 'Wave Avg Vol') + ' (cumulative)', gridcolor:'#1c232d'},
     yaxis3: {domain:[0, 0.25],    title: `Daily Vol (${maPeriod}-bar MA)`, gridcolor:'#1c232d'},
     shapes: allShapes,
@@ -7682,11 +7742,137 @@ document.getElementById('manualType2').addEventListener('change', render);
 document.getElementById('manualDate2a').addEventListener('change', render);
 document.getElementById('manualDate2b').addEventListener('change', render);
 
+// ADDED (2026-09-10): on-screen, on-demand report summarizing the
+// stock/market's own behavior for the currently loaded symbol --
+// explicitly scoped (per direct request) to market/symbol behavior,
+// not the user's own trading decisions. Built entirely from data
+// already available client-side for the chart itself; recomputes
+// the same zigzag/wave-volume analysis render() already performs
+// rather than introducing new shared state to pass values out of
+// render()'s own local scope.
+function generateReport() {
+  if (!RAW_BARS.length) {
+    document.getElementById('reportPanel').style.display = 'block';
+    document.getElementById('reportPanel').textContent = 'No bar data available to report on yet.';
+    return;
+  }
+
+  const vib = parseFloat(document.getElementById('vibNumber').value);
+  const mode = document.querySelector('input[name=volmode]:checked').value;
+  const {pivots, state, extremeIdx, extremePrice} = computeZigZag(RAW_BARS, vib);
+  const {waveDir, waveMetric} = computeWaveVolume(RAW_BARS, pivots, state, extremeIdx, mode);
+
+  const lastBar = RAW_BARS[RAW_BARS.length - 1];
+  const price = lastBar.close;
+  const lows = RAW_BARS.map(b => b.low), highs = RAW_BARS.map(b => b.high);
+  const priceMin = Math.min(...lows), priceMax = Math.max(...highs);
+  const priceMid = (priceMin + priceMax) / 2;
+
+  const lines = [];
+  lines.push(`MARKET BEHAVIOR REPORT -- __SYMBOL__`);
+  lines.push(`Generated ${new Date().toLocaleString()}`);
+  lines.push(`Current price: ${price.toFixed(2)}  |  Range over loaded history: ${priceMin.toFixed(2)} - ${priceMax.toFixed(2)}`);
+  lines.push('');
+
+  // -- Volatility behavior: recent (last 20 bars) range vs. the full
+  // loaded history's average bar range -- a simple, honest measure of
+  // whether this symbol is currently moving more or less than usual,
+  // not a claim about future movement.
+  const recentBars = RAW_BARS.slice(-20);
+  const recentRanges = recentBars.map(b => b.high - b.low);
+  const allRanges = RAW_BARS.map(b => b.high - b.low);
+  const avgRecentRange = recentRanges.reduce((a,b) => a+b, 0) / recentRanges.length;
+  const avgAllRange = allRanges.reduce((a,b) => a+b, 0) / allRanges.length;
+  const volRatio = avgAllRange > 0 ? avgRecentRange / avgAllRange : 1;
+  lines.push('VOLATILITY');
+  if (volRatio > 1.3) {
+    lines.push(`Recent bar ranges are running ${((volRatio-1)*100).toFixed(0)}% wider than this symbol's own average over the loaded history -- elevated movement right now, not necessarily directional.`);
+  } else if (volRatio < 0.7) {
+    lines.push(`Recent bar ranges are running ${((1-volRatio)*100).toFixed(0)}% narrower than this symbol's own average -- a quieter, more contracted period than usual.`);
+  } else {
+    lines.push(`Recent bar ranges are broadly in line with this symbol's own average over the loaded history -- no unusual expansion or contraction right now.`);
+  }
+  lines.push('');
+
+  // -- Wave behavior: reuses the exact same building/exhausting
+  // framing already used elsewhere in this app's Weis engines (see
+  // the Time-Bar/Renko/PnF "Effort vs. Result" panels) for
+  // consistency, not a new, separate vocabulary.
+  lines.push('CURRENT WAVE');
+  if (waveMetric && waveMetric.length >= 2) {
+    const current = waveMetric[waveMetric.length - 1];
+    const prior = waveMetric[waveMetric.length - 2];
+    const dirLabel = waveDir > 0 ? 'UP' : (waveDir < 0 ? 'DOWN' : 'FLAT');
+    if (current > prior) {
+      lines.push(`Current swing is ${dirLabel}, printing more volume than the prior swing -- fresh participation, the move is building rather than fading.`);
+    } else if (current < prior) {
+      lines.push(`Current swing is ${dirLabel}, printing less volume than the prior swing -- effort is fading, a genuine warning sign for this swing's continuation.`);
+    } else {
+      lines.push(`Current swing is ${dirLabel}, with volume roughly matching the prior swing -- no clear building or fading signal yet.`);
+    }
+  } else {
+    lines.push('Not enough completed swings yet in the loaded history to compare wave-over-wave volume.');
+  }
+  lines.push('');
+
+  // -- Pattern hits: the same Weis Radar scan results already shown
+  // on the chart itself, restated in plain language here.
+  lines.push('ACTIVE PATTERNS');
+  if (HITS.length) {
+    for (const h of HITS) {
+      const lvl = (h.level !== null && h.level !== undefined) ? ` at ${h.level.toFixed(2)}` : '';
+      lines.push(`- ${h.type}${lvl}${h.date ? ' (' + h.date + ')' : ' (current bar)'}`);
+    }
+  } else {
+    lines.push('No Spring, Upthrust, Breakout, or Breakdown pattern currently active for this symbol.');
+  }
+  lines.push('');
+
+  // -- Options positioning: only reports a level if it passed the
+  // same isValidLevel() check used for drawing the chart itself, so
+  // this can never repeat a bad value (like the reported Gamma Flip
+  // = 0 case) as if it were real.
+  lines.push('OPTIONS POSITIONING');
+  const callWall = parseFloat(document.getElementById('callWall').value);
+  const putWall = parseFloat(document.getElementById('putWall').value);
+  const gammaFlip = parseFloat(document.getElementById('gammaFlip').value);
+  let anyValidLevel = false;
+  if (isValidLevel(callWall, priceMid)) {
+    const pct = ((callWall - price) / price * 100).toFixed(1);
+    lines.push(`Call Wall at ${callWall.toFixed(2)}, ${pct}% ${callWall > price ? 'above' : 'below'} current price.`);
+    anyValidLevel = true;
+  }
+  if (isValidLevel(putWall, priceMid)) {
+    const pct = ((putWall - price) / price * 100).toFixed(1);
+    lines.push(`Put Wall at ${putWall.toFixed(2)}, ${Math.abs(pct)}% ${putWall > price ? 'above' : 'below'} current price.`);
+    anyValidLevel = true;
+  }
+  if (isValidLevel(gammaFlip, priceMid)) {
+    lines.push(`Gamma Flip at ${gammaFlip.toFixed(2)} -- price is currently ${price > gammaFlip ? 'above' : 'below'} this level.`);
+    anyValidLevel = true;
+  }
+  if (!anyValidLevel) {
+    lines.push('No valid options-derived levels currently available for this symbol.');
+  }
+
+  const panel = document.getElementById('reportPanel');
+  panel.textContent = lines.join('\n');
+  panel.style.display = 'block';
+}
+document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+
 document.getElementById('resetZoomBtn').addEventListener('click', () => {
+  // FIX (2026-09-10): previously reset yaxis to raw Plotly autorange,
+  // which would silently re-introduce the exact squeezed-chart bug
+  // this session fixed (autorange includes shape lines, so a wall
+  // level far from price stretches the range again). Calling render()
+  // instead rebuilds the layout using the same explicit, price-
+  // centered range as the initial render, while still resetting
+  // x-axis pan/zoom and the volume panels via their own autorange.
   Plotly.relayout('chart', {
-    'xaxis.autorange': true, 'yaxis.autorange': true,
-    'yaxis2.autorange': true, 'yaxis3.autorange': true
+    'xaxis.autorange': true, 'yaxis2.autorange': true, 'yaxis3.autorange': true
   });
+  render();
 });
 
 // ADDED (later session): receives live price pushes from the parent
