@@ -7962,7 +7962,42 @@ window.addEventListener('message', (event) => {
   if (!RAW_BARS.length) return;
 
   const hasNewBar = msg.newBar && typeof msg.newBar === 'object';
-  const hasWallChange = typeof msg.callWall === 'number' || typeof msg.putWall === 'number' || typeof msg.gammaFlip === 'number';
+  // FIX (2026-09-11): confirmed the actual, definitive root cause of
+  // persistent "blinking/hiccupping," reported as still happening
+  // despite the fingerprint excluding wall values from the RELOAD
+  // decision (see build_command_tab() above) and despite the earlier
+  // stale-while-revalidate cache fix. This is a SEPARATE, downstream
+  // decision -- whether THIS message triggers a full render() versus
+  // the lightweight price-only path -- and it had the same class of
+  // bug: msg.callWall/putWall/gammaFlip are set on every single
+  // message by design (the Python side refreshes these hidden-div
+  // attributes on every render), so "is a wall value present" was
+  // true on every tick, unconditionally triggering a full render()
+  // roughly every ~10 seconds forever -- recomputing the entire
+  // zigzag and every overlay just to redraw a chart that, in the
+  // common case, hadn't actually changed at all. Now compares each
+  // incoming value against what's CURRENTLY DISPLAYED (the same
+  // input fields render() itself reads from) and only counts it as a
+  // real change if it differs by more than a tiny floating-point
+  // epsilon -- not merely present.
+  const curCallWall = parseFloat(document.getElementById('callWall').value);
+  const curPutWall = parseFloat(document.getElementById('putWall').value);
+  const curGammaFlip = parseFloat(document.getElementById('gammaFlip').value);
+  // FIX (2026-09-11): epsilon deliberately set to $0.05, not a tiny
+  // floating-point tolerance -- a separate, already-documented comment
+  // elsewhere in this file confirms these wall levels genuinely drift
+  // slightly on every single tick BY DESIGN, since they're recomputed
+  // against the live, continuously-moving price. A too-small epsilon
+  // would still trigger a full render() on nearly every tick, since
+  // that routine drift would almost always exceed it. These are
+  // coarse, approximate options-derived levels, not precise tick
+  // prices -- a nickel of routine drift carries no real information
+  // and isn't something a user needs the chart to visibly react to.
+  const EPS = 0.05;
+  const hasWallChange =
+    (typeof msg.callWall === 'number' && (isNaN(curCallWall) || Math.abs(msg.callWall - curCallWall) > EPS)) ||
+    (typeof msg.putWall === 'number' && (isNaN(curPutWall) || Math.abs(msg.putWall - curPutWall) > EPS)) ||
+    (typeof msg.gammaFlip === 'number' && (isNaN(curGammaFlip) || Math.abs(msg.gammaFlip - curGammaFlip) > EPS));
 
   if (!hasNewBar && !hasWallChange) {
     // Common case, every ~10s: pure price movement within the current
