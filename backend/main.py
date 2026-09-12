@@ -44,8 +44,21 @@ except Exception as _campaign_router_import_exc:
     print(f"[sigmalytic] campaign_api router not available: {_campaign_router_import_exc}")
     campaign_router = None
 from backend.research_api import router as research_router
-from backend.intelligence_api import router as intelligence_router
-from backend.operator_dominance.operator_dominance_api import router as operator_router
+try:
+    from backend.intelligence_api import router as intelligence_router
+except Exception as _intelligence_router_import_exc:
+    # FIX (2026-09-12): confirmed via the same audit as campaign_router
+    # above -- this was an equally critical, unguarded module-level
+    # import, found via a broader re-scan after the first fix. Same
+    # reasoning applies: an import failure here should degrade this
+    # one feature, not take down the entire shared backend.
+    print(f"[sigmalytic] intelligence_api router not available: {_intelligence_router_import_exc}")
+    intelligence_router = None
+try:
+    from backend.operator_dominance.operator_dominance_api import router as operator_router
+except Exception as _operator_router_import_exc:
+    print(f"[sigmalytic] operator_dominance_api router not available: {_operator_router_import_exc}")
+    operator_router = None
 
 try:
     from backend.admin_api import router as admin_router
@@ -2901,30 +2914,42 @@ def refresh_weis_gamma_evidence(payload: dict = Body(default=None), _admin: str 
 
 @app.post("/api/admin/run-closure-engine")
 def run_closure_engine_admin(_admin: str = Depends(require_admin)):
-    from backend.intelligence.campaign_closure_engine import (
-        run_campaign_closure_cycle,
-    )
+    try:
+        from backend.intelligence.campaign_closure_engine import (
+            run_campaign_closure_cycle,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"closure engine unavailable: {e}"[:300]}
 
     return run_campaign_closure_cycle()
 
 
 @app.get("/api/campaigns/active")
 def campaigns_active_alias():
-    from backend.campaign_api import active_campaigns
+    try:
+        from backend.campaign_api import active_campaigns
+    except Exception as e:
+        return {"campaigns": [], "error": f"campaign engine unavailable: {e}"[:300]}
 
     return active_campaigns()
 
 
 @app.get("/api/campaigns/summary")
 def campaigns_summary_alias():
-    from backend.campaign_api import status
+    try:
+        from backend.campaign_api import status
+    except Exception as e:
+        return {"error": f"campaign engine unavailable: {e}"[:300]}
 
     return status()
 
 
 @app.get("/api/radar/top")
 def radar_top_alias(limit: int = 8):
-    from backend.campaign_api import rankings
+    try:
+        from backend.campaign_api import rankings
+    except Exception as e:
+        return {"campaigns": [], "error": f"campaign engine unavailable: {e}"[:300]}
 
     data = rankings()
     campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
@@ -3445,9 +3470,12 @@ def radar_symbol_sizing(symbol: str, portfolio_value: float = 100000.0):
     """
     from decimal import Decimal
     from datetime import date
-    from backend.intelligence.position_sizing_engine import (
-        compute_position_size, PortfolioContext, sizing_result_to_dict,
-    )
+    try:
+        from backend.intelligence.position_sizing_engine import (
+            compute_position_size, PortfolioContext, sizing_result_to_dict,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"position sizing engine unavailable: {e}"[:300]}
     from backend.radar_service import RADAR_CACHE, _redis_client
 
     sym = (symbol or "").upper().strip()
@@ -3578,8 +3606,11 @@ def campaign_analogs(symbol: str):
     import os as _os
     from dataclasses import asdict
     from types import SimpleNamespace
-    from backend.campaign_engine.campaign_store import CampaignStore
-    from backend.analog_engine.analog_engine import find_analogs, _fetch_closed_campaigns
+    try:
+        from backend.campaign_engine.campaign_store import CampaignStore
+        from backend.analog_engine.analog_engine import find_analogs, _fetch_closed_campaigns
+    except Exception as e:
+        return {"ok": False, "symbol": (symbol or "").upper().strip(), "error": f"analog engine unavailable: {e}"[:300]}
 
     sym = (symbol or "").upper().strip()
     if not sym:
@@ -3893,8 +3924,11 @@ def _build_eligible_campaign_alerts():
     from decimal import Decimal
     from datetime import date as _date
     from collections import Counter
-    from backend.campaign_engine.campaign_store import CampaignStore
-    from backend.intelligence.subscriber_alerts import CampaignBirthAlert
+    try:
+        from backend.campaign_engine.campaign_store import CampaignStore
+        from backend.intelligence.subscriber_alerts import CampaignBirthAlert
+    except Exception as e:
+        return None, {"ok": False, "error": f"campaign engine unavailable: {e}"[:300]}, None
 
     store = CampaignStore()
     if not store.configured():
@@ -6255,8 +6289,10 @@ def divergence_watchlist_compat(limit: int = 50, _admin: str = Depends(require_a
 if campaign_router is not None:
     app.include_router(campaign_router)
 app.include_router(research_router)
-app.include_router(intelligence_router)
-app.include_router(operator_router)
+if intelligence_router is not None:
+    app.include_router(intelligence_router)
+if operator_router is not None:
+    app.include_router(operator_router)
 
 if alerts_router is not None:
     app.include_router(alerts_router)
