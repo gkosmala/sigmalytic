@@ -29,7 +29,20 @@ import requests
 import threading
 import uuid
 
-from backend.campaign_api import router as campaign_router
+try:
+    from backend.campaign_api import router as campaign_router
+except Exception as _campaign_router_import_exc:
+    # FIX (2026-09-12): confirmed via direct code audit this was the
+    # one genuinely critical, unguarded import among all campaign-
+    # related imports in this file -- unlike frontend/app.py's own
+    # campaign_tab import (already gracefully guarded), this one had
+    # no protection at all. Since Campaign Intelligence's own logic
+    # (weis_radar_scan.py, radar_service.py) has zero real dependency
+    # on it, an import failure here should degrade this one feature,
+    # not take down the entire shared backend -- including the Weis
+    # Radar chart endpoint this same file also serves.
+    print(f"[sigmalytic] campaign_api router not available: {_campaign_router_import_exc}")
+    campaign_router = None
 from backend.research_api import router as research_router
 from backend.intelligence_api import router as intelligence_router
 from backend.operator_dominance.operator_dominance_api import router as operator_router
@@ -6239,7 +6252,8 @@ def divergence_watchlist_compat(limit: int = 50, _admin: str = Depends(require_a
         "items": rows[:limit],
     }
 
-app.include_router(campaign_router)
+if campaign_router is not None:
+    app.include_router(campaign_router)
 app.include_router(research_router)
 app.include_router(intelligence_router)
 app.include_router(operator_router)
