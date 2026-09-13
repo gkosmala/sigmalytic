@@ -9727,7 +9727,6 @@ ALL_TABS = [
     # the exact steps to restore it: re-add its ALL_TABS entry here,
     # its elif branch in render_main()'s tab routing, and its Input in
     # set_tab() -- nothing to rebuild from scratch.
-    ("campaign",    "Campaign Intelligence"),
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
     ("portfolio",   "Portfolio"),
@@ -10744,31 +10743,9 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
             main = build_weis_radar_tab(session)
         else:
             return no_update, no_update, no_update, no_update
-    elif tab=="campaign":
-        if build_campaign_tab is None:
-            main = card([
-                html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                note_box("Campaign module is present but did not import. Check frontend/campaign_tab.py.", "blue"),
-            ])
-        else:
-            try:
-                main = build_campaign_tab(session=session)
-            except TypeError:
-                try:
-                    main = build_campaign_tab()
-                except Exception as e:
-                    main = card([
-                        html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                        note_box("Campaign module loading error: " + str(e), "blue"),
-                    ])
-            except Exception as e:
-                main = card([
-                    html.H2("Campaign Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                    note_box("Campaign module loading error: " + str(e), "blue"),
-                ])
+    # campaign/radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
     elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
-    # radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
     elif tab=="portfolio":
         if build_portfolio_tab is None:
             main = card([
