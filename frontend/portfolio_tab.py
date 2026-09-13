@@ -4,19 +4,42 @@ frontend/portfolio_tab.py
 --------------------------
 Portfolio Dashboard Tab for Sigmalytic V2.
 
-Shows the complete portfolio picture across all active campaigns:
-  - Position count vs 20-25 optimal range (Phase 11)
-  - Capital deployed vs available
-  - State breakdown across lifecycle stages
-  - TIER distribution
-  - ODS distribution (operator dominance health)
-  - Top performers and watch list
-  - Conjunction exit signals
+REBUILT (2026-09-13): the previous version of this tab showed a
+summary of Campaign Intelligence's own internally-generated
+opportunities (position count vs. an optimal range, TIER/ODS
+distribution, conjunction exits) -- confirmed via direct user
+discussion this session to be a genuine, pre-existing naming/concept
+mismatch: "Portfolio" should mean the trader's own real holdings, not
+a summary of the app's own opportunity-tracking system. That system
+(Campaign Intelligence) was separately archived earlier this session
+for unrelated reasons, which is what originally surfaced this tab as
+broken -- but the rebuild below is a genuine redesign around the
+correct concept, not just a data-source swap.
 
-Plugs into sigmalytic_app_TODAY.py:
+This is now a real portfolio built from the trader's own open
+positions (the same trade-entry data already captured by the Journal
+tab's "Log New Trade" form), showing three things the Journal tab
+does not already cover -- confirmed directly against
+trade_journal_tab.py before building this, so nothing here duplicates
+Journal's own closed-trade performance and behavioral scoring:
+  - Live, unrealized P&L per open position (current price vs. the
+    real entry price already on file)
+  - Capital allocation: what share of total deployed capital sits in
+    each open position
+  - Sector exposure: open positions grouped by real Russell 1000
+    sector classification, surfacing concentration risk a trader
+    can't see from the Journal's trade-by-trade view alone
+
+All three are computed server-side by /api/portfolio/summary
+(backend/main.py), which reuses backend.heatmap_engine's existing,
+already-trusted sector classification and the same parallelized,
+rate-limit-aware fetch_bars_batch() already proven for the Weis Radar
+scan.
+
+Plugs into frontend/app.py:
   1. from portfolio_tab import build_portfolio_tab
-  2. Add ("portfolio", "Portfolio") to ALL_TABS
-  3. Add elif tab=="portfolio": main = build_portfolio_tab() to tab router
+  2. ("portfolio", "Portfolio") in ALL_TABS
+  3. elif tab=="portfolio": main = build_portfolio_tab(session=session) in the tab router
 """
 
 from __future__ import annotations
@@ -40,39 +63,32 @@ BLUE_DIM  = "#93c5fd"; MUTED     = "#64748b"; TEXT = "#94a3b8"
 WHITE     = "#f1f5f9"; BORDER    = "rgba(255,255,255,.08)"; BORDER_T = "rgba(45,143,111,.35)"
 PURPLE    = "#a78bfa"
 
-OPTIMAL_MIN = 20
-OPTIMAL_MAX = 25
+SECTOR_COLORS = [TEAL_DIM, BLUE_DIM, YELLOW_DIM, RED_DIM, PURPLE, "#f472b6", "#60a5fa", "#facc15"]
 
-STATE_ORDER = ["BIRTH","CONFIRMED","SURVIVING","EXPANDING","MATURING","DISTRIBUTION_RISK"]
-STATE_COLORS = {
-    "BIRTH": BLUE_DIM, "CONFIRMED": TEAL_DIM, "SURVIVING": TEAL_DIM,
-    "EXPANDING": YELLOW_DIM, "MATURING": YELLOW, "DISTRIBUTION_RISK": RED_DIM,
-}
+
+def _current_user_id(session=None) -> str:
+    try:
+        if session and isinstance(session, dict):
+            return str(session.get("user_id") or session.get("id") or "anonymous")
+    except Exception:
+        pass
+    return "anonymous"
+
+
+def _auth_headers(session=None) -> dict:
+    try:
+        if session and isinstance(session, dict) and session.get("access_token"):
+            return {"Authorization": f"Bearer {session['access_token']}"}
+    except Exception:
+        pass
+    return {}
 
 
 def _safe_float(value, default=0.0):
-    """
-    Like float(value or default), but also handles the case dict.get(key, 0)
-    does NOT protect against: an explicit `null` in the backend JSON, where
-    the key exists but its value is None. .get(key, default) only supplies
-    default when the key is missing entirely.
-    """
-    if value is None:
-        return default
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except Exception:
         return default
-
-
-def _safe_int(value, default=0):
-    return int(_safe_float(value, default))
-
-
-STATE_ICONS = {
-    "BIRTH": "", "CONFIRMED": "", "SURVIVING": "",
-    "EXPANDING": "", "MATURING": "", "DISTRIBUTION_RISK": "",
-}
 
 
 def _card(children, sx=None):
@@ -99,186 +115,119 @@ def _metric(label, value, color=WHITE, sub=""):
               "padding": "16px 20px", "flex": "1", "minWidth": "110px"})
 
 
-def _hbar(label, value, max_val, color=TEAL_DIM):
-    pct = min(100.0, value / max_val * 100) if max_val > 0 else 0
+def _hbar(label, pct, color=TEAL_DIM, sub=""):
+    pct = max(0.0, min(100.0, pct))
     return html.Div([
         html.Div([
             html.Span(label, style={"fontSize": "12px", "color": TEXT, "fontWeight": "600"}),
-            html.Span(str(int(value)), style={"fontSize": "12px", "color": color,
-                                              "fontWeight": "800", "fontFamily": "DM Mono, monospace"}),
+            html.Span(f"{pct:.1f}%" + (f"  ·  {sub}" if sub else ""),
+                      style={"fontSize": "12px", "color": color,
+                             "fontWeight": "800", "fontFamily": "DM Mono, monospace"}),
         ], style={"display": "flex", "justifyContent": "space-between", "marginBottom": "5px"}),
-        html.Div([html.Div(style={"width": f"{pct}%", "height": "5px", "background": color,
+        html.Div([html.Div(style={"width": f"{pct}%", "height": "6px", "background": color,
                                   "borderRadius": "3px"})],
-                 style={"width": "100%", "height": "5px", "background": "rgba(255,255,255,.06)",
+                 style={"width": "100%", "height": "6px", "background": "rgba(255,255,255,.06)",
                         "borderRadius": "3px"}),
-    ], style={"marginBottom": "10px"})
+    ], style={"marginBottom": "12px"})
 
 
-def _state_pill(state, count):
-    color = STATE_COLORS.get(state, MUTED)
-    icon  = STATE_ICONS.get(state, "•")
+def _position_row(p: dict) -> html.Div:
+    pnl = p.get("unrealized_pnl_pct")
+    pnl_color = TEAL_DIM if (pnl or 0) >= 0 else RED_DIM
+    pnl_text = f"{pnl:+.1f}%" if pnl is not None else "—"
+    current = p.get("current_price")
+    current_text = f"${current:.2f}" if current is not None else "—"
+
     return html.Div([
-        html.Div(f"{icon} {count}", style={"fontSize": "20px", "fontWeight": "900",
-                                           "color": color, "fontFamily": "DM Mono, monospace"}),
-        html.Div(state.replace("_", " "), style={"fontSize": "9px", "color": MUTED,
-                                                  "fontWeight": "700", "marginTop": "4px",
-                                                  "textTransform": "uppercase", "letterSpacing": ".06em"}),
-    ], style={"background": f"{color}11", "border": f"1px solid {color}30",
-              "borderRadius": "10px", "padding": "10px 14px", "textAlign": "center", "minWidth": "80px"})
-
-
-def _perf_row(c):
-    symbol  = c.get("symbol", "—")
-    tier    = c.get("historical_confidence", "—")
-    ret_pct = _safe_float(c.get("return_pct"))
-    days    = _safe_int(c.get("campaign_age_days"))
-    state   = c.get("current_state", "BIRTH")
-    color   = TEAL_DIM if ret_pct >= 0 else RED_DIM
-    return html.Div([
-        html.Span(symbol, style={"fontFamily": "DM Mono, monospace", "fontWeight": "900",
-                                 "fontSize": "13px", "color": WHITE, "flex": "1"}),
-        html.Span(tier, style={"fontSize": "10px", "color": MUTED, "flex": ".8"}),
-        html.Span(f"D{days}", style={"fontSize": "11px", "color": MUTED, "flex": ".5"}),
-        html.Span(state.replace("_", " "), style={"fontSize": "10px", "color": STATE_COLORS.get(state, MUTED), "flex": "1.2"}),
-        html.Span(f"{ret_pct:+.1f}%", style={"fontSize": "13px", "fontWeight": "800",
-                                              "color": color, "fontFamily": "DM Mono, monospace",
-                                              "flex": ".7", "textAlign": "right"}),
-    ], style={"display": "flex", "alignItems": "center", "gap": "8px",
-              "padding": "8px 0", "borderBottom": f"1px solid {BORDER}"})
+        html.Span(p.get("symbol", "—"), style={"fontSize": "13px", "fontWeight": "800",
+                                                 "color": WHITE, "flex": "1"}),
+        html.Span(p.get("direction", "—"), style={"fontSize": "11px", "color": MUTED, "flex": "0.7"}),
+        html.Span(f"${p.get('entry_price', 0):.2f}", style={"fontSize": "12px", "color": TEXT,
+                                                              "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
+        html.Span(current_text, style={"fontSize": "12px", "color": TEXT,
+                                        "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
+        html.Span(pnl_text, style={"fontSize": "12px", "color": pnl_color, "fontWeight": "800",
+                                    "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
+        html.Span(f"{p.get('allocation_pct', 0):.1f}%", style={"fontSize": "12px", "color": BLUE_DIM,
+                                                                  "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
+        html.Span(p.get("sector", "Unknown"), style={"fontSize": "11px", "color": MUTED, "flex": "1"}),
+    ], style={"display": "flex", "gap": "10px", "alignItems": "center",
+              "padding": "10px 0", "borderBottom": f"1px solid {BORDER}"})
 
 
 def build_portfolio_tab(session=None) -> html.Div:
-    def _fetch_active():
-        try:
-            r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/active", timeout=20)
-            return r.json() if r.ok else {}
-        except Exception:
-            return {}
+    user_id = _current_user_id(session)
 
-    def _fetch_summary():
-        try:
-            r = _rq.get(f"{BACKEND_HTTP}/api/campaigns/summary", timeout=20)
-            return r.json() if r.ok else {}
-        except Exception:
-            return {}
+    def _do_fetch():
+        r = _rq.get(f"{BACKEND_HTTP}/api/portfolio/summary", timeout=20,
+                    headers=_auth_headers(session))
+        return r.json() if r.ok else {}
 
-    if shared_cache is not None:
-        data = shared_cache.get_or_fetch("/api/campaigns/active", _fetch_active, ttl_seconds=120)
-        summary = shared_cache.get_or_fetch("/api/campaigns/summary", _fetch_summary, ttl_seconds=120)
-    else:
-        data = _fetch_active()
-        summary = _fetch_summary()
+    try:
+        data = (
+            shared_cache.get_or_fetch(f"/api/portfolio/summary:{user_id}", _do_fetch, ttl_seconds=30)
+            if shared_cache is not None
+            else _do_fetch()
+        )
+    except Exception:
+        data = {}
 
-    campaigns = data.get("campaigns", []) if isinstance(data, dict) else []
+    positions = data.get("positions", []) if isinstance(data, dict) else []
+    total_capital = _safe_float(data.get("total_capital"))
+    sector_exposure = data.get("sector_exposure", {}) if isinstance(data, dict) else {}
 
-    total      = len(campaigns)
-    tier1      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_1")
-    tier2      = sum(1 for c in campaigns if c.get("historical_confidence") == "TIER_2")
-    tier3      = total - tier1 - tier2
-    avg_ods    = _safe_float(summary.get("avg_ods"))
-    exits      = _safe_int(summary.get("conjunction_exits"))
-    avg_return = _safe_float(summary.get("avg_return_pct"))
-    ages       = [_safe_int(c.get("campaign_age_days")) for c in campaigns]
-    avg_age    = sum(ages) / len(ages) if ages else 0
-
-    state_counts: dict[str, int] = summary.get("state_breakdown", {})
-    if not state_counts:
-        for c in campaigns:
-            s = c.get("current_state", "BIRTH")
-            state_counts[s] = state_counts.get(s, 0) + 1
-
-    ods_high = sum(1 for c in campaigns if float(c.get("operator_dominance") or 0) >= 70)
-    ods_mid  = sum(1 for c in campaigns if 40 <= float(c.get("operator_dominance") or 0) < 70)
-    ods_low  = sum(1 for c in campaigns if float(c.get("operator_dominance") or 0) < 40)
-
-    cap_color  = TEAL_DIM if OPTIMAL_MIN <= total <= OPTIMAL_MAX else (YELLOW_DIM if total < OPTIMAL_MIN else RED_DIM)
-    cap_label  = "OPTIMAL" if OPTIMAL_MIN <= total <= OPTIMAL_MAX else ("BUILDING" if total < OPTIMAL_MIN else "OVER")
-    ret_color  = TEAL_DIM if avg_return >= 0 else RED_DIM
-
-    if not campaigns:
+    if not positions:
         return html.Div([_card([
             html.Div([
-                html.Div("", style={"fontSize": "40px", "marginBottom": "12px"}),
-                html.Div("Portfolio Building", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
-                html.Div("Signal spark engine runs tonight at 20:30 UTC. Campaigns will appear here after the first scoring run.",
-                         style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "400px"}),
+                html.Div("Portfolio", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
+                html.Div(
+                    "No open positions yet. Log a trade from the Journal tab, and it will appear "
+                    "here with live P&L, capital allocation, and sector exposure.",
+                    style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "440px"}),
             ], style={"textAlign": "center", "padding": "48px"}),
         ])])
 
+    avg_pnl = sum((p.get("unrealized_pnl_pct") or 0) for p in positions) / len(positions)
+    avg_color = TEAL_DIM if avg_pnl >= 0 else RED_DIM
+
     return html.Div([
 
-        # Row 1 — Key metrics
+        # Row 1 — Overview
         _card([
             _section("Portfolio Overview"),
             html.Div([
-                _metric("Campaigns", str(total), cap_color, f"{cap_label} · optimal {OPTIMAL_MIN}–{OPTIMAL_MAX}"),
-                _metric("TIER 1", str(tier1), TEAL_DIM),
-                _metric("TIER 2", str(tier2), BLUE_DIM),
-                _metric("Avg Age", f"{avg_age:.0f}d", WHITE, "days open"),
-                _metric("Avg Return", f"{avg_return:+.1f}%", ret_color, "open positions"),
-                _metric("Avg ODS", f"{avg_ods:.0f}", TEAL_DIM if avg_ods >= 60 else YELLOW_DIM, "operator dominance"),
-                _metric("Exit Signals", str(exits), RED_DIM if exits > 0 else MUTED, "conjunction exits"),
+                _metric("Open Positions", str(len(positions)), WHITE),
+                _metric("Capital Deployed", f"${total_capital:,.0f}", WHITE),
+                _metric("Avg Unrealized P&L", f"{avg_pnl:+.1f}%", avg_color, "across open positions"),
             ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
         ]),
 
-        # Row 2 — State breakdown + distributions
-        html.Div([
-            _card([
-                _section("Campaign Lifecycle"),
-                html.Div([
-                    _state_pill(s, state_counts.get(s, 0))
-                    for s in STATE_ORDER if state_counts.get(s, 0) > 0
-                ], style={"display": "flex", "gap": "8px", "flexWrap": "wrap", "marginBottom": "20px"}),
-
-                _section("TIER Distribution"),
-                _hbar("TIER 1", tier1, max(total, 1), TEAL_DIM),
-                _hbar("TIER 2", tier2, max(total, 1), BLUE_DIM),
-                _hbar("TIER 3", tier3, max(total, 1), MUTED),
-            ], sx={"flex": "1"}),
-
-            _card([
-                _section("Operator Dominance Distribution"),
-                _hbar("High ODS ≥70 — Operator in control",  ods_high, max(total, 1), TEAL_DIM),
-                _hbar("Mid ODS 40–70 — Mixed signals",        ods_mid,  max(total, 1), YELLOW_DIM),
-                _hbar("Low ODS <40 — Operator exiting",       ods_low,  max(total, 1), RED_DIM),
-
-                html.Div(style={"height": "1px", "background": BORDER, "margin": "16px 0"}),
-
-                _section("Capacity"),
-                html.Div([
-                    html.Span(str(total), style={"fontSize": "40px", "fontWeight": "900",
-                                                 "color": cap_color, "fontFamily": "DM Mono, monospace"}),
-                    html.Span(f" / {OPTIMAL_MAX}", style={"fontSize": "20px", "color": MUTED}),
-                ]),
-                html.Div([html.Div(style={
-                    "width": f"{min(100, total / OPTIMAL_MAX * 100):.0f}%",
-                    "height": "8px", "background": cap_color, "borderRadius": "4px",
-                })], style={"width": "100%", "height": "8px",
-                            "background": "rgba(255,255,255,.06)", "borderRadius": "4px",
-                            "marginTop": "10px"}),
-                html.Div(f"Optimal range: {OPTIMAL_MIN}–{OPTIMAL_MAX} simultaneous positions (Phase 11)",
-                         style={"fontSize": "11px", "color": MUTED, "marginTop": "8px"}),
-            ], sx={"flex": "1"}),
-        ], style={"display": "flex", "gap": "16px"}),
-
-        # Row 3 — Top and watch
+        # Row 2 — Open positions table
         _card([
-            _section("Position Performance"),
+            _section(f"Open Positions ({len(positions)})"),
             html.Div([
-                html.Div([
-                    html.Div("Top Performers", style={"fontSize": "12px", "color": TEAL_DIM,
-                                                         "fontWeight": "800", "marginBottom": "10px"}),
-                    *[_perf_row(c) for c in sorted(campaigns,
-                       key=lambda x: _safe_float(x.get("return_pct")), reverse=True)[:6]],
-                ], style={"flex": "1"}),
-                html.Div(style={"width": "1px", "background": BORDER, "margin": "0 20px"}),
-                html.Div([
-                    html.Div("Watch List", style={"fontSize": "12px", "color": YELLOW_DIM,
-                                                      "fontWeight": "800", "marginBottom": "10px"}),
-                    *[_perf_row(c) for c in sorted(campaigns,
-                       key=lambda x: _safe_float(x.get("return_pct")))[:6]],
-                ], style={"flex": "1"}),
-            ], style={"display": "flex"}),
+                html.Span("Symbol", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "1"}),
+                html.Span("Dir", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Entry", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.8"}),
+                html.Span("Current", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.8"}),
+                html.Span("P&L", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Alloc.", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Sector", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "1"}),
+            ], style={"display": "flex", "gap": "10px", "paddingBottom": "8px",
+                      "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px",
+                      "textTransform": "uppercase", "letterSpacing": ".06em"}),
+            html.Div([_position_row(p) for p in positions]),
         ]),
 
+        # Row 3 — Sector exposure
+        _card([
+            _section("Sector Exposure"),
+            html.Div([
+                _hbar(sector, info.get("allocation_pct", 0),
+                      SECTOR_COLORS[i % len(SECTOR_COLORS)],
+                      sub=f"${info.get('capital', 0):,.0f}")
+                for i, (sector, info) in enumerate(sector_exposure.items())
+            ]) if sector_exposure else html.Div("No sector data available.",
+                                                  style={"color": MUTED, "fontSize": "12px"}),
+        ]),
     ])

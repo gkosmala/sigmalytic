@@ -1668,6 +1668,101 @@ def journal_profile_compat(request: Request):
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.get("/api/portfolio/summary")
+def portfolio_summary(request: Request):
+    """
+    ADDED (2026-09-13): real, user-owned portfolio summary -- replaces
+    the old /api/campaigns/-based Portfolio tab (Campaign Intelligence
+    tracked the app's OWN internally-generated opportunities, not a
+    trader's real holdings -- confirmed via direct user discussion this
+    session that this was a genuine, pre-existing naming/concept
+    mismatch, not just a broken-data-source issue).
+
+    Computes three things a trader's own open positions don't already
+    show in the Journal tab (which covers closed-trade performance and
+    behavioral scoring, not live position state):
+      - live, unrealized P&L per open position, using the current
+        price against the real entry price already on file
+      - capital allocation: what share of total deployed capital sits
+        in each open position
+      - sector exposure: open positions grouped by real Russell 1000
+        sector classification (backend.heatmap_engine's own sector
+        lookup, already used and trusted for the Heat Map tab)
+
+    Uses fetch_bars_batch() for the live-price step -- the same
+    parallelized, rate-limit-aware fetch already proven for the Weis
+    Radar scan -- rather than fetching each symbol's price one at a
+    time.
+    """
+    try:
+        from backend.supabase_isolation import get_user_id_from_request
+        from backend.trade_journal_service import get_journal_entries
+        from backend.radar_service import fetch_bars_batch
+        from backend.heatmap_engine import _load_sector_lookup
+
+        user_id = get_user_id_from_request(request)
+        open_trades = get_journal_entries(user_id, status="OPEN", limit=200)
+
+        if not open_trades:
+            return {"ok": True, "positions": [], "total_capital": 0.0, "sector_exposure": {}}
+
+        symbols = sorted({t["symbol"] for t in open_trades if t.get("symbol")})
+        bars_map = fetch_bars_batch(symbols, timeframe="1Day", limit=1)
+        sector_lookup = _load_sector_lookup()
+
+        positions = []
+        total_capital = 0.0
+        sector_capital: dict[str, float] = {}
+
+        for t in open_trades:
+            sym = t.get("symbol")
+            entry_price = float(t.get("entry_price") or 0)
+            shares = float(t.get("shares") or 0)
+            capital = entry_price * shares
+            total_capital += capital
+
+            bars = bars_map.get(sym) or []
+            current_price = float(bars[-1]["c"]) if bars else None
+            unrealized_pnl_pct = (
+                round((current_price - entry_price) / entry_price * 100, 2)
+                if current_price and entry_price > 0 else None
+            )
+
+            sector = (sector_lookup.get(sym) or {}).get("sector", "Unknown")
+            sector_capital[sector] = sector_capital.get(sector, 0.0) + capital
+
+            positions.append({
+                "symbol": sym,
+                "direction": t.get("direction"),
+                "entry_price": entry_price,
+                "current_price": current_price,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "shares": shares,
+                "capital": round(capital, 2),
+                "sector": sector,
+            })
+
+        for p in positions:
+            p["allocation_pct"] = round(p["capital"] / total_capital * 100, 1) if total_capital > 0 else 0.0
+
+        sector_exposure = {
+            sector: {
+                "capital": round(cap, 2),
+                "allocation_pct": round(cap / total_capital * 100, 1) if total_capital > 0 else 0.0,
+            }
+            for sector, cap in sorted(sector_capital.items(), key=lambda kv: kv[1], reverse=True)
+        }
+
+        return {
+            "ok": True,
+            "positions": positions,
+            "total_capital": round(total_capital, 2),
+            "sector_exposure": sector_exposure,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300], "positions": [], "total_capital": 0.0, "sector_exposure": {}}
+
+
 @app.get("/api/radar/divergence")
 def radar_divergence_compat():
     try:
