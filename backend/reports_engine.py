@@ -357,41 +357,122 @@ def _movers_table(movers: List[Dict[str, Any]]) -> str:
     """
 
 
+def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
+    """
+    ADDED (2026-09-13): replaces the old campaign-engine data source
+    (backend.campaign_full_enrichment_api, archived earlier this
+    session) as the report's core content, per explicit direction:
+    reports should not be retired, but rebuilt on the new setup --
+    Weis Analysis, with Renko.
+
+    Runs the point-in-time, non-repainting Renko-Weis evaluation
+    (backend.research_engine.renko_weis_wave_engine.RenkoWeisWaveEngine
+    -- already validated and already live behind
+    /api/research/renko-weis/{symbol}, just never previously used for
+    full-universe reporting) across every symbol in the exact same
+    active universe the Weis Radar scan already uses
+    (backend.radar_service._build_active_clean_universe()), rather
+    than inventing a separate, different universe for this report.
+
+    Uses fetch_bars_batch() for the network-fetch step -- already
+    proven this session to parallelize cleanly across symbols
+    (ThreadPoolExecutor, max_workers=10; see radar_service.py's own
+    comment on why that specific concurrency level was chosen) --
+    reusing that existing, tested safety work rather than re-fetching
+    bars sequentially or reinventing parallelization here. The actual
+    per-symbol Renko-Weis evaluation is pure, fast CPU work over an
+    already-fetched bar list with no further network calls, so it
+    runs in a plain sequential loop after the parallel fetch
+    completes -- no additional concurrency needed for that part.
+    """
+    from backend.radar_service import fetch_bars_batch, _build_active_clean_universe
+    from backend.research_engine.renko_weis_wave_engine import RenkoWeisWaveEngine
+
+    universe = _build_active_clean_universe()
+    bars_map = fetch_bars_batch(universe, timeframe="1Day", limit=252)
+
+    engine = RenkoWeisWaveEngine()
+    results: List[Dict[str, Any]] = []
+    for sym, bars in bars_map.items():
+        if not bars or len(bars) < 20:
+            continue
+        try:
+            verdict = engine.evaluate(bars, symbol=sym)
+            results.append(verdict.to_dict())
+        except Exception:
+            continue
+    return results
+
+
+def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str = "", limit: int = 25, bearish: bool = False) -> str:
+    """
+    ADDED (2026-09-13): the Renko-Weis counterpart to _table_html()
+    above -- that function's columns are entirely campaign-specific
+    (ODS status, lifecycle, cohort, target/failure prices) and don't
+    apply to this genuinely different data shape, so this is a new,
+    parallel function rather than a forced adaptation of the old one.
+    Set bearish=True to sort/display by the bearish side of the
+    verdict (weis_score_bearish/verdict_bearish) instead of the
+    bullish side -- the same row dict carries both, since the engine
+    always evaluates a symbol both ways.
+    """
+    score_key = "weis_score_bearish" if bearish else "weis_score"
+    verdict_key = "verdict_bearish" if bearish else "verdict"
+    shown = sorted(rows, key=lambda r: r.get(score_key) or 0, reverse=True)[:limit]
+    if not shown:
+        return f"""
+        <section class="section">
+          <h2>{_esc(title)}</h2>
+          <p class="muted">No rows met this section's criteria in today's review.</p>
+        </section>
+        """
+    body = []
+    for row in shown:
+        body.append(f"""
+        <tr>
+          <td><strong>{_esc(row.get("symbol"))}</strong></td>
+          <td>{_esc(row.get(verdict_key))}</td>
+          <td class="num">{_fmt(row.get(score_key), 1)}</td>
+          <td class="num">{_fmt(row.get("wave_count"), 0)}</td>
+          <td>{_esc(row.get("explanation"))}</td>
+        </tr>
+        """)
+    return f"""
+    <section class="section">
+      <h2>{_esc(title)}</h2>
+      {f'<p class="note">{_esc(note)}</p>' if note else ''}
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Verdict</th><th class="num">Weis Score</th>
+            <th class="num">Wave Count</th><th>Explanation</th>
+          </tr>
+        </thead>
+        <tbody>{''.join(body)}</tbody>
+      </table>
+    </section>
+    """
+
+
 def build_report_html(report_date_str: str) -> str:
     """
-    Builds the full HTML report document for a given date, using the
-    full-universe enriched campaign table as of when this is called.
-    Calls the endpoint's underlying function directly (in-process),
-    rather than an HTTP round-trip, since this runs inside the same
-    backend service that already serves that endpoint.
+    Builds the full HTML report document for a given date.
+
+    REBUILT (2026-09-13): previously used the live full-universe
+    enriched campaign table (backend.campaign_full_enrichment_api),
+    which was archived earlier this session along with the rest of
+    Campaign Intelligence. Per explicit direction, this report is not
+    retired -- rebuilt instead on the new setup: a full-universe scan
+    using the Renko-Weis engine (_run_full_universe_renko_weis_scan()
+    above), the same "pure Weis" analysis already live and validated
+    behind /api/research/renko-weis/{symbol}, now run across the full
+    active universe rather than one symbol at a time.
     """
-    from backend.campaign_full_enrichment_api import full_universe_enriched_campaign_table
+    rows = _run_full_universe_renko_weis_scan()
 
-    payload = full_universe_enriched_campaign_table(limit=100)
-    rows = [r for r in (payload.get("rows") or []) if isinstance(r, dict)]
-    market = payload.get("market_data_status") or {}
-
-    confirmed = [r for r in rows if r.get("ods_status") == "CONFIRMED"]
-    pending = [r for r in rows if r.get("ods_status") == "PENDING"]
-    not_confirmed = [r for r in rows if r.get("ods_status") == "NOT_CONFIRMED"]
-    long_watch = [r for r in rows if _is_bullish(r)]
-    neutral_watch = [r for r in rows if not _is_bullish(r)]
-    mature = [r for r in rows if r.get("lifecycle_maturity") in ("MATURE", "LONG_MATURE")]
-    cohort_ready = [r for r in rows if r.get("cohort_status") == "COHORT_READY"]
-    risk_watch = [
-        r for r in rows
-        if r.get("ods_status") in ("PENDING", "NOT_CONFIRMED")
-        and (
-            "demand_support_validation" in _missing_components(r)
-            or "structurally_meaningful_location" in _missing_components(r)
-            or r.get("ods_status") == "NOT_CONFIRMED"
-        )
-    ]
-    missing_counts = _component_counts(pending)
-    missing_html = "".join(
-        f"<tr><td>{_esc(k)}</td><td class='num'>{v}</td></tr>"
-        for k, v in missing_counts.items()
-    ) or "<tr><td>No missing components recorded</td><td class='num'>0</td></tr>"
+    bullish_rows = [r for r in rows if (r.get("weis_score") or 0) > 0]
+    bearish_rows = [r for r in rows if (r.get("weis_score_bearish") or 0) > 0]
+    neutral_rows = [r for r in rows if (r.get("weis_score") or 0) <= 0 and (r.get("weis_score_bearish") or 0) <= 0]
 
     try:
         display_date = datetime.strptime(report_date_str, "%Y-%m-%d").strftime("%B %d, %Y")
@@ -405,15 +486,16 @@ def build_report_html(report_date_str: str) -> str:
     <section class="section">
       <h2>Executive Market Review</h2>
       <p>
-        Today's V2 review uses the live full-universe Campaign Engine source: up to 100 ranked campaign rows,
-        formal ODS evidence evaluation, lifecycle maturity, cohort readiness, target/failure levels, and
-        risk/reward context. The review identified {len(confirmed)} formally ODS-confirmed campaigns,
-        {len(pending)} ODS-pending campaigns with specific missing evidence components, and
-        {len(cohort_ready)} cohort-ready names.
+        Today's review uses the live, full-universe Renko-Weis engine: a point-in-time,
+        non-repainting Renko brick reconstruction with David Weis's own Wave Volume
+        methodology mapped onto that brick structure, evaluated across {len(rows)} symbols with
+        sufficient trading history. The review identified {len(bullish_rows)} symbols with an active
+        bullish Weis signal and {len(bearish_rows)} symbols with an active bearish Weis signal.
       </p>
       <p>
-        ODS pending does not mean missing data. It means the historical record was evaluated but one or more
-        required operator-control evidence components was absent.
+        A Weis score reflects Sign-of-Thrust, volume exhaustion, effort-without-reward, and
+        wave-confirmation evidence on non-repainting Renko brick structure -- it describes what the
+        Renko/Weis structure currently shows, not a prediction or personalized recommendation.
       </p>
     </section>
     """
@@ -447,52 +529,28 @@ def build_report_html(report_date_str: str) -> str:
     <section class="section">
       <h2>Coverage Summary</h2>
       <div class="summary">
-        <div class="metric"><div class="num">{len(rows)}</div><div class="txt">Campaign rows reviewed</div></div>
-        <div class="metric"><div class="num">{_esc(market.get("history_years"))}</div><div class="txt">Years of daily history</div></div>
-        <div class="metric"><div class="num">{_esc(market.get("total_bars"))}</div><div class="txt">Daily bars evaluated</div></div>
-        <div class="metric"><div class="num">{len(cohort_ready)}</div><div class="txt">Cohort-ready names</div></div>
+        <div class="metric"><div class="num">{len(rows)}</div><div class="txt">Symbols evaluated</div></div>
+        <div class="metric"><div class="num">{len(bullish_rows)}</div><div class="txt">Active bullish signals</div></div>
+        <div class="metric"><div class="num">{len(bearish_rows)}</div><div class="txt">Active bearish signals</div></div>
+        <div class="metric"><div class="num">{len(neutral_rows)}</div><div class="txt">No active signal</div></div>
       </div>
-      <table>
-        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>Symbols with bars</td><td>{_esc(market.get("symbols_with_bars"))}</td></tr>
-          <tr><td>ODS confirmed</td><td>{len(confirmed)}</td></tr>
-          <tr><td>ODS pending with missing evidence detail</td><td>{len(pending)}</td></tr>
-          <tr><td>ODS not confirmed</td><td>{len(not_confirmed)}</td></tr>
-          <tr><td>Mature or long-mature campaigns</td><td>{len(mature)}</td></tr>
-        </tbody>
-      </table>
     </section>
 
-    <section class="section">
-      <h2>ODS Pending by Missing Evidence Component</h2>
-      <p class="note">Formal ODS confirmation requires tested supply exhaustion, active demand/support validation, structurally meaningful location, and absence of contrary failure.</p>
-      <table>
-        <thead><tr><th>Missing Evidence Component</th><th>Rows</th></tr></thead>
-        <tbody>{missing_html}</tbody>
-      </table>
-    </section>
-
-    {_table_html(_top_rows(confirmed, 20), "Formal ODS Confirmed Campaigns", "Confirmed only when all formal evidence components are present.", 20)}
-    {_card_grid(_top_rows(long_watch, 20), "Long Watchlist", "Bullish watch candidates from the full-universe source.", 12)}
-    {_table_html(_top_rows(neutral_watch, 25), "Neutral / Watch-Only Universe", "Rows not classified as bullish in the current source.", 25)}
-    {_table_html(_top_rows(mature, 25), "Mature Campaign Leaders", "Campaigns with mature or long-mature lifecycle status.", 25)}
-    {_table_html(_top_rows(cohort_ready, 25), "Cohort-Ready Campaigns", "Rows where historical structural analogs were sufficient for cohort readiness.", 25)}
-    {_table_html(_top_rows(risk_watch, 25), "Deterioration / Risk Watch", "Rows with missing demand/support validation, structural location, or explicit non-confirmation.", 25)}
-    {_table_html(_top_rows(rows, 20), "Tomorrow Focus List", "Highest-priority names by ODS/campaign evidence, lifecycle, and cohort context.", 20)}
+    {_weis_verdict_table_html(bullish_rows, "Top Bullish Weis Candidates", "Ranked by Weis score on non-repainting Renko brick structure.", 25, bearish=False)}
+    {_weis_verdict_table_html(bearish_rows, "Top Bearish Weis Candidates", "Ranked by Weis score (bearish side) on non-repainting Renko brick structure.", 25, bearish=True)}
 
     <section class="section">
       <h2>Important Subscriber Notes</h2>
       <p>
-        This report is a daily stock-intelligence review generated from Sigmalytic V2 campaign, formal ODS,
-        lifecycle, cohort, and market-structure evidence. The long, short, neutral, pending, and confirmed
-        classifications are watchlist categories, not personalized investment advice.
+        This report is a daily stock-intelligence review generated from Sigmalytic V2's
+        Renko-Weis analysis. Bullish and bearish classifications describe current Renko/Weis
+        structure and are watchlist categories, not personalized investment advice.
       </p>
     </section>
 
     <div class="footer">
       {_esc(COPYRIGHT)}<br>
-      Sigmalytic Quant Corporation | V2 Campaign Intelligence | Daily Intelligence Report
+      Sigmalytic Quant Corporation | V2 Renko-Weis Intelligence | Daily Intelligence Report
     </div>
   </div>
 </body>
