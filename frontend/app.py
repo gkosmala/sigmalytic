@@ -280,23 +280,26 @@ def _rfa25h_command_center_freshness_title():
     yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
     border = _rfa25h_color("BORDER", "rgba(255,255,255,.08)")
 
-    active = _rfa25h_fetch_json("/api/campaigns/active")
-    rows = _rfa25h_safe_list(active.get("campaigns"))
-
+    # REMOVED (2026-09-13): the /api/campaigns/active fetch this used to
+    # make (for "Campaign Refresh" and "Evidence Refresh" below) is now
+    # pointless -- Campaign Intelligence's backend was archived earlier
+    # this session, so that endpoint always returns an empty campaigns
+    # list. Both chips would have shown a permanent, meaningless blank
+    # timestamp, and worse: _rfa25h_freshness_status() defensively
+    # returns ("NO DATA", red) for a missing timestamp, which drove the
+    # panel's OVERALL title color/label too -- meaning this whole panel
+    # would have shown a permanent red "NO DATA" title even while the
+    # still-relevant Radar indicators below were perfectly healthy.
+    # Rebased the title on radar_refresh instead, the one remaining
+    # timestamp in this panel that's still genuinely meaningful.
     radar = _rfa25h_fetch_json("/api/radar/scores?limit=25")
     cache = radar.get("cache") if isinstance(radar.get("cache"), dict) else {}
 
-    campaign_refresh = _rfa25h_max_ts(rows, "updated_at")
-    evidence_refresh = _rfa25h_max_ts(rows, "evidence_updated_at")
     radar_refresh = radar.get("generated_at") or "-"
     radar_served = radar.get("served_at") or "-"
     radar_cache = cache.get("mode") or "-"
 
-    # FIX: this used to call itself here (infinite recursion -> RecursionError
-    # on every render). The title is now computed directly from the same
-    # campaign_refresh timestamp already fetched above, with real
-    # staleness-aware coloring instead of a hardcoded "white" title.
-    freshness_label, freshness_color = _rfa25h_freshness_status(campaign_refresh)
+    freshness_label, freshness_color = _rfa25h_freshness_status(radar_refresh)
     title_text = f"Data Freshness — {freshness_label}"
 
     return html.Div([
@@ -315,8 +318,6 @@ def _rfa25h_command_center_freshness_title():
             "marginBottom": "7px",
         }),
         html.Div([
-            _rfa25h_chip("Campaign Refresh", campaign_refresh, teal),
-            _rfa25h_chip("Evidence Refresh", evidence_refresh, teal),
             _rfa25h_chip("Radar Refresh", radar_refresh, blue),
             _rfa25h_chip("Radar Cache", radar_cache, yellow),
             _rfa25h_chip("Radar Served", radar_served, muted),
