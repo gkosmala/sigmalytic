@@ -10525,7 +10525,17 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         count_guide = None
 
     # Preserve backend decision/confluence if present. Fall back to local engine output.
-    fallback_live = create_live_update(clean, price, volume, new_seq, count_guide=count_guide).to_dict()
+    # FIX (2026-09-13): confirmed a real, reported bug -- candles was
+    # never passed here, meaning calculate_behavioral_score(candles)
+    # inside create_live_update() always received None on every
+    # regular ~10s tick (the most common case), so behavioral_score
+    # was silently None the entire time. This wasn't visible before
+    # since nothing displayed that field directly -- it only surfaced
+    # once the new Behavioral Conviction thermometer was added and
+    # consistently failed to render. candles is already this
+    # function's own parameter (on_tick), so this is purely a missing
+    # pass-through, not new data-fetching.
+    fallback_live = create_live_update(clean, price, volume, new_seq, count_guide=count_guide, candles=candles).to_dict()
     new_live = {
         **fallback_live,
         "symbol": clean,
