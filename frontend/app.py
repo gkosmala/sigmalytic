@@ -2874,7 +2874,8 @@ def _build_volume_expansion_note(price, rel_volume):
     )
 
 
-def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None):
+def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None,
+                            behavioral_score=None, options_bias=None):
     """Compact, user-readable Direction & Confidence panel.
 
     FIX (2026-08-04): merged in the previously-separate Symbol/Live
@@ -2952,6 +2953,38 @@ def build_direction_panel(decision, score, symbol=None, price=None, regime=None,
             html.Span("\"Score Tier A — Audio Active\"", style={"color": TEAL_DIM}),
         ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
         html.Div(_build_volume_expansion_note(price, rel_volume), style={"marginTop": "10px"}) if price is not None else None,
+        # ADDED (2026-09-13): two new, genuinely independent thermometer
+        # reads, per explicit request and design discussion -- NOT
+        # additions to the blended Engine Score above. Confirmed via
+        # direct code inspection before building: behavioral_score and
+        # options_bias are both already computed and already flow
+        # through to the frontend's live data (shared/engine.py's
+        # create_live_update() already stores both as dedicated
+        # fields), so this is purely a new display of already-live
+        # data, not new backend computation. Confirmed non-duplicative
+        # against every other panel on this page and the Weis Analysis
+        # tab before adding -- unlike a prior candidate (a Wyckoff
+        # grade from Count Guide levels), which was found to genuinely
+        # duplicate the Weis Analysis tab's PnF-Weis Engine card and
+        # was deliberately NOT built for that reason.
+        html.Div(
+            pbar("Behavioral Conviction", round(behavioral_score.get("composite", 50)))
+        ) if behavioral_score else None,
+        html.Div([
+            pbar(
+                "Dealer Hedging",
+                round(
+                    50 + (options_bias.get("confidence", 0) / 2) if options_bias.get("net_bias") == "BULLISH" else
+                    50 - (options_bias.get("confidence", 0) / 2) if options_bias.get("net_bias") == "BEARISH" else
+                    50
+                ),
+                color=BLUE_DIM,
+            ),
+            html.Div([
+                html.Span("← Amplifying", style={"fontSize": "9px", "color": MUTED}),
+                html.Span("Dampening →", style={"fontSize": "9px", "color": MUTED}),
+            ], style={"display": "flex", "justifyContent": "space-between", "marginTop": "2px"}),
+        ], style={"marginTop": "10px"}) if options_bias else None,
     ])
 
 
@@ -3769,7 +3802,9 @@ def build_command_tab(live, candles, symbol, tf):
             # Column A — Direction & Confidence Panel
             html.Div([
                 build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime,
-                                       rel_volume=live.get("rel_volume")),
+                                       rel_volume=live.get("rel_volume"),
+                                       behavioral_score=live.get("behavioral_score"),
+                                       options_bias=live.get("options_bias")),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
