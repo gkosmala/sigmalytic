@@ -9755,8 +9755,8 @@ ALL_TABS = [
     # set_tab() -- nothing to rebuild from scratch.
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
-    ("portfolio",   "Portfolio"),
     ("journal",     "Journal"),
+    ("portfolio",   "Portfolio"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
     ("status",      "Status"),
