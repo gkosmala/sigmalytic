@@ -6613,10 +6613,18 @@ def r4_r14f_strict_wlw_event_date_facts_main_bridge(
     livermore_long_pivot_price: str = "",
     livermore_short_risk_pivot_price: str = "",
 ):
+    # FIX (2026-09-13): confirmed a real, unguarded gap -- the fallback
+    # import below was never itself wrapped in a try/except, so once
+    # backend.campaign_api was archived, BOTH import attempts fail and
+    # the second one propagates uncaught, crashing this endpoint with
+    # an unhandled exception instead of a clean error response.
     try:
         from backend.campaign_api import r4_r14c_strict_wlw_event_date_facts as _r4_r14c_event_date_facts
     except Exception:
-        from campaign_api import r4_r14c_strict_wlw_event_date_facts as _r4_r14c_event_date_facts
+        try:
+            from campaign_api import r4_r14c_strict_wlw_event_date_facts as _r4_r14c_event_date_facts
+        except Exception as e:
+            return {"ok": False, "error": f"campaign engine unavailable: {e}"[:300]}
 
     return _r4_r14c_event_date_facts(
         symbols=symbols,
