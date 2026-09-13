@@ -10134,7 +10134,7 @@ def load_symbol(_, ticker, live, tf, session, lookback):
 
 @app.callback(
     Output("s-tab","data"),
-    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),      Input("tab-campaign","n_clicks"),
+    Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),
     Input("tab-weis_radar","n_clicks"),
     Input("tab-weis","n_clicks"),
     Input("tab-behavior","n_clicks"),
