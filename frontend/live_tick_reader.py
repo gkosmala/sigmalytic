@@ -17,16 +17,23 @@ BAR_MAX_AGE_SECONDS = 90  # bars arrive ~once/minute; this must be looser than t
 
 def read_coherent_tick(redis_client, symbol: str, now: float = None):
     """
-    Returns {"price", "bid_price", "ask_price", "volume", "timestamp"}
-    if the stream has a full, fresh tick for this symbol, else None --
-    meaning the caller should fall back to its existing REST-polled
-    snapshot entirely, not blend the two.
+    Returns {"price", "bid_price", "bid_size", "ask_price", "ask_size",
+    "volume", "timestamp"} if the stream has a full, fresh tick for this
+    symbol, else None -- meaning the caller should fall back to its
+    existing REST-polled snapshot entirely, not blend the two.
 
     "volume" here is the latest bar's volume, matching what the old
     REST endpoint's "volume" field already meant (Alpaca's latest-bar
     endpoint is itself bar-based) -- not a single trade's size, which
     is a different, smaller number that would silently change the
     meaning of that field if used instead.
+
+    UPDATED (2026-09-14): added bid_size/ask_size to the returned dict.
+    Confirmed directly in tools/render_alpaca_stream_worker.py's
+    write_quote_to_hash() that these fields were already being written
+    to the Redis hash on every quote update -- this function just
+    wasn't reading them out. No change to the streaming worker itself
+    was needed.
     """
     now = now if now is not None else time.time()
 
@@ -38,7 +45,7 @@ def read_coherent_tick(redis_client, symbol: str, now: float = None):
     if not raw:
         return None
 
-    required = {"last_price", "last_ts", "bid_price", "ask_price", "quote_ts", "bar_volume", "bar_ts"}
+    required = {"last_price", "last_ts", "bid_price", "bid_size", "ask_price", "ask_size", "quote_ts", "bar_volume", "bar_ts"}
     if not required.issubset(raw.keys()):
         return None  # not all three event types have reported for this symbol yet
 
@@ -60,7 +67,9 @@ def read_coherent_tick(redis_client, symbol: str, now: float = None):
         return {
             "price": float(raw["last_price"]),
             "bid_price": float(raw["bid_price"]),
+            "bid_size": int(float(raw["bid_size"])),
             "ask_price": float(raw["ask_price"]),
+            "ask_size": int(float(raw["ask_size"])),
             "volume": int(float(raw["bar_volume"])),
             "timestamp": datetime.fromtimestamp(last_ts, tz=timezone.utc).isoformat(),
         }
