@@ -1169,6 +1169,43 @@ def _refresh_historical_bars(force_alpaca: bool = False):
     try:
         target_limit = int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252"))
 
+        # ── Step 0: Try Redis first (2026-09-14) ───────────────────────────────
+        # ADDED: confirmed via direct Supabase log inspection this session that
+        # Step 1 below (Supabase) reloads ~372,000 rows (1,479 symbols x 252
+        # daily bars) on every single backend restart, since _historical_bars
+        # is plain in-memory and resets to empty on every deploy -- this app
+        # gets deployed frequently during active development, and each deploy
+        # was paying this full egress cost again. Redis is a genuinely
+        # SEPARATE Render service from this web backend, so it survives this
+        # backend's own restarts/deploys -- unlike the in-memory dict, a value
+        # written here stays available across the exact restarts that were
+        # triggering the expensive Supabase reload. Falls through to the
+        # existing Supabase step untouched if Redis is empty or unavailable
+        # (e.g. Redis's own, much rarer restart, or the very first deploy
+        # ever) -- this is a genuine additional layer, not a replacement for
+        # the existing Supabase fallback, which still populates Redis for
+        # next time via the same save step already in place below.
+        if not force_alpaca and not _historical_bars and _redis_client is not None:
+            try:
+                import json as _hist_bars_json
+                raw_cached = _redis_client.get("historical_bars:v1")
+                if raw_cached:
+                    cached = _hist_bars_json.loads(raw_cached)
+                    if isinstance(cached, dict) and cached:
+                        for sym, bars in cached.items():
+                            _historical_bars[sym] = bars[-target_limit:]
+                        _bars_last_refresh = time.time()
+                        log.info(f"Loaded {len(_historical_bars)} symbols from Redis cache (restart-safe)")
+                        try:
+                            from backend.behavioral_memory import train_batch as _bme_train
+                            trained = _bme_train(dict(_historical_bars))
+                            log.info(f"BME training from Redis: {trained}/{len(_historical_bars)} symbols")
+                        except Exception as _bme_e:
+                            log.warning(f"BME training from Redis failed: {_bme_e}")
+                        return  # Redis load succeeded -- skip Supabase and Alpaca entirely
+            except Exception as _redis_e:
+                log.warning(f"Redis historical bar load failed — falling back to Supabase: {_redis_e}")
+
         # ── Step 1: Try Supabase cache first (fast startup) ───────────────────
         if not force_alpaca and not _historical_bars:
             try:
@@ -1180,6 +1217,22 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                             _historical_bars[sym] = bars[-target_limit:]
                         _bars_last_refresh = time.time()
                         log.info(f"Loaded {len(_historical_bars)} symbols from Supabase cache")
+                        # ADDED (2026-09-14): populate Redis too, so the NEXT
+                        # backend restart hits Step 0 above instead of paying
+                        # this same Supabase egress cost again. 24h TTL: daily
+                        # bars only genuinely change once a day (a new bar
+                        # appended), so this is deliberately much longer than
+                        # this app's usual 15-900s cache TTLs elsewhere.
+                        try:
+                            import json as _hist_bars_json
+                            _redis_client.set(
+                                "historical_bars:v1",
+                                _hist_bars_json.dumps(_historical_bars),
+                                ex=86400,
+                            )
+                            log.info(f"Cached {len(_historical_bars)} symbols to Redis for next restart")
+                        except Exception as _redis_save_e:
+                            log.warning(f"Failed to cache historical bars to Redis: {_redis_save_e}")
                         # Trigger BME training from Supabase data
                         try:
                             from backend.behavioral_memory import train_batch as _bme_train
