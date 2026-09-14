@@ -3762,6 +3762,14 @@ def build_command_tab(live, candles, symbol, tf):
     # ── Row 1b: Price Ladder, horizontal band underneath the chart ────────────
     row1b = html.Div([price_ladder], style={"marginBottom":"16px"})
 
+    # ADDED (2026-09-14): live quote box (bid/ask/sizes/last/volume),
+    # per explicit request for TradeStation-like display. This is a
+    # STATIC placeholder here -- render_quote_box() (a separate,
+    # targeted callback) fills it in via its own 1s interval, so this
+    # box updates without triggering a rebuild of anything else on
+    # this tab.
+    quote_box_row = html.Div(id="quote-box-display", style={"marginBottom": "12px"})
+
     # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
     row2 = card([
         html.Div([
@@ -4042,7 +4050,7 @@ def build_command_tab(live, candles, symbol, tf):
         "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
     })
 
-    return html.Div([cc_wall_values_div, row1, row1b, row2, row3, row4, row5, row6],
+    return html.Div([cc_wall_values_div, quote_box_row, row1, row1b, row2, row3, row4, row5, row6],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -9814,6 +9822,21 @@ app.layout = html.Div([
     dcc.Interval(id="i-clock",  interval=5_000, n_intervals=0),
     dcc.Interval(id="i-market-wire", interval=15_000, n_intervals=0),
     dcc.Store(id="s-market-wire", data=None),
+    # ADDED (2026-09-14): fast, dedicated quote polling (bid/ask/sizes/
+    # last/volume) -- per explicit request for TradeStation-like live
+    # quote display. Deliberately SEPARATE from i-alpaca/s-live: that
+    # 10s interval drives a full page rebuild (render_main), so tying
+    # a 1s interval to the same path would multiply the existing
+    # full-rebuild performance problem by 10x, not fix it. This new
+    # interval feeds ONLY the small quote box below via its own
+    # targeted callback -- confirmed this is a real, live data source
+    # already, not new polling against Alpaca: it reads the SAME
+    # already-live Redis data that tools/render_alpaca_stream_worker.py
+    # (a separate, already-running service) writes on every real quote/
+    # trade event -- this interval only controls how often the BROWSER
+    # checks that already-fresh data, not how often new data arrives.
+    dcc.Interval(id="i-quote-fast", interval=1_000, n_intervals=0),
+    dcc.Store(id="s-quote-box", data=None),
     # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
     # narration of live market context and radar alerts, via the
     # browser's own built-in text-to-speech (no third-party service,
@@ -10640,6 +10663,69 @@ def fetch_market_wire(_):
 )
 def render_market_wire(items):
     return _render_market_wire(items)
+
+@app.callback(
+    Output("s-quote-box", "data"),
+    Input("i-quote-fast", "n_intervals"),
+    State("s-symbol", "data"),
+    State("s-tab", "data"),
+    prevent_initial_call=True,
+)
+def fetch_quote_box(_, symbol, tab):
+    # ADDED (2026-09-14): only poll while actually on Command Center --
+    # no reason to hit Redis every second for a box the person can't
+    # currently see on any other tab.
+    if tab != "command":
+        return no_update
+    clean = (symbol or "AAPL").upper().strip()
+    try:
+        from shared_cache import shared_cache
+        from live_tick_reader import read_coherent_tick
+        redis_client = shared_cache.get_redis_client()
+        if redis_client is None:
+            return no_update
+        streamed = read_coherent_tick(redis_client, clean)
+        return streamed  # None is a valid, meaningful "no fresh tick yet"
+    except Exception:
+        return no_update
+
+@app.callback(
+    Output("quote-box-display", "children"),
+    Input("s-quote-box", "data"),
+)
+def render_quote_box(q):
+    # ADDED (2026-09-14): TradeStation-style live quote box -- bid/ask
+    # WITH size, last price, volume. Deliberately its own small,
+    # targeted callback/Output -- only this box re-renders on the 1s
+    # tick, not main-content (confirmed separately that main-content's
+    # full rebuild on every price tick is the root cause of reported
+    # slowness/flicker; this box is built to specifically avoid
+    # repeating that same mistake).
+    cell = {"fontFamily": "DM Mono, monospace", "fontSize": "13px", "fontWeight": "700"}
+    label = {"fontSize": "9px", "color": MUTED, "fontWeight": "700",
+             "textTransform": "uppercase", "letterSpacing": ".06em"}
+    if not q:
+        return html.Div("Waiting for live quote…", style={"color": MUTED, "fontSize": "11px"})
+    return html.Div([
+        html.Div([
+            html.Div("Bid", style=label),
+            html.Div(f"{q['bid_price']:.2f} x {q['bid_size']}", style={**cell, "color": RED_DIM}),
+        ], style={"flex": "1"}),
+        html.Div([
+            html.Div("Ask", style=label),
+            html.Div(f"{q['ask_price']:.2f} x {q['ask_size']}", style={**cell, "color": TEAL_DIM}),
+        ], style={"flex": "1"}),
+        html.Div([
+            html.Div("Last", style=label),
+            html.Div(f"{q['price']:.2f}", style={**cell, "color": WHITE}),
+        ], style={"flex": "1"}),
+        html.Div([
+            html.Div("Volume", style=label),
+            html.Div(f"{q['volume']:,}", style={**cell, "color": WHITE}),
+        ], style={"flex": "1"}),
+    ], style={"display": "flex", "gap": "16px", "padding": "10px 14px",
+              "background": NAVY_MID, "border": f"1px solid {BORDER}",
+              "borderRadius": "10px"})
 
 @app.callback(
     Output("main-content",       "children"),
