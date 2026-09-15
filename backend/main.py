@@ -1671,6 +1671,47 @@ def journal_trades_compat(request: Request, status: str = None, limit: int = 100
         return {"trades": [], "count": 0, "error": str(exc)[:300]}
 
 
+@app.get("/api/debug/stream-status/{symbol}")
+def debug_stream_status(symbol: str):
+    """
+    ADDED (2026-09-15): read-only diagnostic exposing the exact same
+    Redis state the stream worker and the quote box both depend on --
+    the current desired-symbols subscription set, and the raw
+    live_tick:{symbol} hash if one exists. Built specifically so this
+    can be checked directly (e.g. via a simple URL fetch) instead of
+    needing Render's dashboard/logs for every check during this
+    specific investigation. No write access, no side effects.
+    """
+    try:
+        from backend.subscription_manager import SubscriptionManager
+        import redis as _redis_lib
+        import os as _os
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        sym = symbol.upper().strip()
+
+        subs = SubscriptionManager(client)
+        desired = sorted(subs.get_desired_symbols())
+        slots = subs.get_slots()
+
+        raw_tick = client.hgetall(f"live_tick:{sym}")
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "desired_symbols": desired,
+            "slots": slots,
+            "live_tick_raw": raw_tick or None,
+            "live_tick_exists": bool(raw_tick),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.get("/api/journal/profile")
 def journal_profile_compat(request: Request):
     try:
