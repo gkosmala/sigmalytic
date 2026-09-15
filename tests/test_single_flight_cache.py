@@ -1,7 +1,8 @@
 """
 tests/test_single_flight_cache.py
 -----------------------------------
-Regression coverage for campaign_api.py's _cached_endpoint_result().
+Regression coverage for the single-flight, TTL-based caching guarantee
+this app relies on to prevent thundering-herd OOM crashes.
 
 WHY THIS EXISTS: this cache originally had a real thundering-herd bug --
 the lock only protected the *check* ("is there a fresh cached value"),
@@ -14,6 +15,21 @@ check+compute+store. A second, more subtle bug was found afterward:
 an empty-but-genuinely-fresh result (e.g. "0 divergences found today")
 was being treated as a cache miss and silently overwritten by a stale
 fallback -- these tests cover both.
+
+UPDATED (2026-09-15): this test originally covered campaign_api.py's
+own _cached_endpoint_result(), which had a real, separate, more severe
+bug of its own -- a plain in-process dict, meaning multiple gunicorn
+worker processes each had their own independent copy, completely
+defeating the protection under workers > 1. That was superseded by
+backend/shared_cache.py's Redis-backed get_or_fetch() (see that
+module's own docstring), which is the genuinely current, live
+implementation of this same single-flight guarantee. campaign_api.py
+itself was archived shortly after (unrelated, separate reason -- see
+_archive/campaign_intelligence/), which silently broke this test's
+import with no replacement -- confirmed via an actual CI failure that
+this had been failing on every push since, undetected. Retargeted at
+the current, correct implementation rather than retired, since the
+underlying guarantee this protects is still real and still critical.
 """
 import sys
 import os
@@ -22,7 +38,14 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from backend.campaign_api import _cached_endpoint_result
+from backend.shared_cache import shared_cache
+
+
+def _cached_endpoint_result(key, ttl_seconds, compute_fn):
+    """Thin adapter matching this test file's original (key, ttl, fn)
+    call order, so the tests below stay focused on the guarantee being
+    verified rather than shared_cache's own (fn, ttl) parameter order."""
+    return shared_cache.get_or_fetch(key, compute_fn, ttl_seconds=ttl_seconds)
 
 
 def _fresh_key(prefix: str) -> str:
