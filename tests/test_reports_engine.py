@@ -222,12 +222,27 @@ def test_build_report_html_contains_core_branding_and_no_leftover_debug_artifact
     End-to-end smoke test: the full report document must contain the
     real branding treatment, and must never contain any leftover
     diagnostic markers or internal debug text from past investigations.
+
+    UPDATED (2026-09-15): originally mocked the old campaign-engine
+    data source (backend.campaign_full_enrichment_api), archived
+    earlier this session when Reports was rebuilt on the Renko-Weis
+    engine -- confirmed via an actual CI failure that this had been
+    silently broken (mocking a module that no longer exists) since
+    that rebuild, undetected. Retargeted at the current, real data
+    source (_run_full_universe_renko_weis_scan) with a minimal but
+    realistic row shape, matching what RenkoWeisWaveEngine.evaluate()
+    .to_dict() actually returns (confirmed directly against
+    backend/reports_engine.py's own _weis_verdict_table_html(), which
+    reads symbol/weis_score/verdict/weis_score_bearish/verdict_bearish).
     """
-    fake_campaign_payload = {"rows": [], "market_data_status": {}}
+    fake_renko_weis_rows = [
+        {"symbol": "AAPL", "weis_score": 72.0, "verdict": "Bullish Continuation",
+         "weis_score_bearish": 18.0, "verdict_bearish": "No Bearish Setup"},
+    ]
     fake_radar_cache = {
         "AAPL": {"symbol": "AAPL", "change_pct": -7.2, "price": 300.68, "rel_volume": 2.33, "volume": 132490000},
     }
-    with patch("backend.campaign_full_enrichment_api.full_universe_enriched_campaign_table", return_value=fake_campaign_payload), \
+    with patch("backend.reports_engine._run_full_universe_renko_weis_scan", return_value=fake_renko_weis_rows), \
          patch("backend.radar_service.RADAR_CACHE", fake_radar_cache):
         html_doc = build_report_html("2026-07-31")
 
