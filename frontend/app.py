@@ -3768,7 +3768,11 @@ def build_command_tab(live, candles, symbol, tf):
     # targeted callback) fills it in via its own 1s interval, so this
     # box updates without triggering a rebuild of anything else on
     # this tab.
-    quote_box_row = html.Div(id="quote-box-display", style={"marginBottom": "12px"})
+    quote_box_row = html.Div(
+        "Waiting for live quote…",
+        id="quote-box-display",
+        style={"marginBottom": "12px", "color": MUTED, "fontSize": "11px"},
+    )
 
     # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
     row2 = card([
@@ -10692,6 +10696,7 @@ def fetch_quote_box(_, symbol, tab):
 @app.callback(
     Output("quote-box-display", "children"),
     Input("s-quote-box", "data"),
+    prevent_initial_call=True,
 )
 def render_quote_box(q):
     # ADDED (2026-09-14): TradeStation-style live quote box -- bid/ask
