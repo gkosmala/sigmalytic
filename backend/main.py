@@ -8,10 +8,25 @@ except Exception:
         controlled_universe_ingest_router = None
 
 # STEP28B_CAMPAIGN_PIPELINE_VALIDATION_ROUTER_IMPORT
+# FIX (2026-09-15): confirmed via an actual Render deploy log that this
+# exact import was crashing the ENTIRE backend on every single startup
+# for the past two days -- campaign_pipeline_validation_api.py is
+# archived (moved to _archive/campaign_intelligence/ earlier this
+# session), but this specific import was missed during that guarding
+# pass. Unlike the other campaign imports already fixed, this one sits
+# at true module level (not inside a function), so failure here
+# crashed before the app could even start, not just one endpoint --
+# every deploy since this became stale silently kept serving old code
+# while showing "Deployed" in the deploy list, because Render considers
+# a deploy that reaches the crash-and-restart loop as technically
+# completed, not failed at the git/build level.
 try:
     from campaign_pipeline_validation_api import campaign_pipeline_validation_router
 except Exception:
-    from backend.campaign_pipeline_validation_api import campaign_pipeline_validation_router
+    try:
+        from backend.campaign_pipeline_validation_api import campaign_pipeline_validation_router
+    except Exception:
+        campaign_pipeline_validation_router = None
 
 """
 SAVE AS:
@@ -6657,12 +6672,22 @@ if campaign_pipeline_validation_router is not None:
 # Isolated brokerage import-history restoration lane.
 # This router is intentionally scoped away from campaign mutation, universe ingest,
 # D3D authorization, operator-control confirmation, trade signals, and billing.
+# FIX (2026-09-15): found and fixed alongside a real, confirmed incident
+# where this exact unguarded-fallback pattern (a bare `from X import Y`
+# inside `except Exception:`, no nested try) crashed the entire backend
+# for two days when a different module was archived. This one currently
+# still exists and works, but proactively hardened against the same
+# risk if it's ever moved/renamed without this import being updated too.
 try:
     from backend.import_history_restore_api import router as import_history_restore_router
 except Exception:
-    from import_history_restore_api import router as import_history_restore_router
+    try:
+        from import_history_restore_api import router as import_history_restore_router
+    except Exception:
+        import_history_restore_router = None
 
-app.include_router(import_history_restore_router)
+if import_history_restore_router is not None:
+    app.include_router(import_history_restore_router)
 # SIGMALYTIC_STEP85D_IMPORT_HISTORY_RESTORE_ROUTER_END
 
 
@@ -6675,12 +6700,20 @@ except Exception as _sig_email_alert_test_router_exc:
 # === SIGMALYTIC CONTROLLED EMAIL ALERT TEST ROUTER END ===
 
 # SIGMALYTIC_STEP87B_R2_READ_ONLY_ENRICHED_CAMPAIGN_TABLE_INCLUDE
+# FIX (2026-09-15): found in the same sweep as campaign_pipeline_
+# validation_api -- this module is ALSO archived and was ALSO crashing
+# the entire backend at module-import time, meaning even after fixing
+# that first import, startup would have failed again immediately here.
 try:
     from campaign_enriched_table_api import router as sig87b_r2_enriched_campaign_table_router
-except ImportError:
-    from backend.campaign_enriched_table_api import router as sig87b_r2_enriched_campaign_table_router
+except Exception:
+    try:
+        from backend.campaign_enriched_table_api import router as sig87b_r2_enriched_campaign_table_router
+    except Exception:
+        sig87b_r2_enriched_campaign_table_router = None
 
-app.include_router(sig87b_r2_enriched_campaign_table_router)
+if sig87b_r2_enriched_campaign_table_router is not None:
+    app.include_router(sig87b_r2_enriched_campaign_table_router)
 # END_SIGMALYTIC_STEP87B_R2_READ_ONLY_ENRICHED_CAMPAIGN_TABLE_INCLUDE
 
 
