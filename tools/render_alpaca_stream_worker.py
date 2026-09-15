@@ -41,6 +41,7 @@ ARCHITECTURE:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -176,6 +177,25 @@ def main() -> int:
         "subscribed": set(),      # symbols we believe we're currently subscribed to
     }
 
+    # ADDED (2026-09-15): confirmed a real, genuine anti-pattern -- each
+    # handler below is `async def`, running directly inside alpaca-py's
+    # own asyncio event loop that receives and dispatches every
+    # incoming WebSocket message. But write_trade_to_hash/
+    # write_quote_to_hash/write_bar_to_hash all call the standard,
+    # SYNCHRONOUS redis-py client (imported above as _redis_module,
+    # not redis.asyncio). Each of those calls blocks that same event
+    # loop for its full network round-trip -- during which no new
+    # incoming trade/quote/bar frame can be received or parsed.
+    # Confirmed this matters, not just in theory: live checks against
+    # this app's own diagnostic endpoint showed AAPL trades arriving
+    # ~25-45s apart on a paid, "0 delay" SIP plan during active market
+    # hours, with zero write errors logged -- consistent with messages
+    # being silently missed while the loop was blocked, not with the
+    # feed or account being at fault. run_in_executor offloads each
+    # write to a background thread, letting the event loop return
+    # immediately to receiving the next message.
+    loop = asyncio.get_event_loop()
+
     async def _on_trade(trade):
         # Called by the SDK on its own event-loop thread for every
         # incoming trade. Only ever writes the trade-owned fields (see
@@ -183,29 +203,35 @@ def main() -> int:
         # fields another handler owns, so concurrent events for the
         # same symbol can't race or clobber each other.
         try:
-            write_trade_to_hash(_redis_client, trade.symbol, float(trade.price),
-                                 getattr(trade, "size", None), time.time())
+            await loop.run_in_executor(
+                None, write_trade_to_hash, _redis_client, trade.symbol,
+                float(trade.price), getattr(trade, "size", None), time.time(),
+            )
         except Exception as exc:
             print(f"[ALPACA_STREAM] Error writing trade for {getattr(trade, 'symbol', '?')}: {exc}",
                   flush=True)
 
     async def _on_quote(quote):
         try:
-            write_quote_to_hash(_redis_client, quote.symbol,
-                                 float(quote.bid_price) if quote.bid_price else None,
-                                 getattr(quote, "bid_size", None),
-                                 float(quote.ask_price) if quote.ask_price else None,
-                                 getattr(quote, "ask_size", None),
-                                 time.time())
+            await loop.run_in_executor(
+                None, write_quote_to_hash, _redis_client, quote.symbol,
+                float(quote.bid_price) if quote.bid_price else None,
+                getattr(quote, "bid_size", None),
+                float(quote.ask_price) if quote.ask_price else None,
+                getattr(quote, "ask_size", None),
+                time.time(),
+            )
         except Exception as exc:
             print(f"[ALPACA_STREAM] Error writing quote for {getattr(quote, 'symbol', '?')}: {exc}",
                   flush=True)
 
     async def _on_bar(bar):
         try:
-            write_bar_to_hash(_redis_client, bar.symbol,
-                               float(bar.open), float(bar.high), float(bar.low), float(bar.close),
-                               getattr(bar, "volume", None), time.time())
+            await loop.run_in_executor(
+                None, write_bar_to_hash, _redis_client, bar.symbol,
+                float(bar.open), float(bar.high), float(bar.low), float(bar.close),
+                getattr(bar, "volume", None), time.time(),
+            )
         except Exception as exc:
             print(f"[ALPACA_STREAM] Error writing bar for {getattr(bar, 'symbol', '?')}: {exc}",
                   flush=True)
