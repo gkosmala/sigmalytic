@@ -10110,6 +10110,32 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session, lookback):
 
 # Live-only mode — no toggle callback needed
 
+def _request_command_center_stream(clean: str):
+    # ADDED (2026-09-15): extracted from load_symbol() into a shared
+    # helper, per a confirmed, real root cause -- load_symbol() only
+    # fires when the user actively clicks "Load" (Input("btn-load",
+    # "n_clicks"), prevent_initial_call=True). Simply loading or
+    # refreshing the page with a symbol already set NEVER called this,
+    # meaning the stream worker's desired-symbols set stayed genuinely
+    # empty (confirmed directly in its own logs: "desired_symbols=
+    # set()", repeating indefinitely) for any session that didn't
+    # involve an explicit re-entry of the ticker. Now also called from
+    # on_tick(), which runs on every regular price tick regardless of
+    # how the page was loaded -- reconciling this every ~10s is safe
+    # and cheap (SubscriptionManager.request() is just one Redis
+    # hset(), idempotent for an unchanged symbol).
+    try:
+        from shared_cache import shared_cache
+        from subscription_manager import SubscriptionManager
+        redis_client = shared_cache.get_redis_client()
+        if redis_client is not None:
+            SubscriptionManager(redis_client).request("command_center", clean)
+            print(f"[STREAM_SUBSCRIBE] command_center requested for {clean}", flush=True)
+        else:
+            print("[STREAM_SUBSCRIBE_FAIL] command_center: shared_cache.get_redis_client() returned None", flush=True)
+    except Exception as _sub_exc:
+        print(f"[STREAM_SUBSCRIBE_FAIL] command_center for {clean}: {type(_sub_exc).__name__}: {_sub_exc}", flush=True)
+
 @app.callback(
     Output("s-symbol","data"),
     Output("ticker-input","value"),
@@ -10145,17 +10171,7 @@ def load_symbol(_, ticker, live, tf, session, lookback):
     # made this completely undiagnosable when nothing downstream ever
     # showed a subscribed symbol, with no way to tell whether Redis was
     # unreachable, the import failed, or something else entirely.
-    try:
-        from shared_cache import shared_cache
-        from subscription_manager import SubscriptionManager
-        redis_client = shared_cache.get_redis_client()
-        if redis_client is not None:
-            SubscriptionManager(redis_client).request("command_center", clean)
-            print(f"[STREAM_SUBSCRIBE] command_center requested for {clean}", flush=True)
-        else:
-            print("[STREAM_SUBSCRIBE_FAIL] command_center: shared_cache.get_redis_client() returned None", flush=True)
-    except Exception as _sub_exc:
-        print(f"[STREAM_SUBSCRIBE_FAIL] command_center for {clean}: {type(_sub_exc).__name__}: {_sub_exc}", flush=True)
+    _request_command_center_stream(clean)
 
     price = live["price"] if live else 0
     _track("symbol_loaded", clean, price=price,
@@ -10286,6 +10302,15 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         print(f"[MEM] on_tick: failed to read memory ({_mem_exc})", flush=True)
 
     clean = sanitize_symbol(symbol or "AAPL") or "AAPL"
+
+    # ADDED (2026-09-15): re-request the stream subscription on every
+    # regular tick, not just when the user explicitly clicks "Load" --
+    # confirmed via the stream worker's own logs that its
+    # desired_symbols set stayed permanently empty, since simply
+    # loading/refreshing the page with a symbol already set never
+    # called this at all before. Cheap and idempotent (one Redis
+    # hset() per tick, same value if the symbol hasn't changed).
+    _request_command_center_stream(clean)
 
     # ADDED (2026-09-06): try the Alpaca SIP stream's coherent tick
     # first -- price, bid/ask, and volume all read together from the
