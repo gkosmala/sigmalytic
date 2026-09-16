@@ -194,15 +194,27 @@ def main() -> int:
     # feed or account being at fault. run_in_executor offloads each
     # write to a background thread, letting the event loop return
     # immediately to receiving the next message.
-    loop = asyncio.get_event_loop()
-
     async def _on_trade(trade):
         # Called by the SDK on its own event-loop thread for every
         # incoming trade. Only ever writes the trade-owned fields (see
         # write_trade_to_hash) -- never reads or touches the quote/bar
         # fields another handler owns, so concurrent events for the
         # same symbol can't race or clobber each other.
+        # FIX (2026-09-15): confirmed via live logs a real, active bug
+        # in the async offload itself -- asyncio.get_event_loop() was
+        # called once, outside these handlers, on whatever thread
+        # first defined them. But this stream runs on its OWN,
+        # separate thread (see the threading.Thread below), which has
+        # its own, different event loop -- so every single write was
+        # failing with "attached to a different loop", 100% failure
+        # rate, likely worse than before this fix and a plausible
+        # cause of the reported memory spike (a failed task per event,
+        # at real-time trade frequency). get_running_loop() call
+        # inside each handler always returns the loop that specific
+        # coroutine is actually executing on, correctly, regardless of
+        # which thread it's running in.
         try:
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None, write_trade_to_hash, _redis_client, trade.symbol,
                 float(trade.price), getattr(trade, "size", None), time.time(),
@@ -213,6 +225,7 @@ def main() -> int:
 
     async def _on_quote(quote):
         try:
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None, write_quote_to_hash, _redis_client, quote.symbol,
                 float(quote.bid_price) if quote.bid_price else None,
@@ -227,6 +240,7 @@ def main() -> int:
 
     async def _on_bar(bar):
         try:
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None, write_bar_to_hash, _redis_client, bar.symbol,
                 float(bar.open), float(bar.high), float(bar.low), float(bar.close),
