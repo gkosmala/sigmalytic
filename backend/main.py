@@ -1911,8 +1911,28 @@ def require_admin(authorization: str = Header(default="")) -> str:
     return verified_email
 
 
+def require_admin_or_cron(request: Request, authorization: str = Header(default="")) -> str:
+    """
+    ADDED (2026-09-16): confirmed a real, genuine gap -- the daily
+    report cron (tools/render_daily_report_generator.py) calls this
+    exact endpoint, but it required a full, human-admin Supabase
+    Bearer session token, which an automated cron job has no way to
+    obtain. This was likely failing on every single scheduled run,
+    not just the one reported -- it just went unnoticed until now.
+    Accepts EITHER a matching X-Cron-Secret header (the automated,
+    non-human path) OR falls through to the existing, unmodified
+    require_admin() check (the human, manual-trigger path) -- the
+    human-admin protection itself is untouched, this only adds a
+    second, separate way in for the one legitimate automated caller.
+    """
+    cron_secret = os.environ.get("REPORT_CRON_SECRET", "")
+    if cron_secret and request.headers.get("X-Cron-Secret", "") == cron_secret:
+        return "cron"
+    return require_admin(authorization)
+
+
 @app.get("/api/admin/generate-report")
-def generate_report_now(date: str = None, _admin: str = Depends(require_admin)):
+def generate_report_now(date: str = None, _admin: str = Depends(require_admin_or_cron)):
     """
     Manually triggers report generation for a given date (YYYY-MM-DD),
     defaulting to today (UTC) if not specified. Used both for the

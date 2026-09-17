@@ -29,9 +29,23 @@ def main() -> int:
     if report_date:
         url += f"?date={report_date}"
 
+    # ADDED (2026-09-16): confirmed a real, genuine gap -- this
+    # endpoint requires admin authentication, which this automated
+    # cron job had no way to provide, so every single scheduled run
+    # was very likely failing this same way, not just the one
+    # reported. REPORT_CRON_SECRET must be set to the SAME value on
+    # both this cron service and the backend service on Render for
+    # this to work -- logging clearly here so a missing/mismatched
+    # secret is immediately obvious in the logs, not another mystery.
+    cron_secret = os.getenv("REPORT_CRON_SECRET", "")
+    if not cron_secret:
+        print("[REPORT_CRON] WARNING: REPORT_CRON_SECRET is not set on this service -- "
+              "this request will be rejected as unauthenticated.", flush=True)
+
     print(f"[REPORT_CRON] Requesting report generation: {url}", flush=True)
+    req = urllib.request.Request(url, headers={"X-Cron-Secret": cron_secret} if cron_secret else {})
     try:
-        with urllib.request.urlopen(url, timeout=320) as resp:
+        with urllib.request.urlopen(req, timeout=320) as resp:
             body = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         print(f"[REPORT_CRON] Failed: {exc}", flush=True)
