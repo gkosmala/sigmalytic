@@ -1671,6 +1671,48 @@ def journal_trades_compat(request: Request, status: str = None, limit: int = 100
         return {"trades": [], "count": 0, "error": str(exc)[:300]}
 
 
+@app.get("/api/debug/redis-facts")
+def debug_redis_facts():
+    """
+    ADDED (2026-09-19): direct, factual read of Redis's own built-in
+    INFO command -- not a setting to interpret in a dashboard, but
+    real numbers Redis reports about itself. Specifically:
+    uptime_in_seconds tells us exactly how long the CURRENT Redis
+    process has been running (if it's small, the process restarted
+    recently, a hard fact, not an inference from missing log lines).
+    aof_enabled/rdb_last_save_time show the actual, current
+    persistence configuration and last successful save, rather than
+    a dashboard label that may not reflect what's actually active.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        info = client.info()
+
+        return {
+            "ok": True,
+            "uptime_in_seconds": info.get("uptime_in_seconds"),
+            "uptime_in_days": info.get("uptime_in_days"),
+            "process_id": info.get("process_id"),
+            "run_id": info.get("run_id"),
+            "aof_enabled": info.get("aof_enabled"),
+            "rdb_last_save_time": info.get("rdb_last_save_time"),
+            "rdb_changes_since_last_save": info.get("rdb_changes_since_last_save"),
+            "total_net_input_bytes": info.get("total_net_input_bytes"),
+            "role": info.get("role"),
+            "redis_version": info.get("redis_version"),
+            "total_connections_received": info.get("total_connections_received"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/report-status/{report_date}")
 def debug_report_status(report_date: str):
     """
