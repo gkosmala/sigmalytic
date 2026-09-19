@@ -1671,6 +1671,51 @@ def journal_trades_compat(request: Request, status: str = None, limit: int = 100
         return {"trades": [], "count": 0, "error": str(exc)[:300]}
 
 
+@app.get("/api/debug/report-status/{report_date}")
+def debug_report_status(report_date: str):
+    """
+    ADDED (2026-09-17): read-only diagnostic for the daily-report
+    pipeline, mirroring debug_stream_status's approach -- a user
+    reported seeing a genuine "Report generated successfully" message,
+    but the report never appeared in the Reports list, even after a
+    fresh page reload (ruling out a timing/caching explanation).
+    Exposes every piece of Redis state this pipeline touches, so the
+    actual break point is visible directly instead of guessed at.
+    No write access, no side effects.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+        from backend.reports_engine import REPORT_JOB_KEY_PREFIX, REDIS_REPORT_INDEX_KEY, REPORT_QUEUE_KEY
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+
+        job_raw = client.get(f"{REPORT_JOB_KEY_PREFIX}{report_date}")
+        job_status = _json.loads(job_raw) if job_raw else None
+
+        report_exists = client.exists(f"report:{report_date}") == 1
+        indexed_dates = sorted(client.smembers(REDIS_REPORT_INDEX_KEY) or [])
+        queue_length = client.llen(REPORT_QUEUE_KEY)
+        queue_contents = client.lrange(REPORT_QUEUE_KEY, 0, -1)
+
+        return {
+            "ok": True,
+            "report_date": report_date,
+            "job_status": job_status,
+            "report_content_exists": report_exists,
+            "indexed_dates": indexed_dates,
+            "queue_length": queue_length,
+            "queue_contents": queue_contents,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/stream-status/{symbol}")
 def debug_stream_status(symbol: str):
     """
