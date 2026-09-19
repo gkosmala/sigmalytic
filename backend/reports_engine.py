@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -579,9 +580,96 @@ def generate_and_store_report(report_date_str: Optional[str] = None) -> Dict[str
         _redis_client.set(f"report:{report_date_str}", html_doc, ex=REDIS_REPORT_TTL_SECONDS)
         _redis_client.sadd(REDIS_REPORT_INDEX_KEY, report_date_str)
         _redis_client.expire(REDIS_REPORT_INDEX_KEY, REDIS_REPORT_TTL_SECONDS)
-        return {"ok": True, "date": report_date_str, "length": len(html_doc)}
     except Exception as e:
         return {"ok": False, "error": str(e), "date": report_date_str}
+
+    # ADDED (2026-09-19): independent backup to Supabase, a completely
+    # separate system from Redis -- built after a confirmed Redis
+    # persistence incident wiped every previously-stored report with
+    # no way to recover them. Deliberately best-effort and non-fatal:
+    # a backup failure must never fail report generation itself, since
+    # the Redis copy (already saved above) is still what the app
+    # actually serves moment-to-moment.
+    try:
+        _backup_report_to_supabase(report_date_str, html_doc)
+    except Exception as backup_exc:
+        print(f"[REPORT_BACKUP] Failed to back up {report_date_str} to Supabase: {backup_exc}", flush=True)
+
+    return {"ok": True, "date": report_date_str, "length": len(html_doc)}
+
+
+def _backup_report_to_supabase(report_date_str: str, html_doc: str) -> None:
+    """
+    Upserts one report's HTML into public.report_backups (see
+    supabase/migrations/20260919_create_report_backups.sql). Uses the
+    same direct-REST-call pattern already proven in
+    backend/supabase_bars.py, rather than adding a new client library
+    dependency for a single table.
+    """
+    import requests
+
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_ANON_KEY", "")
+    if not url or not key:
+        raise RuntimeError("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not configured")
+
+    resp = requests.post(
+        f"{url}/rest/v1/report_backups",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",  # upsert on the report_date primary key
+        },
+        json={"report_date": report_date_str, "html_content": html_doc},
+        timeout=15,
+    )
+    resp.raise_for_status()
+
+
+def restore_reports_from_supabase_backup() -> Dict[str, Any]:
+    """
+    ADDED (2026-09-19): the recovery half of the backup above. Reads
+    every backed-up report from Supabase and re-populates Redis's
+    report:{date} keys and the reports:index set -- intended to be
+    called once, manually, via a new admin endpoint, specifically for
+    situations like the one that motivated this: Redis was reset and
+    lost everything Supabase still has a copy of.
+    """
+    import requests
+    from backend.radar_service import _redis_client
+
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+
+    url = os.environ.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_ANON_KEY", "")
+    if not url or not key:
+        return {"ok": False, "error": "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not configured"}
+
+    resp = requests.get(
+        f"{url}/rest/v1/report_backups",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={"select": "report_date,html_content"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+
+    restored = []
+    for row in rows:
+        date_str = row.get("report_date")
+        html_doc = row.get("html_content")
+        if not date_str or not html_doc:
+            continue
+        _redis_client.set(f"report:{date_str}", html_doc, ex=REDIS_REPORT_TTL_SECONDS)
+        _redis_client.sadd(REDIS_REPORT_INDEX_KEY, date_str)
+        restored.append(date_str)
+
+    if restored:
+        _redis_client.expire(REDIS_REPORT_INDEX_KEY, REDIS_REPORT_TTL_SECONDS)
+
+    return {"ok": True, "restored_dates": sorted(restored), "count": len(restored)}
 
 
 def list_available_reports() -> List[str]:

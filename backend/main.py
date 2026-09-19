@@ -2071,6 +2071,24 @@ def generate_report_now(date: str = None, _admin: str = Depends(require_admin_or
     )
 
 
+@app.get("/api/admin/restore-reports-backup")
+def restore_reports_backup(_admin: str = Depends(require_admin)):
+    """
+    ADDED (2026-09-19): manually restores every backed-up report from
+    Supabase (public.report_backups) back into Redis -- the recovery
+    half of the backup added the same day, after Redis's own
+    persistence lost every previously-stored report with no way back.
+    Human-admin only (not the cron-secret path) -- this is a rare,
+    deliberate recovery action, not a routine automated one.
+    """
+    try:
+        from backend.reports_engine import restore_reports_from_supabase_backup
+        result = restore_reports_from_supabase_backup()
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)[:500]}
+    return result
+
+
 @app.get("/api/admin/generate-report-status")
 def generate_report_status(date: str = None, _admin: str = Depends(require_admin)):
     """
