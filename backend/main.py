@@ -1768,6 +1768,87 @@ def debug_radar_weis_summary():
         return {"ok": False, "error": str(exc)[:500]}
 
 
+@app.get("/api/debug/weis-waves/{symbol}")
+def debug_weis_waves(symbol: str):
+    """
+    ADDED (2026-09-20): direct, real verification of the Upthrust
+    condition -- confirms or refutes it against actual computed wave
+    data, rather than reasoning about what the condition could do.
+    Recomputes waves fresh from the same historical bars the radar
+    scan itself uses, and shows exactly which sub-condition of the
+    Upthrust check passes/fails for this specific symbol right now.
+    No write access, no side effects.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+        from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS
+
+        sym = symbol.upper().strip()
+
+        # FIX (2026-09-20): caught before deployment -- backend/
+        # radar_service.py's _historical_bars is an in-memory dict
+        # that only exists inside the SEPARATE radar-scanner worker
+        # process. Importing it here, in the backend service, would
+        # have read the backend's own, always-empty copy of that same
+        # module-level variable, causing this diagnostic to fail on
+        # every single call, not confirm anything. Reading from the
+        # Redis-backed "historical_bars:v1" key instead -- the one
+        # genuinely shared between both services (built earlier this
+        # session specifically so bars survive a backend restart).
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        raw_all_bars = client.get("historical_bars:v1")
+        if not raw_all_bars:
+            return {"ok": False, "error": "historical_bars:v1 not found in Redis"}
+
+        all_bars = _json.loads(raw_all_bars)
+        bars = all_bars.get(sym, [])
+        if not bars or len(bars) < 5:
+            return {"ok": False, "error": f"No/insufficient historical bars cached for {sym} ({len(bars)} bars)"}
+
+        engine = WeisWaveEngine(TF_DEFAULTS["1D"])
+        waves = engine.calculate_waves(bars[-60:])
+
+        if len(waves) < 3:
+            return {"ok": True, "symbol": sym, "wave_count": len(waves),
+                     "note": "Fewer than 3 waves -- Upthrust/Spring check never runs for this symbol."}
+
+        cw, pw, pw2 = waves[-1], waves[-2], waves[-3]
+
+        recent = waves[-6:] if len(waves) >= 6 else waves
+        up_vol = sum(w.cum_volume for w in recent if w.direction == 1)
+        down_vol = sum(w.cum_volume for w in recent if w.direction == -1)
+        macro_bias = 1 if up_vol > down_vol * 1.2 else (-1 if down_vol > up_vol * 1.2 else 0)
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "wave_count": len(waves),
+            "macro_bias": macro_bias,
+            "up_vol_recent": round(up_vol, 0),
+            "down_vol_recent": round(down_vol, 0),
+            "current_wave":  {"direction": cw.direction,  "cum_volume": round(cw.cum_volume, 0)},
+            "prev_wave":     {"direction": pw.direction,  "cum_volume": round(pw.cum_volume, 0)},
+            "prev_wave_2":   {"direction": pw2.direction, "cum_volume": round(pw2.cum_volume, 0)},
+            "upthrust_condition_check": {
+                "macro_bias_lte_0":       macro_bias <= 0,
+                "current_wave_down":      cw.direction == -1,
+                "prev_wave_up":           pw.direction == 1,
+                "prev_volume_lt_70pct_of_prev2": pw.cum_volume < pw2.cum_volume * 0.7,
+                "all_pass_(genuine_upthrust)": (
+                    macro_bias <= 0 and cw.direction == -1 and pw.direction == 1 and
+                    pw.cum_volume < pw2.cum_volume * 0.7
+                ),
+            },
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/radar-symbol/{symbol}")
 def debug_radar_symbol(symbol: str):
     """
