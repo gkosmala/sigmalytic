@@ -1713,6 +1713,50 @@ def debug_redis_facts():
         return {"ok": False, "error": str(exc)[:500]}
 
 
+@app.get("/api/debug/radar-weis-summary")
+def debug_radar_weis_summary():
+    """
+    ADDED (2026-09-20): aggregate view across the entire radar cache --
+    how many symbols currently carry a real, non-NONE Weis signal, and
+    which ones. Built to answer a direct, real question that a single-
+    symbol check can't: is a "NONE" result on one or two symbols normal
+    rarity, or is Weis detection broken universe-wide right now.
+    No write access, no side effects.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        raw = client.get("radar:cache")
+        if not raw:
+            return {"ok": False, "error": "radar:cache is empty or not yet populated"}
+
+        cache = _json.loads(raw)
+        total = len(cache)
+        with_signal = [
+            {"symbol": sym, "weis_signal": e.get("weis_signal"), "weis_score": e.get("weis_score"),
+             "composite_score": e.get("composite_score")}
+            for sym, e in cache.items()
+            if e.get("weis_signal") and e.get("weis_signal") != "NONE"
+        ]
+        with_signal.sort(key=lambda x: x.get("weis_score") or 0, reverse=True)
+
+        return {
+            "ok": True,
+            "total_symbols_in_cache": total,
+            "symbols_with_real_weis_signal": len(with_signal),
+            "top_signals": with_signal[:25],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/radar-symbol/{symbol}")
 def debug_radar_symbol(symbol: str):
     """
