@@ -880,12 +880,6 @@ def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
         "change_pct":        round(change_pct, 2),
         "volume":            int(volume),
         "rel_volume":        round(rel_vol, 2),
-        "composite_score":   composite,
-        "confluence":        round(confluence, 1),
-        "expansion_node":    round(expansion, 1),
-        "relative_strength": round(rel_strength, 1),
-        "volume_pressure":   round(vol_pressure, 1),
-        "behavioral":        round(behavioral, 1),
         "setup_type":        setup_type,
         "status":            status,
         "trigger":           trigger,
@@ -1469,17 +1463,75 @@ def run_radar_scan():
         bars = _historical_bars.get(symbol, [])
         try:
             result = score_symbol(symbol, snap, bars)
-            if result and result.get("composite_score", 0) > 0:
+
+            # FIX (2026-09-20): confirmed a real, genuine conditional
+            # dependency -- the Weis Wave signal only ran if
+            # score_symbol() (the generic technical-analysis path)
+            # succeeded first, even though the Weis calculation itself
+            # never reads anything score_symbol() produces. Per
+            # explicit product direction that the Weis radar must not
+            # be conditional on the generic scan at all, price is now
+            # extracted independently, directly from the same raw
+            # snapshot fields score_symbol() itself reads (never from
+            # result), so the Weis signal computes and is reported
+            # even for a symbol score_symbol() rejects entirely (e.g.
+            # its own >50%-single-day-change anomaly filter).
+            daily_bar_indep    = snap.get("dailyBar",    {}) or {}
+            latest_trade_indep = snap.get("latestTrade", {}) or {}
+            price_indep = float(latest_trade_indep.get("p", 0) or daily_bar_indep.get("c", 0) or 0)
+
+            weis = {}
+            if _WEIS_RADAR_AVAILABLE and bars and price_indep > 0:
+                try:
+                    weis = score_weis_wave_radar(symbol, bars, price_indep)
+                except Exception as _we:
+                    weis = {}
+
+            if result:
                 result["on_divergence_watchlist"] = symbol in div_symbols
-                # Add lightweight Weis Wave signal from daily bars
-                if _WEIS_RADAR_AVAILABLE and bars:
-                    try:
-                        price = result.get("price", 0)
-                        weis  = score_weis_wave_radar(symbol, bars, price)
-                        result.update(weis)
-                    except Exception as _we:
-                        pass
+                result.update(weis)
+
+                # ADDED (2026-09-19): composite_score is now driven
+                # entirely by the genuine Weis Wave signal above, per
+                # explicit product direction that this app is Weis-
+                # based only -- no generic technical-analysis scoring
+                # anywhere in the primary radar output. The old
+                # generic composite (confluence/expansion/relative
+                # strength/volume pressure/behavioral) is still
+                # computed internally, just above, since status/
+                # regime/setup_type genuinely still need it -- it's
+                # simply no longer exposed in the output at all.
+                # Rescaled 0-18 (weis_wave.py's own real max, Spring/
+                # Upthrust) to 0-100, since composite_score already has
+                # real, hard-coded 0-100-scale letter-grade thresholds
+                # (85/75/65/50) shared across multiple files -- audited
+                # all 21 files that read this field before making this
+                # change; this rescale is what keeps those thresholds
+                # meaningful rather than silently broken.
+                raw_weis_score = result.get("weis_score", 0) or 0
+                result["composite_score"] = round(min(raw_weis_score / 18.0, 1.0) * 100, 1)
+
                 scored.append(result)
+
+            elif weis:
+                # score_symbol() rejected this symbol (bad price data,
+                # or its own >50% single-day-change anomaly filter),
+                # but the Weis signal is real and independent of that
+                # rejection -- report it on its own rather than drop
+                # the symbol from the radar entirely. Genuinely minimal
+                # fields (no confluence/expansion/setup_type/status/
+                # regime -- those all require score_symbol()'s own,
+                # separate generic calculations to be meaningful).
+                raw_weis_score = weis.get("weis_score", 0) or 0
+                scored.append({
+                    "symbol": symbol,
+                    "price": round(price_indep, 2),
+                    "composite_score": round(min(raw_weis_score / 18.0, 1.0) * 100, 1),
+                    "on_divergence_watchlist": symbol in div_symbols,
+                    "weis_only": True,  # flags this row as lacking score_symbol()'s generic fields
+                    **weis,
+                })
+
         except Exception as e:
             log.debug(f"Score error {symbol}: {e}")
 
