@@ -1747,10 +1747,21 @@ def debug_radar_weis_summary():
         ]
         with_signal.sort(key=lambda x: x.get("weis_score") or 0, reverse=True)
 
+        # ADDED (2026-09-20): breakdown by signal type -- a real,
+        # reported result showed the same signal (UPTHRUST) repeated
+        # across the entire top-25 list. Since Spring and Upthrust
+        # share the same fixed max score (18), the prior sort alone
+        # can't distinguish "one signal type is unusually dominant"
+        # from "many different signal types, just tied at the top" --
+        # this makes that distinction directly, factually visible.
+        from collections import Counter
+        signal_counts = dict(Counter(s["weis_signal"] for s in with_signal))
+
         return {
             "ok": True,
             "total_symbols_in_cache": total,
             "symbols_with_real_weis_signal": len(with_signal),
+            "signal_type_breakdown": signal_counts,
             "top_signals": with_signal[:25],
         }
     except Exception as exc:
