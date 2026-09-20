@@ -1780,35 +1780,23 @@ def debug_weis_waves(symbol: str):
     No write access, no side effects.
     """
     try:
-        import redis as _redis_lib
-        import os as _os
-        import json as _json
         from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS
 
         sym = symbol.upper().strip()
 
-        # FIX (2026-09-20): caught before deployment -- backend/
-        # radar_service.py's _historical_bars is an in-memory dict
-        # that only exists inside the SEPARATE radar-scanner worker
-        # process. Importing it here, in the backend service, would
-        # have read the backend's own, always-empty copy of that same
-        # module-level variable, causing this diagnostic to fail on
-        # every single call, not confirm anything. Reading from the
-        # Redis-backed "historical_bars:v1" key instead -- the one
-        # genuinely shared between both services (built earlier this
-        # session specifically so bars survive a backend restart).
-        redis_url = _os.getenv("REDIS_URL")
-        if not redis_url:
-            return {"ok": False, "error": "REDIS_URL not set on this service"}
-        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
-        raw_all_bars = client.get("historical_bars:v1")
-        if not raw_all_bars:
-            return {"ok": False, "error": "historical_bars:v1 not found in Redis"}
-
-        all_bars = _json.loads(raw_all_bars)
-        bars = all_bars.get(sym, [])
+        # FIX (2026-09-20): the Redis-cached historical_bars:v1 key is
+        # only ever written once, right after a backend/worker
+        # restart, with a 24h TTL and nothing to refresh it in between
+        # -- confirmed via a real, reported "not found" result that it
+        # can genuinely go stale/expired between restarts. Fetching
+        # fresh, directly from Alpaca via the same proven
+        # fetch_bars_batch() already used by the real radar scan,
+        # rather than depending on that cache's current state.
+        from backend.radar_service import fetch_bars_batch
+        bars_map = fetch_bars_batch([sym], timeframe="1Day", limit=60)
+        bars = bars_map.get(sym, [])
         if not bars or len(bars) < 5:
-            return {"ok": False, "error": f"No/insufficient historical bars cached for {sym} ({len(bars)} bars)"}
+            return {"ok": False, "error": f"No/insufficient historical bars available for {sym} ({len(bars)} bars)"}
 
         engine = WeisWaveEngine(TF_DEFAULTS["1D"])
         waves = engine.calculate_waves(bars[-60:])
