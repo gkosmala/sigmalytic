@@ -1713,6 +1713,60 @@ def debug_redis_facts():
         return {"ok": False, "error": str(exc)[:500]}
 
 
+@app.get("/api/debug/radar-symbol/{symbol}")
+def debug_radar_symbol(symbol: str):
+    """
+    ADDED (2026-09-20): read-only diagnostic showing exactly what the
+    radar currently has cached for one symbol -- built specifically so
+    the actual Weis-vs-generic scoring change (2026-09-19/20) can be
+    verified directly against a known symbol, rather than by visual
+    judgment on the Radar Screen alone. Reads the same radar:cache
+    Redis key the live radar scan itself writes to and the frontend
+    reads from -- this is exactly what's currently being shown,
+    not a fresh recomputation. No write access, no side effects.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        raw = client.get("radar:cache")
+        if not raw:
+            return {"ok": False, "error": "radar:cache is empty or not yet populated"}
+
+        cache = _json.loads(raw)
+        sym = symbol.upper().strip()
+        entry = cache.get(sym)
+
+        if not entry:
+            return {"ok": True, "symbol": sym, "found": False,
+                     "note": "Not currently in the radar cache -- either outside the scanned universe, or filtered out entirely (no Weis signal and score_symbol() rejected it)."}
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "found": True,
+            "composite_score": entry.get("composite_score"),
+            "weis_signal": entry.get("weis_signal"),
+            "weis_score": entry.get("weis_score"),
+            "weis_macro_bias": entry.get("weis_macro_bias"),
+            "three_bar_reversal": entry.get("three_bar_reversal"),
+            "weis_only": entry.get("weis_only", False),
+            "setup_type": entry.get("setup_type"),
+            "status": entry.get("status"),
+            "regime": entry.get("regime"),
+            "price": entry.get("price"),
+            "change_pct": entry.get("change_pct"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/report-status/{report_date}")
 def debug_report_status(report_date: str):
     """
