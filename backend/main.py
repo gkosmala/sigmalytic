@@ -1791,6 +1791,108 @@ def debug_radar_weis_summary():
         return {"ok": False, "error": str(exc)[:500]}
 
 
+RADAR_CONFIG_REDIS_KEY = "radar:signal_config"
+
+RADAR_CONFIG_DEFAULTS = {
+    # ADDED (2026-09-21): defaults deliberately match today's actual,
+    # unconfigured production behavior exactly -- score_weis_wave_radar()'s
+    # existing Spring/Upthrust/Buying Climax/Selling Climax/3-Bar
+    # Reversal set, on daily bars, with the same 252-bar (~1 trading
+    # year) lookback fetch_bars_batch() already uses by default. An
+    # operator who never touches this new config sees no change at all.
+    "display_signals": ["spring", "upthrust", "climaxup", "climaxdown", "3bar"],
+    "timeframe": "1Day",
+    "lookback": 252,
+    "alert_signals": [],
+    "sms_enabled": False,
+    "email_enabled": False,
+}
+
+
+@app.get("/api/radar/config")
+def get_radar_config():
+    """
+    ADDED (2026-09-21): the real, operator-facing config for which
+    signals the radar computes/displays, at what timeframe and
+    lookback, and which of those signals (a possibly narrower set)
+    should actually trigger an alert -- and via which channel(s).
+    Public GET (read-only, no admin needed) so the settings UI and the
+    scan worker can both read the current, live configuration.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": True, **RADAR_CONFIG_DEFAULTS, "source": "defaults (REDIS_URL not set)"}
+
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        raw = client.get(RADAR_CONFIG_REDIS_KEY)
+        if not raw:
+            return {"ok": True, **RADAR_CONFIG_DEFAULTS, "source": "defaults (nothing configured yet)"}
+
+        config = _json.loads(raw)
+        merged = {**RADAR_CONFIG_DEFAULTS, **config}
+        return {"ok": True, **merged, "source": "configured"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
+@app.post("/api/radar/config")
+def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
+    """
+    ADDED (2026-09-21): writes the shared radar configuration --
+    admin-only, since this changes the single, shared production scan
+    that every operator/viewer of the Radar Screen sees, not a
+    per-user preference. Validates against the same 11 known signal
+    names and known timeframe shapes used everywhere else in this
+    feature, so a typo here can't silently produce an empty or
+    broken scan.
+    """
+    try:
+        import redis as _redis_lib
+        import os as _os
+        import json as _json
+
+        VALID_SIGNALS = {"spring", "upthrust", "climaxup", "climaxdown", "3bar",
+                          "absorption", "distribution", "sign_of_strength", "sign_of_weakness",
+                          "breakout", "breakdown"}
+
+        display_signals = config.get("display_signals", RADAR_CONFIG_DEFAULTS["display_signals"])
+        alert_signals = config.get("alert_signals", RADAR_CONFIG_DEFAULTS["alert_signals"])
+        invalid_display = set(display_signals) - VALID_SIGNALS
+        invalid_alert = set(alert_signals) - VALID_SIGNALS
+        if invalid_display or invalid_alert:
+            return {"ok": False, "error": f"Unknown signal name(s): {sorted(invalid_display | invalid_alert)}"}
+
+        # Alert signals must be a subset of what's actually displayed --
+        # alerting on a signal the scan isn't even computing would fire
+        # (or silently never fire) on stale or nonexistent data.
+        if not set(alert_signals) <= set(display_signals):
+            return {"ok": False, "error": "alert_signals must be a subset of display_signals"}
+
+        new_config = {
+            "display_signals": display_signals,
+            "timeframe": config.get("timeframe", RADAR_CONFIG_DEFAULTS["timeframe"]),
+            "lookback": int(config.get("lookback", RADAR_CONFIG_DEFAULTS["lookback"])),
+            "alert_signals": alert_signals,
+            "sms_enabled": bool(config.get("sms_enabled", RADAR_CONFIG_DEFAULTS["sms_enabled"])),
+            "email_enabled": bool(config.get("email_enabled", RADAR_CONFIG_DEFAULTS["email_enabled"])),
+        }
+
+        redis_url = _os.getenv("REDIS_URL")
+        if not redis_url:
+            return {"ok": False, "error": "REDIS_URL not set on this service"}
+        client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
+        client.set(RADAR_CONFIG_REDIS_KEY, _json.dumps(new_config))
+
+        return {"ok": True, "saved": new_config}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/signal-test")
 def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
                         timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar,absorption,distribution,sign_of_strength,sign_of_weakness,breakout,breakdown",
