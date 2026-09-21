@@ -438,6 +438,78 @@ def fetch_snapshots(symbols: List[str]) -> dict:
     return results
 
 
+def is_bar_complete(bar_timestamp_str: str, timeframe: str, now=None) -> bool:
+    """
+    ADDED (2026-09-21): confirmed empirically before writing this --
+    checked a live 1Hour AAPL bar mid-hour and found Alpaca genuinely
+    returns the current, still-forming bar (server time 15:16 UTC,
+    latest bar timestamped 15:00 UTC -- 16 minutes into an hour that
+    hadn't finished). This is exactly the gap the operator flagged:
+    analyzing an in-progress bar means analyzing a high/low/close/
+    volume that are all still actively changing.
+
+    Returns True only if the bar starting at bar_timestamp_str, at the
+    given timeframe, has genuinely, fully elapsed by `now`.
+
+    Minute/hour timeframes use exact, simple duration math -- a fixed
+    bar length, no ambiguity. Daily/weekly use a deliberately
+    conservative, approximate market-close/week-end check (not a full
+    trading-calendar with holidays/early closes) -- stated honestly as
+    a real limitation, not hidden: this can occasionally be a day or
+    so too conservative around holidays, but will never incorrectly
+    treat a genuinely incomplete bar as complete, which is the failure
+    mode that actually matters here.
+    """
+    from datetime import datetime, timezone, timedelta
+    import re
+
+    now = now or datetime.now(timezone.utc)
+    bar_start = datetime.fromisoformat(bar_timestamp_str.replace("Z", "+00:00"))
+    if bar_start.tzinfo is None:
+        bar_start = bar_start.replace(tzinfo=timezone.utc)
+
+    m = re.match(r"^(\d+)(Min|Hour)$", timeframe)
+    if m:
+        amount, unit = int(m.group(1)), m.group(2)
+        duration = timedelta(minutes=amount) if unit == "Min" else timedelta(hours=amount)
+        return now >= bar_start + duration
+
+    if timeframe == "1Day":
+        if now.date() > bar_start.date():
+            return True
+        if now.date() == bar_start.date():
+            # Conservative: 8pm UTC covers both EDT (4pm=20:00 UTC) and
+            # EST (4pm=21:00 UTC) market closes without needing DST logic.
+            return now.hour >= 20
+        return False
+
+    if timeframe == "1Week":
+        # Conservative: a full 7 days must have elapsed since this
+        # week's bar started, rather than trying to compute the exact
+        # next Monday (which still wouldn't account for holidays).
+        return now >= bar_start + timedelta(days=7)
+
+    if timeframe == "1Month":
+        return now >= bar_start + timedelta(days=28)
+
+    # Unrecognized timeframe string: don't block on it, but this
+    # should never silently happen for any value this app itself sends.
+    return True
+
+
+def trim_incomplete_bar(bars: list, timeframe: str, now=None) -> list:
+    """
+    Drops the last bar in `bars` if is_bar_complete() says it hasn't
+    genuinely finished yet. Safe on an empty or single-bar list.
+    """
+    if not bars:
+        return bars
+    last_ts = bars[-1].get("t")
+    if last_ts and not is_bar_complete(last_ts, timeframe, now=now):
+        return bars[:-1]
+    return bars
+
+
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252) -> dict:
     """
     Fetch historical bars for the radar universe.

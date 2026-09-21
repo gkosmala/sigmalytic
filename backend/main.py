@@ -1839,7 +1839,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
     """
     try:
         import pandas as pd
-        from backend.radar_service import fetch_bars_batch
+        from backend.radar_service import fetch_bars_batch, trim_incomplete_bar
         from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS, SPRING_SCORE, UPTHRUST_SCORE, CLIMAX_SCORE, NO_DEMAND_SCORE, detect_three_bar_reversal
         from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
 
@@ -1864,6 +1864,13 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
         results = []
         for sym in sym_list:
             bars = bars_map.get(sym, [])
+            # FIX (2026-09-21): confirmed empirically (a real, live
+            # 1Hour AAPL bar, 16 minutes into an hour that hadn't
+            # finished) that Alpaca includes the current, still-
+            # forming bar. Trimmed here before any engine sees it --
+            # analyzing an in-progress bar's still-changing high/low/
+            # close/volume would produce unstable, misleading signals.
+            bars = trim_incomplete_bar(bars, timeframe)
             if not bars or len(bars) < 65:
                 results.append({"symbol": sym, "signals_found": [], "note": f"insufficient bars for full evaluation ({len(bars)}, need 65+)"})
                 continue
