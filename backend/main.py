@@ -1944,6 +1944,41 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
         return {"ok": False, "error": str(exc)[:800]}
 
 
+@app.get("/api/debug/latest-bar/{symbol}")
+def debug_latest_bar(symbol: str, timeframe: str = "1Hour"):
+    """
+    ADDED (2026-09-21): direct, empirical check of a real, important
+    question raised before building the timeframe-aware scan trigger:
+    does Alpaca's bars API already exclude the current, still-forming
+    bar, or does it return one? Rather than assume either way, this
+    surfaces the actual latest bar's timestamp next to the current
+    server time so the gap can be read directly. No write access.
+    """
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from datetime import datetime, timezone
+
+        sym = symbol.upper().strip()
+        bars_map = fetch_bars_batch([sym], timeframe=timeframe, limit=5)
+        bars = bars_map.get(sym, [])
+        if not bars:
+            return {"ok": False, "error": f"No bars returned for {sym} at {timeframe}"}
+
+        now_utc = datetime.now(timezone.utc)
+        last_three = bars[-3:]
+
+        return {
+            "ok": True,
+            "symbol": sym,
+            "timeframe": timeframe,
+            "current_server_time_utc": now_utc.isoformat(),
+            "last_3_bar_timestamps": [b.get("t") for b in last_three],
+            "most_recent_bar_timestamp": bars[-1].get("t"),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/weis-waves/{symbol}")
 def debug_weis_waves(symbol: str):
     """
