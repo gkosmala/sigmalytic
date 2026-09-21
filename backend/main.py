@@ -112,6 +112,29 @@ app = FastAPI(
     version="2.0.0",
 )
 
+# ADDED (2026-09-20): CORS for /api/debug/* only, GET only. Built so a
+# published test page (the operator explicitly wants to click-test the
+# signal+timeframe endpoint, not just read raw JSON at a URL) can call
+# this backend directly from the browser. Confirmed before adding this:
+# no CORS middleware existed anywhere in this file previously, so every
+# cross-origin browser fetch to this backend was being silently blocked
+# by the browser itself. Scoped narrowly on purpose -- these are already
+# public, unauthenticated, read-only diagnostic routes (CORS governs
+# only browser-JS cross-origin calls, not direct URL access, which was
+# already unrestricted), and GET-only so this can't be used to trigger
+# any state-changing admin route, which all require their own separate
+# require_admin/require_admin_or_cron auth regardless of CORS.
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class _DebugOnlyCORS(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/debug/") and request.method == "GET":
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+app.add_middleware(_DebugOnlyCORS)
+
 
 @app.on_event("startup")
 def _start_radar_scheduler_on_boot():
@@ -1770,52 +1793,45 @@ def debug_radar_weis_summary():
 
 @app.get("/api/debug/signal-test")
 def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
-                        timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar"):
+                        timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar,absorption,distribution,sign_of_strength,sign_of_weakness,breakout,breakdown"):
     """
-    ADDED (2026-09-20): real, working test of operator-selectable
-    signal + timeframe -- built specifically because the operator
-    asked to see this operate on live data before any real UI/backend
-    build, not a mockup with illustrative numbers.
+    ADDED (2026-09-20, revised same day): real, working test of
+    operator-selectable signal + timeframe -- built specifically
+    because the operator asked to see this operate on live data
+    before any real UI/backend build.
 
-    Fetches REAL bars at the requested timeframe via the same, already-
-    fixed fetch_bars_batch() (properly timeframe-aware calendar windows,
-    confirmed directly in its own code before building this), then
-    runs the real Spring/Upthrust/Climax/3-Bar-Reversal detection --
-    but with the WeisWaveEngine's threshold matched to the REQUESTED
-    timeframe, not hardcoded to daily like score_weis_wave_radar() is.
-    Using daily's 1.5% threshold on, say, 5-minute bars would make wave
-    detection nearly non-functional at that scale (5-minute bars rarely
-    move 1.5% bar-to-bar) -- confirmed this mismatch directly in
-    score_weis_wave_radar()'s own code before writing this, rather than
-    reusing it as-is.
+    REVISION NOTE: the first version of this endpoint only covered 5
+    of the 11 signals, on the belief the other 6 had no working
+    detection code anywhere. That was wrong -- confirmed directly by
+    reading the actual files before this revision: No Demand/No Supply
+    (absorption/distribution) already exist inside WeisWaveEngine
+    itself; Sign of Strength/Weakness and genuine (non-generic)
+    Breakout/Breakdown already exist as real, working methods in
+    backend/research_engine/wyckoff_verdict_engine.py. All 11 are now
+    genuinely computed here, from the same real bars, not mocked.
 
-    Honest, stated scope: only the 5 signals that already have real
-    detection logic (Spring/Upthrust/Buying Climax/Selling Climax/
-    3-Bar Reversal) can be tested this way. Absorption, Distribution,
-    Sign of Strength/Weakness, and Breakout/Breakdown have no working
-    detection code anywhere in this codebase yet -- requesting them
-    here returns them explicitly marked unavailable, not a fabricated
-    result.
+    Two different engines are combined per symbol:
+    1. WeisWaveEngine (backend/weis_wave.py), threshold matched to the
+       REQUESTED timeframe (not hardcoded to daily -- confirmed and
+       fixed this specific mismatch before building this): Spring,
+       Upthrust, Buying/Selling Climax, 3-Bar Reversal, and the
+       No Demand/No Supply wave-volume comparison (absorption/
+       distribution).
+    2. WyckoffVerdictEngine (backend/research_engine/
+       wyckoff_verdict_engine.py): Sign of Strength/Weakness via its
+       real evaluate_bars(), and genuine Breakout/Breakdown via its
+       detect_breakout()/detect_breakdown() methods, using the same
+       resistance/support evaluate_bars() itself establishes.
     """
     try:
+        import pandas as pd
         from backend.radar_service import fetch_bars_batch
-        from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS, SPRING_SCORE, UPTHRUST_SCORE, CLIMAX_SCORE, detect_three_bar_reversal
+        from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS, SPRING_SCORE, UPTHRUST_SCORE, CLIMAX_SCORE, NO_DEMAND_SCORE, detect_three_bar_reversal
+        from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
 
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         requested_signals = {s.strip().lower() for s in signals.split(",") if s.strip()}
 
-        NOT_YET_BUILT = {"absorption", "distribution", "sign_of_strength", "sign_of_weakness", "breakout", "breakdown"}
-        unavailable_requested = sorted(requested_signals & NOT_YET_BUILT)
-
-        # FIX (2026-09-20): caught via direct testing before deploy --
-        # the naive dict .get(timeframe, "1D") fallback meant any
-        # timeframe NOT in the explicit map (e.g. a genuine custom
-        # value like "22Min", exactly what operator-selectable
-        # timeframe is supposed to support) silently fell back to the
-        # DAILY threshold (0.015) -- the opposite of correct for an
-        # intraday value. Any "*Min" string not explicitly mapped now
-        # falls back to the 5-minute threshold instead, a far more
-        # reasonable intraday default than daily's.
         explicit_tf_map = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "1H", "1Day": "1D", "1Week": "1W"}
         if timeframe in explicit_tf_map:
             tf_threshold_key = explicit_tf_map[timeframe]
@@ -1827,23 +1843,27 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
             tf_threshold_key = "1D"
         threshold = TF_DEFAULTS.get(tf_threshold_key, 0.005)
 
-        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=60)
+        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=80)
+        wyckoff_engine = WyckoffVerdictEngine()
 
         results = []
         for sym in sym_list:
             bars = bars_map.get(sym, [])
-            if not bars or len(bars) < 5:
-                results.append({"symbol": sym, "signal": "NONE", "score": 0, "note": f"insufficient bars ({len(bars)})"})
+            if not bars or len(bars) < 65:
+                results.append({"symbol": sym, "signals_found": [], "note": f"insufficient bars for full evaluation ({len(bars)}, need 65+)"})
                 continue
+
+            found = []
+            waves = []
 
             engine = WeisWaveEngine(threshold)
             waves = engine.calculate_waves(bars[-60:])
             tbr = detect_three_bar_reversal(bars)
 
-            signal, score = "NONE", 0
             if tbr and "3bar" in requested_signals:
-                signal, score = f"3BAR_{tbr.direction}", tbr.score
-            elif len(waves) >= 3:
+                found.append({"signal": f"3BAR_{tbr.direction}", "score": tbr.score})
+
+            if len(waves) >= 3:
                 cw, pw, pw2 = waves[-1], waves[-2], waves[-3]
                 macro_bias = 0
                 if len(waves) >= 4:
@@ -1853,26 +1873,59 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
                     macro_bias = 1 if up_vol > down_vol * 1.2 else (-1 if down_vol > up_vol * 1.2 else 0)
 
                 if "spring" in requested_signals and macro_bias >= 0 and cw.direction == 1 and pw.direction == -1 and pw.cum_volume < pw2.cum_volume * 0.7:
-                    signal, score = "SPRING", SPRING_SCORE
-                elif "upthrust" in requested_signals and macro_bias <= 0 and cw.direction == -1 and pw.direction == 1 and pw.cum_volume < pw2.cum_volume * 0.7:
-                    signal, score = "UPTHRUST", UPTHRUST_SCORE
-                elif "climaxup" in requested_signals and cw.direction == 1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
-                    signal, score = "CLIMAX_BUY", CLIMAX_SCORE
-                elif "climaxdown" in requested_signals and cw.direction == -1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
-                    signal, score = "CLIMAX_SELL", CLIMAX_SCORE
+                    found.append({"signal": "SPRING", "score": SPRING_SCORE})
+                if "upthrust" in requested_signals and macro_bias <= 0 and cw.direction == -1 and pw.direction == 1 and pw.cum_volume < pw2.cum_volume * 0.7:
+                    found.append({"signal": "UPTHRUST", "score": UPTHRUST_SCORE})
+                if "climaxup" in requested_signals and cw.direction == 1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
+                    found.append({"signal": "CLIMAX_BUY", "score": CLIMAX_SCORE})
+                if "climaxdown" in requested_signals and cw.direction == -1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
+                    found.append({"signal": "CLIMAX_SELL", "score": CLIMAX_SCORE})
+                if "distribution" in requested_signals and cw.direction == 1 and cw.cum_volume < pw.cum_volume * 0.4:
+                    found.append({"signal": "NO_DEMAND (distribution)", "score": NO_DEMAND_SCORE})
+                if "absorption" in requested_signals and cw.direction == -1 and cw.cum_volume < pw.cum_volume * 0.4:
+                    found.append({"signal": "NO_SUPPLY (absorption)", "score": NO_DEMAND_SCORE})
 
-            results.append({"symbol": sym, "signal": signal, "score": score, "wave_count": len(waves), "bar_count": len(bars)})
+            wants_wyckoff = requested_signals & {"sign_of_strength", "sign_of_weakness", "breakout", "breakdown"}
+            if wants_wyckoff:
+                try:
+                    df = pd.DataFrame(bars)
+                    df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume", "t": "date"})
+                    if "date" not in df.columns:
+                        df["date"] = range(len(df))
+                    verdict = wyckoff_engine.evaluate_bars(df, symbol=sym)
+
+                    if verdict.get("verdict") not in ("INSUFFICIENT_DATA", "NO_MEANINGFUL_STRUCTURE"):
+                        if "sign_of_strength" in requested_signals and verdict.get("sign_of_strength_score", 0) >= 50:
+                            found.append({"signal": "SIGN_OF_STRENGTH", "score": verdict["sign_of_strength_score"]})
+                        if "sign_of_weakness" in requested_signals and verdict.get("sign_of_weakness_score", 0) >= 50:
+                            found.append({"signal": "SIGN_OF_WEAKNESS", "score": verdict["sign_of_weakness_score"]})
+
+                        prepared_df = wyckoff_engine._prepare(df)
+                        idx = len(prepared_df) - 1
+                        resistance = verdict.get("resistance_level")
+                        support = verdict.get("support_level")
+                        if "breakout" in requested_signals and resistance:
+                            bo = wyckoff_engine.detect_breakout(prepared_df, idx, resistance)
+                            if bo:
+                                found.append({"signal": "BREAKOUT", "detail": bo})
+                        if "breakdown" in requested_signals and support:
+                            bd = wyckoff_engine.detect_breakdown(prepared_df, idx, support)
+                            if bd:
+                                found.append({"signal": "BREAKDOWN", "detail": bd})
+                except Exception as wy_exc:
+                    found.append({"signal": "WYCKOFF_ENGINE_ERROR", "error": str(wy_exc)[:200]})
+
+            results.append({"symbol": sym, "bar_count": len(bars), "wave_count": len(waves), "signals_found": found})
 
         return {
             "ok": True,
             "timeframe": timeframe,
             "threshold_used": threshold,
             "signals_requested": sorted(requested_signals),
-            "signals_not_yet_built": unavailable_requested if unavailable_requested else None,
             "results": results,
         }
     except Exception as exc:
-        return {"ok": False, "error": str(exc)[:500]}
+        return {"ok": False, "error": str(exc)[:800]}
 
 
 @app.get("/api/debug/weis-waves/{symbol}")
