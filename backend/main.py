@@ -1838,9 +1838,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
        resistance/support evaluate_bars() itself establishes.
     """
     try:
-        import pandas as pd
-        from backend.radar_service import fetch_bars_batch, trim_incomplete_bar
-        from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS, SPRING_SCORE, UPTHRUST_SCORE, CLIMAX_SCORE, NO_DEMAND_SCORE, detect_three_bar_reversal
+        from backend.radar_service import fetch_bars_batch, trim_incomplete_bar, compute_symbol_signals, min_bars_required_for, weis_wave_threshold_for_timeframe
         from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
 
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
@@ -1850,28 +1848,12 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
         # figure -- confirmed directly in wyckoff_verdict_engine.py
         # that it's derived purely from that engine's own
         # structure_lookback=50 implementation constant, plus a rolling-
-        # window buffer. Applying it as a blanket minimum to every
-        # request was a real, separate flaw: Spring/Upthrust/Climax/
-        # 3-Bar/Absorption/Distribution only need a handful of waves,
-        # not 65 bars -- forcing that minimum meant a weekly Spring
-        # check would need over a year of data for no genuine reason.
-        # Now the minimum only climbs to structure_lookback's
-        # requirement when Sign of Strength/Weakness or Breakout/
-        # Breakdown are actually among the requested signals.
-        needs_structure_lookback = bool(requested_signals & {"sign_of_strength", "sign_of_weakness", "breakout", "breakdown"})
-        min_bars_required = 65 if needs_structure_lookback else 10
+        # window buffer. Now shared with the real radar scan via
+        # min_bars_required_for(), so the two can't drift apart on
+        # this rule the way score_symbol()'s composite once did.
+        min_bars_required = min_bars_required_for(requested_signals)
         effective_lookback = max(int(lookback or 80), min_bars_required)
-
-        explicit_tf_map = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "1H", "1Day": "1D", "1Week": "1W"}
-        if timeframe in explicit_tf_map:
-            tf_threshold_key = explicit_tf_map[timeframe]
-        elif timeframe.endswith("Min"):
-            tf_threshold_key = "5m"
-        elif timeframe.endswith("Hour"):
-            tf_threshold_key = "1H"
-        else:
-            tf_threshold_key = "1D"
-        threshold = TF_DEFAULTS.get(tf_threshold_key, 0.005)
+        threshold = weis_wave_threshold_for_timeframe(timeframe)
 
         # FIX (2026-09-21): confirmed via a real, reported result --
         # requesting the minimum lookback always failed the
@@ -1890,69 +1872,13 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
                 results.append({"symbol": sym, "signals_found": [], "note": f"insufficient bars for the signals requested ({len(bars)}, need {min_bars_required}+)"})
                 continue
 
-            found = []
-            waves = []
-
-            engine = WeisWaveEngine(threshold)
-            waves = engine.calculate_waves(bars[-60:])
-            tbr = detect_three_bar_reversal(bars)
-
-            if tbr and "3bar" in requested_signals:
-                found.append({"signal": f"3BAR_{tbr.direction}", "score": tbr.score})
-
-            if len(waves) >= 3:
-                cw, pw, pw2 = waves[-1], waves[-2], waves[-3]
-                macro_bias = 0
-                if len(waves) >= 4:
-                    recent = waves[-6:]
-                    up_vol = sum(w.cum_volume for w in recent if w.direction == 1)
-                    down_vol = sum(w.cum_volume for w in recent if w.direction == -1)
-                    macro_bias = 1 if up_vol > down_vol * 1.2 else (-1 if down_vol > up_vol * 1.2 else 0)
-
-                if "spring" in requested_signals and macro_bias >= 0 and cw.direction == 1 and pw.direction == -1 and pw.cum_volume < pw2.cum_volume * 0.7:
-                    found.append({"signal": "SPRING", "score": SPRING_SCORE})
-                if "upthrust" in requested_signals and macro_bias <= 0 and cw.direction == -1 and pw.direction == 1 and pw.cum_volume < pw2.cum_volume * 0.7:
-                    found.append({"signal": "UPTHRUST", "score": UPTHRUST_SCORE})
-                if "climaxup" in requested_signals and cw.direction == 1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
-                    found.append({"signal": "CLIMAX_BUY", "score": CLIMAX_SCORE})
-                if "climaxdown" in requested_signals and cw.direction == -1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
-                    found.append({"signal": "CLIMAX_SELL", "score": CLIMAX_SCORE})
-                if "distribution" in requested_signals and cw.direction == 1 and cw.cum_volume < pw.cum_volume * 0.4:
-                    found.append({"signal": "NO_DEMAND (distribution)", "score": NO_DEMAND_SCORE})
-                if "absorption" in requested_signals and cw.direction == -1 and cw.cum_volume < pw.cum_volume * 0.4:
-                    found.append({"signal": "NO_SUPPLY (absorption)", "score": NO_DEMAND_SCORE})
-
-            wants_wyckoff = requested_signals & {"sign_of_strength", "sign_of_weakness", "breakout", "breakdown"}
-            if wants_wyckoff:
-                try:
-                    df = pd.DataFrame(bars)
-                    df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume", "t": "date"})
-                    if "date" not in df.columns:
-                        df["date"] = range(len(df))
-                    verdict = wyckoff_engine.evaluate_bars(df, symbol=sym)
-
-                    if verdict.get("verdict") not in ("INSUFFICIENT_DATA", "NO_MEANINGFUL_STRUCTURE"):
-                        if "sign_of_strength" in requested_signals and verdict.get("sign_of_strength_score", 0) >= 50:
-                            found.append({"signal": "SIGN_OF_STRENGTH", "score": verdict["sign_of_strength_score"]})
-                        if "sign_of_weakness" in requested_signals and verdict.get("sign_of_weakness_score", 0) >= 50:
-                            found.append({"signal": "SIGN_OF_WEAKNESS", "score": verdict["sign_of_weakness_score"]})
-
-                        prepared_df = wyckoff_engine._prepare(df)
-                        idx = len(prepared_df) - 1
-                        resistance = verdict.get("resistance_level")
-                        support = verdict.get("support_level")
-                        if "breakout" in requested_signals and resistance:
-                            bo = wyckoff_engine.detect_breakout(prepared_df, idx, resistance)
-                            if bo:
-                                found.append({"signal": "BREAKOUT", "detail": bo})
-                        if "breakdown" in requested_signals and support:
-                            bd = wyckoff_engine.detect_breakdown(prepared_df, idx, support)
-                            if bd:
-                                found.append({"signal": "BREAKDOWN", "detail": bd})
-                except Exception as wy_exc:
-                    found.append({"signal": "WYCKOFF_ENGINE_ERROR", "error": str(wy_exc)[:200]})
-
-            results.append({"symbol": sym, "bar_count": len(bars), "wave_count": len(waves), "signals_found": found})
+            # ADDED (2026-09-21): now calls the same, shared
+            # compute_symbol_signals() the real radar scan itself
+            # calls -- extracted here unchanged from this endpoint's
+            # own, already-proven logic, so this endpoint and
+            # production can never silently diverge again.
+            found = compute_symbol_signals(sym, bars, requested_signals, timeframe, wyckoff_engine=wyckoff_engine)
+            results.append({"symbol": sym, "bar_count": len(bars), "signals_found": found})
 
         return {
             "ok": True,
