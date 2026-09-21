@@ -1793,17 +1793,31 @@ def debug_radar_weis_summary():
 
 @app.get("/api/debug/signal-test")
 def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
-                        timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar,absorption,distribution,sign_of_strength,sign_of_weakness,breakout,breakdown"):
+                        timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar,absorption,distribution,sign_of_strength,sign_of_weakness,breakout,breakdown",
+                        lookback: int = 80):
     """
-    ADDED (2026-09-20, revised same day): real, working test of
-    operator-selectable signal + timeframe -- built specifically
-    because the operator asked to see this operate on live data
-    before any real UI/backend build.
+    ADDED (2026-09-20, revised same day, lookback added 2026-09-21):
+    real, working test of operator-selectable signal + timeframe +
+    lookback -- built specifically because the operator asked to see
+    this operate on live data before any real UI/backend build.
+
+    lookback mirrors the real production concept directly: the live
+    radar scan's daily lookback is already configurable today, but
+    only via the RADAR_HISTORICAL_BARS_LIMIT environment variable on
+    Render (a redeploy-required, infra-level setting) -- confirmed by
+    reading backend/radar_service.py before adding this. This makes it
+    a genuine, in-request choice instead, the same way timeframe and
+    signals already are here. Floored at 65 -- WyckoffVerdictEngine's
+    own evaluate_bars() needs at least structure_lookback+10 (60) rows
+    remaining AFTER its rolling-window calculations drop leading NaNs,
+    confirmed directly in its own code; fewer than 65 raw bars would
+    make Sign of Strength/Weakness and Breakout/Breakdown unreliable
+    regardless of what's requested.
 
     REVISION NOTE: the first version of this endpoint only covered 5
     of the 11 signals, on the belief the other 6 had no working
     detection code anywhere. That was wrong -- confirmed directly by
-    reading the actual files before this revision: No Demand/No Supply
+    reading the actual files before that revision: No Demand/No Supply
     (absorption/distribution) already exist inside WeisWaveEngine
     itself; Sign of Strength/Weakness and genuine (non-generic)
     Breakout/Breakdown already exist as real, working methods in
@@ -1831,6 +1845,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
 
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         requested_signals = {s.strip().lower() for s in signals.split(",") if s.strip()}
+        effective_lookback = max(int(lookback or 80), 65)
 
         explicit_tf_map = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "1H", "1Day": "1D", "1Week": "1W"}
         if timeframe in explicit_tf_map:
@@ -1843,7 +1858,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
             tf_threshold_key = "1D"
         threshold = TF_DEFAULTS.get(tf_threshold_key, 0.005)
 
-        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=80)
+        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=effective_lookback)
         wyckoff_engine = WyckoffVerdictEngine()
 
         results = []
@@ -1920,6 +1935,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
         return {
             "ok": True,
             "timeframe": timeframe,
+            "lookback_used": effective_lookback,
             "threshold_used": threshold,
             "signals_requested": sorted(requested_signals),
             "results": results,
