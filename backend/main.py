@@ -1845,7 +1845,22 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
 
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
         requested_signals = {s.strip().lower() for s in signals.split(",") if s.strip()}
-        effective_lookback = max(int(lookback or 80), 65)
+
+        # FIX (2026-09-21): 65 was never a Wyckoff/Weis methodology
+        # figure -- confirmed directly in wyckoff_verdict_engine.py
+        # that it's derived purely from that engine's own
+        # structure_lookback=50 implementation constant, plus a rolling-
+        # window buffer. Applying it as a blanket minimum to every
+        # request was a real, separate flaw: Spring/Upthrust/Climax/
+        # 3-Bar/Absorption/Distribution only need a handful of waves,
+        # not 65 bars -- forcing that minimum meant a weekly Spring
+        # check would need over a year of data for no genuine reason.
+        # Now the minimum only climbs to structure_lookback's
+        # requirement when Sign of Strength/Weakness or Breakout/
+        # Breakdown are actually among the requested signals.
+        needs_structure_lookback = bool(requested_signals & {"sign_of_strength", "sign_of_weakness", "breakout", "breakdown"})
+        min_bars_required = 65 if needs_structure_lookback else 10
+        effective_lookback = max(int(lookback or 80), min_bars_required)
 
         explicit_tf_map = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "1H", "1Day": "1D", "1Week": "1W"}
         if timeframe in explicit_tf_map:
@@ -1858,21 +1873,21 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
             tf_threshold_key = "1D"
         threshold = TF_DEFAULTS.get(tf_threshold_key, 0.005)
 
-        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=effective_lookback)
+        # FIX (2026-09-21): confirmed via a real, reported result --
+        # requesting the minimum lookback always failed the
+        # insufficient-bars check, because trim_incomplete_bar() below
+        # correctly drops the in-progress bar during market hours.
+        # Fetching one extra bar here so the post-trim count still
+        # meets whatever was actually required above.
+        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=effective_lookback + 1)
         wyckoff_engine = WyckoffVerdictEngine()
 
         results = []
         for sym in sym_list:
             bars = bars_map.get(sym, [])
-            # FIX (2026-09-21): confirmed empirically (a real, live
-            # 1Hour AAPL bar, 16 minutes into an hour that hadn't
-            # finished) that Alpaca includes the current, still-
-            # forming bar. Trimmed here before any engine sees it --
-            # analyzing an in-progress bar's still-changing high/low/
-            # close/volume would produce unstable, misleading signals.
             bars = trim_incomplete_bar(bars, timeframe)
-            if not bars or len(bars) < 65:
-                results.append({"symbol": sym, "signals_found": [], "note": f"insufficient bars for full evaluation ({len(bars)}, need 65+)"})
+            if not bars or len(bars) < min_bars_required:
+                results.append({"symbol": sym, "signals_found": [], "note": f"insufficient bars for the signals requested ({len(bars)}, need {min_bars_required}+)"})
                 continue
 
             found = []
