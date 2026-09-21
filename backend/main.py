@@ -1879,7 +1879,7 @@ def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
         # correctly drops the in-progress bar during market hours.
         # Fetching one extra bar here so the post-trim count still
         # meets whatever was actually required above.
-        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=effective_lookback + 1)
+        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=effective_lookback + 1, min_bars_floor=min_bars_required)
         wyckoff_engine = WyckoffVerdictEngine()
 
         results = []
