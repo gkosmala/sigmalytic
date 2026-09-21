@@ -510,7 +510,7 @@ def trim_incomplete_bar(bars: list, timeframe: str, now=None) -> list:
     return bars
 
 
-def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252) -> dict:
+def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252, min_bars_floor: int = 60) -> dict:
     """
     Fetch historical bars for the radar universe.
 
@@ -525,7 +525,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     # Default target is 252 daily bars (about one trading year) so MA20, MA50,
     # ATR14, relative volume, compression, and trend structure are real.
     # Alpaca needs both start and end; otherwise it may only return today's bar.
-    target_limit = max(int(limit or 252), 60)
+    target_limit = max(int(limit or 252), min_bars_floor)
     end_dt = datetime.now(timezone.utc) + timedelta(days=1)
 
     # FIX (2026-08-17): this calendar-window calculation was hardcoded to
