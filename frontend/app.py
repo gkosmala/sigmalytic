@@ -4645,12 +4645,20 @@ def build_weis_radar_tab(session=None):
         if config.get("sms_enabled"):
             channels.append("sms")
 
+        lookback_limits = config.get("lookback_limits") or {
+            "1Min": 500, "5Min": 500, "15Min": 500, "30Min": 500,
+            "1Hour": 500, "1Day": 2520, "1Week": 1040,
+        }
+        selected_timeframe = config.get("timeframe") or "1Day"
+        selected_lookback_max = int(lookback_limits.get(selected_timeframe, 500))
+
         control_style = {
             "background": "rgba(255,255,255,.035)", "border": f"1px solid {BORDER}",
             "borderRadius": "10px", "padding": "10px 12px",
         }
         label_style = {"color": WHITE, "fontSize": "11px", "fontWeight": "800", "marginBottom": "6px"}
         return html.Div([
+            dcc.Store(id="s-weis-radar-lookback-limits", data=lookback_limits),
             html.Div("Permanent Scan Settings", style={"color": WHITE, "fontSize": "14px", "fontWeight": "900"}),
             html.Div(
                 "Saved in the shared production configuration. Changes apply to the next scheduled or manual scan.",
@@ -4677,16 +4685,26 @@ def build_weis_radar_tab(session=None):
                             ("30 Minutes", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"),
                             ("1 Week", "1Week"),
                         ]],
-                        value=config.get("timeframe") or "1Day", clearable=False,
+                        value=selected_timeframe, clearable=False,
                         style={"color": "#111"},
                     ),
                 ], style=control_style),
                 html.Div([
-                    html.Div("Lookback bars (10–500)", style=label_style),
+                    html.Div(
+                        f"Lookback bars (10–{selected_lookback_max:,})",
+                        id="weis-radar-config-lookback-label",
+                        style=label_style,
+                    ),
                     dcc.Input(
-                        id="weis-radar-config-lookback", type="number", min=10, max=500, step=1,
+                        id="weis-radar-config-lookback", type="number", min=10,
+                        max=selected_lookback_max, step=1,
                         value=int(config.get("lookback") or 252), debounce=True,
                         style={"width": "100%", "height": "38px", "borderRadius": "8px", "padding": "0 10px"},
+                    ),
+                    html.Div(
+                        "Daily supports about 10 trading years; weekly supports about 20 years. "
+                        "Intraday stays bounded for scan speed.",
+                        style={"color": MUTED, "fontSize": "9px", "marginTop": "5px"},
                     ),
                 ], style=control_style),
                 html.Div([
@@ -6412,6 +6430,25 @@ def sync_weis_radar_alert_choices(display_signals, alert_signals):
     options = [option for option in WEIS_RADAR_SIGNAL_OPTIONS if option["value"] in selected]
     values = [signal for signal in (alert_signals or []) if signal in selected]
     return options, values
+
+
+@app.callback(
+    Output("weis-radar-config-lookback-label", "children"),
+    Output("weis-radar-config-lookback", "max"),
+    Output("weis-radar-config-lookback", "value"),
+    Input("weis-radar-config-timeframe", "value"),
+    State("s-weis-radar-lookback-limits", "data"),
+    State("weis-radar-config-lookback", "value"),
+    prevent_initial_call=True,
+)
+def sync_weis_radar_lookback_limit(timeframe, lookback_limits, current_lookback):
+    limits = lookback_limits or {}
+    maximum = int(limits.get(timeframe, 500))
+    try:
+        value = max(10, min(maximum, int(current_lookback or 252)))
+    except (TypeError, ValueError):
+        value = min(252, maximum)
+    return f"Lookback bars (10–{maximum:,})", maximum, value
 
 
 @app.callback(

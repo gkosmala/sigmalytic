@@ -1809,6 +1809,12 @@ RADAR_CONFIG_DEFAULTS = {
 }
 
 
+def _radar_lookback_limits() -> dict:
+    """Keep API validation aligned with the worker's memory-safe limits."""
+    from backend.weis_radar_scan import RADAR_LOOKBACK_LIMITS
+    return dict(RADAR_LOOKBACK_LIMITS)
+
+
 @app.get("/api/radar/config")
 def get_radar_config():
     """
@@ -1824,18 +1830,31 @@ def get_radar_config():
         import os as _os
         import json as _json
 
+        lookback_limits = _radar_lookback_limits()
         redis_url = _os.getenv("REDIS_URL")
         if not redis_url:
-            return {"ok": True, **RADAR_CONFIG_DEFAULTS, "source": "defaults (REDIS_URL not set)"}
+            return {
+                "ok": True, **RADAR_CONFIG_DEFAULTS,
+                "lookback_limits": lookback_limits,
+                "source": "defaults (REDIS_URL not set)",
+            }
 
         client = _redis_lib.Redis.from_url(redis_url, decode_responses=True)
         raw = client.get(RADAR_CONFIG_REDIS_KEY)
         if not raw:
-            return {"ok": True, **RADAR_CONFIG_DEFAULTS, "source": "defaults (nothing configured yet)"}
+            return {
+                "ok": True, **RADAR_CONFIG_DEFAULTS,
+                "lookback_limits": lookback_limits,
+                "source": "defaults (nothing configured yet)",
+            }
 
         config = _json.loads(raw)
         merged = {**RADAR_CONFIG_DEFAULTS, **config}
-        return {"ok": True, **merged, "source": "configured"}
+        return {
+            "ok": True, **merged,
+            "lookback_limits": lookback_limits,
+            "source": "configured",
+        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:500]}
 
@@ -2423,8 +2442,15 @@ def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
             return {"ok": False, "error": f"Unsupported timeframe: {timeframe}"}
 
         lookback = int(config.get("lookback", RADAR_CONFIG_DEFAULTS["lookback"]))
-        if lookback < 10 or lookback > 500:
-            return {"ok": False, "error": "lookback must be between 10 and 500 bars"}
+        lookback_max = _radar_lookback_limits()[timeframe]
+        if lookback < 10 or lookback > lookback_max:
+            return {
+                "ok": False,
+                "error": (
+                    f"lookback must be between 10 and {lookback_max} bars "
+                    f"for {timeframe}"
+                ),
+            }
 
         new_config = {
             "display_signals": display_signals,

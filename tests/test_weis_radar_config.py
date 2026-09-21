@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.weis_radar_scan import (
+    RADAR_LOOKBACK_LIMITS,
+    WEIS_RADAR_SCAN_CHUNK_SIZE,
     _configured_signal_key,
     _dispatch_configured_alerts,
     _load_radar_config,
@@ -43,6 +45,16 @@ def test_config_is_sanitized_before_a_scan_uses_it():
     }
 
 
+def test_daily_and_weekly_lookbacks_use_timeframe_specific_limits():
+    daily = _load_radar_config(_FakeRedis({"timeframe": "1Day", "lookback": 900}))
+    daily_too_large = _load_radar_config(_FakeRedis({"timeframe": "1Day", "lookback": 9999}))
+    weekly_too_large = _load_radar_config(_FakeRedis({"timeframe": "1Week", "lookback": 9999}))
+
+    assert daily["lookback"] == 900
+    assert daily_too_large["lookback"] == RADAR_LOOKBACK_LIMITS["1Day"] == 2520
+    assert weekly_too_large["lookback"] == RADAR_LOOKBACK_LIMITS["1Week"] == 1040
+
+
 def test_engine_labels_map_back_to_saved_signal_keys():
     assert _configured_signal_key("3BAR_BULLISH") == "3bar"
     assert _configured_signal_key("CLIMAX_BUY") == "climaxup"
@@ -69,6 +81,43 @@ def test_production_scan_loads_config_and_uses_shared_signal_engine():
     assert "compute_symbol_signals" in source
     assert 'timeframe=config["timeframe"]' in source
     assert "_dispatch_configured_alerts" in source
+
+
+def test_production_scan_fetches_the_universe_in_bounded_chunks():
+    symbols = [f"S{i:03d}" for i in range((WEIS_RADAR_SCAN_CHUNK_SIZE * 2) + 3)]
+    fetch_calls = []
+
+    def fake_fetch(symbol_chunk, **kwargs):
+        fetch_calls.append((list(symbol_chunk), kwargs))
+        return {
+            symbol: [{"c": 100.0, "t": "2026-09-21T20:00:00Z"}]
+            for symbol in symbol_chunk
+        }
+
+    fake_radar_service = SimpleNamespace(
+        _redis_client=None,
+        compute_symbol_signals=lambda *args, **kwargs: [],
+        fetch_bars_batch=fake_fetch,
+        load_russell1000=lambda: symbols,
+        min_bars_required_for=lambda requested: 1,
+        trim_incomplete_bar=lambda bars, timeframe: bars,
+    )
+    fake_engine_module = SimpleNamespace(WyckoffVerdictEngine=lambda: object())
+
+    with patch.dict(sys.modules, {
+        "backend.radar_service": fake_radar_service,
+        "backend.research_engine.wyckoff_verdict_engine": fake_engine_module,
+    }):
+        result = run_weis_radar_scan()
+
+    assert [len(call[0]) for call in fetch_calls] == [
+        WEIS_RADAR_SCAN_CHUNK_SIZE,
+        WEIS_RADAR_SCAN_CHUNK_SIZE,
+        3,
+    ]
+    assert all(call[1]["limit"] == 253 for call in fetch_calls)
+    assert result["scanned"] == len(symbols)
+    assert result["errors"] == 0
 
 
 def test_operator_alerts_are_deduplicated_per_symbol_signal_and_bar():

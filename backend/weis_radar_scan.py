@@ -10,10 +10,10 @@ Radar/Market Radio/report pipeline.
 
 Same architecture already proven for report generation earlier this
 session: runs entirely on the isolated worker process (never the web
-backend), on a daily schedule, results cached in Redis for the
-frontend to read. Reuses fetch_bars_batch's own established batching
-(not 1,023 individual API calls) and compute_symbol_signals(), the
-same calculation used by the live signal-test endpoint.
+backend), on the saved timeframe's schedule, results cached in Redis
+for the frontend to read. Fetches bounded 25-symbol chunks with
+fetch_bars_batch() and reuses compute_symbol_signals(), the same
+calculation used by the live signal-test endpoint.
 """
 import json
 from datetime import datetime, timezone
@@ -41,6 +41,20 @@ VALID_SIGNALS = {
     "breakout", "breakdown",
 }
 VALID_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+
+# Full-universe scans retain one batch's raw bar dictionaries in memory at a
+# time. Intraday remains deliberately bounded because those scans can run as
+# often as once per minute; daily and weekly history can be meaningfully wider.
+RADAR_LOOKBACK_LIMITS = {
+    "1Min": 500,
+    "5Min": 500,
+    "15Min": 500,
+    "30Min": 500,
+    "1Hour": 500,
+    "1Day": 2520,   # approximately 10 trading years
+    "1Week": 1040,  # approximately 20 years
+}
+WEIS_RADAR_SCAN_CHUNK_SIZE = 25
 
 
 def _load_radar_config(redis_client) -> dict:
@@ -71,7 +85,8 @@ def _load_radar_config(redis_client) -> dict:
     if timeframe not in VALID_TIMEFRAMES:
         timeframe = RADAR_CONFIG_DEFAULTS["timeframe"]
     try:
-        lookback = max(10, min(500, int(config.get("lookback") or 252)))
+        lookback_max = RADAR_LOOKBACK_LIMITS[timeframe]
+        lookback = max(10, min(lookback_max, int(config.get("lookback") or 252)))
     except Exception:
         lookback = RADAR_CONFIG_DEFAULTS["lookback"]
 
@@ -361,43 +376,66 @@ def run_weis_radar_scan() -> dict:
 
     engine = WyckoffVerdictEngine()
     symbols = load_russell1000()
-    bars_map = fetch_bars_batch(
-        symbols,
-        timeframe=config["timeframe"],
-        limit=effective_lookback + 1,
-        min_bars_floor=minimum_bars,
-    )
-
     results = []
     errors = 0
-    for symbol, raw_bars in bars_map.items():
-        try:
-            bars = trim_incomplete_bar(raw_bars, config["timeframe"])
-            if len(bars) < minimum_bars:
+    scanned = 0
+
+    # Process the universe in bounded chunks. Previously one fetch retained
+    # every symbol's complete history at once: 2,520 daily bars across roughly
+    # 1,000 symbols meant more than 2.5 million Python dictionaries resident at
+    # the same time. Keeping only 25 symbols' bars live makes long daily/weekly
+    # lookbacks practical without moving that memory pressure to the web app.
+    for chunk_start in range(0, len(symbols), WEIS_RADAR_SCAN_CHUNK_SIZE):
+        symbol_chunk = symbols[chunk_start:chunk_start + WEIS_RADAR_SCAN_CHUNK_SIZE]
+        bars_map = fetch_bars_batch(
+            symbol_chunk,
+            timeframe=config["timeframe"],
+            limit=effective_lookback + 1,
+            min_bars_floor=minimum_bars,
+        )
+        scanned += len(bars_map)
+
+        for symbol, raw_bars in bars_map.items():
+            try:
+                bars = trim_incomplete_bar(raw_bars, config["timeframe"])
+                if len(bars) < minimum_bars:
+                    errors += 1
+                    continue
+                found = compute_symbol_signals(
+                    symbol,
+                    bars,
+                    requested_signals,
+                    config["timeframe"],
+                    wyckoff_engine=engine,
+                )
+                hits = _normalize_signal_hits(found, bars[-1]["c"])
+                if hits:
+                    results.append({
+                        "symbol": symbol,
+                        "hits": hits,
+                        "last_bar_time": bars[-1].get("t"),
+                    })
+            except Exception:
                 errors += 1
-                continue
-            found = compute_symbol_signals(
-                symbol,
-                bars,
-                requested_signals,
-                config["timeframe"],
-                wyckoff_engine=engine,
-            )
-            hits = _normalize_signal_hits(found, bars[-1]["c"])
-            if hits:
-                results.append({
-                    "symbol": symbol,
-                    "hits": hits,
-                    "last_bar_time": bars[-1].get("t"),
-                })
-        except Exception:
-            errors += 1
+
+        if _redis_client:
+            try:
+                _redis_client.set(WEIS_RADAR_JOB_KEY, json.dumps({
+                    "status": "running",
+                    "started_at": started_at,
+                    "processed": min(chunk_start + len(symbol_chunk), len(symbols)),
+                    "total_symbols": len(symbols),
+                    "scanned": scanned,
+                    "errors": errors,
+                }), ex=WEIS_RADAR_JOB_TTL_SECONDS)
+            except Exception:
+                pass
 
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
     alerts_dispatched = _dispatch_configured_alerts(results, config, _redis_client)
     payload = {
         "ok": True,
-        "scanned": len(bars_map),
+        "scanned": scanned,
         "hits": len(results),
         "errors": errors,
         "alerts_dispatched": alerts_dispatched,
@@ -412,7 +450,7 @@ def run_weis_radar_scan() -> dict:
             _redis_client.set(WEIS_RADAR_JOB_KEY, json.dumps({
                 "status": "done", "started_at": started_at,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
-                "hits": len(results), "scanned": len(bars_map), "errors": errors,
+                "hits": len(results), "scanned": scanned, "errors": errors,
                 "alerts_dispatched": alerts_dispatched,
             }), ex=WEIS_RADAR_JOB_TTL_SECONDS)
         except Exception:
