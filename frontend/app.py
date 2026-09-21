@@ -4455,21 +4455,67 @@ def build_stub_tab(title, description):
 
 
 
-PATTERN_COLORS = {"SPRING": "#4ade80", "UPTHRUST": "#f87171", "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
-                    "SPRING_BUILDING": "#facc15", "UPTHRUST_BUILDING": "#facc15"}
+PATTERN_COLORS = {
+    "SPRING": "#4ade80", "UPTHRUST": "#f87171",
+    "BREAKOUT": "#60a5fa", "BREAKDOWN": "#fb923c",
+    "CLIMAX_BUY": "#facc15", "CLIMAX_SELL": "#f97316",
+    "SIGN_OF_STRENGTH": "#4ade80", "SIGN_OF_WEAKNESS": "#f87171",
+    "NO_SUPPLY (absorption)": "#2dd4bf", "NO_DEMAND (distribution)": "#c084fc",
+}
+
+WEIS_RADAR_SIGNAL_OPTIONS = [
+    {"label": "Spring", "value": "spring"},
+    {"label": "Upthrust", "value": "upthrust"},
+    {"label": "Buying Climax", "value": "climaxup"},
+    {"label": "Selling Climax", "value": "climaxdown"},
+    {"label": "3-Bar Reversal", "value": "3bar"},
+    {"label": "Absorption / No Supply", "value": "absorption"},
+    {"label": "Distribution / No Demand", "value": "distribution"},
+    {"label": "Sign of Strength", "value": "sign_of_strength"},
+    {"label": "Sign of Weakness", "value": "sign_of_weakness"},
+    {"label": "Breakout", "value": "breakout"},
+    {"label": "Breakdown", "value": "breakdown"},
+]
+
+
+def _weis_radar_signal_key(hit):
+    signal = str((hit or {}).get("type") or "").upper()
+    if signal.startswith("3BAR_"):
+        return "3bar"
+    if signal == "CLIMAX_BUY":
+        return "climaxup"
+    if signal == "CLIMAX_SELL":
+        return "climaxdown"
+    if signal.startswith("NO_SUPPLY"):
+        return "absorption"
+    if signal.startswith("NO_DEMAND"):
+        return "distribution"
+    return {
+        "SPRING": "spring", "UPTHRUST": "upthrust",
+        "SIGN_OF_STRENGTH": "sign_of_strength",
+        "SIGN_OF_WEAKNESS": "sign_of_weakness",
+        "BREAKOUT": "breakout", "BREAKDOWN": "breakdown",
+    }.get(signal, "")
 
 
 def _format_weis_radar_hit(h):
-    t = h.get("type")
+    t = str(h.get("type") or "Signal")
     color = PATTERN_COLORS.get(t, MUTED)
-    if t in ("SPRING", "UPTHRUST"):
-        detail = f"score {h.get('score')}, level ${h.get('level')}"
-    elif t in ("SPRING_BUILDING", "UPTHRUST_BUILDING"):
-        detail = f"level ${h.get('level')} -- still forming, market open"
-    else:
+    details = []
+    if h.get("score") is not None:
+        details.append(f"score {float(h['score']):.0f}")
+    if h.get("level") is not None:
+        details.append(f"level ${float(h['level']):,.2f}")
+    if t in ("BREAKOUT", "BREAKDOWN") and h.get("pct_beyond") is not None:
         held_txt = "HOLDING" if h.get("held") else "not holding"
-        detail = f"{h.get('pct_beyond')}% beyond ${h.get('level')} -- crossed {h.get('date')} ({h.get('days_back')}d ago), {held_txt}"
-    return html.Span([html.Span(t, style={"color": color, "fontWeight": "800"}), f" ({detail})"])
+        details.append(f"{h.get('pct_beyond')}% beyond")
+        details.append(f"crossed {h.get('date')} ({h.get('days_back')} bars ago)")
+        details.append(held_txt)
+    detail_text = f" ({', '.join(details)})" if details else ""
+    return html.Span([
+        html.Span(t.replace("_", " "), style={"color": color, "fontWeight": "800"}),
+        detail_text,
+    ])
 
 
 def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
@@ -4496,7 +4542,7 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
     if filter_type and filter_type != "all":
         filtered = []
         for r_ in results:
-            matching_hits = [h for h in r_.get("hits", []) if h.get("type") == filter_type]
+            matching_hits = [h for h in r_.get("hits", []) if _weis_radar_signal_key(h) == filter_type]
             if matching_hits:
                 filtered.append({**r_, "hits": matching_hits})
     else:
@@ -4540,8 +4586,8 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
 
 def build_weis_radar_tab(session=None):
     """
-    ADDED (2026-08-24): Weis Radar -- shows the results of the daily
-    Russell 1000 Spring/Upthrust/Breakout/Breakdown scan (see
+    ADDED (2026-08-24): Weis Radar -- shows the results of the
+    configurable Russell 1000 signal scan (see
     backend/weis_radar_scan.py, run once daily by the isolated worker
     process -- see that module's own docstring for the full
     architecture). This tab only ever reads the already-computed
@@ -4577,9 +4623,117 @@ def build_weis_radar_tab(session=None):
             children.append(dcc.Interval(id="i-weis-radar-poll", interval=4000, disabled=True))
         return html.Div(children)
 
+    def _settings_panel():
+        if not is_admin(session):
+            return html.Div()
+        try:
+            config_response = _rq.get(f"{BACKEND_HTTP}/api/radar/config", timeout=10)
+            config = config_response.json() if config_response.ok else {}
+        except Exception:
+            config = {}
+
+        display_signals = config.get("display_signals") or [
+            "spring", "upthrust", "climaxup", "climaxdown", "3bar"
+        ]
+        alert_signals = [
+            signal for signal in (config.get("alert_signals") or [])
+            if signal in display_signals
+        ]
+        channels = []
+        if config.get("email_enabled"):
+            channels.append("email")
+        if config.get("sms_enabled"):
+            channels.append("sms")
+
+        control_style = {
+            "background": "rgba(255,255,255,.035)", "border": f"1px solid {BORDER}",
+            "borderRadius": "10px", "padding": "10px 12px",
+        }
+        label_style = {"color": WHITE, "fontSize": "11px", "fontWeight": "800", "marginBottom": "6px"}
+        return html.Div([
+            html.Div("Permanent Scan Settings", style={"color": WHITE, "fontSize": "14px", "fontWeight": "900"}),
+            html.Div(
+                "Saved in the shared production configuration. Changes apply to the next scheduled or manual scan.",
+                style={"color": MUTED, "fontSize": "11px", "marginBottom": "12px"},
+            ),
+            html.Div([
+                html.Div([
+                    html.Div("Signals to calculate and display", style=label_style),
+                    dcc.Checklist(
+                        id="weis-radar-config-display-signals",
+                        options=WEIS_RADAR_SIGNAL_OPTIONS,
+                        value=display_signals,
+                        labelStyle={"display": "inline-block", "marginRight": "14px", "marginBottom": "7px"},
+                        inputStyle={"marginRight": "5px"},
+                        style={"color": WHITE, "fontSize": "11px"},
+                    ),
+                ], style={**control_style, "gridColumn": "1 / -1"}),
+                html.Div([
+                    html.Div("Timeframe", style=label_style),
+                    dcc.Dropdown(
+                        id="weis-radar-config-timeframe",
+                        options=[{"label": label, "value": value} for label, value in [
+                            ("1 Minute", "1Min"), ("5 Minutes", "5Min"), ("15 Minutes", "15Min"),
+                            ("30 Minutes", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"),
+                            ("1 Week", "1Week"),
+                        ]],
+                        value=config.get("timeframe") or "1Day", clearable=False,
+                        style={"color": "#111"},
+                    ),
+                ], style=control_style),
+                html.Div([
+                    html.Div("Lookback bars (10–500)", style=label_style),
+                    dcc.Input(
+                        id="weis-radar-config-lookback", type="number", min=10, max=500, step=1,
+                        value=int(config.get("lookback") or 252), debounce=True,
+                        style={"width": "100%", "height": "38px", "borderRadius": "8px", "padding": "0 10px"},
+                    ),
+                ], style=control_style),
+                html.Div([
+                    html.Div("Signals that trigger alerts", style=label_style),
+                    dcc.Checklist(
+                        id="weis-radar-config-alert-signals",
+                        options=[option for option in WEIS_RADAR_SIGNAL_OPTIONS if option["value"] in display_signals],
+                        value=alert_signals,
+                        labelStyle={"display": "block", "marginBottom": "5px"},
+                        inputStyle={"marginRight": "5px"},
+                        style={"color": WHITE, "fontSize": "11px"},
+                    ),
+                ], style=control_style),
+                html.Div([
+                    html.Div("Operator alert channels", style=label_style),
+                    dcc.Checklist(
+                        id="weis-radar-config-channels",
+                        options=[
+                            {"label": "Email (ADMIN_ALERT_EMAIL)", "value": "email"},
+                            {"label": "SMS (ALERT_PHONE)", "value": "sms"},
+                        ],
+                        value=channels,
+                        labelStyle={"display": "block", "marginBottom": "7px"},
+                        inputStyle={"marginRight": "5px"},
+                        style={"color": WHITE, "fontSize": "11px"},
+                    ),
+                ], style=control_style),
+            ], style={"display": "grid", "gridTemplateColumns": "repeat(2, minmax(0, 1fr))", "gap": "10px"}),
+            html.Div([
+                html.Button(
+                    "Save Settings", id="btn-save-weis-radar-config", n_clicks=0,
+                    style={"background": TEAL, "color": WHITE, "borderRadius": "8px", "fontWeight": "900",
+                           "fontSize": "11px", "padding": "8px 14px", "marginTop": "12px"},
+                ),
+                html.Span(
+                    f"Current source: {config.get('source', 'defaults')}",
+                    style={"color": MUTED, "fontSize": "10px", "marginLeft": "10px"},
+                ),
+            ]),
+            html.Div(id="weis-radar-config-message", style={"color": MUTED, "fontSize": "11px", "marginTop": "7px"}),
+        ], style={"border": f"1px solid {BORDER_T}", "borderRadius": "14px", "padding": "14px",
+                  "background": "rgba(45,212,191,.05)", "margin": "12px 0 16px"})
+
     if not data.get("ok"):
         return html.Div([
             _header_row(),
+            _settings_panel(),
             html.Div(f"Could not load scan results: {data.get('error', 'unknown error')}",
                       style={"color": RED_DIM, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -4590,19 +4744,12 @@ def build_weis_radar_tab(session=None):
     if not results:
         return html.Div([
             _header_row(),
+            _settings_panel(),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
 
-    FILTER_OPTIONS = [
-        {"label": "All Patterns", "value": "all"},
-        {"label": "Spring", "value": "SPRING"},
-        {"label": "Upthrust", "value": "UPTHRUST"},
-        {"label": "Breakout", "value": "BREAKOUT"},
-        {"label": "Breakdown", "value": "BREAKDOWN"},
-        {"label": "Spring Building", "value": "SPRING_BUILDING"},
-        {"label": "Upthrust Building", "value": "UPTHRUST_BUILDING"},
-    ]
+    FILTER_OPTIONS = [{"label": "All Signals", "value": "all"}, *WEIS_RADAR_SIGNAL_OPTIONS]
     SORT_OPTIONS = [
         {"label": "Most Patterns", "value": "most_hits"},
         {"label": "Newest Alert First", "value": "newest"},
@@ -4612,8 +4759,11 @@ def build_weis_radar_tab(session=None):
 
     return html.Div([
         _header_row(),
-        html.Div(f"Daily Russell 1000 scan for Spring, Upthrust, Breakout, and Breakdown patterns. "
+        _settings_panel(),
+        html.Div(f"Configured Russell 1000 Weis/Wyckoff signal scan. "
                   f"{data.get('scanned', 0)} symbols scanned, {len(results)} with a hit."
+                  + (f" Timeframe: {(data.get('config') or {}).get('timeframe')}."
+                     if (data.get('config') or {}).get('timeframe') else "")
                   + (f" Last run: {generated_at}" if generated_at else "")
                   + " Click any row to see its chart.",
                   style={"color": MUTED, "fontSize": "12px", "marginBottom": "16px"}),
@@ -6248,6 +6398,63 @@ def poll_weis_radar_status(n_intervals, session):
     if n_intervals and n_intervals >= 200:
         return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True
     return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
+
+
+@app.callback(
+    Output("weis-radar-config-alert-signals", "options"),
+    Output("weis-radar-config-alert-signals", "value"),
+    Input("weis-radar-config-display-signals", "value"),
+    State("weis-radar-config-alert-signals", "value"),
+    prevent_initial_call=True,
+)
+def sync_weis_radar_alert_choices(display_signals, alert_signals):
+    selected = set(display_signals or [])
+    options = [option for option in WEIS_RADAR_SIGNAL_OPTIONS if option["value"] in selected]
+    values = [signal for signal in (alert_signals or []) if signal in selected]
+    return options, values
+
+
+@app.callback(
+    Output("weis-radar-config-message", "children"),
+    Input("btn-save-weis-radar-config", "n_clicks"),
+    State("weis-radar-config-display-signals", "value"),
+    State("weis-radar-config-timeframe", "value"),
+    State("weis-radar-config-lookback", "value"),
+    State("weis-radar-config-alert-signals", "value"),
+    State("weis-radar-config-channels", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def save_weis_radar_config(
+    n_clicks, display_signals, timeframe, lookback, alert_signals, channels, session
+):
+    if not is_admin(session):
+        return "Admin access is required to change the production scan."
+    if not display_signals:
+        return "Select at least one signal to display."
+
+    payload = {
+        "display_signals": list(display_signals),
+        "timeframe": timeframe,
+        "lookback": int(lookback or 252),
+        "alert_signals": list(alert_signals or []),
+        "email_enabled": "email" in (channels or []),
+        "sms_enabled": "sms" in (channels or []),
+    }
+    try:
+        response = req.post(
+            f"{BACKEND_HTTP}/api/radar/config",
+            json=payload,
+            headers=_auth_headers(session),
+            timeout=15,
+        )
+        result = response.json()
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+    if not response.ok or not result.get("ok"):
+        return f"Settings were not saved: {result.get('error') or result.get('detail') or f'HTTP {response.status_code}'}"
+    return "Settings saved permanently. Click Run Scan Now to apply them immediately."
 
 
 def _build_weis_radar_chart_html(chart_data, ma_period=20):

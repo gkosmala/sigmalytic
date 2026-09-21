@@ -122,6 +122,47 @@ def send_sms(sym: dict, status: str, to_number: str = None) -> bool:
         return False
 
 
+def send_signal_sms(
+    symbol: str,
+    signal: str,
+    price: float = 0.0,
+    score: float = 0.0,
+    to_number: str = None,
+) -> bool:
+    """Send a concise operator SMS for a configured Weis Radar signal."""
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_FROM_NUMBER:
+        log.debug("Twilio credentials not set — skipping signal SMS silently")
+        return False
+    if not TWILIO_ACCOUNT_SID.startswith("AC") or len(TWILIO_ACCOUNT_SID) != 34:
+        log.debug("Twilio Account SID format invalid — skipping signal SMS silently")
+        return False
+    if len(TWILIO_AUTH_TOKEN) < 20:
+        log.debug("Twilio Auth Token appears invalid — skipping signal SMS silently")
+        return False
+
+    phone = to_number or ALERT_PHONE
+    if not phone:
+        log.debug("No alert phone number set — skipping signal SMS silently")
+        return False
+
+    score_text = f" | Score: {score:.0f}" if score else ""
+    body = (
+        "📡 SIGMALYTIC WEIS RADAR\n"
+        f"{symbol} → {signal.upper()}\n"
+        f"Price: ${price:,.2f}{score_text}\n"
+        "Not financial advice."
+    )
+    try:
+        from twilio.rest import Client
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        message = client.messages.create(body=body, from_=TWILIO_FROM_NUMBER, to=phone)
+        log.info(f"Signal SMS sent: {symbol} → {signal} to {phone} (SID: {message.sid})")
+        return True
+    except Exception as exc:
+        log.warning(f"Signal SMS error: {exc}")
+        return False
+
+
 def maybe_send_sms(sym: dict, old_status: str, new_status: str, to_number: str = None):
     """
     Send SMS only if:
@@ -171,5 +212,4 @@ def send_test_sms(to_number: str = None) -> dict:
         return {"ok": True, "sid": message.sid, "to": phone}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-
 

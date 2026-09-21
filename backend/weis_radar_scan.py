@@ -1,8 +1,8 @@
 """
-ADDED (2026-08-24): Weis Radar -- scans the full Russell 1000 for
-Spring, Upthrust, Breakout, and Breakdown patterns, using the real,
-already-fixed WyckoffVerdictEngine (backend/research_engine/
-wyckoff_verdict_engine.py). Genuinely separate from the existing
+ADDED (2026-08-24): Weis Radar -- scans the full Russell 1000 using
+the operator's saved signal, timeframe, lookback, and alert settings.
+The eleven available signals reuse the shared, live-tested Weis/Wyckoff
+calculation in backend/radar_service.py. Genuinely separate from the existing
 "Radar" tab's own composite scoring (get_radar_scores in
 radar_service.py) -- deliberately additive, not integrated into that
 system, so this carries zero risk to the existing, already-working
@@ -12,9 +12,8 @@ Same architecture already proven for report generation earlier this
 session: runs entirely on the isolated worker process (never the web
 backend), on a daily schedule, results cached in Redis for the
 frontend to read. Reuses fetch_bars_batch's own established batching
-(not 1,023 individual API calls) and the exact same raw-bar-to-
-DataFrame conversion already used by the live, single-symbol
-wyckoff-verdict endpoint (backend/main.py's radar_symbol_wyckoff_verdict).
+(not 1,023 individual API calls) and compute_symbol_signals(), the
+same calculation used by the live signal-test endpoint.
 """
 import json
 from datetime import datetime, timezone
@@ -25,6 +24,156 @@ WEIS_RADAR_RESULTS_KEY = "weis_radar:results"
 WEIS_RADAR_JOB_KEY = "weis_radar:job_status"
 WEIS_RADAR_JOB_TTL_SECONDS = 3600
 WEIS_RADAR_MANUAL_QUEUE_KEY = "weis_radar:manual_scan_queue"
+RADAR_CONFIG_REDIS_KEY = "radar:signal_config"
+
+RADAR_CONFIG_DEFAULTS = {
+    "display_signals": ["spring", "upthrust", "climaxup", "climaxdown", "3bar"],
+    "timeframe": "1Day",
+    "lookback": 252,
+    "alert_signals": [],
+    "sms_enabled": False,
+    "email_enabled": False,
+}
+
+VALID_SIGNALS = {
+    "spring", "upthrust", "climaxup", "climaxdown", "3bar",
+    "absorption", "distribution", "sign_of_strength", "sign_of_weakness",
+    "breakout", "breakdown",
+}
+VALID_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+
+
+def _load_radar_config(redis_client) -> dict:
+    """Load and defensively normalize the shared admin configuration."""
+    config = dict(RADAR_CONFIG_DEFAULTS)
+    if redis_client:
+        try:
+            raw = redis_client.get(RADAR_CONFIG_REDIS_KEY)
+            if raw:
+                decoded = json.loads(raw)
+                if isinstance(decoded, dict):
+                    config.update(decoded)
+        except Exception:
+            pass
+
+    display_signals = [
+        str(signal).lower() for signal in (config.get("display_signals") or [])
+        if str(signal).lower() in VALID_SIGNALS
+    ]
+    if not display_signals:
+        display_signals = list(RADAR_CONFIG_DEFAULTS["display_signals"])
+
+    alert_signals = [
+        str(signal).lower() for signal in (config.get("alert_signals") or [])
+        if str(signal).lower() in display_signals
+    ]
+    timeframe = str(config.get("timeframe") or RADAR_CONFIG_DEFAULTS["timeframe"])
+    if timeframe not in VALID_TIMEFRAMES:
+        timeframe = RADAR_CONFIG_DEFAULTS["timeframe"]
+    try:
+        lookback = max(10, min(500, int(config.get("lookback") or 252)))
+    except Exception:
+        lookback = RADAR_CONFIG_DEFAULTS["lookback"]
+
+    return {
+        "display_signals": display_signals,
+        "timeframe": timeframe,
+        "lookback": lookback,
+        "alert_signals": alert_signals,
+        "sms_enabled": bool(config.get("sms_enabled", False)),
+        "email_enabled": bool(config.get("email_enabled", False)),
+    }
+
+
+def _configured_signal_key(signal_name: str) -> str:
+    """Map an engine result label back to the saved configuration key."""
+    signal = str(signal_name or "").upper()
+    if signal.startswith("3BAR_"):
+        return "3bar"
+    if signal == "CLIMAX_BUY":
+        return "climaxup"
+    if signal == "CLIMAX_SELL":
+        return "climaxdown"
+    if signal.startswith("NO_SUPPLY"):
+        return "absorption"
+    if signal.startswith("NO_DEMAND"):
+        return "distribution"
+    return {
+        "SPRING": "spring",
+        "UPTHRUST": "upthrust",
+        "SIGN_OF_STRENGTH": "sign_of_strength",
+        "SIGN_OF_WEAKNESS": "sign_of_weakness",
+        "BREAKOUT": "breakout",
+        "BREAKDOWN": "breakdown",
+    }.get(signal, "")
+
+
+def _normalize_signal_hits(found: list, price: float) -> list:
+    """Convert the shared 11-signal engine output to Weis Radar rows."""
+    hits = []
+    for item in found:
+        signal = str(item.get("signal") or "")
+        if not signal or signal == "WYCKOFF_ENGINE_ERROR":
+            continue
+        hit = {"type": signal, "price": round(float(price), 2)}
+        if item.get("score") is not None:
+            hit["score"] = round(float(item["score"]), 1)
+        if isinstance(item.get("detail"), dict):
+            hit.update(item["detail"])
+        hits.append(hit)
+    return hits
+
+
+def _dispatch_configured_alerts(results: list, config: dict, redis_client) -> int:
+    """Send deduplicated operator alerts for the configured signal subset."""
+    if not redis_client or not config.get("alert_signals"):
+        return 0
+    if not config.get("email_enabled") and not config.get("sms_enabled"):
+        return 0
+
+    requested = set(config["alert_signals"])
+    dispatched = 0
+    for row in results:
+        symbol = row.get("symbol", "")
+        bar_time = str(row.get("last_bar_time") or "unknown")
+        for hit in row.get("hits", []):
+            signal_key = _configured_signal_key(hit.get("type"))
+            if signal_key not in requested:
+                continue
+
+            dedupe_key = f"weis_radar:alerted:{symbol}:{signal_key}:{bar_time}"
+            try:
+                if not redis_client.set(dedupe_key, "1", nx=True, ex=7 * 24 * 60 * 60):
+                    continue
+            except Exception:
+                continue
+
+            signal_label = str(hit.get("type") or signal_key).replace("_", " ")
+            price = float(hit.get("price") or 0)
+            score = float(hit.get("score") or 0)
+            detail = f"{symbol} produced {signal_label} at ${price:,.2f}"
+            if score:
+                detail += f" with score {score:.0f}"
+            detail += f" on the {config['timeframe']} scan."
+
+            if config.get("email_enabled"):
+                try:
+                    from backend.email_service import send_admin_alert_sync
+                    send_admin_alert_sync(
+                        f"Weis Radar: {symbol} {signal_label}",
+                        detail,
+                        alert_key=dedupe_key,
+                    )
+                except Exception:
+                    pass
+            if config.get("sms_enabled"):
+                try:
+                    from backend.sms_alerts import send_signal_sms
+                    send_signal_sms(symbol, signal_label, price=price, score=score)
+                except Exception:
+                    pass
+            dispatched += 1
+    return dispatched
 
 
 def request_manual_weis_radar_scan() -> dict:
@@ -187,7 +336,14 @@ def run_weis_radar_scan() -> dict:
     fix earlier this session: this must never run on the web-facing
     process's memory budget.
     """
-    from backend.radar_service import load_russell1000, fetch_bars_batch, _redis_client
+    from backend.radar_service import (
+        _redis_client,
+        compute_symbol_signals,
+        fetch_bars_batch,
+        load_russell1000,
+        min_bars_required_for,
+        trim_incomplete_bar,
+    )
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -198,27 +354,54 @@ def run_weis_radar_scan() -> dict:
         except Exception:
             pass
 
+    config = _load_radar_config(_redis_client)
+    requested_signals = set(config["display_signals"])
+    minimum_bars = min_bars_required_for(requested_signals)
+    effective_lookback = max(config["lookback"], minimum_bars)
+
     engine = WyckoffVerdictEngine()
     symbols = load_russell1000()
-    bars_map = fetch_bars_batch(symbols, timeframe="1Day", limit=252)
+    bars_map = fetch_bars_batch(
+        symbols,
+        timeframe=config["timeframe"],
+        limit=effective_lookback + 1,
+        min_bars_floor=minimum_bars,
+    )
 
     results = []
     errors = 0
     for symbol, raw_bars in bars_map.items():
         try:
-            df = _bars_to_dataframe(raw_bars)
-            hits = scan_symbol_for_weis_patterns(engine, df)
+            bars = trim_incomplete_bar(raw_bars, config["timeframe"])
+            if len(bars) < minimum_bars:
+                errors += 1
+                continue
+            found = compute_symbol_signals(
+                symbol,
+                bars,
+                requested_signals,
+                config["timeframe"],
+                wyckoff_engine=engine,
+            )
+            hits = _normalize_signal_hits(found, bars[-1]["c"])
             if hits:
-                results.append({"symbol": symbol, "hits": hits})
+                results.append({
+                    "symbol": symbol,
+                    "hits": hits,
+                    "last_bar_time": bars[-1].get("t"),
+                })
         except Exception:
             errors += 1
 
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
+    alerts_dispatched = _dispatch_configured_alerts(results, config, _redis_client)
     payload = {
         "ok": True,
         "scanned": len(bars_map),
         "hits": len(results),
         "errors": errors,
+        "alerts_dispatched": alerts_dispatched,
+        "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -230,6 +413,7 @@ def run_weis_radar_scan() -> dict:
                 "status": "done", "started_at": started_at,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "hits": len(results), "scanned": len(bars_map), "errors": errors,
+                "alerts_dispatched": alerts_dispatched,
             }), ex=WEIS_RADAR_JOB_TTL_SECONDS)
         except Exception:
             pass

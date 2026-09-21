@@ -2389,7 +2389,7 @@ def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
     """
     ADDED (2026-09-21): writes the shared radar configuration --
     admin-only, since this changes the single, shared production scan
-    that every operator/viewer of the Radar Screen sees, not a
+    that every operator/viewer of the Weis Radar sees, not a
     per-user preference. Validates against the same 11 known signal
     names and known timeframe shapes used everywhere else in this
     feature, so a typo here can't silently produce an empty or
@@ -2403,6 +2403,7 @@ def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
         VALID_SIGNALS = {"spring", "upthrust", "climaxup", "climaxdown", "3bar",
                           "absorption", "distribution", "sign_of_strength", "sign_of_weakness",
                           "breakout", "breakdown"}
+        VALID_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
 
         display_signals = config.get("display_signals", RADAR_CONFIG_DEFAULTS["display_signals"])
         alert_signals = config.get("alert_signals", RADAR_CONFIG_DEFAULTS["alert_signals"])
@@ -2417,10 +2418,18 @@ def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
         if not set(alert_signals) <= set(display_signals):
             return {"ok": False, "error": "alert_signals must be a subset of display_signals"}
 
+        timeframe = str(config.get("timeframe", RADAR_CONFIG_DEFAULTS["timeframe"]))
+        if timeframe not in VALID_TIMEFRAMES:
+            return {"ok": False, "error": f"Unsupported timeframe: {timeframe}"}
+
+        lookback = int(config.get("lookback", RADAR_CONFIG_DEFAULTS["lookback"]))
+        if lookback < 10 or lookback > 500:
+            return {"ok": False, "error": "lookback must be between 10 and 500 bars"}
+
         new_config = {
             "display_signals": display_signals,
-            "timeframe": config.get("timeframe", RADAR_CONFIG_DEFAULTS["timeframe"]),
-            "lookback": int(config.get("lookback", RADAR_CONFIG_DEFAULTS["lookback"])),
+            "timeframe": timeframe,
+            "lookback": lookback,
             "alert_signals": alert_signals,
             "sms_enabled": bool(config.get("sms_enabled", RADAR_CONFIG_DEFAULTS["sms_enabled"])),
             "email_enabled": bool(config.get("email_enabled", RADAR_CONFIG_DEFAULTS["email_enabled"])),
