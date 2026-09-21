@@ -681,19 +681,24 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
         calendar_days = max(180, int(target_limit * 7 * 1.15))
     else:
         bars_per_trading_day = {
-            "1Min": 390, "5Min": 78, "15Min": 26, "30Min": 13, "1Hour": 7,
+            "1Min": 390, "5Min": 78, "15Min": 26, "30Min": 13,
+            "1Hour": 7, "2Hour": 4, "4Hour": 2,
         }.get(timeframe, 1)
         trading_days_needed = target_limit / bars_per_trading_day
         # ~1.4x converts trading days to calendar days (weekends); small
         # extra buffer for holidays, matching the spirit of the existing
         # daily buffer without inheriting its literal ratio.
         calendar_days = max(5, int(trading_days_needed * 1.4 * 1.15))
-        # Cap intraday windows -- range/wall identification only looks
-        # back ~30 columns, so there's no genuine need for, e.g., a full
-        # year of 5-minute bars even after the fix above; keeps requests
-        # right-sized rather than merely "less wrong."
-        if bars_per_trading_day >= 7:
-            calendar_days = min(calendar_days, 90)
+        # Fine-grained intraday scans stay within 90 calendar days. The
+        # operator-selectable 1H/2H/4H histories intentionally support three
+        # trading years; their wider cap includes enough weekend/holiday
+        # buffer for 756 sessions without silently truncating the request.
+        calendar_day_cap = {
+            "1Min": 90, "5Min": 90, "15Min": 90, "30Min": 90,
+            "1Hour": 1300, "2Hour": 1300, "4Hour": 1300,
+        }.get(timeframe)
+        if calendar_day_cap is not None:
+            calendar_days = min(calendar_days, calendar_day_cap)
 
     start_dt = end_dt - timedelta(days=calendar_days)
     start_date = start_dt.strftime("%Y-%m-%d")

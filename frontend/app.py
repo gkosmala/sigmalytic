@@ -4477,6 +4477,21 @@ WEIS_RADAR_SIGNAL_OPTIONS = [
     {"label": "Breakdown", "value": "breakdown"},
 ]
 
+WEIS_RADAR_LOOKBACK_LIMITS = {
+    "1Min": 500, "5Min": 500, "15Min": 500, "30Min": 500,
+    "1Hour": 5292, "2Hour": 3024, "4Hour": 1512,
+    "1Day": 2520, "1Week": 1040,
+}
+
+
+def _weis_radar_lookback_options(timeframe):
+    maximum = WEIS_RADAR_LOOKBACK_LIMITS.get(timeframe, 500)
+    presets = [100, 150, 252, 500, 1000, 1040, 1512, 2520, 3024, 5292]
+    values = [value for value in presets if value <= maximum]
+    if maximum not in values:
+        values.append(maximum)
+    return [{"label": f"{value:,} bars", "value": value} for value in sorted(set(values))]
+
 
 def _weis_radar_signal_key(hit):
     signal = str((hit or {}).get("type") or "").upper()
@@ -4645,10 +4660,7 @@ def build_weis_radar_tab(session=None):
         if config.get("sms_enabled"):
             channels.append("sms")
 
-        lookback_limits = config.get("lookback_limits") or {
-            "1Min": 500, "5Min": 500, "15Min": 500, "30Min": 500,
-            "1Hour": 500, "1Day": 2520, "1Week": 1040,
-        }
+        lookback_limits = config.get("lookback_limits") or WEIS_RADAR_LOOKBACK_LIMITS
         selected_timeframe = config.get("timeframe") or "1Day"
         selected_lookback_max = int(lookback_limits.get(selected_timeframe, 500))
 
@@ -4682,8 +4694,8 @@ def build_weis_radar_tab(session=None):
                         id="weis-radar-config-timeframe",
                         options=[{"label": label, "value": value} for label, value in [
                             ("1 Minute", "1Min"), ("5 Minutes", "5Min"), ("15 Minutes", "15Min"),
-                            ("30 Minutes", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"),
-                            ("1 Week", "1Week"),
+                            ("30 Minutes", "30Min"), ("1 Hour", "1Hour"), ("2 Hours", "2Hour"),
+                            ("4 Hours", "4Hour"), ("1 Day", "1Day"), ("1 Week", "1Week"),
                         ]],
                         value=selected_timeframe, clearable=False,
                         style={"color": "#111"},
@@ -4702,8 +4714,8 @@ def build_weis_radar_tab(session=None):
                         style={"width": "100%", "height": "38px", "borderRadius": "8px", "padding": "0 10px"},
                     ),
                     html.Div(
-                        "Daily supports about 10 trading years; weekly supports about 20 years. "
-                        "Intraday stays bounded for scan speed.",
+                        "1H, 2H, and 4H support about three trading years. Daily supports "
+                        "about 10 years; weekly supports about 20 years.",
                         style={"color": MUTED, "fontSize": "9px", "marginTop": "5px"},
                     ),
                 ], style=control_style),
@@ -4819,7 +4831,8 @@ def build_weis_radar_tab(session=None):
                     id="weis-radar-chart-timeframe",
                     options=[{"label": lbl, "value": val} for lbl, val in [
                         ("1 Min", "1Min"), ("5 Min", "5Min"), ("15 Min", "15Min"),
-                        ("30 Min", "30Min"), ("1 Hour", "1Hour"), ("1 Day", "1Day"), ("1 Week", "1Week"),
+                        ("30 Min", "30Min"), ("1 Hour", "1Hour"), ("2 Hours", "2Hour"),
+                        ("4 Hours", "4Hour"), ("1 Day", "1Day"), ("1 Week", "1Week"),
                     ]],
                     value="1Day", clearable=False,
                     style={"width": "130px", "display": "inline-block", "color": "#111"},
@@ -4829,7 +4842,7 @@ def build_weis_radar_tab(session=None):
                 html.Span("Lookback: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
                 dcc.Dropdown(
                     id="weis-radar-chart-lookback",
-                    options=[{"label": f"{n} bars", "value": n} for n in [100, 150, 252, 500]],
+                    options=_weis_radar_lookback_options("1Day"),
                     value=252, clearable=False,
                     style={"width": "110px", "display": "inline-block", "color": "#111"},
                 ),
@@ -6449,6 +6462,27 @@ def sync_weis_radar_lookback_limit(timeframe, lookback_limits, current_lookback)
     except (TypeError, ValueError):
         value = min(252, maximum)
     return f"Lookback bars (10–{maximum:,})", maximum, value
+
+
+@app.callback(
+    Output("weis-radar-chart-lookback", "options"),
+    Output("weis-radar-chart-lookback", "value"),
+    Input("weis-radar-chart-timeframe", "value"),
+    State("weis-radar-chart-lookback", "value"),
+    prevent_initial_call=True,
+)
+def sync_weis_radar_chart_lookbacks(timeframe, current_lookback):
+    maximum = WEIS_RADAR_LOOKBACK_LIMITS.get(timeframe, 500)
+    try:
+        value = max(60, min(maximum, int(current_lookback or 252)))
+    except (TypeError, ValueError):
+        value = min(252, maximum)
+    options = _weis_radar_lookback_options(timeframe)
+    option_values = {option["value"] for option in options}
+    if value not in option_values:
+        options.append({"label": f"{value:,} bars", "value": value})
+        options.sort(key=lambda option: option["value"])
+    return options, value
 
 
 @app.callback(

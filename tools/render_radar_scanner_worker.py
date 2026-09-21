@@ -137,6 +137,8 @@ def main() -> int:
             "15Min": 15 * 60,
             "30Min": 30 * 60,
             "1Hour": 60 * 60,
+            "2Hour": 2 * 60 * 60,
+            "4Hour": 4 * 60 * 60,
             "1Day": 24 * 60 * 60,
             "1Week": 7 * 24 * 60 * 60,
         }.get(config.get("timeframe"), 24 * 60 * 60)

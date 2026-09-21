@@ -45,7 +45,7 @@ def test_config_is_sanitized_before_a_scan_uses_it():
     }
 
 
-def test_daily_and_weekly_lookbacks_use_timeframe_specific_limits():
+def test_long_lookbacks_use_timeframe_specific_limits():
     daily = _load_radar_config(_FakeRedis({"timeframe": "1Day", "lookback": 900}))
     daily_too_large = _load_radar_config(_FakeRedis({"timeframe": "1Day", "lookback": 9999}))
     weekly_too_large = _load_radar_config(_FakeRedis({"timeframe": "1Week", "lookback": 9999}))
@@ -53,6 +53,15 @@ def test_daily_and_weekly_lookbacks_use_timeframe_specific_limits():
     assert daily["lookback"] == 900
     assert daily_too_large["lookback"] == RADAR_LOOKBACK_LIMITS["1Day"] == 2520
     assert weekly_too_large["lookback"] == RADAR_LOOKBACK_LIMITS["1Week"] == 1040
+
+    expected_hourly_limits = {"1Hour": 5292, "2Hour": 3024, "4Hour": 1512}
+    for timeframe, expected_limit in expected_hourly_limits.items():
+        config = _load_radar_config(_FakeRedis({
+            "timeframe": timeframe,
+            "lookback": 99999,
+        }))
+        assert config["timeframe"] == timeframe
+        assert config["lookback"] == expected_limit
 
 
 def test_engine_labels_map_back_to_saved_signal_keys():
@@ -167,4 +176,16 @@ def test_worker_schedule_uses_the_saved_timeframe_cadence():
     assert "_load_radar_config" in source
     assert '"5Min": 5 * 60' in source
     assert '"1Hour": 60 * 60' in source
+    assert '"2Hour": 2 * 60 * 60' in source
+    assert '"4Hour": 4 * 60 * 60' in source
     assert "_weis_radar_interval_seconds()" in source
+
+
+def test_hourly_fetch_windows_and_ui_include_two_and_four_hour_bars():
+    service_source = Path("backend/radar_service.py").read_text(encoding="utf-8")
+    frontend_source = Path("frontend/app.py").read_text(encoding="utf-8")
+
+    assert '"1Hour": 7, "2Hour": 4, "4Hour": 2' in service_source
+    assert '"1Hour": 1300, "2Hour": 1300, "4Hour": 1300' in service_source
+    assert '("2 Hours", "2Hour")' in frontend_source
+    assert '("4 Hours", "4Hour")' in frontend_source

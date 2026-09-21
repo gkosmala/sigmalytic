@@ -40,7 +40,10 @@ VALID_SIGNALS = {
     "absorption", "distribution", "sign_of_strength", "sign_of_weakness",
     "breakout", "breakdown",
 }
-VALID_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+VALID_TIMEFRAMES = {
+    "1Min", "5Min", "15Min", "30Min",
+    "1Hour", "2Hour", "4Hour", "1Day", "1Week",
+}
 
 # Full-universe scans retain one batch's raw bar dictionaries in memory at a
 # time. Intraday remains deliberately bounded because those scans can run as
@@ -50,7 +53,9 @@ RADAR_LOOKBACK_LIMITS = {
     "5Min": 500,
     "15Min": 500,
     "30Min": 500,
-    "1Hour": 500,
+    "1Hour": 5292,  # 7 bars/session * 252 sessions * 3 years
+    "2Hour": 3024,  # 4 bars/session * 252 sessions * 3 years
+    "4Hour": 1512,  # 2 bars/session * 252 sessions * 3 years
     "1Day": 2520,   # approximately 10 trading years
     "1Week": 1040,  # approximately 20 years
 }

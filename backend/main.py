@@ -1454,7 +1454,10 @@ def get_pnf_weis_verdict(symbol: str, timeframe: str = "1Day"):
     if not sym:
         return {"ok": False, "error": "missing_symbol"}
 
-    allowed_timeframes = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    allowed_timeframes = {
+        "1Min", "5Min", "15Min", "30Min",
+        "1Hour", "2Hour", "4Hour", "1Day", "1Week",
+    }
     if timeframe not in allowed_timeframes:
         return {"ok": False, "symbol": sym, "error": f"invalid_timeframe: {timeframe}. Must be one of {sorted(allowed_timeframes)}"}
 
@@ -2422,7 +2425,10 @@ def set_radar_config(config: dict, _admin: str = Depends(require_admin)):
         VALID_SIGNALS = {"spring", "upthrust", "climaxup", "climaxdown", "3bar",
                           "absorption", "distribution", "sign_of_strength", "sign_of_weakness",
                           "breakout", "breakdown"}
-        VALID_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+        VALID_TIMEFRAMES = {
+            "1Min", "5Min", "15Min", "30Min",
+            "1Hour", "2Hour", "4Hour", "1Day", "1Week",
+        }
 
         display_signals = config.get("display_signals", RADAR_CONFIG_DEFAULTS["display_signals"])
         alert_signals = config.get("alert_signals", RADAR_CONFIG_DEFAULTS["alert_signals"])
@@ -2704,17 +2710,21 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
     query params rather than hardcoded -- confirmed fetch_bars_batch()
     (backend/radar_service.py) already has correct, separately-tuned
     calendar-window math for every timeframe it supports (1Min, 5Min,
-    15Min, 30Min, 1Hour, 1Day, 1Week), so this is a safe, mechanical
+    15Min, 30Min, 1Hour, 2Hour, 4Hour, 1Day, 1Week), so this is a safe, mechanical
     change, not new risk.
     """
     from backend.radar_service import fetch_bars_batch
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
-    from backend.weis_radar_scan import _bars_to_dataframe, scan_symbol_for_weis_patterns
+    from backend.weis_radar_scan import (
+        RADAR_LOOKBACK_LIMITS,
+        _bars_to_dataframe,
+        scan_symbol_for_weis_patterns,
+    )
 
-    ALLOWED_TIMEFRAMES = {"1Min", "5Min", "15Min", "30Min", "1Hour", "1Day", "1Week"}
+    ALLOWED_TIMEFRAMES = set(RADAR_LOOKBACK_LIMITS)
     if timeframe not in ALLOWED_TIMEFRAMES:
         return {"ok": False, "error": f"Unsupported timeframe '{timeframe}'."}
-    limit = max(60, min(int(limit), 1000))  # sane bounds -- same floor scan_symbol_for_weis_patterns already requires, cap to prevent an oversized request
+    limit = max(60, min(int(limit), RADAR_LOOKBACK_LIMITS[timeframe]))
 
     try:
         sym = symbol.upper().strip()
