@@ -1768,6 +1768,113 @@ def debug_radar_weis_summary():
         return {"ok": False, "error": str(exc)[:500]}
 
 
+@app.get("/api/debug/signal-test")
+def debug_signal_test(symbols: str = "AAPL,MSFT,TSLA,NVDA,AMD,ABNB,AA,AZO",
+                        timeframe: str = "1Day", signals: str = "spring,upthrust,climaxup,climaxdown,3bar"):
+    """
+    ADDED (2026-09-20): real, working test of operator-selectable
+    signal + timeframe -- built specifically because the operator
+    asked to see this operate on live data before any real UI/backend
+    build, not a mockup with illustrative numbers.
+
+    Fetches REAL bars at the requested timeframe via the same, already-
+    fixed fetch_bars_batch() (properly timeframe-aware calendar windows,
+    confirmed directly in its own code before building this), then
+    runs the real Spring/Upthrust/Climax/3-Bar-Reversal detection --
+    but with the WeisWaveEngine's threshold matched to the REQUESTED
+    timeframe, not hardcoded to daily like score_weis_wave_radar() is.
+    Using daily's 1.5% threshold on, say, 5-minute bars would make wave
+    detection nearly non-functional at that scale (5-minute bars rarely
+    move 1.5% bar-to-bar) -- confirmed this mismatch directly in
+    score_weis_wave_radar()'s own code before writing this, rather than
+    reusing it as-is.
+
+    Honest, stated scope: only the 5 signals that already have real
+    detection logic (Spring/Upthrust/Buying Climax/Selling Climax/
+    3-Bar Reversal) can be tested this way. Absorption, Distribution,
+    Sign of Strength/Weakness, and Breakout/Breakdown have no working
+    detection code anywhere in this codebase yet -- requesting them
+    here returns them explicitly marked unavailable, not a fabricated
+    result.
+    """
+    try:
+        from backend.radar_service import fetch_bars_batch
+        from backend.weis_wave import WeisWaveEngine, TF_DEFAULTS, SPRING_SCORE, UPTHRUST_SCORE, CLIMAX_SCORE, detect_three_bar_reversal
+
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        requested_signals = {s.strip().lower() for s in signals.split(",") if s.strip()}
+
+        NOT_YET_BUILT = {"absorption", "distribution", "sign_of_strength", "sign_of_weakness", "breakout", "breakdown"}
+        unavailable_requested = sorted(requested_signals & NOT_YET_BUILT)
+
+        # FIX (2026-09-20): caught via direct testing before deploy --
+        # the naive dict .get(timeframe, "1D") fallback meant any
+        # timeframe NOT in the explicit map (e.g. a genuine custom
+        # value like "22Min", exactly what operator-selectable
+        # timeframe is supposed to support) silently fell back to the
+        # DAILY threshold (0.015) -- the opposite of correct for an
+        # intraday value. Any "*Min" string not explicitly mapped now
+        # falls back to the 5-minute threshold instead, a far more
+        # reasonable intraday default than daily's.
+        explicit_tf_map = {"1Min": "1m", "5Min": "5m", "15Min": "15m", "1Hour": "1H", "1Day": "1D", "1Week": "1W"}
+        if timeframe in explicit_tf_map:
+            tf_threshold_key = explicit_tf_map[timeframe]
+        elif timeframe.endswith("Min"):
+            tf_threshold_key = "5m"
+        elif timeframe.endswith("Hour"):
+            tf_threshold_key = "1H"
+        else:
+            tf_threshold_key = "1D"
+        threshold = TF_DEFAULTS.get(tf_threshold_key, 0.005)
+
+        bars_map = fetch_bars_batch(sym_list, timeframe=timeframe, limit=60)
+
+        results = []
+        for sym in sym_list:
+            bars = bars_map.get(sym, [])
+            if not bars or len(bars) < 5:
+                results.append({"symbol": sym, "signal": "NONE", "score": 0, "note": f"insufficient bars ({len(bars)})"})
+                continue
+
+            engine = WeisWaveEngine(threshold)
+            waves = engine.calculate_waves(bars[-60:])
+            tbr = detect_three_bar_reversal(bars)
+
+            signal, score = "NONE", 0
+            if tbr and "3bar" in requested_signals:
+                signal, score = f"3BAR_{tbr.direction}", tbr.score
+            elif len(waves) >= 3:
+                cw, pw, pw2 = waves[-1], waves[-2], waves[-3]
+                macro_bias = 0
+                if len(waves) >= 4:
+                    recent = waves[-6:]
+                    up_vol = sum(w.cum_volume for w in recent if w.direction == 1)
+                    down_vol = sum(w.cum_volume for w in recent if w.direction == -1)
+                    macro_bias = 1 if up_vol > down_vol * 1.2 else (-1 if down_vol > up_vol * 1.2 else 0)
+
+                if "spring" in requested_signals and macro_bias >= 0 and cw.direction == 1 and pw.direction == -1 and pw.cum_volume < pw2.cum_volume * 0.7:
+                    signal, score = "SPRING", SPRING_SCORE
+                elif "upthrust" in requested_signals and macro_bias <= 0 and cw.direction == -1 and pw.direction == 1 and pw.cum_volume < pw2.cum_volume * 0.7:
+                    signal, score = "UPTHRUST", UPTHRUST_SCORE
+                elif "climaxup" in requested_signals and cw.direction == 1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
+                    signal, score = "CLIMAX_BUY", CLIMAX_SCORE
+                elif "climaxdown" in requested_signals and cw.direction == -1 and cw.cum_volume > pw.cum_volume * 2.0 and cw.price_range < pw.price_range * 0.5:
+                    signal, score = "CLIMAX_SELL", CLIMAX_SCORE
+
+            results.append({"symbol": sym, "signal": signal, "score": score, "wave_count": len(waves), "bar_count": len(bars)})
+
+        return {
+            "ok": True,
+            "timeframe": timeframe,
+            "threshold_used": threshold,
+            "signals_requested": sorted(requested_signals),
+            "signals_not_yet_built": unavailable_requested if unavailable_requested else None,
+            "results": results,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:500]}
+
+
 @app.get("/api/debug/weis-waves/{symbol}")
 def debug_weis_waves(symbol: str):
     """
