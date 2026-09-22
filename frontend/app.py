@@ -61,9 +61,13 @@ except Exception:
     build_trade_journal_tab = None
 
 try:
-    from status_center import build_status_center as build_status_center
+    from live_opportunity_center import (
+        build_live_opportunity_center as build_status_center,
+        register_live_opportunity_center_callbacks,
+    )
 except Exception:
     build_status_center = None
+    register_live_opportunity_center_callbacks = None
 
 import sys, pathlib
 
@@ -6138,6 +6142,18 @@ app = dash.Dash(__name__, title="Sigmalytic Quant Corporation — Decision Intel
                            {"name":"theme-color","content":NAVY}])
 server = app.server
 
+# Live Opportunity Center callbacks are registered once against the Dash app.
+# The center itself remains dynamically rendered only when its tab is opened.
+if register_live_opportunity_center_callbacks is not None:
+    try:
+        register_live_opportunity_center_callbacks(app)
+    except Exception as _loc_callback_exc:
+        print(
+            f"[LIVE_OPPORTUNITY_CENTER_CALLBACK_REGISTRATION_FAIL] "
+            f"{type(_loc_callback_exc).__name__}: {_loc_callback_exc}",
+            flush=True,
+        )
+
 # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
 # narration, browser TTS based. See the i-radio/s-radio-* component
 # comments near i-clock for the full design rationale.
@@ -10049,7 +10065,7 @@ ALL_TABS = [
     ("portfolio",   "Portfolio"),
     ("billing",     "Billing"),
     ("preferences", "Preferences"),
-    ("status",      "Status"),
+    ("status",      "Live Opportunity Center"),
     ("reports",     "Reports"),
     ("briefing",    "☀️ Morning Report"),
     ("guide",       "User Guide"),
@@ -11216,18 +11232,26 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     note_box("Journal tab error: " + str(e), "blue"),
                 ])
     elif tab=="status":
+        # The Live Opportunity Center owns interactive symbol/timeframe
+        # controls and three independently configured charts. Do not rebuild
+        # the entire tab on the global live-price tick, or those selections
+        # would be reset every ~10 seconds. Same proven guard already used
+        # by Journal, Preferences, Reports, and Morning Report.
+        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
+        if not _trigger.startswith("s-tab"):
+            return no_update, no_update, no_update, no_update
         if build_status_center is None:
             main = card([
-                html.H2("Status", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                note_box("Status Center module is present but did not import. Check frontend/status_center.py.", "blue"),
+                html.H2("Live Opportunity Center", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Live Opportunity Center module did not import. Check frontend/live_opportunity_center.py.", "blue"),
             ])
         else:
             try:
                 main = build_status_center(session=session)
             except Exception as e:
                 main = card([
-                    html.H2("Status", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                    note_box("Status Center error: " + str(e), "blue"),
+                    html.H2("Live Opportunity Center", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Live Opportunity Center error: " + str(e), "blue"),
                 ])
     elif tab=="billing":
         try:
