@@ -365,6 +365,7 @@ def run_weis_radar_scan() -> dict:
         trim_incomplete_bar,
     )
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
 
     started_at = datetime.now(timezone.utc).isoformat()
     if _redis_client:
@@ -380,6 +381,11 @@ def run_weis_radar_scan() -> dict:
     effective_lookback = max(config["lookback"], minimum_bars)
 
     engine = WyckoffVerdictEngine()
+    lifecycle = WeisRadarLifecycleTracker(
+        _redis_client,
+        timeframe=config["timeframe"],
+        scan_id=started_at,
+    )
     symbols = load_russell1000()
     results = []
     errors = 0
@@ -414,6 +420,12 @@ def run_weis_radar_scan() -> dict:
                     wyckoff_engine=engine,
                 )
                 hits = _normalize_signal_hits(found, bars[-1]["c"])
+
+                # Persist and evaluate lifecycle state on the SAME completed
+                # bars already fetched for the universe scan. No second market
+                # data request is introduced here.
+                lifecycle.process_symbol(symbol, bars, hits)
+
                 if hits:
                     results.append({
                         "symbol": symbol,
@@ -436,6 +448,7 @@ def run_weis_radar_scan() -> dict:
             except Exception:
                 pass
 
+    lifecycle_snapshot = lifecycle.save()
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
     alerts_dispatched = _dispatch_configured_alerts(results, config, _redis_client)
     payload = {
@@ -446,6 +459,7 @@ def run_weis_radar_scan() -> dict:
         "alerts_dispatched": alerts_dispatched,
         "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
+        "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -477,6 +491,12 @@ def get_weis_radar_results() -> dict:
         if raw is None:
             return {"ok": True, "results": [], "generated_at": None,
                      "note": "No scan has completed yet."}
-        return json.loads(raw)
+        payload = json.loads(raw)
+        # Backward-compatible: a cached scan created before lifecycle support
+        # still receives the currently persisted lifecycle snapshot.
+        if "lifecycle" not in payload:
+            from backend.weis_radar_lifecycle import get_lifecycle_snapshot
+            payload["lifecycle"] = get_lifecycle_snapshot(_redis_client)
+        return payload
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}

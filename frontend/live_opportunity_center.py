@@ -11,9 +11,9 @@ endpoint.  No synthetic market rows or synthetic chart data are created here.
 
 Current production scope:
 - Latest completed full-universe Weis Radar scan is the opportunity source.
-- The UI translates current radar events into BUILDING / ARMED / TRIGGERED
-  presentation states. CONFIRMED / INVALIDATED are reserved for the future
-  follow-through state engine and are never fabricated by this module.
+- The UI translates current radar events into BUILDING / ARMED / TRIGGERED.
+- The backend follow-through engine persists TRIGGERED events and advances
+  them to CONFIRMED / INVALIDATED only from later completed-bar evidence.
 - Three chart windows are independently configurable for symbol and timeframe.
 - Linked mode uses Chart 1's symbol across all three windows.
 - Unlinked mode permits any three symbol/timeframe combinations.
@@ -152,14 +152,40 @@ def _stage_for_signal(signal: str) -> str:
 
 
 def _stage_priority(stage: str) -> int:
-    return {"TRIGGERED": 3, "ARMED": 2, "BUILDING": 1}.get(stage, 0)
+    # Active opportunities sort ahead of terminal lifecycle history.
+    return {
+        "TRIGGERED": 5,
+        "ARMED": 4,
+        "BUILDING": 3,
+        "CONFIRMED": 2,
+        "INVALIDATED": 1,
+    }.get(stage, 0)
 
 
 def _normalize_opportunities(payload: dict) -> list[dict]:
     config = payload.get("config") if isinstance(payload, dict) else {}
     config = config if isinstance(config, dict) else {}
     primary_tf = str(config.get("timeframe") or "1Day")
-    rows = []
+    by_symbol = {}
+
+    lifecycle = payload.get("lifecycle") if isinstance(payload, dict) else {}
+    lifecycle = lifecycle if isinstance(lifecycle, dict) else {}
+    lifecycle_events = [
+        event for event in (lifecycle.get("events") or [])
+        if isinstance(event, dict)
+        and str(event.get("stage") or "") in {"TRIGGERED", "CONFIRMED", "INVALIDATED"}
+    ]
+
+    lifecycle_by_symbol_signal = {}
+    for event in lifecycle_events:
+        symbol = _clean_symbol(event.get("symbol"))
+        signal = str(event.get("signal_type") or "").upper()
+        key = (symbol, str(event.get("timeframe") or primary_tf), signal)
+        existing = lifecycle_by_symbol_signal.get(key)
+        event_time = str(event.get("status_changed_at") or event.get("detected_at") or "")
+        existing_time = str((existing or {}).get("status_changed_at") or (existing or {}).get("detected_at") or "")
+        if existing is None or event_time > existing_time:
+            lifecycle_by_symbol_signal[key] = event
 
     raw_rows = payload.get("results") if isinstance(payload, dict) else []
     for raw in raw_rows or []:
@@ -185,27 +211,63 @@ def _normalize_opportunities(payload: dict) -> list[dict]:
         _, _, primary_signal, primary_hit = classified[0]
         stage = _stage_for_signal(primary_signal)
         direction = _direction_for_signal(primary_signal)
+        life = lifecycle_by_symbol_signal.get((symbol, primary_tf, primary_signal))
+        if life:
+            stage = str(life.get("stage") or stage)
+            direction = str(life.get("direction") or direction)
+
         scores = [float(h.get("score")) for h in hits if h.get("score") is not None]
-        last_price = primary_hit.get("price")
+        last_price = life.get("last_price") if life else primary_hit.get("price")
         if last_price is None:
             last_price = next((h.get("price") for h in hits if h.get("price") is not None), None)
 
-        rows.append(
-            {
-                "symbol": symbol,
-                "direction": direction,
-                "stage": stage,
-                "primary_tf": primary_tf,
-                "event": _signal_label(primary_signal),
-                "signal_type": primary_signal,
-                "detected": raw.get("last_bar_time") or payload.get("generated_at"),
-                "price": last_price,
-                "score": max(scores) if scores else None,
-                "signal_count": len(hits),
-                "hits": hits,
-            }
-        )
+        by_symbol[symbol] = {
+            "symbol": symbol,
+            "direction": direction,
+            "stage": stage,
+            "primary_tf": primary_tf,
+            "event": str((life or {}).get("event") or _signal_label(primary_signal)),
+            "signal_type": primary_signal,
+            "detected": (life or {}).get("detected_at") or raw.get("last_bar_time") or payload.get("generated_at"),
+            "price": last_price,
+            "score": (life or {}).get("score") if life and life.get("score") is not None else (max(scores) if scores else None),
+            "signal_count": len(hits),
+            "hits": hits,
+            "lifecycle": life,
+        }
 
+    # Keep terminal events visible after the original point-in-time signal
+    # disappears from the latest Radar results. One row per symbol keeps Dash
+    # pattern IDs unique and makes row selection deterministic.
+    for event in lifecycle_events:
+        symbol = _clean_symbol(event.get("symbol"))
+        if not symbol:
+            continue
+        signal = str(event.get("signal_type") or "").upper()
+        candidate = {
+            "symbol": symbol,
+            "direction": str(event.get("direction") or _direction_for_signal(signal)),
+            "stage": str(event.get("stage") or "TRIGGERED"),
+            "primary_tf": str(event.get("timeframe") or primary_tf),
+            "event": str(event.get("event") or _signal_label(signal)),
+            "signal_type": signal,
+            "detected": event.get("detected_at"),
+            "price": event.get("last_price") if event.get("last_price") is not None else event.get("trigger_price"),
+            "score": event.get("score"),
+            "signal_count": 1,
+            "hits": [event.get("original_hit") or {"type": signal}],
+            "lifecycle": event,
+        }
+        existing = by_symbol.get(symbol)
+        if existing is None:
+            by_symbol[symbol] = candidate
+        else:
+            existing_rank = (_stage_priority(existing.get("stage")), str(existing.get("detected") or ""))
+            candidate_rank = (_stage_priority(candidate.get("stage")), str(candidate.get("detected") or ""))
+            if candidate_rank > existing_rank:
+                by_symbol[symbol] = candidate
+
+    rows = list(by_symbol.values())
     rows.sort(
         key=lambda r: (
             -_stage_priority(r["stage"]),
@@ -307,8 +369,7 @@ def _lifecycle_strip(rows: list[dict]):
     }
     for stage in ["BUILDING", "ARMED", "TRIGGERED", "CONFIRMED", "INVALIDATED"]:
         color = _stage_color(stage)
-        reserved = stage in {"CONFIRMED", "INVALIDATED"}
-        count_text = "—" if reserved else str(counts[stage])
+        count_text = str(counts[stage])
         cards.append(
             html.Div(
                 [
@@ -320,7 +381,7 @@ def _lifecycle_strip(rows: list[dict]):
                         style={"display": "flex", "justifyContent": "space-between", "gap": "10px"},
                     ),
                     html.Div(
-                        "Reserved for follow-through engine" if reserved else descriptions[stage],
+                        descriptions[stage],
                         style={"fontSize": "9px", "color": MUTED, "marginTop": "4px"},
                     ),
                 ],
@@ -448,8 +509,15 @@ def _detail_panel(row: dict | None, config: dict | None = None):
     hit_labels = [_signal_label(_signal_type(h)) for h in (row.get("hits") or [])]
     if not hit_labels:
         hit_labels = [row.get("event") or "Radar event"]
+    lifecycle = row.get("lifecycle") if isinstance(row.get("lifecycle"), dict) else {}
 
-    if stage == "TRIGGERED":
+    if stage == "CONFIRMED":
+        headline = "FOLLOW-THROUGH CONFIRMED"
+        sub = "A later completed bar crossed the event's confirmation threshold."
+    elif stage == "INVALIDATED":
+        headline = "SETUP INVALIDATED"
+        sub = "A later completed bar crossed the event's invalidation threshold."
+    elif stage == "TRIGGERED":
         headline = "TRADE ABOUT TO HAPPEN"
         sub = "A material structural event has been detected. Watch for follow-through."
     elif stage == "ARMED":
@@ -517,15 +585,37 @@ def _detail_panel(row: dict | None, config: dict | None = None):
                 style={"padding": "14px 0", "borderBottom": f"1px solid {BORDER}"},
             ),
             html.Div(
-                [
-                    html.Div("Follow-through", style={"fontSize": "10px", "fontWeight": "900", "color": GREEN, "marginBottom": "5px"}),
-                    html.Div(
-                        "The current radar payload does not yet persist universal CONFIRMED / INVALIDATED lifecycle states. "
-                        "Those states remain reserved until the follow-through engine is wired; the charts below show the real "
-                        "multi-timeframe evidence without inventing confirmation levels.",
-                        style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.55"},
-                    ),
-                ],
+                (
+                    [
+                        html.Div("Follow-through", style={"fontSize": "10px", "fontWeight": "900", "color": GREEN, "marginBottom": "7px"}),
+                        html.Div(
+                            lifecycle.get("reason") or "Trigger is being monitored on later completed bars.",
+                            style={"fontSize": "10px", "color": WHITE, "lineHeight": "1.55", "marginBottom": "6px"},
+                        ),
+                        html.Div(
+                            f"Confirmation: {lifecycle.get('confirmation_rule') or '—'}",
+                            style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.55"},
+                        ),
+                        html.Div(
+                            f"Invalidation: {lifecycle.get('invalidation_rule') or '—'}",
+                            style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.55"},
+                        ),
+                        html.Div(
+                            f"Later completed bars observed: {int(lifecycle.get('bars_observed_after_trigger') or 0)}",
+                            style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.55"},
+                        ),
+                    ]
+                    if lifecycle
+                    else
+                    [
+                        html.Div("Follow-through", style={"fontSize": "10px", "fontWeight": "900", "color": GREEN, "marginBottom": "5px"}),
+                        html.Div(
+                            "BUILDING and ARMED conditions remain point-in-time Radar observations. "
+                            "Once a structural trigger occurs, the backend lifecycle engine persists it and monitors later completed bars.",
+                            style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.55"},
+                        ),
+                    ]
+                ),
                 style={"padding": "14px 0", "borderBottom": f"1px solid {BORDER}"},
             ),
             html.Div(

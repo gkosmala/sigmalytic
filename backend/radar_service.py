@@ -582,7 +582,14 @@ def compute_symbol_signals(symbol: str, bars: list, requested_signals: set, time
     tbr = detect_three_bar_reversal(bars)
 
     if tbr and "3bar" in requested_signals:
-        found.append({"signal": f"3BAR_{tbr.direction}", "score": tbr.score})
+        found.append({
+            "signal": f"3BAR_{tbr.direction}",
+            "score": tbr.score,
+            "detail": {
+                "invalidation": tbr.invalidation,
+                "note": tbr.note,
+            },
+        })
 
     if len(waves) >= 3:
         cw, pw, pw2 = waves[-1], waves[-2], waves[-3]
