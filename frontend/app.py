@@ -17,6 +17,7 @@ import os
 import random
 import time
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -24,6 +25,9 @@ import dash
 from dash import dcc, html, Input, Output, State, no_update, callback_context, MATCH, ALL
 import plotly.graph_objects as go
 import requests as req
+
+# All Command Center market times follow New York daylight-saving rules.
+MARKET_ET = ZoneInfo("America/New_York")
 
 # FIX (2026-07-25): When this file is loaded as `frontend.app` (as gunicorn
 # does: `gunicorn "frontend.app:server"`), Python only adds the repo root to
@@ -200,11 +204,15 @@ def _rfa25h_fmt_ts(value):
     text = str(value).strip()
     if not text:
         return "-"
-    had_utc = text.endswith("Z") or "+00:00" in text
-    text = text.replace("T", " ").replace("Z", "").replace("+00:00", "")
-    if "." in text:
-        text = text.split(".", 1)[0]
-    return text + (" UTC" if had_utc else "")
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        # The Radar engine emits UTC timestamps; its older fallback can
+        # omit the offset while still representing UTC.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(MARKET_ET).strftime("%Y-%m-%d %I:%M:%S %p %Z")
+    except (ValueError, OverflowError):
+        return text  # Non-time cache labels should stay readable.
 
 
 def _rfa25h_chip(label, value, accent):
@@ -1592,7 +1600,7 @@ def _render_market_wire(items):
 
 
 def _build_clock_inline():
-    EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
+    now = datetime.now(MARKET_ET)
     minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
     phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
              else "Midday Auction" if minutes<840 else "Closing Auction")
@@ -3156,7 +3164,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
     seq      = live["sequence"]; score = decision["score"]
     try:
         ts = datetime.fromisoformat(live["timestamp"].replace("Z","+00:00"))
-        ts = ts.astimezone(timezone(timedelta(hours=-4))); live_age = ts.strftime("%I:%M:%S %p")
+        ts = ts.astimezone(MARKET_ET); live_age = ts.strftime("%I:%M:%S %p")
     except: live_age = "—"
     sc   = TEAL_DIM if score>=70 else (YELLOW_DIM if score>=45 else RED_DIM)
     size = "FULL" if score>=80 else ("HALF" if score>=65 else ("PROBE" if score>=45 else "NONE"))
@@ -3587,7 +3595,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
 
     # ── Row 4: Time Engine + Alerts + Footer ──────────────────────────────────
     # Clock with white text
-    EST = timezone(timedelta(hours=-4)); now = datetime.now(EST)
+    now = datetime.now(MARKET_ET)
     minutes = now.hour*60+now.minute; in_sess = 570<=minutes<=960
     phase = ("Outside RTH" if not in_sess else "Opening Drive" if minutes<630
              else "Midday Auction" if minutes<840 else "Closing Auction")
@@ -10843,7 +10851,15 @@ def render_quote_box(q):
             style={"color": MUTED, "fontSize": "11px"})
 
     def market_time(value):
-        return value[:19].replace("T", " ") + " UTC" if value and len(value) >= 19 else "—"
+        if not value:
+            return "—"
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(MARKET_ET).strftime("%Y-%m-%d %I:%M:%S %p %Z")
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            return "—"
 
     source = q.get("source")
     source_label = "STREAMING SIP" if source == "alpaca_stream" else "SIP SNAPSHOT"
