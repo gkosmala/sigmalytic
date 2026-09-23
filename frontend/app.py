@@ -6378,7 +6378,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <title>__SYMBOL__ Weis Radar Chart</title>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.32.0/dist/plotly.min.js"></script>
 <style>
-  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; }
+  html { overflow-x:hidden; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; box-sizing:border-box; overflow-x:hidden; }
   .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
   .ctrl { display:flex; flex-direction:column; gap:4px; }
   .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8b98a5; }
@@ -6386,12 +6387,12 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .ctrl input[type=range] { width:160px; }
   .ctrl input[type=text] { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
   .ctrl select { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
-  .radio-group { display:flex; gap:10px; font-size:13px; }
+  .radio-group { display:flex; flex-wrap:wrap; gap:10px; font-size:13px; }
   .vibval { font-weight:600; color:#7ee787; min-width:34px; display:inline-block; }
   .stats { display:flex; gap:22px; font-size:12px; color:#a9b4bf; margin:10px 2px 4px 2px; flex-wrap:wrap; }
   .stats b { color:#e6e9ee; }
   .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
-  #chart { width:100%; }
+  #chart { width:100%; min-width:0; }
   .missing-note { font-size:11px; color:#5c6773; font-style:italic; }
   .calibration-box { background:#101722; border:1px solid #2b3b4e; border-radius:8px; padding:10px 12px; margin:0 0 12px 0; font-size:12px; color:#a9b4bf; display:none; }
   .calibration-box b { color:#e6e9ee; }
@@ -6519,7 +6520,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <div style="margin:4px 0 8px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
   <button id="generateReportBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; margin-left:8px;">📄 Generate Report</button>
-  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
+  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box to zoom. Drag the navigator below the chart to browse history. Double-click or Reset Zoom to return to recent bars.</span>
 </div>
 <!-- ADDED (2026-09-10): on-screen report panel, per explicit request
      -- no download, shown directly in the page. Hidden until the
@@ -7462,6 +7463,8 @@ function render() {
   const {xs: zx, ys: zy} = buildZigZagLine(RAW_BARS, pivots, state, extremeIdx, extremePrice);
 
   const dates = RAW_BARS.map(b => b.date);
+  const visibleBars = Math.min(40, RAW_BARS.length);
+  const recentRange = [RAW_BARS.length - visibleBars - 0.5, RAW_BARS.length - 0.5];
   const opens = RAW_BARS.map(b => b.open);
   const highs = RAW_BARS.map(b => b.high);
   const lows = RAW_BARS.map(b => b.low);
@@ -7745,6 +7748,7 @@ function render() {
     margin:{t:10, r:70, l:50, b:70},  // FIX (2026-09-10): increased from 40 to accommodate the now-angled x-axis labels below
     height: 780,
     showlegend: false,
+    uirevision: 'command-chart-history',
     dragmode: 'zoom',
     // FIX (later session): user-reported visible gaps in the chart --
     // root cause: dates like "2026-08-29T09:30:00" are auto-detected by
@@ -7763,7 +7767,10 @@ function render() {
     // labels. nticks caps how many are actually shown; tickangle
     // rotates them so longer date/time strings don't overlap each
     // other even at a reduced count.
-    xaxis: {domain:[0,1], anchor:'y3', rangeslider:{visible:false}, gridcolor:'#1c232d', type:'category',
+    xaxis: {domain:[0,1], anchor:'y3', range:recentRange,
+      rangeslider:{visible:RAW_BARS.length > visibleBars, thickness:0.10,
+        bgcolor:'#101722', bordercolor:'#2b3b4e', borderwidth:1},
+      gridcolor:'#1c232d', type:'category',
       nticks: 12, tickangle: -45, tickfont:{size:10}},
     // FIX (2026-09-10): confirmed a real, reported bug -- price
     // structure was rendering squeezed near the top of the chart.
@@ -8070,10 +8077,11 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
   // instead rebuilds the layout using the same explicit, price-
   // centered range as the initial render, while still resetting
   // x-axis pan/zoom and the volume panels via their own autorange.
+  const visibleBars = Math.min(40, RAW_BARS.length);
   Plotly.relayout('chart', {
-    'xaxis.autorange': true, 'yaxis2.autorange': true, 'yaxis3.autorange': true
-  });
-  render();
+    'xaxis.range': [RAW_BARS.length - visibleBars - 0.5, RAW_BARS.length - 0.5],
+    'yaxis2.autorange': true, 'yaxis3.autorange': true
+  }).then(render);
 });
 
 // ADDED (later session): receives live price pushes from the parent
