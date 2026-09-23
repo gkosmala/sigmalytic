@@ -6520,7 +6520,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <div style="margin:4px 0 8px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
   <button id="generateReportBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; margin-left:8px;">📄 Generate Report</button>
-  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box to zoom. Drag the navigator below the chart to browse history. Double-click or Reset Zoom to return to recent bars.</span>
+  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Use Chart History below to browse earlier candles. Drag a box to zoom; Reset Zoom returns to the selected window.</span>
 </div>
 <!-- ADDED (2026-09-10): on-screen report panel, per explicit request
      -- no download, shown directly in the page. Hidden until the
@@ -6528,6 +6528,18 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
      the chart itself (RAW_BARS, HITS, wave state, wall levels), so
      no additional backend round-trip is needed to generate it. -->
 <div id="reportPanel" style="display:none; background:#11161d; border:1px solid #3a4a5f; border-radius:8px; padding:16px; margin:0 0 12px 0; font-size:13px; line-height:1.6; color:#c8d3de; white-space:pre-wrap;"></div>
+<div id="historyNav" style="background:#101722; border:1px solid #2b3b4e; border-radius:8px; padding:10px 14px; margin:8px 0 4px;">
+  <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12px; margin-bottom:6px;">
+    <label for="historySlider" style="font-weight:700; color:#dbeafe;">Chart History</label>
+    <span id="historyStatus" style="color:#a9b4bf;">Loading bars…</span>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px; font-size:11px; color:#a9b4bf;">
+    <span>Older</span>
+    <input type="range" id="historySlider" min="0" max="0" value="0" disabled
+           aria-label="Browse chart history" style="width:100%; flex:1; min-width:0; accent-color:#4ade80; cursor:pointer;">
+    <span>Recent</span>
+  </div>
+</div>
 <div id="chart"></div>
 <div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
 <div class="legend-note">
@@ -6545,6 +6557,36 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <script>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
+const HISTORY_WINDOW = 40;
+const historySlider = document.getElementById('historySlider');
+let historyReady = false;
+
+function updateHistoryStatus() {
+  const total = RAW_BARS.length;
+  const start = Number(historySlider.value);
+  document.getElementById('historyStatus').textContent = total === 0
+    ? 'No bars loaded.'
+    : total <= HISTORY_WINDOW
+      ? `All ${total} loaded bars are visible. Increase Lookback above to load more.`
+      : `Bars ${start + 1}–${start + HISTORY_WINDOW} of ${total} loaded`;
+}
+
+function syncHistoryControl() {
+  const maximum = Math.max(0, RAW_BARS.length - HISTORY_WINDOW);
+  const atRecentEnd = !historyReady || Number(historySlider.value) >= Number(historySlider.max);
+  historySlider.max = String(maximum);
+  if (atRecentEnd) historySlider.value = String(maximum);
+  historySlider.disabled = maximum === 0;
+  historyReady = true;
+  updateHistoryStatus();
+}
+
+historySlider.addEventListener('input', () => {
+  updateHistoryStatus();
+  const start = Number(historySlider.value);
+  const count = Math.min(HISTORY_WINDOW, RAW_BARS.length);
+  Plotly.relayout('chart', {'xaxis.range': [start - 0.5, start + count - 0.5]});
+});
 
 // MOVED (2026-09-10): was previously defined inside render() itself,
 // which meant the new generateReport() function (a sibling, not a
@@ -7438,6 +7480,7 @@ function restoreSettings() {
 }
 
 function render() {
+  syncHistoryControl();
   // ADDED (later session): belt-and-suspenders alongside the
   // computeZigZag fix above -- many other places in this function
   // (dates[dates.length-1], RAW_BARS[RAW_BARS.length-1].close, etc.)
@@ -7463,8 +7506,9 @@ function render() {
   const {xs: zx, ys: zy} = buildZigZagLine(RAW_BARS, pivots, state, extremeIdx, extremePrice);
 
   const dates = RAW_BARS.map(b => b.date);
-  const visibleBars = Math.min(40, RAW_BARS.length);
-  const recentRange = [RAW_BARS.length - visibleBars - 0.5, RAW_BARS.length - 0.5];
+  const visibleBars = Math.min(HISTORY_WINDOW, RAW_BARS.length);
+  const historyStart = Number(historySlider.value);
+  const recentRange = [historyStart - 0.5, historyStart + visibleBars - 0.5];
   const opens = RAW_BARS.map(b => b.open);
   const highs = RAW_BARS.map(b => b.high);
   const lows = RAW_BARS.map(b => b.low);
@@ -7768,8 +7812,7 @@ function render() {
     // rotates them so longer date/time strings don't overlap each
     // other even at a reduced count.
     xaxis: {domain:[0,1], anchor:'y3', range:recentRange,
-      rangeslider:{visible:RAW_BARS.length > visibleBars, thickness:0.10,
-        bgcolor:'#101722', bordercolor:'#2b3b4e', borderwidth:1},
+      rangeslider:{visible:false},
       gridcolor:'#1c232d', type:'category',
       nticks: 12, tickangle: -45, tickfont:{size:10}},
     // FIX (2026-09-10): confirmed a real, reported bug -- price
@@ -8077,9 +8120,11 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
   // instead rebuilds the layout using the same explicit, price-
   // centered range as the initial render, while still resetting
   // x-axis pan/zoom and the volume panels via their own autorange.
-  const visibleBars = Math.min(40, RAW_BARS.length);
+  syncHistoryControl();
+  const visibleBars = Math.min(HISTORY_WINDOW, RAW_BARS.length);
+  const start = Number(historySlider.value);
   Plotly.relayout('chart', {
-    'xaxis.range': [RAW_BARS.length - visibleBars - 0.5, RAW_BARS.length - 0.5],
+    'xaxis.range': [start - 0.5, start + visibleBars - 0.5],
     'yaxis2.autorange': true, 'yaxis3.autorange': true
   }).then(render);
 });
