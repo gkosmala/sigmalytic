@@ -571,6 +571,68 @@ def get_stock_quote(symbol: str):
         }
 
 
+@app.get("/api/stock/{symbol}/quote-snapshot")
+def get_stock_quote_snapshot(symbol: str):
+    """Latest SIP bid/ask and trade, each with its actual market timestamp.
+
+    This is a fallback for the Command Center quote strip when its WebSocket
+    has no fresh quote. It is intentionally independent of minute bars.
+    """
+    import math
+    import re
+
+    sym = (symbol or "").upper().strip()
+    if not re.fullmatch(r"[A-Z][A-Z0-9.]{0,9}", sym):
+        return {"ok": False, "error": "invalid_symbol"}
+    key = os.getenv("ALPACA_API_KEY") or os.getenv("APCA_API_KEY_ID")
+    secret = os.getenv("ALPACA_API_SECRET") or os.getenv("APCA_API_SECRET_KEY")
+    if not key or not secret:
+        return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials"}
+
+    base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+    try:
+        response = requests.get(
+            f"{base_url}/v2/stocks/{sym}/snapshot",
+            headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+            params={"feed": "sip"}, timeout=5,
+        )
+        if not response.ok:
+            return {"ok": False, "symbol": sym, "error": f"alpaca_sip_http_{response.status_code}"}
+        snap = response.json() or {}
+        quote = snap.get("latestQuote") or {}
+        trade = snap.get("latestTrade") or {}
+
+        def positive_number(value):
+            try:
+                number = float(value)
+                return number if math.isfinite(number) and number > 0 else None
+            except (TypeError, ValueError):
+                return None
+
+        def share_size(value):
+            try:
+                lots = int(value)
+                return lots * 100 if lots >= 0 else None  # SIP equity sizes are round lots.
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        bid = positive_number(quote.get("bp"))
+        ask = positive_number(quote.get("ap"))
+        last = positive_number(trade.get("p"))
+        if bid is None and ask is None and last is None:
+            return {"ok": False, "symbol": sym, "error": "no_sip_quote_or_trade"}
+        return {
+            "ok": True, "symbol": sym, "source": "alpaca_snapshot", "feed": "sip",
+            "bid_price": bid, "bid_size": share_size(quote.get("bs")) if bid is not None else None,
+            "ask_price": ask, "ask_size": share_size(quote.get("as")) if ask is not None else None,
+            "quote_timestamp": quote.get("t") if bid is not None or ask is not None else None,
+            "price": last, "last_timestamp": trade.get("t") if last is not None else None,
+        }
+    except Exception as exc:
+        print(f"[QUOTE_SNAPSHOT_FAIL] {sym}: {type(exc).__name__}: {exc}", flush=True)
+        return {"ok": False, "symbol": sym, "error": "snapshot_unavailable"}
+
+
 # FIX (2026-07-28): the frontend's fetch_real_candles() has been calling
 # this endpoint all along, but it never existed on the backend at all --
 # confirmed via production logs showing a consistent 404. This is a real,

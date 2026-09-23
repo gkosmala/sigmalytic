@@ -10781,9 +10781,10 @@ def render_market_wire(items):
     Input("i-quote-fast", "n_intervals"),
     State("s-symbol", "data"),
     State("s-tab", "data"),
+    State("s-quote-box", "data"),
     prevent_initial_call=True,
 )
-def fetch_quote_box(_, symbol, tab):
+def fetch_quote_box(_, symbol, tab, previous):
     # ADDED (2026-09-14): only poll while actually on Command Center --
     # no reason to hit Redis every second for a box the person can't
     # currently see on any other tab.
@@ -10792,14 +10793,38 @@ def fetch_quote_box(_, symbol, tab):
     clean = (symbol or "AAPL").upper().strip()
     try:
         from shared_cache import shared_cache
-        from live_tick_reader import read_coherent_tick
+        from live_tick_reader import read_fresh_quote
         redis_client = shared_cache.get_redis_client()
-        if redis_client is None:
-            return None
-        streamed = read_coherent_tick(redis_client, clean)
-        return streamed  # None means no fresh bid/ask is available.
+        if redis_client is not None:
+            streamed = read_fresh_quote(redis_client, clean)
+            if streamed is not None:
+                return streamed
     except Exception:
-        return None
+        pass
+
+    # Alpaca's SIP snapshot contains the latest quote and trade, even if
+    # the stream paused. Throttle the fallback to one fetch per five seconds
+    # per open Command Center, not every one-second UI interval.
+    now = time.time()
+    if (isinstance(previous, dict) and previous.get("symbol") == clean
+            and previous.get("source") == "alpaca_snapshot"
+            and now - previous.get("checked_at", 0) < 5):
+        return previous
+    try:
+        response = req.get(f"{BACKEND_HTTP}/api/stock/{clean}/quote-snapshot", timeout=7)
+        if response.ok:
+            payload = response.json()
+            if payload.get("ok") and payload.get("symbol") == clean:
+                payload["checked_at"] = now
+                return payload
+    except Exception:
+        pass
+    # A brief failed poll should not blank a correctly timestamped quote.
+    if (isinstance(previous, dict) and previous.get("symbol") == clean
+            and previous.get("source") == "alpaca_snapshot"
+            and now - previous.get("checked_at", 0) < 30):
+        return previous
+    return None
 
 @app.callback(
     Output("quote-box-display", "children"),
@@ -10807,39 +10832,48 @@ def fetch_quote_box(_, symbol, tab):
     prevent_initial_call=True,
 )
 def render_quote_box(q):
-    # ADDED (2026-09-14): TradeStation-style live quote box -- bid/ask
-    # WITH size, last price, volume. Deliberately its own small,
-    # targeted callback/Output -- only this box re-renders on the 1s
-    # tick, not main-content (confirmed separately that main-content's
-    # full rebuild on every price tick is the root cause of reported
-    # slowness/flicker; this box is built to specifically avoid
-    # repeating that same mistake).
+    # Targeted one-second redraw for the quote strip. Each number comes
+    # from its own event, so give quote/trade timestamps separately.
     cell = {"fontFamily": "DM Mono, monospace", "fontSize": "13px", "fontWeight": "700"}
     label = {"fontSize": "9px", "color": MUTED, "fontWeight": "700",
              "textTransform": "uppercase", "letterSpacing": ".06em"}
     if not q:
         return html.Div(
-            "No fresh streaming bid/ask quote. The main price may still update from a separate snapshot.",
+            "No SIP quote available. Check the streaming worker or Alpaca snapshot feed.",
             style={"color": MUTED, "fontSize": "11px"})
+
+    def market_time(value):
+        return value[:19].replace("T", " ") + " UTC" if value and len(value) >= 19 else "—"
+
+    source = q.get("source")
+    source_label = "STREAMING SIP" if source == "alpaca_stream" else "SIP SNAPSHOT"
+    quote_label = "Received" if source == "alpaca_stream" else "Quote time"
+
+    def price_and_size(price, size):
+        if price is None:
+            return "—"
+        return f"{price:.2f}" + (f"  × {size:,} shares" if size is not None else "")
+
     return html.Div([
         html.Div([
             html.Div("Bid", style=label),
-            html.Div(f"{q['bid_price']:.2f} x {q['bid_size']}", style={**cell, "color": RED_DIM}),
+            html.Div(price_and_size(q.get("bid_price"), q.get("bid_size")), style={**cell, "color": RED_DIM}),
+        ], style={"flex": "1"}),
+        html.Div([
+            html.Div("Last trade", style=label),
+            html.Div(f"{q['price']:.2f}" if q.get("price") is not None else "—",
+                     style={**cell, "color": WHITE}),
         ], style={"flex": "1"}),
         html.Div([
             html.Div("Ask", style=label),
-            html.Div(f"{q['ask_price']:.2f} x {q['ask_size']}", style={**cell, "color": TEAL_DIM}),
+            html.Div(price_and_size(q.get("ask_price"), q.get("ask_size")), style={**cell, "color": TEAL_DIM}),
         ], style={"flex": "1"}),
-        html.Div([
-            html.Div("Last", style=label),
-            html.Div(f"{q['price']:.2f}", style={**cell, "color": WHITE}),
-        ], style={"flex": "1"}),
-        html.Div([
-            html.Div("Volume", style=label),
-            html.Div(f"{q['volume']:,}", style={**cell, "color": WHITE}),
-        ], style={"flex": "1"}),
+        html.Div(
+            f"{source_label} · {quote_label}: {market_time(q.get('quote_timestamp'))} · "
+            f"Last trade: {market_time(q.get('last_timestamp'))}",
+            style={"width": "100%", "color": MUTED, "fontSize": "10px"}),
     ], style={"display": "flex", "gap": "16px", "padding": "10px 14px",
-              "background": NAVY_MID, "border": f"1px solid {BORDER}",
+              "flexWrap": "wrap", "background": NAVY_MID, "border": f"1px solid {BORDER}",
               "borderRadius": "10px"})
 
 @app.callback(

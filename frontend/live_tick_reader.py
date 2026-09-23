@@ -9,6 +9,7 @@ a real, silent inconsistency, not an improvement over the plain REST
 poll it's meant to enhance.
 """
 import time
+import math
 from datetime import datetime, timezone
 
 TRADE_QUOTE_MAX_AGE_SECONDS = 15
@@ -81,3 +82,60 @@ def read_coherent_tick(redis_client, symbol: str, now: float = None):
         }
     except (KeyError, ValueError, TypeError):
         return None
+
+
+def read_fresh_quote(redis_client, symbol: str, now: float = None):
+    """Read a fresh bid/ask independently of the trade and one-minute bar.
+
+    A quote is useful even when there has been no recent trade or bar. Last
+    price and bar volume are returned only when *their own* timestamps are
+    fresh, so the UI can label missing fields without hiding the quote.
+    """
+    now = time.time() if now is None else now
+    try:
+        raw = redis_client.hgetall(f"live_tick:{symbol.upper()}")
+        raw = {k.decode("utf-8") if isinstance(k, bytes) else k: v
+               for k, v in raw.items()}
+        quote_ts = float(raw["quote_ts"])
+        bid = float(raw["bid_price"])
+        ask = float(raw["ask_price"])
+        # Alpaca SIP equity quote sizes are round lots (100 shares).
+        bid_size = int(float(raw["bid_size"])) * 100
+        ask_size = int(float(raw["ask_size"])) * 100
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+    except Exception:  # Redis may be unavailable temporarily.
+        return None
+
+    if (not all(math.isfinite(x) for x in (quote_ts, bid, ask))
+            or not -2 <= now - quote_ts <= TRADE_QUOTE_MAX_AGE_SECONDS
+            or bid <= 0 or ask <= 0
+            or bid_size < 0 or ask_size < 0):
+        return None
+
+    result = {
+        "symbol": symbol.upper(),
+        "source": "alpaca_stream",
+        "bid_price": bid, "bid_size": bid_size,
+        "ask_price": ask, "ask_size": ask_size,
+        "quote_timestamp": datetime.fromtimestamp(quote_ts, tz=timezone.utc).isoformat(),
+    }
+    try:
+        last_ts = float(raw["last_ts"])
+        last_price = float(raw["last_price"])
+        if (math.isfinite(last_ts) and math.isfinite(last_price)
+                and 0 <= now - last_ts <= TRADE_QUOTE_MAX_AGE_SECONDS
+                and last_price > 0):
+            result["price"] = last_price
+            result["last_timestamp"] = datetime.fromtimestamp(last_ts, tz=timezone.utc).isoformat()
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
+    try:
+        bar_ts = float(raw["bar_ts"])
+        volume = int(float(raw["bar_volume"]))
+        if math.isfinite(bar_ts) and 0 <= now - bar_ts <= BAR_MAX_AGE_SECONDS and volume >= 0:
+            result["volume"] = volume
+            result["bar_timestamp"] = datetime.fromtimestamp(bar_ts, tz=timezone.utc).isoformat()
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
+    return result
