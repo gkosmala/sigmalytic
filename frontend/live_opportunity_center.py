@@ -69,6 +69,7 @@ TIMEFRAME_LABELS = {
 }
 
 _CALLBACKS_REGISTERED = False
+LOC_UNIVERSE_PAGE_SIZE = 20
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
@@ -399,7 +400,7 @@ def _lifecycle_strip(rows: list[dict]):
     return html.Div(cards, style={"display": "flex", "gap": "8px", "flexWrap": "wrap"})
 
 
-def _opportunity_table(rows: list[dict]):
+def _opportunity_table(rows: list[dict], page: int = 0):
     header_style = {
         "fontSize": "9px",
         "fontWeight": "800",
@@ -440,7 +441,9 @@ def _opportunity_table(rows: list[dict]):
         )
 
     body = []
-    for row in rows[:60]:
+    page = max(0, int(page or 0))
+    first = page * LOC_UNIVERSE_PAGE_SIZE
+    for row in rows[first:first + LOC_UNIVERSE_PAGE_SIZE]:
         stage = row["stage"]
         direction = row["direction"]
         body.append(
@@ -909,6 +912,7 @@ def build_live_opportunity_center(session=None):
             dcc.Store(id="loc-selected-opportunity", data=selected),
             dcc.Store(id="loc-link-mode", data=True),
             dcc.Store(id="loc-primary-tf", data=primary_tf),
+            dcc.Store(id="loc-universe-page", data=0),
 
             # Header
             html.Div(
@@ -926,13 +930,13 @@ def build_live_opportunity_center(session=None):
                 ],
                 style={"display": "flex", "justifyContent": "space-between", "gap": "16px", "alignItems": "center", "marginBottom": "10px"},
             ),
+            # Watchlist is the first substantive panel, directly under the heading.
+            build_watchlist_radar(snapshot, master_symbol),
+
             html.Div(_scan_meta(snapshot), id="loc-scan-meta", style={"marginBottom": "14px"}),
 
             # Lifecycle
             html.Div(_lifecycle_strip(rows), id="loc-lifecycle-strip", style={"marginBottom": "14px"}),
-
-            # Subscriber Watchlist Radar
-            build_watchlist_radar(snapshot, master_symbol),
 
             # Universe list + detail
             html.Div(
@@ -941,7 +945,7 @@ def build_live_opportunity_center(session=None):
                         [
                             html.Div(
                                 [
-                                    html.Div("Universe Opportunities", style={"fontSize": "13px", "fontWeight": "900", "color": WHITE}),
+                                    html.Div(f"Universe Opportunities ({len(rows)} qualifying symbols)", style={"fontSize": "13px", "fontWeight": "900", "color": WHITE}),
                                     html.Div(
                                         "Click any row to load that symbol into the three-chart workspace.",
                                         style={"fontSize": "10px", "color": MUTED},
@@ -949,7 +953,29 @@ def build_live_opportunity_center(session=None):
                                 ],
                                 style={"padding": "14px 14px 10px"},
                             ),
-                            html.Div(_opportunity_table(rows), id="loc-opportunity-table"),
+                            html.Div(_opportunity_table(rows, 0), id="loc-opportunity-table"),
+                            html.Div(
+                                [
+                                    html.Div(
+                                        f"Showing {1 if rows else 0}–{min(len(rows), LOC_UNIVERSE_PAGE_SIZE)} of {len(rows)}",
+                                        id="loc-universe-page-status",
+                                        style={"fontSize": "11px", "fontWeight": "700", "color": MUTED,
+                                               "marginRight": "auto"},
+                                    ),
+                                    html.Button(
+                                        "Previous", id="loc-universe-prev", n_clicks=0, disabled=True,
+                                        style={**control_button, "height": "30px"},
+                                    ),
+                                    html.Button(
+                                        "Next", id="loc-universe-next", n_clicks=0,
+                                        disabled=len(rows) <= LOC_UNIVERSE_PAGE_SIZE,
+                                        style={**control_button, "height": "30px", "borderColor": BORDER_T,
+                                               "color": TEAL},
+                                    ),
+                                ],
+                                style={"display": "flex", "alignItems": "center", "gap": "8px",
+                                       "flexWrap": "wrap", "padding": "10px 12px"},
+                            ),
                         ],
                         style={
                             "background": NAVY_CARD,
@@ -1053,7 +1079,6 @@ def register_live_opportunity_center_callbacks(app):
 
     @app.callback(
         Output("loc-opportunity-store", "data"),
-        Output("loc-opportunity-table", "children"),
         Output("loc-scan-meta", "children"),
         Output("loc-lifecycle-strip", "children"),
         Input("loc-refresh", "n_clicks"),
@@ -1062,7 +1087,37 @@ def register_live_opportunity_center_callbacks(app):
     def _refresh_opportunities(_):
         snapshot = _load_opportunity_snapshot()
         rows = snapshot.get("rows") or []
-        return snapshot, _opportunity_table(rows), _scan_meta(snapshot), _lifecycle_strip(rows)
+        # Pager responds to snapshot refresh and resets to the first page.
+        return snapshot, _scan_meta(snapshot), _lifecycle_strip(rows)
+
+    @app.callback(
+        Output("loc-opportunity-table", "children"),
+        Output("loc-universe-page-status", "children"),
+        Output("loc-universe-prev", "disabled"),
+        Output("loc-universe-next", "disabled"),
+        Output("loc-universe-page", "data"),
+        Input("loc-opportunity-store", "data"),
+        Input("loc-universe-prev", "n_clicks"),
+        Input("loc-universe-next", "n_clicks"),
+        State("loc-universe-page", "data"),
+    )
+    def _page_universe(snapshot, _prev, _next, current_page):
+        rows = (snapshot or {}).get("rows") or []
+        last_page = max(0, (len(rows) - 1) // LOC_UNIVERSE_PAGE_SIZE)
+        trigger = callback_context.triggered_id
+        page = 0 if trigger == "loc-opportunity-store" else int(current_page or 0)
+        if trigger == "loc-universe-prev":
+            page -= 1
+        elif trigger == "loc-universe-next":
+            page += 1
+        page = max(0, min(page, last_page))
+        first = page * LOC_UNIVERSE_PAGE_SIZE
+        end = min(len(rows), first + LOC_UNIVERSE_PAGE_SIZE)
+        label = (
+            f"Showing {first + 1 if rows else 0}–{end} of {len(rows)} "
+            f"qualifying symbols · Page {page + 1} of {last_page + 1}"
+        )
+        return _opportunity_table(rows, page), label, page == 0, page >= last_page, page
 
     @app.callback(
         Output("loc-link-mode", "data"),

@@ -11232,13 +11232,13 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                     note_box("Journal tab error: " + str(e), "blue"),
                 ])
     elif tab=="status":
-        # The Live Opportunity Center owns interactive symbol/timeframe
-        # controls and three independently configured charts. Do not rebuild
-        # the entire tab on the global live-price tick, or those selections
-        # would be reset every ~10 seconds. Same proven guard already used
-        # by Journal, Preferences, Reports, and Morning Report.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
+        # Preserve chart and watchlist state on ordinary live ticks, but do not
+        # lose an actual tab switch if a live tick arrived in the same batch.
+        _tab_switched = any(
+            str(item.get("prop_id") or "").startswith("s-tab.")
+            for item in callback_context.triggered
+        )
+        if not _tab_switched:
             return no_update, no_update, no_update, no_update
         if build_status_center is None:
             main = card([
