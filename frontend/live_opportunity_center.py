@@ -30,6 +30,7 @@ import requests as _rq
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dash import ALL, Input, Output, State, callback_context, dcc, html, no_update
+from watchlist_radar import build_watchlist_radar, register_watchlist_radar_callbacks
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -930,6 +931,9 @@ def build_live_opportunity_center(session=None):
             # Lifecycle
             html.Div(_lifecycle_strip(rows), id="loc-lifecycle-strip", style={"marginBottom": "14px"}),
 
+            # Subscriber Watchlist Radar
+            build_watchlist_radar(snapshot, master_symbol),
+
             # Universe list + detail
             html.Div(
                 [
@@ -1043,6 +1047,9 @@ def register_live_opportunity_center_callbacks(app):
     if _CALLBACKS_REGISTERED:
         return
     _CALLBACKS_REGISTERED = True
+
+    # Register the subscriber Watchlist Radar callbacks once against the same Dash app.
+    register_watchlist_radar_callbacks(app)
 
     @app.callback(
         Output("loc-opportunity-store", "data"),
