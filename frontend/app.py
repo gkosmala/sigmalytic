@@ -305,8 +305,15 @@ def _rfa25h_command_center_freshness_title():
             refresh_kind = "Radar Scan"
     except (TypeError, ValueError, OverflowError, OSError):
         pass
-    radar_served = radar.get("served_at") or "-"
-    radar_cache = cache.get("mode") or "-"
+    radar_served = radar.get("served_at")
+    radar_cache = cache.get("mode")
+    radar_chips = [_rfa25h_chip(refresh_kind, radar_refresh, blue)]
+    # The active Radar engine does not return fallback cache/served fields.
+    # Show those chips only when the response actually contains them.
+    if radar_cache:
+        radar_chips.append(_rfa25h_chip("Radar Cache", radar_cache, yellow))
+    if radar_served:
+        radar_chips.append(_rfa25h_chip("Radar Served", radar_served, muted))
 
     freshness_label, freshness_color = _rfa25h_freshness_status(radar_refresh)
     title_text = f"Radar Snapshot — {freshness_label}"
@@ -326,11 +333,7 @@ def _rfa25h_command_center_freshness_title():
             "letterSpacing": ".1em",
             "marginBottom": "7px",
         }),
-        html.Div([
-            _rfa25h_chip(refresh_kind, radar_refresh, blue),
-            _rfa25h_chip("Radar Cache", radar_cache, yellow),
-            _rfa25h_chip("Radar Served", radar_served, muted),
-        ], style={
+        html.Div(radar_chips, style={
             "display": "flex",
             "gap": "8px",
             "flexWrap": "wrap",
@@ -3147,7 +3150,7 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
     return placeholder if placeholder is not None else {"status": "LOADING_IN_BACKGROUND"}
 
 
-def build_command_tab(live, candles, symbol, tf):
+def build_command_tab(live, candles, symbol, tf, quote_data=None):
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
     seq      = live["sequence"]; score = decision["score"]
@@ -3498,14 +3501,12 @@ def build_command_tab(live, candles, symbol, tf):
 
     # ADDED (2026-09-14): live quote box (bid/ask/sizes/last/volume),
     # per explicit request for TradeStation-like display. This is a
-    # STATIC placeholder here -- render_quote_box() (a separate,
-    # targeted callback) fills it in via its own 1s interval, so this
-    # box updates without triggering a rebuild of anything else on
-    # this tab.
+    # Keep the last quote state across routine main-content redraws;
+    # the dedicated 1s callback still updates only this small box.
     quote_box_row = html.Div(
-        "Waiting for live quote…",
+        render_quote_box(quote_data),
         id="quote-box-display",
-        style={"marginBottom": "12px", "color": MUTED, "fontSize": "11px"},
+        style={"marginBottom": "12px"},
     )
 
     # ── Row 2: Decision Engine + Trade Card + Probability Ladder (ONE card) ──
@@ -10794,11 +10795,11 @@ def fetch_quote_box(_, symbol, tab):
         from live_tick_reader import read_coherent_tick
         redis_client = shared_cache.get_redis_client()
         if redis_client is None:
-            return no_update
+            return None
         streamed = read_coherent_tick(redis_client, clean)
-        return streamed  # None is a valid, meaningful "no fresh tick yet"
+        return streamed  # None means no fresh bid/ask is available.
     except Exception:
-        return no_update
+        return None
 
 @app.callback(
     Output("quote-box-display", "children"),
@@ -10817,7 +10818,9 @@ def render_quote_box(q):
     label = {"fontSize": "9px", "color": MUTED, "fontWeight": "700",
              "textTransform": "uppercase", "letterSpacing": ".06em"}
     if not q:
-        return html.Div("Waiting for live quote…", style={"color": MUTED, "fontSize": "11px"})
+        return html.Div(
+            "No fresh streaming bid/ask quote. The main price may still update from a separate snapshot.",
+            style={"color": MUTED, "fontSize": "11px"})
     return html.Div([
         html.Div([
             html.Div("Bid", style=label),
@@ -10859,8 +10862,9 @@ def render_quote_box(q):
     State("s-live-mode","data"),
     State("s-tf","data"),
     State("s-session","data"),
+    State("s-quote-box","data"),
 )
-def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
+def render_main(tab,live,candles,symbol,live_mode,tf,session=None,quote_data=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -10908,7 +10912,7 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
         # comment on the "GAMMA PREVIEW: READ-ONLY" badge), not
         # something a subscriber needs to see or would understand.
         return (html.Div([
-                    build_command_tab(live, candles or _init_candles, symbol, tf),
+                    build_command_tab(live, candles or _init_candles, symbol, tf, quote_data=quote_data),
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 

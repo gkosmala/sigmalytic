@@ -45,6 +45,12 @@ def read_coherent_tick(redis_client, symbol: str, now: float = None):
     if not raw:
         return None
 
+    # FIX (2026-09-23): frontend Redis returns byte keys. The stream
+    # worker writes string field names, but hgetall() on this client
+    # returns bytes, so required.issubset(raw.keys()) was always false.
+    raw = {key.decode("utf-8") if isinstance(key, bytes) else key: value
+           for key, value in raw.items()}
+
     required = {"last_price", "last_ts", "bid_price", "bid_size", "ask_price", "ask_size", "quote_ts", "bar_volume", "bar_ts"}
     if not required.issubset(raw.keys()):
         return None  # not all three event types have reported for this symbol yet
