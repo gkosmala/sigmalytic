@@ -2600,7 +2600,10 @@ def generate_report_now(date: str = None, _admin: str = Depends(require_admin_or
 
     try:
         from backend.reports_engine import start_report_generation_job
-        result = start_report_generation_job(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        result = start_report_generation_job(
+            date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            deliver_email=(_admin == "cron"),
+        )
     except Exception as exc:
         result = {"ok": False, "error": str(exc)[:500]}
 
@@ -2633,7 +2636,7 @@ def restore_reports_backup(_admin: str = Depends(require_admin)):
 
 
 @app.get("/api/admin/generate-report-status")
-def generate_report_status(date: str = None, _admin: str = Depends(require_admin)):
+def generate_report_status(date: str = None, _admin: str = Depends(require_admin_or_cron)):
     """
     Polling companion to /api/admin/generate-report -- see that
     endpoint's 2026-08-20 fix note. Returns the real, current status
@@ -2923,8 +2926,8 @@ def reports_list():
     from fastapi.responses import JSONResponse as _JSONResponse
 
     try:
-        from backend.reports_engine import list_available_reports
-        result = {"ok": True, "dates": list_available_reports()}
+        from backend.reports_engine import report_catalog
+        result = report_catalog()
     except Exception as exc:
         result = {"ok": False, "error": str(exc)[:500], "dates": []}
 

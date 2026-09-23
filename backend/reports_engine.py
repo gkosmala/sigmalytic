@@ -33,11 +33,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 REPORT_TITLE = "Sigmalytic Quant Corporation - Nightly Intelligence Report"
-REPORT_SUBTITLE = "V2 Campaign Intelligence - Daily Subscriber Edition"
+REPORT_SUBTITLE = "V2 Renko-Weis Intelligence - Daily Subscriber Edition"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
-REDIS_REPORT_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
-REDIS_REPORT_INDEX_KEY = "reports:index"       # sorted set of available dates
+REDIS_REPORT_INDEX_KEY = "reports:index"       # set of available dates
 
 
 # ── Shared helpers (same logic as tools/generate_nightly_intelligence_report_v2.py) ──
@@ -577,9 +576,13 @@ def generate_and_store_report(report_date_str: Optional[str] = None) -> Dict[str
         return {"ok": False, "error": "Redis not configured", "date": report_date_str}
 
     try:
-        _redis_client.set(f"report:{report_date_str}", html_doc, ex=REDIS_REPORT_TTL_SECONDS)
+        # Reports are an archive: they must not vanish after 90 days.
+        _redis_client.set(f"report:{report_date_str}", html_doc)
         _redis_client.sadd(REDIS_REPORT_INDEX_KEY, report_date_str)
-        _redis_client.expire(REDIS_REPORT_INDEX_KEY, REDIS_REPORT_TTL_SECONDS)
+        _redis_client.persist(REDIS_REPORT_INDEX_KEY)  # clear any old 90-day expiry
+        if (_redis_client.get(f"report:{report_date_str}") != html_doc
+                or not _redis_client.sismember(REDIS_REPORT_INDEX_KEY, report_date_str)):
+            return {"ok": False, "error": "Report write could not be verified", "date": report_date_str}
     except Exception as e:
         return {"ok": False, "error": str(e), "date": report_date_str}
 
@@ -590,12 +593,28 @@ def generate_and_store_report(report_date_str: Optional[str] = None) -> Dict[str
     # a backup failure must never fail report generation itself, since
     # the Redis copy (already saved above) is still what the app
     # actually serves moment-to-moment.
+    backup_ok = True
     try:
         _backup_report_to_supabase(report_date_str, html_doc)
     except Exception as backup_exc:
+        backup_ok = False
         print(f"[REPORT_BACKUP] Failed to back up {report_date_str} to Supabase: {backup_exc}", flush=True)
 
-    return {"ok": True, "date": report_date_str, "length": len(html_doc)}
+    return {"ok": True, "date": report_date_str, "length": len(html_doc), "backup_ok": backup_ok}
+
+
+def _report_archive_credentials():
+    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    # report_backups has RLS enabled and no anon policies. Using the anon
+    # key here silently returns an empty archive or fails writes.
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not url or not key:
+        raise RuntimeError("Report archive is not configured on this service")
+    return url, key
+
+
+def _report_archive_headers(key):
+    return {"apikey": key, "Authorization": f"Bearer {key}"}
 
 
 def _backup_report_to_supabase(report_date_str: str, html_doc: str) -> None:
@@ -608,16 +627,12 @@ def _backup_report_to_supabase(report_date_str: str, html_doc: str) -> None:
     """
     import requests
 
-    url = os.environ.get("SUPABASE_URL", "")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_ANON_KEY", "")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not configured")
+    url, key = _report_archive_credentials()
 
     resp = requests.post(
         f"{url}/rest/v1/report_backups",
         headers={
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
+            **_report_archive_headers(key),
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates",  # upsert on the report_date primary key
         },
@@ -625,6 +640,37 @@ def _backup_report_to_supabase(report_date_str: str, html_doc: str) -> None:
         timeout=15,
     )
     resp.raise_for_status()
+
+
+def _archived_report_dates() -> List[str]:
+    import requests
+    url, key = _report_archive_credentials()
+    resp = requests.get(
+        f"{url}/rest/v1/report_backups",
+        headers=_report_archive_headers(key),
+        params={"select": "report_date", "order": "report_date.desc"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return [row["report_date"] for row in resp.json() if row.get("report_date")]
+
+
+def _archived_report_html(report_date_str: str) -> Optional[str]:
+    import requests
+    from datetime import date as _date
+    # Keep the PostgREST filter bounded to a real ISO calendar date.
+    if _date.fromisoformat(report_date_str).isoformat() != report_date_str:
+        return None
+    url, key = _report_archive_credentials()
+    resp = requests.get(
+        f"{url}/rest/v1/report_backups",
+        headers=_report_archive_headers(key),
+        params={"select": "html_content", "report_date": f"eq.{report_date_str}", "limit": "1"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    rows = resp.json()
+    return rows[0].get("html_content") if rows else None
 
 
 def restore_reports_from_supabase_backup() -> Dict[str, Any]:
@@ -642,14 +688,14 @@ def restore_reports_from_supabase_backup() -> Dict[str, Any]:
     if not _redis_client:
         return {"ok": False, "error": "Redis not configured"}
 
-    url = os.environ.get("SUPABASE_URL", "")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or os.environ.get("SUPABASE_ANON_KEY", "")
-    if not url or not key:
-        return {"ok": False, "error": "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY not configured"}
+    try:
+        url, key = _report_archive_credentials()
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
 
     resp = requests.get(
         f"{url}/rest/v1/report_backups",
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        headers=_report_archive_headers(key),
         params={"select": "report_date,html_content"},
         timeout=30,
     )
@@ -662,44 +708,144 @@ def restore_reports_from_supabase_backup() -> Dict[str, Any]:
         html_doc = row.get("html_content")
         if not date_str or not html_doc:
             continue
-        _redis_client.set(f"report:{date_str}", html_doc, ex=REDIS_REPORT_TTL_SECONDS)
+        if not _redis_client.exists(f"report:{date_str}"):
+            _redis_client.set(f"report:{date_str}", html_doc)
         _redis_client.sadd(REDIS_REPORT_INDEX_KEY, date_str)
         restored.append(date_str)
 
     if restored:
-        _redis_client.expire(REDIS_REPORT_INDEX_KEY, REDIS_REPORT_TTL_SECONDS)
+        _redis_client.persist(REDIS_REPORT_INDEX_KEY)
 
     return {"ok": True, "restored_dates": sorted(restored), "count": len(restored)}
 
 
-def list_available_reports() -> List[str]:
+def report_catalog() -> Dict[str, Any]:
     from backend.radar_service import _redis_client
 
-    if not _redis_client:
-        return []
+    redis_dates = set()
     try:
-        dates = _redis_client.smembers(REDIS_REPORT_INDEX_KEY)
-        return sorted(dates, reverse=True)
-    except Exception:
-        return []
+        if _redis_client is not None:
+            redis_dates = set(_redis_client.smembers(REDIS_REPORT_INDEX_KEY))
+    except Exception as exc:
+        print(f"[REPORT_LIST] Redis index unavailable: {exc}", flush=True)
+
+    try:
+        archived_dates = _archived_report_dates()
+        return {"ok": True, "dates": sorted(redis_dates | set(archived_dates), reverse=True)}
+    except Exception as exc:
+        print(f"[REPORT_LIST] Supabase archive unavailable: {exc}", flush=True)
+        if redis_dates:
+            return {"ok": True, "dates": sorted(redis_dates, reverse=True),
+                    "warning": "Report history may be incomplete; archive unavailable"}
+        return {"ok": False, "dates": [],
+                "error": "Report storage is unavailable; cannot verify report history"}
+
+
+def list_available_reports() -> List[str]:
+    return report_catalog()["dates"]
 
 
 def get_report_html(report_date_str: str) -> Optional[str]:
     from backend.radar_service import _redis_client
 
-    if not _redis_client:
-        return None
     try:
-        return _redis_client.get(f"report:{report_date_str}")
-    except Exception:
+        if _redis_client is not None:
+            html_doc = _redis_client.get(f"report:{report_date_str}")
+            if html_doc:
+                return html_doc
+    except Exception as exc:
+        print(f"[REPORT_GET] Redis unavailable: {exc}", flush=True)
+
+    try:
+        html_doc = _archived_report_html(report_date_str)
+    except Exception as exc:
+        print(f"[REPORT_GET] Supabase archive unavailable: {exc}", flush=True)
         return None
+    if html_doc and _redis_client is not None:
+        try:
+            _redis_client.set(f"report:{report_date_str}", html_doc)
+            _redis_client.sadd(REDIS_REPORT_INDEX_KEY, report_date_str)
+            _redis_client.persist(REDIS_REPORT_INDEX_KEY)
+        except Exception as exc:
+            print(f"[REPORT_GET] Redis restore unavailable: {exc}", flush=True)
+    return html_doc
 
 
 REPORT_JOB_KEY_PREFIX = "report_job:"
 REPORT_JOB_TTL_SECONDS = 60 * 60  # 1 hour -- long enough to poll to completion, short enough not to accumulate stale job records
 
 
-def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
+def deliver_saved_report(report_date_str: str) -> Dict[str, int]:
+    """Email the archived report only to verified accounts with explicit opt-in.
+
+    Called only for the scheduled nightly job, after the independent archive
+    write succeeds. A manual regeneration never broadcasts the report.
+    """
+    import requests
+    from backend.radar_service import _redis_client
+
+    url, key = _report_archive_credentials()
+    html_doc = _archived_report_html(report_date_str)
+    if not html_doc:
+        raise RuntimeError("Saved archive content is missing; no email sent")
+    counts = {"email_sent": 0, "email_failed": 0}
+    offset = 0
+    sender_key = os.environ.get("RESEND_API_KEY", "")
+    while True:
+        response = requests.get(
+            f"{url}/rest/v1/user_preferences", headers=_report_archive_headers(key),
+            params={"select": "user_id,alert_types", "order": "user_id.asc",
+                    "limit": "500", "offset": str(offset)}, timeout=15,
+        )
+        response.raise_for_status()
+        batch = response.json()
+        recipients = [p for p in batch if isinstance(p.get("alert_types"), dict)
+                      and p["alert_types"].get("daily_report_email") is True]
+        if recipients and not sender_key:
+            raise RuntimeError("RESEND_API_KEY missing; no report emails sent")
+        for pref in recipients:
+            user_id = pref.get("user_id")
+            if not user_id or user_id == "demo_user_001":
+                continue
+            # Never trust the editable email in user_preferences. Only the
+            # email of this Supabase auth account may receive the report.
+            auth = requests.get(f"{url}/auth/v1/admin/users/{user_id}",
+                                headers=_report_archive_headers(key), timeout=15)
+            if auth.status_code == 404:
+                continue
+            auth.raise_for_status()
+            account = auth.json()
+            email = account.get("email") if account.get("email_confirmed_at") else None
+            if not email:
+                continue
+            sent_key = f"report_email_sent:{report_date_str}:{user_id}"
+            # Claim before sending so overlapping nightly runs do not broadcast
+            # twice. A failed send releases the claim for the next attempt.
+            if not _redis_client.set(sent_key, "sending", nx=True, ex=120):
+                continue
+            try:
+                sent = requests.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {sender_key}",
+                             "Content-Type": "application/json"},
+                    json={"from": os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com"),
+                          "to": [email],
+                          "subject": f"Sigmalytic Daily Intelligence Report - {report_date_str}",
+                          "html": html_doc}, timeout=20,
+                )
+                sent.raise_for_status()
+                _redis_client.set(sent_key, "sent")
+                counts["email_sent"] += 1
+            except Exception as exc:
+                _redis_client.delete(sent_key)
+                counts["email_failed"] += 1
+                print(f"[REPORT_EMAIL] Delivery failed for report {report_date_str}: {exc}", flush=True)
+        if len(batch) < 500:
+            return counts
+        offset += len(batch)
+
+
+def start_report_generation_job(report_date_str: str, deliver_email: bool = False) -> Dict[str, Any]:
     """
     FIX (2026-08-20): confirmed root cause of "Generate Report" freezing
     for 3+ minutes then failing with a raw 502 -- generate_and_store_report()
@@ -763,7 +909,8 @@ def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
     try:
         _redis_client.set(job_key, json.dumps({"status": "running", "started_at": started_at}),
                            ex=REPORT_JOB_TTL_SECONDS)
-        _redis_client.lpush(REPORT_QUEUE_KEY, report_date_str)
+        _redis_client.lpush(REPORT_QUEUE_KEY, json.dumps({"date": report_date_str,
+                                                         "deliver_email": deliver_email}))
     except Exception as e:
         return {"ok": False, "error": f"Could not start job: {e}"}
 
@@ -773,7 +920,7 @@ def start_report_generation_job(report_date_str: str) -> Dict[str, Any]:
 REPORT_QUEUE_KEY = "report_generation_queue"
 
 
-def run_queued_report_job(report_date_str: str) -> None:
+def run_queued_report_job(report_date_str: str, deliver_email: bool = False) -> None:
     """
     The actual generation-plus-status-recording logic, extracted so it
     can run wherever a caller wants it to -- specifically, from the
@@ -792,8 +939,19 @@ def run_queued_report_job(report_date_str: str) -> None:
     try:
         result = generate_and_store_report(report_date_str)
         if result.get("ok"):
+            delivery = {"email_sent": 0, "email_failed": 0}
+            if deliver_email and result.get("backup_ok"):
+                try:
+                    delivery = deliver_saved_report(report_date_str)
+                except Exception as exc:
+                    delivery = {"email_sent": 0, "email_failed": 0,
+                                "email_error": str(exc)[:300]}
+            elif deliver_email:
+                delivery["email_error"] = "Report archive backup failed; emails withheld"
             _redis_client.set(job_key, json.dumps({"status": "done", "started_at": started_at,
-                                                     "finished_at": datetime.now(timezone.utc).isoformat()}),
+                                                     "finished_at": datetime.now(timezone.utc).isoformat(),
+                                                     "backup_ok": result.get("backup_ok", False),
+                                                     **delivery}),
                                ex=REPORT_JOB_TTL_SECONDS)
         else:
             _redis_client.set(job_key, json.dumps({"status": "error", "started_at": started_at,
@@ -831,7 +989,14 @@ def process_one_pending_report_job() -> bool:
     if not report_date_str:
         return False
 
-    run_queued_report_job(report_date_str)
+    try:
+        job = json.loads(report_date_str)
+        date_str = job["date"] if isinstance(job, dict) else report_date_str
+        email_requested = isinstance(job, dict) and job.get("deliver_email") is True
+    except (ValueError, TypeError, KeyError):
+        # The previous queue format used a bare ISO date.
+        date_str, email_requested = report_date_str, False
+    run_queued_report_job(date_str, deliver_email=email_requested)
     return True
 
 
@@ -866,6 +1031,19 @@ def delete_report(report_date_str: str) -> Dict[str, Any]:
         return {"ok": False, "error": "Redis not configured", "date": report_date_str}
 
     try:
+        # A Redis-only delete would make the report reappear immediately
+        # through the new archive read path. Remove the durable copy first.
+        import requests
+        from datetime import date as _date
+        if _date.fromisoformat(report_date_str).isoformat() != report_date_str:
+            return {"ok": False, "error": "Invalid report date", "date": report_date_str}
+        url, key = _report_archive_credentials()
+        archive_resp = requests.delete(
+            f"{url}/rest/v1/report_backups",
+            headers=_report_archive_headers(key),
+            params={"report_date": f"eq.{report_date_str}"}, timeout=15,
+        )
+        archive_resp.raise_for_status()
         existed = _redis_client.exists(f"report:{report_date_str}") or \
             _redis_client.sismember(REDIS_REPORT_INDEX_KEY, report_date_str)
         _redis_client.delete(f"report:{report_date_str}")

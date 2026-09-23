@@ -3951,11 +3951,18 @@ def build_reports_tab(selected_date=None, session=None):
     silently reset to the most recent date on every rebuild, out from
     under a user actively reading an older report.
     """
+    list_error = None
+    list_warning = None
     try:
         r = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-        dates = (r.json().get("dates") or []) if r.ok else []
+        payload = r.json() if r.ok else {}
+        dates = (payload.get("dates") or []) if payload.get("ok") else []
+        list_warning = payload.get("warning")
+        if not r.ok or not payload.get("ok"):
+            list_error = "Report storage is unavailable. Report history cannot be checked right now."
     except Exception:
         dates = []
+        list_error = "Could not load the report list. Please try again shortly."
 
     _generate_control = html.Div([
         html.Label("Generate report for date:", style={"fontSize": "12px", "color": WHITE, "marginRight": "8px"}),
@@ -3986,7 +3993,7 @@ def build_reports_tab(selected_date=None, session=None):
     if not dates:
         return card([
             html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "marginBottom": "8px"}),
-            html.P("No daily reports are available yet. The first report is generated once daily; check back after the next scheduled run.",
+            html.P(list_error or "No stored reports were found. Check the report archive if older reports are missing.",
                    style={"fontSize": "13px", "color": "rgba(255,255,255,.6)"}),
             _generate_control,
             # FIX (2026-08-20): handle_generate_report()'s callback
@@ -4008,6 +4015,10 @@ def build_reports_tab(selected_date=None, session=None):
             # here -- this exists purely so the Output id resolves.
             dcc.Dropdown(id="reports-date-picker", options=[], value=None,
                          clearable=False, style={"display": "none"}),
+            html.Iframe(id="reports-iframe", srcDoc="", style={"display": "none"}),
+            html.A(id="reports-download-btn", href="", download="", style={"display": "none"}),
+            html.Button(id="reports-print-btn", style={"display": "none"}, disabled=True),
+            html.Div(id="reports-print-status", style={"display": "none"}),
         ])
 
     most_recent = selected_date if selected_date in dates else dates[0]
@@ -4019,10 +4030,11 @@ def build_reports_tab(selected_date=None, session=None):
         html_doc = None
 
     return card([
+        html.P(list_warning, style={"color": YELLOW_DIM, "fontSize": "12px"}) if list_warning else None,
         html.Div([
             html.Div([
                 html.H2("Reports", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE, "margin": "0 0 4px"}),
-                html.P("Daily subscriber intelligence report, generated once per day from the live full-universe campaign engine.",
+                html.P("Daily Renko-Weis review of the active stock universe.",
                        style={"fontSize": "13px", "color": WHITE, "margin": "0"}),
             ]),
             html.Div([
@@ -4043,6 +4055,11 @@ def build_reports_tab(selected_date=None, session=None):
                            "padding": "10px 18px", "textDecoration": "none", "whiteSpace": "nowrap",
                            "marginLeft": "10px"},
                 ),
+                html.Button("Print / Save PDF", id="reports-print-btn", n_clicks=0,
+                    disabled=not bool(html_doc),
+                    style={"background": TEAL_GLOW, "border": f"1px solid {BORDER_T}", "borderRadius": "10px",
+                           "color": TEAL_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
+                           "padding": "10px 18px", "whiteSpace": "nowrap", "marginLeft": "10px"}),
                 html.Button("🗑 Delete Report", id="reports-delete-btn", n_clicks=0,
                     style={"background": "transparent", "border": f"1px solid {RED_DIM}", "borderRadius": "10px",
                            "color": RED_DIM, "cursor": "pointer", "fontSize": "13px", "fontWeight": "800",
@@ -4052,10 +4069,11 @@ def build_reports_tab(selected_date=None, session=None):
                     id="reports-delete-confirm",
                     message="",
                 ) if is_admin(session) else None,
-            ], style={"display": "flex", "alignItems": "center"}),
-        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
+            ], style={"display": "flex", "alignItems": "center", "flexWrap": "wrap", "gap": "8px"}),
+        ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "flexWrap": "wrap", "gap": "12px", "marginBottom": "16px"}),
         html.Div(id="reports-delete-message", style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}) if is_admin(session) else None,
         _generate_control,
+        html.Div(id="reports-print-status", style={"fontSize": "12px", "color": YELLOW_DIM}),
         html.Iframe(
             id="reports-iframe",
             srcDoc=html_doc or "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>",
@@ -4730,13 +4748,17 @@ def build_preferences_tab(user_id="", session=None):
         "market_hours_only": True,
         "hurst_profile":     "MEDIUM",
         "weis_threshold":    0.5,
+        "daily_report_email": False,
     }
 
+    report_pref_available = False
     if user_id:
         try:
-            r = _preqs.get(f"{BACKEND_HTTP}/api/preferences/{user_id}", timeout=4)
+            r = _preqs.get(f"{BACKEND_HTTP}/api/preferences/{user_id}",
+                           headers=_auth_headers(session), timeout=4)
             if r.ok:
                 p = r.json()
+                report_pref_available = True
                 prefs["delivery_mode"]     = p.get("delivery_mode", prefs["delivery_mode"])
                 prefs["min_score"]         = p.get("min_score", prefs["min_score"])
                 prefs["alert_types"]       = p.get("alert_types", prefs["alert_types"])
@@ -4744,6 +4766,7 @@ def build_preferences_tab(user_id="", session=None):
                 prefs["market_hours_only"] = p.get("market_hours_only", prefs["market_hours_only"])
                 prefs["hurst_profile"]     = p.get("hurst_profile", prefs["hurst_profile"])
                 prefs["weis_threshold"]    = p.get("weis_threshold", prefs["weis_threshold"])
+                prefs["daily_report_email"] = (p.get("alert_types") or {}).get("daily_report_email") is True if isinstance(p.get("alert_types"), dict) else False
         except Exception:
             pass
 
@@ -4770,6 +4793,7 @@ def build_preferences_tab(user_id="", session=None):
         dcc.Store(id="prefs-wl-cur",     data=watchlist),
         dcc.Store(id="prefs-hurst-cur",  data=hurst),
         dcc.Store(id="prefs-weis-cur",   data=weis),
+        dcc.Store(id="prefs-report-email-cur", data=prefs["daily_report_email"]),
 
         html.Div([
             html.H2("Alert Preferences", style={"color":WHITE,"fontSize":"22px","fontWeight":"800","marginBottom":"4px"}),
@@ -4793,6 +4817,19 @@ def build_preferences_tab(user_id="", session=None):
                 html.Button("Daily Summary", id="pref-btn-daily",    n_clicks=0,
                             style=_on() if mode=="daily"    else _off()),
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
+
+        # Report email is separate from the alert digest frequency above.
+        _card([_stitle("Daily Intelligence Report"),
+            html.Div("Email me the nightly report when it is saved.",
+                     style={"color": WHITE, "fontSize": "13px", "marginBottom": "10px"}),
+            html.Button("ON" if prefs["daily_report_email"] else "OFF",
+                        id="pref-btn-report-email", n_clicks=0, disabled=not report_pref_available,
+                        style=_on() if prefs["daily_report_email"] else _off()),
+            html.Div(id="prefs-report-email-status", style={"color": TEAL_DIM,
+                        "fontSize": "12px", "marginTop": "8px"},
+                        children="Sign in to enable email." if not user_id else
+                        ("Preferences could not load. Refresh this page." if not report_pref_available else "")),
+        ]),
 
         # Minimum Score
         _card([_stitle("Minimum Confluence Score"), _label("Only alert when score is at least:"),
@@ -4874,6 +4911,7 @@ def build_preferences_tab(user_id="", session=None):
                 "fontSize":"12px","fontWeight":"700","padding":"8px 16px","cursor":"pointer"})]),
 
     ], style={"maxWidth":"600px","margin":"0 auto","padding":"24px 16px"})
+
 
 def register_preferences_callbacks(app):
 
@@ -8793,25 +8831,80 @@ app.clientside_callback(
 
 
 @app.callback(
+    Output("pref-btn-report-email", "children"),
+    Output("pref-btn-report-email", "style"),
+    Output("prefs-report-email-cur", "data"),
+    Output("prefs-report-email-status", "children"),
+    Input("pref-btn-report-email", "n_clicks"),
+    State("prefs-report-email-cur", "data"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def save_daily_report_email_preference(_clicks, enabled, session):
+    user_id = (session or {}).get("user_id")
+    if not user_id or not _auth_headers(session):
+        return no_update, no_update, no_update, "Sign in to change report email delivery."
+    new_value = not bool(enabled)
+    try:
+        response = req.patch(
+            f"{BACKEND_HTTP}/api/preferences/{user_id}/daily-report-email",
+            json={"enabled": new_value}, headers=_auth_headers(session), timeout=10,
+        )
+        response.raise_for_status()
+        if not response.json().get("ok"):
+            raise ValueError("The preference was not saved")
+    except Exception:
+        return no_update, no_update, no_update, "Could not save this preference. Please retry."
+    button_style = {"background": TEAL_GLOW if new_value else "rgba(0,0,0,.2)",
+                    "border": f"1px solid {BORDER_T if new_value else BORDER}",
+                    "borderRadius": "8px", "color": TEAL_DIM if new_value else WHITE,
+                    "fontSize": "12px", "fontWeight": "700", "padding": "8px 16px", "cursor": "pointer"}
+    return ("ON" if new_value else "OFF", button_style, new_value,
+            "Nightly report email enabled." if new_value else "Nightly report email disabled.")
+
+
+@app.callback(
     Output("reports-iframe", "srcDoc"),
     Output("reports-download-btn", "href"),
     Output("reports-download-btn", "download"),
+    Output("reports-print-btn", "disabled"),
     Input("reports-date-picker", "value"),
     prevent_initial_call=True,
 )
 def update_report_view(selected_date):
     if not selected_date:
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, True
     download_href = f"{BACKEND_HTTP}/api/reports/{selected_date}/pdf?download=true"
     download_name = f"Sigmalytic_Daily_Report_{selected_date}.pdf"
     try:
         r = req.get(f"{BACKEND_HTTP}/api/reports/{selected_date}", timeout=20)
         payload = r.json() if r.ok else {}
         if payload.get("ok"):
-            return payload.get("html"), download_href, download_name
+            return payload.get("html"), download_href, download_name, False
     except Exception:
         pass
-    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name
+    return "<p style='font-family:sans-serif;padding:20px;'>Report content unavailable.</p>", download_href, download_name, True
+
+
+app.clientside_callback(
+    """function(n) {
+        if (!n) return window.dash_clientside.no_update;
+        const frame = document.getElementById('reports-iframe');
+        if (!frame || !frame.contentWindow || !frame.srcdoc || !frame.srcdoc.includes('<html')) {
+            return 'Open a saved report before printing.';
+        }
+        try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+            return '';
+        } catch (error) {
+            return 'Printing is unavailable here. Use Download PDF above.';
+        }
+    }""",
+    Output("reports-print-status", "children"),
+    Input("reports-print-btn", "n_clicks"),
+    prevent_initial_call=True,
+)
 
 
 @app.callback(Output("reports-generate-message","children"),
@@ -8877,6 +8970,7 @@ def handle_generate_report(n_clicks, date_str, session):
               Output("reports-generate-poll","disabled", allow_duplicate=True),
               Output("reports-date-picker","options"),
               Output("reports-date-picker","value"),
+              Output("s-reports-refresh","data"),
               Input("reports-generate-poll","n_intervals"),
               State("reports-generate-job-date","data"),
               State("s-session","data"),
@@ -8893,7 +8987,7 @@ def poll_report_generation(n_intervals, job_date, session):
     "running," which is expected and keeps polling normally).
     """
     if not job_date:
-        return no_update, True, no_update, no_update
+        return no_update, True, no_update, no_update, no_update
 
     try:
         r = req.get(
@@ -8909,7 +9003,7 @@ def poll_report_generation(n_intervals, job_date, session):
     status = payload.get("status", "unknown")
 
     if status == "running":
-        return no_update, False, no_update, no_update  # keep polling, message unchanged
+        return no_update, False, no_update, no_update, no_update
 
     if status == "unknown":
         if n_intervals >= 12:
@@ -8926,25 +9020,40 @@ def poll_report_generation(n_intervals, job_date, session):
             reason = payload.get("error")
             detail = f" (real reason: {reason})" if reason else ""
             return (f"Lost track of the report's progress{detail}. "
-                    f"Check the Reports list in a few minutes, or try again.", True, no_update, no_update)
-        return no_update, False, no_update, no_update  # keep polling briefly -- job may not be visible yet
+                    f"Check the Reports list in a few minutes, or try again.", True,
+                    no_update, no_update, no_update)
+        return no_update, False, no_update, no_update, no_update
 
     # status is "done" or "error" -- either way, stop polling and refresh the list
     try:
         list_resp = req.get(f"{BACKEND_HTTP}/api/reports/list", timeout=15)
-        dates = (list_resp.json().get("dates") or []) if list_resp.ok else []
+        catalog = list_resp.json() if list_resp.ok else {}
+        dates = (catalog.get("dates") or []) if catalog.get("ok") else []
     except Exception:
         dates = []
 
     if status == "done":
         if job_date not in dates:
-            dates = [job_date] + dates
+            return ("Generation finished, but the report is missing from storage. "
+                    "No report was added to the list.", True, no_update, no_update, no_update)
+        try:
+            read_resp = req.get(f"{BACKEND_HTTP}/api/reports/{job_date}", timeout=20)
+            read_payload = read_resp.json() if read_resp.ok else {}
+            if not read_payload.get("ok") or not read_payload.get("html"):
+                raise ValueError("Report content missing")
+        except Exception:
+            return ("Generation finished, but the report content cannot be opened. "
+                    "Please check report storage.", True, no_update, no_update, no_update)
         options = [{"label": d, "value": d} for d in dates]
-        return f"Report generated successfully for {job_date}.", True, options, job_date
+        backup_note = (" Archive backup unavailable; report history is at risk."
+                       if payload.get("backup_ok") is False else "")
+        return (f"Report saved and verified for {job_date}.{backup_note}", True,
+                options, job_date, {"date": job_date, "checked_at": time.time()})
 
     # status == "error"
     options = [{"label": d, "value": d} for d in dates] if dates else no_update
-    return f"Generation failed: {payload.get('error', 'unknown error')}", True, options, no_update
+    return (f"Generation failed: {payload.get('error', 'unknown error')}", True,
+            options, no_update, no_update)
 
 
 @app.callback(Output("reports-delete-confirm", "message"),
@@ -9927,6 +10036,7 @@ app.layout = html.Div([
     # checks that already-fresh data, not how often new data arrives.
     dcc.Interval(id="i-quote-fast", interval=1_000, n_intervals=0),
     dcc.Store(id="s-quote-box", data=None),
+    dcc.Store(id="s-reports-refresh", data=None),
     # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
     # narration of live market context and radar alerts, via the
     # browser's own built-in text-to-speech (no third-party service,
@@ -10909,12 +11019,13 @@ def render_quote_box(q):
     Input("s-live","data"),
     Input("s-candles","data"),
     Input("s-symbol","data"),
+    Input("s-reports-refresh","data"),
     State("s-live-mode","data"),
     State("s-tf","data"),
     State("s-session","data"),
     State("s-quote-box","data"),
 )
-def render_main(tab,live,candles,symbol,live_mode,tf,session=None,quote_data=None):
+def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=None,quote_data=None):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -11113,7 +11224,7 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None,quote_data=Non
         if not _trigger.startswith("s-tab"):
             return no_update, no_update, no_update, no_update
         try:
-            main = build_preferences_tab(user_id="", session=None)
+            main = build_preferences_tab(user_id=(session or {}).get("user_id", ""), session=session)
         except Exception as e:
             main = card([
                 html.H2("️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
@@ -11198,8 +11309,9 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None,quote_data=Non
         # navigation events, without needing to read anything back from
         # a component this same callback creates.
         _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
-            main = build_reports_tab(session=session)
+        if _trigger.startswith(("s-tab", "s-reports-refresh")):
+            report_date = (reports_refresh or {}).get("date") if isinstance(reports_refresh, dict) else None
+            main = build_reports_tab(selected_date=report_date, session=session)
         else:
             return no_update, no_update, no_update, no_update
     elif tab=="guide":       main = build_guide_tab()

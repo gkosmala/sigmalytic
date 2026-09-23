@@ -90,6 +90,10 @@ class PreferencesUpdate(BaseModel):
     weis_threshold:    Optional[float]          = None
 
 
+class DailyReportEmailPreference(BaseModel):
+    enabled: bool
+
+
 _DEFAULT_PREFERENCES = {
     "delivery_mode":     "realtime",
     "min_score":         60,
@@ -100,6 +104,33 @@ _DEFAULT_PREFERENCES = {
     "hurst_profile":     "MEDIUM",
     "weis_threshold":    0.5,
 }
+
+
+@preferences_router.patch("/{user_id}/daily-report-email")
+def save_daily_report_email(user_id: str, payload: DailyReportEmailPreference,
+                            authenticated_user_id: str = Depends(get_user_id_from_request)):
+    """Explicit opt-in, stored within existing preferences JSON (no migration)."""
+    _require_self(user_id, authenticated_user_id)
+    if user_id == "demo_user_001":
+        raise HTTPException(401, "Sign in to receive reports by email")
+    try:
+        client = _supabase()
+        response = client.table("user_preferences").select("user_id,alert_types").eq("user_id", user_id).limit(1).execute()
+        rows = response.data or []
+        types = dict((rows[0].get("alert_types") or {}) if rows and isinstance(rows[0].get("alert_types"), dict) else _DEFAULT_PREFERENCES["alert_types"])
+        types["daily_report_email"] = payload.enabled
+        if rows:
+            client.table("user_preferences").update({"alert_types": types, "updated_at": datetime.now(timezone.utc).isoformat()}).eq("user_id", user_id).execute()
+        else:
+            client.table("user_preferences").upsert({"user_id": user_id, "email": "",
+                    **_DEFAULT_PREFERENCES, "alert_types": types,
+                    "updated_at": datetime.now(timezone.utc).isoformat()}, on_conflict="user_id").execute()
+        return {"ok": True, "enabled": payload.enabled}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("Saving report preference failed: %s", exc)
+        raise HTTPException(503, "Report preference could not be saved")
 
 
 # ── Supabase client helper ──────────────────────────────────────────────────────
