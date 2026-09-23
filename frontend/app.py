@@ -139,7 +139,6 @@ def _start_all_background_refreshers():
     # (path, ttl_seconds, refresh_interval_seconds, extra_headers, initial_delay_seconds)
     endpoints = [
         ("/api/campaigns/active", 120, 90, None, 0),
-        ("/api/campaigns/summary", 120, 90, None, 8),
         ("/api/radar/scores", 90, 65, None, 16),
         ("/api/radar/scores?limit=25", 90, 65, None, 24),
         ("/api/scoreboard", 120, 90, None, 32),
@@ -170,20 +169,14 @@ def _rfa25h_color(name, fallback):
 
 
 def _rfa25h_fetch_json(path, timeout=20):
-    def _do_fetch():
-        try:
-            response = req.get(f"{BACKEND_HTTP}{path}", timeout=timeout)
-            if not response.ok:
-                return {}
-            data = response.json()
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
-
+    """Nonblocking read of the background-refreshed Radar cache."""
     if shared_cache is None:
-        return _do_fetch()
-
-    return shared_cache.get_or_fetch(path, _do_fetch, ttl_seconds=120)
+        return {}
+    try:
+        data = shared_cache.peek_stale(path)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _rfa25h_safe_list(value):
@@ -244,9 +237,9 @@ def _rfa25h_chip(label, value, accent):
     })
 
 
-def _rfa25h_freshness_status(campaign_refresh_iso):
+def _rfa25h_freshness_status(radar_refresh_iso):
     """
-    Returns (label, color) based on how old campaign_refresh_iso is.
+    Return the age of the last Radar calculation, not quote freshness.
     Never raises; a missing or unparseable timestamp is always treated as
     NOT live, since this function must never claim freshness it cannot
     actually verify.
@@ -255,11 +248,11 @@ def _rfa25h_freshness_status(campaign_refresh_iso):
     yellow = _rfa25h_color("YELLOW_DIM", "#fde68a")
     teal = _rfa25h_color("TEAL_DIM", "#34d399")
 
-    if not campaign_refresh_iso or campaign_refresh_iso == "-":
+    if not radar_refresh_iso or radar_refresh_iso == "-":
         return "NO DATA", red
 
     try:
-        text = str(campaign_refresh_iso).strip()
+        text = str(radar_refresh_iso).strip()
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"
         ts = datetime.fromisoformat(text)
@@ -271,9 +264,11 @@ def _rfa25h_freshness_status(campaign_refresh_iso):
     age = datetime.now(timezone.utc) - ts
     if age < timedelta(0):
         return "UNKNOWN", yellow
-    if age <= timedelta(hours=20):
-        return "LIVE", teal
-    return "STALE", red
+    if age <= timedelta(minutes=15):
+        return "RECENT SNAPSHOT", teal
+    if age <= timedelta(hours=2):
+        return "OLDER SNAPSHOT", yellow
+    return "STALE SNAPSHOT", red
 
 
 def _rfa25h_command_center_freshness_title():
@@ -299,12 +294,22 @@ def _rfa25h_command_center_freshness_title():
     radar = _rfa25h_fetch_json("/api/radar/scores?limit=25")
     cache = radar.get("cache") if isinstance(radar.get("cache"), dict) else {}
 
+    # The active Radar engine reports a Unix timestamp in last_scan;
+    # the compatibility fallback reports an ISO generated_at.
     radar_refresh = radar.get("generated_at") or "-"
+    refresh_kind = "Fallback Built"
+    try:
+        last_scan = radar.get("last_scan")
+        if last_scan is not None:
+            radar_refresh = datetime.fromtimestamp(float(last_scan), timezone.utc).isoformat()
+            refresh_kind = "Radar Scan"
+    except (TypeError, ValueError, OverflowError, OSError):
+        pass
     radar_served = radar.get("served_at") or "-"
     radar_cache = cache.get("mode") or "-"
 
     freshness_label, freshness_color = _rfa25h_freshness_status(radar_refresh)
-    title_text = f"Data Freshness — {freshness_label}"
+    title_text = f"Radar Snapshot — {freshness_label}"
 
     return html.Div([
         html.Div(title_text, style={
@@ -313,7 +318,7 @@ def _rfa25h_command_center_freshness_title():
             "color": freshness_color,
             "marginBottom": "8px",
         }),
-        html.Div("Data Freshness", style={
+        html.Div("Radar scan or fallback build time (not current quote or candle)", style={
             "fontSize": "9px",
             "fontWeight": "900",
             "color": muted,
@@ -322,7 +327,7 @@ def _rfa25h_command_center_freshness_title():
             "marginBottom": "7px",
         }),
         html.Div([
-            _rfa25h_chip("Radar Refresh", radar_refresh, blue),
+            _rfa25h_chip(refresh_kind, radar_refresh, blue),
             _rfa25h_chip("Radar Cache", radar_cache, yellow),
             _rfa25h_chip("Radar Served", radar_served, muted),
         ], style={
@@ -338,13 +343,13 @@ def _rfa25h_command_center_freshness_title():
 
 
 
-TIMEFRAMES   = ["1m", "5m", "15m", "1H", "1D", "1W"]
+TIMEFRAMES   = ["1m", "5m", "15m", "1H", "2H", "4H", "1D", "1W"]
 USER_ID      = "demo_user_001"
 
-TF_VOLATILITY = {"1m": 0.25, "5m": 0.60, "15m": 1.10, "1H": 2.00, "1D": 4.50, "1W": 9.00}
-TF_INTERVAL   = {"1m": 60,   "5m": 300,  "15m": 900,  "1H": 3600, "1D": 86400, "1W": 604800}
+TF_VOLATILITY = {"1m": 0.25, "5m": 0.60, "15m": 1.10, "1H": 2.00, "2H": 2.83, "4H": 4.00, "1D": 4.50, "1W": 9.00}
+TF_INTERVAL   = {"1m": 60,   "5m": 300,  "15m": 900,  "1H": 3600, "2H": 7200, "4H": 14400, "1D": 86400, "1W": 604800}
 TF_TICKFMT    = {"1m": "%H:%M", "5m": "%H:%M", "15m": "%H:%M",
-                 "1H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
+                 "1H": "%b %d %H:%M", "2H": "%b %d %H:%M", "4H": "%b %d %H:%M", "1D": "%b %d", "1W": "%b %d '%y"}
 
 # ── Brand tokens ───────────────────────────────────────────────────────────────
 WHITE = "#FFFFFF"
@@ -860,290 +865,7 @@ def _build_d3f1b_controlled_persistence_lifecycle_panel(session=None):
             "color": "#e5e7eb",
         },
     )
-# Weis-Gamma Status Center display cache.
-_WEIS_GAMMA_STATUS_CACHE = {
-    "as_of": None,
-    "data": None,
-}
-
-
-def _cached_campaign_summary(ttl_seconds: int = 30):
-    now = datetime.now(timezone.utc)
-    cached_at = _WEIS_GAMMA_STATUS_CACHE.get("as_of")
-
-    if cached_at is not None:
-        try:
-            age = (now - cached_at).total_seconds()
-            if age < ttl_seconds and isinstance(_WEIS_GAMMA_STATUS_CACHE.get("data"), dict):
-                return _WEIS_GAMMA_STATUS_CACHE.get("data") or {}
-        except Exception:
-            pass
-
-    data = _get("/api/campaigns/summary")
-
-    if not isinstance(data, dict) or not data:
-        data = _get("/api/campaign/status")
-
-    if isinstance(data, dict):
-        # FIX (2026-08-06): now that threaded=True enables genuine
-        # concurrent request handling, two separate key writes here
-        # created a brief window where a concurrent read could see an
-        # updated as_of paired with stale data. A single, atomic dict
-        # reassignment removes that window entirely.
-        _WEIS_GAMMA_STATUS_CACHE.update({"as_of": now, "data": data})
-        return data
-
-    return {}
-
-
-def _wg_metric_card(label, value, color=WHITE):
-    return html.Div([
-        html.Div(str(label), style={
-            "fontSize": "11px",
-            "color": WHITE,
-            "fontWeight": "800",
-            "letterSpacing": ".08em",
-            "textTransform": "uppercase",
-            "opacity": ".85",
-        }),
-        html.Div(str(value), style={
-            "fontSize": "24px",
-            "lineHeight": "1.1",
-            "color": color,
-            "fontWeight": "900",
-            "marginTop": "6px",
-        }),
-    ], style={
-        "background": "rgba(8,24,39,.72)",
-        "border": f"1px solid {BORDER}",
-        "borderRadius": "14px",
-        "padding": "12px",
-        "minHeight": "76px",
-    })
-
-
-def _wg_label(value, category="gamma"):
-    """
-    FIX (2026-07-28): this used to be a single label dictionary shared
-    across five conceptually different metric categories (gamma status,
-    option-chain fetch status, fusion state, phase, rank bucket). Several
-    raw backend status codes happen to collide across categories (e.g.
-    both a gamma computation and an option-chain fetch can independently
-    report "OK"), so the *same* human-readable text -- "Gamma OK" -- was
-    appearing in unrelated panels like "Option Chain Status", where it
-    doesn't describe what that panel is actually showing. This reads as
-    duplicated output even though the underlying counts are genuinely
-    different fields. Each category now has its own accurate label set.
-    """
-    shared = {
-        "NONE": "Missing Overlay",
-        "EMPTY": "Empty",
-        "NOT_PRESENT": "Not Present",
-    }
-
-    by_category = {
-        "gamma": {
-            "OK": "Gamma OK",
-            "NO_OPTIONS_RETURNED": "No Options Returned",
-            "NO_OPTION_CHAIN_INPUT": "No Option-Chain Input",
-            "NO_GAMMA_INPUT": "No Gamma Input",
-            "CALL_SIGNATURE_MISMATCH": "Call Signature Mismatch",
-        },
-        "option_chain": {
-            "OK": "Chain Fetched OK",
-            "NO_OPTIONS_RETURNED": "No Options Returned",
-            "SKIPPED_FETCH_CAP_REACHED": "Skipped - Fetch Cap Reached",
-            "SKIPPED_SYMBOL_NOT_ALLOWED": "Skipped - Symbol Not Allowed",
-            "SKIPPED_NOT_DISCOVERED": "Skipped - Not Yet Discovered",
-            "DISABLED": "Option-Chain Fetch Disabled",
-            "ADAPTER_UNAVAILABLE": "Adapter Unavailable",
-            "FETCH_EXCEPTION": "Fetch Exception",
-        },
-        "fusion": {
-            "WEIS_ONLY_GAMMA_STALE": "Weis Only - Gamma Stale",
-            "WEIS_ONLY_NO_OPTIONS_RETURNED": "Weis Only - No Options Returned",
-            "WEIS_EXPANSION_GAMMA_NEUTRAL": "Weis Expansion - Gamma Neutral",
-            "WEIS_GAMMA_UNRESOLVED": "Weis Gamma Unresolved",
-        },
-        "phase": {
-            "WEIS_EXPANSION": "Weis Expansion",
-            "WEIS_BASELINE": "Weis Baseline",
-            "WEIS_TEST": "Weis Test",
-            "WEIS_EXHAUSTION": "Weis Exhaustion",
-        },
-        "rank": {
-            "A_PLUS": "A+",
-            "LOW_PRIORITY": "Low Priority",
-            "WATCHLIST": "Watchlist",
-            "AVOID": "Avoid",
-        },
-    }
-
-    key = str(value or "NONE")
-    if key in shared:
-        return shared[key]
-    mapping = by_category.get(category, by_category["gamma"])
-    if key in mapping:
-        return mapping[key]
-    return key.replace("_", " ").title()
-
-
-def _wg_counts_text(counts, category="gamma"):
-    if not isinstance(counts, dict) or not counts:
-        return "-"
-
-    parts = []
-    for key, value in counts.items():
-        parts.append(f"{_wg_label(key, category=category)}: {value}")
-
-    return " | ".join(parts)
-
-
-def build_weis_gamma_status_center_panel():
-    summary = _cached_campaign_summary()
-    wg = summary.get("weis_gamma_status_center") or {}
-
-    if not wg:
-        return html.Div([
-            html.Div(_rfa25h_command_center_freshness_title(), style={
-                "fontSize": "14px",
-                "fontWeight": "900",
-                "color": WHITE,
-                "marginBottom": "6px",
-            }),
-            html.Div("Waiting for Weis-Gamma status data from backend.", style={
-                "fontSize": "12px",
-                "color": WHITE,
-                "opacity": ".85",
-            }),
-        ], style={
-            "border": f"1px solid {BORDER}",
-            "background": "rgba(8,24,39,.60)",
-            "borderRadius": "18px",
-            "padding": "16px",
-            "marginBottom": "16px",
-        })
-
-    total = wg.get("total_campaigns", summary.get("active_campaigns", 0))
-    present = wg.get("weis_gamma_present", 0)
-    missing = wg.get("weis_gamma_missing", 0)
-
-    gamma_ok = wg.get("gamma_ok", 0)
-    no_options_returned = wg.get("gamma_no_options_returned", 0)
-    no_option_chain = wg.get("gamma_no_option_chain", 0)
-    stale = wg.get("gamma_stale_or_unconfirmed", 0)
-    transition_enabled = wg.get("transition_enabled", 0)
-
-    phase_counts = wg.get("phase_counts") or {}
-    rank_counts = wg.get("rank_bucket_counts") or {}
-    gamma_counts = wg.get("gamma_status_counts") or {}
-    option_chain_counts = wg.get("option_chain_status_counts") or {}
-    fusion_counts = wg.get("fusion_state_counts") or {}
-
-    transitions_off = int(transition_enabled or 0) == 0
-    # FIX (2026-07-29): this badge was labeled "TRANSITIONS OFF" /
-    # "TRANSITIONS ENABLED", which reads as if it reports whether your
-    # actual campaign lifecycle engine (BIRTH -> ... -> CLOSED, which
-    # genuinely runs nightly via campaign_state_engine.py) is active.
-    # It doesn't -- this flag comes from a read-only Weis-Gamma evidence
-    # *preview* (_build_transition_readiness_evidence in
-    # campaign_evidence_builder.py) that is explicitly documented as
-    # "does not change the campaign state engine, only explains what
-    # evidence would support" -- i.e. it's SUPPOSED to always read as
-    # off, as a safety self-check, and has no bearing on whether your
-    # real product is actually transitioning campaigns. Renamed so it
-    # can't be mistaken for the real engine's status.
-    safety_color = TEAL_DIM if transitions_off else RED_DIM
-    safety_label = "GAMMA PREVIEW: READ-ONLY (EXPECTED)" if transitions_off else "⚠ GAMMA PREVIEW CLAIMS WRITE ACCESS"
-
-    stale_color = TEAL_DIM if int(stale or 0) == 0 else RED_DIM
-    no_input_color = TEAL_DIM if int(no_option_chain or 0) == 0 else YELLOW_DIM
-
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Div(_rfa25h_command_center_freshness_title(), style={
-                    "fontSize": "16px",
-                    "fontWeight": "900",
-                    "color": WHITE,
-                }),
-                html.Div(
-                    "Gamma is a read-only execution-risk overlay. No Options Returned means Alpaca was queried and no listed chain was returned; it is not a stale Gamma failure.",
-                    style={
-                        "fontSize": "12px",
-                        "color": WHITE,
-                        "opacity": ".85",
-                        "marginTop": "4px",
-                    },
-                ),
-            ]),
-            html.Div(safety_label, style={
-                "fontSize": "11px",
-                "fontWeight": "900",
-                "color": safety_color,
-                "border": f"1px solid {safety_color}",
-                "borderRadius": "999px",
-                "padding": "6px 10px",
-            }),
-        ], style={
-            "display": "flex",
-            "justifyContent": "space-between",
-            "gap": "12px",
-            "alignItems": "center",
-            "marginBottom": "14px",
-        }),
-
-        html.Div([
-            _wg_metric_card("Total Campaigns", total, WHITE),
-            _wg_metric_card("Weis-Gamma Present", present, TEAL_DIM),
-            _wg_metric_card("Gamma OK", gamma_ok, TEAL_DIM),
-            _wg_metric_card("No Options Returned", no_options_returned, YELLOW_DIM),
-            _wg_metric_card("No Option-Chain Input", no_option_chain, no_input_color),
-            _wg_metric_card("Gamma Stale / Unconfirmed", stale, stale_color),
-            _wg_metric_card("Gamma Preview Read-Only", "YES" if transitions_off else "NO", safety_color),
-            _wg_metric_card("Missing Overlay", missing, YELLOW_DIM),
-        ], style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(150px, 1fr))",
-            "gap": "10px",
-        }),
-
-        html.Div([
-            html.Div([
-                html.Div("Phase Counts", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(phase_counts, category="phase"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Rank Buckets", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(rank_counts, category="rank"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Effective Gamma Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(gamma_counts, category="gamma"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Option Chain Status", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(option_chain_counts, category="option_chain"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-            html.Div([
-                html.Div("Effective Fusion State", style={"fontSize": "11px", "fontWeight": "900", "color": WHITE}),
-                html.Div(_wg_counts_text(fusion_counts, category="fusion"), style={"fontSize": "12px", "color": WHITE, "marginTop": "4px"}),
-            ]),
-        ], style={
-            "display": "grid",
-            "gridTemplateColumns": "repeat(auto-fit, minmax(220px, 1fr))",
-            "gap": "10px",
-            "marginTop": "12px",
-        }),
-    ], style={
-        "border": "1px solid rgba(45,212,191,.30)",
-        "background": "rgba(8,24,39,.72)",
-        "borderRadius": "18px",
-        "padding": "16px",
-        "marginBottom": "16px",
-        "boxShadow": "0 0 0 1px rgba(45,212,191,.08) inset",
-    })
-
+# Legacy campaign-summary / Weis-Gamma status display retired.
 
 def _post(path, body, headers=None):
     try:
@@ -1162,6 +884,8 @@ def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
         "5m": "5Min",
         "15m": "15Min",
         "1H": "1Hour",
+        "2H": "2Hour",
+        "4H": "4Hour",
         "1D": "1Day",
         "1W": "1Week",
     }
@@ -1227,6 +951,12 @@ def _bucket_start(dt: datetime, tf: str) -> datetime:
 
     if tf == "1H":
         return dt.replace(minute=0, second=0, microsecond=0)
+
+    if tf in ("2H", "4H"):
+        # Alpaca historical multi-hour bars use fixed UTC clock boundaries.
+        hours = 2 if tf == "2H" else 4
+        return dt.replace(hour=(dt.hour // hours) * hours,
+                          minute=0, second=0, microsecond=0)
 
     if tf == "1D":
         return dt.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1478,7 +1208,7 @@ def _build_time_axis_ticks(candles, tf, target_tick_count=7):
     if n == 0:
         return [], []
 
-    is_intraday = tf in ("1m", "5m", "15m", "1H")
+    is_intraday = tf in ("1m", "5m", "15m", "1H", "2H", "4H")
     month_abbr = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     try:
@@ -4058,7 +3788,7 @@ def build_command_tab(live, candles, symbol, tf):
         "marginBottom": "16px", "background": "rgba(8,24,39,.40)",
     })
 
-    return html.Div([cc_wall_values_div, quote_box_row, row1, row1b, row2, row3, row4, row5, row6],
+    return html.Div([cc_wall_values_div, _rfa25h_command_center_freshness_title(), quote_box_row, row1, row1b, row2, row3, row4, row5, row6],
                     style={"display":"flex","flexDirection":"column"})
 
 
@@ -10251,6 +9981,8 @@ app.layout = html.Div([
                     html.Button("5m",  id="tf-5m",  n_clicks=0, style=_tf_btn_style("5m",  "5m")),
                     html.Button("15m", id="tf-15m", n_clicks=0, style=_tf_btn_style("15m", "5m")),
                     html.Button("1H",  id="tf-1H",  n_clicks=0, style=_tf_btn_style("1H",  "5m")),
+                    html.Button("2H",  id="tf-2H",  n_clicks=0, style=_tf_btn_style("2H",  "5m")),
+                    html.Button("4H",  id="tf-4H",  n_clicks=0, style=_tf_btn_style("4H",  "5m")),
                     html.Button("1D",  id="tf-1D",  n_clicks=0, style=_tf_btn_style("1D",  "5m")),
                     html.Button("1W",  id="tf-1W",  n_clicks=0, style=_tf_btn_style("1W",  "5m")),
                 ], style={"display":"flex","gap":"2px","padding":"4px","background":NAVY_MID,
@@ -10377,16 +10109,18 @@ app.layout = html.Div([
     Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
     Output("s-seq","data",allow_duplicate=True),
     Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
-    Output("tf-1H","style"), Output("tf-1D","style"), Output("tf-1W","style"),
+    Output("tf-1H","style"), Output("tf-2H","style"), Output("tf-4H","style"),
+    Output("tf-1D","style"), Output("tf-1W","style"),
     Input("tf-1m","n_clicks"), Input("tf-5m","n_clicks"), Input("tf-15m","n_clicks"),
-    Input("tf-1H","n_clicks"), Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
+    Input("tf-1H","n_clicks"), Input("tf-2H","n_clicks"), Input("tf-4H","n_clicks"),
+    Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
     State("s-live","data"), State("s-session","data"),
     State("cc-lookback","value"), prevent_initial_call=True,
 )
-def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session, lookback):
+def select_tf(_1m,_5m,_15m,_1H,_2H,_4H,_1D,_1W, live, session, lookback):
     ctx = callback_context
     if not ctx.triggered:
-        return (no_update,)*9
+        return (no_update,)*11
     btn_id = ctx.triggered[0]["prop_id"].split(".")[0]
     new_tf = btn_id.replace("tf-","")
     symbol = live.get("symbol", "AAPL") if live else "AAPL"
@@ -10399,8 +10133,9 @@ def select_tf(_1m,_5m,_15m,_1H,_1D,_1W, live, session, lookback):
                decision_score=live.get("decision",{}).get("score"),
                decision_status=live.get("decision",{}).get("status"), session=session)
     s0=_tf_btn_style("1m",new_tf); s1=_tf_btn_style("5m",new_tf); s2=_tf_btn_style("15m",new_tf)
-    s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("1D",new_tf); s5=_tf_btn_style("1W",new_tf)
-    return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5
+    s3=_tf_btn_style("1H",new_tf); s4=_tf_btn_style("2H",new_tf); s5=_tf_btn_style("4H",new_tf)
+    s6=_tf_btn_style("1D",new_tf); s7=_tf_btn_style("1W",new_tf)
+    return new_tf, fresh, 0, s0, s1, s2, s3, s4, s5, s6, s7
 
 # Live-only mode — no toggle callback needed
 
@@ -11309,7 +11044,8 @@ def render_main(tab,live,candles,symbol,live_mode,tf,session=None):
                 # or would understand. Command Center's own render no
                 # longer calls this function at all, so there's no
                 # duplication risk to guard against anymore either.
-                build_weis_gamma_status_center_panel(),
+                html.Div("Legacy Weis-Gamma campaign-status panel retired; current Radar snapshot status is displayed in Command Center.",
+                         style={"fontSize":"12px","color":WHITE,"marginBottom":"12px"}),
                 build_cache_diagnostics_panel(),
                 build_admin_tab(session=admin_session, backend_url=BACKEND_HTTP),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})

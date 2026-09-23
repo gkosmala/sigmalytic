@@ -713,6 +713,7 @@ def get_gamma_matrix(symbol: str, spot_price: float = 0.0, feed: str = ""):
 # with the real implementation.
 CANDLE_CALENDAR_DAYS_PER_BAR = {
     "1Min": 1/390, "5Min": 1/78, "15Min": 1/26, "1Hour": 1/6.5,
+    "2Hour": 1/3.25, "4Hour": 1/1.625,
     "1Day": 1.6, "1Week": 8, "1Month": 35,
 }
 
