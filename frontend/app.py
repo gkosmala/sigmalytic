@@ -10627,6 +10627,22 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
+        # Keep callback Inputs mounted on every tab. A button created inside
+        # main-content disappears on navigation and Dash rejects its callback.
+        html.Div([
+            html.Div([
+                html.Strong("Start with the User Guide", style={"color": WHITE, "fontSize": "16px"}),
+                html.Div("The User Guide walks through every feature and shows you how to get the most "
+                         "out of the app.",
+                         style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.5", "marginTop": "5px"}),
+            ]),
+            _btn("Open User Guide", "home-open-guide", extra={"whiteSpace": "nowrap"}),
+        ], id="welcome-guide-action", style={"display": "none", "flexWrap": "wrap",
+                                       "alignItems": "center", "justifyContent": "space-between",
+                                       "gap": "14px", "marginTop": "16px", "padding": "18px",
+                                       "border": f"1px solid {BORDER_T}",
+                                       "borderRadius": "12px", "background": TEAL_GLOW}),
+
         # Keep the foreword mounted while live prices refresh the Welcome
         # content, so its disclosure stays open until the reader closes it.
         html.Div([build_welcome_foreword(), build_welcome_copyright()],
@@ -10878,9 +10894,8 @@ def load_symbol(_, ticker, live, tf, session, lookback, chart_hours="all"):
 
     return clean, clean, fresh, new_live
 
-# The navigation buttons stay mounted on every page. Keep the button inside
-# Welcome out of this callback: Dash cannot run a callback whose Input has
-# disappeared from the current page (which stranded users on other tabs).
+# The navigation buttons stay mounted on every page. The Welcome guide button
+# has its own callback and also stays mounted, hidden outside the Welcome tab.
 app.clientside_callback(
     """function() {
         const id = dash_clientside.callback_context.triggered_id;
@@ -10958,9 +10973,12 @@ def sync_active_tab_styles(active_tab):
     return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
 
 
-@app.callback(Output("welcome-after-main", "style"), Input("s-tab", "data"))
+@app.callback(Output("welcome-after-main", "style"),
+              Output("welcome-guide-action", "style"), Input("s-tab", "data"))
 def show_welcome_after_main(tab):
-    return {"display": "block"} if tab == "home" else {"display": "none"}
+    if tab == "home":
+        return {"display": "block"}, {"display": "flex"}
+    return {"display": "none"}, {"display": "none"}
 
 @app.callback(
     Output("s-live","data"),
@@ -11559,6 +11577,22 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
+    # A price tick can arrive in the same request as a tab click. Check all
+    # changed Inputs so a concurrent tick cannot discard the navigation.
+    changed = {
+        str(item.get("prop_id") or "").split(".", 1)[0]
+        for item in callback_context.triggered
+        if item.get("prop_id") and item["prop_id"] != "."
+    }
+    tab_switched = "s-tab" in changed
+
+    # These pages do not use every market tick. Keep their current contents
+    # mounted (and their inputs intact) until navigation or other real data
+    # changes. The Command Center still redraws on live price/candle updates.
+    if (tab in {"weis", "behavior", "import", "portfolio", "billing", "guide"}
+            and changed and changed <= {"s-live", "s-candles"}):
+        return no_update, no_update, no_update, no_update
+
     if not live:
         live = _init_live
 
@@ -11621,18 +11655,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                              style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6"}),
                 ], style={"flex": "1", "minWidth": "240px"}),
             ], style={"display": "flex", "flexWrap": "wrap", "gap": "24px", "marginTop": "24px"}),
-            html.Div([
-                html.Div([
-                    html.Strong("Start with the User Guide", style={"color": WHITE, "fontSize": "16px"}),
-                    html.Div("The User Guide walks through every feature and shows you how to get the most "
-                             "out of the app.",
-                             style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.5", "marginTop": "5px"}),
-                ]),
-                _btn("Open User Guide", "home-open-guide", extra={"whiteSpace": "nowrap"}),
-            ], style={"display": "flex", "flexWrap": "wrap", "alignItems": "center",
-                      "justifyContent": "space-between", "gap": "14px", "marginTop": "26px",
-                      "padding": "18px", "border": f"1px solid {BORDER_T}",
-                      "borderRadius": "12px", "background": TEAL_GLOW}),
             html.Div([
                 html.Strong("We're listening", style={"display": "block", "fontSize": "16px", "marginBottom": "6px"}),
                 "Your feedback shapes what we build next. If something's working well, or if you see a "
@@ -11706,8 +11728,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # rebuild, with no memory of what the user had selected. Only
         # rebuild on a genuine tab switch (s-tab), so a live-tick while
         # already on this tab doesn't reset the user's timeframe choice.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
+        if tab_switched:
             main = build_heatmap_tab()
         else:
             return no_update, no_update, no_update, no_update
@@ -11720,8 +11741,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # wiping whichever chart was open (and its volume-mode choice)
         # every single tick. Same fix, same reason: only rebuild on a
         # genuine tab switch (s-tab).
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
+        if tab_switched:
             main = build_weis_radar_tab(session)
         else:
             return no_update, no_update, no_update, no_update
@@ -11751,8 +11771,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # what the user had typed. A user actively logging a new trade
         # could have their input wiped mid-keystroke. Only rebuild on a
         # genuine tab switch.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
+        if not tab_switched:
             return no_update, no_update, no_update, no_update
         if build_trade_journal_tab is None:
             main = card([
@@ -11770,11 +11789,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
     elif tab=="status":
         # Preserve chart and watchlist state on ordinary live ticks, but do not
         # lose an actual tab switch if a live tick arrived in the same batch.
-        _tab_switched = any(
-            str(item.get("prop_id") or "").startswith("s-tab.")
-            for item in callback_context.triggered
-        )
-        if not _tab_switched:
+        if not tab_switched:
             return no_update, no_update, no_update, no_update
         if build_status_center is None:
             main = card([
@@ -11803,8 +11818,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # has a real watchlist symbol input field (prefs-sym-input) with
         # no guard against this callback's every-~2s live-tick rebuild.
         # Only rebuild on a genuine tab switch.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
+        if not tab_switched:
             return no_update, no_update, no_update, no_update
         try:
             main = build_preferences_tab(user_id=(session or {}).get("user_id", ""), session=session)
@@ -11822,8 +11836,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # typed almost as fast as they can type it. Only rebuild on a
         # genuine tab switch (s-tab), so a live-tick while already on this
         # tab doesn't reset form inputs.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if not _trigger.startswith("s-tab"):
+        if not tab_switched:
             return no_update, no_update, no_update, no_update
         try:
             admin_session = session if isinstance(session, dict) else {}
@@ -11891,8 +11904,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # (including their date selection) untouched between real
         # navigation events, without needing to read anything back from
         # a component this same callback creates.
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith(("s-tab", "s-reports-refresh")):
+        if tab_switched or "s-reports-refresh" in changed:
             report_date = (reports_refresh or {}).get("date") if isinstance(reports_refresh, dict) else None
             main = build_reports_tab(selected_date=report_date, session=session)
         else:
@@ -11911,8 +11923,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # only the opening lines, and Stop appearing to do nothing since
         # the next automatic restart followed almost immediately. Same
         # fix, same reason: only rebuild on a genuine tab switch (s-tab).
-        _trigger = callback_context.triggered[0]["prop_id"] if callback_context.triggered else ""
-        if _trigger.startswith("s-tab"):
+        if tab_switched:
             main = build_briefing_tab()
         else:
             return no_update, no_update, no_update, no_update
