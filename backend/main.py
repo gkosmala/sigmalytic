@@ -1603,7 +1603,7 @@ def get_weis_wave_verdict(symbol: str):
 
 
 @app.get("/api/candles/{symbol}")
-def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
+def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200, session_hours: str = "all"):
     sym = (symbol or "").upper().strip()
 
     if not sym:
@@ -1615,6 +1615,32 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
 
     if not key or not secret:
         return {"ok": False, "symbol": sym, "error": "missing_alpaca_credentials", "bars": []}
+
+    import re
+    if not re.fullmatch(r"(?:[1-9][0-9]?Min|[1-9][0-9]?Hour|1Day|1Week|1Month)", timeframe):
+        return {"ok": False, "symbol": sym, "error": "invalid_chart_timeframe", "bars": []}
+    if session_hours not in ("all", "regular", "extended"):
+        return {"ok": False, "symbol": sym, "error": "invalid_session_hours", "bars": []}
+    amount = int(re.match(r"[0-9]+", timeframe).group())
+    if (timeframe.endswith("Min") and amount > 59) or (timeframe.endswith("Hour") and amount > 23):
+        return {"ok": False, "symbol": sym, "error": "invalid_chart_timeframe", "bars": []}
+
+    if session_hours != "all":
+        if timeframe in ("1Day", "1Week", "1Month"):
+            return {"ok": False, "symbol": sym, "error": "session_hours_require_intraday", "bars": []}
+        try:
+            from backend.chart_sessions import fetch_session_candles
+            bars = fetch_session_candles(
+                sym, timeframe, session_hours, max(1, min(int(limit or 200), 1000)),
+                requests, base_url,
+                {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+            )
+            return {"ok": True, "symbol": sym, "timeframe": timeframe,
+                    "session_hours": session_hours, "bars": bars, "source": "alpaca_sip"}
+        except ValueError as exc:
+            return {"ok": False, "symbol": sym, "error": str(exc), "bars": []}
+        except Exception as exc:
+            return {"ok": False, "symbol": sym, "error": str(exc)[:200], "bars": []}
 
     url = f"{base_url}/v2/stocks/{sym}/bars"
     headers = {
@@ -1648,7 +1674,14 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200):
     # rather than an obvious empty/error response -- exactly the
     # sustained, reboot-proof mismatch reported. Corrected to reflect
     # real trading-bars-per-day for each intraday granularity.
-    _calendar_days_per_bar = CANDLE_CALENDAR_DAYS_PER_BAR.get(timeframe, 1)
+    if timeframe in CANDLE_CALENDAR_DAYS_PER_BAR:
+        _calendar_days_per_bar = CANDLE_CALENDAR_DAYS_PER_BAR[timeframe]
+    elif timeframe.endswith("Min"):
+        _calendar_days_per_bar = (amount / 390) * 1.8
+    elif timeframe.endswith("Hour"):
+        _calendar_days_per_bar = (amount * 60 / 390) * 1.8
+    else:
+        _calendar_days_per_bar = CANDLE_CALENDAR_DAYS_PER_BAR.get(timeframe, 1)
     _lookback_days = max(5, int(_clean_limit * _calendar_days_per_bar) + 10)
     _end_dt = datetime.utcnow() + timedelta(days=1)
     _start_dt = _end_dt - timedelta(days=_lookback_days)

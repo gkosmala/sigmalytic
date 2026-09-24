@@ -14,6 +14,7 @@ Includes: Behavioral Intelligence Layer v1.0
 from __future__ import annotations
 import json
 import os
+import re
 import random
 import time
 from datetime import datetime, timezone, timedelta
@@ -885,7 +886,7 @@ def _post(path, body, headers=None):
     except Exception:
         return {}
 
-def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
+def fetch_real_candles(symbol: str, tf: str, limit: int = 200, chart_hours: str = "all") -> list[dict]:
     """
     Fetch real OHLCV bars from backend Alpaca candle endpoint.
     No synthetic candles are created here.
@@ -899,18 +900,29 @@ def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
         "4H": "4Hour",
         "1D": "1Day",
         "1W": "1Week",
+        "1M": "1Month",
     }
     clean = sanitize_symbol(symbol or "")
     if not clean:
         return []
 
-    timeframe = tf_map.get(tf, "5Min")
+    timeframe = tf_map.get(tf)
+    if timeframe is None:
+        custom = re.fullmatch(r"([1-9][0-9]?)(m|H)", tf or "")
+        if not custom:
+            return []
+        amount = int(custom.group(1))
+        if amount > (59 if custom.group(2) == "m" else 23):
+            return []
+        timeframe = f"{amount}{'Min' if custom.group(2) == 'm' else 'Hour'}"
+    if tf in ("1D", "1W", "1M"):
+        chart_hours = "all"  # Session switching applies to intraday bars.
 
     try:
         r = req.get(
             f"{BACKEND_HTTP}/api/candles/{clean}",
-            params={"timeframe": timeframe, "limit": limit},
-            timeout=8,
+            params={"timeframe": timeframe, "limit": limit, "session_hours": chart_hours},
+            timeout=35 if chart_hours != "all" else 8,
         )
         if not r.ok:
             print(f"REAL_CANDLES_HTTP_ERROR {clean} {timeframe}: {r.status_code} {r.text[:200]}")
@@ -943,7 +955,7 @@ def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
         return []
 
 
-def _bucket_start(dt: datetime, tf: str) -> datetime:
+def _bucket_start(dt: datetime, tf: str, chart_hours: str = "all") -> datetime | None:
     """
     Return the beginning of the selected timeframe bucket.
     This is what prevents the chart from creating a new candle on every tick.
@@ -951,6 +963,24 @@ def _bucket_start(dt: datetime, tf: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     dt = dt.astimezone(timezone.utc)
+
+    interval = re.fullmatch(r"([1-9][0-9]?)(m|H)", tf or "")
+    if interval and chart_hours in ("regular", "extended"):
+        local = dt.astimezone(MARKET_ET)
+        opening, closing = ((570, 960) if chart_hours == "regular" else (240, 1200))
+        minute_of_day = local.hour * 60 + local.minute
+        if local.weekday() >= 5 or not opening <= minute_of_day < closing:
+            return None
+        duration = int(interval.group(1)) * (60 if interval.group(2) == "H" else 1)
+        offset = opening + (minute_of_day - opening) // duration * duration
+        return (local.replace(hour=0, minute=0, second=0, microsecond=0)
+                + timedelta(minutes=offset)).astimezone(timezone.utc)
+
+    if interval:
+        duration = int(interval.group(1)) * (60 if interval.group(2) == "H" else 1)
+        minute_of_day = dt.hour * 60 + dt.minute
+        offset = minute_of_day // duration * duration
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(minutes=offset)
 
     if tf == "1m":
         return dt.replace(second=0, microsecond=0)
@@ -980,12 +1010,16 @@ def _bucket_start(dt: datetime, tf: str) -> datetime:
         start = dt - timedelta(days=dt.weekday())
         return start.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    if tf == "1M":
+        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
     minute = (dt.minute // 5) * 5
     return dt.replace(minute=minute, second=0, microsecond=0)
 
 
 def update_current_candle(candles: list[dict], price: float, volume: int, tick_time: str, tf: str,
-                          bar_timestamp: str = None, limit: int = 200) -> list[dict]:
+                          bar_timestamp: str = None, limit: int = 200,
+                          chart_hours: str = "all") -> list[dict]:
     """
     Update only the active candle while inside the selected timeframe.
     A new candle is appended only when the timeframe bucket rolls over.
@@ -998,7 +1032,9 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
     except Exception:
         tick_dt = datetime.now(timezone.utc)
 
-    current_bucket = _bucket_start(tick_dt, tf)
+    current_bucket = _bucket_start(tick_dt, tf, chart_hours)
+    if current_bucket is None:
+        return candles or []
     current_t = current_bucket.isoformat()
 
     minute_volume = None
@@ -1025,7 +1061,7 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
 
     try:
         last_dt = datetime.fromisoformat(str(last.get("t", "")).replace("Z", "+00:00"))
-        last_bucket = _bucket_start(last_dt, tf)
+        last_bucket = _bucket_start(last_dt, tf, chart_hours)
     except Exception:
         last_bucket = current_bucket
 
@@ -3175,7 +3211,9 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
     return placeholder if placeholder is not None else {"status": "LOADING_IN_BACKGROUND"}
 
 
-def build_command_tab(live, candles, symbol, tf, quote_data=None):
+def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="all"):
+    if tf in ("1D", "1W", "1M"):
+        chart_hours = "all"
     price    = live["price"]; decision = live["decision"]
     nodes    = live["confluence"]; kl = get_key_levels(price, count_guide=live.get("count_guide"))
     seq      = live["sequence"]; score = decision["score"]
@@ -3354,15 +3392,16 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
     # change, a lookback change producing a differently-sized series,
     # or a multi-bar jump if a tick was somehow missed) still falls
     # through to a genuine rebuild -- the safe default.
-    _cc_fingerprint = (symbol, tf, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
+    _cc_fingerprint = (symbol, tf, chart_hours, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
     _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
     _cc_new_bar_to_push = None
     if _cached_entry and _cached_entry[0] == _cc_fingerprint:
         command_chart_html = _cached_entry[1]
-    elif (_cached_entry and _cc_bars and len(_cached_entry[0]) == 4
+    elif (_cached_entry and _cc_bars and len(_cached_entry[0]) == 5
           and _cached_entry[0][0] == symbol and _cached_entry[0][1] == tf
-          and _cached_entry[0][2] == len(_cc_bars) - 1
-          and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][3]):
+          and _cached_entry[0][2] == chart_hours
+          and _cached_entry[0][3] == len(_cc_bars) - 1
+          and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][4]):
         # Exactly one new bar appended -- reuse the cached HTML as-is
         # (no reload) and hand the new bar to the hidden div below so
         # it gets pushed into the already-loaded chart instead.
@@ -3371,7 +3410,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
     else:
         _cc_chart_data = {
-            "symbol": symbol, "timeframe": tf, "bars": _cc_bars, "hits": [],
+            "symbol": symbol, "timeframe": tf, "session_hours": chart_hours,
+            "bars": _cc_bars, "hits": [],
             "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
         }
         command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
@@ -3490,11 +3530,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
         # Chart — fills remaining space
         # REPLACED (later session): dcc.Graph(figure=fig) -> html.Iframe
         # rendering the same embedded HTML/JS tool used by Weis Radar.
-        # Sized identically to that chart (1050px, matching the explicit
-        # "same size and format" request) rather than fit to whatever
-        # smaller footprint this panel previously allocated for the old
-        # Plotly figure -- outer wrapper's overflow changed from hidden
-        # to visible accordingly, so the taller chart isn't clipped.
+        # The iframe sizes itself to the remaining viewport height;
+        # the study controls inside are collapsed until requested.
         #
         # id ADDED (later session): needed so the new
         # push_live_price_to_command_chart clientside_callback below can
@@ -3502,8 +3539,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
         # into it -- fixing the chart appearing to "blink" on every
         # 10-second tick without going back to a frozen, non-live chart.
         html.Div(
-            html.Iframe(id="cc-weis-chart", srcDoc=command_chart_html,
-                        style={"width":"100%","height":"1050px","border":"none"}),
+            html.Iframe(id="cc-weis-chart", srcDoc=command_chart_html, allow="fullscreen",
+                        style={"width":"100%","height":"max(260px, calc(100dvh - 355px))","border":"none"}),
             style={"margin":"0 -20px -8px -20px","overflow":"visible"},
         ),
 
@@ -4668,8 +4705,8 @@ def build_weis_radar_tab(session=None):
         # and why srcDoc (not a live cross-origin fetch) avoids needing
         # CORS on the backend.
         dcc.Loading(html.Iframe(
-            id="weis-radar-chart", srcDoc="",
-            style={"display": "none", "width": "100%", "height": "1050px", "border": "none"},
+            id="weis-radar-chart", srcDoc="", allow="fullscreen",
+            style={"display": "none", "width": "100%", "height": "max(260px, calc(100dvh - 355px))", "border": "none"},
         )),
 
         html.Div(_render_weis_radar_table(results), id="weis-radar-table-container"),
@@ -6417,7 +6454,9 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
 
     html_doc = _WEIS_RADAR_CHART_TEMPLATE
     html_doc = html_doc.replace("__SYMBOL__", symbol)
+    html_doc = html_doc.replace("__TIMEFRAME_LABEL__", str(chart_data.get("timeframe") or "5m"))
     html_doc = html_doc.replace("__TIMEFRAME__", json.dumps(chart_data.get("timeframe") or "5m"))
+    html_doc = html_doc.replace("__SESSION_HOURS__", json.dumps(chart_data.get("session_hours") or "all"))
     html_doc = html_doc.replace("__MA_PERIOD__", str(int(ma_period) if ma_period else 20))
     html_doc = html_doc.replace("__BARS_JSON__", json.dumps(bars_for_js))
     html_doc = html_doc.replace("__HITS_JSON__", json.dumps(hits_for_js))
@@ -6445,9 +6484,13 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <title>__SYMBOL__ Weis Radar Chart</title>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.32.0/dist/plotly.min.js"></script>
 <style>
-  html { overflow-x:hidden; }
-  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; box-sizing:border-box; overflow-x:hidden; }
-  .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  html { overflow:hidden; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:6px 10px; box-sizing:border-box; overflow:hidden; }
+  html:fullscreen, html:fullscreen body { width:100%; height:100%; }
+  #chartSettings { background:#121821; border:1px solid #232c38; border-radius:7px; margin-bottom:4px; }
+  #chartSettings summary { cursor:pointer; padding:5px 9px; color:#dbeafe; font-size:11px; font-weight:700; }
+  #chartSettings[open] { max-height:calc(100dvh - 260px); overflow:auto; }
+  .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border-radius:10px; padding:10px 12px; }
   .ctrl { display:flex; flex-direction:column; gap:4px; }
   .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8b98a5; }
   .ctrl input[type=number] { width:90px; background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
@@ -6456,7 +6499,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .ctrl select { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
   .radio-group { display:flex; flex-wrap:wrap; gap:10px; font-size:13px; }
   .vibval { font-weight:600; color:#7ee787; min-width:34px; display:inline-block; }
-  .stats { display:flex; gap:22px; font-size:12px; color:#a9b4bf; margin:10px 2px 4px 2px; flex-wrap:wrap; }
+  .stats { display:flex; gap:12px; font-size:11px; color:#a9b4bf; margin:2px 2px 3px 2px; flex-wrap:wrap; }
   .stats b { color:#e6e9ee; }
   .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
   #chart { width:100%; min-width:0; }
@@ -6478,6 +6521,12 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 
+<div id="chartActions" style="display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:11px;min-height:26px;">
+  <span><b>__SYMBOL__</b> · __TIMEFRAME_LABEL__ · <span id="sessionCaption">Regular hours</span></span>
+  <button type="button" id="fullscreenBtn" style="background:#193d37;color:#dbeafe;border:1px solid #366c5d;border-radius:5px;padding:3px 9px;cursor:pointer;">⛶ Full screen</button>
+</div>
+<details id="chartSettings">
+<summary>Studies, volume settings and annotations</summary>
 <div class="controls">
   <div class="ctrl">
     <label>Vibration (% reversal)</label>
@@ -6590,19 +6639,19 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 
 <div class="stats" id="stats"></div>
 <div id="calibrationPanel" class="calibration-box"></div>
-<div style="margin:4px 0 8px 0;">
+</details>
+<div style="margin:3px 0 3px 0;">
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
   <button id="generateReportBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; margin-left:8px;">📄 Generate Report</button>
-  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Use Chart History below to browse earlier candles. Drag a box to zoom; Reset Zoom returns to the selected window.</span>
 </div>
 <!-- ADDED (2026-09-10): on-screen report panel, per explicit request
      -- no download, shown directly in the page. Hidden until the
      button is clicked; built entirely from data already computed for
      the chart itself (RAW_BARS, HITS, wave state, wall levels), so
      no additional backend round-trip is needed to generate it. -->
-<div id="reportPanel" style="display:none; background:#11161d; border:1px solid #3a4a5f; border-radius:8px; padding:16px; margin:0 0 12px 0; font-size:13px; line-height:1.6; color:#c8d3de; white-space:pre-wrap;"></div>
-<div id="historyNav" style="background:#101722; border:1px solid #2b3b4e; border-radius:8px; padding:10px 14px; margin:8px 0 4px;">
-  <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12px; margin-bottom:6px;">
+<div id="reportPanel" style="display:none; position:fixed; inset:4%; z-index:20; overflow:auto; background:#11161d; border:1px solid #3a4a5f; border-radius:8px; padding:16px; font-size:13px; line-height:1.6; color:#c8d3de; white-space:pre-wrap;"><button type="button" onclick="this.parentElement.style.display='none'" style="float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;">✕ Close</button></div>
+<div id="historyNav" style="background:#101722; border:1px solid #2b3b4e; border-radius:6px; padding:4px 8px; margin:2px 0;">
+  <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:11px; margin-bottom:2px;">
     <label for="historySlider" style="font-weight:700; color:#dbeafe;">Chart History</label>
     <span id="historyStatus" style="color:#a9b4bf;">Loading bars…</span>
     <label style="color:#a9b4bf; cursor:pointer;"><input type="checkbox" id="fitAllBars"> Fit all loaded bars</label>
@@ -6619,8 +6668,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <div id="waveLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Weis wave volume height" title="Drag or scroll here to change Weis wave volume height. Double-click to reset."><span>↕ Wave volume</span></div>
   <div id="barLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Regular volume height" title="Drag or scroll here to change regular volume height. Double-click to reset."><span>↕ Bar volume</span></div>
 </div>
-<div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
-<div class="legend-note">
+<div class="stats" id="trendlineInfo" style="display:none;"></div>
+<div class="legend-note" style="display:none;">
   Green candles/waves = rising, red = falling. Drag or scroll either right-hand volume ladder to resize its bars.
   Dashed blue/orange/purple =
   Call Wall/Put Wall/Gamma Flip. Dashed gold = Secondary Channels. Dotted gray = well-defined S/R levels.
@@ -6637,12 +6686,30 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
 const TIMEFRAME = __TIMEFRAME__;
+const SESSION_HOURS = __SESSION_HOURS__;
+document.getElementById('sessionCaption').textContent = {
+  all:'All reported SIP hours', regular:'Regular 9:30–16:00 ET',
+  extended:'Extended 4:00–20:00 ET'
+}[SESSION_HOURS] || 'All reported SIP hours';
 const historySlider = document.getElementById('historySlider');
 const fitAllBars = document.getElementById('fitAllBars');
 let historyReady = false;
 let waveScale = 1, barScale = 1;
 const VOLUME_DOMAINS = {wave:[0.265,0.45], bar:[0,0.22]};
-const CHART_HEIGHT = 720, CHART_TOP = 12, CHART_BOTTOM = 52;
+let CHART_HEIGHT = 500;
+const CHART_TOP = 8, CHART_BOTTOM = 36;
+function fitFrameToViewport() {
+  try {
+    if (document.fullscreenElement || !window.frameElement) return;
+    const frame = window.frameElement;
+    const available = window.parent.innerHeight - frame.getBoundingClientRect().top - 8;
+    frame.style.height = `${Math.max(250, Math.floor(available))}px`;
+  } catch (e) { /* Keep the CSS viewport fallback if frame access is restricted. */ }
+}
+function fitChartHeight() {
+  const top = document.getElementById('chartHost').getBoundingClientRect().top;
+  CHART_HEIGHT = Math.max(180, Math.floor(window.innerHeight - top - 8));
+}
 
 function getVisibleBarCount() {
   if (fitAllBars.checked) return RAW_BARS.length;
@@ -6683,6 +6750,12 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(render, 150);
 });
+try { window.parent.addEventListener('resize', () => {
+  fitFrameToViewport();
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 150);
+}); }
+catch (e) { /* Standalone HTML has no parent resize listener. */ }
 
 const etClock = new Intl.DateTimeFormat('en-US', {
   timeZone:'America/New_York', year:'numeric', month:'short', day:'numeric',
@@ -6690,7 +6763,7 @@ const etClock = new Intl.DateTimeFormat('en-US', {
 });
 function barCalendar(raw) {
   const text = String(raw || '');
-  const daily = /^(1d|1day|1w|1week)$/i.test(TIMEFRAME);
+  const daily = /^(1D|1Day|1W|1Week|1M|1Month)$/.test(TIMEFRAME);
   // Alpaca daily and weekly candles use UTC midnight; their ISO calendar
   // date is the trading date, even when midnight is the prior evening ET.
   if (daily || !text.includes('T')) {
@@ -6714,7 +6787,7 @@ function barCalendar(raw) {
 
 function timeAxis(dates, start, count) {
   const tickvals = [], ticktext = [], shapes = [];
-  const daily = /^(1d|1day|1w|1week)$/i.test(TIMEFRAME);
+  const daily = /^(1D|1Day|1W|1Week|1M|1Month)$/.test(TIMEFRAME);
   const width = document.getElementById('chartHost').clientWidth || 1000;
   const stride = Math.max(1, Math.ceil(count / Math.max(5, Math.floor((width - 120) / 85))));
   let lastTick = start - stride;
@@ -6757,6 +6830,16 @@ function placeVolumeLadders() {
     ladder.style.height = `${(domain[1]-domain[0])*plotHeight}px`;
   }
 }
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen();
+});
+document.addEventListener('fullscreenchange', () => {
+  document.getElementById('fullscreenBtn').textContent =
+    document.fullscreenElement ? '⛶ Exit full screen' : '⛶ Full screen';
+  setTimeout(render, 80);
+});
+document.getElementById('chartSettings').addEventListener('toggle', () => setTimeout(render, 40));
 for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
   const ladder = document.getElementById(id);
   let drag = null;
@@ -7677,6 +7760,7 @@ function restoreSettings() {
 }
 
 function render() {
+  fitChartHeight();
   syncHistoryControl();
   // ADDED (later session): belt-and-suspenders alongside the
   // computeZigZag fix above -- many other places in this function
@@ -8430,6 +8514,25 @@ window.addEventListener('message', (event) => {
     const d = new Date(value);
     if (!Number.isFinite(d.getTime())) return null;
     d.setUTCSeconds(0, 0);
+    const interval = /^([1-9][0-9]?)(m|H)$/.exec(tf || '');
+    if (interval && SESSION_HOURS !== 'all') {
+      const calendar = barCalendar(d.toISOString());
+      const [hour, minute] = calendar.time.split(':').map(Number);
+      const opening = SESSION_HOURS === 'regular' ? 570 : 240;
+      const closing = SESSION_HOURS === 'regular' ? 960 : 1200;
+      const minuteOfDay = hour * 60 + minute;
+      if (minuteOfDay < opening || minuteOfDay >= closing) return null;
+      const size = Number(interval[1]) * (interval[2] === 'H' ? 60 : 1);
+      const delta = (minuteOfDay - opening) % size;
+      d.setUTCMinutes(d.getUTCMinutes() - delta);
+      return d.toISOString();
+    }
+    if (interval) {
+      const size = Number(interval[1]) * (interval[2] === 'H' ? 60 : 1);
+      const minuteOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();
+      d.setUTCHours(0, Math.floor(minuteOfDay / size) * size);
+      return d.toISOString();
+    }
     if (tf === '5m' || tf === '15m') {
       const size = tf === '5m' ? 5 : 15;
       d.setUTCMinutes(Math.floor(d.getUTCMinutes() / size) * size);
@@ -8439,11 +8542,14 @@ window.addEventListener('message', (event) => {
     } else if (tf === '1D' || tf === '1W') {
       d.setUTCHours(0, 0);
       if (tf === '1W') d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    } else if (tf === '1M') {
+      d.setUTCDate(1); d.setUTCHours(0,0,0,0);
     }
     return d.toISOString();
   }
   const lastDate = RAW_BARS[RAW_BARS.length - 1].date;
   const liveBucket = msg.tradeTimestamp ? bucketTime(msg.tradeTimestamp, msg.timeframe) : null;
+  if (SESSION_HOURS !== 'all' && msg.tradeTimestamp && !liveBucket) return;
   const lastBucket = bucketTime(lastDate, msg.timeframe);
   const tradeRolled = liveBucket && lastBucket && Date.parse(liveBucket) > Date.parse(lastBucket);
   const sameVerifiedBar = !tradeRolled && msg.barDate &&
@@ -8537,6 +8643,7 @@ window.addEventListener('message', (event) => {
 });
 
 restoreSettings();
+fitFrameToViewport();
 // Initial auto-calibration: unlike the standalone reference tool (which
 // triggers this from its "Activate" button after a CSV upload), this
 // live chart's RAW_BARS is already populated by the time this script
@@ -8631,7 +8738,7 @@ def show_weis_radar_chart(n_clicks_list, timeframe, lookback, ma_period, close_c
 
     html_doc = _build_weis_radar_chart_html(data, ma_period=ma_period or 20)
 
-    return (html_doc, {"display": "block", "width": "100%", "height": "1050px", "border": "none"},
+    return (html_doc, {"display": "block", "width": "100%", "height": "max(260px, calc(100dvh - 355px))", "border": "none"},
             symbol, data, title_text,
             {"display": "block", "color": WHITE, "fontSize": "13px", "fontWeight": "700", "marginBottom": "4px"})
 
@@ -10223,6 +10330,7 @@ app.layout = html.Div([
     dcc.Store(id="s-live-mode", data=True),
     dcc.Store(id="s-symbol",    data="AAPL"),
     dcc.Store(id="s-tf",        data="5m"),
+    dcc.Store(id="s-chart-hours", data="all"),
     dcc.Store(id="s-tab",       data="home"),
     dcc.Store(id="s-alert-score",    data=0),
     dcc.Store(id="s-alert-banner",   data=None),
@@ -10408,6 +10516,30 @@ app.layout = html.Div([
                                      "borderRadius":"8px","padding":"8px 10px","width":"64px",
                                      "fontSize":"13px","fontWeight":"700"}),
                 ], style={"display":"flex","alignItems":"center"}),
+                html.Details([
+                    html.Summary("Customize Bar", style={"cursor":"pointer","fontWeight":"700"}),
+                    html.Div([
+                        dcc.Input(id="cc-custom-amount", type="number", value=7, min=1, max=59, step=1,
+                                  style={"width":"58px","padding":"5px","background":NAVY_MID,"color":WHITE}),
+                        dcc.Dropdown(id="cc-custom-unit", clearable=False, value="current",
+                                     options=[{"label":"Current interval","value":"current"},
+                                              {"label":"Minutes","value":"m"},
+                                              {"label":"Hours","value":"H"},
+                                              {"label":"Monthly","value":"M"}],
+                                     style={"width":"110px","color":"#111"}),
+                        dcc.Dropdown(id="cc-session-hours", clearable=False, value="all",
+                                     options=[{"label":"All SIP hours","value":"all"},
+                                              {"label":"Regular 9:30–16:00 ET","value":"regular"},
+                                              {"label":"Extended 4:00–20:00 ET","value":"extended"}],
+                                     style={"width":"185px","color":"#111"}),
+                        html.Button("Apply", id="cc-apply-chart-view", n_clicks=0,
+                                    style={"cursor":"pointer","padding":"6px 12px"}),
+                    ], style={"display":"flex","gap":"6px","alignItems":"center","marginTop":"6px"}),
+                    html.Div(id="cc-chart-view-status", style={"fontSize":"11px","color":WHITE}),
+                    html.Div("Custom time bars use real SIP trades aggregated by Alpaca. Session choices recalculate intraday OHLC and volume. Activity bars need a historical trade stream.",
+                             style={"fontSize":"10px","color":WHITE,"maxWidth":"530px"}),
+                ], style={"color":WHITE,"background":NAVY_MID,"border":f"1px solid {BORDER}",
+                          "borderRadius":"9px","padding":"6px 9px"}),
             ], style={"display":"flex","flexWrap":"wrap","alignItems":"center",
                        "justifyContent":"center","gap":"10px"}),
         ], style={"display":"flex","flexDirection":"column","alignItems":"center",
@@ -10514,6 +10646,39 @@ app.layout = html.Div([
 # ── Callbacks ──────────────────────────────────────────────────────────────────
 
 @app.callback(
+    Output("s-chart-hours", "data"),
+    Output("s-tf", "data", allow_duplicate=True),
+    Output("s-candles", "data", allow_duplicate=True),
+    Output("s-seq", "data", allow_duplicate=True),
+    Output("cc-chart-view-status", "children"),
+    Input("cc-apply-chart-view", "n_clicks"),
+    State("cc-custom-amount", "value"), State("cc-custom-unit", "value"),
+    State("cc-session-hours", "value"), State("s-tf", "data"),
+    State("s-symbol", "data"), State("cc-lookback", "value"),
+    prevent_initial_call=True,
+)
+def apply_custom_chart_view(_clicks, amount, unit, hours, current_tf, symbol, lookback):
+    tf = current_tf or "5m"
+    if unit != "current":
+        try:
+            count = 1 if unit == "M" else int(amount)
+            if unit != "M" and float(amount) != count:
+                raise ValueError
+        except (TypeError, ValueError):
+            return no_update, no_update, no_update, no_update, "Enter a whole number of minutes or hours."
+        maximum = 59 if unit == "m" else 23 if unit == "H" else 1
+        if count < 1 or count > maximum:
+            return no_update, no_update, no_update, no_update, f"Choose 1–{maximum} for that interval."
+        tf = "1M" if unit == "M" else f"{count}{unit}"
+    if tf in ("1D", "1W", "1M") and hours != "all":
+        return no_update, no_update, no_update, no_update, "Session hours apply to intraday candles. Select All SIP hours for daily, weekly or monthly."
+    hours = hours if hours in ("all", "regular", "extended") else "all"
+    bars = fetch_real_candles(symbol or "AAPL", tf, limit=lookback or 252, chart_hours=hours)
+    if not bars:
+        return no_update, no_update, no_update, no_update, "No bars returned. Choose fewer Lookback bars or another session."
+    return hours, tf, bars, 0, f"Showing {len(bars):,} {tf} bars · {hours} session."
+
+@app.callback(
     Output("s-tf","data"), Output("s-candles","data",allow_duplicate=True),
     Output("s-seq","data",allow_duplicate=True),
     Output("tf-1m","style"), Output("tf-5m","style"), Output("tf-15m","style"),
@@ -10523,9 +10688,9 @@ app.layout = html.Div([
     Input("tf-1H","n_clicks"), Input("tf-2H","n_clicks"), Input("tf-4H","n_clicks"),
     Input("tf-1D","n_clicks"), Input("tf-1W","n_clicks"),
     State("s-live","data"), State("s-session","data"),
-    State("cc-lookback","value"), prevent_initial_call=True,
+    State("cc-lookback","value"), State("s-chart-hours","data"), prevent_initial_call=True,
 )
-def select_tf(_1m,_5m,_15m,_1H,_2H,_4H,_1D,_1W, live, session, lookback):
+def select_tf(_1m,_5m,_15m,_1H,_2H,_4H,_1D,_1W, live, session, lookback, chart_hours="all"):
     ctx = callback_context
     if not ctx.triggered:
         return (no_update,)*11
@@ -10533,7 +10698,10 @@ def select_tf(_1m,_5m,_15m,_1H,_2H,_4H,_1D,_1W, live, session, lookback):
     new_tf = btn_id.replace("tf-","")
     symbol = live.get("symbol", "AAPL") if live else "AAPL"
     price  = live.get("price", 0) if live else 0
-    fresh  = fetch_real_candles(symbol, new_tf, limit=lookback or 200)
+    fresh  = fetch_real_candles(symbol, new_tf, limit=lookback or 200,
+                                chart_hours=chart_hours if new_tf not in ("1D", "1W") else "all")
+    if not fresh:
+        return (no_update,) * 11
     # Track event
     if live:
         _track("timeframe_changed", live.get("symbol",""), price=price, timeframe=new_tf,
@@ -10584,9 +10752,10 @@ def _request_command_center_stream(clean: str):
     State("s-tf","data"),
     State("s-session","data"),
     State("cc-lookback","value"),
+    State("s-chart-hours","data"),
     prevent_initial_call=True,
 )
-def load_symbol(_, ticker, live, tf, session, lookback):
+def load_symbol(_, ticker, live, tf, session, lookback, chart_hours="all"):
     clean = sanitize_symbol(ticker or "")
     if not clean:
         return no_update, no_update, no_update, no_update
@@ -10614,7 +10783,8 @@ def load_symbol(_, ticker, live, tf, session, lookback):
     _track("symbol_loaded", clean, price=price,
            decision_score=live.get("decision",{}).get("score") if live else None, session=session)
 
-    fresh = fetch_real_candles(clean, tf or "5m", limit=lookback or 200)
+    fresh = fetch_real_candles(clean, tf or "5m", limit=lookback or 200,
+                               chart_hours=chart_hours or "all")
 
     # FIX (2026-08-13): previously never touched s-live at all --
     # switching symbols left the PRIOR symbol's price/decision
@@ -10707,9 +10877,10 @@ def sync_active_tab_styles(active_tab):
     State("s-live","data"), State("s-seq","data"), State("s-candles","data"),
     State("s-live-mode","data"), State("s-symbol","data"), State("s-tf","data"),
     State("cc-lookback","value"),
+    State("s-chart-hours","data"),
     prevent_initial_call=True,
 )
-def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None):
+def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, chart_hours="all"):
     """
     Live price refresh + real candle bucket behavior.
 
@@ -11081,7 +11252,8 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None):
     # to substantially shrink the worst-case staleness window, while
     # still not re-fetching full history on every single 20-second tick.
     if not candles or (new_seq % 3 == 0):
-        fresh_history = fetch_real_candles(clean, tf or "5m", limit=lookback or 200)
+        fresh_history = fetch_real_candles(clean, tf or "5m", limit=lookback or 200,
+                                           chart_hours=chart_hours or "all")
         if fresh_history:
             candles = fresh_history
 
@@ -11093,6 +11265,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None):
         tf=tf or "5m",
         bar_timestamp=bar_timestamp,
         limit=lookback or 200,
+        chart_hours=chart_hours or "all",
     )
 
     return new_live, new_seq, new_candles
@@ -11287,15 +11460,16 @@ def render_quote_box(q):
     State("s-tf","data"),
     State("s-session","data"),
     State("s-quote-box","data"),
+    State("s-chart-hours","data"),
 )
-def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=None,quote_data=None):
+def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=None,quote_data=None,chart_hours="all"):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
     if not live:
         live = _init_live
 
-    if not candles:
+    if candles is None:
         candles = _init_candles
 
     if tab == "home":
@@ -11336,7 +11510,8 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # comment on the "GAMMA PREVIEW: READ-ONLY" badge), not
         # something a subscriber needs to see or would understand.
         return (html.Div([
-                    build_command_tab(live, candles or _init_candles, symbol, tf, quote_data=quote_data),
+                    build_command_tab(live, candles, symbol, tf,
+                                      quote_data=quote_data, chart_hours=chart_hours or "all"),
                 ], style={"display":"flex","flexDirection":"column","gap":"16px"}),
                 SHOWN, trade_plan, active_pane)
 
