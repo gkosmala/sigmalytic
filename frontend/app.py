@@ -10311,10 +10311,10 @@ ALL_TABS = [
     ("import",      "Import History"),
     ("journal",     "Journal"),
     ("portfolio",   "Portfolio"),
-    ("billing",     "Billing"),
     ("preferences", "Preferences"),
     ("reports",     "Reports"),
     ("briefing",    "☀️ Morning Report"),
+    ("billing",     "Billing"),
     ("guide",       "User Guide"),
     ("admin",       "Admin"),
 ]
