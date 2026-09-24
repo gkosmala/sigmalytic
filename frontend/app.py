@@ -1126,6 +1126,46 @@ def card(children, sx=None):
     if sx: s.update(sx)
     return html.Section(children, style=s)
 
+def build_welcome_foreword():
+    """Founder acknowledgments, kept readable on the Welcome page."""
+    acknowledgments = [
+        "To my wife, Jan — you lived through more late nights and early mornings than anyone "
+        "should have to, and you never once let me feel like this dream was a burden instead "
+        "of a shared one. This app exists because you made room for it, and for me, in your "
+        "life. There's no version of Sigmalytic without you.",
+        "To Edwin Winder — for the countless meetings, the sage advice, and the gentle, "
+        "persistent pushes that kept me pointed at the target when it would have been easier "
+        "to drift. Your steadiness shaped this project as much as any line of code.",
+        "To Lee Cahn — for so generously sharing your knowledge of the markets and trading. "
+        "Your experience has been worth more than I can put into words, and I'm not sure I'll "
+        "ever be able to thank you enough.",
+        "To Statish Gajaraju — for fitting me into your schedule and setting the table. "
+        "I am indebted and forever grateful.",
+        "To Tim Thompson — you saw the vision before it was fully formed, and your enthusiasm "
+        "became Sigmalytic's rocket fuel at exactly the moments it was needed most.",
+        "To Gary Kaltbaum — your radio show taught me to see charts through words, a skill "
+        "that quietly runs through everything this app tries to do.",
+        "To my father — for teaching me the fundamentals of entrepreneurship, long before "
+        "I knew I'd need them.",
+        "And to my family — for giving me the space to chase this, and for believing in a "
+        "dream you couldn't yet see.",
+    ]
+    paragraph_style = {"color":WHITE,"fontSize":"13px","lineHeight":"1.7","margin":"0 0 12px"}
+    return html.Section([
+        html.H3("Foreword", style={"color":TEAL_DIM,"fontSize":"17px","margin":"0 0 10px"}),
+        html.P("Some things get built alone, and some things only get built because of who "
+               "stands beside you while you build them. Sigmalytic is the second kind, and "
+               "I want to take a moment to acknowledge the people who made it possible.",
+               style=paragraph_style),
+        html.Details([
+            html.Summary("Read the full foreword", style={"color":TEAL_DIM,"fontSize":"13px",
+                                                     "fontWeight":"800","cursor":"pointer"}),
+            html.Div([html.P(paragraph, style=paragraph_style) for paragraph in acknowledgments],
+                     style={"marginTop":"16px"}),
+        ]),
+    ], style={"background":NAVY_MID,"border":f"1px solid {BORDER}","borderRadius":"12px",
+              "padding":"18px 20px","marginTop":"24px"})
+
 def note_box(text, variant=""):
     s = {"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
          "padding":"12px 14px","color":WHITE,"fontSize":"12px","lineHeight":"1.6"}
@@ -11481,6 +11521,12 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         candles = _init_candles
 
     if tab == "home":
+        # Welcome content is static. Live market ticks must not rebuild its
+        # native <details> element while someone is reading the foreword.
+        triggers = callback_context.triggered or []
+        if triggers and not any(t["prop_id"] == "." or t["prop_id"].startswith("s-tab.")
+                                for t in triggers):
+            return no_update, HIDDEN, no_update, no_update
         main = card([
             html.Div("SIGMALYTIC QUANT CORPORATION", style={
                 "color": TEAL_DIM,
@@ -11557,6 +11603,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                        style={"color": TEAL_DIM, "fontWeight": "800"}),
                 " — we read every message and reply within 24–48 hours.",
             ], style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6", "marginTop": "20px"}),
+            build_welcome_foreword(),
             html.Footer([
                 html.Strong("© 2026 Sigmalytic Quant Corporation. All rights reserved.",
                             style={"color":WHITE,"fontSize":"14px","fontWeight":"900"}),
@@ -11576,7 +11623,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
             ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}",
                       "borderRadius":"12px","padding":"16px 20px","marginTop":"24px"}),
         ], sx={"padding": "clamp(20px, 3vw, 34px)"})
-        return main, HIDDEN, no_update, no_update
+        return main, HIDDEN, no_update, html.Div()
 
     if tab == "command":
         open_trade  = _get(f"/api/behavior/open-trade/{_current_user_id(session)}", headers=_auth_headers(session))
