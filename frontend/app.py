@@ -917,6 +917,9 @@ def fetch_real_candles(symbol: str, tf: str, limit: int = 200) -> list[dict]:
             return []
 
         data = r.json() if r.ok else {}
+        if not isinstance(data, dict) or data.get("ok") is False:
+            print(f"REAL_CANDLES_BACKEND_ERROR {clean} {timeframe}: {str(data)[:250]}", flush=True)
+            return []
         bars = data.get("bars", []) if isinstance(data, dict) else []
 
         cleaned = []
@@ -981,10 +984,14 @@ def _bucket_start(dt: datetime, tf: str) -> datetime:
     return dt.replace(minute=minute, second=0, microsecond=0)
 
 
-def update_current_candle(candles: list[dict], price: float, volume: int, tick_time: str, tf: str) -> list[dict]:
+def update_current_candle(candles: list[dict], price: float, volume: int, tick_time: str, tf: str,
+                          bar_timestamp: str = None, limit: int = 200) -> list[dict]:
     """
     Update only the active candle while inside the selected timeframe.
     A new candle is appended only when the timeframe bucket rolls over.
+    The stream's volume is an absolute ONE-MINUTE bar volume, not an
+    incremental trade size. Historical bars supply aggregate volume for
+    longer timeframes; never add that minute volume on every price poll.
     """
     try:
         tick_dt = datetime.fromisoformat(str(tick_time).replace("Z", "+00:00"))
@@ -994,17 +1001,26 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
     current_bucket = _bucket_start(tick_dt, tf)
     current_t = current_bucket.isoformat()
 
+    minute_volume = None
+    if tf == "1m" and bar_timestamp is not None:
+        try:
+            bar_dt = datetime.fromisoformat(str(bar_timestamp).replace("Z", "+00:00"))
+            if _bucket_start(bar_dt, tf) == current_bucket:
+                minute_volume = max(0, int(volume or 0))
+        except (TypeError, ValueError, OverflowError):
+            pass
+
     if not candles:
         return [{
             "o": price,
             "h": price,
             "l": price,
             "c": price,
-            "v": int(volume or 0),
+            "v": minute_volume if minute_volume is not None else 0,
             "t": current_t,
         }]
 
-    new_candles = [dict(c) for c in candles[-199:]]
+    new_candles = [dict(c) for c in candles[-max(1, int(limit)):]]
     last = new_candles[-1]
 
     try:
@@ -1018,7 +1034,8 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
         last["h"] = max(float(last.get("h", price)), price)
         last["l"] = min(float(last.get("l", price)), price)
         last["c"] = price
-        last["v"] = int(last.get("v", 0) or 0) + int(volume or 0)
+        if minute_volume is not None:
+            last["v"] = max(int(last.get("v", 0) or 0), minute_volume)
         last["t"] = current_t
         new_candles[-1] = last
     else:
@@ -1028,11 +1045,11 @@ def update_current_candle(candles: list[dict], price: float, volume: int, tick_t
             "h": price,
             "l": price,
             "c": price,
-            "v": int(volume or 0),
+            "v": minute_volume if minute_volume is not None else 0,
             "t": current_t,
         })
 
-    return new_candles[-200:]
+    return new_candles[-max(1, int(limit)):]
 
 def _regime_from_live(live: dict) -> str:
     score = live.get("decision", {}).get("score", 50)
@@ -3371,6 +3388,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
         "data-put-wall": "" if put_wall_level is None else f"{put_wall_level}",
         "data-gamma-flip": "" if gamma_pivot_level is None else f"{gamma_pivot_level}",
         "data-new-bar": "" if _cc_new_bar_to_push is None else json.dumps(_cc_new_bar_to_push),
+        "data-bar-volume": "" if not _cc_bars else str(_cc_bars[-1]["volume"]),
+        "data-bar-time": "" if not _cc_bars else _cc_bars[-1]["date"],
     })
     ROW  = {"display":"flex","gap":"16px","marginBottom":"16px"}
     regime = _regime_from_live(live)
@@ -3462,7 +3481,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
                 html.Span(f"  {live_age}  ·  {tf}  ·  {regime.replace('_',' ').title()}",
                           style={"fontSize":"10px","color":WHITE}),
             ]),
-            html.Span(f"${price:.2f}",
+            html.Span(f"${price:.2f}" if seq else "—", id="cc-chart-last-price",
                       style={"fontSize":"14px","fontWeight":"900","color":WHITE,
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
@@ -3490,7 +3509,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
 
         # Footer — aligned with Distance box at bottom of price ladder
         html.Div([
-            html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}",
+            html.Span(f"Vol {(candles[-1]['v'] if candles else live['volume']):,}" if seq else "Vol —",
                       style={"fontSize":"13px","color":WHITE,"fontWeight":"700",
                              "fontFamily":"DM Mono, monospace"}),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
@@ -8228,7 +8247,7 @@ document.getElementById('resetZoomBtn').addEventListener('click', () => {
 // the whole chart. The full render() is still used for the genuinely
 // structural cases (a new bar arriving, or a wall level moving),
 // since those really do need shapes/annotations to update.
-function updateLivePriceOnly(price) {
+function updateLivePriceOnly(price, volume) {
   if (!RAW_BARS.length) return;
   const last = RAW_BARS[RAW_BARS.length - 1];
   last.close = price;
@@ -8238,6 +8257,13 @@ function updateLivePriceOnly(price) {
   const highs = RAW_BARS.map(b => b.high);
   const lows = RAW_BARS.map(b => b.low);
   Plotly.restyle('chart', {close: [closes], high: [highs], low: [lows]}, [0]);
+  if (Number.isFinite(volume) && volume >= 0 && last.volume !== volume) {
+    last.volume = volume;
+    const volumes = RAW_BARS.map(b => b.volume);
+    const period = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
+    Plotly.restyle('chart', {y: [volumes]}, [3]);
+    Plotly.restyle('chart', {y: [movingAverage(volumes, period)]}, [4]);
+  }
 }
 
 window.addEventListener('message', (event) => {
@@ -8245,7 +8271,37 @@ window.addEventListener('message', (event) => {
   if (!msg || msg.type !== 'sigmalytic_live_price') return;
   if (!RAW_BARS.length) return;
 
-  const hasNewBar = msg.newBar && typeof msg.newBar === 'object';
+  function bucketTime(value, tf) {
+    const d = new Date(value);
+    if (!Number.isFinite(d.getTime())) return null;
+    d.setUTCSeconds(0, 0);
+    if (tf === '5m' || tf === '15m') {
+      const size = tf === '5m' ? 5 : 15;
+      d.setUTCMinutes(Math.floor(d.getUTCMinutes() / size) * size);
+    } else if (tf === '1H' || tf === '2H' || tf === '4H') {
+      const size = tf === '1H' ? 1 : (tf === '2H' ? 2 : 4);
+      d.setUTCHours(Math.floor(d.getUTCHours() / size) * size, 0);
+    } else if (tf === '1D' || tf === '1W') {
+      d.setUTCHours(0, 0);
+      if (tf === '1W') d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    }
+    return d.toISOString();
+  }
+  const lastDate = RAW_BARS[RAW_BARS.length - 1].date;
+  const liveBucket = msg.tradeTimestamp ? bucketTime(msg.tradeTimestamp, msg.timeframe) : null;
+  const lastBucket = bucketTime(lastDate, msg.timeframe);
+  const tradeRolled = liveBucket && lastBucket && Date.parse(liveBucket) > Date.parse(lastBucket);
+  const sameVerifiedBar = !tradeRolled && msg.barDate &&
+    Date.parse(msg.barDate) === Date.parse(lastDate);
+  if (liveBucket && lastBucket && Date.parse(liveBucket) < Date.parse(lastBucket)) return;
+  if (tradeRolled) {
+    // A real last trade opened the next bucket before the 10s history
+    // refresh. Its OHLC is observed; volume waits for an actual bar.
+    RAW_BARS.push({date: liveBucket, open: msg.price, high: msg.price,
+      low: msg.price, close: msg.price, volume: 0});
+  }
+  const hasNewBar = msg.newBar && typeof msg.newBar === 'object' &&
+    Date.parse(msg.newBar.date) > Date.parse(RAW_BARS[RAW_BARS.length - 1].date);
   // FIX (2026-09-11): confirmed the actual, definitive root cause of
   // persistent "blinking/hiccupping," reported as still happening
   // despite the fingerprint excluding wall values from the RELOAD
@@ -8283,19 +8339,20 @@ window.addEventListener('message', (event) => {
     (typeof msg.putWall === 'number' && (isNaN(curPutWall) || Math.abs(msg.putWall - curPutWall) > EPS)) ||
     (typeof msg.gammaFlip === 'number' && (isNaN(curGammaFlip) || Math.abs(msg.gammaFlip - curGammaFlip) > EPS));
 
-  if (!hasNewBar && !hasWallChange) {
+  if (!tradeRolled && !hasNewBar && !hasWallChange) {
     // Common case, every ~10s: pure price movement within the current
     // bar. Lightweight path only -- no recompute, no reload, no
     // full redraw of anything but the current candle's own position.
     if (typeof msg.price === 'number' && !isNaN(msg.price)) {
-      updateLivePriceOnly(msg.price);
+      updateLivePriceOnly(msg.price, sameVerifiedBar ? msg.volume : undefined);
     }
     return;
   }
 
   if (hasNewBar) {
     const nb = msg.newBar;
-    if (typeof nb.date === 'string' && typeof nb.close === 'number') {
+    if (typeof nb.date === 'string' && typeof nb.close === 'number' &&
+        Date.parse(nb.date) > Date.parse(RAW_BARS[RAW_BARS.length - 1].date)) {
       RAW_BARS.push({
         date: nb.date, open: nb.open, high: nb.high,
         low: nb.low, close: nb.close, volume: nb.volume || 0,
@@ -8308,6 +8365,9 @@ window.addEventListener('message', (event) => {
     last.close = price;
     last.high = Math.max(last.high, price);
     last.low = Math.min(last.low, price);
+  }
+  if (sameVerifiedBar && Number.isFinite(msg.volume) && msg.volume >= 0) {
+    RAW_BARS[RAW_BARS.length - 1].volume = msg.volume;
   }
   if (typeof msg.callWall === 'number' && !isNaN(msg.callWall)) {
     document.getElementById('callWall').value = msg.callWall;
@@ -8713,21 +8773,39 @@ app.clientside_callback(
 # already excluded from the rebuild trigger.
 app.clientside_callback(
     """
-    function(live) {
+    function(live, quote, symbol, tf) {
         var iframe = document.getElementById('cc-weis-chart');
-        if (!iframe || !iframe.contentWindow || !live || typeof live.price !== 'number') {
+        if (!iframe || !iframe.contentWindow) {
             return window.dash_clientside.no_update;
         }
-        var msg = {type: 'sigmalytic_live_price', price: live.price};
+        var price = live && (live.sequence > 0 || live.verified) && live.symbol === symbol ? live.price : null;
+        var tradeTimestamp = price !== null ? live.timestamp : null;
+        var liveAt = price !== null ? Date.parse(live.timestamp) : NaN;
+        if (quote && quote.symbol === symbol && typeof quote.price === 'number' &&
+            Number.isFinite(Date.parse(quote.last_timestamp)) &&
+            (!Number.isFinite(liveAt) || Date.parse(quote.last_timestamp) >= liveAt)) {
+            price = quote.price;
+            tradeTimestamp = quote.last_timestamp;
+        }
+        if (typeof price !== 'number' || !Number.isFinite(price)) {
+            return window.dash_clientside.no_update;
+        }
+        var headerPrice = document.getElementById('cc-chart-last-price');
+        if (headerPrice) headerPrice.textContent = '$' + price.toFixed(2);
+        var msg = {type: 'sigmalytic_live_price', price: price,
+                   tradeTimestamp: tradeTimestamp, timeframe: tf};
         var wallDiv = document.getElementById('cc-wall-values');
         if (wallDiv) {
             var cw = wallDiv.getAttribute('data-call-wall');
             var pw = wallDiv.getAttribute('data-put-wall');
             var gf = wallDiv.getAttribute('data-gamma-flip');
             var nb = wallDiv.getAttribute('data-new-bar');
+            var vol = wallDiv.getAttribute('data-bar-volume');
+            msg.barDate = wallDiv.getAttribute('data-bar-time');
             if (cw) msg.callWall = parseFloat(cw);
             if (pw) msg.putWall = parseFloat(pw);
             if (gf) msg.gammaFlip = parseFloat(gf);
+            if (vol !== '') msg.volume = Number(vol);
             if (nb) {
                 try { msg.newBar = JSON.parse(nb); } catch (e) { /* malformed -- ignore, price/walls still apply */ }
             }
@@ -8738,6 +8816,9 @@ app.clientside_callback(
     """,
     Output("cc-live-price-sink", "children"),
     Input("s-live", "data"),
+    Input("s-quote-box", "data"),
+    State("s-symbol", "data"),
+    State("s-tf", "data"),
     prevent_initial_call=True,
 )
 
@@ -10397,6 +10478,7 @@ def load_symbol(_, ticker, live, tf, session, lookback):
         new_live = create_live_update(clean, new_price, new_volume, 0, candles=fresh).to_dict()
         new_live["symbol"] = clean
         new_live["timestamp"] = d.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        new_live["verified"] = True
     except Exception as _load_exc:
         print(f"[SYMBOL_LOAD_FAIL] load_symbol {clean}: {type(_load_exc).__name__}: {_load_exc}", flush=True)
 
@@ -10469,9 +10551,10 @@ def sync_active_tab_styles(active_tab):
     Input("i-alpaca","n_intervals"),
     State("s-live","data"), State("s-seq","data"), State("s-candles","data"),
     State("s-live-mode","data"), State("s-symbol","data"), State("s-tf","data"),
+    State("cc-lookback","value"),
     prevent_initial_call=True,
 )
-def on_tick(_, current, seq, candles, live_mode, symbol, tf):
+def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None):
     """
     Live price refresh + real candle bucket behavior.
 
@@ -10513,18 +10596,11 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # hset() per tick, same value if the symbol hasn't changed).
     _request_command_center_stream(clean)
 
-    # ADDED (2026-09-06): try the Alpaca SIP stream's coherent tick
-    # first -- price, bid/ask, and volume all read together from the
-    # SAME moment, the same source. Deliberately all-or-nothing (see
-    # live_tick_reader.read_coherent_tick's own docstring): either the
-    # stream has a full, fresh tick and we use ALL of it, or it doesn't
-    # and we fall through to the exact original REST call below,
-    # unchanged. Never blends a fresh streamed field with a stale
-    # REST-polled one -- an earlier version of this change did exactly
-    # that (fresh price, stale bar-volume) and was caught and reverted
-    # specifically because price and volume describing different
-    # moments is a real inconsistency, not an improvement.
+    # Prefer the SIP stream. A fresh last trade can still update price
+    # when its minute bar is late; only verified minute-bar volume is
+    # used for the volume chart. REST is the last fallback.
     streamed = None
+    redis_client = None
     try:
         from shared_cache import shared_cache
         from live_tick_reader import read_coherent_tick
@@ -10535,11 +10611,32 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         print(f"[STREAM_TICK_FAIL] on_tick seq={seq} symbol={clean}: {type(_stream_exc).__name__}: {_stream_exc}", flush=True)
         streamed = None
 
+    d = {}  # The streaming branch has no REST response.
+    bar_timestamp = None
     if streamed is not None:
         price = streamed["price"]
         volume = streamed["volume"]
         tick_time = streamed["timestamp"]
+        bar_timestamp = streamed.get("bar_timestamp")
+        d = {"source": "alpaca_stream"}
     else:
+        # The quote strip can have a fresh last trade while its minute bar
+        # is briefly late. Use that same SIP trade before falling back to
+        # a polled latest-bar close, which is not the latest trade.
+        try:
+            from live_tick_reader import read_fresh_quote
+            if redis_client is not None:
+                q = read_fresh_quote(redis_client, clean)
+                if q is not None and q.get("price") is not None:
+                    price = q["price"]
+                    volume = q.get("volume", 0)
+                    tick_time = q["last_timestamp"]
+                    bar_timestamp = q.get("bar_timestamp")
+                    d = {"source": q["source"]}
+                    streamed = q
+        except Exception as _quote_exc:
+            print(f"[TICK_QUOTE_FAIL] {clean}: {type(_quote_exc).__name__}: {_quote_exc}", flush=True)
+    if streamed is None:
         try:
             r = req.get(f"{BACKEND_HTTP}/api/stock/{clean}", timeout=10)
             r.raise_for_status()
@@ -10829,7 +10926,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
     # to substantially shrink the worst-case staleness window, while
     # still not re-fetching full history on every single 20-second tick.
     if not candles or (new_seq % 3 == 0):
-        fresh_history = fetch_real_candles(clean, tf or "5m")
+        fresh_history = fetch_real_candles(clean, tf or "5m", limit=lookback or 200)
         if fresh_history:
             candles = fresh_history
 
@@ -10839,18 +10936,29 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf):
         volume=volume,
         tick_time=tick_time,
         tf=tf or "5m",
+        bar_timestamp=bar_timestamp,
+        limit=lookback or 200,
     )
 
     return new_live, new_seq, new_candles
 @app.callback(
     Output("price-ctrl","children"),
-    Input("s-live-mode","data"), Input("s-live","data"),
+    Input("s-live-mode","data"), Input("s-live","data"), Input("s-quote-box","data"),
+    State("s-symbol","data"),
 )
-def render_price_ctrl(live_mode, live):
-    price=live["price"] if live else 280.15
+def render_price_ctrl(live_mode, live, quote, symbol):
+    price = live.get("price") if live and (live.get("sequence", 0) or live.get("verified")) and live.get("symbol") == symbol else None
+    if quote and quote.get("symbol") == symbol and quote.get("price") is not None:
+        try:
+            quote_at = datetime.fromisoformat(quote["last_timestamp"].replace("Z", "+00:00"))
+            live_at = datetime.fromisoformat(live["timestamp"].replace("Z", "+00:00")) if price is not None else None
+            if live_at is None or quote_at >= live_at:
+                price = quote["price"]
+        except (KeyError, TypeError, ValueError):
+            pass
     return html.Div([
         html.Span("LIVE PRICE",style={"fontSize":"10px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".12em"}),
-        html.Strong(f"${price:.2f}",style={"fontSize":"17px","color":WHITE,"fontWeight":"900"}),
+        html.Strong(f"${price:.2f}" if price is not None else "—",style={"fontSize":"17px","color":WHITE,"fontWeight":"900"}),
     ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}","borderRadius":"12px",
                "padding":"8px 14px","width":"130px","minHeight":"50px","display":"flex","flexDirection":"column","justifyContent":"center"})
 
@@ -10861,7 +10969,7 @@ def render_price_ctrl(live_mode, live):
 def update_badges(live):
     seq = live["sequence"] if live else 0
     return (badge("LIVE","teal"),
-            badge("Alpaca IEX","blue"),
+            badge("Alpaca SIP","blue"),
             badge(f"Tick #{seq}","yellow"))
 
 @app.callback(

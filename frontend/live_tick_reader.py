@@ -79,6 +79,7 @@ def read_coherent_tick(redis_client, symbol: str, now: float = None):
             "ask_size": int(float(raw["ask_size"])),
             "volume": int(float(raw["bar_volume"])),
             "timestamp": datetime.fromtimestamp(last_ts, tz=timezone.utc).isoformat(),
+            "bar_timestamp": datetime.fromtimestamp(bar_ts, tz=timezone.utc).isoformat(),
         }
     except (KeyError, ValueError, TypeError):
         return None
