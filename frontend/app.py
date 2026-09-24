@@ -10878,7 +10878,22 @@ def load_symbol(_, ticker, live, tf, session, lookback, chart_hours="all"):
 
     return clean, clean, fresh, new_live
 
-@app.callback(
+# The navigation buttons stay mounted on every page. Keep the button inside
+# Welcome out of this callback: Dash cannot run a callback whose Input has
+# disappeared from the current page (which stranded users on other tabs).
+app.clientside_callback(
+    """function() {
+        const id = dash_clientside.callback_context.triggered_id;
+        const buttons = [
+            'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
+            'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
+            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing'
+        ];
+        const index = buttons.indexOf(id);
+        if (index < 0 || !arguments[index]) return dash_clientside.no_update;
+        return id.substring(4);
+    }""",
     Output("s-tab","data"),
     Input("tab-home","n_clicks"),         Input("tab-command","n_clicks"),      Input("tab-heatmap","n_clicks"),
     Input("tab-weis_radar","n_clicks"),
@@ -10892,17 +10907,17 @@ def load_symbol(_, ticker, live, tf, session, lookback, chart_hours="all"):
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
-    Input("home-open-guide","n_clicks"),
     prevent_initial_call=True,
 )
-def set_tab(*_):
-    ctx = callback_context
-    if not ctx.triggered: return no_update
-    triggered = ctx.triggered[0]
-    tab = triggered["prop_id"].replace(".n_clicks", "").replace("tab-", "")
-    if tab == "home-open-guide":
-        return "guide" if triggered.get("value") else no_update
-    return tab
+
+
+@app.callback(
+    Output("s-tab", "data", allow_duplicate=True),
+    Input("home-open-guide", "n_clicks"),
+    prevent_initial_call=True,
+)
+def open_guide_from_welcome(n_clicks):
+    return "guide" if n_clicks else no_update
 
 
 # SIGMALYTIC_STEP100R_L3_ACTIVE_TAB_STYLE_SYNC
