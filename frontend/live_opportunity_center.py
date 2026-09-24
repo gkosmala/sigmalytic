@@ -31,6 +31,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dash import ALL, Input, Output, State, callback_context, dcc, html, no_update
 from watchlist_radar import build_watchlist_radar, register_watchlist_radar_callbacks
+try:
+    from shared_cache import shared_cache
+except Exception:
+    shared_cache = None
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -281,8 +285,17 @@ def _normalize_opportunities(payload: dict) -> list[dict]:
     return rows
 
 
-def _load_opportunity_snapshot() -> dict:
-    payload = _get_json("/api/weis-radar/results", timeout=8)
+def _load_opportunity_snapshot(force=False) -> dict:
+    key = "/api/weis-radar/results"
+    cached = shared_cache.peek(key, ttl_seconds=180) if shared_cache and not force else None
+    payload = cached if isinstance(cached, dict) and cached.get("ok") else _get_json(key, timeout=8)
+    if payload.get("ok") and shared_cache:
+        # Keep the first successful read available for the next tab visit.
+        # Explicit Refresh bypasses this read and still requests current data.
+        if force:
+            shared_cache._force_refresh(key, lambda: payload, ttl_seconds=180)
+        elif not isinstance(cached, dict) or not cached.get("ok"):
+            shared_cache._force_refresh(key, lambda: payload, ttl_seconds=180)
     rows = _normalize_opportunities(payload) if payload.get("ok") else []
     return {
         "rows": rows,
@@ -913,6 +926,9 @@ def build_live_opportunity_center(session=None):
             dcc.Store(id="loc-link-mode", data=True),
             dcc.Store(id="loc-primary-tf", data=primary_tf),
             dcc.Store(id="loc-universe-page", data=0),
+            # Wait until the subscriber stays here before requesting three
+            # costly chart scans; a quick tab switch cancels the initial load.
+            dcc.Interval(id="loc-chart-delay", interval=1200, max_intervals=1),
 
             # Header
             html.Div(
@@ -1085,7 +1101,7 @@ def register_live_opportunity_center_callbacks(app):
         prevent_initial_call=True,
     )
     def _refresh_opportunities(_):
-        snapshot = _load_opportunity_snapshot()
+        snapshot = _load_opportunity_snapshot(force=True)
         rows = snapshot.get("rows") or []
         # Pager responds to snapshot refresh and resets to the first page.
         return snapshot, _scan_meta(snapshot), _lifecycle_strip(rows)
@@ -1259,8 +1275,13 @@ def register_live_opportunity_center_callbacks(app):
         Input("loc-tf-2", "value"),
         Input("loc-tf-3", "value"),
         Input("loc-primary-tf", "data"),
+        Input("loc-chart-delay", "n_intervals"),
+        State("s-tab", "data"),
     )
-    def _update_three_charts(linked, s1, s2, s3, tf1, tf2, tf3, primary_tf):
+    def _update_three_charts(linked, s1, s2, s3, tf1, tf2, tf3, primary_tf,
+                             initial_delay, active_tab):
+        if active_tab != "status" or not initial_delay:
+            return no_update, no_update, no_update
         master = _clean_symbol(s1)
         symbols = [master, master if linked else _clean_symbol(s2), master if linked else _clean_symbol(s3)]
         timeframes = [

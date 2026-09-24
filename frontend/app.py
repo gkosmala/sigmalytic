@@ -144,6 +144,9 @@ def _start_all_background_refreshers():
     # (path, ttl_seconds, refresh_interval_seconds, extra_headers, initial_delay_seconds)
     endpoints = [
         ("/api/campaigns/active", 120, 90, None, 0),
+        # The completed universe scan is shared market data; keep it warm so
+        # opening Live Opportunity Center does not wait for this endpoint.
+        ("/api/weis-radar/results", 180, 120, None, 8),
         ("/api/radar/scores", 90, 65, None, 16),
         ("/api/radar/scores?limit=25", 90, 65, None, 24),
         ("/api/scoreboard", 120, 90, None, 32),
@@ -3919,6 +3922,51 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
                     style={"display":"flex","flexDirection":"column"})
 
 
+_HEATMAP_CACHE_SECONDS = 30
+_heatmap_figures = {}
+_heatmap_fetching = set()
+_heatmap_lock = threading.Lock()
+
+
+def _heatmap_loading_figure():
+    fig = go.Figure()
+    fig.add_annotation(text="Loading current heat map data…", showarrow=False,
+                       font=dict(color=WHITE, size=16))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(0,0,0,0)", height=600)
+    return fig
+
+
+def _heatmap_ready_or_loading(timeframe):
+    """Return a recent figure immediately; load missing data off the tab request."""
+    with _heatmap_lock:
+        cached = _heatmap_figures.get(timeframe)
+        if cached and time.monotonic() - cached[0] < _HEATMAP_CACHE_SECONDS:
+            return cached[1], False
+        if timeframe not in _heatmap_fetching:
+            _heatmap_fetching.add(timeframe)
+
+            def fetch():
+                try:
+                    figure = _build_heatmap_treemap(timeframe)
+                    with _heatmap_lock:
+                        _heatmap_figures[timeframe] = (time.monotonic(), figure)
+                except Exception as exc:
+                    print(f"[HEATMAP_FETCH_FAIL] {timeframe}: {exc}", flush=True)
+                    figure = go.Figure()
+                    figure.add_annotation(text="Heat map unavailable. Reopen this tab to retry.",
+                                          showarrow=False, font=dict(color=WHITE, size=15))
+                    with _heatmap_lock:
+                        _heatmap_figures[timeframe] = (time.monotonic(), figure)
+                finally:
+                    with _heatmap_lock:
+                        _heatmap_fetching.discard(timeframe)
+
+            threading.Thread(target=fetch, daemon=True,
+                             name=f"heatmap-{timeframe}").start()
+    return _heatmap_loading_figure(), True
+
+
 def _build_heatmap_treemap(timeframe: str = "daily"):
     """
     Builds the Plotly treemap figure for the Sector/Industry Heat Map --
@@ -4038,6 +4086,7 @@ def build_heatmap_tab(timeframe: str = "daily"):
             },
         )
 
+    figure, loading = _heatmap_ready_or_loading(timeframe)
     return card([
         html.Div([
             html.Div([
@@ -4047,13 +4096,14 @@ def build_heatmap_tab(timeframe: str = "daily"):
             ]),
             html.Div([_tf_button(k, l) for k, l in timeframes], id="heatmap-tf-row"),
         ], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "16px"}),
-        dcc.Graph(
-            id="heatmap-treemap",
-            figure=_build_heatmap_treemap(timeframe),
-            config={"displayModeBar": False},
-            style={"height": "650px", "width": "100%"},
+        dcc.Loading(
+            dcc.Graph(id="heatmap-treemap", figure=figure,
+                      config={"displayModeBar": False},
+                      style={"height": "650px", "width": "100%"}),
+            type="dot",
         ),
         dcc.Store(id="heatmap-selected-tf", data=timeframe),
+        dcc.Interval(id="heatmap-poll", interval=1000, disabled=not loading),
     ])
 
 
@@ -10043,6 +10093,7 @@ def handle_subscriber_alerts_preview(n_clicks, session):
     Output("heatmap-treemap", "figure"),
     Output("heatmap-selected-tf", "data"),
     Output("heatmap-tf-row", "children"),
+    Output("heatmap-poll", "disabled"),
     Input("heatmap-tf-hourly", "n_clicks"),
     Input("heatmap-tf-daily", "n_clicks"),
     Input("heatmap-tf-weekly", "n_clicks"),
@@ -10052,11 +10103,14 @@ def handle_subscriber_alerts_preview(n_clicks, session):
 def update_heatmap_timeframe(n_hourly, n_daily, n_weekly, n_monthly):
     ctx = callback_context
     if not ctx.triggered:
-        return no_update, no_update, no_update
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        return no_update, no_update, no_update, no_update
+    triggered = ctx.triggered[0]
+    if not triggered.get("value"):
+        return no_update, no_update, no_update, no_update
+    trigger_id = triggered["prop_id"].split(".")[0]
     timeframe = trigger_id.replace("heatmap-tf-", "")
     if timeframe not in ("hourly", "daily", "weekly", "monthly"):
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     timeframes = [("hourly", "Hourly"), ("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "Monthly")]
 
@@ -10079,7 +10133,25 @@ def update_heatmap_timeframe(n_hourly, n_daily, n_weekly, n_monthly):
             },
         )
 
-    return _build_heatmap_treemap(timeframe), timeframe, [_tf_button(k, l) for k, l in timeframes]
+    figure, loading = _heatmap_ready_or_loading(timeframe)
+    return figure, timeframe, [_tf_button(k, l) for k, l in timeframes], not loading
+
+
+@app.callback(
+    Output("heatmap-treemap", "figure", allow_duplicate=True),
+    Output("heatmap-poll", "disabled", allow_duplicate=True),
+    Input("heatmap-poll", "n_intervals"),
+    State("heatmap-selected-tf", "data"),
+    prevent_initial_call=True,
+)
+def finish_heatmap_load(n_intervals, timeframe):
+    if not n_intervals or timeframe not in {"hourly", "daily", "weekly", "monthly"}:
+        return no_update, no_update
+    with _heatmap_lock:
+        cached = _heatmap_figures.get(timeframe)
+    if cached and time.monotonic() - cached[0] < _HEATMAP_CACHE_SECONDS:
+        return cached[1], True
+    return no_update, no_update
 
 
 

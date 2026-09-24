@@ -130,9 +130,9 @@ services:
     # for this exact setting) -- still recycles periodically as a
     # general safety net, just no longer aggressively enough to be the
     # dominant source of restarts under ordinary load.
-    # One process keeps memory usage bounded; two threads let a tab change
-    # run while another request is waiting on market or account data.
-    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 2 --max-requests 1000 --max-requests-jitter 200 --bind 0.0.0.0:$PORT --timeout 240
+    # One process keeps memory usage bounded; a third thread keeps navigation
+    # responsive while live updates and a chart request await backend data.
+    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 3 --max-requests 1000 --max-requests-jitter 200 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
