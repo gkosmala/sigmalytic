@@ -10294,9 +10294,9 @@ _init_candles = []
 ALL_TABS = [
     ("home",        "Welcome"),
     ("command",     "Command Center"),
-    ("weis_radar",  "Weis Radar"),
+    ("weis_radar",  "Sigma Radar"),
     ("status",      "Live Opportunity Center"),
-    ("weis",        "Weis Analysis"),
+    ("weis",        "Sigma Analysis"),
     ("heatmap",     "Heat Map"),
     # ARCHIVED (later session, at explicit request): Radar Screen,
     # Intelligence Change Detector, and Scoreboard were removed from
