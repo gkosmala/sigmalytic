@@ -10292,7 +10292,7 @@ def _trigger_weis_background_fetch(symbol, cache_key):
 _init_candles = []
 
 ALL_TABS = [
-    ("home",        "Home"),
+    ("home",        "Welcome"),
     ("command",     "Command Center"),
     ("weis_radar",  "Weis Radar"),
     ("status",      "Live Opportunity Center"),
@@ -10827,12 +10827,16 @@ def load_symbol(_, ticker, live, tf, session, lookback, chart_hours="all"):
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
+    Input("home-open-guide","n_clicks"),
     prevent_initial_call=True,
 )
 def set_tab(*_):
     ctx = callback_context
     if not ctx.triggered: return no_update
-    tab = ctx.triggered[0]["prop_id"].replace(".n_clicks","").replace("tab-","")
+    triggered = ctx.triggered[0]
+    tab = triggered["prop_id"].replace(".n_clicks", "").replace("tab-", "")
+    if tab == "home-open-guide":
+        return "guide" if triggered.get("value") else no_update
     return tab
 
 
@@ -11478,7 +11482,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
 
     if tab == "home":
         main = card([
-            html.Div("Sigmalytic V2", style={
+            html.Div("SIGMALYTIC QUANT CORPORATION", style={
                 "color": TEAL_DIM,
                 "fontSize": "13px",
                 "fontWeight": "900",
@@ -11486,22 +11490,74 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                 "textTransform": "uppercase",
                 "marginBottom": "8px",
             }),
-            html.H2("Decision Intelligence Ready", style={
+            html.H2("Welcome to Sigmalytic", style={
                 "color": WHITE,
-                "fontSize": "22px",
+                "fontSize": "clamp(22px, 3vw, 30px)",
                 "fontWeight": "900",
-                "margin": "0 0 10px 0",
+                "margin": "0 0 12px 0",
             }),
             html.Div(
-                "Select Command Center, Weis Radar, Weis Analysis, Campaign Intelligence, Billing, Preferences, or Admin from the tabs above.",
+                "We built Sigmalytic because we believe a tool is only as good as the outcomes it helps "
+                "create for the people using it. Your success is the whole point — we don't measure ours "
+                "any other way.",
                 style={
                     "color": WHITE,
-                    "fontSize": "13px",
-                    "lineHeight": "1.6",
-                    "opacity": ".9",
+                    "fontSize": "15px",
+                    "lineHeight": "1.65",
+                    "maxWidth": "870px",
+                    "marginBottom": "14px",
                 },
             ),
-        ])
+            html.Div(
+                "Markets generate thousands of signals every day. Sigmalytic helps you sort through the "
+                "noise, save time, and focus on potential Trades About to Happen — so you can explore "
+                "opportunities with a clearer view of what the market is doing, and make more informed "
+                "decisions with confidence.",
+                style={
+                    "color": WHITE,
+                    "fontSize": "15px",
+                    "lineHeight": "1.65",
+                    "maxWidth": "870px",
+                },
+            ),
+            html.Div([
+                html.Div([
+                    html.H3("Learn from every decision", style={"color": TEAL_DIM, "fontSize": "16px", "margin": "0 0 8px"}),
+                    html.Div("Behavioral Intelligence helps you see the patterns behind your own decisions "
+                             "and outcomes. Use that feedback to recognize avoidable mistakes, build better "
+                             "habits, and strengthen your process — trade by trade, day by day.",
+                             style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6"}),
+                ], style={"flex": "1", "minWidth": "240px"}),
+                html.Div([
+                    html.H3("Stay informed", style={"color": TEAL_DIM, "fontSize": "16px", "margin": "0 0 8px"}),
+                    html.Div("Start your day with the morning audio report, follow your alerts as they come "
+                             "in, and enable the nightly report in Preferences for email delivery. Wherever "
+                             "your day takes you, Sigmalytic keeps you connected to the market.",
+                             style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6"}),
+                ], style={"flex": "1", "minWidth": "240px"}),
+            ], style={"display": "flex", "flexWrap": "wrap", "gap": "24px", "marginTop": "24px"}),
+            html.Div([
+                html.Div([
+                    html.Strong("Start with the User Guide", style={"color": WHITE, "fontSize": "16px"}),
+                    html.Div("The User Guide walks through every feature and shows you how to get the most "
+                             "out of the app.",
+                             style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.5", "marginTop": "5px"}),
+                ]),
+                _btn("Open User Guide", "home-open-guide", extra={"whiteSpace": "nowrap"}),
+            ], style={"display": "flex", "flexWrap": "wrap", "alignItems": "center",
+                      "justifyContent": "space-between", "gap": "14px", "marginTop": "26px",
+                      "padding": "18px", "border": f"1px solid {BORDER_T}",
+                      "borderRadius": "12px", "background": TEAL_GLOW}),
+            html.Div([
+                html.Strong("We're listening", style={"display": "block", "fontSize": "16px", "marginBottom": "6px"}),
+                "Your feedback shapes what we build next. If something's working well, or if you see a "
+                "way we can do better, we want to hear it. Email us at ",
+                html.A("teams@sigmalyticquantcorp.com",
+                       href="mailto:teams@sigmalyticquantcorp.com",
+                       style={"color": TEAL_DIM, "fontWeight": "800"}),
+                " — we read every message and reply within 24–48 hours.",
+            ], style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6", "marginTop": "20px"}),
+        ], sx={"padding": "clamp(20px, 3vw, 34px)"})
         return main, HIDDEN, no_update, no_update
 
     if tab == "command":
