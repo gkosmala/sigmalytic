@@ -3371,7 +3371,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None):
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
     else:
         _cc_chart_data = {
-            "symbol": symbol, "bars": _cc_bars, "hits": [],
+            "symbol": symbol, "timeframe": tf, "bars": _cc_bars, "hits": [],
             "call_wall": call_wall_level, "put_wall": put_wall_level, "gamma_flip": gamma_pivot_level,
         }
         command_chart_html = _build_weis_radar_chart_html(_cc_chart_data, ma_period=20)
@@ -6417,6 +6417,7 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
 
     html_doc = _WEIS_RADAR_CHART_TEMPLATE
     html_doc = html_doc.replace("__SYMBOL__", symbol)
+    html_doc = html_doc.replace("__TIMEFRAME__", json.dumps(chart_data.get("timeframe") or "5m"))
     html_doc = html_doc.replace("__MA_PERIOD__", str(int(ma_period) if ma_period else 20))
     html_doc = html_doc.replace("__BARS_JSON__", json.dumps(bars_for_js))
     html_doc = html_doc.replace("__HITS_JSON__", json.dumps(hits_for_js))
@@ -6459,6 +6460,12 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .stats b { color:#e6e9ee; }
   .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
   #chart { width:100%; min-width:0; }
+  #chartHost { position:relative; width:100%; }
+  .volume-ladder { position:absolute; right:0; width:76px; z-index:3; cursor:ns-resize;
+    touch-action:none; background:transparent; border-left:1px solid transparent; box-sizing:border-box; }
+  .volume-ladder:hover, .volume-ladder:focus-visible { background:rgba(74,222,128,.1); border-left-color:#4ade80; outline:none; }
+  .volume-ladder span { position:absolute; top:3px; right:4px; padding:2px 4px; border-radius:3px;
+    font-size:10px; color:#dbeafe; background:#193d37; pointer-events:none; }
   .missing-note { font-size:11px; color:#5c6773; font-style:italic; }
   .calibration-box { background:#101722; border:1px solid #2b3b4e; border-radius:8px; padding:10px 12px; margin:0 0 12px 0; font-size:12px; color:#a9b4bf; display:none; }
   .calibration-box b { color:#e6e9ee; }
@@ -6598,6 +6605,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:12px; margin-bottom:6px;">
     <label for="historySlider" style="font-weight:700; color:#dbeafe;">Chart History</label>
     <span id="historyStatus" style="color:#a9b4bf;">Loading bars…</span>
+    <label style="color:#a9b4bf; cursor:pointer;"><input type="checkbox" id="fitAllBars"> Fit all loaded bars</label>
   </div>
   <div style="display:flex; align-items:center; gap:10px; font-size:11px; color:#a9b4bf;">
     <span>Older</span>
@@ -6606,10 +6614,15 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
     <span>Recent</span>
   </div>
 </div>
-<div id="chart"></div>
+<div id="chartHost">
+  <div id="chart"></div>
+  <div id="waveLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Weis wave volume height" title="Drag or scroll here to change Weis wave volume height. Double-click to reset."><span>↕ Wave volume</span></div>
+  <div id="barLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Regular volume height" title="Drag or scroll here to change regular volume height. Double-click to reset."><span>↕ Bar volume</span></div>
+</div>
 <div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
 <div class="legend-note">
-  Green candles/segments = up-wave, red = down-wave. Red line = zigzag wave. Dashed blue/orange/purple =
+  Green candles/waves = rising, red = falling. Drag or scroll either right-hand volume ladder to resize its bars.
+  Dashed blue/orange/purple =
   Call Wall/Put Wall/Gamma Flip. Dashed gold = Secondary Channels. Dotted gray = well-defined S/R levels.
   Yellow arrows/text = Effort-vs-Result callouts (exploratory). Solid pink/cyan = manual Line 1/2.
   Green/red dashed = Spring/Upthrust/Breakout/Breakdown pattern levels (existing Weis Radar scan hits).
@@ -6623,22 +6636,38 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <script>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
-const HISTORY_WINDOW = 40;
+const TIMEFRAME = __TIMEFRAME__;
 const historySlider = document.getElementById('historySlider');
+const fitAllBars = document.getElementById('fitAllBars');
 let historyReady = false;
+let waveScale = 1, barScale = 1;
+const VOLUME_DOMAINS = {wave:[0.265,0.45], bar:[0,0.22]};
+const CHART_HEIGHT = 720, CHART_TOP = 12, CHART_BOTTOM = 52;
+
+function getVisibleBarCount() {
+  if (fitAllBars.checked) return RAW_BARS.length;
+  const width = document.getElementById('chartHost').clientWidth || 1000;
+  return Math.min(RAW_BARS.length, Math.max(28, Math.floor((width - 140) / 6)));
+}
+
+function getWindow() {
+  const count = getVisibleBarCount();
+  const start = Math.min(Number(historySlider.value) || 0, Math.max(0, RAW_BARS.length - count));
+  return {start, count};
+}
 
 function updateHistoryStatus() {
   const total = RAW_BARS.length;
-  const start = Number(historySlider.value);
+  const {start, count} = getWindow();
   document.getElementById('historyStatus').textContent = total === 0
     ? 'No bars loaded.'
-    : total <= HISTORY_WINDOW
-      ? `All ${total} loaded bars are visible. Increase Lookback above to load more.`
-      : `Bars ${start + 1}–${start + HISTORY_WINDOW} of ${total} loaded`;
+    : count === total
+      ? `All ${total} loaded bars visible · increase Lookback to load more`
+      : `Bars ${start + 1}–${start + count} of ${total} loaded`;
 }
 
 function syncHistoryControl() {
-  const maximum = Math.max(0, RAW_BARS.length - HISTORY_WINDOW);
+  const maximum = Math.max(0, RAW_BARS.length - getVisibleBarCount());
   const atRecentEnd = !historyReady || Number(historySlider.value) >= Number(historySlider.max);
   historySlider.max = String(maximum);
   if (atRecentEnd) historySlider.value = String(maximum);
@@ -6647,12 +6676,111 @@ function syncHistoryControl() {
   updateHistoryStatus();
 }
 
-historySlider.addEventListener('input', () => {
-  updateHistoryStatus();
-  const start = Number(historySlider.value);
-  const count = Math.min(HISTORY_WINDOW, RAW_BARS.length);
-  Plotly.relayout('chart', {'xaxis.range': [start - 0.5, start + count - 0.5]});
+historySlider.addEventListener('input', render);
+fitAllBars.addEventListener('change', render);
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 150);
 });
+
+const etClock = new Intl.DateTimeFormat('en-US', {
+  timeZone:'America/New_York', year:'numeric', month:'short', day:'numeric',
+  hour:'2-digit', minute:'2-digit', hour12:false
+});
+function barCalendar(raw) {
+  const text = String(raw || '');
+  const daily = /^(1d|1day|1w|1week)$/i.test(TIMEFRAME);
+  // Alpaca daily and weekly candles use UTC midnight; their ISO calendar
+  // date is the trading date, even when midnight is the prior evening ET.
+  if (daily || !text.includes('T')) {
+    const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})/.exec(text);
+    if (match) {
+      const date = new Date(Date.UTC(+match[1], +match[2] - 1, +match[3]));
+      return {day:text.slice(0,10), month:match[1]+'-'+match[2],
+        short:date.toLocaleDateString('en-US', {timeZone:'UTC', month:'short',day:'numeric'}),
+        monthLabel:date.toLocaleDateString('en-US', {timeZone:'UTC',month:'short',year:'2-digit'}),
+        time:''};
+    }
+  }
+  const time = new Date(/[zZ]|[+-][0-9]{2}:[0-9]{2}$/.test(text) ? text : text+'Z');
+  if (Number.isNaN(time.getTime())) return {day:text, month:text.slice(0,7),short:text,time:text};
+  const fields = Object.fromEntries(etClock.formatToParts(time).map(part => [part.type,part.value]));
+  return {day:`${fields.year}-${fields.month}-${fields.day}`,
+    month:`${fields.year}-${fields.month}`,
+    short:`${fields.month} ${fields.day}`, monthLabel:`${fields.month} '${fields.year.slice(-2)}`,
+    time:`${fields.hour}:${fields.minute}`};
+}
+
+function timeAxis(dates, start, count) {
+  const tickvals = [], ticktext = [], shapes = [];
+  const daily = /^(1d|1day|1w|1week)$/i.test(TIMEFRAME);
+  const width = document.getElementById('chartHost').clientWidth || 1000;
+  const stride = Math.max(1, Math.ceil(count / Math.max(5, Math.floor((width - 120) / 85))));
+  let lastTick = start - stride;
+  for (let i = start; i < start + count; i++) {
+    const date = barCalendar(dates[i]);
+    const prev = i > start ? barCalendar(dates[i-1]) : null;
+    const newDay = !!prev && date.day !== prev.day;
+    const newMonth = !!prev && date.month !== prev.month;
+    if (newDay && !daily || newMonth && daily) shapes.push({type:'line',xref:'x',yref:'paper',
+      x0:dates[i],x1:dates[i],y0:0,y1:1,line:{color:'#526074',width:1,dash:'dot'},layer:'below'});
+    if (i === start || newMonth || (newDay && !daily) || i-lastTick >= stride) {
+      tickvals.push(dates[i]);
+      ticktext.push(daily ? (newMonth || i === start ? date.monthLabel : date.short)
+                          : (newDay || i === start ? date.short+'<br>'+date.time : date.time));
+      lastTick = i;
+    }
+  }
+  return {tickvals,ticktext,shapes};
+}
+
+let currentVolumeMax = {wave:1, bar:1};
+function scaleFor(axis) { return axis === 'wave' ? waveScale : barScale; }
+function setVolumeScale(axis, value) {
+  const next = Math.min(8, Math.max(0.25, value));
+  if (axis === 'wave') waveScale = next; else barScale = next;
+  const id = axis === 'wave' ? 'waveLadder' : 'barLadder';
+  const ladder = document.getElementById(id);
+  ladder.querySelector('span').textContent = `↕ ${axis === 'wave' ? 'Wave' : 'Bar'} ×${next.toFixed(1)}`;
+  ladder.setAttribute('aria-valuenow', next.toFixed(2));
+  const plot = document.getElementById('chart');
+  if (plot._fullLayout) Plotly.relayout(plot, {[axis === 'wave' ? 'yaxis2.range' : 'yaxis3.range']:
+    [0, currentVolumeMax[axis] / next]});
+  saveSettings();
+}
+function placeVolumeLadders() {
+  const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM;
+  for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
+    const ladder = document.getElementById(id), domain = VOLUME_DOMAINS[axis];
+    ladder.style.top = `${CHART_TOP + (1-domain[1])*plotHeight}px`;
+    ladder.style.height = `${(domain[1]-domain[0])*plotHeight}px`;
+  }
+}
+for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
+  const ladder = document.getElementById(id);
+  let drag = null;
+  ladder.addEventListener('pointerdown', e => {
+    drag = {y:e.clientY, scale:scaleFor(axis)};
+    ladder.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  ladder.addEventListener('pointermove', e => {
+    if (drag) setVolumeScale(axis, drag.scale * Math.exp((drag.y-e.clientY)/90));
+  });
+  ladder.addEventListener('pointerup', () => { drag = null; });
+  ladder.addEventListener('pointercancel', () => { drag = null; });
+  ladder.addEventListener('wheel', e => {
+    e.preventDefault();
+    setVolumeScale(axis, scaleFor(axis) * Math.exp(-e.deltaY / 350));
+  }, {passive:false});
+  ladder.addEventListener('dblclick', () => setVolumeScale(axis, 1));
+  ladder.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault(); setVolumeScale(axis, scaleFor(axis) * (e.key === 'ArrowUp' ? 1.12 : 1/1.12));
+    }
+  });
+}
 
 // MOVED (2026-09-10): was previously defined inside render() itself,
 // which meant the new generateReport() function (a sibling, not a
@@ -7049,15 +7177,15 @@ function computeWaveVolume(bars, pivots, finalState, finalExtremeIdx, mode) {
   const waveDir = new Array(n).fill(null);
   const waveMetric = new Array(n).fill(0);
   const segments = [];
-  let prevIdx = 0, prevType = null;
+  let prevIdx = -1, prevType = null;
   for (const p of pivots) {
-    if (prevType !== null) {
-      const direction = prevType === 'L' ? 'up' : 'down';
-      segments.push([prevIdx, p.idx, direction]);
-    }
+    const direction = prevType === null ? (p.type === 'H' ? 'up' : 'down')
+                                        : (prevType === 'L' ? 'up' : 'down');
+    segments.push([prevIdx + 1, p.idx, direction]);
     prevIdx = p.idx; prevType = p.type;
   }
-  if (finalState !== null) segments.push([prevIdx, n - 1, finalState]);
+  if (prevIdx < n - 1) segments.push([prevIdx + 1, n - 1,
+    finalState || (bars[n-1].close >= bars[0].close ? 'up' : 'down')]);
   for (const [start, end, direction] of segments) {
     let running = 0;
     for (let i = start; i <= end; i++) {
@@ -7511,6 +7639,7 @@ function saveSettings() {
       vibrationMode: document.getElementById('vibrationMode').value,
       volmode: document.querySelector('input[name=volmode]:checked').value,
       maPeriod: document.getElementById('volMaPeriod').value,
+      waveScale, barScale,
     };
     for (const id of PERSISTED_CHECKBOX_IDS) settings[id] = document.getElementById(id).checked;
     for (const id of PERSISTED_TEXT_IDS) settings[id] = document.getElementById(id).value;
@@ -7536,6 +7665,8 @@ function restoreSettings() {
       if (radio) radio.checked = true;
     }
     if (s.maPeriod !== undefined) document.getElementById('volMaPeriod').value = s.maPeriod;
+    if (Number.isFinite(s.waveScale)) waveScale = Math.min(8, Math.max(0.25, s.waveScale));
+    if (Number.isFinite(s.barScale)) barScale = Math.min(8, Math.max(0.25, s.barScale));
     for (const id of PERSISTED_CHECKBOX_IDS) {
       if (s[id] !== undefined) document.getElementById(id).checked = s[id];
     }
@@ -7572,39 +7703,37 @@ function render() {
   const {xs: zx, ys: zy} = buildZigZagLine(RAW_BARS, pivots, state, extremeIdx, extremePrice);
 
   const dates = RAW_BARS.map(b => b.date);
-  const visibleBars = Math.min(HISTORY_WINDOW, RAW_BARS.length);
-  const historyStart = Number(historySlider.value);
+  const {start:historyStart, count:visibleBars} = getWindow();
   const recentRange = [historyStart - 0.5, historyStart + visibleBars - 0.5];
   const opens = RAW_BARS.map(b => b.open);
   const highs = RAW_BARS.map(b => b.high);
   const lows = RAW_BARS.map(b => b.low);
   const closes = RAW_BARS.map(b => b.close);
 
-  // FIX (2026-09-10): confirmed a real, reported bug -- a genuinely
-  // invalid level (e.g. Gamma Flip reported as 0 when the backend's
-  // options data fetch failed) previously still got drawn as a
-  // horizontal shape line. Since the price y-axis has no explicit
-  // range (see below) and Plotly's autorange DOES include shapes, one
-  // wildly-wrong level like 0 stretched the entire visible range down
-  // to include it -- squeezing the real candles (which might only
-  // span a few dollars) into a tiny sliver near the top of the chart.
-  // isValidLevel() (module-level, defined near RAW_BARS above) rejects
-  // anything non-finite, non-positive, or further than 50% away from
-  // the actual recent price range -- a real wall/gamma level should
-  // never be that far from where the stock has actually been trading.
-  const priceMin = Math.min(...lows), priceMax = Math.max(...highs);
+  // Scale candles to the visible window; older bars and distant wall
+  // annotations must not flatten the price action in the current view.
+  const priceMin = Math.min(...lows.slice(historyStart, historyStart + visibleBars));
+  const priceMax = Math.max(...highs.slice(historyStart, historyStart + visibleBars));
   const priceMid = (priceMin + priceMax) / 2;
+  const pricePad = Math.max((priceMax - priceMin) * 0.07, priceMid * 0.001, 0.01);
 
   const candleTrace = {
     type: 'candlestick', x: dates, open: opens, high: highs, low: lows, close: closes,
-    increasing: {line: {color:'#2ecc71'}}, decreasing: {line:{color:'#e74c3c'}},
+    increasing: {line: {color:'#00d95b',width:1},fillcolor:'#00d95b'},
+    decreasing: {line:{color:'#f23645',width:1},fillcolor:'#f23645'},
     name: 'Price', xaxis:'x', yaxis:'y'
   };
 
-  const zigzagTrace = {
-    type: 'scatter', mode: 'lines', x: zx, y: zy,
-    line: {color:'#ff3b3b', width:1.5}, name: 'Wave', xaxis:'x', yaxis:'y'
-  };
+  const upWave = {x:[],y:[]}, downWave = {x:[],y:[]};
+  for (let i=1; i<zx.length; i++) {
+    const points = zy[i] >= zy[i-1] ? upWave : downWave;
+    points.x.push(zx[i-1], zx[i], null);
+    points.y.push(zy[i-1], zy[i], null);
+  }
+  const waveTraces = [
+    {type:'scatter',mode:'lines',x:upWave.x,y:upWave.y,line:{color:'#00d95b',width:1.7},name:'Rising wave',xaxis:'x',yaxis:'y'},
+    {type:'scatter',mode:'lines',x:downWave.x,y:downWave.y,line:{color:'#f23645',width:1.7},name:'Falling wave',xaxis:'x',yaxis:'y'}
+  ];
 
   let allShapes = [];
   let allAnnotations = [];
@@ -7834,16 +7963,16 @@ function render() {
   }
 
   const volTrace = {
-    type:'bar', x: dates, y: waveMetric, marker:{color: waveDir.map(d => d === 'up' ? '#2ecc71' : (d === 'down' ? '#e74c3c' : '#555'))},
+    type:'bar', x: dates, y: waveMetric, marker:{color: waveDir.map(d => d === 'up' ? '#00d95b' : (d === 'down' ? '#f23645' : '#64748b'))},
     name: mode === 'total' ? 'Wave Total Volume' : 'Wave Average Volume',
     xaxis:'x', yaxis:'y2'
   };
 
   const dailyVolumes = RAW_BARS.map(b => b.volume);
-  const dailyVolColors = RAW_BARS.map(b => b.close >= b.open ? '#2ecc71' : '#e74c3c');
+  const dailyVolColors = RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645');
   const dailyVolTrace = {
-    type:'bar', x: dates, y: dailyVolumes, marker:{color: dailyVolColors, opacity:0.85},
-    name: 'Daily Volume', xaxis:'x', yaxis:'y3'
+    type:'bar', x: dates, y: dailyVolumes, marker:{color: dailyVolColors},
+    name: 'Bar Volume', xaxis:'x', yaxis:'y3'
   };
   const maPeriod = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
   const maValues = movingAverage(dailyVolumes, maPeriod);
@@ -7853,57 +7982,53 @@ function render() {
     xaxis:'x', yaxis:'y3'
   };
 
+  const visibleWave = waveMetric.slice(historyStart, historyStart + visibleBars);
+  const visibleVolume = dailyVolumes.slice(historyStart, historyStart + visibleBars);
+  const visibleMa = maValues.slice(historyStart, historyStart + visibleBars).filter(Number.isFinite);
+  currentVolumeMax.wave = Math.max(1, ...visibleWave) * 1.12;
+  currentVolumeMax.bar = Math.max(1, ...visibleVolume, ...visibleMa) * 1.12;
+  const ticks = timeAxis(dates, historyStart, visibleBars);
+
   const layout = {
     paper_bgcolor:'#0b0f14', plot_bgcolor:'#0b0f14', font:{color:'#c8d3de'},
-    margin:{t:10, r:70, l:50, b:70},  // FIX (2026-09-10): increased from 40 to accommodate the now-angled x-axis labels below
-    height: 780,
+    margin:{t:CHART_TOP, r:82, l:12, b:CHART_BOTTOM},
+    height: CHART_HEIGHT,
     showlegend: false,
-    uirevision: 'command-chart-history',
+    uirevision: `command-chart-${TIMEFRAME}-${historyStart}-${visibleBars}`,
     dragmode: 'zoom',
-    // FIX (later session): user-reported visible gaps in the chart --
-    // root cause: dates like "2026-08-29T09:30:00" are auto-detected by
-    // Plotly as a continuous date/time axis, so every closed market
-    // hour (overnight, weekends) renders as literal blank horizontal
-    // space proportional to real elapsed time. Explicit 'category' type
-    // places bars at even, sequential positions regardless of the
-    // actual time gap between them -- the standard fix for financial
-    // charts, and consistent with how candlestick charts are normally
-    // expected to look (no dead space for market closures).
-    // FIX (2026-09-10): confirmed a real, reported readability issue --
-    // this axis has type:'category' (see the comment above explaining
-    // why), and with no tick configuration at all, Plotly's default
-    // behavior on a dense category axis is to attempt showing every
-    // single bar's raw timestamp, producing cluttered, overlapping
-    // labels. nticks caps how many are actually shown; tickangle
-    // rotates them so longer date/time strings don't overlap each
-    // other even at a reduced count.
+    // Category positions collapse closed market hours and weekends.
+    // Tick labels use the selected interval and New York session time.
     xaxis: {domain:[0,1], anchor:'y3', range:recentRange,
       rangeslider:{visible:false},
-      gridcolor:'#1c232d', type:'category',
-      nticks: 12, tickangle: -45, tickfont:{size:10}},
-    // FIX (2026-09-10): confirmed a real, reported bug -- price
-    // structure was rendering squeezed near the top of the chart.
-    // Root cause: no explicit range here meant Plotly's autorange
-    // computed the visible range from BOTH the candles AND every
-    // shape (the wall/gamma lines), including a genuinely invalid one
-    // in the reported case (Gamma Flip = 0). isValidLevel() above now
-    // prevents implausible levels from being drawn at all, but even a
-    // real, valid wall level can legitimately sit far from where the
-    // stock is actually trading -- so this also sets an explicit
-    // range centered on the real candle data (10% padding) rather
-    // than relying on autorange to guess a sensible view.
-    yaxis:  {domain:[0.55, 1], title:'Price', gridcolor:'#1c232d',
-      range: [priceMin - (priceMax - priceMin) * 0.1, priceMax + (priceMax - priceMin) * 0.1]},
-    yaxis2: {domain:[0.29, 0.51], title: (mode === 'total' ? 'Wave Total Vol' : 'Wave Avg Vol') + ' (cumulative)', gridcolor:'#1c232d'},
-    yaxis3: {domain:[0, 0.25],    title: `Daily Vol (${maPeriod}-bar MA)`, gridcolor:'#1c232d'},
-    shapes: allShapes,
+      gridcolor:'#364050', type:'category', showgrid:true, zeroline:false,
+      tickmode:'array', tickvals:ticks.tickvals, ticktext:ticks.ticktext,
+      tickangle:0, automargin:false, tickfont:{size:10,color:'#aab5c6'}},
+    // Each panel has an independent right-hand ladder and explicit
+    // visible-window scale; the volume ladders can be dragged or scrolled.
+    yaxis:  {domain:[0.49,1], side:'right', tickformat:'.2f', gridcolor:'#293442', zeroline:false,
+      range: [priceMin - pricePad, priceMax + pricePad]},
+    yaxis2: {domain:VOLUME_DOMAINS.wave, side:'right', rangemode:'tozero', tickformat:'~s',
+      gridcolor:'#293442', zeroline:true, range:[0,currentVolumeMax.wave/waveScale]},
+    yaxis3: {domain:VOLUME_DOMAINS.bar, side:'right', rangemode:'tozero', tickformat:'~s',
+      gridcolor:'#293442', zeroline:true, range:[0,currentVolumeMax.bar/barScale]},
+    bargap:0.12,
+    shapes: [...ticks.shapes, ...allShapes],
     annotations: allAnnotations
   };
 
-  Plotly.react('chart', [candleTrace, zigzagTrace, volTrace, dailyVolTrace, maTrace], layout, {
+  Plotly.react('chart', [candleTrace, ...waveTraces, volTrace, dailyVolTrace, maTrace], layout, {
     responsive:true, displayModeBar:true, displaylogo:false,
     modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']
   });
+  placeVolumeLadders();
+  for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
+    const scale = scaleFor(axis);
+    const ladder = document.getElementById(id);
+    ladder.querySelector('span').textContent = `↕ ${axis === 'wave' ? 'Wave' : 'Bar'} ×${scale.toFixed(1)}`;
+    ladder.setAttribute('aria-valuenow', scale.toFixed(2));
+    ladder.setAttribute('aria-valuemin', '0.25');
+    ladder.setAttribute('aria-valuemax', '8');
+  }
 
   document.getElementById('trendlineInfo').innerHTML = trendlineSummaries.join('');
 
@@ -8179,20 +8304,18 @@ function generateReport() {
 document.getElementById('generateReportBtn').addEventListener('click', generateReport);
 
 document.getElementById('resetZoomBtn').addEventListener('click', () => {
-  // FIX (2026-09-10): previously reset yaxis to raw Plotly autorange,
-  // which would silently re-introduce the exact squeezed-chart bug
-  // this session fixed (autorange includes shape lines, so a wall
-  // level far from price stretches the range again). Calling render()
-  // instead rebuilds the layout using the same explicit, price-
-  // centered range as the initial render, while still resetting
-  // x-axis pan/zoom and the volume panels via their own autorange.
-  syncHistoryControl();
-  const visibleBars = Math.min(HISTORY_WINDOW, RAW_BARS.length);
-  const start = Number(historySlider.value);
+  const {start,count} = getWindow();
+  const shown = RAW_BARS.slice(start,start+count);
+  if (!shown.length) return;
+  const low = Math.min(...shown.map(b => b.low));
+  const high = Math.max(...shown.map(b => b.high));
+  const pad = Math.max((high-low)*0.07, (low+high)*0.0005, 0.01);
   Plotly.relayout('chart', {
-    'xaxis.range': [start - 0.5, start + visibleBars - 0.5],
-    'yaxis2.autorange': true, 'yaxis3.autorange': true
-  }).then(render);
+    'xaxis.range': [start-0.5,start+count-0.5],
+    'yaxis.range': [low-pad,high+pad],
+    'yaxis2.range': [0,currentVolumeMax.wave/waveScale],
+    'yaxis3.range': [0,currentVolumeMax.bar/barScale]
+  });
 });
 
 // ADDED (later session): receives live price pushes from the parent
@@ -8257,12 +8380,44 @@ function updateLivePriceOnly(price, volume) {
   const highs = RAW_BARS.map(b => b.high);
   const lows = RAW_BARS.map(b => b.low);
   Plotly.restyle('chart', {close: [closes], high: [highs], low: [lows]}, [0]);
+  const plot = document.getElementById('chart');
+  const barColors = plot.data && plot.data[4] && plot.data[4].marker.color;
+  const lastColor = last.close >= last.open ? '#00d95b' : '#f23645';
+  if (Array.isArray(barColors) && barColors[barColors.length-1] !== lastColor) {
+    Plotly.restyle(plot, {'marker.color':[RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645')]}, [4]);
+  }
+  const priceRange = plot._fullLayout && plot._fullLayout.yaxis.range;
+  if (priceRange && (price > priceRange[1] || price < priceRange[0])) {
+    const {start,count} = getWindow();
+    const visible = RAW_BARS.slice(start,start+count);
+    const low = Math.min(...visible.map(b => b.low));
+    const high = Math.max(...visible.map(b => b.high));
+    const pad = Math.max((high-low)*0.07,(low+high)*0.0005,0.01);
+    Plotly.relayout(plot, {'yaxis.range':[low-pad,high+pad]});
+  }
   if (Number.isFinite(volume) && volume >= 0 && last.volume !== volume) {
     last.volume = volume;
     const volumes = RAW_BARS.map(b => b.volume);
     const period = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
-    Plotly.restyle('chart', {y: [volumes]}, [3]);
-    Plotly.restyle('chart', {y: [movingAverage(volumes, period)]}, [4]);
+    const colors = RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645');
+    Plotly.restyle(plot, {y:[volumes], 'marker.color':[colors]}, [4]);
+    Plotly.restyle(plot, {y:[movingAverage(volumes, period)]}, [5]);
+    const vib = parseFloat(document.getElementById('vibNumber').value);
+    const {pivots,state,extremeIdx} = computeZigZag(RAW_BARS, vib);
+    const mode = document.querySelector('input[name=volmode]:checked').value;
+    const {waveMetric,waveDir} = computeWaveVolume(RAW_BARS, pivots, state, extremeIdx, mode);
+    Plotly.restyle(plot, {y:[waveMetric], 'marker.color':[waveDir.map(d => d === 'up' ? '#00d95b' : '#f23645')]}, [3]);
+    const {start,count} = getWindow();
+    const barMax = Math.max(...volumes.slice(start,start+count));
+    const waveMax = Math.max(...waveMetric.slice(start,start+count));
+    if (barMax > currentVolumeMax.bar / barScale) {
+      currentVolumeMax.bar = barMax * 1.12;
+      Plotly.relayout(plot, {'yaxis3.range':[0,currentVolumeMax.bar/barScale]});
+    }
+    if (waveMax > currentVolumeMax.wave / waveScale) {
+      currentVolumeMax.wave = waveMax * 1.12;
+      Plotly.relayout(plot, {'yaxis2.range':[0,currentVolumeMax.wave/waveScale]});
+    }
   }
 }
 
