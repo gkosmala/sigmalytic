@@ -1166,6 +1166,26 @@ def build_welcome_foreword():
     ], style={"background":NAVY_MID,"border":f"1px solid {BORDER}","borderRadius":"12px",
               "padding":"18px 20px","marginTop":"24px"})
 
+def build_welcome_copyright():
+    return html.Footer([
+        html.Strong("© 2026 Sigmalytic Quant Corporation. All rights reserved.",
+                    style={"color":WHITE,"fontSize":"14px","fontWeight":"900"}),
+        html.P(
+            "Sigmalytic's original application design, software and source code, analyses, "
+            "reports, text, charts, and graphics are protected by copyright. "
+            "Copying, modifying, distributing, or reusing these materials requires prior written "
+            "permission, except as permitted by law or an applicable license. Third-party market "
+            "data and licensed materials remain the property of their respective rights holders.",
+            style={"color":WHITE,"fontSize":"12px","lineHeight":"1.6","margin":"10px 0"}),
+        html.Div([
+            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                   style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
+            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                   style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
+        ], style={"display":"flex","flexWrap":"wrap","gap":"18px"}),
+    ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}",
+              "borderRadius":"12px","padding":"16px 20px","marginTop":"24px"})
+
 def note_box(text, variant=""):
     s = {"border":f"1px solid {BORDER}","background":"rgba(0,0,0,.2)","borderRadius":"12px",
          "padding":"12px 14px","color":WHITE,"fontSize":"12px","lineHeight":"1.6"}
@@ -10607,6 +10627,11 @@ app.layout = html.Div([
 
         html.Main(id="main-content"),
 
+        # Keep the foreword mounted while live prices refresh the Welcome
+        # content, so its disclosure stays open until the reader closes it.
+        html.Div([build_welcome_foreword(), build_welcome_copyright()],
+                 id="welcome-after-main", style={"display":"none"}),
+
         # ── Trade plan + Behavioral Analysis — clean 2-column row, exactly
         # matching row4's Time Engine + Visual/Audio Alerts structure above
         # (both flex:1, same alignItems:stretch), per explicit request for
@@ -10916,6 +10941,11 @@ def sync_active_tab_styles(active_tab):
     })
 
     return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
+
+
+@app.callback(Output("welcome-after-main", "style"), Input("s-tab", "data"))
+def show_welcome_after_main(tab):
+    return {"display": "block"} if tab == "home" else {"display": "none"}
 
 @app.callback(
     Output("s-live","data"),
@@ -11521,12 +11551,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         candles = _init_candles
 
     if tab == "home":
-        # Welcome content is static. Live market ticks must not rebuild its
-        # native <details> element while someone is reading the foreword.
-        triggers = callback_context.triggered or []
-        if triggers and not any(t["prop_id"] == "." or t["prop_id"].startswith("s-tab.")
-                                for t in triggers):
-            return no_update, HIDDEN, no_update, no_update
         main = card([
             html.Div("SIGMALYTIC QUANT CORPORATION", style={
                 "color": TEAL_DIM,
@@ -11603,25 +11627,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                        style={"color": TEAL_DIM, "fontWeight": "800"}),
                 " — we read every message and reply within 24–48 hours.",
             ], style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6", "marginTop": "20px"}),
-            build_welcome_foreword(),
-            html.Footer([
-                html.Strong("© 2026 Sigmalytic Quant Corporation. All rights reserved.",
-                            style={"color":WHITE,"fontSize":"14px","fontWeight":"900"}),
-                html.P(
-                    "Sigmalytic's original application design, software and source code, analyses, "
-                    "reports, text, charts, and graphics are protected by copyright. "
-                    "Copying, modifying, distributing, or reusing these materials requires prior written "
-                    "permission, except as permitted by law or an applicable license. Third-party market "
-                    "data and licensed materials remain the property of their respective rights holders.",
-                    style={"color":WHITE,"fontSize":"12px","lineHeight":"1.6","margin":"10px 0"}),
-                html.Div([
-                    html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
-                           style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
-                    html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
-                           style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
-                ], style={"display":"flex","flexWrap":"wrap","gap":"18px"}),
-            ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}",
-                      "borderRadius":"12px","padding":"16px 20px","marginTop":"24px"}),
         ], sx={"padding": "clamp(20px, 3vw, 34px)"})
         return main, HIDDEN, no_update, html.Div()
 
