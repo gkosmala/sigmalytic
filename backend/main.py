@@ -1619,7 +1619,7 @@ def get_candles(symbol: str, timeframe: str = "5Min", limit: int = 200, session_
     import re
     if not re.fullmatch(r"(?:[1-9][0-9]?Min|[1-9][0-9]?Hour|1Day|1Week|1Month)", timeframe):
         return {"ok": False, "symbol": sym, "error": "invalid_chart_timeframe", "bars": []}
-    if session_hours not in ("all", "regular", "extended"):
+    if session_hours not in ("all", "premarket", "regular", "extended"):
         return {"ok": False, "symbol": sym, "error": "invalid_session_hours", "bars": []}
     amount = int(re.match(r"[0-9]+", timeframe).group())
     if (timeframe.endswith("Min") and amount > 59) or (timeframe.endswith("Hour") and amount > 23):

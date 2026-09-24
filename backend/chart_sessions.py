@@ -1,7 +1,7 @@
 """Session-correct equity candles for the interactive chart.
 
 Alpaca does not offer a session parameter on its stock-bar endpoint. For a
-selected regular or extended session, aggregate SIP minute/five-minute bars
+selected premarket, regular or extended session, aggregate SIP minute/five-minute bars
 after filtering in New York time so OHLC and volume use the selected hours.
 """
 
@@ -14,7 +14,8 @@ from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
 _TIMEFRAME = re.compile(r"^([1-9][0-9]?)(Min|Hour)$")
-SESSION_WINDOWS = {"regular": (9 * 60 + 30, 16 * 60),
+SESSION_WINDOWS = {"premarket": (4 * 60, 9 * 60 + 30),
+                   "regular": (9 * 60 + 30, 16 * 60),
                    "extended": (4 * 60, 20 * 60)}
 
 

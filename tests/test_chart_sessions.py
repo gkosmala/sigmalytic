@@ -31,6 +31,22 @@ class ChartSessionTests(unittest.TestCase):
         self.assertIsNone(session_bucket("2026-07-06T08:00:00Z", "3Hour", "regular"))
         self.assertIsNotNone(session_bucket("2026-07-06T08:00:00Z", "3Hour", "extended"))
 
+    def test_premarket_candles_exclude_regular_session_and_follow_dst(self):
+        self.assertEqual(session_bucket("2026-01-05T09:00:00Z", "1Hour", "premarket").isoformat(),
+                         "2026-01-05T09:00:00+00:00")
+        self.assertEqual(session_bucket("2026-07-06T08:00:00Z", "1Hour", "premarket").isoformat(),
+                         "2026-07-06T08:00:00+00:00")
+        raw = [bar("2026-09-24T07:59:00Z", 1, 100),
+               bar("2026-09-24T08:00:00Z", 10, 2),
+               bar("2026-09-24T13:29:00Z", 12, 3),
+               bar("2026-09-24T13:30:00Z", 20, 100)]
+        result = aggregate_session_bars(raw, "1Hour", "premarket")
+        self.assertEqual(result[0], {"t": "2026-09-24T08:00:00Z", "o": 10,
+                                     "h": 11, "l": 9, "c": 10.5, "v": 2})
+        self.assertEqual(result[-1]["t"], "2026-09-24T13:00:00Z")
+        self.assertEqual(result[-1]["v"], 3)
+        self.assertEqual(len(result), 2)
+
     def test_fetch_paginates_back_to_requested_session_bars(self):
         pages = [
             {"bars": [bar("2026-09-24T13:44:00Z", 14, 2),

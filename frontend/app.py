@@ -965,9 +965,11 @@ def _bucket_start(dt: datetime, tf: str, chart_hours: str = "all") -> datetime |
     dt = dt.astimezone(timezone.utc)
 
     interval = re.fullmatch(r"([1-9][0-9]?)(m|H)", tf or "")
-    if interval and chart_hours in ("regular", "extended"):
+    if interval and chart_hours in ("premarket", "regular", "extended"):
         local = dt.astimezone(MARKET_ET)
-        opening, closing = ((570, 960) if chart_hours == "regular" else (240, 1200))
+        opening, closing = {"premarket": (240, 570),
+                            "regular": (570, 960),
+                            "extended": (240, 1200)}[chart_hours]
         minute_of_day = local.hour * 60 + local.minute
         if local.weekday() >= 5 or not opening <= minute_of_day < closing:
             return None
@@ -6688,7 +6690,8 @@ const HITS = __HITS_JSON__;
 const TIMEFRAME = __TIMEFRAME__;
 const SESSION_HOURS = __SESSION_HOURS__;
 document.getElementById('sessionCaption').textContent = {
-  all:'All reported SIP hours', regular:'Regular 9:30–16:00 ET',
+  all:'All reported SIP hours', premarket:'Premarket 4:00–9:30 ET',
+  regular:'Regular 9:30–16:00 ET',
   extended:'Extended 4:00–20:00 ET'
 }[SESSION_HOURS] || 'All reported SIP hours';
 const historySlider = document.getElementById('historySlider');
@@ -8519,7 +8522,7 @@ window.addEventListener('message', (event) => {
       const calendar = barCalendar(d.toISOString());
       const [hour, minute] = calendar.time.split(':').map(Number);
       const opening = SESSION_HOURS === 'regular' ? 570 : 240;
-      const closing = SESSION_HOURS === 'regular' ? 960 : 1200;
+      const closing = SESSION_HOURS === 'premarket' ? 570 : (SESSION_HOURS === 'regular' ? 960 : 1200);
       const minuteOfDay = hour * 60 + minute;
       if (minuteOfDay < opening || minuteOfDay >= closing) return null;
       const size = Number(interval[1]) * (interval[2] === 'H' ? 60 : 1);
@@ -10529,6 +10532,7 @@ app.layout = html.Div([
                                      style={"width":"110px","color":"#111"}),
                         dcc.Dropdown(id="cc-session-hours", clearable=False, value="all",
                                      options=[{"label":"All SIP hours","value":"all"},
+                                              {"label":"Premarket 4:00–9:30 ET","value":"premarket"},
                                               {"label":"Regular 9:30–16:00 ET","value":"regular"},
                                               {"label":"Extended 4:00–20:00 ET","value":"extended"}],
                                      style={"width":"185px","color":"#111"}),
@@ -10672,7 +10676,7 @@ def apply_custom_chart_view(_clicks, amount, unit, hours, current_tf, symbol, lo
         tf = "1M" if unit == "M" else f"{count}{unit}"
     if tf in ("1D", "1W", "1M") and hours != "all":
         return no_update, no_update, no_update, no_update, "Session hours apply to intraday candles. Select All SIP hours for daily, weekly or monthly."
-    hours = hours if hours in ("all", "regular", "extended") else "all"
+    hours = hours if hours in ("all", "premarket", "regular", "extended") else "all"
     bars = fetch_real_candles(symbol or "AAPL", tf, limit=lookback or 252, chart_hours=hours)
     if not bars:
         return no_update, no_update, no_update, no_update, "No bars returned. Choose fewer Lookback bars or another session."
