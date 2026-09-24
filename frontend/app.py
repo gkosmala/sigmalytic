@@ -11557,6 +11557,24 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                        style={"color": TEAL_DIM, "fontWeight": "800"}),
                 " — we read every message and reply within 24–48 hours.",
             ], style={"color": WHITE, "fontSize": "13px", "lineHeight": "1.6", "marginTop": "20px"}),
+            html.Footer([
+                html.Strong("© 2026 Sigmalytic Quant Corporation. All rights reserved.",
+                            style={"color":WHITE,"fontSize":"14px","fontWeight":"900"}),
+                html.P(
+                    "Sigmalytic's original application design, software and source code, analyses, "
+                    "reports, text, charts, and graphics are protected by copyright. "
+                    "Copying, modifying, distributing, or reusing these materials requires prior written "
+                    "permission, except as permitted by law or an applicable license. Third-party market "
+                    "data and licensed materials remain the property of their respective rights holders.",
+                    style={"color":WHITE,"fontSize":"12px","lineHeight":"1.6","margin":"10px 0"}),
+                html.Div([
+                    html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
+                           style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
+                    html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
+                           style={"color":TEAL_DIM,"fontSize":"12px","textDecoration":"underline"}),
+                ], style={"display":"flex","flexWrap":"wrap","gap":"18px"}),
+            ], style={"background":NAVY_MID,"border":f"1px solid {BORDER_T}",
+                      "borderRadius":"12px","padding":"16px 20px","marginTop":"24px"}),
         ], sx={"padding": "clamp(20px, 3vw, 34px)"})
         return main, HIDDEN, no_update, no_update
 
@@ -11832,21 +11850,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         else:
             return no_update, no_update, no_update, no_update
     else:                    main = html.Div("Unknown tab")
-
-    # Persistent copyright footer -- appears at the bottom of every tab's
-    # content, regardless of which tab is active, without needing to
-    # modify the large static app.layout structure.
-    main = html.Div([
-        main,
-        html.Div([
-            html.Span(f"© {datetime.now().year} Sigmalytic Quant Corporation. All rights reserved.",
-                      style={"fontSize":"11px","color":"rgba(255,255,255,.35)"}),
-            html.A("Terms of Service", href=f"{BACKEND_HTTP}/terms", target="_blank",
-                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
-            html.A("Privacy Policy", href=f"{BACKEND_HTTP}/privacy", target="_blank",
-                   style={"fontSize":"11px","color":"rgba(255,255,255,.35)","marginLeft":"16px","textDecoration":"underline"}),
-        ], style={"textAlign":"center","padding":"24px 0 8px","marginTop":"24px"}),
-    ])
 
     return main, HIDDEN, no_update, no_update
 
