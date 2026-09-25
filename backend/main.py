@@ -36,6 +36,7 @@ backend/main.py
 # test build filter backend
 from fastapi import FastAPI, Body, Request, HTTPException, Header, Depends
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
 import os
 import json
@@ -2623,7 +2624,7 @@ def generate_report_now(date: str = None, _admin: str = Depends(require_admin_or
     try:
         from backend.reports_engine import start_report_generation_job
         result = start_report_generation_job(
-            date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            date or datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d"),
             deliver_email=(_admin == "cron"),
         )
     except Exception as exc:
@@ -2670,7 +2671,7 @@ def generate_report_status(date: str = None, _admin: str = Depends(require_admin
     from fastapi.responses import JSONResponse as _JSONResponse
     from backend.reports_engine import get_report_generation_status
 
-    result = get_report_generation_status(date or datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    result = get_report_generation_status(date or datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d"))
     return _JSONResponse(
         content=result,
         headers={

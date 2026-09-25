@@ -17,7 +17,7 @@ correct and is reused here unmodified rather than rewritten.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from backend.research_engine.point_in_time_renko_generator import (
     PointInTimeRenkoGenerator,
@@ -379,8 +379,12 @@ class RenkoWeisWaveEngine:
             "climax": self.detect_climax(current),
         }
 
-    def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "") -> RenkoWeisVerdict:
-        waves = self.build_waves(bars)
+    def evaluate(self, bars: List[Dict[str, Any]], symbol: str = "",
+                 waves: Optional[List[RenkoWeisWave]] = None) -> RenkoWeisVerdict:
+        # A report can reuse the exact waves it displays as supporting evidence.
+        # Normal API callers still build the waves here as before.
+        if waves is None:
+            waves = self.build_waves(bars)
 
         sot = self.shortening_of_thrust_score(waves)
         sot_confirmed = sot >= 100
@@ -436,4 +440,3 @@ class RenkoWeisWaveEngine:
                 f"waves={len(waves)}"
             ),
         )
-

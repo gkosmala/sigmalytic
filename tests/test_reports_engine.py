@@ -236,18 +236,65 @@ def test_build_report_html_contains_core_branding_and_no_leftover_debug_artifact
     reads symbol/weis_score/verdict/weis_score_bearish/verdict_bearish).
     """
     fake_renko_weis_rows = [
-        {"symbol": "AAPL", "weis_score": 72.0, "verdict": "Bullish Continuation",
+        {"symbol": "AAPL", "last_bar_date": "2026-07-31", "bars_used": 252,
+         "price": 300.68, "change_pct": -7.2, "rel_volume": 2.33, "volume": 132490000,
+         "events": [{"type": "BREAKDOWN", "level": 305.0, "pct_beyond": 1.42,
+                     "date": "2026-07-31", "days_back": 0}],
+         "setups": [], "climaxes": [], "weis_score": 72.0, "verdict": "Bullish Continuation",
          "weis_score_bearish": 18.0, "verdict_bearish": "No Bearish Setup"},
     ]
-    fake_radar_cache = {
-        "AAPL": {"symbol": "AAPL", "change_pct": -7.2, "price": 300.68, "rel_volume": 2.33, "volume": 132490000},
-    }
     with patch("backend.reports_engine._run_full_universe_renko_weis_scan", return_value=fake_renko_weis_rows), \
-         patch("backend.radar_service.RADAR_CACHE", fake_radar_cache):
+         patch("backend.heatmap_engine._load_sector_lookup", return_value={"AAPL": {"sector": "Information Technology"}}):
         html_doc = build_report_html("2026-07-31")
 
     assert '<span class="sigma">' in html_doc, "Real Sigma-symbol branding must be present"
     assert "table-layout: fixed" in html_doc, "Table overflow-containment CSS must be present"
     assert "-7.20%" in html_doc, "Real movers data must populate correctly"
+    assert "Breakdown" in html_doc and "305.00" in html_doc
+    assert "July 31, 2026 (latest completed daily bar)" in html_doc
     assert "MOVERS_BUILD_MARKER" not in html_doc, "No leftover diagnostic marker"
     assert "reason:" not in html_doc, "No leftover internal diagnostic text"
+
+
+def test_daily_report_rejects_mislabeled_bar_dates():
+    import pytest
+    with patch("backend.reports_engine._run_full_universe_renko_weis_scan",
+               return_value=[{"symbol": "AAPL", "last_bar_date": "2026-07-30"}]):
+        with pytest.raises(ValueError, match="differs from latest market bar"):
+            build_report_html("2026-07-31")
+
+
+def test_daily_report_uses_one_dated_snapshot_for_events_and_sectors():
+    rows = [
+        {"symbol": "AAPL", "last_bar_date": "2026-07-31", "price": 200,
+         "volume": 1200, "rel_volume": 1.2, "change_pct": 3.0,
+         "events": [{"type": "BREAKOUT", "level": 195, "date": "2026-07-31",
+                     "days_back": 0, "pct_beyond": 2.56}], "setups": [], "climaxes": []},
+        {"symbol": "XOM", "last_bar_date": "2026-07-31", "price": 100,
+         "volume": 900, "rel_volume": 0.9, "change_pct": -2.0,
+         "events": [], "setups": [{"side": "Near support", "level": 99.5,
+                                  "distance_pct": 0.50}], "climaxes": ["CLIMAX_SELL"],
+         "climax_evidence": {"current_volume": 900, "prior_volume": 400,
+                             "current_progress": 1, "prior_progress": 3}},
+        {"symbol": "STALE", "last_bar_date": "2026-07-30", "price": 1,
+         "change_pct": -30, "events": [], "setups": [], "climaxes": []},
+    ]
+    with patch("backend.reports_engine._run_full_universe_renko_weis_scan", return_value=rows), \
+         patch("backend.heatmap_engine._load_sector_lookup", return_value={
+             "AAPL": {"sector": "Information Technology"}, "XOM": {"sector": "Energy"}}), \
+         patch("backend.reports_engine._fetch_market_movers", side_effect=AssertionError("old cache used")):
+        output = build_report_html("2026-07-31")
+    assert "STALE" not in output
+    assert "Sector Heat Map" in output and "Information Technology" in output and "Energy" in output
+    assert "Near support" in output and "Selling climax" in output and "Breakout" in output
+
+
+def test_daily_report_withholds_when_sector_coverage_is_too_low():
+    import pytest
+    with patch("backend.reports_engine._run_full_universe_renko_weis_scan",
+               return_value=[{"symbol": "AAPL", "last_bar_date": "2026-07-31"}]), \
+         patch("backend.heatmap_engine._load_sector_lookup",
+               return_value={symbol: {"sector": "Technology"}
+                             for symbol in ("AAPL", "XOM", "MSFT", "GOOG", "NVDA")}):
+        with pytest.raises(ValueError, match="report withheld"):
+            build_report_html("2026-07-31")

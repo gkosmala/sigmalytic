@@ -4,24 +4,11 @@ backend/reports_engine.py
 ---------------------------
 Daily subscriber intelligence report -- generation and storage.
 
-WHY THIS EXISTS (2026-07-30): a complete, working nightly report
-generator (tools/generate_nightly_intelligence_report_v2.py, 623 lines,
-producing real HTML/Markdown/PDF output from the live full-universe
-enriched campaign data) was found sitting in this codebase, fully
-built, but never actually scheduled or wired into anything -- the same
-"fully built, never activated" pattern found repeatedly earlier the
-same night (the radar scanner scheduler, the divergence Redis bridge).
-
-This reuses that same proven HTML-generation logic (the table/card
-builders and document structure are functionally the same), adapted to:
-  - call the enrichment endpoint directly, in-process (no HTTP
-    round-trip to itself, unlike the original tools/ script)
-  - return an HTML string instead of writing files to local disk
-  - store that HTML in Redis, keyed by date, so it survives across
-    this service's own process restarts and is readable by the
-    frontend (a separate service) -- the same Redis-bridging pattern
-    already proven correct for RADAR_CACHE and DIVERGENCE_WATCHLIST
-    earlier the same night.
+The current report scans dated daily bars from one sector-classified
+equity universe. It applies the existing Wyckoff/Weis event detectors,
+time-bar volume-climax rules, and Renko-Weis exhaustion screening,
+and derives sector breadth from those same bars. Legacy campaign/ODS
+results and the radar cache are not report data sources.
 """
 
 from __future__ import annotations
@@ -31,9 +18,10 @@ import math
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 REPORT_TITLE = "Sigmalytic Quant Corporation - Nightly Intelligence Report"
-REPORT_SUBTITLE = "V2 Renko-Weis Intelligence - Daily Subscriber Edition"
+REPORT_SUBTITLE = "Daily market opportunities and sector movement"
 COPYRIGHT = "Copyright © 2026 Sigmalytic Quant Corporation. All rights reserved. Confidential and proprietary."
 
 REDIS_REPORT_INDEX_KEY = "reports:index"       # set of available dates
@@ -343,10 +331,9 @@ def _movers_table(movers: List[Dict[str, Any]]) -> str:
     return f"""
     <section class="section">
       <h2>What Happened in the Market Today</h2>
-      <p class="note">The largest price moves across the full scanned universe, by raw percentage
-      change and relative volume -- independent of setup-quality ranking, so a dramatic move is never
-      silently excluded just because it doesn't score as a high-quality bullish setup. Reflects market
-      data as of when this report was generated.</p>
+      <p class="note">Largest absolute close-to-close changes among symbols with verified bars
+      for the data-through date below. Relative volume compares that day's volume with the preceding
+      20 daily bars. These values come from the same historical-bar feed as the candidate tables.</p>
       <table>
         <thead>
           <tr><th>Symbol</th><th class="num">Price</th><th class="num">Change</th><th class="num">Rel. Volume</th><th class="num">Volume</th></tr>
@@ -357,48 +344,136 @@ def _movers_table(movers: List[Dict[str, Any]]) -> str:
     """
 
 
+def _bar_market_date(bar: Dict[str, Any]) -> Optional[str]:
+    """Alpaca daily timestamps are at midnight in New York."""
+    try:
+        stamp = str(bar.get("t") or "").replace("Z", "+00:00")
+        return datetime.fromisoformat(stamp).astimezone(ZoneInfo("America/New_York")).date().isoformat()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _wave_evidence(waves: List[Any], bars: List[Dict[str, Any]], bearish: bool) -> Dict[str, Any]:
+    """Actual inputs to the three binary checks, without altering their scores."""
+    opposite_direction = 1 if bearish else -1
+    compared = [w for w in waves if w.direction == opposite_direction]
+    last_three = compared[-3:]
+    recent = compared[-1] if compared else None
+    preceding = compared[-2] if len(compared) >= 2 else None
+    current = waves[-1] if waves else None
+    reference = (recent.cumulative_volume + preceding.cumulative_volume) if preceding else None
+    return {
+        "progress": [round(w.price_progress, 4) for w in last_three],
+        "volumes": [round(w.cumulative_volume) for w in last_three],
+        "exhaustion_ratio": (recent.cumulative_volume / preceding.cumulative_volume
+                             if preceding and preceding.cumulative_volume > 0 else None),
+        "confirmation_ratio": (current.cumulative_volume / reference
+                               if current and current.direction == -opposite_direction
+                               and reference and reference > 0 else None),
+        "current_volume": round(current.cumulative_volume) if current else None,
+        "reference_volume": round(reference) if reference is not None else None,
+        "current_direction": ("UP" if current.direction == 1 else "DOWN") if current else None,
+        "wave_start_date": (_bar_market_date(bars[current.start_index])
+                            if current and current.start_index is not None
+                            and 0 <= current.start_index < len(bars) else None),
+    }
+
+
+def _market_movers_from_scanned_rows(rows: List[Dict[str, Any]], limit: int = 15) -> List[Dict[str, Any]]:
+    available = [r for r in rows if _safe_float(r.get("change_pct")) is not None]
+    return sorted(available, key=lambda r: abs(r["change_pct"]), reverse=True)[:limit]
+
+
 def _run_full_universe_renko_weis_scan() -> List[Dict[str, Any]]:
     """
-    ADDED (2026-09-13): replaces the old campaign-engine data source
-    (backend.campaign_full_enrichment_api, archived earlier this
-    session) as the report's core content, per explicit direction:
-    reports should not be retired, but rebuilt on the new setup --
-    Weis Analysis, with Renko.
-
-    Runs the point-in-time, non-repainting Renko-Weis evaluation
-    (backend.research_engine.renko_weis_wave_engine.RenkoWeisWaveEngine
-    -- already validated and already live behind
-    /api/research/renko-weis/{symbol}, just never previously used for
-    full-universe reporting) across every symbol in the exact same
-    active universe the Weis Radar scan already uses
-    (backend.radar_service._build_active_clean_universe()), rather
-    than inventing a separate, different universe for this report.
-
-    Uses fetch_bars_batch() for the network-fetch step -- already
-    proven this session to parallelize cleanly across symbols
-    (ThreadPoolExecutor, max_workers=10; see radar_service.py's own
-    comment on why that specific concurrency level was chosen) --
-    reusing that existing, tested safety work rather than re-fetching
-    bars sequentially or reinventing parallelization here. The actual
-    per-symbol Renko-Weis evaluation is pure, fast CPU work over an
-    already-fetched bar list with no further network calls, so it
-    runs in a plain sequential loop after the parallel fetch
-    completes -- no additional concurrency needed for that part.
+    Fetch split/dividend-adjusted bars for the Heat Map's classified
+    stock universe and compute all report evidence from that snapshot.
+    No asynchronous radar cache or legacy campaign score is read.
     """
-    from backend.radar_service import fetch_bars_batch, _build_active_clean_universe
+    from backend.radar_service import fetch_bars_batch, compute_symbol_signals, trim_incomplete_bar
+    from backend.weis_radar_scan import _bars_to_dataframe, scan_symbol_for_weis_patterns
+    from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
+    from backend.heatmap_engine import _load_sector_lookup
     from backend.research_engine.renko_weis_wave_engine import RenkoWeisWaveEngine
 
-    universe = _build_active_clean_universe()
-    bars_map = fetch_bars_batch(universe, timeframe="1Day", limit=252)
+    # The sector-identified equity universe used by the actual Heat Map,
+    # avoiding the prior 1,500-symbol alphabetic fill with ETF results.
+    universe = list(_load_sector_lookup())
+    if not universe:
+        raise ValueError("Sector reference universe is unavailable")
+    bars_map = fetch_bars_batch(universe, timeframe="1Day", limit=252, adjustment="all")
 
     engine = RenkoWeisWaveEngine()
+    wyckoff = WyckoffVerdictEngine()
     results: List[Dict[str, Any]] = []
     for sym, bars in bars_map.items():
+        bars = trim_incomplete_bar(bars, "1Day")
         if not bars or len(bars) < 20:
             continue
         try:
-            verdict = engine.evaluate(bars, symbol=sym)
-            results.append(verdict.to_dict())
+            last_date = _bar_market_date(bars[-1])
+            if not last_date:
+                continue  # Cannot assert when undated source data was observed.
+            waves = engine.build_waves(bars)
+            if not waves:
+                continue
+            verdict = engine.evaluate(bars, symbol=sym, waves=waves)
+            result = verdict.to_dict()
+            result.update(last_bar_date=last_date, bars_used=len(bars),
+                          bullish_evidence=_wave_evidence(waves, bars, bearish=False),
+                          bearish_evidence=_wave_evidence(waves, bars, bearish=True))
+            close = _safe_float(bars[-1].get("c"))
+            prior = _safe_float(bars[-2].get("c"))
+            volume = _safe_float(bars[-1].get("v"))
+            trailing = [_safe_float(b.get("v")) for b in bars[-21:-1]]
+            result.update(price=close, volume=volume,
+                          change_pct=((close / prior - 1) * 100 if close is not None and prior and prior > 0 else None),
+                          rel_volume=(volume / (sum(trailing) / 20)
+                                      if volume is not None and len(trailing) == 20
+                                      and all(v is not None for v in trailing) and sum(trailing) > 0 else None))
+            if len(bars) >= 65:
+                df = _bars_to_dataframe(bars)
+                result["events"] = [
+                    hit for hit in scan_symbol_for_weis_patterns(wyckoff, df)
+                    if hit.get("type") in ("SPRING", "UPTHRUST")
+                    or (hit.get("type") in ("BREAKOUT", "BREAKDOWN")
+                        and hit.get("days_back", 999) <= 3)
+                ]
+                # Only near a genuine multi-touch level, still on the
+                # unbroken side. This is a watch condition, not a signal.
+                prepared = wyckoff._prepare(df)
+                idx = len(prepared) - 1
+                resistance = wyckoff._find_well_defined_level(prepared, idx, is_support=False)
+                support = wyckoff._find_well_defined_level(prepared, idx, is_support=True)
+                result["setups"] = []
+                if close is not None and resistance and 0 <= (resistance - close) / resistance <= 0.02:
+                    result["setups"].append({"side": "Near resistance", "level": resistance,
+                                             "distance_pct": 100 * (resistance - close) / resistance})
+                if close is not None and support and 0 <= (close - support) / support <= 0.02:
+                    result["setups"].append({"side": "Near support", "level": support,
+                                             "distance_pct": 100 * (close - support) / support})
+            else:
+                result["events"], result["setups"] = [], []
+
+            # These use the same live Weis Radar time-bar signal rules,
+            # independent of the supplementary Renko heuristic above.
+            result["climaxes"] = [
+                signal["signal"] for signal in compute_symbol_signals(
+                    sym, bars, {"climaxup", "climaxdown"}, "1Day")
+                if signal.get("signal") in ("CLIMAX_BUY", "CLIMAX_SELL")
+            ]
+            if result["climaxes"]:
+                from backend.weis_wave import WeisWaveEngine
+                from backend.radar_service import weis_wave_threshold_for_timeframe
+                time_waves = WeisWaveEngine(weis_wave_threshold_for_timeframe("1Day")).calculate_waves(bars[-60:])
+                if len(time_waves) >= 2:
+                    result["climax_evidence"] = {
+                        "current_volume": round(time_waves[-1].cum_volume),
+                        "prior_volume": round(time_waves[-2].cum_volume),
+                        "current_progress": round(time_waves[-1].price_range, 4),
+                        "prior_progress": round(time_waves[-2].price_range, 4),
+                    }
+            results.append(result)
         except Exception:
             continue
     return results
@@ -418,7 +493,10 @@ def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str =
     """
     score_key = "weis_score_bearish" if bearish else "weis_score"
     verdict_key = "verdict_bearish" if bearish else "verdict"
-    shown = sorted(rows, key=lambda r: r.get(score_key) or 0, reverse=True)[:limit]
+    # These scores have only a handful of possible values. A tie does not
+    # imply one candidate is better; sort tied rows alphabetically rather
+    # than presenting a random fetch-completion order as an assessment.
+    shown = sorted(rows, key=lambda r: (-(_safe_float(r.get(score_key)) or 0), str(r.get("symbol") or "")))[:limit]
     if not shown:
         return f"""
         <section class="section">
@@ -428,13 +506,31 @@ def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str =
         """
     body = []
     for row in shown:
+        evidence = row.get("bearish_evidence" if bearish else "bullish_evidence") or {}
+        progress = evidence.get("progress") or []
+        volumes = evidence.get("volumes") or []
+        progress_text = " / ".join(_fmt(p, 2) for p in progress) if len(progress) == 3 else "insufficient waves"
+        volume_text = " / ".join(_fmt(v, 0) for v in volumes) if len(volumes) == 3 else "insufficient waves"
+        ratio = evidence.get("exhaustion_ratio")
+        confirm = evidence.get("confirmation_ratio")
+        side = "Up" if bearish else "Down"
+        evidence_html = (
+            f"{side} waves, oldest to newest: price progress {_esc(progress_text)}; "
+            f"estimated wave volume {_esc(volume_text)}.<br>"
+            f"Newest / prior volume: {_fmt(ratio, 2)} (exhaustion rule &lt; 0.60). "
+            f"Current / last two opposite-wave volume: {_fmt(confirm, 2)} "
+            f"(confirmation rule &gt; 1.25).<br>"
+            f"Latest wave: {_esc(evidence.get('current_direction'))}, "
+            f"started {_esc(evidence.get('wave_start_date'))}."
+        )
         body.append(f"""
         <tr>
           <td><strong>{_esc(row.get("symbol"))}</strong></td>
-          <td>{_esc(row.get(verdict_key))}</td>
+          <td>{_esc(_readable_label(row.get(verdict_key)))}</td>
           <td class="num">{_fmt(row.get(score_key), 1)}</td>
-          <td class="num">{_fmt(row.get("wave_count"), 0)}</td>
-          <td>{_esc(row.get("explanation"))}</td>
+          <td class="num">{_fmt(row.get("bars_used"), 0)} / {_fmt(row.get("wave_count"), 0)}</td>
+          <td>{_esc(row.get("last_bar_date"))}</td>
+          <td>{evidence_html}</td>
         </tr>
         """)
     return f"""
@@ -444,8 +540,8 @@ def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str =
       <table>
         <thead>
           <tr>
-            <th>Symbol</th><th>Verdict</th><th class="num">Weis Score</th>
-            <th class="num">Wave Count</th><th>Explanation</th>
+            <th>Symbol</th><th>Screening label</th><th class="num">Score</th>
+            <th class="num">Bars / waves</th><th>Last bar</th><th>Measured evidence</th>
           </tr>
         </thead>
         <tbody>{''.join(body)}</tbody>
@@ -454,58 +550,128 @@ def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str =
     """
 
 
+def _opportunity_table(items: List[Dict[str, Any]], title: str, note: str, limit: int = 12) -> str:
+    entries = sorted(items, key=lambda item: (item.get("priority", 0), item.get("symbol", "")))[:limit]
+    body = "".join(
+        f"<tr><td><strong>{_esc(item['symbol'])}</strong></td>"
+        f"<td>{_esc(item['label'])}</td><td class='num'>{_fmt(item.get('price'), 2)}</td>"
+        f"<td>{_esc(item['date'])}</td><td>{_esc(item['evidence'])}</td></tr>"
+        for item in entries
+    )
+    return f"""<section class="section"><h2>{_esc(title)} ({len(items)})</h2>
+      <p class="note">{_esc(note)}</p>
+      {('<table><thead><tr><th>Symbol</th><th>Observation</th><th>Close</th><th>Bar date</th><th>Measured evidence</th></tr></thead><tbody>' + body + '</tbody></table>')
+       if body else '<p class="muted">No symbols met this rule on the dated bars in this report.</p>'}
+      {f'<p class="note">Showing {limit} of {len(items)} observations.</p>' if len(items) > limit else ''}
+    </section>"""
+
+
+def _sector_heatmap_html(rows: List[Dict[str, Any]]) -> str:
+    from backend.heatmap_engine import _load_sector_lookup
+
+    sectors: Dict[str, List[float]] = {}
+    lookup = _load_sector_lookup()
+    for row in rows:
+        sector = (lookup.get(row.get("symbol")) or {}).get("sector")
+        change = _safe_float(row.get("change_pct"))
+        if sector and sector != "Unknown" and change is not None:
+            sectors.setdefault(sector, []).append(change)
+    entries = []
+    for sector, changes in sectors.items():
+        avg = sum(changes) / len(changes)
+        up = sum(change > 0 for change in changes)
+        down = sum(change < 0 for change in changes)
+        # Colors represent the measured equal-weight return, not an
+        # unverified claim about institutional sector rotation.
+        color = "#c8efdb" if avg >= 0.5 else "#e7f6ec" if avg > 0 else "#fae4e4" if avg > -0.5 else "#f7caca"
+        entries.append((sector, avg, len(changes), up, down, color))
+    entries.sort(key=lambda item: item[1], reverse=True)
+    body = "".join(
+        f'<tr style="background:{color}"><td><strong>{_esc(sector)}</strong></td>'
+        f'<td class="num">{avg:+.2f}%</td><td class="num">{up} / {down}</td>'
+        f'<td class="num">{count}</td></tr>'
+        for sector, avg, count, up, down, color in entries
+    )
+    return f"""<section class="section"><h2>Sector Heat Map</h2>
+      <p class="note">Equal-weight average of close-to-close daily changes in the dated
+      sector-classified sample. Up / down counts exclude unchanged symbols; coverage
+      shows symbols with usable data. Green is positive and red is negative.</p>
+      <table><thead><tr><th>Sector</th><th class="num">Average change</th>
+      <th class="num">Up / down</th><th class="num">Coverage</th></tr></thead><tbody>{body}</tbody></table>
+    </section>"""
+
+
 def build_report_html(report_date_str: str) -> str:
-    """
-    Builds the full HTML report document for a given date.
+    """One dated daily-bar snapshot; fail rather than mislabel cached or old bars."""
+    from backend.heatmap_engine import _load_sector_lookup
 
-    REBUILT (2026-09-13): previously used the live full-universe
-    enriched campaign table (backend.campaign_full_enrichment_api),
-    which was archived earlier this session along with the rest of
-    Campaign Intelligence. Per explicit direction, this report is not
-    retired -- rebuilt instead on the new setup: a full-universe scan
-    using the Renko-Weis engine (_run_full_universe_renko_weis_scan()
-    above), the same "pure Weis" analysis already live and validated
-    behind /api/research/renko-weis/{symbol}, now run across the full
-    active universe rather than one symbol at a time.
-    """
-    rows = _run_full_universe_renko_weis_scan()
+    report_date = datetime.strptime(report_date_str, "%Y-%m-%d").date().isoformat()
+    observed = _run_full_universe_renko_weis_scan()
+    latest_dates = [r.get("last_bar_date") for r in observed if r.get("last_bar_date")]
+    if not latest_dates:
+        raise ValueError("No dated daily bars were returned; no report or subscriber email was generated")
+    latest_date = max(latest_dates)
+    if latest_date != report_date:
+        raise ValueError(f"Requested report date {report_date} differs from latest market bar {latest_date}; no report emailed")
+    rows = [r for r in observed if r.get("last_bar_date") == report_date]
+    excluded = len(observed) - len(rows)
+    display_date = datetime.strptime(report_date, "%Y-%m-%d").strftime("%B %d, %Y")
+    worker_commit = os.getenv("RENDER_GIT_COMMIT") or "unavailable (check worker deployment)"
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    universe_size = len(_load_sector_lookup())
+    if len(rows) < max(1, int(0.70 * universe_size)):
+        raise ValueError(f"Only {len(rows)} of {universe_size} sector-universe symbols have current bars; report withheld")
 
-    bullish_rows = [r for r in rows if (r.get("weis_score") or 0) > 0]
-    bearish_rows = [r for r in rows if (r.get("weis_score_bearish") or 0) > 0]
-    neutral_rows = [r for r in rows if (r.get("weis_score") or 0) <= 0 and (r.get("weis_score_bearish") or 0) <= 0]
+    confirmed, setups, exhaustion, climaxes = [], [], [], []
+    for row in rows:
+        symbol, price = row.get("symbol", ""), row.get("price")
+        for event in row.get("events") or []:
+            kind = event.get("type", "")
+            event_date = event.get("date") or report_date
+            level = _fmt(event.get("level"), 2)
+            detail = f"Level {level}"
+            if kind in ("BREAKOUT", "BREAKDOWN"):
+                detail += f"; close {abs(float(event.get('pct_beyond') or 0)):.2f}% beyond; "
+                detail += f"crossed {event_date}; held to latest close"
+            else:
+                detail += f"; existing multi-touch level; detector score {_fmt(event.get('score'), 0)}"
+            confirmed.append(dict(symbol=symbol, price=price, date=report_date,
+                                  label=_readable_label(kind), evidence=detail,
+                                  priority=int(event.get("days_back", 0))))
+        if not row.get("events"):
+            for setup in row.get("setups") or []:
+                setups.append(dict(symbol=symbol, price=price, date=report_date,
+                                   label=setup["side"], priority=setup["distance_pct"],
+                                   evidence=f"Close {_fmt(setup['distance_pct'], 2)}% from multi-touch level "
+                                            f"{_fmt(setup['level'], 2)}; no crossing detected"))
+        for bearish, field, label in ((False, "volume_exhaustion", "Selling exhaustion"),
+                                      (True, "buying_exhaustion", "Buying exhaustion")):
+            if (row.get(field) or 0) >= 100:
+                evidence = row.get("bearish_evidence" if bearish else "bullish_evidence") or {}
+                ratio = evidence.get("exhaustion_ratio")
+                price_steps = " / ".join(_fmt(p, 2) for p in evidence.get("progress") or [])
+                wave_volumes = " / ".join(_fmt(v, 0) for v in evidence.get("volumes") or [])
+                exhaustion.append(dict(symbol=symbol, price=price, date=report_date,
+                                       label=label, priority=ratio if ratio is not None else 1,
+                                       evidence=f"Three comparable wave price moves: {price_steps}; "
+                                                f"estimated volumes: {wave_volumes}. "
+                                                f"Latest / prior volume {_fmt(ratio, 2)} (rule < 0.60); "
+                                                f"current wave {evidence.get('current_direction') or 'unknown'}"))
+        for climax in row.get("climaxes") or []:
+            detail = row.get("climax_evidence") or {}
+            climaxes.append(dict(symbol=symbol, price=price, date=report_date,
+                                 label="Buying climax" if climax == "CLIMAX_BUY" else "Selling climax",
+                                 evidence=f"Time-bar wave volume {_fmt(detail.get('current_volume'), 0)} vs "
+                                          f"prior {_fmt(detail.get('prior_volume'), 0)}; price progress "
+                                          f"{_fmt(detail.get('current_progress'), 2)} vs "
+                                          f"prior {_fmt(detail.get('prior_progress'), 2)}"))
 
-    try:
-        display_date = datetime.strptime(report_date_str, "%Y-%m-%d").strftime("%B %d, %Y")
-    except Exception:
-        display_date = report_date_str
-
-    movers = _fetch_market_movers(limit=15)
-    movers_html = _movers_table(movers)
-
-    executive = f"""
-    <section class="section">
-      <h2>Executive Market Review</h2>
-      <p>
-        Today's review uses the live, full-universe Renko-Weis engine: a point-in-time,
-        non-repainting Renko brick reconstruction with David Weis's own Wave Volume
-        methodology mapped onto that brick structure, evaluated across {len(rows)} symbols with
-        sufficient trading history. The review identified {len(bullish_rows)} symbols with an active
-        bullish Weis signal and {len(bearish_rows)} symbols with an active bearish Weis signal.
-      </p>
-      <p>
-        A Weis score reflects Sign-of-Thrust, volume exhaustion, effort-without-reward, and
-        wave-confirmation evidence on non-repainting Renko brick structure -- it describes what the
-        Renko/Weis structure currently shows, not a prediction or personalized recommendation.
-      </p>
-    </section>
-    """
-
+    movers_html = _movers_table(_market_movers_from_scanned_rows(rows))
     html_doc = f"""<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>{_esc(REPORT_TITLE)} - {_esc(display_date)}</title>
-  <!-- generated_at: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')} -->
   <style>{_CSS}</style>
 </head>
 <body>
@@ -513,44 +679,44 @@ def build_report_html(report_date_str: str) -> str:
     <div class="cover">
       <h1><span class="sigma">&Sigma;</span> SIGMALYTIC</h1>
       <div class="corp-subtitle">QUANT CORPORATION</div>
-      <div class="subtitle">{_esc(REPORT_SUBTITLE)}</div>
+      <div class="subtitle">Observed setups, completed-bar events, wave-volume readings, and sector movement</div>
       <div class="meta">
-        <div class="label">Report date</div><div>{_esc(display_date)}</div>
-        <div class="label">Application</div><div>Sigmalytic Quant Corporation - Version 2</div>
-        <div class="label">Audience</div><div>Subscribers, trial users, and market-intelligence readers</div>
-        <div class="label">Important boundary</div><div>Stock-intelligence review and decision support only; not personalized financial advice.</div>
+        <div class="label">Data through</div><div>{_esc(display_date)} (latest completed daily bar)</div>
+        <div class="label">Generated</div><div>{generated_at}</div>
+        <div class="label">Market data</div><div>Alpaca daily stock bars, feed {_esc(os.getenv('ALPACA_FEED', 'iex'))}, corporate-action adjustment all, up to 252 bars per symbol</div>
+        <div class="label">Actual scoring engines</div><div>Weis Radar/Wyckoff pattern detector and time-bar Weis Wave;
+          separate Renko-Weis volume-exhaustion checks. No legacy campaign/ODS or user-selected radar timeframe.</div>
+        <div class="label">Worker code revision</div><div>{_esc(worker_commit)}</div>
       </div>
     </div>
-
-    {executive}
-
-    {movers_html}
-
     <section class="section">
-      <h2>Coverage Summary</h2>
+      <h2>Market Overview</h2>
+      <p>{len(rows)} of {universe_size} sector-classified symbols had usable completed bars for
+      {report_date}. {excluded} otherwise usable symbol(s) were excluded because their bars ended
+      on a different date. Sections can overlap: a symbol can meet multiple independent rules.</p>
       <div class="summary">
-        <div class="metric"><div class="num">{len(rows)}</div><div class="txt">Symbols evaluated</div></div>
-        <div class="metric"><div class="num">{len(bullish_rows)}</div><div class="txt">Active bullish signals</div></div>
-        <div class="metric"><div class="num">{len(bearish_rows)}</div><div class="txt">Active bearish signals</div></div>
-        <div class="metric"><div class="num">{len(neutral_rows)}</div><div class="txt">No active signal</div></div>
+        <div class="metric"><div class="num">{len(rows)}</div><div class="txt">Dated symbols</div></div>
+        <div class="metric"><div class="num">{len(set(i['symbol'] for i in setups))}</div><div class="txt">Near tested levels</div></div>
+        <div class="metric"><div class="num">{len(set(i['symbol'] for i in confirmed))}</div><div class="txt">Observed events</div></div>
+        <div class="metric"><div class="num">{len(set(i['symbol'] for i in exhaustion + climaxes))}</div><div class="txt">Wave-volume flags</div></div>
       </div>
     </section>
-
-    {_weis_verdict_table_html(bullish_rows, "Top Bullish Weis Candidates", "Ranked by Weis score on non-repainting Renko brick structure.", 25, bearish=False)}
-    {_weis_verdict_table_html(bearish_rows, "Top Bearish Weis Candidates", "Ranked by Weis score (bearish side) on non-repainting Renko brick structure.", 25, bearish=True)}
-
-    <section class="section">
-      <h2>Important Subscriber Notes</h2>
-      <p>
-        This report is a daily stock-intelligence review generated from Sigmalytic V2's
-        Renko-Weis analysis. Bullish and bearish classifications describe current Renko/Weis
-        structure and are watchlist categories, not personalized investment advice.
-      </p>
-    </section>
+    {_sector_heatmap_html(rows)}
+    {_opportunity_table(setups, "Setting Up: Near Tested Levels", "Close is within 2% of a multi-touch support or resistance level without a confirmed crossing. A watch condition, not a trade trigger.", 15)}
+    {_opportunity_table(confirmed, "Observed Springs, Upthrusts and Crossings", "Detector rules met on completed daily bars. Breakout/breakdown crossings occurred within the last three sessions and held to the latest close; this does not validate subsequent performance.", 20)}
+    {_opportunity_table(exhaustion, "Buying and Selling Exhaustion", "Renko-Weis screening rule: shrinking volume on comparable waves after three progressively shorter thrusts. Approximate volume is apportioned across Renko bricks.", 15)}
+    {_opportunity_table(climaxes, "Buying and Selling Climaxes", "Existing daily time-bar Weis Radar rule: current wave volume > 2x previous wave, while its price progress < half the previous wave. Rules describe observed volume and price, not a future move.", 15)}
+    {movers_html}
+    <section class="section"><h2>How to Read This Report</h2>
+      <p>All observations use the dated bars shown above. "Setting up" means proximity
+      to a tested level; "observed event" means a programmed condition was met.
+      A Renko-Weis score is a binary screening heuristic, not a success probability.
+      The sections are not ranked by forecast return and have not been independently
+      validated here as profitable trading signals.</p></section>
 
     <div class="footer">
       {_esc(COPYRIGHT)}<br>
-      Sigmalytic Quant Corporation | V2 Renko-Weis Intelligence | Daily Intelligence Report
+      Sigmalytic Quant Corporation | Dated Market Intelligence | Daily Intelligence Report
     </div>
   </div>
 </body>
@@ -568,7 +734,7 @@ def generate_and_store_report(report_date_str: Optional[str] = None) -> Dict[str
     from backend.radar_service import _redis_client
 
     if report_date_str is None:
-        report_date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        report_date_str = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
     html_doc = build_report_html(report_date_str)
 

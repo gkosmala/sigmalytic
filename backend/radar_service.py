@@ -646,7 +646,8 @@ def compute_symbol_signals(symbol: str, bars: list, requested_signals: set, time
     return found
 
 
-def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252, min_bars_floor: int = 60) -> dict:
+def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252,
+                     min_bars_floor: int = 60, adjustment: str = "raw") -> dict:
     """
     Fetch historical bars for the radar universe.
 
@@ -714,7 +715,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     log.info(
         f"Fetching historical bars for {len(symbols)} symbols | "
         f"timeframe={timeframe} limit={target_limit} "
-        f"start={start_date} end={end_date} feed={ALPACA_FEED}"
+        f"start={start_date} end={end_date} feed={ALPACA_FEED} adjustment={adjustment}"
     )
 
     debug_samples = []
@@ -739,7 +740,7 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
                 "end": end_date,
                 "feed": ALPACA_FEED,
                 "sort": "asc",
-                "adjustment": "raw",
+                "adjustment": adjustment,
                 "limit": target_limit,
             }
 

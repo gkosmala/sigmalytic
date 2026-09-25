@@ -16,6 +16,7 @@ import time
 import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 def _get_json(url: str, headers=None) -> dict:
@@ -26,7 +27,7 @@ def _get_json(url: str, headers=None) -> dict:
 
 def main() -> int:
     backend = os.getenv("SIGMALYTIC_BACKEND_URL", "https://sigmalytic-backend.onrender.com").rstrip("/")
-    report_date = os.getenv("SIGMALYTIC_REPORT_DATE") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    report_date = os.getenv("SIGMALYTIC_REPORT_DATE") or datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
     # ADDED (2026-09-16): confirmed a real, genuine gap -- this
     # endpoint requires admin authentication, which this automated
