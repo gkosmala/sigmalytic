@@ -4920,13 +4920,15 @@ def build_preferences_tab(user_id="", session=None):
     }
 
     report_pref_available = False
-    if user_id:
+    report_pref_error = "Sign in to enable email." if not _auth_headers(session) else ""
+    if user_id and user_id != "demo_user_001" and _auth_headers(session):
         try:
             r = _preqs.get(f"{BACKEND_HTTP}/api/preferences/{user_id}",
-                           headers=_auth_headers(session), timeout=4)
+                           headers=_auth_headers(session), timeout=10)
             if r.ok:
                 p = r.json()
-                report_pref_available = True
+                if not isinstance(p, dict):
+                    raise ValueError("Invalid preferences response")
                 prefs["delivery_mode"]     = p.get("delivery_mode", prefs["delivery_mode"])
                 prefs["min_score"]         = p.get("min_score", prefs["min_score"])
                 prefs["alert_types"]       = p.get("alert_types", prefs["alert_types"])
@@ -4935,8 +4937,17 @@ def build_preferences_tab(user_id="", session=None):
                 prefs["hurst_profile"]     = p.get("hurst_profile", prefs["hurst_profile"])
                 prefs["weis_threshold"]    = p.get("weis_threshold", prefs["weis_threshold"])
                 prefs["daily_report_email"] = (p.get("alert_types") or {}).get("daily_report_email") is True if isinstance(p.get("alert_types"), dict) else False
-        except Exception:
-            pass
+                report_pref_available = True
+            elif r.status_code in (401, 403):
+                report_pref_error = "Your session has expired. Sign out and sign in again to change this setting."
+            elif r.status_code == 503:
+                report_pref_error = "Preferences service is unavailable. Please contact support if this continues."
+            else:
+                report_pref_error = f"Preferences could not load (error {r.status_code}). Please retry."
+        except _preqs.RequestException:
+            report_pref_error = "Preferences could not load. Check your connection and try again."
+        except (ValueError, TypeError, AttributeError):
+            report_pref_error = "Preferences returned an invalid response. Please contact support."
 
     mode     = prefs["delivery_mode"]
     types    = prefs["alert_types"]
@@ -4961,7 +4972,7 @@ def build_preferences_tab(user_id="", session=None):
         dcc.Store(id="prefs-wl-cur",     data=watchlist),
         dcc.Store(id="prefs-hurst-cur",  data=hurst),
         dcc.Store(id="prefs-weis-cur",   data=weis),
-        dcc.Store(id="prefs-report-email-cur", data=prefs["daily_report_email"]),
+        dcc.Store(id="prefs-report-email-cur", data=prefs["daily_report_email"] if report_pref_available else None),
 
         html.Div([
             html.H2("Alert Preferences", style={"color":WHITE,"fontSize":"22px","fontWeight":"800","marginBottom":"4px"}),
@@ -4988,15 +4999,19 @@ def build_preferences_tab(user_id="", session=None):
 
         # Report email is separate from the alert digest frequency above.
         _card([_stitle("Daily Intelligence Report"),
-            html.Div("Email me the nightly report when it is saved.",
+            html.Div("Email me the nightly report when it is saved?",
                      style={"color": WHITE, "fontSize": "13px", "marginBottom": "10px"}),
-            html.Button("ON" if prefs["daily_report_email"] else "OFF",
-                        id="pref-btn-report-email", n_clicks=0, disabled=not report_pref_available,
-                        style=_on() if prefs["daily_report_email"] else _off()),
+            html.Div([
+                html.Button("Yes", id="pref-btn-report-email-yes", n_clicks=0,
+                            disabled=not report_pref_available,
+                            style=_on() if report_pref_available and prefs["daily_report_email"] else _off()),
+                html.Button("No", id="pref-btn-report-email-no", n_clicks=0,
+                            disabled=not report_pref_available,
+                            style=_on() if report_pref_available and not prefs["daily_report_email"] else _off()),
+            ], style={"display": "flex", "gap": "8px"}),
             html.Div(id="prefs-report-email-status", style={"color": TEAL_DIM,
                         "fontSize": "12px", "marginTop": "8px"},
-                        children="Sign in to enable email." if not user_id else
-                        ("Preferences could not load. Refresh this page." if not report_pref_available else "")),
+                        children="" if report_pref_available else report_pref_error),
         ]),
 
         # Minimum Score
@@ -9287,20 +9302,26 @@ app.clientside_callback(
 
 
 @app.callback(
-    Output("pref-btn-report-email", "children"),
-    Output("pref-btn-report-email", "style"),
+    Output("pref-btn-report-email-yes", "style"),
+    Output("pref-btn-report-email-no", "style"),
     Output("prefs-report-email-cur", "data"),
     Output("prefs-report-email-status", "children"),
-    Input("pref-btn-report-email", "n_clicks"),
+    Input("pref-btn-report-email-yes", "n_clicks"),
+    Input("pref-btn-report-email-no", "n_clicks"),
     State("prefs-report-email-cur", "data"),
     State("s-session", "data"),
     prevent_initial_call=True,
 )
-def save_daily_report_email_preference(_clicks, enabled, session):
+def save_daily_report_email_preference(_yes_clicks, _no_clicks, enabled, session):
     user_id = (session or {}).get("user_id")
-    if not user_id or not _auth_headers(session):
+    if not user_id or user_id == "demo_user_001" or not _auth_headers(session):
         return no_update, no_update, no_update, "Sign in to change report email delivery."
-    new_value = not bool(enabled)
+    trigger = callback_context.triggered[0]["prop_id"].split(".")[0]
+    if trigger not in ("pref-btn-report-email-yes", "pref-btn-report-email-no"):
+        return (no_update,) * 4
+    new_value = trigger == "pref-btn-report-email-yes"
+    if enabled is new_value:
+        return no_update, no_update, no_update, "Preference already saved."
     try:
         response = req.patch(
             f"{BACKEND_HTTP}/api/preferences/{user_id}/daily-report-email",
@@ -9309,13 +9330,20 @@ def save_daily_report_email_preference(_clicks, enabled, session):
         response.raise_for_status()
         if not response.json().get("ok"):
             raise ValueError("The preference was not saved")
-    except Exception:
+    except req.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code in (401, 403):
+            return no_update, no_update, no_update, "Your session has expired. Sign out and sign in again."
         return no_update, no_update, no_update, "Could not save this preference. Please retry."
-    button_style = {"background": TEAL_GLOW if new_value else "rgba(0,0,0,.2)",
-                    "border": f"1px solid {BORDER_T if new_value else BORDER}",
-                    "borderRadius": "8px", "color": TEAL_DIM if new_value else WHITE,
-                    "fontSize": "12px", "fontWeight": "700", "padding": "8px 16px", "cursor": "pointer"}
-    return ("ON" if new_value else "OFF", button_style, new_value,
+    except (req.RequestException, ValueError):
+        return no_update, no_update, no_update, "Could not save this preference. Please retry."
+    def choice_style(selected):
+        return {"background": TEAL_GLOW if selected else "rgba(0,0,0,.2)",
+                "border": f"1px solid {BORDER_T if selected else BORDER}",
+                "borderRadius": "8px", "color": TEAL_DIM if selected else WHITE,
+                "fontFamily": "DM Sans, sans-serif", "fontSize": "12px", "fontWeight": "700",
+                "padding": "8px 16px", "cursor": "pointer"}
+
+    return (choice_style(new_value), choice_style(not new_value), new_value,
             "Nightly report email enabled." if new_value else "Nightly report email disabled.")
 
 
