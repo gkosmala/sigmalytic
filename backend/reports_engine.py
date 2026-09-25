@@ -828,7 +828,7 @@ def deliver_saved_report(report_date_str: str) -> Dict[str, int]:
                     "https://api.resend.com/emails",
                     headers={"Authorization": f"Bearer {sender_key}",
                              "Content-Type": "application/json"},
-                    json={"from": os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalytic.com"),
+                    json={"from": os.environ.get("ALERT_FROM_EMAIL", "alerts@sigmalyticquantcorp.com"),
                           "to": [email],
                           "subject": f"Sigmalytic Daily Intelligence Report - {report_date_str}",
                           "html": html_doc}, timeout=20,
@@ -839,7 +839,17 @@ def deliver_saved_report(report_date_str: str) -> Dict[str, int]:
             except Exception as exc:
                 _redis_client.delete(sent_key)
                 counts["email_failed"] += 1
-                print(f"[REPORT_EMAIL] Delivery failed for report {report_date_str}: {exc}", flush=True)
+                detail = ""
+                if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                    try:
+                        provider_error = exc.response.json()
+                        if isinstance(provider_error, dict):
+                            name = str(provider_error.get("name", ""))[:60]
+                            message = str(provider_error.get("message", ""))[:240]
+                            detail = f"; Resend {name}: {message}"
+                    except (ValueError, TypeError):
+                        pass
+                print(f"[REPORT_EMAIL] Delivery failed for report {report_date_str}: {exc}{detail}", flush=True)
         if len(batch) < 500:
             return counts
         offset += len(batch)
