@@ -6,10 +6,10 @@ Per-user Supabase client dependency for FastAPI.
 
 HOW IT WORKS
 ────────────
-- Real users: Dash passes their Supabase JWT as Authorization: Bearer <token>
-  FastAPI verifies the token's signature (not just its contents) using the
-  project's Supabase JWT secret, then uses the verified 'sub' claim as the
-  user's identity.
+- Real users: Dash passes their Supabase JWT as Authorization: Bearer <token>.
+  The backend verifies legacy tokens with the configured secret, or asks
+  this project's Supabase Auth server to verify other signing keys. It
+  trusts only the verified user id returned by either path.
 
 - Demo users: No JWT is passed (or the literal sentinel "demo" is sent).
   Backend falls back to demo_user_001.
@@ -26,8 +26,9 @@ returned. This is a real account-isolation vulnerability: one user could
 read or write another user's data. Fixed by actually verifying the
 token's signature against SUPABASE_JWT_SECRET (Supabase dashboard ->
 Settings -> API -> JWT Settings -> JWT Secret) before trusting anything
-in it, and rejecting (401) rather than silently downgrading to demo when
-a JWT-shaped token fails verification.
+in it, and rejecting rather than silently downgrading to demo when a
+JWT-shaped token fails verification. Supabase Auth now verifies tokens
+that cannot be checked with the legacy secret.
 
 USAGE IN ENDPOINTS
 ──────────────────
@@ -43,8 +44,10 @@ async def my_endpoint(
     ...
 """
 
-import os
 import logging
+import os
+
+import requests
 from fastapi import Request, HTTPException
 
 log = logging.getLogger("supabase_isolation")
@@ -54,18 +57,52 @@ DEMO_USER_ID = "demo_user_001"
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
 
+def _verified_user_id_from_auth_server(token: str) -> str:
+    """Ask this project's Supabase Auth service to validate a user's token.
+
+    This also supports asymmetric signing keys and deployments without the
+    legacy JWT secret. Never use the unverified JWT payload as an identity.
+    """
+    url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    api_key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not api_key:
+        log.error("Supabase Auth verification is not configured")
+        raise HTTPException(503, "Authentication is not configured on this server")
+
+    try:
+        response = requests.get(
+            f"{url}/auth/v1/user",
+            headers={"apikey": api_key, "Authorization": f"Bearer {token}"},
+            timeout=8,
+        )
+    except requests.RequestException as exc:
+        log.warning("Supabase Auth verification unavailable: %s", type(exc).__name__)
+        raise HTTPException(503, "Authentication service unavailable") from exc
+
+    if response.status_code in (401, 403):
+        raise HTTPException(401, "Invalid or expired session — please log in again")
+    if not response.ok:
+        log.warning("Supabase Auth verification returned status %s", response.status_code)
+        raise HTTPException(503, "Authentication service unavailable")
+
+    try:
+        user_id = response.json().get("id")
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise HTTPException(503, "Authentication service returned an invalid response") from exc
+    if not isinstance(user_id, str) or not user_id:
+        raise HTTPException(503, "Authentication service returned an invalid response")
+    return user_id
+
+
 def get_user_id_from_request(request: Request) -> str:
     """
     FastAPI dependency — extracts and verifies user_id from the Authorization header.
 
     - Missing header, or the literal sentinel "demo": returns DEMO_USER_ID.
-    - Present and a valid, signature-verified Supabase JWT: returns the
-      real user UUID from the verified 'sub' claim.
-    - Present but fails verification (forged, expired, wrong secret):
-      raises 401. This is deliberate -- silently falling back to demo
-      here would hide bugs and, more importantly, would mean a bad actor
-      could probe the API with garbage tokens with no signal anything
-      was wrong.
+    - A locally verifiable legacy token uses the configured HS256 secret.
+    - Other tokens are checked by Supabase Auth, which supports rotating
+      signing keys and verifies the current project's user identity.
+    - Invalid tokens never fall back to the shared demo account.
     """
     auth_header = request.headers.get("Authorization", "")
 
@@ -76,31 +113,30 @@ def get_user_id_from_request(request: Request) -> str:
     if not token or token == "demo":
         return DEMO_USER_ID
 
-    if not SUPABASE_JWT_SECRET:
-        # Fail closed, not open: if we can't verify signatures at all,
-        # we must not trust any non-demo token's claimed identity.
-        log.error("SUPABASE_JWT_SECRET not configured — rejecting authenticated request")
-        raise HTTPException(503, "Authentication is not configured on this server")
-
-    try:
-        import jwt as pyjwt
-
-        payload = pyjwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-    except Exception as e:
-        log.warning(f"JWT verification failed: {e}")
-        raise HTTPException(401, "Invalid or expired session — please log in again")
-
-    user_id = payload.get("sub", "")
-    if not user_id:
+    if token.count(".") != 2:
         raise HTTPException(401, "Invalid session token")
 
-    log.debug(f"Authenticated user: {user_id[:8]}…")
-    return user_id
+    if SUPABASE_JWT_SECRET:
+        try:
+            import jwt as pyjwt
+
+            payload = pyjwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
+        except pyjwt.PyJWTError:
+            # A rotated/asymmetric signing key cannot be verified with the
+            # old shared secret. Let Supabase Auth decide if it is valid.
+            pass
+        else:
+            user_id = payload.get("sub")
+            if not isinstance(user_id, str) or not user_id:
+                raise HTTPException(401, "Invalid session token")
+            return user_id
+
+    return _verified_user_id_from_auth_server(token)
 
 
 def get_auth_headers(session: dict) -> dict:

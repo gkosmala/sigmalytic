@@ -4938,8 +4938,10 @@ def build_preferences_tab(user_id="", session=None):
                 prefs["weis_threshold"]    = p.get("weis_threshold", prefs["weis_threshold"])
                 prefs["daily_report_email"] = (p.get("alert_types") or {}).get("daily_report_email") is True if isinstance(p.get("alert_types"), dict) else False
                 report_pref_available = True
-            elif r.status_code in (401, 403):
-                report_pref_error = "Your session has expired. Sign out and sign in again to change this setting."
+            elif r.status_code == 401:
+                report_pref_error = "Sign-in could not be verified. Sign out and sign in again."
+            elif r.status_code == 403:
+                report_pref_error = "This account cannot access its preferences. Please contact support."
             elif r.status_code == 503:
                 report_pref_error = "Preferences service is unavailable. Please contact support if this continues."
             else:
@@ -9331,8 +9333,10 @@ def save_daily_report_email_preference(_yes_clicks, _no_clicks, enabled, session
         if not response.json().get("ok"):
             raise ValueError("The preference was not saved")
     except req.HTTPError as exc:
-        if exc.response is not None and exc.response.status_code in (401, 403):
-            return no_update, no_update, no_update, "Your session has expired. Sign out and sign in again."
+        if exc.response is not None and exc.response.status_code == 401:
+            return no_update, no_update, no_update, "Sign-in could not be verified. Sign out and sign in again."
+        if exc.response is not None and exc.response.status_code == 403:
+            return no_update, no_update, no_update, "This account cannot change its preferences. Please contact support."
         return no_update, no_update, no_update, "Could not save this preference. Please retry."
     except (req.RequestException, ValueError):
         return no_update, no_update, no_update, "Could not save this preference. Please retry."
