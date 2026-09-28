@@ -10,7 +10,7 @@ import math
 
 import pandas as pd
 
-from backend.weis_trade_finder import _preceding_climax
+from backend.weis_trade_finder import _preceding_climax, _test_wave_volume_ratio
 
 
 def _number(value):
@@ -31,22 +31,6 @@ def _separated_touches(prepared, level, *, is_support, gap=10):
                  if bool(getattr(row, flag)) and
                  abs(float(getattr(row, price)) / level - 1) <= .0015]
     return len(positions) >= 2 and positions[-1] - positions[0] >= gap
-
-
-def _volume_ratio(waves, current, direction):
-    """Compare the just-ended penetration wave to preceding same-side waves."""
-    same = [w for w in waves if w.get("dir") == direction and _number(w.get("vol"))]
-    if current and current.get("dir") == direction:
-        tested, prior = current, same[-3:]
-    elif same:
-        tested, prior = same[-1], same[-4:-1]
-    else:
-        return None
-    volumes = [_number(w.get("vol")) for w in prior]
-    value = _number(tested.get("vol"))
-    if not volumes or any(v is None or v <= 0 for v in volumes) or value is None:
-        return None
-    return value / (sum(volumes) / len(volumes))
 
 
 def wave_effort_result(waves, current, direction):
@@ -129,7 +113,7 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
         if not (stop < level < close <= entry if side == "Long" else
                 entry <= close < level < stop):
             continue
-        ratio = _volume_ratio(completed, current, direction)
+        ratio = _test_wave_volume_ratio(completed, current, direction)
         behavior = wave_effort_result(completed, current, direction)
         climax = _preceding_climax(completed, direction)
         risk = abs(entry - stop)

@@ -29,6 +29,22 @@ def _preceding_climax(waves, direction):
             float(current["delta"]) >= 1.5 * (sum(distances) / len(distances)))
 
 
+def _test_wave_volume_ratio(waves, current, direction):
+    """Test wave volume divided by preceding waves in the same direction."""
+    same = [w for w in waves if w.get("dir") == direction and _num(w.get("vol")) is not None]
+    if current and current.get("dir", direction) == direction:
+        tested, prior = current, same[-3:]
+    elif same:
+        tested, prior = same[-1], same[-4:-1]
+    else:
+        return None
+    volumes = [_num(w.get("vol")) for w in prior]
+    tested_volume = _num(tested.get("vol"))
+    if not volumes or any(v is None or v <= 0 for v in volumes) or tested_volume is None or tested_volume <= 0:
+        return None
+    return tested_volume / (sum(volumes) / len(volumes))
+
+
 def build_trade_setup(symbol, bars, timeframe, *, wyckoff_engine=None, weis_engine=None,
                       min_reward_risk=2.0):
     """Require mature structure, wave exhaustion, and a light-volume sweep/reclaim.
@@ -71,14 +87,6 @@ def build_trade_setup(symbol, bars, timeframe, *, wyckoff_engine=None, weis_engi
     # Use this same ATR-calibrated Weis wave segmentation for the test's
     # volume comparison. The Wyckoff chart series has different boundaries.
     test_waves, _, _, current_test_wave = weis_engine.build_waves(weis_engine._prepare(df))
-    prior = [_num(w.get("vol")) for w in test_waves[-5:]]
-    current_volume = _num(current_test_wave.get("vol"))
-    if not prior or any(v is None or v <= 0 for v in prior) or current_volume is None or current_volume <= 0:
-        return None
-    volume_ratio = current_volume / (sum(prior) / len(prior))
-    if volume_ratio >= .7:
-        return None
-
     possibilities = (
         ("Long", "spring_score", "sot_downwaves", "volume_exhaustion",
          "effort_without_reward", "range_resistance", "low", "high"),
@@ -87,6 +95,10 @@ def build_trade_setup(symbol, bars, timeframe, *, wyckoff_engine=None, weis_engi
     )
     qualified = []
     for side, test_key, sot_key, exhaustion_key, friction_key, target_key, stop_key, entry_key in possibilities:
+        volume_ratio = _test_wave_volume_ratio(test_waves, current_test_wave,
+                                                -1 if side == "Long" else 1)
+        if volume_ratio is None or volume_ratio >= .7:
+            continue
         test_score = _num(structure.get(test_key)) or 0
         sot = _num(wave.get(sot_key)) or 0
         exhaustion = _num(wave.get(exhaustion_key)) or 0

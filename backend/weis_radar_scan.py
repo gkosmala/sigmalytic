@@ -465,8 +465,7 @@ def run_weis_radar_scan() -> dict:
                                      "score": 100.0, "structure_level": event["structure_level"],
                                      "entry_trigger": event["entry_trigger"],
                                      "invalidation": event["invalidation"]})
-                        if symbol not in {"SPY", "QQQ", "IWM", "GLD", "SMH"}:
-                            quantum_candidates.append(event)
+                        quantum_candidates.append(event)
 
                 # Persist and evaluate lifecycle state on the SAME completed
                 # bars already fetched for the universe scan. No second market
@@ -520,6 +519,17 @@ def run_weis_radar_scan() -> dict:
 
     lifecycle_snapshot = lifecycle.save()
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
+    armed_by_identity = {(p["symbol"], p["side"], p["test_bar_time"]): p for p in trade_candidates}
+    for event in quantum_candidates:
+        armed = armed_by_identity.get((event["symbol"], event["side"], event["test_bar_time"]))
+        if armed:
+            # The stricter trade plan owns the target and its derived reward/risk.
+            # The volume ratio is calculated identically by both engines.
+            event.update({key: armed[key] for key in (
+                "target", "reward_risk", "wave_volume_ratio", "exhaustion_score",
+                "effort_without_reward_score", "sot_score", "preceding_climax")})
+            event["low_volume_test"] = event["wave_volume_ratio"] < .7
+            event["armed"] = True
     candidates = candidate_records(quantum_candidates)
     armed_setups = sorted(trade_candidates, key=lambda plan: (plan["symbol"], plan["side"]))
     completed_trades = [p["outcome"] for p in history.values()

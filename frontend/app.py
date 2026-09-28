@@ -4535,7 +4535,6 @@ def _render_weis_trade_finder(trade_finder):
     summary = trade_finder.get("outcomes") or {}
     assumptions = trade_finder.get("assumptions") or {}
     headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
-    headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
     rows = [html.Tr([
         html.Td(str(item.get("symbol") or "")),
         html.Td(str(item.get("side") or "")),
@@ -4597,19 +4596,29 @@ def _render_weis_quantum_handoff(handoff):
         html.H3("Validated Spring and Upthrust setups for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
                  "Each breached a prior multi-touch level and closed back inside. "
+                 "Wave evidence is shown separately: no single pattern is required for every event. "
                  "The next bar must reach its entry trigger; no fill or profit is assumed. "
                  "No top-ten cutoff is applied until selection is validated against outcomes.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Symbol", "Side", "State", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Exhaustion", "Signals")])),
+                                      for label in ("Symbol", "Side", "Armed", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Wave evidence", "Signal")])),
                     html.Tbody([html.Tr([html.Td(row.get("symbol")),
-                                        html.Td(row.get("side")), html.Td(row.get("state", "TRIGGERED")),
+                                        html.Td(row.get("side")), html.Td("Yes" if row["raw"].get("armed") else "No"),
                                         html.Td(f"${row['raw']['entry_trigger']:,.2f}"),
                                         html.Td(f"${row['raw']['invalidation']:,.2f}"),
                                         html.Td(f"{row['raw']['risk_pct']:.2f}%" if row['raw'].get('risk_pct') is not None else "—"),
                                         html.Td(f"{row['raw']['reward_risk']:.2f}:1" if row['raw'].get('reward_risk') is not None else "—"),
                                         html.Td(f"{row['raw']['wave_volume_ratio']:.2f}×" if row['raw'].get('wave_volume_ratio') is not None else "—"),
-                                        html.Td(str(row['raw'].get('exhaustion_score') or 0)),
+                                        html.Td(", ".join(label for condition, label in (
+                                            (row['raw'].get('exhaustion_score', 0) > 0, "exhaustion"),
+                                            (row['raw'].get('effort_without_reward_score', 0) > 0 or
+                                             (row['raw'].get('wave_behavior') or {}).get('effort_without_result'),
+                                             "effort without result"),
+                                            (row['raw'].get('low_volume_test'), "low-volume test"),
+                                            (row['raw'].get('preceding_climax'), "preceding climax"),
+                                            ((row['raw'].get('wave_behavior') or {}).get('diminished_volume_new_extreme'),
+                                             "diminished-volume extreme"),
+                                        ) if condition) or "No wave confirmation recorded"),
                                         html.Td(", ".join(row.get("signals") or []) or "Wave evidence")])
                                 for row in candidates])],
                    style={"width": "100%", "fontSize": "12px", "color": WHITE})

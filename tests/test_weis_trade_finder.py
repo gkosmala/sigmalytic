@@ -1,5 +1,5 @@
 """Profit-path and structural gating checks for the Sigma Radar trade finder."""
-from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path, backtest_symbol
+from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path, backtest_symbol, _test_wave_volume_ratio
 
 
 class Structure:
@@ -38,6 +38,13 @@ def bars():
                for i in range(65)]
     history[-1] = {"t": "65", "o": 100.5, "h": 102, "l": 99, "c": 101, "v": 10000}
     return history
+
+
+def test_test_wave_compares_same_direction_only():
+    waves = [{"dir": -1, "vol": 100}, {"dir": 1, "vol": 1000},
+             {"dir": -1, "vol": 200}]
+    assert _test_wave_volume_ratio(waves, {"dir": -1, "vol": 75}, -1) == .5
+    assert _test_wave_volume_ratio(waves, {"dir": 1, "vol": 75}, 1) == .075
 
 
 def test_armed_trade_requires_real_structure_and_reward():

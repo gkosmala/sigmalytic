@@ -39,7 +39,7 @@ def handoff(plan):
         "sot_score", "exhaustion_score", "effort_without_reward_score",
         "wave_volume_ratio", "test_score", "preceding_climax",
         "entry_trigger", "invalidation", "target", "reward_risk",
-        "structure_level", "low_volume_test", "wave_behavior")}
+        "structure_level", "low_volume_test", "wave_behavior", "armed")}
     raw["risk_pct"] = round(risk_pct, 4) if risk_pct is not None else None
     return {"symbol": plan["symbol"], "side": plan["side"],
             "state": plan.get("state", "TRIGGERED"), "signals": list(plan.get("signals") or []),

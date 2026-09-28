@@ -37,6 +37,16 @@ def test_validated_event_keeps_trigger_and_invalidation():
     assert rows[0]["raw"]["risk_pct"] == 5.0
 
 
+def test_armed_flag_and_distinct_effort_evidence_survive_handoff():
+    event = {**_plan("ABC", "Long", 0, 1.2, 100),
+             "entry_trigger": 100, "invalidation": 98,
+             "armed": True, "wave_behavior": {"effort_without_result": True}}
+    row = candidate_records([event])[0]
+    assert row["raw"]["armed"] is True
+    assert row["features"]["climax_or_absorption"] == 1.0
+    assert row["features"]["directional_exhaustion"] == 0.0
+
+
 def test_candidate_handoff_has_no_top_ten_cutoff():
     rows = candidate_records([_plan(f"S{i:02d}", "Long", i, .4, 80) for i in range(17)])
     assert len(rows) == 17
