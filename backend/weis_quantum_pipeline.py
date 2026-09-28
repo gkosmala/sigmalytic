@@ -41,6 +41,16 @@ def handoff(plan):
         "entry_trigger", "invalidation", "target", "reward_risk",
         "structure_level", "low_volume_test", "wave_behavior", "armed")}
     raw["risk_pct"] = round(risk_pct, 4) if risk_pct is not None else None
+    raw["prior_wave_evidence"] = [label for condition, label in (
+        (_unit(plan.get("exhaustion_score", 0) / 100) > 0, "exhaustion"),
+        (_unit(plan.get("effort_without_reward_score", 0) / 100) > 0, "effort without result"),
+        (climax, "climax"),
+    ) if condition]
+    raw["test_wave_evidence"] = [label for condition, label in (
+        (plan.get("low_volume_test"), "low volume"),
+        (behavior.get("effort_without_result"), "effort without result"),
+        (behavior.get("diminished_volume_new_extreme"), "diminished-volume extreme"),
+    ) if condition]
     return {"symbol": plan["symbol"], "side": plan["side"],
             "state": plan.get("state", "TRIGGERED"), "signals": list(plan.get("signals") or []),
             "test_bar_time": plan["test_bar_time"], "timeframe": plan["timeframe"],

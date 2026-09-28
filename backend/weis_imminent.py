@@ -104,6 +104,7 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
 
     # Pre-event Weis readings cannot see the penetration bar or future bars.
     wave = weis_engine.evaluate(prior, symbol=symbol)
+    prior_completed, _, _, _ = weis_engine.build_waves(weis_engine._prepare(prior))
     completed, _, _, current = weis_engine.build_waves(weis_engine._prepare(df))
     results = []
     for side, signal, level, direction, entry_key, stop_key, opposite, sot_key, exhaust_key, effort_key in tests:
@@ -115,7 +116,7 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
             continue
         ratio = _test_wave_volume_ratio(completed, current, direction)
         behavior = wave_effort_result(completed, current, direction)
-        climax = _preceding_climax(completed, direction)
+        climax = _preceding_climax(prior_completed, direction)
         risk = abs(entry - stop)
         target = _number(opposite)
         reward = ((target - entry) if side == "Long" else (entry - target)) if target else None

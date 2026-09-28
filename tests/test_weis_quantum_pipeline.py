@@ -47,6 +47,15 @@ def test_armed_flag_and_distinct_effort_evidence_survive_handoff():
     assert row["features"]["directional_exhaustion"] == 0.0
 
 
+def test_prior_absorption_and_test_volume_have_separate_chapters():
+    event = {**_plan("ABC", "Long", 0, .4, 100),
+             "effort_without_reward_score": 100, "low_volume_test": True,
+             "wave_behavior": {"effort_without_result": False}}
+    raw = handoff(event)["raw"]
+    assert raw["prior_wave_evidence"] == ["effort without result"]
+    assert raw["test_wave_evidence"] == ["low volume"]
+
+
 def test_candidate_handoff_has_no_top_ten_cutoff():
     rows = candidate_records([_plan(f"S{i:02d}", "Long", i, .4, 80) for i in range(17)])
     assert len(rows) == 17

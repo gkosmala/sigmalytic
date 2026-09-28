@@ -66,3 +66,19 @@ def test_cumulative_wave_effort_result_and_diminished_extreme():
     up = [{"dir": 1, "vol": 100, "delta": 2, "end": 108},
           {"dir": 1, "vol": 110, "delta": 2, "end": 109}]
     assert wave_effort_result(up, {"dir": 1, "vol": 40, "delta": 1, "end": 110}, 1)["diminished_volume_new_extreme"]
+
+
+def test_climax_on_test_bar_is_not_labeled_preceding_climax():
+    class TestClimax(Waves):
+        def build_waves(self, df):
+            earlier = [{"dir": -1, "vol": 100, "delta": 2, "end": 102},
+                       {"dir": -1, "vol": 100, "delta": 2, "end": 101}]
+            if len(df) == 80:
+                return earlier + [{"dir": -1, "vol": 500, "delta": 5, "end": 99}], None, None, None
+            return earlier, None, None, None
+
+    history = bars()
+    history[-1].update({"l": 99, "c": 102, "h": 106})
+    events = find_imminent_weis_events("ABC", history, "1Day", weis_engine=TestClimax())
+    assert len(events) == 1
+    assert events[0]["preceding_climax"] is False
