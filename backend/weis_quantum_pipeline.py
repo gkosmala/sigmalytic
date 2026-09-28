@@ -1,4 +1,4 @@
-"""Reproducible Weis candidate ranking and quantum kernel handoff.
+"""Reproducible Weis candidate handoff and quantum kernel comparison.
 
 The zero-state fraction is a circuit overlap, not a calibrated probability
 of a profitable trade or proof of institutional activity.
@@ -33,33 +33,25 @@ def handoff(plan):
         _unit(plan.get("test_score", 0) / 100),
         max(friction, float(climax), float(bool(behavior.get("effort_without_result")))),
     )
+    entry, stop = plan.get("entry_trigger"), plan.get("invalidation")
+    risk_pct = abs(entry - stop) / entry * 100 if entry and stop and entry > 0 else None
+    raw = {key: plan.get(key) for key in (
+        "sot_score", "exhaustion_score", "effort_without_reward_score",
+        "wave_volume_ratio", "test_score", "preceding_climax",
+        "entry_trigger", "invalidation", "target", "reward_risk",
+        "structure_level", "low_volume_test", "wave_behavior")}
+    raw["risk_pct"] = round(risk_pct, 4) if risk_pct is not None else None
     return {"symbol": plan["symbol"], "side": plan["side"],
             "state": plan.get("state", "TRIGGERED"), "signals": list(plan.get("signals") or []),
             "test_bar_time": plan["test_bar_time"], "timeframe": plan["timeframe"],
-            "features": dict(zip(FEATURE_NAMES, features)),
-            "raw": {key: plan.get(key) for key in (
-                "sot_score", "exhaustion_score", "effort_without_reward_score",
-                "wave_volume_ratio", "test_score", "preceding_climax",
-                "entry_trigger", "invalidation", "target", "reward_risk",
-                "structure_level", "low_volume_test", "wave_behavior")}}
+            "features": dict(zip(FEATURE_NAMES, features)), "raw": raw}
 
 
-def classical_rank(plan):
-    """Explicit evidence order; a result has no historical success probability."""
-    row = handoff(plan)
-    f = row["features"]
-    score = round(40 * f["directional_exhaustion"] +
-                  25 * f["low_volume_test"] + 20 * f["level_test"] +
-                  15 * f["climax_or_absorption"], 2)
-    return {**row, "classical_evidence_score": score,
-            "score_definition": "40% exhaustion, 25% low-volume wave, 20% validated level event, 15% climax/absorption"}
-
-
-def rank_candidates(plans, limit=10):
-    rows = [classical_rank(p) for p in plans]
-    rows.sort(key=lambda r: (-r["classical_evidence_score"],
-                             -float(r["raw"]["reward_risk"] or 0), r["symbol"], r["side"]))
-    return rows[:limit]
+def candidate_records(plans):
+    """Expose all validated events with measured evidence; no chosen weights."""
+    rows = [handoff(plan) for plan in plans]
+    rows.sort(key=lambda row: (row["symbol"], row["side"]))
+    return rows
 
 
 def kernel_circuit(features):
@@ -127,8 +119,8 @@ def execute(rows, *, mode="local", shots=4096, backend_name=None):
         completed.append({**row, "counts": counts, "shots": total,
                           "kernel_similarity": counts.get("0000", 0) / total if total else None,
                           "measurement": "P(0000) overlap with declared reference; not trade probability"})
-    completed.sort(key=lambda row: (-(row["kernel_similarity"] or 0),
-                                    -row["classical_evidence_score"], row["symbol"]))
+    # Keep the input order. The reference overlap has not been calibrated to
+    # trade outcomes, so it must not be presented as a trade-quality ranking.
     return {"mode": mode, "backend": backend_used,
             "job_id": job.job_id() if mode == "ibm" else None,
             "shots_requested": shots, "reference": dict(zip(FEATURE_NAMES, REFERENCE)),

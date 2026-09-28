@@ -4531,13 +4531,12 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
 def _render_weis_trade_finder(trade_finder):
     if not isinstance(trade_finder, dict):
         return html.Div()
-    top = trade_finder.get("top10") or []
+    top = trade_finder.get("setups") or []
     summary = trade_finder.get("outcomes") or {}
     assumptions = trade_finder.get("assumptions") or {}
     headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
-    headers = ("Rank", *headers, "Weis evidence")
+    headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
     rows = [html.Tr([
-        html.Td(str(rank)),
         html.Td(str(item.get("symbol") or "")),
         html.Td(str(item.get("side") or "")),
         html.Td(f"${item['entry_trigger']:,.2f}"),
@@ -4545,8 +4544,7 @@ def _render_weis_trade_finder(trade_finder):
         html.Td(f"${item['target']:,.2f}"),
         html.Td(f"{item['reward_risk']:.2f}:1"),
         html.Td(f"{item['wave_volume_ratio']:.2f}× prior volume"),
-        html.Td(f"{item.get('classical_evidence_score', 0):.1f}"),
-    ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for rank, item in enumerate(top, 1)]
+    ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in top]
     return html.Div([
         html.H3("Armed trade setups", style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
         html.Div("Mature range • shortening thrust or climax • low-volume support/resistance test. "
@@ -4581,12 +4579,12 @@ def _render_weis_quantum(quantum):
                  "least-risk reference, not a trade-success probability or proof of institutional activity.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Rank", "Symbol", "Side", "Circuit similarity", "Shots")])),
-                    html.Tbody([html.Tr([html.Td(str(index)), html.Td(row.get("symbol")),
+                                      for label in ("Symbol", "Side", "Circuit similarity", "Shots")])),
+                    html.Tbody([html.Tr([html.Td(row.get("symbol")),
                                         html.Td(row.get("side")),
                                         html.Td(f"{100 * row['kernel_similarity']:.1f}%" if row.get("kernel_similarity") is not None else "—"),
                                         html.Td(str(row.get("shots", "—")))])
-                                for index, row in enumerate(rows, 1)])],
+                                for row in rows])],
                    style={"width": "100%", "fontSize": "12px", "color": WHITE}),
     ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
 
@@ -4594,22 +4592,26 @@ def _render_weis_quantum(quantum):
 def _render_weis_quantum_handoff(handoff):
     if not isinstance(handoff, dict):
         return html.Div()
-    candidates = handoff.get("top10") or []
+    candidates = handoff.get("candidates") or []
     return html.Div([
         html.H3("Validated Spring and Upthrust setups for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
-        html.Div(f"{handoff.get('candidate_count', 0)} directional candidates; up to ten sent to the "
-                 "quantum circuit. Each candidate breached a prior multi-touch level and closed back inside. "
-                 "The next bar must reach its entry trigger; no fill or profit is assumed.",
+        html.Div(f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
+                 "Each breached a prior multi-touch level and closed back inside. "
+                 "The next bar must reach its entry trigger; no fill or profit is assumed. "
+                 "No top-ten cutoff is applied until selection is validated against outcomes.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Rank", "Symbol", "Side", "State", "Entry trigger", "Invalidation", "Weis evidence", "Signals")])),
-                    html.Tbody([html.Tr([html.Td(str(index)), html.Td(row.get("symbol")),
+                                      for label in ("Symbol", "Side", "State", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Exhaustion", "Signals")])),
+                    html.Tbody([html.Tr([html.Td(row.get("symbol")),
                                         html.Td(row.get("side")), html.Td(row.get("state", "TRIGGERED")),
                                         html.Td(f"${row['raw']['entry_trigger']:,.2f}"),
                                         html.Td(f"${row['raw']['invalidation']:,.2f}"),
-                                        html.Td(f"{row['classical_evidence_score']:.1f}"),
+                                        html.Td(f"{row['raw']['risk_pct']:.2f}%" if row['raw'].get('risk_pct') is not None else "—"),
+                                        html.Td(f"{row['raw']['reward_risk']:.2f}:1" if row['raw'].get('reward_risk') is not None else "—"),
+                                        html.Td(f"{row['raw']['wave_volume_ratio']:.2f}×" if row['raw'].get('wave_volume_ratio') is not None else "—"),
+                                        html.Td(str(row['raw'].get('exhaustion_score') or 0)),
                                         html.Td(", ".join(row.get("signals") or []) or "Wave evidence")])
-                                for index, row in enumerate(candidates, 1)])],
+                                for row in candidates])],
                    style={"width": "100%", "fontSize": "12px", "color": WHITE})
         if candidates else html.Div("No directional Weis candidate found in this scan.",
                                     style={"color": MUTED, "fontSize": "12px"}),

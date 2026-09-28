@@ -1,4 +1,4 @@
-"""Run the current Weis Radar top ten through a local or IBM quantum kernel.
+"""Run validated Weis Radar candidates through a local or IBM quantum kernel.
 
 Examples (from repository root):
   python tools/run_weis_quantum_pipeline.py --input scan.json --mode local
@@ -50,11 +50,9 @@ def main():
             parser.error("No completed Weis Radar scan found in Redis")
         payload = json.loads(raw)
 
-    handoff = (payload.get("quantum_handoff") or {}).get("top10") or []
+    handoff = (payload.get("quantum_handoff") or {}).get("candidates") or []
     if not handoff:
-        parser.error("Scan has no ranked Weis candidates; run Weis Radar on the updated worker first")
-    if len(handoff) > 10:
-        parser.error("Expected at most ten selected handoff candidates")
+        parser.error("Scan has no validated Weis candidates; run Weis Radar on the updated worker first")
     result = execute(handoff, mode=args.mode, shots=args.shots, backend_name=args.backend)
     result["scan_generated_at"] = payload.get("generated_at")
     result["timeframe"] = (payload.get("config") or {}).get("timeframe")

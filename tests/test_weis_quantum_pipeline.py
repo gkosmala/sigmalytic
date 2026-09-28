@@ -1,5 +1,5 @@
-"""Checks for deterministic candidate selection and stable handoff identity."""
-from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, rank_candidates
+"""Checks for complete, unweighted candidate handoff and stable identity."""
+from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, candidate_records
 
 
 def _plan(symbol, side, exhaustion, ratio, test, climax=False):
@@ -9,12 +9,12 @@ def _plan(symbol, side, exhaustion, ratio, test, climax=False):
             "preceding_climax": climax, "reward_risk": 2.5}
 
 
-def test_directional_ranking_keeps_identity_and_evidence():
+def test_candidate_handoff_keeps_identity_and_evidence_without_weights():
     buy = _plan("BUY", "Long", 100, .2, 90, True)
     sell = _plan("SELL", "Short", 0, .6, 70)
-    ordered = rank_candidates([sell, buy])
+    ordered = candidate_records([sell, buy])
     assert [(row["symbol"], row["side"]) for row in ordered] == [("BUY", "Long"), ("SELL", "Short")]
-    assert ordered[0]["classical_evidence_score"] > ordered[1]["classical_evidence_score"]
+    assert all("classical_evidence_score" not in row for row in ordered)
     assert set(handoff(buy)["features"]) == set(FEATURE_NAMES)
     assert ordered[0]["raw"]["wave_volume_ratio"] == .2
 
@@ -25,15 +25,21 @@ def test_features_clamp_invalid_inputs_without_claiming_trade_probability():
     assert "profit_probability" not in row
 
 
-def test_validated_event_ranks_with_trigger_and_invalidation():
+def test_validated_event_keeps_trigger_and_invalidation():
     event = {**_plan("ABC", "Short", 100, .5, 100),
              "state": "TRIGGERED", "signals": ["UPTHRUST"],
              "entry_trigger": 100, "invalidation": 105}
-    ranked = rank_candidates([event])
-    assert ranked[0]["state"] == "TRIGGERED"
-    assert ranked[0]["signals"] == ["UPTHRUST"]
-    assert ranked[0]["raw"]["entry_trigger"] == 100
-    assert ranked[0]["raw"]["invalidation"] == 105
+    rows = candidate_records([event])
+    assert rows[0]["state"] == "TRIGGERED"
+    assert rows[0]["signals"] == ["UPTHRUST"]
+    assert rows[0]["raw"]["entry_trigger"] == 100
+    assert rows[0]["raw"]["invalidation"] == 105
+    assert rows[0]["raw"]["risk_pct"] == 5.0
+
+
+def test_candidate_handoff_has_no_top_ten_cutoff():
+    rows = candidate_records([_plan(f"S{i:02d}", "Long", i, .4, 80) for i in range(17)])
+    assert len(rows) == 17
 
 
 def test_missing_climax_still_has_nonzero_kernel_overlap():

@@ -370,7 +370,7 @@ def run_weis_radar_scan() -> dict:
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
     from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
     from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path
-    from backend.weis_quantum_pipeline import rank_candidates
+    from backend.weis_quantum_pipeline import candidate_records
     from backend.weis_imminent import find_imminent_weis_events
     from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
     from backend.weis_radar_lifecycle import _is_after
@@ -520,19 +520,15 @@ def run_weis_radar_scan() -> dict:
 
     lifecycle_snapshot = lifecycle.save()
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
-    ranked_candidates = rank_candidates(quantum_candidates)
-    armed_ranked = rank_candidates(trade_candidates)
-    by_identity = {(p["symbol"], p["side"], p["test_bar_time"]): p for p in trade_candidates}
-    trade_top10 = [{**by_identity[(r["symbol"], r["side"], r["test_bar_time"])],
-                    "classical_evidence_score": r["classical_evidence_score"],
-                    "quantum_features": r["features"]} for r in armed_ranked]
+    candidates = candidate_records(quantum_candidates)
+    armed_setups = sorted(trade_candidates, key=lambda plan: (plan["symbol"], plan["side"]))
     completed_trades = [p["outcome"] for p in history.values()
                         if isinstance(p.get("outcome"), dict) and p["outcome"].get("status") in
                         {"TARGET", "STOP", "STOP_FIRST_OR_AMBIGUOUS", "TIME_EXIT"}]
     realized_net_r = [p["net_r"] for p in completed_trades if p.get("net_r") is not None]
     trade_finder = {
-        "top10": trade_top10, "qualified_count": len(trade_candidates),
-        "ranking_definition": "Armed plans require additional mature-range, light-volume, and reward/risk gates",
+        "setups": armed_setups, "qualified_count": len(trade_candidates),
+        "qualification_definition": "Armed plans require additional mature-range, light-volume, and reward/risk gates",
         "outcomes": {"completed": len(completed_trades),
                      "target_first": sum(p["status"] == "TARGET" for p in completed_trades),
                      "average_modeled_net_r": round(sum(realized_net_r) / len(realized_net_r), 4)
@@ -555,8 +551,8 @@ def run_weis_radar_scan() -> dict:
         "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
         "trade_finder": trade_finder,
-        "quantum_handoff": {"top10": ranked_candidates, "candidate_count": len(quantum_candidates),
-                            "ranking_definition": "All candidates breached a prior multi-touch level and closed back inside; 40% exhaustion, 25% light-volume test, 20% validated event, 15% Climax/absorption",
+        "quantum_handoff": {"candidates": candidates, "candidate_count": len(candidates),
+                            "selection_status": "All validated events shown; no weighted score or top-ten selection until outcome calibration",
                             "note": "TRIGGERED is a completed fake-out bar. Next-bar entry must still reach its trigger; no outcome or profit probability is implied."},
         "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
