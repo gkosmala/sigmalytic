@@ -4528,6 +4528,69 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
     ], style={"width": "100%", "borderCollapse": "collapse"})
 
 
+def _render_weis_trade_finder(trade_finder):
+    if not isinstance(trade_finder, dict):
+        return html.Div()
+    top = trade_finder.get("top10") or []
+    summary = trade_finder.get("outcomes") or {}
+    assumptions = trade_finder.get("assumptions") or {}
+    headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
+    headers = ("Rank", *headers, "Weis evidence")
+    rows = [html.Tr([
+        html.Td(str(rank)),
+        html.Td(str(item.get("symbol") or "")),
+        html.Td(str(item.get("side") or "")),
+        html.Td(f"${item['entry_trigger']:,.2f}"),
+        html.Td(f"${item['invalidation']:,.2f}"),
+        html.Td(f"${item['target']:,.2f}"),
+        html.Td(f"{item['reward_risk']:.2f}:1"),
+        html.Td(f"{item['wave_volume_ratio']:.2f}× prior volume"),
+        html.Td(f"{item.get('classical_evidence_score', 0):.1f}"),
+    ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for rank, item in enumerate(top, 1)]
+    return html.Div([
+        html.H3("Armed trade setups", style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
+        html.Div("Mature range • shortening thrust or climax • low-volume support/resistance test. "
+                 "Entry requires the next bar to reach its trigger; levels are research plans.",
+                 style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
+        html.Div(f"{trade_finder.get('qualified_count', 0)} qualified in this scan; "
+                 f"{summary.get('completed', 0)} completed tracked paths, "
+                 f"{summary.get('target_first', 0)} target-first; "
+                 f"average modeled net R: {summary.get('average_modeled_net_r') if summary.get('average_modeled_net_r') is not None else 'insufficient outcomes'}. "
+                 f"Modeled cost: {assumptions.get('modeled_cost_bps_per_side', '—')} bps per side; "
+                 f"time limit: {assumptions.get('max_bars', '—')} bars. "
+                 "These counts are not a predicted success probability.",
+                 style={"color": MUTED, "fontSize": "11px", "marginBottom": "8px"}),
+        html.Table([html.Thead(html.Tr([html.Th(h, style={"padding": "8px", "textAlign": "left", "color": MUTED})
+                                      for h in headers])), html.Tbody(rows)],
+                   style={"width": "100%", "borderCollapse": "collapse", "fontSize": "12px"})
+        if rows else html.Div("No setup met all structural and reward/risk checks on this scan.",
+                              style={"color": MUTED, "fontSize": "12px"}),
+    ], style={"border": f"1px solid {BORDER_T}", "borderRadius": "12px", "padding": "14px",
+              "marginBottom": "20px", "overflowX": "auto"})
+
+
+def _render_weis_quantum(quantum):
+    if not isinstance(quantum, dict):
+        return html.Div("IBM/quantum results pending for this scan.",
+                        style={"color": MUTED, "fontSize": "12px", "marginBottom": "12px"})
+    rows = quantum.get("results") or []
+    return html.Div([
+        html.H3("Weis quantum kernel", style={"color": WHITE, "fontSize": "17px"}),
+        html.Div(f"{quantum.get('mode', '').upper()} • {quantum.get('backend') or 'local simulator'} "
+                 f"• job {quantum.get('job_id') or 'local'} • P(0000) is similarity to a defined "
+                 "least-risk reference, not a trade-success probability or proof of institutional activity.",
+                 style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
+        html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
+                                      for label in ("Rank", "Symbol", "Side", "Circuit similarity", "Shots")])),
+                    html.Tbody([html.Tr([html.Td(str(index)), html.Td(row.get("symbol")),
+                                        html.Td(row.get("side")),
+                                        html.Td(f"{100 * row['kernel_similarity']:.1f}%" if row.get("kernel_similarity") is not None else "—"),
+                                        html.Td(str(row.get("shots", "—")))])
+                                for index, row in enumerate(rows, 1)])],
+                   style={"width": "100%", "fontSize": "12px", "color": WHITE}),
+    ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
+
+
 def build_weis_radar_tab(session=None):
     """
     ADDED (2026-08-24): Weis Radar -- shows the results of the
@@ -4704,6 +4767,8 @@ def build_weis_radar_tab(session=None):
         return html.Div([
             _header_row(),
             _settings_panel(),
+            _render_weis_trade_finder(data.get("trade_finder")),
+            _render_weis_quantum(data.get("quantum")),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -4730,6 +4795,8 @@ def build_weis_radar_tab(session=None):
         # client-side so filter/sort changes re-render locally instead
         # of hitting the backend again.
         dcc.Store(id="s-weis-radar-raw-results", data=results),
+        _render_weis_trade_finder(data.get("trade_finder")),
+        _render_weis_quantum(data.get("quantum")),
         html.Div([
             html.Div([
                 html.Span("Filter: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),

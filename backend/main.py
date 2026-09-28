@@ -2782,6 +2782,56 @@ def weis_radar_results():
     return get_weis_radar_results()
 
 
+@app.post("/api/admin/weis-radar/quantum-result")
+def save_weis_quantum_result(result: dict, _admin: str = Depends(require_admin)):
+    """Store a finished circuit run only for the exact current Radar scan."""
+    import json
+    from backend.radar_service import _redis_client
+    from backend.weis_radar_scan import WEIS_RADAR_RESULTS_KEY, WEIS_RADAR_QUANTUM_KEY
+    if not _redis_client:
+        return {"ok": False, "error": "Redis unavailable"}
+    try:
+        scan = json.loads(_redis_client.get(WEIS_RADAR_RESULTS_KEY) or "{}")
+        expected = (scan.get("trade_finder") or {}).get("handoff") or []
+        submitted = result.get("results") or []
+        identity = lambda rows: {(row.get("symbol"), row.get("side"), row.get("test_bar_time")) for row in rows}
+        if (not expected or result.get("scan_generated_at") != scan.get("generated_at") or
+                result.get("timeframe") != (scan.get("config") or {}).get("timeframe") or
+                not isinstance(submitted, list) or len(submitted) != len(expected) or
+                identity(submitted) != identity(expected) or
+                result.get("mode") not in {"ibm", "local"}):
+            return {"ok": False, "error": "Result does not match the current scan handoff"}
+        _redis_client.set(WEIS_RADAR_QUANTUM_KEY, json.dumps(result, allow_nan=False))
+        return {"ok": True, "count": len(submitted)}
+    except (TypeError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)[:150]}
+
+
+@app.get("/api/admin/weis-radar/trade-history")
+def weis_radar_trade_history(_admin: str = Depends(require_admin)):
+    from backend.weis_radar_scan import get_weis_trade_history
+    return get_weis_trade_history()
+
+
+@app.get("/api/admin/weis-radar/backtest/{symbol}")
+def weis_radar_trade_backtest(symbol: str, timeframe: str = "1Day", _admin: str = Depends(require_admin)):
+    """One-symbol, read-only replay of the same entry and profit-path rules."""
+    from backend.weis_radar_scan import VALID_TIMEFRAMES
+    from backend.radar_service import fetch_bars_batch, trim_incomplete_bar
+    from backend.weis_trade_finder import backtest_symbol
+    sym = symbol.strip().upper()
+    if timeframe not in VALID_TIMEFRAMES or not sym or len(sym) > 7 or not sym.replace(".", "").isalnum():
+        return {"ok": False, "error": "Invalid symbol or timeframe"}
+    try:
+        bars = fetch_bars_batch([sym], timeframe=timeframe, limit=252, min_bars_floor=65).get(sym, [])
+        bars = trim_incomplete_bar(bars, timeframe)
+        if len(bars) < 75:
+            return {"ok": False, "error": "Need at least 75 completed bars for a 10-bar outcome window"}
+        return {"ok": True, **backtest_symbol(sym, bars, timeframe, max_bars=10, cost_bps=5)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.get("/api/weis-radar/chart/{symbol}")
 def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252):
     """

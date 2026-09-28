@@ -16,6 +16,7 @@ fetch_bars_batch() and reuses compute_symbol_signals(), the same
 calculation used by the live signal-test endpoint.
 """
 import json
+import os
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -24,6 +25,8 @@ WEIS_RADAR_RESULTS_KEY = "weis_radar:results"
 WEIS_RADAR_JOB_KEY = "weis_radar:job_status"
 WEIS_RADAR_JOB_TTL_SECONDS = 3600
 WEIS_RADAR_MANUAL_QUEUE_KEY = "weis_radar:manual_scan_queue"
+WEIS_RADAR_TRADE_HISTORY_KEY = "weis_radar:trade_finder:v1"
+WEIS_RADAR_QUANTUM_KEY = "weis_radar:quantum:v1"
 RADAR_CONFIG_REDIS_KEY = "radar:signal_config"
 
 RADAR_CONFIG_DEFAULTS = {
@@ -366,6 +369,9 @@ def run_weis_radar_scan() -> dict:
     )
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
     from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
+    from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path
+    from backend.weis_quantum_pipeline import rank_candidates
+    from backend.weis_radar_lifecycle import _is_after
 
     started_at = datetime.now(timezone.utc).isoformat()
     if _redis_client:
@@ -378,7 +384,7 @@ def run_weis_radar_scan() -> dict:
     config = _load_radar_config(_redis_client)
     requested_signals = set(config["display_signals"])
     minimum_bars = min_bars_required_for(requested_signals)
-    effective_lookback = max(config["lookback"], minimum_bars)
+    effective_lookback = max(config["lookback"], minimum_bars, 65)
 
     engine = WyckoffVerdictEngine()
     lifecycle = WeisRadarLifecycleTracker(
@@ -388,6 +394,22 @@ def run_weis_radar_scan() -> dict:
     )
     symbols = load_russell1000()
     results = []
+    trade_candidates = []
+    try:
+        history = json.loads(_redis_client.get(WEIS_RADAR_TRADE_HISTORY_KEY) or "{}") if _redis_client else {}
+        if not isinstance(history, dict):
+            history = {}
+    except Exception:
+        history = {}
+    history_by_symbol = {}
+    for existing in history.values():
+        if isinstance(existing, dict):
+            history_by_symbol.setdefault((existing.get("symbol"), existing.get("timeframe")), []).append(existing)
+    try:
+        trade_max_bars = max(1, int(os.getenv("WEIS_TRADE_MAX_BARS", "10")))
+        trade_cost_bps = max(0.0, float(os.getenv("WEIS_TRADE_COST_BPS_PER_SIDE", "5")))
+    except (TypeError, ValueError):
+        trade_max_bars, trade_cost_bps = 10, 5.0
     errors = 0
     scanned = 0
 
@@ -426,6 +448,29 @@ def run_weis_radar_scan() -> dict:
                 # data request is introduced here.
                 lifecycle.process_symbol(symbol, bars, hits)
 
+                # Track the actual target/stop path after each prior test.
+                # This uses the same completed bars as the scan and never
+                # promotes a Weis confirmation into a winning trade.
+                for plan in history_by_symbol.get((symbol, config["timeframe"]), []):
+                    if (plan.get("outcome") or {}).get("status") not in (None, "OPEN"):
+                        continue
+                    future = [b for b in bars if b.get("t") and _is_after(b["t"], plan["test_bar_time"])]
+                    if future:
+                        plan["outcome"] = evaluate_trade_path(
+                            plan, future, max_bars=trade_max_bars, cost_bps=trade_cost_bps)
+
+                try:
+                    plan = build_trade_setup(symbol, bars, config["timeframe"],
+                                             wyckoff_engine=engine)
+                except Exception:
+                    plan = None  # keep the existing pattern scan available
+                if plan:
+                    trade_candidates.append(plan)
+                    trade_id = f"{symbol}:{config['timeframe']}:{plan['test_bar_time']}:{plan['side']}"
+                    if trade_id not in history:
+                        history[trade_id] = dict(plan)
+                        history_by_symbol.setdefault((symbol, config["timeframe"]), []).append(history[trade_id])
+
                 if hits:
                     results.append({
                         "symbol": symbol,
@@ -450,6 +495,31 @@ def run_weis_radar_scan() -> dict:
 
     lifecycle_snapshot = lifecycle.save()
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
+    ranked_candidates = rank_candidates(trade_candidates)
+    by_identity = {(p["symbol"], p["side"], p["test_bar_time"]): p for p in trade_candidates}
+    trade_top10 = [{**by_identity[(r["symbol"], r["side"], r["test_bar_time"])],
+                    "classical_evidence_score": r["classical_evidence_score"],
+                    "quantum_features": r["features"]} for r in ranked_candidates]
+    completed_trades = [p["outcome"] for p in history.values()
+                        if isinstance(p.get("outcome"), dict) and p["outcome"].get("status") in
+                        {"TARGET", "STOP", "STOP_FIRST_OR_AMBIGUOUS", "TIME_EXIT"}]
+    realized_net_r = [p["net_r"] for p in completed_trades if p.get("net_r") is not None]
+    trade_finder = {
+        "top10": trade_top10, "qualified_count": len(trade_candidates),
+        "handoff": ranked_candidates,
+        "ranking_definition": "40% directional exhaustion, 25% low-volume test, 20% level test, 15% climax or absorption",
+        "outcomes": {"completed": len(completed_trades),
+                     "target_first": sum(p["status"] == "TARGET" for p in completed_trades),
+                     "average_modeled_net_r": round(sum(realized_net_r) / len(realized_net_r), 4)
+                     if realized_net_r else None},
+        "assumptions": {"entry": "next bar reaches test high for long or test low for short",
+                        "stop_and_target_same_bar": "stop first",
+                        "max_bars": trade_max_bars,
+                        "modeled_cost_bps_per_side": trade_cost_bps},
+        "profit_probability": None,
+        "probability_status": "Requires chronological validation of completed net-profit outcomes; no IBM probability reported.",
+        "note": "Structural trade plans and observed paths, not calibrated profit probabilities.",
+    }
     alerts_dispatched = _dispatch_configured_alerts(results, config, _redis_client)
     payload = {
         "ok": True,
@@ -459,11 +529,16 @@ def run_weis_radar_scan() -> dict:
         "alerts_dispatched": alerts_dispatched,
         "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
+        "trade_finder": trade_finder,
         "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     if _redis_client:
+        try:
+            _redis_client.set(WEIS_RADAR_TRADE_HISTORY_KEY, json.dumps(history))
+        except Exception:
+            pass
         try:
             _redis_client.set(WEIS_RADAR_RESULTS_KEY, json.dumps(payload))
             _redis_client.set(WEIS_RADAR_JOB_KEY, json.dumps({
@@ -492,6 +567,11 @@ def get_weis_radar_results() -> dict:
             return {"ok": True, "results": [], "generated_at": None,
                      "note": "No scan has completed yet."}
         payload = json.loads(raw)
+        quantum_raw = _redis_client.get(WEIS_RADAR_QUANTUM_KEY)
+        if quantum_raw:
+            quantum = json.loads(quantum_raw)
+            if quantum.get("scan_generated_at") == payload.get("generated_at"):
+                payload["quantum"] = quantum
         # Backward-compatible: a cached scan created before lifecycle support
         # still receives the currently persisted lifecycle snapshot.
         if "lifecycle" not in payload:
@@ -500,3 +580,18 @@ def get_weis_radar_results() -> dict:
         return payload
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
+
+
+def get_weis_trade_history() -> dict:
+    """Read-only audit of plans and later observed target/stop paths."""
+    from backend.radar_service import _redis_client
+    if not _redis_client:
+        return {"ok": False, "error": "Redis not configured"}
+    try:
+        raw = _redis_client.get(WEIS_RADAR_TRADE_HISTORY_KEY)
+        plans = json.loads(raw) if raw else {}
+        if not isinstance(plans, dict):
+            raise ValueError("invalid trade history")
+        return {"ok": True, "count": len(plans), "plans": plans}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
