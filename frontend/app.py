@@ -4596,15 +4596,17 @@ def _render_weis_quantum_handoff(handoff):
         return html.Div()
     candidates = handoff.get("top10") or []
     return html.Div([
-        html.H3("Top Weis candidates for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
+        html.H3("Validated Spring and Upthrust setups for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(f"{handoff.get('candidate_count', 0)} directional candidates; up to ten sent to the "
-                 "quantum circuit. WATCH is evidence to evaluate, not an armed entry. "
-                 "Armed trade setups are listed separately below.",
+                 "quantum circuit. Each candidate breached a prior multi-touch level and closed back inside. "
+                 "The next bar must reach its entry trigger; no fill or profit is assumed.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Rank", "Symbol", "Side", "State", "Weis evidence", "Signals")])),
+                                      for label in ("Rank", "Symbol", "Side", "State", "Entry trigger", "Invalidation", "Weis evidence", "Signals")])),
                     html.Tbody([html.Tr([html.Td(str(index)), html.Td(row.get("symbol")),
-                                        html.Td(row.get("side")), html.Td(row.get("state", "WATCH")),
+                                        html.Td(row.get("side")), html.Td(row.get("state", "TRIGGERED")),
+                                        html.Td(f"${row['raw']['entry_trigger']:,.2f}"),
+                                        html.Td(f"${row['raw']['invalidation']:,.2f}"),
                                         html.Td(f"{row['classical_evidence_score']:.1f}"),
                                         html.Td(", ".join(row.get("signals") or []) or "Wave evidence")])
                                 for index, row in enumerate(candidates, 1)])],

@@ -1,5 +1,5 @@
 """Checks for deterministic candidate selection and stable handoff identity."""
-from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, rank_candidates, radar_candidates
+from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, rank_candidates
 
 
 def _plan(symbol, side, exhaustion, ratio, test, climax=False):
@@ -25,15 +25,26 @@ def test_features_clamp_invalid_inputs_without_claiming_trade_probability():
     assert "profit_probability" not in row
 
 
-def test_watchlist_ranks_without_requiring_armed_trade():
-    wave = {"sot_upwaves": 100, "buying_exhaustion": 100,
-            "buying_effort_without_reward": 0, "sot_downwaves": 0,
-            "volume_exhaustion": 0, "effort_without_reward": 0}
-    watch = radar_candidates("ABC", "1Day", "2026-09-25",
-                             [{"type": "UPTHRUST"}], wave, .5)
-    assert len(watch) == 1 and watch[0]["side"] == "Short"
-    ranked = rank_candidates(watch)
-    assert ranked[0]["state"] == "WATCH"
+def test_validated_event_ranks_with_trigger_and_invalidation():
+    event = {**_plan("ABC", "Short", 100, .5, 100),
+             "state": "TRIGGERED", "signals": ["UPTHRUST"],
+             "entry_trigger": 100, "invalidation": 105}
+    ranked = rank_candidates([event])
+    assert ranked[0]["state"] == "TRIGGERED"
     assert ranked[0]["signals"] == ["UPTHRUST"]
-    assert ranked[0]["classical_evidence_score"] > 50
-    assert ranked[0]["raw"]["entry_trigger"] is None
+    assert ranked[0]["raw"]["entry_trigger"] == 100
+    assert ranked[0]["raw"]["invalidation"] == 105
+
+
+def test_missing_climax_still_has_nonzero_kernel_overlap():
+    """Regression: a binary zero Climax must not force every result to 0%."""
+    import importlib.util
+    if importlib.util.find_spec("qiskit") is None:
+        return  # the production Python environment runs this circuit check
+    from qiskit.quantum_info import Statevector
+    from backend.weis_quantum_pipeline import kernel_circuit
+    features = {"directional_exhaustion": 1.0, "low_volume_test": .83,
+                "level_test": 1.0, "climax_or_absorption": 0.0}
+    circuit = kernel_circuit(features).remove_final_measurements(inplace=False)
+    probability = Statevector.from_instruction(circuit).probabilities()[0]
+    assert 0.25 < probability < 0.75, probability

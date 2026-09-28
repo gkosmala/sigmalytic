@@ -370,7 +370,8 @@ def run_weis_radar_scan() -> dict:
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
     from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
     from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path
-    from backend.weis_quantum_pipeline import rank_candidates, radar_candidates
+    from backend.weis_quantum_pipeline import rank_candidates
+    from backend.weis_imminent import find_imminent_weis_events
     from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
     from backend.weis_radar_lifecycle import _is_after
 
@@ -446,6 +447,27 @@ def run_weis_radar_scan() -> dict:
                 )
                 hits = _normalize_signal_hits(found, bars[-1]["c"])
 
+                # The shared signal-test engine uses a lightweight wave
+                # rotation heuristic. Do not publish that heuristic as a
+                # genuine Spring/Upthrust. Replace its two labels with
+                # literal, prior-level breach and close-back-inside events.
+                hits = [h for h in hits if h["type"] not in {"SPRING", "UPTHRUST"}]
+                try:
+                    events = find_imminent_weis_events(
+                        symbol, bars, config["timeframe"],
+                        structure_engine=engine, weis_engine=weis_engine)
+                except Exception:
+                    events = []
+                for event in events:
+                    signal = event["signals"][0]
+                    if signal.lower() in requested_signals:
+                        hits.append({"type": signal, "price": round(float(bars[-1]["c"]), 2),
+                                     "score": 100.0, "structure_level": event["structure_level"],
+                                     "entry_trigger": event["entry_trigger"],
+                                     "invalidation": event["invalidation"]})
+                        if symbol not in {"SPY", "QQQ", "IWM", "GLD", "SMH"}:
+                            quantum_candidates.append(event)
+
                 # Persist and evaluate lifecycle state on the SAME completed
                 # bars already fetched for the universe scan. No second market
                 # data request is introduced here.
@@ -473,29 +495,6 @@ def run_weis_radar_scan() -> dict:
                     if trade_id not in history:
                         history[trade_id] = dict(plan)
                         history_by_symbol.setdefault((symbol, config["timeframe"]), []).append(history[trade_id])
-
-                # The quantum shortlist is a ranked WATCH list. Evaluate the
-                # deeper Weis engine only on symbols with actual Radar hits
-                # (or an armed plan), keeping the full-universe scan bounded.
-                if (hits or plan) and len(bars) >= 65:
-                    try:
-                        wave_df = pd.DataFrame([
-                            {"open": b["o"], "high": b["h"], "low": b["l"],
-                             "close": b["c"], "volume": b["v"], "date": b.get("t")}
-                            for b in bars[-252:]])
-                        wave = weis_engine.evaluate(wave_df, symbol=symbol)
-                        complete, _, _, current = weis_engine.build_waves(
-                            weis_engine._prepare(wave_df))
-                        prior_volumes = [float(w["vol"]) for w in complete[-5:]
-                                         if float(w.get("vol", 0)) > 0]
-                        current_volume = float(current.get("vol", 0)) if current else 0
-                        volume_ratio = (current_volume / (sum(prior_volumes) / len(prior_volumes))
-                                        if prior_volumes and current_volume > 0 else 1.0)
-                        quantum_candidates.extend(radar_candidates(
-                            symbol, config["timeframe"], bars[-1].get("t"), hits,
-                            wave, volume_ratio, armed=plan))
-                    except Exception:
-                        pass  # a failed deep evaluation cannot suppress Radar hits
 
                 if hits:
                     results.append({
@@ -533,7 +532,7 @@ def run_weis_radar_scan() -> dict:
     realized_net_r = [p["net_r"] for p in completed_trades if p.get("net_r") is not None]
     trade_finder = {
         "top10": trade_top10, "qualified_count": len(trade_candidates),
-        "ranking_definition": "Armed plans remain separate from the broader quantum WATCH shortlist",
+        "ranking_definition": "Armed plans require additional mature-range, light-volume, and reward/risk gates",
         "outcomes": {"completed": len(completed_trades),
                      "target_first": sum(p["status"] == "TARGET" for p in completed_trades),
                      "average_modeled_net_r": round(sum(realized_net_r) / len(realized_net_r), 4)
@@ -557,8 +556,8 @@ def run_weis_radar_scan() -> dict:
         "results": results,
         "trade_finder": trade_finder,
         "quantum_handoff": {"top10": ranked_candidates, "candidate_count": len(quantum_candidates),
-                            "ranking_definition": "40% directional exhaustion, 25% light-volume wave, 20% Radar Spring/Upthrust signal, 15% Climax/absorption",
-                            "note": "WATCH means ranked evidence, not an armed entry or predicted profit."},
+                            "ranking_definition": "All candidates breached a prior multi-touch level and closed back inside; 40% exhaustion, 25% light-volume test, 20% validated event, 15% Climax/absorption",
+                            "note": "TRIGGERED is a completed fake-out bar. Next-bar entry must still reach its trigger; no outcome or profit probability is implied."},
         "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

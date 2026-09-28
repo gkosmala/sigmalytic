@@ -22,23 +22,26 @@ def _unit(value):
 
 def handoff(plan):
     """Keep direction and raw evidence beside normalized, bounded features."""
-    exhaustion = _unit(plan.get("exhaustion_score", 0) / 100)
+    behavior = plan.get("wave_behavior") or {}
+    exhaustion = max(_unit(plan.get("exhaustion_score", 0) / 100),
+                     float(bool(behavior.get("diminished_volume_new_extreme"))))
     friction = _unit(plan.get("effort_without_reward_score", 0) / 100)
     climax = bool(plan.get("preceding_climax"))
     features = (
         exhaustion,
-        1 - _unit(plan.get("wave_volume_ratio", 1)),
+        1 - _unit(plan["wave_volume_ratio"]) if plan.get("wave_volume_ratio") is not None else 0.0,
         _unit(plan.get("test_score", 0) / 100),
-        max(friction, float(climax)),
+        max(friction, float(climax), float(bool(behavior.get("effort_without_result")))),
     )
     return {"symbol": plan["symbol"], "side": plan["side"],
-            "state": plan.get("state", "WATCH"), "signals": list(plan.get("signals") or []),
+            "state": plan.get("state", "TRIGGERED"), "signals": list(plan.get("signals") or []),
             "test_bar_time": plan["test_bar_time"], "timeframe": plan["timeframe"],
             "features": dict(zip(FEATURE_NAMES, features)),
             "raw": {key: plan.get(key) for key in (
                 "sot_score", "exhaustion_score", "effort_without_reward_score",
                 "wave_volume_ratio", "test_score", "preceding_climax",
-                "entry_trigger", "invalidation", "target", "reward_risk")}}
+                "entry_trigger", "invalidation", "target", "reward_risk",
+                "structure_level", "low_volume_test", "wave_behavior")}}
 
 
 def classical_rank(plan):
@@ -49,7 +52,7 @@ def classical_rank(plan):
                   25 * f["low_volume_test"] + 20 * f["level_test"] +
                   15 * f["climax_or_absorption"], 2)
     return {**row, "classical_evidence_score": score,
-            "score_definition": "40% exhaustion, 25% light-volume wave, 20% Radar pattern, 15% climax/absorption"}
+            "score_definition": "40% exhaustion, 25% low-volume wave, 20% validated level event, 15% climax/absorption"}
 
 
 def rank_candidates(plans, limit=10):
@@ -57,42 +60,6 @@ def rank_candidates(plans, limit=10):
     rows.sort(key=lambda r: (-r["classical_evidence_score"],
                              -float(r["raw"]["reward_risk"] or 0), r["symbol"], r["side"]))
     return rows[:limit]
-
-
-def radar_candidates(symbol, timeframe, bar_time, hits, wave, wave_volume_ratio, armed=None):
-    """Create directional watch candidates from actual Radar and Weis evidence.
-
-    A pattern hit is a Radar signal, not confirmation of a structural level
-    sweep. The ARMED flag comes only from the separate strict trade finder.
-    """
-    names = {hit.get("type") for hit in hits}
-    output = []
-    for side, pattern, climax, sot_key, exhaustion_key, friction_key in (
-        ("Long", "SPRING", "CLIMAX_SELL", "sot_downwaves", "volume_exhaustion", "effort_without_reward"),
-        ("Short", "UPTHRUST", "CLIMAX_BUY", "sot_upwaves", "buying_exhaustion", "buying_effort_without_reward"),
-    ):
-        sot = _unit(wave.get(sot_key, 0) / 100)
-        exhaustion = _unit(wave.get(exhaustion_key, 0) / 100)
-        friction = _unit(wave.get(friction_key, 0) / 100)
-        if not ({pattern, climax} & names or sot or exhaustion or friction or
-                (armed and armed.get("side") == side)):
-            continue
-        is_armed = bool(armed and armed.get("side") == side)
-        output.append({
-            "symbol": symbol, "side": side, "timeframe": timeframe,
-            "test_bar_time": str(bar_time or ""), "state": "ARMED" if is_armed else "WATCH",
-            "sot_score": wave.get(sot_key, 0), "exhaustion_score": wave.get(exhaustion_key, 0),
-            "effort_without_reward_score": wave.get(friction_key, 0),
-            "wave_volume_ratio": wave_volume_ratio,
-            "test_score": 100 if pattern in names else 0,
-            "preceding_climax": climax in names,
-            "reward_risk": armed.get("reward_risk") if is_armed else None,
-            "entry_trigger": armed.get("entry_trigger") if is_armed else None,
-            "invalidation": armed.get("invalidation") if is_armed else None,
-            "target": armed.get("target") if is_armed else None,
-            "signals": sorted(name for name in (pattern, climax) if name in names),
-        })
-    return output
 
 
 def kernel_circuit(features):
@@ -107,19 +74,21 @@ def kernel_circuit(features):
 
     def feature_map(vector):
         for index, value in enumerate(vector):
-            circuit.ry(math.pi * value, index)
+            # A half-turn over the full [0, 1] feature range avoids making
+            # a missing binary Climax feature orthogonal to the reference.
+            circuit.ry((math.pi / 2) * value, index)
         for index in range(3):
             circuit.cx(index, index + 1)
-            circuit.rz(math.pi * vector[index] * vector[index + 1], index + 1)
+            circuit.rz((math.pi / 4) * vector[index] * vector[index + 1], index + 1)
             circuit.cx(index, index + 1)
 
     def inverse_map(vector):
         for index in reversed(range(3)):
             circuit.cx(index, index + 1)
-            circuit.rz(-math.pi * vector[index] * vector[index + 1], index + 1)
+            circuit.rz(-(math.pi / 4) * vector[index] * vector[index + 1], index + 1)
             circuit.cx(index, index + 1)
         for index in reversed(range(4)):
-            circuit.ry(-math.pi * vector[index], index)
+            circuit.ry(-(math.pi / 2) * vector[index], index)
 
     feature_map(values)
     inverse_map(REFERENCE)

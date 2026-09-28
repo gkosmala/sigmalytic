@@ -246,6 +246,8 @@ class WeisVerdictEngine:
                             running_extreme
                             - current_start
                         )),
+                        "start": float(current_start),
+                        "end": float(running_extreme),
                         "bar_volumes": current_bar_volumes,
                     })
 
@@ -273,6 +275,8 @@ class WeisVerdictEngine:
             "dir": int(current_dir),
             "vol": float(current_volume),
             "delta": float(abs(df["close"].iloc[-1] - current_start)) if len(df) else 0.0,
+            "start": float(current_start),
+            "end": float(running_extreme),
             "bar_volumes": current_bar_volumes,
         }
 
