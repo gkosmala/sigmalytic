@@ -1,5 +1,5 @@
 """Checks for deterministic candidate selection and stable handoff identity."""
-from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, rank_candidates
+from backend.weis_quantum_pipeline import FEATURE_NAMES, handoff, rank_candidates, radar_candidates
 
 
 def _plan(symbol, side, exhaustion, ratio, test, climax=False):
@@ -23,3 +23,17 @@ def test_features_clamp_invalid_inputs_without_claiming_trade_probability():
     row = handoff(_plan("X", "Short", 1000, -4, 200))
     assert all(0 <= value <= 1 for value in row["features"].values())
     assert "profit_probability" not in row
+
+
+def test_watchlist_ranks_without_requiring_armed_trade():
+    wave = {"sot_upwaves": 100, "buying_exhaustion": 100,
+            "buying_effort_without_reward": 0, "sot_downwaves": 0,
+            "volume_exhaustion": 0, "effort_without_reward": 0}
+    watch = radar_candidates("ABC", "1Day", "2026-09-25",
+                             [{"type": "UPTHRUST"}], wave, .5)
+    assert len(watch) == 1 and watch[0]["side"] == "Short"
+    ranked = rank_candidates(watch)
+    assert ranked[0]["state"] == "WATCH"
+    assert ranked[0]["signals"] == ["UPTHRUST"]
+    assert ranked[0]["classical_evidence_score"] > 50
+    assert ranked[0]["raw"]["entry_trigger"] is None

@@ -50,9 +50,9 @@ def main():
             parser.error("No completed Weis Radar scan found in Redis")
         payload = json.loads(raw)
 
-    handoff = (payload.get("trade_finder") or {}).get("handoff") or []
+    handoff = (payload.get("quantum_handoff") or {}).get("top10") or []
     if not handoff:
-        parser.error("Scan has no qualified handoff candidates; run Weis Radar first")
+        parser.error("Scan has no ranked Weis candidates; run Weis Radar on the updated worker first")
     if len(handoff) > 10:
         parser.error("Expected at most ten selected handoff candidates")
     result = execute(handoff, mode=args.mode, shots=args.shots, backend_name=args.backend)

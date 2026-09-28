@@ -4591,6 +4591,29 @@ def _render_weis_quantum(quantum):
     ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
 
 
+def _render_weis_quantum_handoff(handoff):
+    if not isinstance(handoff, dict):
+        return html.Div()
+    candidates = handoff.get("top10") or []
+    return html.Div([
+        html.H3("Top Weis candidates for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
+        html.Div(f"{handoff.get('candidate_count', 0)} directional candidates; up to ten sent to the "
+                 "quantum circuit. WATCH is evidence to evaluate, not an armed entry. "
+                 "Armed trade setups are listed separately below.",
+                 style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
+        html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
+                                      for label in ("Rank", "Symbol", "Side", "State", "Weis evidence", "Signals")])),
+                    html.Tbody([html.Tr([html.Td(str(index)), html.Td(row.get("symbol")),
+                                        html.Td(row.get("side")), html.Td(row.get("state", "WATCH")),
+                                        html.Td(f"{row['classical_evidence_score']:.1f}"),
+                                        html.Td(", ".join(row.get("signals") or []) or "Wave evidence")])
+                                for index, row in enumerate(candidates, 1)])],
+                   style={"width": "100%", "fontSize": "12px", "color": WHITE})
+        if candidates else html.Div("No directional Weis candidate found in this scan.",
+                                    style={"color": MUTED, "fontSize": "12px"}),
+    ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
+
+
 def build_weis_radar_tab(session=None):
     """
     ADDED (2026-08-24): Weis Radar -- shows the results of the
@@ -4768,6 +4791,7 @@ def build_weis_radar_tab(session=None):
             _header_row(),
             _settings_panel(),
             _render_weis_trade_finder(data.get("trade_finder")),
+            _render_weis_quantum_handoff(data.get("quantum_handoff")),
             _render_weis_quantum(data.get("quantum")),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
@@ -4796,6 +4820,7 @@ def build_weis_radar_tab(session=None):
         # of hitting the backend again.
         dcc.Store(id="s-weis-radar-raw-results", data=results),
         _render_weis_trade_finder(data.get("trade_finder")),
+        _render_weis_quantum_handoff(data.get("quantum_handoff")),
         _render_weis_quantum(data.get("quantum")),
         html.Div([
             html.Div([

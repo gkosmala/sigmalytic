@@ -2792,7 +2792,7 @@ def save_weis_quantum_result(result: dict, _admin: str = Depends(require_admin))
         return {"ok": False, "error": "Redis unavailable"}
     try:
         scan = json.loads(_redis_client.get(WEIS_RADAR_RESULTS_KEY) or "{}")
-        expected = (scan.get("trade_finder") or {}).get("handoff") or []
+        expected = (scan.get("quantum_handoff") or {}).get("top10") or []
         submitted = result.get("results") or []
         identity = lambda rows: {(row.get("symbol"), row.get("side"), row.get("test_bar_time")) for row in rows}
         if (not expected or result.get("scan_generated_at") != scan.get("generated_at") or

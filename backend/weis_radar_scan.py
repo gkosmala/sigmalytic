@@ -370,7 +370,8 @@ def run_weis_radar_scan() -> dict:
     from backend.research_engine.wyckoff_verdict_engine import WyckoffVerdictEngine
     from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
     from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path
-    from backend.weis_quantum_pipeline import rank_candidates
+    from backend.weis_quantum_pipeline import rank_candidates, radar_candidates
+    from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
     from backend.weis_radar_lifecycle import _is_after
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -387,6 +388,7 @@ def run_weis_radar_scan() -> dict:
     effective_lookback = max(config["lookback"], minimum_bars, 65)
 
     engine = WyckoffVerdictEngine()
+    weis_engine = WeisVerdictEngine()
     lifecycle = WeisRadarLifecycleTracker(
         _redis_client,
         timeframe=config["timeframe"],
@@ -395,6 +397,7 @@ def run_weis_radar_scan() -> dict:
     symbols = load_russell1000()
     results = []
     trade_candidates = []
+    quantum_candidates = []
     try:
         history = json.loads(_redis_client.get(WEIS_RADAR_TRADE_HISTORY_KEY) or "{}") if _redis_client else {}
         if not isinstance(history, dict):
@@ -471,6 +474,29 @@ def run_weis_radar_scan() -> dict:
                         history[trade_id] = dict(plan)
                         history_by_symbol.setdefault((symbol, config["timeframe"]), []).append(history[trade_id])
 
+                # The quantum shortlist is a ranked WATCH list. Evaluate the
+                # deeper Weis engine only on symbols with actual Radar hits
+                # (or an armed plan), keeping the full-universe scan bounded.
+                if (hits or plan) and len(bars) >= 65:
+                    try:
+                        wave_df = pd.DataFrame([
+                            {"open": b["o"], "high": b["h"], "low": b["l"],
+                             "close": b["c"], "volume": b["v"], "date": b.get("t")}
+                            for b in bars[-252:]])
+                        wave = weis_engine.evaluate(wave_df, symbol=symbol)
+                        complete, _, _, current = weis_engine.build_waves(
+                            weis_engine._prepare(wave_df))
+                        prior_volumes = [float(w["vol"]) for w in complete[-5:]
+                                         if float(w.get("vol", 0)) > 0]
+                        current_volume = float(current.get("vol", 0)) if current else 0
+                        volume_ratio = (current_volume / (sum(prior_volumes) / len(prior_volumes))
+                                        if prior_volumes and current_volume > 0 else 1.0)
+                        quantum_candidates.extend(radar_candidates(
+                            symbol, config["timeframe"], bars[-1].get("t"), hits,
+                            wave, volume_ratio, armed=plan))
+                    except Exception:
+                        pass  # a failed deep evaluation cannot suppress Radar hits
+
                 if hits:
                     results.append({
                         "symbol": symbol,
@@ -495,19 +521,19 @@ def run_weis_radar_scan() -> dict:
 
     lifecycle_snapshot = lifecycle.save()
     results.sort(key=lambda r: len(r["hits"]), reverse=True)
-    ranked_candidates = rank_candidates(trade_candidates)
+    ranked_candidates = rank_candidates(quantum_candidates)
+    armed_ranked = rank_candidates(trade_candidates)
     by_identity = {(p["symbol"], p["side"], p["test_bar_time"]): p for p in trade_candidates}
     trade_top10 = [{**by_identity[(r["symbol"], r["side"], r["test_bar_time"])],
                     "classical_evidence_score": r["classical_evidence_score"],
-                    "quantum_features": r["features"]} for r in ranked_candidates]
+                    "quantum_features": r["features"]} for r in armed_ranked]
     completed_trades = [p["outcome"] for p in history.values()
                         if isinstance(p.get("outcome"), dict) and p["outcome"].get("status") in
                         {"TARGET", "STOP", "STOP_FIRST_OR_AMBIGUOUS", "TIME_EXIT"}]
     realized_net_r = [p["net_r"] for p in completed_trades if p.get("net_r") is not None]
     trade_finder = {
         "top10": trade_top10, "qualified_count": len(trade_candidates),
-        "handoff": ranked_candidates,
-        "ranking_definition": "40% directional exhaustion, 25% low-volume test, 20% level test, 15% climax or absorption",
+        "ranking_definition": "Armed plans remain separate from the broader quantum WATCH shortlist",
         "outcomes": {"completed": len(completed_trades),
                      "target_first": sum(p["status"] == "TARGET" for p in completed_trades),
                      "average_modeled_net_r": round(sum(realized_net_r) / len(realized_net_r), 4)
@@ -530,6 +556,9 @@ def run_weis_radar_scan() -> dict:
         "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
         "trade_finder": trade_finder,
+        "quantum_handoff": {"top10": ranked_candidates, "candidate_count": len(quantum_candidates),
+                            "ranking_definition": "40% directional exhaustion, 25% light-volume wave, 20% Radar Spring/Upthrust signal, 15% Climax/absorption",
+                            "note": "WATCH means ranked evidence, not an armed entry or predicted profit."},
         "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

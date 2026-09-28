@@ -32,6 +32,7 @@ def handoff(plan):
         max(friction, float(climax)),
     )
     return {"symbol": plan["symbol"], "side": plan["side"],
+            "state": plan.get("state", "WATCH"), "signals": list(plan.get("signals") or []),
             "test_bar_time": plan["test_bar_time"], "timeframe": plan["timeframe"],
             "features": dict(zip(FEATURE_NAMES, features)),
             "raw": {key: plan.get(key) for key in (
@@ -48,14 +49,50 @@ def classical_rank(plan):
                   25 * f["low_volume_test"] + 20 * f["level_test"] +
                   15 * f["climax_or_absorption"], 2)
     return {**row, "classical_evidence_score": score,
-            "score_definition": "40% exhaustion, 25% light-volume test, 20% level test, 15% climax/absorption"}
+            "score_definition": "40% exhaustion, 25% light-volume wave, 20% Radar pattern, 15% climax/absorption"}
 
 
 def rank_candidates(plans, limit=10):
     rows = [classical_rank(p) for p in plans]
     rows.sort(key=lambda r: (-r["classical_evidence_score"],
-                             -float(r["raw"]["reward_risk"]), r["symbol"]))
+                             -float(r["raw"]["reward_risk"] or 0), r["symbol"], r["side"]))
     return rows[:limit]
+
+
+def radar_candidates(symbol, timeframe, bar_time, hits, wave, wave_volume_ratio, armed=None):
+    """Create directional watch candidates from actual Radar and Weis evidence.
+
+    A pattern hit is a Radar signal, not confirmation of a structural level
+    sweep. The ARMED flag comes only from the separate strict trade finder.
+    """
+    names = {hit.get("type") for hit in hits}
+    output = []
+    for side, pattern, climax, sot_key, exhaustion_key, friction_key in (
+        ("Long", "SPRING", "CLIMAX_SELL", "sot_downwaves", "volume_exhaustion", "effort_without_reward"),
+        ("Short", "UPTHRUST", "CLIMAX_BUY", "sot_upwaves", "buying_exhaustion", "buying_effort_without_reward"),
+    ):
+        sot = _unit(wave.get(sot_key, 0) / 100)
+        exhaustion = _unit(wave.get(exhaustion_key, 0) / 100)
+        friction = _unit(wave.get(friction_key, 0) / 100)
+        if not ({pattern, climax} & names or sot or exhaustion or friction or
+                (armed and armed.get("side") == side)):
+            continue
+        is_armed = bool(armed and armed.get("side") == side)
+        output.append({
+            "symbol": symbol, "side": side, "timeframe": timeframe,
+            "test_bar_time": str(bar_time or ""), "state": "ARMED" if is_armed else "WATCH",
+            "sot_score": wave.get(sot_key, 0), "exhaustion_score": wave.get(exhaustion_key, 0),
+            "effort_without_reward_score": wave.get(friction_key, 0),
+            "wave_volume_ratio": wave_volume_ratio,
+            "test_score": 100 if pattern in names else 0,
+            "preceding_climax": climax in names,
+            "reward_risk": armed.get("reward_risk") if is_armed else None,
+            "entry_trigger": armed.get("entry_trigger") if is_armed else None,
+            "invalidation": armed.get("invalidation") if is_armed else None,
+            "target": armed.get("target") if is_armed else None,
+            "signals": sorted(name for name in (pattern, climax) if name in names),
+        })
+    return output
 
 
 def kernel_circuit(features):
