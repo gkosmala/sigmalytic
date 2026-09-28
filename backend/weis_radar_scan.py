@@ -530,8 +530,9 @@ def run_weis_radar_scan() -> dict:
                 "effort_without_reward_score", "sot_score", "preceding_climax")})
             event["low_volume_test"] = event["wave_volume_ratio"] < .7
             event["armed"] = True
-    candidates = candidate_records(quantum_candidates)
     imminent_setups = sequential_trade_setups(quantum_candidates)
+    candidates = candidate_records(imminent_setups)
+    validated_events = candidate_records(quantum_candidates)
     armed_setups = sorted(trade_candidates, key=lambda plan: (plan["symbol"], plan["side"]))
     completed_trades = [p["outcome"] for p in history.values()
                         if isinstance(p.get("outcome"), dict) and p["outcome"].get("status") in
@@ -567,7 +568,8 @@ def run_weis_radar_scan() -> dict:
             "definition": "Prior directional wave effort without result, exhaustion, or climax; then a low-volume Spring or Upthrust test",
         },
         "quantum_handoff": {"candidates": candidates, "candidate_count": len(candidates),
-                            "selection_status": "All validated events shown; no weighted score or top-ten selection until outcome calibration",
+                            "validated_events": validated_events,
+                            "selection_status": "Sequential Weis setups only; no weighted score or top-ten cutoff",
                             "note": "TRIGGERED is a completed fake-out bar. Next-bar entry must still reach its trigger; no outcome or profit probability is implied."},
         "lifecycle": lifecycle_snapshot,
         "generated_at": datetime.now(timezone.utc).isoformat(),

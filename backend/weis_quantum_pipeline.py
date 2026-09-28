@@ -1,7 +1,6 @@
-"""Reproducible Weis candidate handoff and quantum kernel comparison.
+"""Send actual Weis setup evidence to a local or IBM quantum sampler.
 
-The zero-state fraction is a circuit overlap, not a calibrated probability
-of a profitable trade or proof of institutional activity.
+Measurements are raw circuit output, not a setup rank or trade probability.
 """
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ import math
 
 
 FEATURE_NAMES = ("directional_exhaustion", "low_volume_test", "level_test", "climax_or_absorption")
-REFERENCE = (1.0, 1.0, 1.0, 1.0)
 
 
 def _unit(value):
@@ -39,7 +37,7 @@ def handoff(plan):
         "sot_score", "exhaustion_score", "effort_without_reward_score",
         "wave_volume_ratio", "test_score", "preceding_climax",
         "entry_trigger", "invalidation", "target", "reward_risk",
-        "structure_level", "low_volume_test", "wave_behavior", "armed")}
+        "structure_level", "low_volume_test", "wave_behavior", "wave_sequence", "armed")}
     raw["risk_pct"] = round(risk_pct, 4) if risk_pct is not None else None
     raw["prior_wave_evidence"] = [label for condition, label in (
         (_unit(plan.get("exhaustion_score", 0) / 100) > 0, "exhaustion"),
@@ -65,11 +63,7 @@ def candidate_records(plans):
 
 
 def kernel_circuit(features):
-    """Four-feature overlap with a fixed least-risk reference archetype.
-
-    The reference is a declared modeling choice, not a learned institution
-    label. Interaction gates encode relationships between adjacent features.
-    """
+    """Encode one actual setup; no reference state or candidate comparison."""
     from qiskit import QuantumCircuit
     values = tuple(_unit(features[name]) for name in FEATURE_NAMES)
     circuit = QuantumCircuit(4)
@@ -84,16 +78,7 @@ def kernel_circuit(features):
             circuit.rz((math.pi / 4) * vector[index] * vector[index + 1], index + 1)
             circuit.cx(index, index + 1)
 
-    def inverse_map(vector):
-        for index in reversed(range(3)):
-            circuit.cx(index, index + 1)
-            circuit.rz(-(math.pi / 4) * vector[index] * vector[index + 1], index + 1)
-            circuit.cx(index, index + 1)
-        for index in reversed(range(4)):
-            circuit.ry(-(math.pi / 2) * vector[index], index)
-
     feature_map(values)
-    inverse_map(REFERENCE)
     circuit.measure_all()
     return circuit
 
@@ -127,11 +112,8 @@ def execute(rows, *, mode="local", shots=4096, backend_name=None):
         counts = pub.data.meas.get_counts()
         total = sum(counts.values())
         completed.append({**row, "counts": counts, "shots": total,
-                          "kernel_similarity": counts.get("0000", 0) / total if total else None,
-                          "measurement": "P(0000) overlap with declared reference; not trade probability"})
-    # Keep the input order. The reference overlap has not been calibrated to
-    # trade outcomes, so it must not be presented as a trade-quality ranking.
+                          "measurement": "Raw encoded-setup counts; no ranking or trade probability"})
     return {"mode": mode, "backend": backend_used,
             "job_id": job.job_id() if mode == "ibm" else None,
-            "shots_requested": shots, "reference": dict(zip(FEATURE_NAMES, REFERENCE)),
+            "shots_requested": shots,
             "results": completed}

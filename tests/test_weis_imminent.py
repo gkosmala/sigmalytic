@@ -34,6 +34,9 @@ def test_spring_requires_prior_multitouch_level_and_actual_reclaim():
     assert len(events) == 1 and events[0]["signals"] == ["SPRING"]
     assert events[0]["entry_trigger"] == 106 and events[0]["invalidation"] == 99
     assert events[0]["state"] == "TRIGGERED"
+    sequence = events[0]["wave_sequence"]
+    assert sequence["before_test"]["completed"][-1]["vol"] == 90
+    assert sequence["through_test"]["forming"]["vol"] == 25
     no_reclaim = bars()
     no_reclaim[-1].update({"l": 99, "c": 99.5})
     assert not find_imminent_weis_events("ABC", no_reclaim, "1Day", weis_engine=Waves())

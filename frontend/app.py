@@ -4606,16 +4606,16 @@ def _render_weis_quantum(quantum):
                         style={"color": MUTED, "fontSize": "12px", "marginBottom": "12px"})
     rows = quantum.get("results") or []
     return html.Div([
-        html.H3("Weis quantum kernel", style={"color": WHITE, "fontSize": "17px"}),
+        html.H3("Weis setup circuit measurements", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(f"{quantum.get('mode', '').upper()} • {quantum.get('backend') or 'local simulator'} "
-                 f"• job {quantum.get('job_id') or 'local'} • P(0000) is similarity to a defined "
-                 "least-risk reference, not a trade-success probability or proof of institutional activity.",
+                 f"• job {quantum.get('job_id') or 'local'} • Raw bitstring counts for each setup; "
+                 "no reference pattern, ranking, or trade probability.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Symbol", "Side", "Circuit similarity", "Shots")])),
+                                      for label in ("Symbol", "Side", "Measured bitstrings", "Shots")])),
                     html.Tbody([html.Tr([html.Td(row.get("symbol")),
                                         html.Td(row.get("side")),
-                                        html.Td(f"{100 * row['kernel_similarity']:.1f}%" if row.get("kernel_similarity") is not None else "—"),
+                                        html.Td(", ".join(f"{key}: {value}" for key, value in sorted((row.get("counts") or {}).items()))),
                                         html.Td(str(row.get("shots", "—")))])
                                 for row in rows])],
                    style={"width": "100%", "fontSize": "12px", "color": WHITE}),
@@ -4625,7 +4625,7 @@ def _render_weis_quantum(quantum):
 def _render_weis_quantum_handoff(handoff):
     if not isinstance(handoff, dict):
         return html.Div()
-    candidates = handoff.get("candidates") or []
+    candidates = handoff.get("validated_events") or handoff.get("candidates") or []
     return html.Div([
         html.H3("All validated Spring and Upthrust events", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "

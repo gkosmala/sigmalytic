@@ -60,6 +60,13 @@ def wave_effort_result(waves, current, direction):
     }
 
 
+def _wave_record(wave):
+    """Preserve observed directional wave measurements in the handoff."""
+    if not wave:
+        return None
+    return {key: wave.get(key) for key in ("dir", "vol", "delta", "start", "end")}
+
+
 def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None, weis_engine=None):
     """Return latest-bar, level-validated directional reversals.
 
@@ -104,8 +111,18 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
 
     # Pre-event Weis readings cannot see the penetration bar or future bars.
     wave = weis_engine.evaluate(prior, symbol=symbol)
-    prior_completed, _, _, _ = weis_engine.build_waves(weis_engine._prepare(prior))
+    prior_completed, _, _, prior_current = weis_engine.build_waves(weis_engine._prepare(prior))
     completed, _, _, current = weis_engine.build_waves(weis_engine._prepare(df))
+    wave_sequence = {
+        "before_test": {
+            "completed": [_wave_record(w) for w in prior_completed],
+            "forming": _wave_record(prior_current),
+        },
+        "through_test": {
+            "completed": [_wave_record(w) for w in completed],
+            "forming": _wave_record(current),
+        },
+    }
     results = []
     for side, signal, level, direction, entry_key, stop_key, opposite, sot_key, exhaust_key, effort_key in tests:
         entry, stop, close = (_number(bar[entry_key]), _number(bar[stop_key]), _number(bar["close"]))
@@ -131,6 +148,7 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
             "wave_volume_ratio": round(ratio, 4) if ratio is not None else None,
             "low_volume_test": ratio is not None and ratio < .7,
             "wave_behavior": behavior,
+            "wave_sequence": wave_sequence,
             "test_score": 100, "sot_score": wave.get(sot_key, 0),
             "exhaustion_score": wave.get(exhaust_key, 0),
             "effort_without_reward_score": wave.get(effort_key, 0),

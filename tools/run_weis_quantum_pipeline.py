@@ -1,4 +1,4 @@
-"""Run validated Weis Radar candidates through a local or IBM quantum kernel.
+"""Measure validated Weis Radar setups on a local or IBM quantum sampler.
 
 Examples (from repository root):
   python tools/run_weis_quantum_pipeline.py --input scan.json --mode local
@@ -56,7 +56,7 @@ def main():
     result = execute(handoff, mode=args.mode, shots=args.shots, backend_name=args.backend)
     result["scan_generated_at"] = payload.get("generated_at")
     result["timeframe"] = (payload.get("config") or {}).get("timeframe")
-    result["qualification"] = "Circuit overlap only; trade probability and institutional attribution uncalibrated"
+    result["qualification"] = "Raw circuit measurements only; no reference, ranking, trade probability, or institutional attribution"
     args.output.write_text(json.dumps(result, indent=2, allow_nan=False), encoding="utf-8")
     if client:
         # A newer scan may have finished while the hardware job was queued.

@@ -37,6 +37,15 @@ def test_validated_event_keeps_trigger_and_invalidation():
     assert rows[0]["raw"]["risk_pct"] == 5.0
 
 
+def test_measured_wave_sequence_survives_candidate_handoff():
+    sequence = {"before_test": {"completed": [{"dir": -1, "vol": 120, "delta": 2}],
+                                "forming": None},
+                "through_test": {"completed": [],
+                                 "forming": {"dir": -1, "vol": 45, "delta": .5}}}
+    event = {**_plan("ABC", "Long", 100, .375, 100), "wave_sequence": sequence}
+    assert handoff(event)["raw"]["wave_sequence"] == sequence
+
+
 def test_armed_flag_and_distinct_effort_evidence_survive_handoff():
     event = {**_plan("ABC", "Long", 0, 1.2, 100),
              "entry_trigger": 100, "invalidation": 98,
@@ -61,8 +70,7 @@ def test_candidate_handoff_has_no_top_ten_cutoff():
     assert len(rows) == 17
 
 
-def test_missing_climax_still_has_nonzero_kernel_overlap():
-    """Regression: a binary zero Climax must not force every result to 0%."""
+def test_circuit_encodes_candidate_without_a_reference():
     import importlib.util
     if importlib.util.find_spec("qiskit") is None:
         return  # the production Python environment runs this circuit check
@@ -71,5 +79,20 @@ def test_missing_climax_still_has_nonzero_kernel_overlap():
     features = {"directional_exhaustion": 1.0, "low_volume_test": .83,
                 "level_test": 1.0, "climax_or_absorption": 0.0}
     circuit = kernel_circuit(features).remove_final_measurements(inplace=False)
-    probability = Statevector.from_instruction(circuit).probabilities()[0]
-    assert 0.25 < probability < 0.75, probability
+    probabilities = Statevector.from_instruction(circuit).probabilities()
+    assert len(probabilities) == 16
+    assert abs(sum(probabilities) - 1.0) < 1e-12
+
+
+def test_local_measurements_keep_identity_without_comparison():
+    import importlib.util
+    if importlib.util.find_spec("qiskit") is None:
+        return
+    from backend.weis_quantum_pipeline import execute
+    rows = candidate_records([_plan("A", "Long", 100, .2, 100),
+                              _plan("B", "Short", 0, .6, 100)])
+    result = execute(rows, shots=128)
+    assert [row["symbol"] for row in result["results"]] == ["A", "B"]
+    assert all(sum(row["counts"].values()) == 128 for row in result["results"])
+    assert "reference" not in result and "pairs" not in result
+    assert all("kernel_similarity" not in row for row in result["results"])
