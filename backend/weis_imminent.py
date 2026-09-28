@@ -137,3 +137,17 @@ def find_imminent_weis_events(symbol, bars, timeframe, *, structure_engine=None,
             "preceding_climax": climax,
         })
     return results
+
+
+def sequential_trade_setups(events):
+    """Observed level rejection, prior wave evidence, then a low-volume test.
+
+    Preserve all matching events and their entry/stop/optional target. This
+    is a structural screen, not a fill, outcome, or weighted ranking.
+    """
+    return sorted((event for event in events
+                   if event.get("low_volume_test") and
+                   (event.get("effort_without_reward_score", 0) > 0 or
+                    event.get("exhaustion_score", 0) > 0 or
+                    event.get("preceding_climax"))),
+                  key=lambda event: (event["symbol"], event["side"]))

@@ -371,7 +371,7 @@ def run_weis_radar_scan() -> dict:
     from backend.weis_radar_lifecycle import WeisRadarLifecycleTracker
     from backend.weis_trade_finder import build_trade_setup, evaluate_trade_path
     from backend.weis_quantum_pipeline import candidate_records
-    from backend.weis_imminent import find_imminent_weis_events
+    from backend.weis_imminent import find_imminent_weis_events, sequential_trade_setups
     from backend.research_engine.weis_verdict_engine import WeisVerdictEngine
     from backend.weis_radar_lifecycle import _is_after
 
@@ -531,6 +531,7 @@ def run_weis_radar_scan() -> dict:
             event["low_volume_test"] = event["wave_volume_ratio"] < .7
             event["armed"] = True
     candidates = candidate_records(quantum_candidates)
+    imminent_setups = sequential_trade_setups(quantum_candidates)
     armed_setups = sorted(trade_candidates, key=lambda plan: (plan["symbol"], plan["side"]))
     completed_trades = [p["outcome"] for p in history.values()
                         if isinstance(p.get("outcome"), dict) and p["outcome"].get("status") in
@@ -561,6 +562,10 @@ def run_weis_radar_scan() -> dict:
         "config": {**config, "effective_lookback": effective_lookback},
         "results": results,
         "trade_finder": trade_finder,
+        "trade_about_to_happen": {
+            "setups": imminent_setups, "count": len(imminent_setups),
+            "definition": "Prior directional wave effort without result, exhaustion, or climax; then a low-volume Spring or Upthrust test",
+        },
         "quantum_handoff": {"candidates": candidates, "candidate_count": len(candidates),
                             "selection_status": "All validated events shown; no weighted score or top-ten selection until outcome calibration",
                             "note": "TRIGGERED is a completed fake-out bar. Next-bar entry must still reach its trigger; no outcome or profit probability is implied."},

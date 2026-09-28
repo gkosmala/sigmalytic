@@ -1,5 +1,5 @@
 """Real level, false breakout, and cumulative wave behavior checks."""
-from backend.weis_imminent import find_imminent_weis_events, wave_effort_result
+from backend.weis_imminent import find_imminent_weis_events, wave_effort_result, sequential_trade_setups
 
 
 class Waves:
@@ -82,3 +82,18 @@ def test_climax_on_test_bar_is_not_labeled_preceding_climax():
     events = find_imminent_weis_events("ABC", history, "1Day", weis_engine=TestClimax())
     assert len(events) == 1
     assert events[0]["preceding_climax"] is False
+
+
+def test_sequential_screen_accepts_prior_effort_or_exhaustion_and_later_low_volume():
+    base = {"side": "Long", "entry_trigger": 100, "invalidation": 98,
+            "low_volume_test": True, "wave_volume_ratio": .5}
+    observations = [
+        {**base, "symbol": "EFFORT", "effort_without_reward_score": 100},
+        {**base, "symbol": "EXHAUST", "exhaustion_score": 100},
+        {**base, "symbol": "CLIMAX", "preceding_climax": True},
+        {**base, "symbol": "NO_PRIOR"},
+        {**base, "symbol": "NO_TEST", "effort_without_reward_score": 100,
+         "low_volume_test": False, "wave_volume_ratio": 1.2},
+    ]
+    assert [row["symbol"] for row in sequential_trade_setups(observations)] == [
+        "CLIMAX", "EFFORT", "EXHAUST"]

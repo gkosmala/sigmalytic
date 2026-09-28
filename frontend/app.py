@@ -4528,6 +4528,40 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
     ], style={"width": "100%", "borderCollapse": "collapse"})
 
 
+def _render_weis_imminent_setups(payload):
+    if not isinstance(payload, dict):
+        return html.Div()
+    setups = payload.get("setups") or []
+    headers = ("Symbol", "Side", "Prior wave", "Test wave", "Entry trigger", "Invalidation", "Target", "Armed")
+    rows = [html.Tr([
+        html.Td(item["symbol"]), html.Td(item["side"]),
+        html.Td(", ".join(label for condition, label in (
+            (item.get("effort_without_reward_score", 0) > 0, "effort without result"),
+            (item.get("exhaustion_score", 0) > 0, "exhaustion"),
+            (item.get("preceding_climax"), "climax"),
+        ) if condition)),
+        html.Td(f"low volume ({item['wave_volume_ratio']:.2f}×)"),
+        html.Td(f"${item['entry_trigger']:,.2f}"),
+        html.Td(f"${item['invalidation']:,.2f}"),
+        html.Td(f"${item['target']:,.2f}" if item.get("target") is not None else "No target defined"),
+        html.Td("Yes" if item.get("armed") else "No"),
+    ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in setups]
+    return html.Div([
+        html.H3("Trades about to happen — sequential Weis setups",
+                style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
+        html.Div(f"{len(setups)} setups with a prior wave signal, a completed level rejection, "
+                 "and a later low-volume test. Entry requires the next bar to reach its trigger. "
+                 "A missing target is shown explicitly; no entry has been assumed.",
+                 style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
+        html.Table([html.Thead(html.Tr([html.Th(label, style={"padding": "8px", "textAlign": "left", "color": MUTED})
+                                      for label in headers])), html.Tbody(rows)],
+                   style={"width": "100%", "borderCollapse": "collapse", "fontSize": "12px"})
+        if rows else html.Div("No sequential Weis setup in this scan.",
+                              style={"color": MUTED, "fontSize": "12px"}),
+    ], style={"border": f"1px solid {BORDER_T}", "borderRadius": "12px", "padding": "14px",
+              "marginBottom": "20px", "overflowX": "auto"})
+
+
 def _render_weis_trade_finder(trade_finder):
     if not isinstance(trade_finder, dict):
         return html.Div()
@@ -4593,7 +4627,7 @@ def _render_weis_quantum_handoff(handoff):
         return html.Div()
     candidates = handoff.get("candidates") or []
     return html.Div([
-        html.H3("Validated Spring and Upthrust setups for quantum evaluation", style={"color": WHITE, "fontSize": "17px"}),
+        html.H3("All validated Spring and Upthrust events", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
                  "Each breached a prior multi-touch level and closed back inside. "
                  "Prior-wave effort and later test-wave behavior are shown separately. "
@@ -4795,9 +4829,9 @@ def build_weis_radar_tab(session=None):
         return html.Div([
             _header_row(),
             _settings_panel(),
+            _render_weis_imminent_setups(data.get("trade_about_to_happen")),
             _render_weis_trade_finder(data.get("trade_finder")),
             _render_weis_quantum_handoff(data.get("quantum_handoff")),
-            _render_weis_quantum(data.get("quantum")),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -4824,9 +4858,9 @@ def build_weis_radar_tab(session=None):
         # client-side so filter/sort changes re-render locally instead
         # of hitting the backend again.
         dcc.Store(id="s-weis-radar-raw-results", data=results),
+        _render_weis_imminent_setups(data.get("trade_about_to_happen")),
         _render_weis_trade_finder(data.get("trade_finder")),
         _render_weis_quantum_handoff(data.get("quantum_handoff")),
-        _render_weis_quantum(data.get("quantum")),
         html.Div([
             html.Div([
                 html.Span("Filter: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),
