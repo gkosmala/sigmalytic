@@ -380,8 +380,15 @@ def _edit_trade_form(all_trades=None) -> html.Div:
         status = t.get("status", "—")
         entry = t.get("entry_price", 0)
         entry_date = t.get("entry_date", "—")
+        # Short label: the full journal_id is long enough on its own to
+        # wrap to a second line in this dropdown's fixed-height option
+        # rows, which made consecutive options visually overlap on
+        # narrow/mobile screens. A short id suffix is enough to tell
+        # same-symbol/same-day entries apart while keeping this on one
+        # line; the full journal_id is still the dropdown's value.
+        short_id = jid[-6:] if len(jid) > 6 else jid
         options.append({
-            "label": f"{sym} | {status} | {jid} | entry ${float(entry or 0):,.2f} | {entry_date}",
+            "label": f"{sym} · {status} · {entry_date} · ${float(entry or 0):,.2f} · #{short_id}",
             "value": jid,
         })
 

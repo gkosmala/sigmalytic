@@ -275,3 +275,43 @@
     display: block !important;
   }
 }
+
+/* ── Dash dropdown menu (dcc.Dropdown) — all screen sizes ───────────
+   FIX (2026-10-02): the Journal tab's "Edit Journal Entry" dropdown
+   lists every trade with a fairly long label (symbol, status, date,
+   price, id). dcc.Dropdown's underlying menu renders each option in a
+   fixed-height row with no wrapping, so on a narrow screen a label
+   that doesn't fit overlapped the row below it, making the whole list
+   look garbled/jumbled. Labels were also shortened in
+   trade_journal_tab.py, but this rule makes any dcc.Dropdown in the
+   app safe against the same overlap regardless of label length, and
+   matches its menu to the app's dark theme (the default is white on
+   white here, which was unreadable too). */
+.Select-menu-outer, .Select-menu {
+  background: #0f172a !important;
+  z-index: 1000 !important;
+}
+.Select-option, .VirtualizedSelectOption {
+  white-space: normal !important;
+  height: auto !important;
+  min-height: 34px !important;
+  line-height: 1.35 !important;
+  padding: 8px 10px !important;
+  background: #0f172a !important;
+  color: #f1f5f9 !important;
+  border-bottom: 1px solid rgba(255,255,255,.06) !important;
+}
+.Select-option.is-focused, .Select-option.is-selected,
+.VirtualizedSelectOption:hover {
+  background: #1b2740 !important;
+}
+.Select-control {
+  background: #0f172a !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+.Select-value-label, .Select-placeholder, .Select--single > .Select-control .Select-value {
+  color: #f1f5f9 !important;
+}
+.Select-input > input {
+  color: #f1f5f9 !important;
+}
