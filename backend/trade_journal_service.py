@@ -449,6 +449,7 @@ def log_trade_entry(
     tier:            Optional[str] = None,
     notes:           Optional[str] = None,
     portfolio_value: float         = 0.0,
+    stop_loss:       Optional[float] = None,
 ) -> Optional[str]:
     """
     Log a new trade entry through Supabase.
@@ -504,6 +505,7 @@ def log_trade_entry(
             "entry_quality_grade": entry_grade,
             "fomo_score": round(float(fomo_score or 0), 2),
             "sizing_grade": sizing_grade,
+            "stop_loss": float(stop_loss) if stop_loss not in (None, "") else None,
             "notes": notes,
             "status": "OPEN",
             "created_at": _now_iso(),
@@ -544,7 +546,7 @@ def log_trade_exit(
         trade_res = (
             sb.table("trade_journal")
             .select(
-                "journal_id, user_id, entry_price, entry_date, shares, campaign_id, "
+                "journal_id, user_id, entry_price, entry_date, shares, direction, campaign_id, "
                 "signal_id, tier, position_value, notes"
             )
             .eq("journal_id", journal_id)
@@ -561,13 +563,22 @@ def log_trade_exit(
         entry_price = _safe_float(row.get("entry_price"), 0.0)
         entry_dt    = _date_or_none(row.get("entry_date"))
         shares_i    = _safe_int(row.get("shares"), 0)
+        direction   = str(row.get("direction") or "LONG").upper()
         signal_id   = row.get("signal_id")
         old_notes   = row.get("notes")
 
         exit_price_f = float(exit_price)
         hold_days    = (exit_date - entry_dt).days if entry_dt else 0
-        pnl          = (exit_price_f - entry_price) * shares_i
-        pnl_pct      = (exit_price_f - entry_price) / entry_price * 100 if entry_price > 0 else 0
+
+        # FIX (2026-10-02): this always used the LONG formula
+        # (exit - entry), so a SHORT trade's recorded P&L was backwards
+        # -- a short profits when price falls, so its P&L is the mirror
+        # image of a LONG's over the same move. Same bug class already
+        # found and fixed in /api/portfolio/summary's unrealized P&L.
+        raw_pnl     = (exit_price_f - entry_price) * shares_i
+        raw_pnl_pct = (exit_price_f - entry_price) / entry_price * 100 if entry_price > 0 else 0
+        pnl         = raw_pnl if direction != "SHORT" else -raw_pnl
+        pnl_pct     = raw_pnl_pct if direction != "SHORT" else -raw_pnl_pct
 
         target_price = None
         stop_price   = None
@@ -629,6 +640,126 @@ def log_trade_exit(
         return False
 
 
+# Fields a subscriber is allowed to edit on their own journal entry.
+# Deliberately excludes journal_id, user_id, status, and every derived/
+# graded field (entry_quality_grade, pnl, patience_score, etc.) --
+# those are either identity fields or recomputed, never hand-edited.
+_EDITABLE_ENTRY_FIELDS = {
+    "symbol", "direction", "entry_date", "entry_price", "shares",
+    "stop_loss", "notes", "tier",
+}
+
+
+def update_trade_entry(
+    journal_id: str,
+    user_id:    str,
+    updates:    dict,
+) -> Optional[dict]:
+    """
+    Edit an existing journal entry -- a subscriber fixing a typo'd
+    price, adding/changing a stop loss, correcting shares, etc.
+
+    Scoped to the entry's own owner (user_id) so one subscriber can't
+    edit another's journal via a guessed journal_id -- unlike
+    delete_trade_entry(), which is admin-only and doesn't need this
+    check, this is a self-service endpoint any signed-in trader can
+    call.
+
+    If the trade is already CLOSED (has an exit_price) and this edit
+    changes entry_price, shares, or direction, pnl/pnl_pct are
+    recomputed from the stored exit_price so the journal doesn't show
+    stale P&L next to a corrected entry. Uses the same direction-aware
+    formula as log_trade_exit (a SHORT's P&L is the mirror image of a
+    LONG's over the same move).
+
+    Returns the updated row, or None if no entry with that
+    journal_id/user_id pair exists.
+    """
+    clean_updates = {k: v for k, v in (updates or {}).items() if k in _EDITABLE_ENTRY_FIELDS}
+    if not clean_updates:
+        return None
+
+    try:
+        sb = _supabase()
+
+        existing_res = (
+            sb.table("trade_journal")
+            .select(
+                "journal_id, user_id, symbol, direction, entry_price, shares, "
+                "exit_price, status"
+            )
+            .eq("journal_id", journal_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = _sb_rows(existing_res)
+        if not existing_rows:
+            log.warning("Journal entry not found or not owned by user: %s / %s", journal_id, user_id)
+            return None
+
+        existing = existing_rows[0]
+
+        if "entry_date" in clean_updates:
+            parsed = _date_or_none(clean_updates["entry_date"])
+            if parsed is None:
+                clean_updates.pop("entry_date")
+            else:
+                clean_updates["entry_date"] = parsed.isoformat()
+
+        if "entry_price" in clean_updates:
+            clean_updates["entry_price"] = _safe_float(clean_updates["entry_price"], 0.0)
+        if "shares" in clean_updates:
+            clean_updates["shares"] = _safe_int(clean_updates["shares"], 0)
+        if "stop_loss" in clean_updates:
+            sl = clean_updates["stop_loss"]
+            clean_updates["stop_loss"] = _safe_float(sl, 0.0) if sl not in (None, "") else None
+        if "direction" in clean_updates:
+            clean_updates["direction"] = str(clean_updates["direction"] or "LONG").upper()
+        if "symbol" in clean_updates:
+            clean_updates["symbol"] = str(clean_updates["symbol"] or "").upper().strip()
+
+        new_entry_price = clean_updates.get("entry_price", _safe_float(existing.get("entry_price"), 0.0))
+        new_shares      = clean_updates.get("shares", _safe_int(existing.get("shares"), 0))
+        new_direction   = clean_updates.get("direction", str(existing.get("direction") or "LONG").upper())
+
+        clean_updates["position_value"] = round(new_entry_price * new_shares, 2)
+
+        existing_exit_price = existing.get("exit_price")
+        price_shares_or_direction_changed = any(
+            f in clean_updates for f in ("entry_price", "shares", "direction")
+        )
+        if existing_exit_price is not None and price_shares_or_direction_changed:
+            exit_price_f = _safe_float(existing_exit_price, 0.0)
+            raw_pnl     = (exit_price_f - new_entry_price) * new_shares
+            raw_pnl_pct = (exit_price_f - new_entry_price) / new_entry_price * 100 if new_entry_price > 0 else 0
+            clean_updates["pnl"]     = round(raw_pnl if new_direction != "SHORT" else -raw_pnl, 2)
+            clean_updates["pnl_pct"] = round(raw_pnl_pct if new_direction != "SHORT" else -raw_pnl_pct, 4)
+
+        clean_updates["updated_at"] = _now_iso()
+
+        sb.table("trade_journal").update(clean_updates).eq("journal_id", journal_id).eq("user_id", user_id).execute()
+
+        updated_res = (
+            sb.table("trade_journal")
+            .select("*")
+            .eq("journal_id", journal_id)
+            .limit(1)
+            .execute()
+        )
+        updated_rows = _sb_rows(updated_res)
+
+        if existing.get("status") == "CLOSED":
+            _update_trader_profile(None, journal_id)
+
+        log.info("Trade entry edited: %s | fields=%s", journal_id, sorted(clean_updates.keys()))
+        return updated_rows[0] if updated_rows else {"journal_id": journal_id, **clean_updates}
+
+    except Exception as exc:
+        log.error("Trade edit error for %s: %s", journal_id, exc)
+        return None
+
+
 def get_journal_entries(
     user_id: str,
     status:  Optional[str] = None,
@@ -643,7 +774,7 @@ def get_journal_entries(
                 "journal_id, symbol, direction, entry_date, entry_price, exit_date, exit_price, "
                 "shares, position_value, pnl, pnl_pct, hold_days, tier, entry_quality_grade, "
                 "exit_quality_grade, patience_score, fomo_score, sizing_grade, status, notes, "
-                "signal_id, campaign_id, created_at"
+                "signal_id, campaign_id, stop_loss, created_at"
             )
             .eq("user_id", user_id)
         )
@@ -674,6 +805,9 @@ def get_journal_entries(
                 "patience_score":      _safe_float(r.get("patience_score"), 0.0),
                 "fomo_score":          _safe_float(r.get("fomo_score"), 0.0),
                 "sizing_grade":        r.get("sizing_grade"),
+                "stop_loss":           (
+                    _safe_float(r.get("stop_loss"), 0.0) if r.get("stop_loss") is not None else None
+                ),
                 "status":              r.get("status"),
                 "notes":               r.get("notes"),
                 "signal_id":           r.get("signal_id"),
