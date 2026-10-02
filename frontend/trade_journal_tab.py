@@ -127,6 +127,7 @@ def _trade_row(t: dict, is_open: bool = False) -> html.Div:
     fomo      = float(t.get("fomo_score", 0))
     entry_d   = t.get("entry_date", "—")
     exit_d    = t.get("exit_date", "—")
+    stop_loss = t.get("stop_loss")
 
     dir_color = TEAL_DIM if direction == "LONG" else RED_DIM
     pnl_color = TEAL_DIM if pnl_pct >= 0 else RED_DIM
@@ -153,8 +154,12 @@ def _trade_row(t: dict, is_open: bool = False) -> html.Div:
         html.Div([
             html.Div(f"${entry_p:,.2f}", style={"fontSize": "12px", "color": WHITE,
                                                   "fontFamily": "DM Mono, monospace"}),
-            html.Div(f"${exit_p:,.2f}" if not is_open else "—",
-                     style={"fontSize": "11px", "color": MUTED, "fontFamily": "DM Mono, monospace"}),
+            html.Div(
+                (f"${exit_p:,.2f}" if not is_open
+                 else (f"SL ${float(stop_loss):,.2f}" if stop_loss is not None else "No stop set")),
+                style={"fontSize": "11px",
+                       "color": RED_DIM if (is_open and stop_loss is not None) else MUTED,
+                       "fontFamily": "DM Mono, monospace"}),
         ], style={"flex": "1"}),
 
         # P&L
@@ -240,6 +245,10 @@ def _log_trade_form() -> html.Div:
             html.Div([
                 html.Div("Portfolio Value", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
                 inp("jrn-portfolio-value", "10000", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Stop Loss", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-stop-loss", "Optional", "number"),
             ], style={"flex": "1"}),
             html.Div([
                 html.Div("Tier", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
@@ -336,6 +345,97 @@ def _exit_trade_form(open_trades=None) -> html.Div:
         dcc.Loading(html.Div(id="jrn-exit-result"), type="dot", color=TEAL_DIM),
         html.Button("Close / Exit Trade", id="jrn-exit-submit", n_clicks=0, style={
             "background": RED_DIM, "color": NAVY, "border": "none",
+            "borderRadius": "8px", "padding": "10px 24px", "fontWeight": "800",
+            "fontSize": "13px", "cursor": "pointer",
+        }),
+    ])
+
+
+def _edit_trade_form(all_trades=None) -> html.Div:
+    """
+    Self-service edit for an existing journal entry -- fixing a typo'd
+    price, correcting shares, adding/changing a stop loss, etc.
+
+    Every field here is OPTIONAL: leave a field blank to leave that
+    value unchanged. Only the fields you actually fill in are sent to
+    PATCH /api/journal/entry/{id} (see handle_journal_edit_submit in
+    app.py), so this doubles as a safe "touch up one thing" form
+    without needing to re-type the whole entry.
+    """
+    all_trades = all_trades or []
+
+    inp = lambda id_, ph, typ="text": dcc.Input(
+        id=id_, type=typ, placeholder=ph,
+        style={"background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "8px",
+               "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+               "width": "100%", "outline": "none"},
+    )
+
+    options = []
+    for t in all_trades:
+        jid = t.get("journal_id")
+        if not jid:
+            continue
+        sym = t.get("symbol", "UNKNOWN")
+        status = t.get("status", "—")
+        entry = t.get("entry_price", 0)
+        entry_date = t.get("entry_date", "—")
+        options.append({
+            "label": f"{sym} | {status} | {jid} | entry ${float(entry or 0):,.2f} | {entry_date}",
+            "value": jid,
+        })
+
+    return html.Div([
+        _section("Edit Journal Entry"),
+        html.Div("Leave any field blank to leave it unchanged. Only filled-in fields are updated.",
+                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "10px"}),
+        html.Div([
+            html.Div([
+                html.Div("Journal Entry", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                dcc.Dropdown(
+                    id="jrn-edit-id",
+                    options=options,
+                    placeholder="Select a journal entry to edit",
+                    style={"background": NAVY_MID, "color": WHITE, "fontSize": "13px"},
+                ),
+            ], style={"flex": "2"}),
+            html.Div([
+                html.Div("Symbol", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-symbol", "Unchanged"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Direction", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                dcc.Dropdown(
+                    id="jrn-edit-direction",
+                    options=[{"label": "LONG", "value": "LONG"}, {"label": "SHORT", "value": "SHORT"}],
+                    placeholder="Unchanged",
+                    style={"background": NAVY_MID, "color": WHITE, "fontSize": "13px"},
+                ),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Entry Date", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-entry-date", "Unchanged", "date"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Entry Price", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-entry-price", "Unchanged", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Shares", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-shares", "Unchanged", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Stop Loss", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-stop-loss", "Unchanged", "number"),
+            ], style={"flex": "1"}),
+            html.Div([
+                html.Div("Notes", style={"fontSize": "10px", "color": MUTED, "marginBottom": "4px"}),
+                inp("jrn-edit-notes", "Unchanged"),
+            ], style={"flex": "2"}),
+        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap", "marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="jrn-edit-result"), type="dot", color=TEAL_DIM),
+        html.Button("Save Changes", id="jrn-edit-submit", n_clicks=0, style={
+            "background": BLUE_DIM, "color": NAVY, "border": "none",
             "borderRadius": "8px", "padding": "10px 24px", "fontWeight": "800",
             "fontSize": "13px", "cursor": "pointer",
         }),
@@ -449,6 +549,7 @@ def build_trade_journal_tab(session=None) -> html.Div:
         # ── Log new trade ─────────────────────────────────────────────────
         _card([_log_trade_form()]),
         _card([_exit_trade_form(open_trades)]),
+        _card([_edit_trade_form(trades)]),
 
         # ── Open trades ───────────────────────────────────────────────────
         _card([

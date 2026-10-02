@@ -12718,6 +12718,7 @@ def logout(n):
     State("jrn-tier", "value"),
     State("jrn-notes", "value"),
     State("jrn-portfolio-value", "value"),
+    State("jrn-stop-loss", "value"),
     State("s-session", "data"),
     prevent_initial_call=True,
 )
@@ -12731,6 +12732,7 @@ def handle_journal_submit(
     tier,
     notes,
     portfolio_value,
+    stop_loss,
     session,
 ):
     if not n_clicks:
@@ -12763,6 +12765,16 @@ def handle_journal_submit(
     if shares <= 0:
         return note_box("Journal entry blocked: shares must be greater than zero.", "yellow")
 
+    if stop_loss not in (None, ""):
+        try:
+            stop_loss = float(stop_loss)
+        except Exception:
+            return note_box("Journal entry blocked: stop loss must be numeric.", "yellow")
+        if stop_loss <= 0:
+            return note_box("Journal entry blocked: stop loss must be greater than zero.", "yellow")
+    else:
+        stop_loss = None
+
     payload = {
         "symbol": symbol,
         "entry_date": entry_date,
@@ -12774,6 +12786,7 @@ def handle_journal_submit(
         "tier": tier,
         "notes": notes,
         "portfolio_value": portfolio_value,
+        "stop_loss": stop_loss,
     }
 
     try:
@@ -12883,13 +12896,131 @@ def handle_journal_exit(
     return note_box(f"Journal exit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
 
 
+@app.callback(
+    Output("jrn-edit-result", "children"),
+    Input("jrn-edit-submit", "n_clicks"),
+    State("jrn-edit-id", "value"),
+    State("jrn-edit-symbol", "value"),
+    State("jrn-edit-direction", "value"),
+    State("jrn-edit-entry-date", "value"),
+    State("jrn-edit-entry-price", "value"),
+    State("jrn-edit-shares", "value"),
+    State("jrn-edit-stop-loss", "value"),
+    State("jrn-edit-notes", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def handle_journal_edit_submit(
+    n_clicks,
+    journal_id,
+    symbol,
+    direction,
+    entry_date,
+    entry_price,
+    shares,
+    stop_loss,
+    notes,
+    session,
+):
+    """
+    Self-service edit: only fields the person actually filled in are
+    sent. An empty/untouched field means "leave this alone" -- the
+    backend's PATCH /api/journal/entry/{id} (update_trade_entry) only
+    updates fields it receives, so this is a deliberately partial
+    payload, not a full re-submission of the entry.
+    """
+    if not n_clicks:
+        return no_update
+
+    journal_id = (journal_id or "").strip()
+    if not journal_id:
+        return note_box("Edit blocked: select a journal entry to edit.", "yellow")
+
+    payload = {}
+
+    if symbol and symbol.strip():
+        payload["symbol"] = symbol.strip().upper()
+
+    if direction:
+        direction = direction.strip().upper()
+        if direction not in {"LONG", "SHORT"}:
+            return note_box("Edit blocked: direction must be LONG or SHORT.", "yellow")
+        payload["direction"] = direction
+
+    if entry_date:
+        payload["entry_date"] = entry_date
+
+    if entry_price not in (None, ""):
+        try:
+            entry_price = float(entry_price)
+        except Exception:
+            return note_box("Edit blocked: entry price must be numeric.", "yellow")
+        if entry_price <= 0:
+            return note_box("Edit blocked: entry price must be greater than zero.", "yellow")
+        payload["entry_price"] = entry_price
+
+    if shares not in (None, ""):
+        try:
+            shares = int(float(shares))
+        except Exception:
+            return note_box("Edit blocked: shares must be numeric.", "yellow")
+        if shares <= 0:
+            return note_box("Edit blocked: shares must be greater than zero.", "yellow")
+        payload["shares"] = shares
+
+    if stop_loss not in (None, ""):
+        try:
+            stop_loss = float(stop_loss)
+        except Exception:
+            return note_box("Edit blocked: stop loss must be numeric.", "yellow")
+        if stop_loss <= 0:
+            return note_box("Edit blocked: stop loss must be greater than zero.", "yellow")
+        payload["stop_loss"] = stop_loss
+
+    if notes and notes.strip():
+        payload["notes"] = notes.strip()
+
+    if not payload:
+        return note_box("Edit blocked: fill in at least one field to change.", "yellow")
+
+    try:
+        r = req.patch(
+            f"{BACKEND_HTTP}/api/journal/entry/{journal_id}",
+            json=payload,
+            headers=_auth_headers(session),
+            timeout=20,
+        )
+        try:
+            resp = r.json()
+        except Exception:
+            resp = {"raw": r.text}
+    except Exception as exc:
+        return note_box(
+            f"Edit failed: request exception: {type(exc).__name__}: {exc}",
+            "yellow",
+        )
+
+    if r.status_code >= 200 and r.status_code < 300 and isinstance(resp, dict) and resp.get("ok"):
+        changed = ", ".join(sorted(payload.keys()))
+        return html.Div([
+            note_box(f"Journal entry {journal_id} updated ({changed}). Auto-refreshing journal table.", "green"),
+            dcc.Interval(id="jrn-edit-auto-refresh", interval=1500, n_intervals=0, max_intervals=1),
+        ])
+
+    detail = resp.get("detail") if isinstance(resp, dict) else None
+    error = resp.get("error") if isinstance(resp, dict) else None
+    raw = resp.get("raw") if isinstance(resp, dict) else None
+    return note_box(f"Edit failed: HTTP {r.status_code}: " + str(detail or error or raw or resp), "yellow")
+
+
 # JOURNAL_AUTO_REFRESH_CLIENTSIDE_CALLBACK
 app.clientside_callback(
     """
-    function(entry_ticks, exit_ticks) {
+    function(entry_ticks, exit_ticks, edit_ticks) {
         const entry = entry_ticks || 0;
         const exit = exit_ticks || 0;
-        if (entry > 0 || exit > 0) {
+        const edit = edit_ticks || 0;
+        if (entry > 0 || exit > 0 || edit > 0) {
             window.location.reload();
         }
         return "";
@@ -12898,6 +13029,7 @@ app.clientside_callback(
     Output("jrn-auto-refresh-dummy", "children"),
     Input("jrn-entry-auto-refresh", "n_intervals"),
     Input("jrn-exit-auto-refresh", "n_intervals"),
+    Input("jrn-edit-auto-refresh", "n_intervals"),
     prevent_initial_call=True,
 )
 

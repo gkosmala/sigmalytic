@@ -36,6 +36,7 @@ from backend.trade_journal_service import (
     log_trade_entry,
     log_trade_exit,
     delete_trade_entry,
+    update_trade_entry,
     get_journal_entries,
     get_trader_profile,
 )
@@ -72,6 +73,7 @@ class TradeEntryRequest(BaseModel):
     tier:            Optional[str] = None
     notes:           Optional[str] = None
     portfolio_value: float = 0.0
+    stop_loss:       Optional[float] = None
 
 
 class TradeExitRequest(BaseModel):
@@ -79,6 +81,23 @@ class TradeExitRequest(BaseModel):
     exit_price:  float
     exit_reason: str           = "MANUAL"
     notes:       Optional[str] = None
+
+
+class TradeEditRequest(BaseModel):
+    """
+    All fields optional -- a PATCH only touches what's provided.
+    Deliberately excludes status, pnl, and every graded/derived field:
+    those are either controlled by entry/exit or recomputed server-side
+    (see update_trade_entry's _EDITABLE_ENTRY_FIELDS).
+    """
+    symbol:      Optional[str]   = None
+    entry_date:  Optional[str]   = None
+    entry_price: Optional[float] = None
+    shares:      Optional[int]   = None
+    direction:   Optional[str]   = None
+    stop_loss:   Optional[float] = None
+    notes:       Optional[str]   = None
+    tier:        Optional[str]   = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -108,6 +127,7 @@ async def create_trade_entry(
         tier            = payload.tier,
         notes           = payload.notes,
         portfolio_value = payload.portfolio_value,
+        stop_loss       = payload.stop_loss,
     )
 
     if not journal_id:
@@ -140,6 +160,45 @@ async def create_trade_exit(
         raise HTTPException(status_code=404, detail=f"Journal entry {journal_id} not found.")
 
     return {"ok": True, "journal_id": journal_id}
+
+
+@journal_router.patch("/entry/{journal_id}")
+async def edit_trade_entry(
+    journal_id: str,
+    payload:    TradeEditRequest,
+    request:    Request,
+) -> dict:
+    """
+    Self-service edit of a subscriber's own journal entry -- fixing a
+    typo'd price, correcting shares, adding/changing a stop loss, etc.
+    Scoped to the caller's own user_id (unlike DELETE below, which is
+    admin-only): a subscriber can edit their own entries without
+    needing support to do it for them.
+    """
+    user_id = get_user_id_from_request(request)
+    updates = payload.model_dump(exclude_unset=True)
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided to update.")
+
+    if "direction" in updates and updates["direction"] is not None:
+        if updates["direction"].upper() not in {"LONG", "SHORT"}:
+            raise HTTPException(status_code=400, detail="direction must be LONG or SHORT.")
+
+    if "entry_date" in updates and updates["entry_date"] is not None:
+        try:
+            date.fromisoformat(updates["entry_date"])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid entry_date format. Use YYYY-MM-DD.")
+
+    updated = update_trade_entry(journal_id=journal_id, user_id=user_id, updates=updates)
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Journal entry {journal_id} not found for this account.",
+        )
+
+    return {"ok": True, "journal_id": journal_id, "entry": updated}
 
 
 @journal_router.delete("/entry/{journal_id}")
