@@ -2344,6 +2344,36 @@ def portfolio_summary(request: Request):
             return {"ok": True, "positions": [], "total_capital": 0.0, "sector_exposure": {}}
 
         symbols = sorted({t["symbol"] for t in open_trades if t.get("symbol")})
+
+        # FIX (2026-10-02): "current_price" was the last COMPLETED daily
+        # bar's close (fetch_bars_batch(..., "1Day", limit=1)) -- during
+        # market hours that's yesterday's close, not a live price, which
+        # is why it disagreed with the real quote. /v2/stocks/bars/latest
+        # (same endpoint _compat_enrich_market_rows already uses
+        # elsewhere in this file for the Market Wire) returns the most
+        # recent minute bar instead. Falls back to the old daily-bar
+        # fetch if Alpaca creds are missing or the request fails, so
+        # this degrades instead of breaking when live data isn't
+        # available.
+        latest_price_map: dict[str, float] = {}
+        try:
+            headers = _compat_alpaca_headers()
+            if headers and symbols:
+                base_url = (os.getenv("ALPACA_BASE_URL") or "https://data.alpaca.markets").rstrip("/")
+                resp = requests.get(
+                    f"{base_url}/v2/stocks/bars/latest",
+                    headers=headers,
+                    params={"symbols": ",".join(symbols), "feed": "sip"},
+                    timeout=15,
+                )
+                if resp.ok:
+                    latest_bars = (resp.json() or {}).get("bars") or {}
+                    for sym, bar in latest_bars.items():
+                        if isinstance(bar, dict) and bar.get("c") is not None:
+                            latest_price_map[str(sym).upper()] = float(bar["c"])
+        except Exception as exc:
+            print(f"[PORTFOLIO] Live-price fetch failed, falling back to daily bars: {exc}", flush=True)
+
         bars_map = fetch_bars_batch(symbols, timeframe="1Day", limit=1)
         sector_lookup = _load_sector_lookup()
 
@@ -2355,15 +2385,22 @@ def portfolio_summary(request: Request):
             sym = t.get("symbol")
             entry_price = float(t.get("entry_price") or 0)
             shares = float(t.get("shares") or 0)
+            direction = str(t.get("direction") or "LONG").upper()
             capital = entry_price * shares
             total_capital += capital
 
             bars = bars_map.get(sym) or []
-            current_price = float(bars[-1]["c"]) if bars else None
-            unrealized_pnl_pct = (
-                round((current_price - entry_price) / entry_price * 100, 2)
-                if current_price and entry_price > 0 else None
-            )
+            current_price = latest_price_map.get(sym) or (float(bars[-1]["c"]) if bars else None)
+
+            # FIX (2026-10-02): this used to always compute the LONG
+            # formula (current - entry), so a SHORT position showed a
+            # gain whenever price rose -- backwards, since a short
+            # profits when price falls. A SHORT's P&L is the mirror
+            # image of a LONG's over the same move.
+            unrealized_pnl_pct = None
+            if current_price and entry_price > 0:
+                raw_pct = (current_price - entry_price) / entry_price * 100
+                unrealized_pnl_pct = round(raw_pct if direction != "SHORT" else -raw_pct, 2)
 
             sector = (sector_lookup.get(sym) or {}).get("sector", "Unknown")
             sector_capital[sector] = sector_capital.get(sector, 0.0) + capital
