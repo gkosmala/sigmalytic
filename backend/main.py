@@ -2336,12 +2336,27 @@ def portfolio_summary(request: Request):
         from backend.trade_journal_service import get_journal_entries
         from backend.radar_service import fetch_bars_batch
         from backend.heatmap_engine import _load_sector_lookup
+        from backend.preferences_router import get_portfolio_value
 
         user_id = get_user_id_from_request(request)
         open_trades = get_journal_entries(user_id, status="OPEN", limit=200)
 
+        # ADDED (2026-10-02): "Alloc." used to mean "% of capital currently
+        # deployed across open positions" -- which is always 100% with a
+        # single open position, and doesn't answer the question a trader
+        # actually has when sizing a new trade ("what % of my WHOLE account
+        # would this be?"). If the user has saved a total portfolio value
+        # in Preferences, allocation is now computed against that instead;
+        # otherwise it falls back to the old deployed-capital basis so this
+        # doesn't break for anyone who hasn't set one yet.
+        account_value = get_portfolio_value(user_id)
+
         if not open_trades:
-            return {"ok": True, "positions": [], "total_capital": 0.0, "sector_exposure": {}}
+            return {
+                "ok": True, "positions": [], "total_capital": 0.0, "sector_exposure": {},
+                "portfolio_value": account_value,
+                "allocation_basis": "portfolio_value" if account_value > 0 else "deployed_capital",
+            }
 
         symbols = sorted({t["symbol"] for t in open_trades if t.get("symbol")})
 
@@ -2416,13 +2431,21 @@ def portfolio_summary(request: Request):
                 "sector": sector,
             })
 
+        # Denominator for "Alloc.": the user's whole account value when
+        # they've set one, otherwise the old fallback (total capital tied
+        # up in open positions right now).
+        allocation_basis = "portfolio_value" if account_value > 0 else "deployed_capital"
+        alloc_denominator = account_value if account_value > 0 else total_capital
+
         for p in positions:
-            p["allocation_pct"] = round(p["capital"] / total_capital * 100, 1) if total_capital > 0 else 0.0
+            p["allocation_pct"] = (
+                round(p["capital"] / alloc_denominator * 100, 1) if alloc_denominator > 0 else 0.0
+            )
 
         sector_exposure = {
             sector: {
                 "capital": round(cap, 2),
-                "allocation_pct": round(cap / total_capital * 100, 1) if total_capital > 0 else 0.0,
+                "allocation_pct": round(cap / alloc_denominator * 100, 1) if alloc_denominator > 0 else 0.0,
             }
             for sector, cap in sorted(sector_capital.items(), key=lambda kv: kv[1], reverse=True)
         }
@@ -2432,6 +2455,8 @@ def portfolio_summary(request: Request):
             "positions": positions,
             "total_capital": round(total_capital, 2),
             "sector_exposure": sector_exposure,
+            "portfolio_value": account_value,
+            "allocation_basis": allocation_basis,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:300], "positions": [], "total_capital": 0.0, "sector_exposure": {}}

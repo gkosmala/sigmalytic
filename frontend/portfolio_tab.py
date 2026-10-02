@@ -175,6 +175,8 @@ def build_portfolio_tab(session=None) -> html.Div:
     positions = data.get("positions", []) if isinstance(data, dict) else []
     total_capital = _safe_float(data.get("total_capital"))
     sector_exposure = data.get("sector_exposure", {}) if isinstance(data, dict) else {}
+    portfolio_value = _safe_float(data.get("portfolio_value"))
+    allocation_basis = data.get("allocation_basis") or ("portfolio_value" if portfolio_value > 0 else "deployed_capital")
 
     if not positions:
         return html.Div([_card([
@@ -199,7 +201,17 @@ def build_portfolio_tab(session=None) -> html.Div:
                 _metric("Open Positions", str(len(positions)), WHITE),
                 _metric("Capital Deployed", f"${total_capital:,.0f}", WHITE),
                 _metric("Avg Unrealized P&L", f"{avg_pnl:+.1f}%", avg_color, "across open positions"),
-            ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
+            ] + ([_metric("Portfolio Value", f"${portfolio_value:,.0f}", WHITE, "set in Preferences")]
+                 if portfolio_value > 0 else []),
+              style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
+            html.Div(
+                "Alloc. below shows what % of your total portfolio value each position "
+                f"takes up." if allocation_basis == "portfolio_value" else
+                "Alloc. below shows what % of your currently-deployed capital each "
+                "position takes up — set your total Portfolio Value in Preferences to "
+                "see allocation as a % of your whole account instead.",
+                style={"color": WHITE, "fontSize": "11px", "marginTop": "12px",
+                       "opacity": 0.85 if allocation_basis == "portfolio_value" else 1}),
         ]),
 
         # Row 2 — Open positions table

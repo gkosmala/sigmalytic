@@ -15,6 +15,7 @@ Table: user_preferences
   market_hours_only BOOLEAN
   hurst_profile    TEXT    -- SHORT | MEDIUM | LONG
   weis_threshold   NUMERIC -- 0.1 - 3.0
+  portfolio_value  NUMERIC -- total account value, e.g. 100000.00 (2026-10-02)
   updated_at       TIMESTAMPTZ
 
 FIX (2026-07-28): this used to connect via raw psycopg2 + DATABASE_URL --
@@ -78,6 +79,7 @@ class PreferencesCreate(BaseModel):
     market_hours_only: bool = True
     hurst_profile:     str = "MEDIUM"
     weis_threshold:    float = 0.5
+    portfolio_value:   float = 0.0
 
 
 class PreferencesUpdate(BaseModel):
@@ -88,6 +90,7 @@ class PreferencesUpdate(BaseModel):
     market_hours_only: Optional[bool]           = None
     hurst_profile:     Optional[str]            = None
     weis_threshold:    Optional[float]          = None
+    portfolio_value:   Optional[float]          = None
 
 
 class DailyReportEmailPreference(BaseModel):
@@ -103,6 +106,7 @@ _DEFAULT_PREFERENCES = {
     "market_hours_only": True,
     "hurst_profile":     "MEDIUM",
     "weis_threshold":    0.5,
+    "portfolio_value":   0.0,
 }
 
 
@@ -151,6 +155,34 @@ def _supabase():
     return _supabase_client
 
 
+def get_portfolio_value(user_id: str) -> float:
+    """
+    Returns the user's saved total-portfolio-value preference (e.g.
+    100000.00), or 0.0 if they've never set one.
+
+    Used by /api/portfolio/summary (backend/main.py) to compute each open
+    position's "Alloc." as a share of the whole account rather than a
+    share of currently-deployed capital -- the latter is always 100% with
+    a single open position, which is not what a trader means by
+    "allocation" when sizing a new trade against their total account.
+    """
+    try:
+        response = (
+            _supabase()
+            .table("user_preferences")
+            .select("portfolio_value")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if rows and rows[0].get("portfolio_value") is not None:
+            return float(rows[0]["portfolio_value"])
+    except Exception as exc:
+        log.warning(f"get_portfolio_value failed for user_id={user_id}: {exc}")
+    return 0.0
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @preferences_router.get("/{user_id}")
@@ -195,6 +227,7 @@ def create_preferences(user_id: str, payload: PreferencesCreate, authenticated_u
             "market_hours_only": payload.market_hours_only,
             "hurst_profile":     payload.hurst_profile,
             "weis_threshold":    payload.weis_threshold,
+            "portfolio_value":   payload.portfolio_value,
             "updated_at":        datetime.now(timezone.utc).isoformat(),
         }
         _supabase().table("user_preferences").upsert(row, on_conflict="user_id").execute()
@@ -226,6 +259,10 @@ def update_preferences(user_id: str, payload: PreferencesUpdate, authenticated_u
     if payload.market_hours_only is not None: updates["market_hours_only"] = payload.market_hours_only
     if payload.hurst_profile     is not None: updates["hurst_profile"]     = payload.hurst_profile
     if payload.weis_threshold    is not None: updates["weis_threshold"]    = payload.weis_threshold
+    if payload.portfolio_value   is not None:
+        if payload.portfolio_value < 0:
+            raise HTTPException(400, "portfolio_value cannot be negative")
+        updates["portfolio_value"] = payload.portfolio_value
 
     if not updates:
         raise HTTPException(400, "No fields to update")
