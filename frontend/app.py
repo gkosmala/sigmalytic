@@ -1295,7 +1295,7 @@ def zcard(name, level, desc, color):
 
 def _tf_btn_style(tf, active_tf):
     active = tf == active_tf
-    return {"background":TEAL_GLOW if active else "transparent","color":TEAL_DIM if active else TEXT,
+    return {"background":TEAL_GLOW if active else "transparent","color":TEAL_DIM if active else WHITE,
             "border":f"1px solid {BORDER_T}" if active else "none","borderRadius":"10px",
             "padding":"8px 12px","fontSize":"12px","fontWeight":"800" if active else "700","cursor":"pointer","fontFamily":"inherit"}
 
@@ -10807,7 +10807,7 @@ app.layout = html.Div([
                 # change/symbol load silently used its 200-bar default.
                 # Read by select_tf and load_symbol below.
                 html.Div([
-                    html.Span("Lookback", style={"fontSize":"11px","color":MUTED,
+                    html.Span("Lookback", style={"fontSize":"11px","color":WHITE,
                                "textTransform":"uppercase","letterSpacing":".04em","marginRight":"6px"}),
                     dcc.Input(id="cc-lookback", type="number", value=252, min=10, max=2000, step=1,
                               style={"background":NAVY_MID,"color":WHITE,"border":f"1px solid {BORDER}",
