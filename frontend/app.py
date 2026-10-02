@@ -5029,7 +5029,17 @@ def build_preferences_tab(user_id="", session=None):
             r = _preqs.patch(url, json=payload, timeout=8)
             if r.status_code == 404:
                 r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
-            return ("Saved", "teal") if r.ok else (f"Error", "red")
+            if r.ok:
+                return ("Saved", "teal")
+            # FIX (2026-10-02): this used to always say just "Error" on any
+            # non-2xx response, which hid the real cause (e.g. a missing
+            # column after a migration hadn't been run yet) and made a
+            # genuine save failure look identical to "nothing happened."
+            try:
+                detail = r.json().get("detail")
+            except Exception:
+                detail = None
+            return (f"Error: {detail}"[:120] if detail else f"Error ({r.status_code})", "red")
         except Exception as e:
             return (f"{str(e)[:60]}", "red")
 
@@ -5150,6 +5160,7 @@ def build_preferences_tab(user_id="", session=None):
                     "background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
                     "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
                     "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
+                html.Div(id="prefs-pv-status", style={"fontSize":"12px","marginLeft":"12px","color":TEAL_DIM}),
             ], style={"display":"flex","alignItems":"center","marginBottom":"8px"}),
             html.Div(
                 "Example: a $100,000 portfolio with a 6% max position size caps you at "
@@ -5358,10 +5369,21 @@ def register_preferences_callbacks(app):
         return msg,_msg_style(color),val
 
     # ── Portfolio value — save on button click ─────────────────────────────────
+    # NOTE (2026-10-02): this card sits well below the top-of-page
+    # "prefs-status" banner, so a user saving this field and not
+    # scrolling back up would see no visible response at all -- reported
+    # as "the button doesn't acknowledge anything." Added a second,
+    # inline status message right next to the Save button itself so
+    # success/failure is visible without scrolling, in addition to (not
+    # instead of) the shared banner everything else already uses.
+    _PV_INLINE_COLORS = {"teal": TEAL_DIM, "red": RED_DIM, "yellow": YELLOW_DIM}
+
     @app.callback(
         Output("prefs-status","children", allow_duplicate=True),
         Output("prefs-status","style", allow_duplicate=True),
         Output("prefs-pv-cur","data"),
+        Output("prefs-pv-status","children"),
+        Output("prefs-pv-status","style"),
         Input("prefs-pv-save","n_clicks"),
         State("prefs-pv-input","value"),
         State("prefs-uid","data"),
@@ -5369,15 +5391,23 @@ def register_preferences_callbacks(app):
         prevent_initial_call=True,
     )
     def save_portfolio_value(n, val, uid, email):
-        if not uid: return "Not logged in",_msg_style("yellow"),val
+        inline_base = {"fontSize":"12px","marginLeft":"12px"}
+        if not uid:
+            style = {**inline_base, "color": _PV_INLINE_COLORS["yellow"]}
+            return "Not logged in",_msg_style("yellow"),val,"Not logged in",style
         try:
             val = float(val) if val not in (None, "") else 0.0
         except (TypeError, ValueError):
-            return "Enter a number",_msg_style("red"),no_update
+            style = {**inline_base, "color": _PV_INLINE_COLORS["red"]}
+            return "Enter a number",_msg_style("red"),no_update,"Enter a valid number",style
         if val < 0:
-            return "Portfolio value cannot be negative",_msg_style("red"),no_update
+            style = {**inline_base, "color": _PV_INLINE_COLORS["red"]}
+            return ("Portfolio value cannot be negative",_msg_style("red"),no_update,
+                     "Cannot be negative",style)
         msg, color = _save(uid, email, {"portfolio_value": val})
-        return msg,_msg_style(color),val
+        style = {**inline_base, "color": _PV_INLINE_COLORS.get(color, WHITE)}
+        inline_msg = f"Saved ${val:,.0f}" if color == "teal" else msg
+        return msg,_msg_style(color),val,inline_msg,style
 
     # ── Hurst profile — instant save ───────────────────────────────────────────
     @app.callback(
