@@ -6329,6 +6329,25 @@ if register_live_opportunity_center_callbacks is not None:
             flush=True,
         )
 
+# FIX (2026-10-02): register_preferences_callbacks() was defined (further up
+# in this file) but never actually called anywhere -- confirmed via a
+# full-file search, and matching the exact symptom reported directly by a
+# user: clicking Save Score, Save Sensitivity, Delivery Mode, Alert Types,
+# Market Hours, Hurst Profile, Watchlist, and the new Portfolio Value field
+# all silently did nothing, while the one Preferences control defined as its
+# own standalone @app.callback outside this function (Daily Report Email
+# Yes/No) worked fine. This has been dead on arrival since whenever this
+# function was last touched -- every one of those controls has never worked
+# in production, not just the new one added today.
+try:
+    register_preferences_callbacks(app)
+except Exception as _prefs_callback_exc:
+    print(
+        f"[PREFERENCES_CALLBACK_REGISTRATION_FAIL] "
+        f"{type(_prefs_callback_exc).__name__}: {_prefs_callback_exc}",
+        flush=True,
+    )
+
 # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
 # narration, browser TTS based. See the i-radio/s-radio-* component
 # comments near i-clock for the full design rationale.
