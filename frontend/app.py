@@ -5111,6 +5111,19 @@ def build_preferences_tab(user_id="", session=None):
         # Hidden stores for current state (set on load, updated on each save)
         dcc.Store(id="prefs-uid",        data=user_id),
         dcc.Store(id="prefs-email",      data=(session or {}).get("email","")),
+        # FIX (2026-10-02): every Preferences save was failing with "Not
+        # authorized to access this user's preferences" (a 403 from
+        # _require_self in backend/preferences_router.py) because _save()
+        # sent the PATCH/POST with no Authorization header at all. The
+        # backend's get_user_id_from_request() treats a request with no
+        # Bearer token as the shared demo user, which never matches the
+        # real logged-in user_id in the URL -- so _require_self always
+        # rejected it. The read path (the GET right above, loading this
+        # tab's current values) already sent _auth_headers(session) and
+        # worked fine; the write path never did. Stashing the access
+        # token in its own store so the save callbacks below can build
+        # the same header.
+        dcc.Store(id="prefs-token",      data=(session or {}).get("access_token","")),
         dcc.Store(id="prefs-mode-cur",   data=mode),
         dcc.Store(id="prefs-types-cur",  data=types),
         dcc.Store(id="prefs-hours-cur",  data=hours),
@@ -5332,12 +5345,27 @@ def register_preferences_callbacks(app):
                 "borderRadius":"6px","color":WHITE,"fontSize":"12px","padding":"4px 10px",
                 "marginRight":"6px","marginBottom":"6px","display":"inline-block"}) for s in wl]
 
-    def _save(uid, email, payload):
+    def _save(uid, email, token, payload):
+        # FIX (2026-10-02): THE THIRD bug in this chain. Once the NameErrors
+        # above were fixed, saves reached the backend but every single one
+        # came back "Not authorized to access this user's preferences" (a
+        # 403 from _require_self in backend/preferences_router.py). Cause:
+        # this call sent no Authorization header at all, so the backend's
+        # get_user_id_from_request() treated it as the anonymous demo user,
+        # which never matches the real logged-in user_id in the URL -- an
+        # automatic 403 on every save, for every user, every time. The
+        # sibling GET request that loads this tab's current values (above,
+        # in build_preferences_tab) already sent headers=_auth_headers(session)
+        # and worked; this write path never did. Fixed by passing the
+        # access token through from the new prefs-token store and sending
+        # the same Bearer header here.
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         try:
             url = f"{BACKEND_HTTP}/api/preferences/{uid}"
-            r = _preqs.patch(url, json=payload, timeout=8)
+            r = _preqs.patch(url, json=payload, headers=headers, timeout=8)
             if r.status_code == 404:
-                r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
+                r = _preqs.post(url, json={**payload, "user_id": uid, "email": email},
+                                 headers=headers, timeout=8)
             if r.ok:
                 return ("Saved", "teal")
             try:
@@ -5361,17 +5389,18 @@ def register_preferences_callbacks(app):
         Input("pref-btn-daily","n_clicks"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         State("prefs-mode-cur","data"),
         prevent_initial_call=True,
     )
-    def save_mode(r, h, d, uid, email, cur):
+    def save_mode(r, h, d, uid, email, token, cur):
         ctx = callback_context
         if not ctx.triggered: return (no_update,)*6
         t = ctx.triggered[0]["prop_id"].split(".")[0]
         mode_map = {"pref-btn-realtime":"realtime","pref-btn-hourly":"hourly","pref-btn-daily":"daily"}
         mode = mode_map.get(t, cur)
         if not uid: return "Not logged in",_msg_style("yellow"),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
-        msg, color = _save(uid, email, {"delivery_mode": mode})
+        msg, color = _save(uid, email, token, {"delivery_mode": mode})
         return msg,_msg_style(color),*[_on() if x==mode else _off() for x in ["realtime","hourly","daily"]],mode
 
     # ── Alert types — instant save ─────────────────────────────────────────────
@@ -5391,10 +5420,11 @@ def register_preferences_callbacks(app):
         Input("pref-btn-fibonacci","n_clicks"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         State("prefs-types-cur","data"),
         prevent_initial_call=True,
     )
-    def save_types(nw,ng,na,ne,nf, uid, email, types):
+    def save_types(nw,ng,na,ne,nf, uid, email, token, types):
         ctx = callback_context
         if not ctx.triggered: return (no_update,)*8
         t = ctx.triggered[0]["prop_id"].split(".")[0]
@@ -5404,7 +5434,7 @@ def register_preferences_callbacks(app):
         if t in km: types[km[t]] = not types.get(km[t], False)
         styles = [_on() if types.get(k) else _off() for k in ["wyckoff","gann","ab_score","elliott","fibonacci"]]
         if not uid: return "Not logged in",_msg_style("yellow"),*styles,types
-        msg, color = _save(uid, email, {"alert_types": types})
+        msg, color = _save(uid, email, token, {"alert_types": types})
         return msg,_msg_style(color),*styles,types
 
     # ── Market hours — instant save ────────────────────────────────────────────
@@ -5417,15 +5447,16 @@ def register_preferences_callbacks(app):
         Input("pref-btn-hours","n_clicks"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         State("prefs-hours-cur","data"),
         prevent_initial_call=True,
     )
-    def save_hours(n, uid, email, cur):
+    def save_hours(n, uid, email, token, cur):
         new = not cur
         label = "ON" if new else "OFF"
         style = _on() if new else _off()
         if not uid: return "Not logged in",_msg_style("yellow"),label,style,new
-        msg, color = _save(uid, email, {"market_hours_only": new})
+        msg, color = _save(uid, email, token, {"market_hours_only": new})
         return msg,_msg_style(color),label,style,new
 
     # ── Min score — save on button click ───────────────────────────────────────
@@ -5437,11 +5468,12 @@ def register_preferences_callbacks(app):
         State("prefs-score-slider","value"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         prevent_initial_call=True,
     )
-    def save_score(n, val, uid, email):
+    def save_score(n, val, uid, email, token):
         if not uid: return "Not logged in",_msg_style("yellow"),val
-        msg, color = _save(uid, email, {"min_score": val})
+        msg, color = _save(uid, email, token, {"min_score": val})
         return msg,_msg_style(color),val
 
     # ── Portfolio value — save on button click ─────────────────────────────────
@@ -5464,9 +5496,10 @@ def register_preferences_callbacks(app):
         State("prefs-pv-input","value"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         prevent_initial_call=True,
     )
-    def save_portfolio_value(n, val, uid, email):
+    def save_portfolio_value(n, val, uid, email, token):
         inline_base = {"fontSize":"12px","marginLeft":"12px"}
         if not uid:
             style = {**inline_base, "color": _PV_INLINE_COLORS["yellow"]}
@@ -5480,7 +5513,7 @@ def register_preferences_callbacks(app):
             style = {**inline_base, "color": _PV_INLINE_COLORS["red"]}
             return ("Portfolio value cannot be negative",_msg_style("red"),no_update,
                      "Cannot be negative",style)
-        msg, color = _save(uid, email, {"portfolio_value": val})
+        msg, color = _save(uid, email, token, {"portfolio_value": val})
         style = {**inline_base, "color": _PV_INLINE_COLORS.get(color, WHITE)}
         inline_msg = f"Saved ${val:,.0f}" if color == "teal" else msg
         return msg,_msg_style(color),val,inline_msg,style
@@ -5498,10 +5531,11 @@ def register_preferences_callbacks(app):
         Input("pref-btn-hurst-long","n_clicks"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         State("prefs-hurst-cur","data"),
         prevent_initial_call=True,
     )
-    def save_hurst(s, m, l, uid, email, cur):
+    def save_hurst(s, m, l, uid, email, token, cur):
         ctx = callback_context
         if not ctx.triggered: return (no_update,)*6
         t = ctx.triggered[0]["prop_id"].split(".")[0]
@@ -5509,7 +5543,7 @@ def register_preferences_callbacks(app):
         hurst = hmap.get(t, cur)
         styles = [_on() if h==hurst else _off() for h in ["SHORT","MEDIUM","LONG"]]
         if not uid: return "Not logged in",_msg_style("yellow"),*styles,hurst
-        msg, color = _save(uid, email, {"hurst_profile": hurst})
+        msg, color = _save(uid, email, token, {"hurst_profile": hurst})
         return msg,_msg_style(color),*styles,hurst
 
     # ── Weis threshold — save on button click ──────────────────────────────────
@@ -5521,11 +5555,12 @@ def register_preferences_callbacks(app):
         State("prefs-weis-slider","value"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         prevent_initial_call=True,
     )
-    def save_weis(n, val, uid, email):
+    def save_weis(n, val, uid, email, token):
         if not uid: return "Not logged in",_msg_style("yellow"),val
-        msg, color = _save(uid, email, {"weis_threshold": val})
+        msg, color = _save(uid, email, token, {"weis_threshold": val})
         return msg,_msg_style(color),val
 
     # ── Watchlist — add symbol and save ───────────────────────────────────────
@@ -5540,15 +5575,16 @@ def register_preferences_callbacks(app):
         State("prefs-wl-cur","data"),
         State("prefs-uid","data"),
         State("prefs-email","data"),
+        State("prefs-token","data"),
         prevent_initial_call=True,
     )
-    def add_symbol(n, sym, wl, uid, email):
+    def add_symbol(n, sym, wl, uid, email, token):
         if not sym: return no_update,no_update,wl,_render_watchlist(wl),""
         s = sym.strip().upper()
         wl = list(wl or [])
         if s and s not in wl: wl.append(s)
         if not uid: return "Not logged in",_msg_style("yellow"),wl,_render_watchlist(wl),""
-        msg, color = _save(uid, email, {"watchlist": wl})
+        msg, color = _save(uid, email, token, {"watchlist": wl})
         return msg,_msg_style(color),wl,_render_watchlist(wl),""
 
 # ── Admin helpers ──────────────────────────────────────────────────────────────
