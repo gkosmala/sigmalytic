@@ -5162,6 +5162,7 @@ def build_preferences_tab(user_id="", session=None):
                     "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
                 html.Div(id="prefs-pv-status", style={"fontSize":"12px","marginLeft":"12px","color":TEAL_DIM}),
             ], style={"display":"flex","alignItems":"center","marginBottom":"8px"}),
+            html.Div(id="prefs-pv-debug", style={"fontSize":"11px","color":"#fbbf24","marginTop":"6px"}),
             html.Div(
                 "Example: a $100,000 portfolio with a 6% max position size caps you at "
                 "$6,000 for any one trade — the Portfolio tab's Alloc. column shows each "
@@ -9321,6 +9322,30 @@ app.clientside_callback(
     """,
     Output("briefing-stop-sink", "children"),
     Input("btn-briefing-stop", "n_clicks"),
+    prevent_initial_call=True,
+)
+
+
+# TEMPORARY DIAGNOSTIC (2026-10-02): a user reported that tapping the
+# Portfolio Value Save button (and every other Preferences button)
+# produces zero visible change and zero network request, even in a
+# fresh incognito window on a different URL -- ruling out caching. This
+# fires entirely client-side, with no dependency on the Python/server
+# callback machinery at all, so it answers one question precisely: does
+# the tap reach the button's click handler in the browser at all? If
+# this text still never appears, the problem is upstream of Dash
+# entirely (something intercepting/blocking the tap itself). Remove
+# once the real cause is found.
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!n_clicks) { return window.dash_clientside.no_update; }
+        try { window.alert('DEBUG: Save tap detected, click #' + n_clicks); } catch (e) {}
+        return 'DEBUG: click #' + n_clicks + ' reached the browser at ' + new Date().toLocaleTimeString();
+    }
+    """,
+    Output("prefs-pv-debug", "children"),
+    Input("prefs-pv-save", "n_clicks"),
     prevent_initial_call=True,
 )
 
