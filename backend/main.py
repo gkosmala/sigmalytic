@@ -2427,6 +2427,7 @@ def portfolio_summary(request: Request):
                 "current_price": current_price,
                 "unrealized_pnl_pct": unrealized_pnl_pct,
                 "shares": shares,
+                "stop_loss": t.get("stop_loss"),
                 "capital": round(capital, 2),
                 "sector": sector,
             })

@@ -137,21 +137,30 @@ def _position_row(p: dict) -> html.Div:
     pnl_text = f"{pnl:+.1f}%" if pnl is not None else "—"
     current = p.get("current_price")
     current_text = f"${current:.2f}" if current is not None else "—"
+    shares = p.get("shares")
+    shares_text = f"{shares:g}" if shares is not None else "—"
+    stop_loss = p.get("stop_loss")
+    stop_loss_text = f"${float(stop_loss):.2f}" if stop_loss not in (None, "") else "No stop"
+    stop_loss_color = YELLOW_DIM if stop_loss not in (None, "") else MUTED
 
     return html.Div([
         html.Span(p.get("symbol", "—"), style={"fontSize": "13px", "fontWeight": "800",
                                                  "color": WHITE, "flex": "1"}),
         html.Span(p.get("direction", "—"), style={"fontSize": "11px", "color": WHITE, "flex": "0.7"}),
+        html.Span(shares_text, style={"fontSize": "12px", "color": WHITE,
+                                       "fontFamily": "DM Mono, monospace", "flex": "0.6"}),
         html.Span(f"${p.get('entry_price', 0):.2f}", style={"fontSize": "12px", "color": WHITE,
                                                               "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
         html.Span(current_text, style={"fontSize": "12px", "color": WHITE,
                                         "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
+        html.Span(stop_loss_text, style={"fontSize": "12px", "color": stop_loss_color,
+                                          "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
         html.Span(pnl_text, style={"fontSize": "12px", "color": pnl_color, "fontWeight": "800",
                                     "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
         html.Span(f"{p.get('allocation_pct', 0):.1f}%", style={"fontSize": "12px", "color": BLUE_DIM,
                                                                   "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
         html.Span(p.get("sector", "Unknown"), style={"fontSize": "11px", "color": WHITE, "flex": "1"}),
-    ], style={"display": "flex", "gap": "10px", "alignItems": "center",
+    ], style={"display": "flex", "gap": "10px", "alignItems": "center", "minWidth": "720px",
               "padding": "10px 0", "borderBottom": f"1px solid {BORDER}"})
 
 
@@ -215,20 +224,27 @@ def build_portfolio_tab(session=None) -> html.Div:
         ]),
 
         # Row 2 — Open positions table
+        # Wrapped in a horizontally-scrollable container (min-width on the
+        # inner block) now that this row has 9 columns -- too many to
+        # squeeze onto a phone screen without one.
         _card([
             _section(f"Open Positions ({len(positions)})"),
             html.Div([
-                html.Span("Symbol", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
-                html.Span("Dir", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Entry", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
-                html.Span("Current", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
-                html.Span("P&L", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Alloc.", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Sector", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
-            ], style={"display": "flex", "gap": "10px", "paddingBottom": "8px",
-                      "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px",
-                      "textTransform": "uppercase", "letterSpacing": ".06em"}),
-            html.Div([_position_row(p) for p in positions]),
+                html.Div([
+                    html.Span("Symbol", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
+                    html.Span("Dir", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                    html.Span("Shares", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.6"}),
+                    html.Span("Entry", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
+                    html.Span("Current", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
+                    html.Span("Stop Loss", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
+                    html.Span("P&L", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                    html.Span("Alloc.", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                    html.Span("Sector", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
+                ], style={"display": "flex", "gap": "10px", "paddingBottom": "8px",
+                          "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px",
+                          "textTransform": "uppercase", "letterSpacing": ".06em", "minWidth": "720px"}),
+                html.Div([_position_row(p) for p in positions], style={"minWidth": "720px"}),
+            ], style={"overflowX": "auto", "WebkitOverflowScrolling": "touch"}),
         ]),
 
         # Row 3 — Sector exposure
