@@ -5048,6 +5048,7 @@ def build_preferences_tab(user_id="", session=None):
         "hurst_profile":     "MEDIUM",
         "weis_threshold":    0.5,
         "daily_report_email": False,
+        "portfolio_value":   0.0,
     }
 
     report_pref_available = False
@@ -5067,6 +5068,7 @@ def build_preferences_tab(user_id="", session=None):
                 prefs["market_hours_only"] = p.get("market_hours_only", prefs["market_hours_only"])
                 prefs["hurst_profile"]     = p.get("hurst_profile", prefs["hurst_profile"])
                 prefs["weis_threshold"]    = p.get("weis_threshold", prefs["weis_threshold"])
+                prefs["portfolio_value"]   = p.get("portfolio_value", prefs["portfolio_value"]) or 0.0
                 prefs["daily_report_email"] = (p.get("alert_types") or {}).get("daily_report_email") is True if isinstance(p.get("alert_types"), dict) else False
                 report_pref_available = True
             elif r.status_code == 401:
@@ -5089,6 +5091,7 @@ def build_preferences_tab(user_id="", session=None):
     watchlist= prefs["watchlist"]
     hurst    = prefs["hurst_profile"]
     weis     = prefs["weis_threshold"]
+    pv       = prefs["portfolio_value"]
 
     if isinstance(types, list):
         all_keys = ["wyckoff","gann","ab_score","elliott","fibonacci"]
@@ -5105,6 +5108,7 @@ def build_preferences_tab(user_id="", session=None):
         dcc.Store(id="prefs-wl-cur",     data=watchlist),
         dcc.Store(id="prefs-hurst-cur",  data=hurst),
         dcc.Store(id="prefs-weis-cur",   data=weis),
+        dcc.Store(id="prefs-pv-cur",     data=pv),
         dcc.Store(id="prefs-report-email-cur", data=prefs["daily_report_email"] if report_pref_available else None),
 
         html.Div([
@@ -5129,6 +5133,32 @@ def build_preferences_tab(user_id="", session=None):
                 html.Button("Daily Summary", id="pref-btn-daily",    n_clicks=0,
                             style=_on() if mode=="daily"    else _off()),
             ], style={"display":"flex","flexWrap":"wrap","gap":"8px"})]),
+
+        # Portfolio Value — drives the Portfolio tab's "Alloc." column, so a
+        # position's allocation is shown as a % of your WHOLE account
+        # rather than a % of capital you currently have deployed.
+        _card([_stitle("Portfolio Value"),
+            _label("Your total account value, used to calculate position sizing"),
+            html.Div([
+                dcc.Input(id="prefs-pv-input", type="number", min=0, step=100,
+                    placeholder="e.g. 100000", value=(pv if pv else None),
+                    style={"background":"rgba(0,0,0,.3)","border":f"1px solid {BORDER}",
+                           "borderRadius":"8px","color":WHITE,"fontFamily":"DM Mono, monospace",
+                           "fontSize":"13px","padding":"10px 14px","width":"160px",
+                           "marginRight":"10px"}),
+                html.Button("Save", id="prefs-pv-save", n_clicks=0, style={
+                    "background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
+                    "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                    "fontWeight":"700","padding":"10px 18px","cursor":"pointer"}),
+            ], style={"display":"flex","alignItems":"center","marginBottom":"8px"}),
+            html.Div(
+                "Example: a $100,000 portfolio with a 6% max position size caps you at "
+                "$6,000 for any one trade — the Portfolio tab's Alloc. column shows each "
+                "position's % of this total so you can see that at a glance." if not pv else
+                f"Currently set to ${pv:,.0f}. The Portfolio tab's Alloc. column shows each "
+                "open position as a % of this value.",
+                style={"color":WHITE,"fontSize":"11px","marginTop":"2px"}),
+        ]),
 
         # Report email is separate from the alert digest frequency above.
         _card([_stitle("Daily Intelligence Report"),
@@ -5325,6 +5355,28 @@ def register_preferences_callbacks(app):
     def save_score(n, val, uid, email):
         if not uid: return "Not logged in",_msg_style("yellow"),val
         msg, color = _save(uid, email, {"min_score": val})
+        return msg,_msg_style(color),val
+
+    # ── Portfolio value — save on button click ─────────────────────────────────
+    @app.callback(
+        Output("prefs-status","children", allow_duplicate=True),
+        Output("prefs-status","style", allow_duplicate=True),
+        Output("prefs-pv-cur","data"),
+        Input("prefs-pv-save","n_clicks"),
+        State("prefs-pv-input","value"),
+        State("prefs-uid","data"),
+        State("prefs-email","data"),
+        prevent_initial_call=True,
+    )
+    def save_portfolio_value(n, val, uid, email):
+        if not uid: return "Not logged in",_msg_style("yellow"),val
+        try:
+            val = float(val) if val not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            return "Enter a number",_msg_style("red"),no_update
+        if val < 0:
+            return "Portfolio value cannot be negative",_msg_style("red"),no_update
+        msg, color = _save(uid, email, {"portfolio_value": val})
         return msg,_msg_style(color),val
 
     # ── Hurst profile — instant save ───────────────────────────────────────────
