@@ -99,18 +99,18 @@ def _card(children, sx=None):
 
 
 def _section(text):
-    return html.Div(text, style={"fontSize": "11px", "fontWeight": "700", "color": MUTED,
+    return html.Div(text, style={"fontSize": "11px", "fontWeight": "700", "color": WHITE,
                                   "textTransform": "uppercase", "letterSpacing": ".08em",
                                   "marginBottom": "14px"})
 
 
 def _metric(label, value, color=WHITE, sub=""):
     return html.Div([
-        html.Div(label, style={"fontSize": "10px", "color": MUTED, "fontWeight": "700",
+        html.Div(label, style={"fontSize": "10px", "color": WHITE, "fontWeight": "700",
                                "textTransform": "uppercase", "letterSpacing": ".08em"}),
         html.Div(value, style={"fontSize": "26px", "fontWeight": "900", "color": color,
                                "fontFamily": "DM Mono, monospace", "marginTop": "4px"}),
-        html.Div(sub, style={"fontSize": "11px", "color": MUTED, "marginTop": "2px"}) if sub else html.Div(),
+        html.Div(sub, style={"fontSize": "11px", "color": WHITE, "marginTop": "2px"}) if sub else html.Div(),
     ], style={"background": NAVY_MID, "border": f"1px solid {BORDER}", "borderRadius": "12px",
               "padding": "16px 20px", "flex": "1", "minWidth": "110px"})
 
@@ -119,7 +119,7 @@ def _hbar(label, pct, color=TEAL_DIM, sub=""):
     pct = max(0.0, min(100.0, pct))
     return html.Div([
         html.Div([
-            html.Span(label, style={"fontSize": "12px", "color": TEXT, "fontWeight": "600"}),
+            html.Span(label, style={"fontSize": "12px", "color": WHITE, "fontWeight": "600"}),
             html.Span(f"{pct:.1f}%" + (f"  ·  {sub}" if sub else ""),
                       style={"fontSize": "12px", "color": color,
                              "fontWeight": "800", "fontFamily": "DM Mono, monospace"}),
@@ -141,16 +141,16 @@ def _position_row(p: dict) -> html.Div:
     return html.Div([
         html.Span(p.get("symbol", "—"), style={"fontSize": "13px", "fontWeight": "800",
                                                  "color": WHITE, "flex": "1"}),
-        html.Span(p.get("direction", "—"), style={"fontSize": "11px", "color": MUTED, "flex": "0.7"}),
-        html.Span(f"${p.get('entry_price', 0):.2f}", style={"fontSize": "12px", "color": TEXT,
+        html.Span(p.get("direction", "—"), style={"fontSize": "11px", "color": WHITE, "flex": "0.7"}),
+        html.Span(f"${p.get('entry_price', 0):.2f}", style={"fontSize": "12px", "color": WHITE,
                                                               "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
-        html.Span(current_text, style={"fontSize": "12px", "color": TEXT,
+        html.Span(current_text, style={"fontSize": "12px", "color": WHITE,
                                         "fontFamily": "DM Mono, monospace", "flex": "0.8"}),
         html.Span(pnl_text, style={"fontSize": "12px", "color": pnl_color, "fontWeight": "800",
                                     "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
         html.Span(f"{p.get('allocation_pct', 0):.1f}%", style={"fontSize": "12px", "color": BLUE_DIM,
                                                                   "fontFamily": "DM Mono, monospace", "flex": "0.7"}),
-        html.Span(p.get("sector", "Unknown"), style={"fontSize": "11px", "color": MUTED, "flex": "1"}),
+        html.Span(p.get("sector", "Unknown"), style={"fontSize": "11px", "color": WHITE, "flex": "1"}),
     ], style={"display": "flex", "gap": "10px", "alignItems": "center",
               "padding": "10px 0", "borderBottom": f"1px solid {BORDER}"})
 
@@ -183,7 +183,7 @@ def build_portfolio_tab(session=None) -> html.Div:
                 html.Div(
                     "No open positions yet. Log a trade from the Journal tab, and it will appear "
                     "here with live P&L, capital allocation, and sector exposure.",
-                    style={"color": TEXT, "fontSize": "13px", "marginTop": "8px", "maxWidth": "440px"}),
+                    style={"color": WHITE, "fontSize": "13px", "marginTop": "8px", "maxWidth": "440px"}),
             ], style={"textAlign": "center", "padding": "48px"}),
         ])])
 
@@ -206,13 +206,13 @@ def build_portfolio_tab(session=None) -> html.Div:
         _card([
             _section(f"Open Positions ({len(positions)})"),
             html.Div([
-                html.Span("Symbol", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "1"}),
-                html.Span("Dir", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Entry", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.8"}),
-                html.Span("Current", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.8"}),
-                html.Span("P&L", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Alloc.", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "0.7"}),
-                html.Span("Sector", style={"fontSize": "9px", "color": MUTED, "fontWeight": "700", "flex": "1"}),
+                html.Span("Symbol", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
+                html.Span("Dir", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Entry", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
+                html.Span("Current", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.8"}),
+                html.Span("P&L", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Alloc.", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "0.7"}),
+                html.Span("Sector", style={"fontSize": "9px", "color": WHITE, "fontWeight": "700", "flex": "1"}),
             ], style={"display": "flex", "gap": "10px", "paddingBottom": "8px",
                       "borderBottom": f"1px solid {BORDER}", "marginBottom": "4px",
                       "textTransform": "uppercase", "letterSpacing": ".06em"}),
@@ -228,6 +228,6 @@ def build_portfolio_tab(session=None) -> html.Div:
                       sub=f"${info.get('capital', 0):,.0f}")
                 for i, (sector, info) in enumerate(sector_exposure.items())
             ]) if sector_exposure else html.Div("No sector data available.",
-                                                  style={"color": MUTED, "fontSize": "12px"}),
+                                                  style={"color": WHITE, "fontSize": "12px"}),
         ]),
     ])
