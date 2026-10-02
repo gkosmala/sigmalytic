@@ -5273,6 +5273,81 @@ def build_preferences_tab(user_id="", session=None):
 
 def register_preferences_callbacks(app):
 
+    # FIX (2026-10-02): THE ACTUAL ROOT CAUSE of every "Preferences button
+    # doesn't work" report today. This function was never called in
+    # production until this same debugging session added the call (see the
+    # register_preferences_callbacks(app) invocation near the Dash app's
+    # construction) -- so this NameError was dead code and never once
+    # executed, let alone caught, before now. _msg_style(...) is called 17
+    # times throughout this function's callbacks but was never defined
+    # anywhere in this file: every single one of them (Delivery Mode, Save
+    # Score, Alert Types, Watchlist, Market Hours, Hurst Profile, Save
+    # Sensitivity, Portfolio Value) raised NameError on every click,
+    # exactly as soon as PR #10 activated this function -- which fails
+    # completely silently in production (debug=False means no visible
+    # error overlay), and happens before _save()'s requests.patch() call,
+    # which is why zero network requests to the backend ever appeared in
+    # the logs. Confirmed via a client-side-only diagnostic callback that
+    # the click itself reached the browser correctly every time; this
+    # NameError is what ate every response after that point. Daily Report
+    # Email was the one preferences control that worked throughout this
+    # whole investigation because it's defined as its own standalone
+    # @app.callback elsewhere in this file and never calls _msg_style.
+    def _msg_style(color="teal"):
+        return {
+            "textAlign": "center", "fontSize": "13px", "minHeight": "20px",
+            "marginBottom": "24px",
+            "color": {"teal": TEAL_DIM, "red": RED_DIM, "yellow": YELLOW_DIM}.get(color, WHITE),
+        }
+
+    # FIX (2026-10-02): same bug, second landmine. _on(), _off(),
+    # _render_watchlist() and _save() are all referenced throughout this
+    # function's callbacks (save_mode, save_types, save_watchlist,
+    # save_hours, save_hurst, save_score, save_portfolio_value, etc.) but
+    # were only ever defined as nested closures inside the *sibling*
+    # function build_preferences_tab() above -- not visible here. Every
+    # callback that reached one of these calls raised NameError (silently,
+    # since debug=False in production), which is why no Preferences button
+    # ever produced a status message or a network request to the backend.
+    # Re-defined locally so every callback body in this function actually
+    # has access to them. Kept in sync by hand with the copies in
+    # build_preferences_tab() -- if one changes, update both.
+    import requests as _preqs
+
+    def _on():
+        return {"background":TEAL_GLOW,"border":f"1px solid {BORDER_T}","borderRadius":"8px",
+                "color":TEAL_DIM,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                "fontWeight":"700","padding":"8px 16px","cursor":"pointer"}
+
+    def _off():
+        return {"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}","borderRadius":"8px",
+                "color":WHITE,"fontFamily":"DM Sans, sans-serif","fontSize":"12px",
+                "fontWeight":"700","padding":"8px 16px","cursor":"pointer"}
+
+    def _render_watchlist(wl):
+        if not wl:
+            return [html.Span("All symbols — no filter applied",
+                              style={"color":WHITE,"fontSize":"12px","fontStyle":"italic"})]
+        return [html.Span(s, style={"background":"rgba(0,0,0,.2)","border":f"1px solid {BORDER}",
+                "borderRadius":"6px","color":WHITE,"fontSize":"12px","padding":"4px 10px",
+                "marginRight":"6px","marginBottom":"6px","display":"inline-block"}) for s in wl]
+
+    def _save(uid, email, payload):
+        try:
+            url = f"{BACKEND_HTTP}/api/preferences/{uid}"
+            r = _preqs.patch(url, json=payload, timeout=8)
+            if r.status_code == 404:
+                r = _preqs.post(url, json={**payload, "user_id": uid, "email": email}, timeout=8)
+            if r.ok:
+                return ("Saved", "teal")
+            try:
+                detail = r.json().get("detail")
+            except Exception:
+                detail = None
+            return (f"Error: {detail}"[:120] if detail else f"Error ({r.status_code})", "red")
+        except Exception as e:
+            return (f"{str(e)[:60]}", "red")
+
     # ── Delivery mode — instant save ───────────────────────────────────────────
     @app.callback(
         Output("prefs-status","children"),
