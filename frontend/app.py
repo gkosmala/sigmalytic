@@ -6914,6 +6914,14 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
         {"type": h.get("type"), "level": h.get("level"), "date": h.get("date")}
         for h in hits
     ]
+    # weis_lines.py (PR #15) output, if the backend chart endpoint
+    # computed it successfully -- passed through as-is (already JSON-
+    # serializable via its own *_records() helpers). None when the
+    # backend's own weis_lines block failed or was unavailable; the
+    # client-side code below treats that the same as "no data yet"
+    # and simply doesn't draw those layers, same degrade pattern as
+    # the existing call_wall/put_wall/gamma_flip fields.
+    weis_lines_data = chart_data.get("weis_lines")
 
     def wall_fields(value):
         if value is None:
@@ -6932,6 +6940,7 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
     html_doc = html_doc.replace("__MA_PERIOD__", str(int(ma_period) if ma_period else 20))
     html_doc = html_doc.replace("__BARS_JSON__", json.dumps(bars_for_js))
     html_doc = html_doc.replace("__HITS_JSON__", json.dumps(hits_for_js))
+    html_doc = html_doc.replace("__WEIS_LINES_JSON__", json.dumps(weis_lines_data))
     html_doc = html_doc.replace("__CALL_WALL_CHECKED__", call_checked)
     html_doc = html_doc.replace("__CALL_WALL_VALUE__", call_value)
     html_doc = html_doc.replace("__CALL_WALL_NOTE__", call_note)
@@ -7069,6 +7078,20 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   </div>
 
   <div class="ctrl">
+    <label>Weis Lines (PR #15 engine)</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="showWeisAll"> All</label>
+      <label><input type="checkbox" id="showWeisZigzag" checked> Zigzag</label>
+      <label><input type="checkbox" id="showWeisPivots"> Pivots</label>
+      <label><input type="checkbox" id="showWeisAxisLines"> Axis Lines</label>
+      <label><input type="checkbox" id="showWeisTrendlines"> Trendlines</label>
+      <label><input type="checkbox" id="showWeisChannels"> Channels</label>
+      <label><input type="checkbox" id="showWeisIceLine"> Ice Line</label>
+      <label><input type="checkbox" id="showWeisConfluence"> Confluence</label>
+    </div>
+  </div>
+
+  <div class="ctrl">
     <label>Line 1 (resistance, pink): type / from / to</label>
     <div style="display:flex; gap:6px;">
       <select id="manualType1">
@@ -7157,6 +7180,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <script>
 const RAW_BARS = __BARS_JSON__;
 const HITS = __HITS_JSON__;
+const WEIS_LINES = __WEIS_LINES_JSON__;  // null if unavailable -- see weis_lines_data above
 const TIMEFRAME = __TIMEFRAME__;
 const SESSION_HOURS = __SESSION_HOURS__;
 document.getElementById('sessionCaption').textContent = {
@@ -8182,6 +8206,13 @@ const PERSISTED_CHECKBOX_IDS = [
   'showCallWall','showPutWall','showGammaFlip','showSecUpper','showSecLower',
   'showSR','showEffort','showSOSSOW','showSOT','showEOM','showMOC','showAbsorption',
   'showManualLine1','showManualLine2',
+  'showWeisZigzag','showWeisPivots','showWeisAxisLines','showWeisTrendlines',
+  'showWeisChannels','showWeisIceLine','showWeisConfluence',
+  // Deliberately NOT persisting showWeisAll -- it's a momentary "set all
+  // the others to this state" action, not a state of its own (see the
+  // dedicated listener below); persisting it would re-force every other
+  // Weis Lines checkbox to match it on every reload, defeating the point
+  // of the individual toggles being independently adjustable afterward.
 ];
 const PERSISTED_TEXT_IDS = [
   'manualType1','manualDate1a','manualDate1b','manualType2','manualDate2a','manualDate2b',
@@ -8281,16 +8312,24 @@ function render() {
     name: 'Price', xaxis:'x', yaxis:'y'
   };
 
+  // GATED (new): the existing client-side zigzag now sits behind its own
+  // "Zigzag" checkbox under the new "Weis Lines" layer group, so it can
+  // be compared against / turned off in favor of the backend-computed
+  // weis_lines.py pivots below -- the two are meant to coexist, not
+  // replace one another, per explicit product decision.
+  const showZigzag = document.getElementById('showWeisZigzag').checked;
   const upWave = {x:[],y:[]}, downWave = {x:[],y:[]};
-  for (let i=1; i<zx.length; i++) {
-    const points = zy[i] >= zy[i-1] ? upWave : downWave;
-    points.x.push(zx[i-1], zx[i], null);
-    points.y.push(zy[i-1], zy[i], null);
+  if (showZigzag) {
+    for (let i=1; i<zx.length; i++) {
+      const points = zy[i] >= zy[i-1] ? upWave : downWave;
+      points.x.push(zx[i-1], zx[i], null);
+      points.y.push(zy[i-1], zy[i], null);
+    }
   }
-  const waveTraces = [
+  const waveTraces = showZigzag ? [
     {type:'scatter',mode:'lines',x:upWave.x,y:upWave.y,line:{color:'#00d95b',width:1.7},name:'Rising wave',xaxis:'x',yaxis:'y'},
     {type:'scatter',mode:'lines',x:downWave.x,y:downWave.y,line:{color:'#f23645',width:1.7},name:'Falling wave',xaxis:'x',yaxis:'y'}
-  ];
+  ] : [];
 
   let allShapes = [];
   let allAnnotations = [];
@@ -8377,6 +8416,85 @@ function render() {
         line:{color:'#8b98a5', width:1, dash:'dot'}, opacity:0.55});
     }
   }
+
+  // ---- weis_lines.py (PR #15) overlay: pivots / axis lines / trendlines /
+  // channels / ice line / confluence. Independent of the existing
+  // client-side zigzag above -- coexists with it, same bar-indexed
+  // dates[] array is reused so both overlays line up on the same x-axis.
+  // WEIS_LINES is null when the backend couldn't compute it for this
+  // request (see weis_lines_data in _build_weis_radar_chart_html);
+  // every checkbox here is a no-op in that case.
+  const weisPivotTrace = {type:'scatter', mode:'markers', x:[], y:[], marker:{size:7, symbol:[], color:[]},
+    name:'Pivots', xaxis:'x', yaxis:'y', showlegend:false, hoverinfo:'skip'};
+  const weisConfluenceTrace = {type:'scatter', mode:'markers', x:[], y:[], marker:{size:10, symbol:'diamond',
+    color:'#eab308', line:{color:'#78350f', width:1}}, name:'Confluence', xaxis:'x', yaxis:'y', showlegend:false,
+    hoverinfo:'skip'};
+  const weisExtraTraces = [];
+
+  if (WEIS_LINES) {
+    const wlBarIndex = (i) => (i >= 0 && i < dates.length) ? dates[i] : null;
+    const wlLineX = [dates[0], dates[dates.length - 1]];
+    const wlLineY = (slope, intercept) => [slope * 0 + intercept, slope * (dates.length - 1) + intercept];
+
+    if (document.getElementById('showWeisPivots').checked) {
+      for (const p of WEIS_LINES.pivots || []) {
+        const x = wlBarIndex(p.bar_index);
+        if (x === null) continue;
+        weisPivotTrace.x.push(x);
+        weisPivotTrace.y.push(p.price);
+        weisPivotTrace.marker.symbol.push(p.kind === 'swing_high' ? 'triangle-down' : 'triangle-up');
+        weisPivotTrace.marker.color.push(p.kind === 'swing_high' ? '#f23645' : '#00d95b');
+      }
+    }
+
+    if (document.getElementById('showWeisAxisLines').checked) {
+      const iceLevel = WEIS_LINES.ice_line_level;
+      for (const a of WEIS_LINES.axis_lines || []) {
+        const isIce = iceLevel !== null && iceLevel !== undefined && Math.abs(a.level - iceLevel) < 1e-6;
+        if (isIce) continue; // drawn separately below, emphasized
+        allShapes.push({type:'line', xref:'x', yref:'y', x0:wlLineX[0], x1:wlLineX[1],
+          y0:a.level, y1:a.level, line:{color:'#64748b', width:1.3, dash:'dash'}, opacity:0.7});
+      }
+    }
+    if (document.getElementById('showWeisIceLine').checked && WEIS_LINES.ice_line_level != null) {
+      const lvl = WEIS_LINES.ice_line_level;
+      allShapes.push({type:'line', xref:'x', yref:'y', x0:wlLineX[0], x1:wlLineX[1],
+        y0:lvl, y1:lvl, line:{color:'#0ea5b7', width:2.2}});
+      allAnnotations.push({xref:'x', yref:'y', x:wlLineX[1], y:lvl, text:'ICE', showarrow:false,
+        xanchor:'left', font:{color:'#0ea5b7', size:10, weight:700}});
+    }
+
+    if (document.getElementById('showWeisTrendlines').checked) {
+      for (const t of WEIS_LINES.support_trendlines || []) {
+        const [y0, y1] = wlLineY(t.slope, t.intercept);
+        allShapes.push({type:'line', xref:'x', yref:'y', x0:wlLineX[0], x1:wlLineX[1],
+          y0, y1, line:{color:'#00d95b', width:1.6}});
+      }
+      for (const t of WEIS_LINES.resistance_trendlines || []) {
+        const [y0, y1] = wlLineY(t.slope, t.intercept);
+        allShapes.push({type:'line', xref:'x', yref:'y', x0:wlLineX[0], x1:wlLineX[1],
+          y0, y1, line:{color:'#f23645', width:1.6}});
+      }
+    }
+    if (document.getElementById('showWeisChannels').checked) {
+      for (const c of WEIS_LINES.channels || []) {
+        const [y0, y1] = wlLineY(c.parallel_slope, c.parallel_intercept);
+        const isSupportBase = c.trendline.kind === 'swing_low';
+        allShapes.push({type:'line', xref:'x', yref:'y', x0:wlLineX[0], x1:wlLineX[1],
+          y0, y1, line:{color: isSupportBase ? '#7fd1ae' : '#f0a08f', width:1.2, dash:'dot'}});
+      }
+    }
+    if (document.getElementById('showWeisConfluence').checked) {
+      for (const z of WEIS_LINES.confluence || []) {
+        const x = wlBarIndex(z.bar_index);
+        if (x === null) continue;
+        weisConfluenceTrace.x.push(x);
+        weisConfluenceTrace.y.push(z.price);
+      }
+    }
+  }
+  if (weisPivotTrace.x.length) weisExtraTraces.push(weisPivotTrace);
+  if (weisConfluenceTrace.x.length) weisExtraTraces.push(weisConfluenceTrace);
 
   // ---- Callout collision avoidance ----
   // Effort/Result, SOS/SOW, and Shortening-of-Thrust can all legitimately
@@ -8573,7 +8691,7 @@ function render() {
     annotations: allAnnotations
   };
 
-  Plotly.react('chart', [candleTrace, ...waveTraces, volTrace, dailyVolTrace, maTrace], layout, {
+  Plotly.react('chart', [candleTrace, ...waveTraces, ...weisExtraTraces, volTrace, dailyVolTrace, maTrace], layout, {
     responsive:true, displayModeBar:true, displaylogo:false,
     modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']
   });
@@ -8604,7 +8722,9 @@ function render() {
     `<span><b>${eomCount}</b> ease of movement</span>` +
     `<span><b>${mocCount}</b> meaning of close</span>` +
     `<span><b>${HITS.length}</b> scan hits</span>` +
-    `<span><b>${RAW_BARS.length}</b> total bars</span>`;
+    `<span><b>${RAW_BARS.length}</b> total bars</span>` +
+    (WEIS_LINES ? `<span><b>${(WEIS_LINES.pivots||[]).length}</b> weis pivots</span>` +
+      `<span><b>${(WEIS_LINES.confluence||[]).length}</b> confluence zones</span>` : '');
 
   // ADDED (later session): persist current control state on every
   // render -- see saveSettings()/restoreSettings() above render(). This
@@ -8668,6 +8788,27 @@ document.getElementById('showManualLine2').addEventListener('change', render);
 document.getElementById('manualType2').addEventListener('change', render);
 document.getElementById('manualDate2a').addEventListener('change', render);
 document.getElementById('manualDate2b').addEventListener('change', render);
+
+// Weis Lines (PR #15) layer toggles. "All" is a momentary action, not a
+// persisted state of its own (see PERSISTED_CHECKBOX_IDS note above):
+// checking it sets every other Weis Lines checkbox to checked, so each
+// one remains individually adjustable afterward rather than being
+// permanently slaved to "All".
+const WEIS_LINES_CHECKBOX_IDS = [
+  'showWeisZigzag', 'showWeisPivots', 'showWeisAxisLines',
+  'showWeisTrendlines', 'showWeisChannels', 'showWeisIceLine', 'showWeisConfluence',
+];
+for (const id of WEIS_LINES_CHECKBOX_IDS) {
+  document.getElementById(id).addEventListener('change', render);
+}
+document.getElementById('showWeisAll').addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  for (const id of WEIS_LINES_CHECKBOX_IDS) {
+    document.getElementById(id).checked = checked;
+  }
+  saveSettings();
+  render();
+});
 
 // ADDED (2026-09-10): on-screen, on-demand report summarizing the
 // stock/market's own behavior for the currently loaded symbol --
