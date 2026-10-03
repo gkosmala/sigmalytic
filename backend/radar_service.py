@@ -647,7 +647,7 @@ def compute_symbol_signals(symbol: str, bars: list, requested_signals: set, time
 
 
 def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 252,
-                     min_bars_floor: int = 60, adjustment: str = "raw") -> dict:
+                     min_bars_floor: int = 60, adjustment: str = "split") -> dict:
     """
     Fetch historical bars for the radar universe.
 
@@ -655,6 +655,38 @@ def fetch_bars_batch(symbols: List[str], timeframe: str = "1Day", limit: int = 2
     calling /bars with only timeframe+limit can return only the current daily
     bar. A real start/end window is required for usable MA20, MA50, ATR and
     relative-volume calculations.
+
+    FIX (2026-10-03): default adjustment changed from "raw" to "split".
+    Found while validating a longer-lookback feature against 10 years of
+    real AAPL bars: with "raw", prices before a stock's split date are in
+    pre-split dollar terms and prices after are in post-split terms, with
+    no adjustment between them -- a ~4x price cliff at AAPL's 2020-08-31
+    4-for-1 split, confirmed directly against the raw bars (close $499.23
+    on 2020-08-28, $129.04 on 2020-08-31). The production Weis Radar scan
+    itself (weis_radar_scan.py's main scan loop) and every chart/debug
+    endpoint in main.py call this function without ever passing their own
+    `adjustment`, so all of them inherited "raw" and were exposed to this
+    for any symbol with a split inside their lookback window. (One other
+    caller, reports_engine.py's nightly report generator, already passes
+    its own explicit adjustment="all" and is unaffected by this default
+    either way.) The existing universe-prescreen batch fetch elsewhere in
+    this file already (correctly) uses "split" -- this brings the main
+    fetch path in line with that precedent, not a new, unprecedented
+    choice.
+    "split" (not "all") is used deliberately: it only corrects for share
+    count across splits, not dividends, so it never changes a bar that
+    has already happened independent of a later dividend payment --
+    "all" would quietly re-adjust historical closes every time a dividend
+    is paid, which is undesirable for absolute-price pattern matching
+    (support/resistance levels, Spring/Upthrust structure levels) that
+    should reflect prices as they actually traded.
+
+    Default lookbacks already in production use (252 daily bars, about a
+    year) are unaffected for any symbol with no split in roughly the last
+    year -- this fix only changes behavior for a symbol that split inside
+    the active lookback window, or for any longer-lookback feature (e.g.
+    a multi-year chart request) that wasn't being correctly adjusted
+    before.
     """
     results = {}
 
