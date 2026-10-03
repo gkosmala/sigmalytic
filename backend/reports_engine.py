@@ -684,8 +684,8 @@ def build_report_html(report_date_str: str) -> str:
         <div class="label">Data through</div><div>{_esc(display_date)} (latest completed daily bar)</div>
         <div class="label">Generated</div><div>{generated_at}</div>
         <div class="label">Market data</div><div>Alpaca daily stock bars, feed {_esc(os.getenv('ALPACA_FEED', 'iex'))}, corporate-action adjustment all, up to 252 bars per symbol</div>
-        <div class="label">Actual scoring engines</div><div>Weis Radar/Wyckoff pattern detector and time-bar Weis Wave;
-          separate Renko-Weis volume-exhaustion checks. No legacy campaign/ODS or user-selected radar timeframe.</div>
+        <div class="label">Actual scoring engines</div><div>Sigmalytic Quant Algorithm.
+          No legacy campaign/ODS or user-selected radar timeframe.</div>
         <div class="label">Worker code revision</div><div>{_esc(worker_commit)}</div>
       </div>
     </div>
