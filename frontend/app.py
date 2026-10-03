@@ -7327,13 +7327,25 @@ function placeVolumeLadders() {
     ladder.style.height = `${(domain[1]-domain[0])*plotHeight}px`;
   }
 }
+let settingsOpenBeforeFullscreen = null;
 document.getElementById('fullscreenBtn').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen();
 });
 document.addEventListener('fullscreenchange', () => {
+  const inFullscreen = !!document.fullscreenElement;
   document.getElementById('fullscreenBtn').textContent =
-    document.fullscreenElement ? '⛶ Exit full screen' : '⛶ Full screen';
+    inFullscreen ? '⛶ Exit full screen' : '⛶ Full screen';
+  const settingsPanel = document.getElementById('chartSettings');
+  if (inFullscreen) {
+    // Collapse the settings panel on entering full screen so the chart gets
+    // the space; your checkbox choices stay saved and are restored as-is.
+    settingsOpenBeforeFullscreen = settingsPanel.open;
+    settingsPanel.open = false;
+  } else if (settingsOpenBeforeFullscreen !== null) {
+    settingsPanel.open = settingsOpenBeforeFullscreen;
+    settingsOpenBeforeFullscreen = null;
+  }
   setTimeout(render, 80);
 });
 document.getElementById('chartSettings').addEventListener('toggle', () => setTimeout(render, 40));
