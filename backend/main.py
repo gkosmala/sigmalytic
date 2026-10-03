@@ -2988,8 +2988,50 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
         except Exception:
             pass  # call_wall/put_wall/gamma_flip stay None -- chart still renders fine without them
 
+        # ADDED: weis_lines.py (PR #15) pivot/axis-line/trendline/channel/
+        # apex/ice-line/confluence output, as an independent, optional
+        # overlay next to the existing client-side zigzag the chart
+        # already draws -- the two are meant to coexist (explicit product
+        # decision), not replace one another, so this is purely additive.
+        # Wrapped in its own try/except, same degrade-gracefully pattern
+        # as the gamma block above: a failure here must never break the
+        # chart's existing bars/hits/walls response.
+        weis_lines_out = None
+        try:
+            from backend import weis_lines as wl
+
+            wl_bars = [
+                {"t": b["date"], "o": b["open"], "h": b["high"],
+                 "l": b["low"], "c": b["close"], "v": b["volume"]}
+                for b in bars_out
+            ]
+            pivots = wl.scan_fractal_pivots(wl_bars, timeframe=timeframe)
+            axis_lines = wl.find_axis_lines(pivots)
+            support_lines = wl.find_trendlines(pivots, wl_bars, kind="swing_low")
+            resistance_lines = wl.find_trendlines(pivots, wl_bars, kind="swing_high")
+            all_trendlines = support_lines + resistance_lines
+            channels = [c for c in (wl.find_channel(t, pivots) for t in all_trendlines) if c is not None]
+            apexes = wl.find_apexes(support_lines, resistance_lines, wl_bars)
+            ice_line = wl.label_ice_line(axis_lines, pivots)
+            confluence = wl.find_confluence(
+                axis_lines=axis_lines, trendlines=all_trendlines, channels=channels)
+
+            weis_lines_out = {
+                "pivots": wl.pivot_records(pivots),
+                "axis_lines": wl.axis_line_records(axis_lines),
+                "support_trendlines": wl.trendline_records(support_lines),
+                "resistance_trendlines": wl.trendline_records(resistance_lines),
+                "channels": wl.channel_records(channels),
+                "apexes": wl.apex_records(apexes),
+                "ice_line_level": round(ice_line.level, 4) if ice_line is not None else None,
+                "confluence": wl.confluence_records(confluence),
+            }
+        except Exception:
+            pass  # weis_lines_out stays None -- chart still renders fine without it
+
         return {"ok": True, "symbol": sym, "timeframe": timeframe, "bars": bars_out, "hits": hits,
-                "call_wall": call_wall, "put_wall": put_wall, "gamma_flip": gamma_flip}
+                "call_wall": call_wall, "put_wall": put_wall, "gamma_flip": gamma_flip,
+                "weis_lines": weis_lines_out}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
