@@ -2728,31 +2728,6 @@ def _attach_behavioral_transition(row: dict) -> dict:
         if "setup_type" not in enriched and "setup" in enriched:
             enriched["setup_type"] = enriched.get("setup")
 
-        # DIAGNOSTIC (2026-07-29): user-reported every symbol on the Radar
-        # Screen tab showing identical zero/dash readiness, probability,
-        # edge ratio, grade, etc. Confirmed via isolated testing that
-        # evaluate_behavioral_transition() itself produces real, varied,
-        # non-zero output when given realistic non-null inputs -- so the
-        # function isn't the problem. Also confirmed via log search that
-        # the broad exception handler around this code isn't firing
-        # (enrichment isn't silently failing). That leaves one remaining
-        # explanation: the actual production inputs (volume_pressure,
-        # relative_strength, expansion_node, behavioral, composite_score)
-        # are themselves null/missing for real symbols. Logging the actual
-        # values for a small sample so the next scan's logs show real
-        # evidence instead of another guess.
-        import random as _diag_random
-        if _diag_random.random() < 0.05:
-            log.warning(
-                f"[RADAR_DIAG] {enriched.get('symbol')}: "
-                f"composite_score={enriched.get('composite_score')} "
-                f"volume_pressure={enriched.get('volume_pressure')} "
-                f"relative_strength={enriched.get('relative_strength')} "
-                f"expansion_node={enriched.get('expansion_node')} "
-                f"behavioral={enriched.get('behavioral')} "
-                f"regime={enriched.get('regime')!r}"
-            )
-
         bt = evaluate_behavioral_transition(enriched)
 
         enriched["behavioral_transition"] = bt
@@ -3286,29 +3261,6 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
                 LAST_SCAN_TIME = float(_raw_ts)
         except Exception as _lsre:
             log.warning(f"LAST_SCAN_TIME Redis read failed: {_lsre}")
-
-    # DIAGNOSTIC (2026-07-29): the previous diagnostic (inside the shared
-    # _attach_behavioral_transition, called from 5+ different places) showed
-    # volume_pressure/relative_strength/expansion_node/behavioral as None
-    # for every symbol -- but that function is shared across multiple
-    # callers, so those log lines weren't necessarily from *this* endpoint
-    # specifically. This logs the RAW RADAR_CACHE values directly, right
-    # here in get_radar_scores (the exact endpoint the Radar Screen tab
-    # calls), before any enrichment happens -- unambiguous evidence of
-    # whether score_symbol's computed values actually make it into the
-    # cache this endpoint reads, or whether something is stripping/
-    # overwriting them before this point.
-    if results:
-        _sample = results[0]
-        log.warning(
-            f"[RADAR_DIAG_RAW] {_sample.get('symbol')}: "
-            f"composite_score={_sample.get('composite_score')} "
-            f"volume_pressure={_sample.get('volume_pressure')} "
-            f"relative_strength={_sample.get('relative_strength')} "
-            f"expansion_node={_sample.get('expansion_node')} "
-            f"behavioral={_sample.get('behavioral')} "
-            f"all_keys={sorted(_sample.keys())}"
-        )
 
     if status:
         results = [r for r in results if r.get("status") == status]
