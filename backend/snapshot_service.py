@@ -454,24 +454,39 @@ def build_admin_report(radar_cache: dict) -> dict:
 
 
 def _slim(s: dict) -> dict:
-    """Return a trimmed symbol dict for API response."""
+    """
+    Return a trimmed symbol dict for API response.
+
+    FIX: every numeric field here used bare s.get(key) with no default,
+    so a symbol with no score/price computed yet (new to the universe,
+    or a scoring error for that bar) sent this field through as a raw
+    None in the JSON. The Admin tab's render code (_sym_row in
+    frontend/app.py) does `s.get(key, 0)`, which only substitutes 0
+    when the KEY IS MISSING -- not when it's present with value None --
+    so that None reached an f"{x:.0f}" format spec and crashed the
+    whole Admin tab with "unsupported format string passed to
+    NoneType.__format__". Numeric fields now coerce via `or 0`, matching
+    the `float(row[...] or 0)` pattern already used elsewhere in this
+    file (e.g. the daily_grades grid above). String fields are left as
+    None -> "" is handled on the render side, not changed here.
+    """
     return {
         "symbol":           s.get("symbol"),
-        "price":            s.get("price"),
-        "change_pct":       s.get("change_pct"),
-        "composite_score":  s.get("composite_score"),
-        "confluence":       s.get("confluence"),
-        "expansion_node":   s.get("expansion_node"),
-        "relative_strength":s.get("relative_strength"),
-        "volume_pressure":  s.get("volume_pressure"),
-        "behavioral":       s.get("behavioral"),
+        "price":            s.get("price") or 0,
+        "change_pct":       s.get("change_pct") or 0,
+        "composite_score":  s.get("composite_score") or 0,
+        "confluence":       s.get("confluence") or 0,
+        "expansion_node":   s.get("expansion_node") or 0,
+        "relative_strength":s.get("relative_strength") or 0,
+        "volume_pressure":  s.get("volume_pressure") or 0,
+        "behavioral":       s.get("behavioral") or 0,
         "status":           s.get("status"),
         "setup_type":       s.get("setup_type"),
         "regime":           s.get("regime"),
         "trigger":          s.get("trigger"),
         "invalidation":     s.get("invalidation"),
-        "atr":              s.get("atr"),
-        "rel_volume":       s.get("rel_volume"),
+        "atr":              s.get("atr") or 0,
+        "rel_volume":       s.get("rel_volume") or 0,
     }
 
 

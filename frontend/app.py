@@ -6242,16 +6242,30 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     ], sx={"marginBottom":"16px"})
 
     # ── Top 10 scores table ───────────────────────────────────────────────
+    # FIX: s.get(key, 0) only falls back to 0 when the key is MISSING --
+    # not when it's present with value None, which is exactly what the
+    # backend's _slim() (snapshot_service.py) sends for any symbol whose
+    # score/price/etc. hasn't been computed yet. That None then hit an
+    # f"{x:.0f}" format spec and crashed the whole Admin tab with
+    # "unsupported format string passed to NoneType.__format__". Every
+    # numeric field read here now also coerces via `or 0`, so a None
+    # value (key present) is caught the same as a missing key.
     def _sym_row(s):
-        score = s.get("composite_score", 0)
+        score = s.get("composite_score", 0) or 0
         sc    = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 50 else RED_DIM)
-        chg   = s.get("change_pct", 0)
+        chg   = s.get("change_pct", 0) or 0
+        price = s.get("price", 0) or 0
+        confluence       = s.get("confluence", 0) or 0
+        expansion_node   = s.get("expansion_node", 0) or 0
+        relative_strength= s.get("relative_strength", 0) or 0
+        volume_pressure  = s.get("volume_pressure", 0) or 0
+        behavioral       = s.get("behavioral", 0) or 0
         return html.Div([
-            html.Span(s.get("symbol",""), style={
+            html.Span(s.get("symbol","") or "", style={
                 "flex":"1","fontWeight":"800","fontSize":"13px","color":WHITE,
                 "fontFamily":"monospace",
             }),
-            html.Span(f"${s.get('price',0):,.2f}", style={
+            html.Span(f"${price:,.2f}", style={
                 "flex":"1","fontSize":"12px","color":WHITE,
             }),
             html.Span(f"{chg:+.2f}%", style={
@@ -6262,9 +6276,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 html.Span(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":sc}),
                 _score_bar(score, width="80px"),
             ], style={"flex":"1"}),
-            html.Span(f"C:{s.get('confluence',0):.0f} E:{s.get('expansion_node',0):.0f} "
-                      f"RS:{s.get('relative_strength',0):.0f} VP:{s.get('volume_pressure',0):.0f} "
-                      f"B:{s.get('behavioral',0):.0f}",
+            html.Span(f"C:{confluence:.0f} E:{expansion_node:.0f} "
+                      f"RS:{relative_strength:.0f} VP:{volume_pressure:.0f} "
+                      f"B:{behavioral:.0f}",
                       style={"flex":"2","fontSize":"10px","color":sc,"fontFamily":"monospace"}),
             html.Span(s.get("status",""), style={
                 "flex":"1","fontSize":"10px","fontWeight":"700","color":sc,
