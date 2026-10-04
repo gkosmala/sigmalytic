@@ -7092,6 +7092,24 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   </div>
 
   <div class="ctrl">
+    <label>Weis Radar signals (scanHistoricalPatterns, matches app.py's WEIS_RADAR_SIGNAL_OPTIONS)</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="sig_spring" checked> Spring</label>
+      <label><input type="checkbox" id="sig_upthrust" checked> Upthrust</label>
+      <label><input type="checkbox" id="sig_breakout" checked> Breakout</label>
+      <label><input type="checkbox" id="sig_breakdown" checked> Breakdown</label>
+      <label><input type="checkbox" id="sig_3bar" checked> 3-Bar Reversal</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Buying Climax</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Selling Climax</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Absorption / No Supply</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Distribution / No Demand</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Strength</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Weakness</label>
+    </div>
+    <span class="missing-note">These mark every historical occurrence across the loaded chart (distinct from the live scanner's single most-recent-bar check). Climax/Absorption/Distribution/SOS/SOW use separate detectors (see Annotation layers above for SOS/SOW/Absorption) -- not wired up here. Spring/Upthrust/Breakout/Breakdown come from scanHistoricalPatterns() (price-only); 3-Bar Reversal comes from weis_lines.py's scanThreeBarReversalPivots(), ported to JS and validated against the Python output.</span>
+  </div>
+
+  <div class="ctrl">
     <label>Weis Lines (PR #15 engine)</label>
     <div class="radio-group">
       <label><input type="checkbox" id="showWeisAll"> All</label>
@@ -7465,6 +7483,93 @@ function scanHistoricalPatterns(bars, lookback = 40, reclaimWindow = 5) {
   }
   return events;
 }
+
+// ADDED (ported from the standalone Weis Radar demo tool, same session):
+// computed once here, read by render() below to drive the "Weis Radar
+// signals" checkbox row above. scanHistoricalPatterns() already existed
+// in this file (used only for the text-report's "historical track
+// record" section) -- reused unchanged here, just also wired into the
+// chart overlay itself.
+let HISTORICAL_PATTERN_EVENTS = scanHistoricalPatterns(RAW_BARS);
+
+// Tiny numeric-safety helpers, used only by scanThreeBarReversalPivots
+// below.
+function _numOrNull(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function _mean(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
+
+// Ported from backend/weis_lines.py's scan_three_bar_reversal_pivots()
+// -- validated byte-for-byte against that Python output earlier this
+// session (3/3 exact match on real gold futures data), then separately
+// re-validated here after adapting it to read RAW_BARS' own field names
+// (open/high/low/close/volume/date) directly rather than going through
+// the weis_lines engine's short o/h/l/c/v/t format -- this chart doesn't
+// need that conversion, since WEIS_LINES itself arrives pre-computed
+// from the backend here (__WEIS_LINES_JSON__ below), not computed
+// client-side the way the standalone upload tool has to. Logic is
+// otherwise byte-for-byte identical to the validated version.
+function scanThreeBarReversalPivots(bars) {
+  const pivots = [];
+  if (!bars.length || bars.length < 7) return pivots;
+
+  for (let i = 1; i < bars.length - 1; i++) {
+    const b1 = bars[i - 1], b2 = bars[i], b3 = bars[i + 1];
+
+    const o1 = _numOrNull(b1.open), c1 = _numOrNull(b1.close), h1 = _numOrNull(b1.high), l1 = _numOrNull(b1.low), v1 = _numOrNull(b1.volume);
+    const o2 = _numOrNull(b2.open), c2 = _numOrNull(b2.close), h2 = _numOrNull(b2.high), l2 = _numOrNull(b2.low);
+    const o3 = _numOrNull(b3.open), c3 = _numOrNull(b3.close), h3 = _numOrNull(b3.high), l3 = _numOrNull(b3.low), v3 = _numOrNull(b3.volume);
+    if ([o1, c1, h1, l1, v1, o2, c2, h2, l2, o3, c3, h3, l3, v3].some(v => v === null)) continue;
+
+    const rangeWindow = bars.slice(Math.max(0, i + 1 - 5), i + 2);
+    if (rangeWindow.length < 5) continue;
+    let validWindow = true;
+    const ranges = [];
+    for (const rb of rangeWindow) {
+      const rh = _numOrNull(rb.high), rl = _numOrNull(rb.low);
+      if (rh === null || rl === null) { validWindow = false; break; }
+      ranges.push(rh - rl);
+    }
+    if (!validWindow) continue;
+    const avgRange = _mean(ranges);
+    if (avgRange <= 0) continue;
+
+    const range1 = h1 - l1, range2 = h2 - l2;
+
+    const bar1StrongUp = c1 > o1 && range1 >= avgRange * 0.8;
+    const bar2Indecision = range2 <= range1 * 0.6;
+    const bar3StrongDown = c3 < o3 && c3 < o1;
+    const bar3VolumeOk = v3 >= v1 * 0.8;
+    if (bar1StrongUp && bar2Indecision && bar3StrongDown && bar3VolumeOk) {
+      pivots.push({
+        kind: "swing_high", price: h1, bar_index: i - 1,
+        confirmed_index: i + 1, confirmed_time: String(b3.date || ""),
+        source: "three_bar_reversal",
+      });
+      continue;
+    }
+
+    const bar1StrongDown = c1 < o1 && range1 >= avgRange * 0.8;
+    const bar3StrongUp = c3 > o3 && c3 > o1;
+    const bar3VolumeOk2 = v3 >= v1 * 0.8;
+    if (bar1StrongDown && bar2Indecision && bar3StrongUp && bar3VolumeOk2) {
+      pivots.push({
+        kind: "swing_low", price: l1, bar_index: i - 1,
+        confirmed_index: i + 1, confirmed_time: String(b3.date || ""),
+        source: "three_bar_reversal",
+      });
+    }
+  }
+  return pivots;
+}
+
+function computeThreeBarEvents(rawBars) {
+  const pivots = scanThreeBarReversalPivots(rawBars);
+  return pivots.map(p => ({
+    idx: p.bar_index, date: p.confirmed_time,
+    type: p.kind === "swing_high" ? "3BAR_BEARISH" : "3BAR_BULLISH",
+    level: p.price,
+  }));
+}
+let THREE_BAR_EVENTS = computeThreeBarEvents(RAW_BARS);
 
 function computeZigZag(bars, vibPct) {
   const n = bars.length;
@@ -8234,6 +8339,7 @@ const PERSISTED_CHECKBOX_IDS = [
   'showManualLine1','showManualLine2',
   'showWeisZigzag','showWeisPivots','showWeisAxisLines','showWeisTrendlines',
   'showWeisChannels','showWeisIceLine','showWeisConfluence',
+  'sig_spring','sig_upthrust','sig_breakout','sig_breakdown','sig_3bar',
   // Deliberately NOT persisting showWeisAll -- it's a momentary "set all
   // the others to this state" action, not a state of its own (see the
   // dedicated listener below); persisting it would re-force every other
@@ -8587,6 +8693,38 @@ function render() {
     }
   }
 
+  // ---- Weis Radar signals (historical, full-chart) -- ADDED (ported
+  // from the standalone demo tool, same session). scanHistoricalPatterns()
+  // marks every historical Spring/Upthrust/Breakout/Breakdown occurrence
+  // across the whole loaded chart, gated by the checkbox row added above
+  // Annotation layers. Distinct from the HITS array/PATTERN_COLORS further
+  // up (the live backend scanner's own single most-recent-bar check,
+  // rendered unconditionally as dashed lines) -- these are independent
+  // overlays, not a replacement for it.
+  const HIST_PATTERN_COLORS = {
+    SPRING: '#4ade80', UPTHRUST: '#f87171', BREAKOUT: '#60a5fa', BREAKDOWN: '#fb923c',
+    '3BAR_BULLISH': '#a3e635', '3BAR_BEARISH': '#fb7185',
+  };
+  const HIST_PATTERN_CHECKBOX = {
+    SPRING: 'sig_spring', UPTHRUST: 'sig_upthrust', BREAKOUT: 'sig_breakout', BREAKDOWN: 'sig_breakdown',
+    '3BAR_BULLISH': 'sig_3bar', '3BAR_BEARISH': 'sig_3bar',
+  };
+  const HIST_PATTERN_SIDE = {
+    SPRING: 'up', UPTHRUST: 'down', BREAKOUT: 'up', BREAKDOWN: 'down',
+    '3BAR_BULLISH': 'up', '3BAR_BEARISH': 'down',
+  };
+  const HIST_PATTERN_LABEL = { '3BAR_BULLISH': '3BAR', '3BAR_BEARISH': '3BAR' };
+  const histPatternCounts = { SPRING: 0, UPTHRUST: 0, BREAKOUT: 0, BREAKDOWN: 0, '3BAR_BULLISH': 0, '3BAR_BEARISH': 0 };
+  for (const e of [...HISTORICAL_PATTERN_EVENTS, ...THREE_BAR_EVENTS]) {
+    const cbId = HIST_PATTERN_CHECKBOX[e.type];
+    if (!cbId || !document.getElementById(cbId).checked) continue;
+    histPatternCounts[e.type]++;
+    calloutQueue.push({
+      barIdx: e.idx, side: HIST_PATTERN_SIDE[e.type], color: HIST_PATTERN_COLORS[e.type],
+      text: HIST_PATTERN_LABEL[e.type] || e.type, fontSize: 10, baseGap: 24,
+    });
+  }
+
   function groupAndPlaceCallouts(queue) {
     const groups = {};
     for (const c of queue) {
@@ -8741,6 +8879,11 @@ function render() {
     `<span><b>${upBars}</b> up-wave bars</span>` +
     `<span><b>${downBars}</b> down-wave bars</span>` +
     `<span><b>${srCount}</b> S/R levels</span>` +
+    `<span style="color:${HIST_PATTERN_COLORS.SPRING}"><b>${histPatternCounts.SPRING}</b> spring</span>` +
+    `<span style="color:${HIST_PATTERN_COLORS.UPTHRUST}"><b>${histPatternCounts.UPTHRUST}</b> upthrust</span>` +
+    `<span style="color:${HIST_PATTERN_COLORS.BREAKOUT}"><b>${histPatternCounts.BREAKOUT}</b> breakout</span>` +
+    `<span style="color:${HIST_PATTERN_COLORS.BREAKDOWN}"><b>${histPatternCounts.BREAKDOWN}</b> breakdown</span>` +
+    `<span style="color:${HIST_PATTERN_COLORS['3BAR_BULLISH']}"><b>${histPatternCounts['3BAR_BULLISH'] + histPatternCounts['3BAR_BEARISH']}</b> 3-bar reversal</span>` +
     `<span><b>${effortCount}</b> effort/result callouts</span>` +
     `<span><b>${sosSowCount}</b> SOS/SOW</span>` +
     `<span><b>${sotCount}</b> shortening of thrust</span>` +
@@ -8811,6 +8954,11 @@ document.getElementById('manualType1').addEventListener('change', render);
 document.getElementById('manualDate1a').addEventListener('change', render);
 document.getElementById('manualDate1b').addEventListener('change', render);
 document.getElementById('showManualLine2').addEventListener('change', render);
+document.getElementById('sig_spring').addEventListener('change', render);
+document.getElementById('sig_upthrust').addEventListener('change', render);
+document.getElementById('sig_breakout').addEventListener('change', render);
+document.getElementById('sig_breakdown').addEventListener('change', render);
+document.getElementById('sig_3bar').addEventListener('change', render);
 document.getElementById('manualType2').addEventListener('change', render);
 document.getElementById('manualDate2a').addEventListener('change', render);
 document.getElementById('manualDate2b').addEventListener('change', render);
