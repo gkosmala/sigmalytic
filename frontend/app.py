@@ -8832,8 +8832,19 @@ document.getElementById('showWeisAll').addEventListener('change', (e) => {
 // render()'s own local scope.
 function generateReport() {
   if (!RAW_BARS.length) {
-    document.getElementById('reportPanel').style.display = 'block';
-    document.getElementById('reportPanel').textContent = 'No bar data available to report on yet.';
+    const emptyPanel = document.getElementById('reportPanel');
+    emptyPanel.innerHTML = '';
+    const emptyCloseBtn = document.createElement('button');
+    emptyCloseBtn.type = 'button';
+    emptyCloseBtn.textContent = '✕ Close';
+    emptyCloseBtn.style.cssText = 'float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;padding:4px 10px;border-radius:4px;margin-bottom:8px;';
+    emptyCloseBtn.addEventListener('click', () => { emptyPanel.style.display = 'none'; });
+    emptyPanel.appendChild(emptyCloseBtn);
+    const emptyText = document.createElement('div');
+    emptyText.style.cssText = 'clear:both;';
+    emptyText.textContent = 'No bar data available to report on yet.';
+    emptyPanel.appendChild(emptyText);
+    emptyPanel.style.display = 'block';
     return;
   }
 
@@ -9008,10 +9019,26 @@ function generateReport() {
   }
 
   const panel = document.getElementById('reportPanel');
-  panel.textContent = lines.join('\\n');
+  panel.innerHTML = '';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.textContent = '✕ Close';
+  closeBtn.style.cssText = 'float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;padding:4px 10px;border-radius:4px;margin-bottom:8px;';
+  closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
+  panel.appendChild(closeBtn);
+  const textNode = document.createElement('div');
+  textNode.style.cssText = 'clear:both;';
+  textNode.textContent = lines.join('\\n');
+  panel.appendChild(textNode);
   panel.style.display = 'block';
 }
 document.getElementById('generateReportBtn').addEventListener('click', generateReport);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const panel = document.getElementById('reportPanel');
+    if (panel.style.display === 'block') panel.style.display = 'none';
+  }
+});
 
 document.getElementById('resetZoomBtn').addEventListener('click', () => {
   const {start,count} = getWindow();
