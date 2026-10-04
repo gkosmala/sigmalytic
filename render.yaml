@@ -185,6 +185,10 @@ services:
         sync: false
       - key: ALPACA_BASE_URL
         value: "https://data.alpaca.markets"
+      # Consolidated SIP bars (the plan the app pays for). Unset, the code
+      # used to fall back to IEX, giving narrower highs/lows and volume.
+      - key: ALPACA_FEED
+        value: sip
 
   - type: cron
     name: sigmalytic-daily-report

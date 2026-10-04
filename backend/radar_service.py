@@ -165,7 +165,7 @@ ALPACA_API_SECRET = (
     or ""
 )
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://data.alpaca.markets")
-ALPACA_FEED       = os.getenv("ALPACA_FEED", "iex")
+ALPACA_FEED       = os.getenv("ALPACA_FEED", "sip")
 DATABASE_URL      = os.getenv("DATABASE_URL", "")
 
 SCAN_INTERVAL_SECONDS = 480   # 8 minutes — lightweight only, completes fast
