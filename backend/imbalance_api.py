@@ -12,9 +12,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header
 
 try:
-    import imbalance_scanner as sc
-except Exception:  # pragma: no cover
     from backend import imbalance_scanner as sc
+except Exception:  # run from inside backend/ (tests, scripts)
+    import imbalance_scanner as sc
 
 
 def _admin_dependency():

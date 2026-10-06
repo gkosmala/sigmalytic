@@ -148,7 +148,7 @@ def test_log_endpoints_require_admin_and_header_is_read(monkeypatch):
         return "admin@x.com"
 
     monkeypatch.setattr(imbalance_api, "_admin_dependency", lambda: fake_require_admin)
-    monkeypatch.setattr(sc, "default_store", lambda: sc.MemoryLogStore())
+    monkeypatch.setattr(imbalance_api.sc, "default_store", lambda: imbalance_api.sc.MemoryLogStore())
     app = FastAPI()
     app.include_router(imbalance_api.imbalance_router)
     c = TestClient(app)
@@ -203,3 +203,14 @@ def test_app_wires_the_imbalance_tab():
     # nav id list and Input list must stay in the same order (index lookup)
     ids = src[src.index("const buttons = ["):src.index("];", src.index("const buttons = ["))]
     assert ids.rstrip().endswith("'tab-imbalance'")
+
+
+def test_imports_the_way_production_does():
+    """Render starts `backend.main:app` from the repo root, so modules load as `backend.*`
+    with NO backend/ directory on sys.path. This is what broke the first deploy."""
+    import subprocess
+    code = ("import sys; sys.path[:] = [p for p in sys.path if not p.rstrip('/').endswith('backend')];"
+            "import backend.imbalance_api as a, backend.imbalance_scanner as s;"
+            "assert len(s.UNIVERSE) == 13; print('ok', sorted(r.path for r in a.imbalance_router.routes))")
+    out = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+    assert out.returncode == 0 and "ok" in out.stdout, out.stderr[-600:]
