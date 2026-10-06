@@ -72,6 +72,11 @@ except Exception:
     register_broker_bi_callbacks = None
 
 try:
+    from imbalance_tab import build_imbalance_tab
+except Exception:
+    build_imbalance_tab = None
+
+try:
     from live_opportunity_center import (
         build_live_opportunity_center as build_status_center,
         register_live_opportunity_center_callbacks,
@@ -11164,6 +11169,7 @@ ALL_TABS = [
     # set_tab() -- nothing to rebuild from scratch.
     ("broker_bi",   "Broker Behavioural Intelligence"),
     ("behavior",    "Behavioral Intelligence"),
+    ("imbalance",   "Imbalance Alerts"),
     ("import",      "Import History"),
     ("journal",     "Journal"),
     ("portfolio",   "Portfolio"),
@@ -11699,7 +11705,7 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi'
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -11719,6 +11725,7 @@ app.clientside_callback(
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
     Input("tab-broker_bi","n_clicks"),
+    Input("tab-imbalance","n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -12723,6 +12730,23 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                 main = card([
                     html.H2("Broker Behavioural Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                     note_box("Broker tab error: " + str(e), "blue"),
+                ])
+    elif tab=="imbalance":
+        # Fetches the alert log from the backend, so only rebuild on a genuine tab switch.
+        if not tab_switched:
+            return no_update, no_update, no_update, no_update
+        if build_imbalance_tab is None:
+            main = card([
+                html.H2("Imbalance Alerts", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Imbalance tab module did not import. Check frontend/imbalance_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_imbalance_tab(session=session, admin=is_admin(session))
+            except Exception as e:
+                main = card([
+                    html.H2("Imbalance Alerts", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Imbalance tab error: " + str(e), "blue"),
                 ])
     elif tab=="guide":       main = build_guide_tab()
     elif tab=="briefing":

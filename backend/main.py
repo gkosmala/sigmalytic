@@ -7341,6 +7341,18 @@ except Exception as _broker_router_mount_error:
     _BROKER_ROUTER_MOUNT_ERROR_EXCERPT = str(_broker_router_mount_error)[:500]
 # === SIGMALYTIC BROKER VAULTS ROUTER MOUNT END ===
 
+# === SIGMALYTIC IMBALANCE ALERT ROUTER MOUNT START ===
+try:
+    try:
+        from backend.imbalance_api import imbalance_router
+    except Exception:
+        from imbalance_api import imbalance_router
+
+    app.include_router(imbalance_router)
+except Exception as _imbalance_router_mount_error:
+    _IMBALANCE_ROUTER_MOUNT_ERROR_EXCERPT = str(_imbalance_router_mount_error)[:500]
+# === SIGMALYTIC IMBALANCE ALERT ROUTER MOUNT END ===
+
 # === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
 try:
     try:
