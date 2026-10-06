@@ -494,6 +494,13 @@ def _detect_anomalies(symbols: list) -> List[dict]:
     """
     Detect unusual patterns in the current scan.
     Flags things worth investigating before launch.
+
+    FIX (2026-10-06): removed the Confluence / Expansion Node / Behavioral
+    checks. Since 2026-09-19 the radar output no longer stores those
+    fields (composite_score is the Weis Wave score; the older generic
+    factors are only used internally to set status), so these checks read
+    a missing value as 0 and produced ~45 false flags per scan. What is
+    left reads only fields the radar still saves.
     """
     flags = []
 
@@ -501,20 +508,7 @@ def _detect_anomalies(symbols: list) -> List[dict]:
         sym   = s.get("symbol","")
         score = s.get("composite_score", 0)
         status= s.get("status","")
-        chg   = s.get("change_pct", 0)
-        rel_v = s.get("rel_volume", 1)
-        conf  = s.get("confluence", 0)
-        exp   = s.get("expansion_node", 0)
-        beh   = s.get("behavioral", 0)
-
-        # Armed but low expansion — contradictory
-        if status == "Armed" and exp < 50:
-            flags.append({
-                "type":    "CONTRADICTION",
-                "symbol":  sym,
-                "message": f"{sym} is Armed but Expansion Node is low ({exp:.0f}) — review trigger logic",
-                "severity":"WARN",
-            })
+        rel_v = s.get("rel_volume", 1) or 1
 
         # High score but Avoid status
         if score >= 75 and status == "Avoid":
@@ -525,30 +519,12 @@ def _detect_anomalies(symbols: list) -> List[dict]:
                 "severity":"WARN",
             })
 
-        # Extreme mover with low confluence
-        if abs(chg) > 5 and conf < 50:
-            flags.append({
-                "type":    "MOVER_LOW_CONF",
-                "symbol":  sym,
-                "message": f"{sym} moved {chg:+.1f}% but Confluence is only {conf:.0f} — possible data issue",
-                "severity":"INFO",
-            })
-
         # Extreme relative volume spike
         if rel_v > 10:
             flags.append({
                 "type":    "VOLUME_SPIKE",
                 "symbol":  sym,
                 "message": f"{sym} has {rel_v:.1f}x relative volume — news event or data anomaly",
-                "severity":"INFO",
-            })
-
-        # Behavioral strongly contradicts confluence
-        if abs(conf - beh) > 35:
-            flags.append({
-                "type":    "DIMENSION_DIVERGENCE",
-                "symbol":  sym,
-                "message": f"{sym}: Confluence={conf:.0f} vs Behavioral={beh:.0f} — large divergence",
                 "severity":"INFO",
             })
 
