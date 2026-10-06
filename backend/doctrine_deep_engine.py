@@ -166,10 +166,12 @@ def compute_doctrine_deep_score(
     struct_score = _clamp(struct_score)
 
     # ── Pillar 6: contrary supply / distribution risk ────────────────────────
+    # Direction follows weis_wave.py / weis_direction.py: a Buying Climax is
+    # distribution (bearish) and a Selling Climax is accumulation (bullish).
     distribution_component = 50.0
-    if weis_signal in ("UPTHRUST", "CLIMAX_SELL"):
+    if weis_signal in ("UPTHRUST", "CLIMAX_BUY"):
         distribution_component = 35.0
-    elif weis_signal in ("SPRING", "CLIMAX_BUY"):
+    elif weis_signal in ("SPRING", "CLIMAX_SELL"):
         distribution_component = 62.0
 
     composite = _clamp(round(
@@ -182,9 +184,9 @@ def compute_doctrine_deep_score(
         2,
     ))
 
-    if weis_signal in ("SPRING", "CLIMAX_BUY"):
+    if weis_signal in ("SPRING", "CLIMAX_SELL"):
         regime = "ACCUMULATION"
-    elif weis_signal in ("UPTHRUST", "CLIMAX_SELL"):
+    elif weis_signal in ("UPTHRUST", "CLIMAX_BUY"):
         regime = "DISTRIBUTION"
     elif macro_bias > 0:
         regime = "MARKUP"
