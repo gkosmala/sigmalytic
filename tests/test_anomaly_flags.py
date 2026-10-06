@@ -31,7 +31,7 @@ def test_armed_without_stored_expansion_is_not_flagged():
 
 
 def test_real_checks_still_fire():
-    rows = _many([_row(symbol="ABNB", composite_score=100, status="Avoid"),
+    rows = _many([_row(symbol="ABNB", composite_score=100, status="Avoid", weis_signal="SPRING"),
                   _row(symbol="HOLX", rel_volume=12.3)])
     kinds = {(f["symbol"], f["type"]) for f in _detect_anomalies(rows)}
     assert ("ABNB", "SCORE_STATUS_MISMATCH") in kinds and ("HOLX", "VOLUME_SPIKE") in kinds

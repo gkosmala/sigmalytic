@@ -6263,14 +6263,16 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # value (key present) is caught the same as a missing key.
     def _sym_row(s):
         score = s.get("composite_score", 0) or 0
-        sc    = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 50 else RED_DIM)
+        # The score is signal STRENGTH, not direction: colour by the signal's
+        # direction when known so a bearish Upthrust is not shown in green.
+        if s.get("signal_direction") == "BEAR":
+            sc = RED_DIM
+        elif s.get("signal_direction") == "BULL":
+            sc = TEAL_DIM
+        else:
+            sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 50 else RED_DIM)
         chg   = s.get("change_pct", 0) or 0
         price = s.get("price", 0) or 0
-        confluence       = s.get("confluence", 0) or 0
-        expansion_node   = s.get("expansion_node", 0) or 0
-        relative_strength= s.get("relative_strength", 0) or 0
-        volume_pressure  = s.get("volume_pressure", 0) or 0
-        behavioral       = s.get("behavioral", 0) or 0
         return html.Div([
             html.Span(s.get("symbol","") or "", style={
                 "flex":"1","fontWeight":"800","fontSize":"13px","color":WHITE,
@@ -6287,10 +6289,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 html.Span(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":sc}),
                 _score_bar(score, width="80px"),
             ], style={"flex":"1"}),
-            html.Span(f"C:{confluence:.0f} E:{expansion_node:.0f} "
-                      f"RS:{relative_strength:.0f} VP:{volume_pressure:.0f} "
-                      f"B:{behavioral:.0f}",
-                      style={"flex":"2","fontSize":"10px","color":sc,"fontFamily":"monospace"}),
+            html.Span(s.get("signal_label") or "-",
+                      style={"flex":"2","fontSize":"11px","fontWeight":"700",
+                             "color": TEAL_DIM if s.get("signal_direction") == "BULL"
+                                      else (RED_DIM if s.get("signal_direction") == "BEAR" else WHITE),
+                             "fontFamily":"monospace"}),
             html.Span(s.get("status",""), style={
                 "flex":"1","fontSize":"10px","fontWeight":"700","color":sc,
             }),
@@ -6301,7 +6304,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _admin_card([
-        html.Div("TOP 10 — COMPOSITE SCORE", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("TOP 10 — WEIS SIGNAL STRENGTH (ties broken by relative volume)", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
@@ -6309,7 +6312,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Span("Price",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Chg%",     style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Score",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Dimensions (C E RS VP B)", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Weis signal", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Status",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         ], style={"display":"flex","gap":"12px","paddingBottom":"8px",
