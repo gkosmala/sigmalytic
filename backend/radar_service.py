@@ -2488,6 +2488,32 @@ def start_radar_scheduler():
         )
         log.info("GEX scan scheduled every 8 minutes")
 
+    # Imbalance Alert scan (off unless IMBALANCE_SCAN_ENABLED=1; shadow-only
+    # unless IMBALANCE_ALERTS_LIVE=1). Weekdays, market hours, every 15 minutes.
+    try:
+        try:
+            from backend import imbalance_scanner as _imb
+        except Exception:
+            import imbalance_scanner as _imb
+        if _imb.scan_enabled():
+            def _imbalance_job():
+                try:
+                    _imb.run_scan()
+                    _imb.update_outcomes()
+                except Exception as exc:
+                    log.warning(f"imbalance scan failed: {exc}")
+            _scheduler.add_job(
+                _imbalance_job,
+                trigger="cron",
+                day_of_week="mon-fri",
+                hour="13-20",
+                minute="*/15",
+                id="imbalance_scan",
+            )
+            log.info("Imbalance Alert scan scheduled (live=%s)", _imb.is_live())
+    except Exception as exc:
+        log.warning(f"Imbalance Alert scan not scheduled: {exc}")
+
     # Layer 1 — Lightweight universe scan every 8 minutes
     _scheduler.add_job(
         _instrumented("radar_scan", run_radar_scan),
