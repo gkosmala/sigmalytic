@@ -26,7 +26,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-import imbalance_engine as ie
+try:
+    from backend import imbalance_engine as ie
+except Exception:  # run from inside backend/ (tests, scripts)
+    import imbalance_engine as ie
 
 log = logging.getLogger("imbalance_scanner")
 
@@ -124,7 +127,10 @@ _MEMORY = MemoryLogStore()
 # ---------------------------------------------------------------------------
 
 def fetch_bars(symbols: List[str]) -> Dict[str, List[dict]]:
-    import broker_market_data as md
+    try:
+        from backend import broker_market_data as md
+    except Exception:
+        import broker_market_data as md
     end = datetime.now(timezone.utc)
     return md.fetch_daily_bars(symbols, end - timedelta(days=BARS_LOOKBACK_DAYS), end)
 
