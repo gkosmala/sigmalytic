@@ -305,6 +305,19 @@ def _attach_weis_wyckoff_setup_grade_only(rows: list) -> None:
 
 # ── Admin report builder ───────────────────────────────────────────────────
 
+def _top_by_score(symbols: list, n: int = 10) -> list:
+    """
+    Top n by composite_score. Many symbols tie at 100 (a Spring and an
+    Upthrust both score 100), so ties break on relative volume instead of
+    staying in alphabetical cache order.
+    """
+    return sorted(
+        symbols,
+        key=lambda x: (x.get("composite_score") or 0, x.get("rel_volume") or 0),
+        reverse=True,
+    )[:n]
+
+
 def build_admin_report(radar_cache: dict) -> dict:
     """
     Build the full admin performance report from live radar cache
@@ -327,7 +340,7 @@ def build_admin_report(radar_cache: dict) -> dict:
     anomalies = _detect_anomalies(symbols)
 
     # ── Top performers today ───────────────────────────────────────────────
-    top_scores = sorted(symbols, key=lambda x: x.get("composite_score",0), reverse=True)[:10]
+    top_scores = _top_by_score(symbols)
     top_movers = sorted(symbols, key=lambda x: abs(x.get("change_pct",0)), reverse=True)[:10]
 
     # ── Regime distribution ────────────────────────────────────────────────
@@ -487,7 +500,16 @@ def _slim(s: dict) -> dict:
         "invalidation":     s.get("invalidation"),
         "atr":              s.get("atr") or 0,
         "rel_volume":       s.get("rel_volume") or 0,
+        "weis_signal":      s.get("weis_signal"),
+        "signal_label":     signal_label(s.get("weis_signal")),
+        "signal_direction": signal_direction(s.get("weis_signal")),
     }
+
+
+try:
+    from backend.weis_direction import signal_direction, signal_label, BULLISH
+except Exception:  # run from inside backend/
+    from weis_direction import signal_direction, signal_label, BULLISH
 
 
 def _detect_anomalies(symbols: list) -> List[dict]:
@@ -510,12 +532,15 @@ def _detect_anomalies(symbols: list) -> List[dict]:
         status= s.get("status","")
         rel_v = s.get("rel_volume", 1) or 1
 
-        # High score but Avoid status
-        if score >= 75 and status == "Avoid":
+        # High score but Avoid status. composite_score is the Weis signal
+        # strength and does not carry direction (an Upthrust scores 100 too),
+        # so only a BULLISH signal marked Avoid is a contradiction. A bearish
+        # signal marked Avoid is the system working as intended.
+        if score >= 75 and status == "Avoid" and signal_direction(s.get("weis_signal")) == BULLISH:
             flags.append({
                 "type":    "SCORE_STATUS_MISMATCH",
                 "symbol":  sym,
-                "message": f"{sym} scores {score:.0f} but status is Avoid — check change_pct filter",
+                "message": f"{sym} has a bullish {signal_label(s.get('weis_signal'))} score of {score:.0f} but status is Avoid — check change_pct filter",
                 "severity":"WARN",
             })
 
