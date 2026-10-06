@@ -66,6 +66,12 @@ except Exception:
     build_trade_journal_tab = None
 
 try:
+    from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
+except Exception:
+    build_broker_bi_tab = None
+    register_broker_bi_callbacks = None
+
+try:
     from live_opportunity_center import (
         build_live_opportunity_center as build_status_center,
         register_live_opportunity_center_callbacks,
@@ -11156,6 +11162,7 @@ ALL_TABS = [
     # the exact steps to restore it: re-add its ALL_TABS entry here,
     # its elif branch in render_main()'s tab routing, and its Input in
     # set_tab() -- nothing to rebuild from scratch.
+    ("broker_bi",   "Broker Behavioural Intelligence"),
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
     ("journal",     "Journal"),
@@ -11692,7 +11699,7 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing'
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -11711,6 +11718,7 @@ app.clientside_callback(
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
+    Input("tab-broker_bi","n_clicks"),
     prevent_initial_call=True,
 )
 
@@ -12698,6 +12706,24 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
             main = build_reports_tab(selected_date=report_date, session=session)
         else:
             return no_update, no_update, no_update, no_update
+    elif tab=="broker_bi":
+        # Same rule as the Journal: the page holds upload boxes and typed
+        # labels, so only rebuild it on a genuine tab switch.
+        if not tab_switched:
+            return no_update, no_update, no_update, no_update
+        if build_broker_bi_tab is None:
+            main = card([
+                html.H2("Broker Behavioural Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Broker tab module did not import. Check frontend/broker_bi_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_broker_bi_tab(session=session)
+            except Exception as e:
+                main = card([
+                    html.H2("Broker Behavioural Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Broker tab error: " + str(e), "blue"),
+                ])
     elif tab=="guide":       main = build_guide_tab()
     elif tab=="briefing":
         # FIX: same root cause already solved once for weis_radar above --
@@ -12941,6 +12967,10 @@ def handle_csv_upload(contents, filename):
             return f"Upload failed: {resp.text[:200]}"
     except Exception as e:
         return f"Error: {str(e)[:200]}"
+
+
+if register_broker_bi_callbacks is not None:
+    register_broker_bi_callbacks(app)
 
 
 # ── Audio + Visual alert clientside callback ─────────────────────────────────
