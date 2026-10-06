@@ -17,7 +17,7 @@ from dash import dcc, html, Input, Output, State, no_update
 
 BACKEND_HTTP     = os.getenv("BACKEND_URL",  "https://sigmalytic-backend.onrender.com")
 FRONTEND_URL     = os.getenv("FRONTEND_URL", "https://sigmalytic-frontend.onrender.com")
-CONTACT_EMAIL    = "support@sigmalytic.com"
+CONTACT_EMAIL    = "teams@sigmalyticquantcorp.com"
 
 # ── Stripe pricing table config ────────────────────────────────────────────────
 PRICING_TABLE_ID = "prctbl_1Tc35NDRUJk6Un01beNdvTak"
