@@ -148,7 +148,7 @@ def _max_streak(values: List[bool]) -> int:
     return best
 
 
-def _analyze_trades(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _analyze_trades(trades: List[Dict[str, Any]], include_round_trips: bool = False) -> Dict[str, Any]:
     """
     Real brokerage behavioral analysis.
 
@@ -460,6 +460,7 @@ def _analyze_trades(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
             "behavioral_flag_count": len(behavioral_flags),
         },
         "round_trips_preview": round_trips[:100],
+        **({"round_trips_all": round_trips} if include_round_trips else {}),
     }
 
 

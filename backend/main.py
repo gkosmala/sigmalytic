@@ -7329,6 +7329,18 @@ app.include_router(preferences_router)
 app.include_router(behavior_router)
 
 
+# === SIGMALYTIC BROKER VAULTS ROUTER MOUNT START ===
+try:
+    try:
+        from backend.broker_intelligence_api import broker_router
+    except Exception:
+        from broker_intelligence_api import broker_router
+
+    app.include_router(broker_router)
+except Exception as _broker_router_mount_error:
+    _BROKER_ROUTER_MOUNT_ERROR_EXCERPT = str(_broker_router_mount_error)[:500]
+# === SIGMALYTIC BROKER VAULTS ROUTER MOUNT END ===
+
 # === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
 try:
     try:
