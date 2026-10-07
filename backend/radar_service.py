@@ -53,6 +53,7 @@ from backend.supabase_isolation import get_user_id_from_request
 from backend.radar_alerts import maybe_send_alert, send_daily_summary
 from backend.scoreboard_service import log_signal, grade_pending_signals
 from backend.sms_alerts import maybe_send_sms
+from backend.weis_setup_state import evaluate_setup_state, drop_incomplete
 
 # ── Behavioral Transition Engine (safe import) ────────────────────────────────
 try:
@@ -1093,11 +1094,8 @@ def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = Fa
     invalidation = round(day_low  - atr * 0.1, 2) if atr > 0 else round(price * 0.99,  2)
     target1      = round(price + atr * 1.0, 2)
     target2      = round(price + atr * 2.0, 2)
-    prev_status  = _prev_statuses.get(symbol, "")
-    status       = _determine_status(composite, expansion, rel_vol, change_pct,
-                                     price=price, trigger=trigger,
-                                     invalidation=invalidation,
-                                     prev_status=prev_status, ma20=ma20, ma50=ma50)
+    weis         = _weis_status(bars, symbol)
+    status       = weis["state"]
     regime       = _infer_regime(change_pct, rel_vol, price, ma20, ma50, history_ready=history_ready)
 
     # ── BME scoring ──────────────────────────────────────────────────────────
@@ -1128,6 +1126,10 @@ def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = Fa
         "rel_volume":        round(rel_vol, 2),
         "setup_type":        setup_type,
         "status":            status,
+        "status_direction":  weis["direction"],
+        "status_reason":     weis["reason"],
+        "status_stop":       weis["stop"],
+        "status_target":     weis["target"],
         "trigger":           trigger,
         "invalidation":      invalidation,
         "target1":           target1,
@@ -1360,6 +1362,44 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
         return "Low Edge - Avoid"
 
     return "Monitoring"
+
+
+_weis_cache: Dict[str, tuple] = {}
+
+
+def _weis_status(bars: list, symbol: str = "") -> dict:
+    """Radar Status = the Weis setup state on the most recently COMPLETED
+    daily bar (spring / upthrust rules: backend/weis_setup_state.py). One of
+    No setup, Watching, Setting Up, Armed, Avoid; direction is 'long' (spring)
+    or 'short' (upthrust). The state can only change when a daily bar
+    completes, so it is computed once per symbol per completed bar and reused
+    on every scan in between. Never raises: on error 'No setup'."""
+    try:
+        done = drop_incomplete(bars or [], "1Day")
+        key = str(done[-1].get("t", "")) if done else ""
+        hit = _weis_cache.get(symbol) if symbol and key else None
+        if hit and hit[0] == key:
+            return hit[1]
+        r = evaluate_setup_state(done)
+        out = {"state": r.get("state", "No setup"), "direction": r.get("direction"),
+               "reason": r.get("reason", ""), "stop": r.get("stop"), "target": r.get("target")}
+        if symbol and key:
+            _weis_cache[symbol] = (key, out)
+        return out
+    except Exception as e:
+        log.warning(f"weis status failed (non-fatal): {e}")
+        return {"state": "No setup", "direction": None, "reason": "state unavailable",
+                "stop": None, "target": None}
+
+
+def _alert_label(s: dict) -> str:
+    """Name used by alerts, SMS, the scoreboard and event history: the Weis
+    state, with 'Short Armed' for a short Armed setup (those modules already
+    treat names starting with 'Short' as the short side)."""
+    st = s.get("status", "")
+    if st == "Armed" and s.get("status_direction") == "short":
+        return "Short Armed"
+    return st
 
 def _determine_status(composite, expansion, rel_vol, change_pct,
                       price=0, trigger=0, invalidation=0,
@@ -1602,7 +1642,7 @@ def run_gex_scan():
     # Combine focus symbols + divergence watchlist + Armed/Triggered symbols
     action_symbols = [
         s for s, d in RADAR_CACHE.items()
-        if d.get("status") in ("Armed", "Triggered", "Confirmed", "Building")
+        if d.get("status") in ("Armed", "Setting Up")
     ]
     symbols = list(set(
         GEX_FOCUS_SYMBOLS +
@@ -2286,7 +2326,7 @@ def _process_events(scored: list):
     for s in scored:
         sym    = s["symbol"]
         score  = s["composite_score"]
-        status = s["status"]
+        status = _alert_label(s)
         prev   = _prev_statuses.get(sym)
 
         if prev and prev != status:
@@ -2366,7 +2406,7 @@ def _populate_synthetic_cache():
             "behavioral":             round(random.uniform(40, 95), 1),
             "setup_type":             random.choice(["Compression Breakout Candidate",
                                                      "Trend Continuation", "Monitoring"]),
-            "status":                 random.choice(["Armed", "Building", "Watching"]),
+            "status":                 random.choice(["Armed", "Setting Up", "Watching"]),
             "trigger":                round(random.uniform(100, 500), 2),
             "invalidation":           round(random.uniform(80, 400), 2),
             "target1":                round(random.uniform(120, 550), 2),

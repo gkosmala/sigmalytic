@@ -92,7 +92,7 @@ def classify_transition(old_status, new_status, delta):
     new_status_l = str(new_status or "").strip().lower()
 
     # Normalize common backend labels.
-    upgrade_states = ("watching", "armed", "triggered", "opportunity")
+    upgrade_states = ("watching", "setting up", "armed", "triggered", "opportunity")
     high_states = ("armed", "triggered", "opportunity")
 
     # No state change should remain a monitor, even if the score delta is negative.
