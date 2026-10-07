@@ -3190,6 +3190,20 @@ def get_probability_engine_status():
 
 
 
+@radar_router.get("/weis-states")
+def get_weis_states():
+    """Lean map of symbol -> Weis setup state and direction (the radar Status), for screens that join it onto their own rows."""
+    rows = _radar_rows_for_states()
+    return {
+        "count": len(rows),
+        "last_scan": LAST_SCAN_TIME,
+        "states": {
+            r.get("symbol"): {"state": r.get("status"), "direction": r.get("status_direction")}
+            for r in rows if r.get("symbol")
+        },
+    }
+
+
 @radar_router.get("/scores")
 def _sanitize_numpy(obj):
     """
@@ -3222,6 +3236,23 @@ def _f(v, default=0.0):
         return float(v)
     except (TypeError, ValueError):
         return default
+
+
+_WEIS_STATE_RANK = {"Armed": 4, "Setting Up": 3, "Watching": 2, "Avoid": 1}
+
+
+def _radar_rows_for_states() -> list:
+    """Scan results from this process or, in the web process, from the scanner's shared Redis copy."""
+    rows = list(RADAR_CACHE.values())
+    if not rows and _redis_client:
+        try:
+            import json as _ws_json
+            raw = _redis_client.get("radar:cache")
+            if raw:
+                rows = list(_ws_json.loads(raw).values())
+        except Exception as e:
+            log.warning(f"Radar cache Redis read failed (weis-states): {e}")
+    return rows
 
 
 def _compute_setup_grade(wyckoff_verdict: dict, weis_verdict: dict) -> dict:
@@ -3363,12 +3394,14 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
         # based only on the genuine, symbol-specific Wyckoff/Weis/
         # Livermore-derived scores: opportunity_state, readiness_score,
         # and composite_score.
-        opportunity_state = str(x.get("opportunity_state", ""))
+        # 2026-10-07: rank by the Weis setup state (the radar Status): Armed
+        # first, then Setting Up, Watching, Avoid, No setup; then signal
+        # strength and relative volume. The old opportunity_state/readiness
+        # ordering no longer reflects what the badge and Status show.
         return (
-            opportunity_state == "Armed",
-            opportunity_state == "Setting Up",
-            _safe_float(x, "readiness_score"),
+            _WEIS_STATE_RANK.get(x.get("status"), 0),
             _safe_float(x, "composite_score"),
+            _safe_float(x, "rel_volume"),
         )
 
     results.sort(key=_rank_key, reverse=True)
@@ -3412,7 +3445,7 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
         "symbols":    page,
         "last_scan":  LAST_SCAN_TIME,
         "data_delay": "15min" if ALPACA_FEED == "iex" else "live",
-        "sort_mode":  "opportunity_state_probability_readiness_score",
+        "sort_mode":  "weis_state_score_relative_volume",
     }
 
 
