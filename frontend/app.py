@@ -4485,6 +4485,86 @@ def _format_weis_radar_hit(h):
     ])
 
 
+_WEIS_STATE_COLORS = {"Armed": "#34d399", "Setting Up": "#fbbf24", "Watching": "#60a5fa", "Avoid": "#f87171"}
+
+
+def _weis_state_map(payload):
+    """{symbol: row} from the scan's Weis setup-state block (empty if missing)."""
+    block = (payload or {}).get("weis_states") if isinstance(payload, dict) else None
+    return {r["symbol"]: r for r in ((block or {}).get("rows") or []) if r.get("symbol")}
+
+
+def _weis_state_cell(row):
+    """Coloured 'Armed long' style label, or a dash when the symbol has no setup."""
+    if not row:
+        return html.Td("No setup", style={"color": MUTED})
+    side = {"long": "long", "short": "short"}.get(row.get("direction"), "")
+    return html.Td(f"{row.get('state')} {side}".strip(),
+                   style={"color": _WEIS_STATE_COLORS.get(row.get("state"), WHITE), "fontWeight": "700"})
+
+
+def _render_weis_state_table(block):
+    """The Weis setup states for the whole scanned universe (the same engine and
+    window as the Radar Status), Armed first. This is the page's main table."""
+    box = {"border": f"1px solid {BORDER_T}", "borderRadius": "12px", "padding": "14px",
+           "marginBottom": "20px", "overflowX": "auto"}
+    title = html.H3("Weis setup states", style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"})
+    if not isinstance(block, dict):
+        return html.Div([title, html.Div(
+            "Setup states appear after the next scan.", style={"color": MUTED, "fontSize": "12px"})], style=box)
+    if not block.get("available"):
+        return html.Div([title, html.Div(
+            f"The Weis setup state is a daily-bar rule, so it is not computed for the {block.get('timeframe')} "
+            "scan timeframe. Set the scan timeframe to 1Day to see it.",
+            style={"color": MUTED, "fontSize": "12px"})], style=box)
+    counts = block.get("counts") or {}
+    rows_in = block.get("rows") or []
+    headers = ("Symbol", "State", "Side", "Line", "Break", "Bars ago", "Closed back", "Stop", "Target", "Trend", "Why")
+
+    def day(t):
+        return str(t)[:10] if t else "-"
+
+    def num(v):
+        return f"${v:,.2f}" if isinstance(v, (int, float)) else "-"
+
+    rows = []
+    for r in rows_in:
+        frames = r.get("trends_by_frame") or {}
+        trend = " / ".join(f"{k}:{v}" for k, v in frames.items()) if isinstance(frames, dict) and frames else (r.get("trend") or "-")
+        line = f"{r.get('line_source') or '-'} x{r.get('line_touches')}" if r.get("line_touches") else (r.get("line_source") or "-")
+        rows.append(html.Tr([
+            html.Td(r.get("symbol"), style={"fontWeight": "700"}),
+            html.Td(r.get("state"), style={"color": _WEIS_STATE_COLORS.get(r.get("state"), WHITE), "fontWeight": "700"}),
+            html.Td(r.get("direction") or "-"),
+            html.Td(line),
+            html.Td(day(r.get("break_time"))),
+            html.Td("-" if r.get("bars_since_break") is None else str(r.get("bars_since_break"))),
+            html.Td(day(r.get("close_back_time"))),
+            html.Td(num(r.get("stop"))),
+            html.Td(num(r.get("target")) if r.get("target") is not None else "No target defined"),
+            html.Td(trend),
+            html.Td((r.get("reason") or "") + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
+                    style={"color": MUTED}),
+        ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}))
+    summary = " · ".join(f"{k}: {counts.get(k, 0)}" for k in ("Armed", "Setting Up", "Watching", "Avoid"))
+    return html.Div([
+        title,
+        html.Div(f"Weis-only states read on the last completed daily bar, over the last {block.get('bar_count')} "
+                 f"completed bars (your radar bar count setting) — the same engine and window as the Radar Status. "
+                 f"{block.get('scanned', 0)} symbols scanned. {summary}. Symbols with no setup are not listed. "
+                 "Springs are long setups, upthrusts are short setups.",
+                 style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
+        html.Table([html.Thead(html.Tr([html.Th(h, style={"padding": "8px", "textAlign": "left", "color": MUTED})
+                                       for h in headers])), html.Tbody(rows)],
+                   style={"width": "100%", "borderCollapse": "collapse", "fontSize": "12px"})
+        if rows else html.Div("No symbol has a Weis setup in this scan.", style={"color": MUTED, "fontSize": "12px"}),
+    ], style=box)
+
+
+_OLDER_ENGINE_NOTE = ("Older engine: the Spring/Upthrust events, entry, stop and target on this table are not "
+                      "from the Weis setup state, so a symbol can read differently here and in Weis setup states above. ")
+
+
 def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
     """
     ADDED (2026-08-25): extracted from build_weis_radar_tab() so the
@@ -4535,6 +4615,10 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
             html.Td(symbol, style={"padding": "8px", "fontWeight": "700", "color": WHITE}),
             html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
             html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
+            html.Td((f"{r_['weis_state']} {r_.get('weis_direction') or ''}".strip()
+                     if r_.get("weis_state") else "No setup"),
+                    style={"padding": "8px", "fontWeight": "700", "fontSize": "12px",
+                           "color": _WEIS_STATE_COLORS.get(r_.get("weis_state"), MUTED)}),
         ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,
            style={"borderBottom": f"1px solid {BORDER}", "cursor": "pointer"}))
 
@@ -4546,16 +4630,19 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
             html.Th("Symbol", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
             html.Th("Price", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
             html.Th("Patterns Found", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
+            html.Th("Weis setup state", style={"padding": "8px", "textAlign": "left", "color": MUTED}),
         ])),
         html.Tbody(rows),
     ], style={"width": "100%", "borderCollapse": "collapse"})
 
 
-def _render_weis_imminent_setups(payload):
+def _render_weis_imminent_setups(payload, states=None):
     if not isinstance(payload, dict):
         return html.Div()
     setups = payload.get("setups") or []
-    headers = ("Symbol", "Side", "Prior wave", "Test wave", "Entry trigger", "Invalidation", "Target", "Armed")
+    states = states or {}
+    headers = ("Symbol", "Side", "Prior wave", "Test wave", "Entry trigger", "Invalidation", "Target",
+               "Armed (older rule)", "Weis setup state")
     rows = [html.Tr([
         html.Td(item["symbol"]), html.Td(item["side"]),
         html.Td(", ".join(label for condition, label in (
@@ -4568,11 +4655,12 @@ def _render_weis_imminent_setups(payload):
         html.Td(f"${item['invalidation']:,.2f}"),
         html.Td(f"${item['target']:,.2f}" if item.get("target") is not None else "No target defined"),
         html.Td("Yes" if item.get("armed") else "No"),
+        _weis_state_cell(states.get(item["symbol"])),
     ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in setups]
     return html.Div([
         html.H3("Trades about to happen — sequential Weis setups",
                 style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
-        html.Div(f"{len(setups)} setups with a prior wave signal, a completed level rejection, "
+        html.Div(_OLDER_ENGINE_NOTE + f"{len(setups)} setups with a prior wave signal, a completed level rejection, "
                  "and a later low-volume test. Entry requires the next bar to reach its trigger. "
                  "A missing target is shown explicitly; no entry has been assumed.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
@@ -4585,13 +4673,15 @@ def _render_weis_imminent_setups(payload):
               "marginBottom": "20px", "overflowX": "auto"})
 
 
-def _render_weis_trade_finder(trade_finder):
+def _render_weis_trade_finder(trade_finder, states=None):
     if not isinstance(trade_finder, dict):
         return html.Div()
     top = trade_finder.get("setups") or []
     summary = trade_finder.get("outcomes") or {}
     assumptions = trade_finder.get("assumptions") or {}
-    headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave")
+    states = states or {}
+    headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave",
+               "Weis setup state")
     rows = [html.Tr([
         html.Td(str(item.get("symbol") or "")),
         html.Td(str(item.get("side") or "")),
@@ -4600,10 +4690,11 @@ def _render_weis_trade_finder(trade_finder):
         html.Td(f"${item['target']:,.2f}"),
         html.Td(f"{item['reward_risk']:.2f}:1"),
         html.Td(f"{item['wave_volume_ratio']:.2f}× prior volume"),
+        _weis_state_cell(states.get(item.get("symbol"))),
     ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in top]
     return html.Div([
         html.H3("Armed trade setups", style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
-        html.Div("Mature range • shortening thrust or climax • low-volume support/resistance test. "
+        html.Div(_OLDER_ENGINE_NOTE + "Mature range • shortening thrust or climax • low-volume support/resistance test. "
                  "Entry requires the next bar to reach its trigger; levels are research plans.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Div(f"{trade_finder.get('qualified_count', 0)} qualified in this scan; "
@@ -4645,22 +4736,24 @@ def _render_weis_quantum(quantum):
     ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
 
 
-def _render_weis_quantum_handoff(handoff):
+def _render_weis_quantum_handoff(handoff, states=None):
     if not isinstance(handoff, dict):
         return html.Div()
     candidates = handoff.get("validated_events") or handoff.get("candidates") or []
+    states = states or {}
     return html.Div([
         html.H3("All validated Spring and Upthrust events", style={"color": WHITE, "fontSize": "17px"}),
-        html.Div(f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
+        html.Div(_OLDER_ENGINE_NOTE + f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
                  "Each breached a prior multi-touch level and closed back inside. "
                  "Prior-wave effort and later test-wave behavior are shown separately. "
                  "The next bar must reach its entry trigger; no fill or profit is assumed. "
                  "No top-ten cutoff is applied until selection is validated against outcomes.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
         html.Table([html.Thead(html.Tr([html.Th(label, style={"textAlign": "left", "padding": "8px"})
-                                      for label in ("Symbol", "Side", "Armed", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Wave evidence", "Signal")])),
+                                      for label in ("Symbol", "Side", "Armed (older rule)", "Weis setup state", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Wave evidence", "Signal")])),
                     html.Tbody([html.Tr([html.Td(row.get("symbol")),
                                         html.Td(row.get("side")), html.Td("Yes" if row["raw"].get("armed") else "No"),
+                                        _weis_state_cell(states.get(row.get("symbol"))),
                                         html.Td(f"${row['raw']['entry_trigger']:,.2f}"),
                                         html.Td(f"${row['raw']['invalidation']:,.2f}"),
                                         html.Td(f"{row['raw']['risk_pct']:.2f}%" if row['raw'].get('risk_pct') is not None else "—"),
@@ -4852,9 +4945,10 @@ def build_weis_radar_tab(session=None):
         return html.Div([
             _header_row(),
             _settings_panel(),
-            _render_weis_imminent_setups(data.get("trade_about_to_happen")),
-            _render_weis_trade_finder(data.get("trade_finder")),
-            _render_weis_quantum_handoff(data.get("quantum_handoff")),
+            _render_weis_state_table(data.get("weis_states")),
+            _render_weis_imminent_setups(data.get("trade_about_to_happen"), _weis_state_map(data)),
+            _render_weis_trade_finder(data.get("trade_finder"), _weis_state_map(data)),
+            _render_weis_quantum_handoff(data.get("quantum_handoff"), _weis_state_map(data)),
             html.Div(data.get("note") or "No patterns found in the most recent scan.",
                       style={"color": MUTED, "marginTop": "12px"}),
         ], style={"padding": "20px"})
@@ -4881,9 +4975,10 @@ def build_weis_radar_tab(session=None):
         # client-side so filter/sort changes re-render locally instead
         # of hitting the backend again.
         dcc.Store(id="s-weis-radar-raw-results", data=results),
-        _render_weis_imminent_setups(data.get("trade_about_to_happen")),
-        _render_weis_trade_finder(data.get("trade_finder")),
-        _render_weis_quantum_handoff(data.get("quantum_handoff")),
+        _render_weis_state_table(data.get("weis_states")),
+        _render_weis_imminent_setups(data.get("trade_about_to_happen"), _weis_state_map(data)),
+        _render_weis_trade_finder(data.get("trade_finder"), _weis_state_map(data)),
+        _render_weis_quantum_handoff(data.get("quantum_handoff"), _weis_state_map(data)),
         html.Div([
             html.Div([
                 html.Span("Filter: ", style={"color": MUTED, "fontSize": "12px", "marginRight": "6px"}),

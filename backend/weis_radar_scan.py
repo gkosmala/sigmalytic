@@ -388,6 +388,16 @@ def run_weis_radar_scan() -> dict:
     minimum_bars = min_bars_required_for(requested_signals)
     effective_lookback = max(config["lookback"], minimum_bars, 65)
 
+    # Weis setup state (the same engine and window the Radar Status uses). It is a
+    # daily-bar rule, so it only runs when the scan timeframe is 1Day.
+    from backend import weis_radar_states
+    from backend.radar_service import _radar_bar_count
+    state_enabled = config["timeframe"] == "1Day"
+    state_bar_count = _radar_bar_count() if state_enabled else None
+    state_rows = []
+    if state_enabled:
+        effective_lookback = max(effective_lookback, state_bar_count)  # the fetch adds the forming bar
+
     engine = WyckoffVerdictEngine()
     weis_engine = WeisVerdictEngine()
     lifecycle = WeisRadarLifecycleTracker(
@@ -446,6 +456,10 @@ def run_weis_radar_scan() -> dict:
                     wyckoff_engine=engine,
                 )
                 hits = _normalize_signal_hits(found, bars[-1]["c"])
+                state_row = (weis_radar_states.state_row(symbol, bars, state_bar_count)
+                             if state_enabled else None)
+                if state_row:
+                    state_rows.append(state_row)
 
                 # The shared signal-test engine uses a lightweight wave
                 # rotation heuristic. Do not publish that heuristic as a
@@ -500,6 +514,8 @@ def run_weis_radar_scan() -> dict:
                         "symbol": symbol,
                         "hits": hits,
                         "last_bar_time": bars[-1].get("t"),
+                        "weis_state": (state_row or {}).get("state"),
+                        "weis_direction": (state_row or {}).get("direction"),
                     })
             except Exception:
                 errors += 1
@@ -554,8 +570,12 @@ def run_weis_radar_scan() -> dict:
         "note": "Structural trade plans and observed paths, not calibrated profit probabilities.",
     }
     alerts_dispatched = _dispatch_configured_alerts(results, config, _redis_client)
+    weis_states = (weis_radar_states.build_block(state_rows, state_bar_count, scanned,
+                                                 config["timeframe"])
+                   if state_enabled else weis_radar_states.unavailable_block(config["timeframe"]))
     payload = {
         "ok": True,
+        "weis_states": weis_states,
         "scanned": scanned,
         "hits": len(results),
         "errors": errors,
