@@ -6296,14 +6296,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 html.Span(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":sc}),
                 _score_bar(score, width="80px"),
             ], style={"flex":"1"}),
-            html.Span(s.get("signal_label") or "-",
-                      style={"flex":"2","fontSize":"11px","fontWeight":"700",
-                             "color": TEAL_DIM if s.get("signal_direction") == "BULL"
-                                      else (RED_DIM if s.get("signal_direction") == "BEAR" else WHITE),
-                             "fontFamily":"monospace"}),
-            html.Span(s.get("status",""), style={
-                "flex":"1","fontSize":"10px","fontWeight":"700","color":sc,
-            }),
+            html.Span(
+                (s.get("status") or "-") + (f" · {s.get('status_direction')}" if s.get("status_direction") and s.get("status") not in (None, "", "No setup") else ""),
+                style={"flex":"2","fontSize":"11px","fontWeight":"700","color":sc,"fontFamily":"monospace"}),
             html.Span(s.get("regime",""), style={
                 "flex":"1","fontSize":"10px","color":WHITE,
             }),
@@ -6311,7 +6306,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _admin_card([
-        html.Div("TOP 10 — WEIS SIGNAL STRENGTH (ties broken by relative volume)", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("TOP 10 — WEIS SETUP STATE (Armed first, then signal strength, then relative volume)", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
@@ -6319,8 +6314,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Span("Price",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Chg%",     style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Score",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Weis signal", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Status",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
+            html.Span("Weis state", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         ], style={"display":"flex","gap":"12px","paddingBottom":"8px",
                   "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),

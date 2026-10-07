@@ -305,15 +305,19 @@ def _attach_weis_wyckoff_setup_grade_only(rows: list) -> None:
 
 # ── Admin report builder ───────────────────────────────────────────────────
 
-def _top_by_score(symbols: list, n: int = 10) -> list:
+_WEIS_STATE_RANK = {"Armed": 4, "Setting Up": 3, "Watching": 2, "Avoid": 1}
+
+
+def _top_by_weis_state(symbols: list, n: int = 10) -> list:
     """
-    Top n by composite_score. Many symbols tie at 100 (a Spring and an
-    Upthrust both score 100), so ties break on relative volume instead of
-    staying in alphabetical cache order.
+    Top n by Weis setup state (Armed, Setting Up, Watching, Avoid, then No
+    setup), then by signal strength (composite_score), then by relative
+    volume so ties do not stay in alphabetical cache order.
     """
     return sorted(
         symbols,
-        key=lambda x: (x.get("composite_score") or 0, x.get("rel_volume") or 0),
+        key=lambda x: (_WEIS_STATE_RANK.get(x.get("status"), 0),
+                       x.get("composite_score") or 0, x.get("rel_volume") or 0),
         reverse=True,
     )[:n]
 
@@ -344,7 +348,7 @@ def build_admin_report(radar_cache: dict) -> dict:
     anomalies = _detect_anomalies(symbols)
 
     # ── Top performers today ───────────────────────────────────────────────
-    top_scores = _top_by_score(symbols)
+    top_scores = _top_by_weis_state(symbols)
     top_movers = sorted(symbols, key=lambda x: abs(x.get("change_pct",0)), reverse=True)[:10]
 
     # ── Regime distribution ────────────────────────────────────────────────
@@ -499,6 +503,7 @@ def _slim(s: dict) -> dict:
         "volume_pressure":  s.get("volume_pressure") or 0,
         "behavioral":       s.get("behavioral") or 0,
         "status":           s.get("status"),
+        "status_direction": s.get("status_direction"),
         "setup_type":       s.get("setup_type"),
         "regime":           s.get("regime"),
         "trigger":          s.get("trigger"),
@@ -528,6 +533,12 @@ def _detect_anomalies(symbols: list) -> List[dict]:
     factors are only used internally to set status), so these checks read
     a missing value as 0 and produced ~45 false flags per scan. What is
     left reads only fields the radar still saves.
+
+    FIX (2026-10-07): removed the "bullish signal but status is Avoid" check.
+    Status is now the Weis setup state, where Avoid is a real state (a failed
+    or flipped setup), not a filter result, so a bullish Spring signal with an
+    Avoid status is not a contradiction. The signal and the state come from
+    different engines and can legitimately differ.
     """
     flags = []
 
@@ -536,18 +547,6 @@ def _detect_anomalies(symbols: list) -> List[dict]:
         score = s.get("composite_score", 0)
         status= s.get("status","")
         rel_v = s.get("rel_volume", 1) or 1
-
-        # High score but Avoid status. composite_score is the Weis signal
-        # strength and does not carry direction (an Upthrust scores 100 too),
-        # so only a BULLISH signal marked Avoid is a contradiction. A bearish
-        # signal marked Avoid is the system working as intended.
-        if score >= 75 and status == "Avoid" and signal_direction(s.get("weis_signal")) == BULLISH:
-            flags.append({
-                "type":    "SCORE_STATUS_MISMATCH",
-                "symbol":  sym,
-                "message": f"{sym} has a bullish {signal_label(s.get('weis_signal'))} score of {score:.0f} but status is Avoid — check change_pct filter",
-                "severity":"WARN",
-            })
 
         # Extreme relative volume spike
         if rel_v > 10:

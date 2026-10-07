@@ -143,6 +143,21 @@ def build_radar_tab(session=None):
         except Exception:
             return "—"
 
+    _WEIS_STATES = ("No setup", "Watching", "Setting Up", "Armed", "Avoid")
+
+    def _weis_state(s, fallback="Watching"):
+        """The badge shows the Weis setup state (the radar Status) when the row has one."""
+        st = s.get("status")
+        if st in _WEIS_STATES:
+            return st
+        return _safe_text(s.get("opportunity_state"), fallback)
+
+    def _weis_side(s, fallback):
+        d = s.get("status_direction")
+        if d in ("long", "short") and s.get("status") in _WEIS_STATES and s.get("status") != "No setup":
+            return d
+        return fallback
+
     def _state_color(state, score=0):
         st = (state or "").lower()
         if "armed" in st:
@@ -207,10 +222,10 @@ def build_radar_tab(session=None):
         chg = _safe_float(s.get("change_pct"))
         score = _safe_float(s.get("composite_score", s.get("score")))
         readiness = _safe_float(s.get("readiness_score"))
-        state = _safe_text(s.get("opportunity_state"), "Watching")
+        state = _weis_state(s)
         transition = _compact_transition(s.get("transition_candidate"))
         behavioral_state = _safe_text(s.get("behavioral_state"), "—")
-        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        side = _weis_side(s, _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—")))
         trigger = s.get("trigger")
         invalidation = s.get("invalidation")
         why = _safe_text(s.get("why_this_trade"), "Awaiting more evidence.")
@@ -416,10 +431,10 @@ def build_radar_tab(session=None):
         symbol = _safe_text(s.get("symbol"), "")
         score = _safe_float(s.get("composite_score", s.get("score")))
         readiness = _safe_float(s.get("readiness_score"))
-        state = _safe_text(s.get("opportunity_state"), "Watching")
+        state = _weis_state(s)
         transition = _compact_transition(s.get("transition_candidate"))
         behavioral_state = _safe_text(s.get("behavioral_state"), "—")
-        side = _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—"))
+        side = _weis_side(s, _safe_text(s.get("trade_side"), _safe_text(s.get("side"), "—")))
         chg = _safe_float(s.get("change_pct"))
         price = s.get("price")
         trigger = s.get("trigger")
@@ -595,8 +610,8 @@ def build_radar_tab(session=None):
 
     # Backend already sorts by opportunity state and readiness. Keep first 3 as hero cards.
     hero = signals[:3] if isinstance(signals, list) else []
-    armed_count = sum(1 for s in signals if _safe_text(s.get("opportunity_state")).lower() == "armed")
-    setup_count = sum(1 for s in signals if "setting" in _safe_text(s.get("opportunity_state")).lower())
+    armed_count = sum(1 for s in signals if _weis_state(s, "").lower() == "armed")
+    setup_count = sum(1 for s in signals if "setting" in _weis_state(s, "").lower())
     elite_count = sum(1 for s in signals if _safe_float(s.get("readiness_score")) >= 90)
     avg_ready = sum(_safe_float(s.get("readiness_score")) for s in signals) / max(len(signals), 1)
 

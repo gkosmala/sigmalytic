@@ -7,7 +7,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 
 from backend.weis_direction import signal_direction, signal_label
-from backend.snapshot_service import _detect_anomalies, _slim, _top_by_score
+from backend.snapshot_service import _detect_anomalies, _slim, _top_by_weis_state
 
 
 def _row(sym, signal="NONE", score=100, status="Watching", rel_volume=1.0, chg=0.0):
@@ -39,10 +39,10 @@ def test_bearish_signal_marked_avoid_is_not_flagged():
     assert [f for f in flags if f["symbol"] == "ABNB"] == []
 
 
-def test_bullish_signal_marked_avoid_is_flagged():
+def test_bullish_signal_marked_avoid_is_not_flagged():
+    # Avoid is a Weis state (failed or flipped setup), not a filter result, so this is no contradiction.
     flags = _detect_anomalies(_many([_row("XYZ", "SPRING", 100, "Avoid")]))
-    hit = [f for f in flags if f["symbol"] == "XYZ"]
-    assert len(hit) == 1 and hit[0]["type"] == "SCORE_STATUS_MISMATCH" and "Spring (bullish)" in hit[0]["message"]
+    assert [f for f in flags if f["symbol"] == "XYZ"] == []
 
 
 def test_unknown_signal_marked_avoid_is_not_flagged():
@@ -54,9 +54,21 @@ def test_slim_carries_signal_fields():
     assert d["signal_label"] == "Upthrust (bearish)" and d["signal_direction"] == "BEAR" and d["weis_signal"] == "UPTHRUST"
 
 
-def test_top_scores_break_ties_by_relative_volume_not_alphabet():
-    rows = [_row(c, "SPRING", 100, rel_volume=rv) for c, rv in (("AAA", 0.5), ("BBB", 3.0), ("CCC", 1.5), ("DDD", 2.0))]
-    rows += [_row(f"Z{i}", "NONE", 40) for i in range(12)]
-    assert [r["symbol"] for r in _top_by_score(rows)[:4]] == ["BBB", "DDD", "CCC", "AAA"]
-    assert len(_top_by_score(rows)) == 10
-    assert _top_by_score([_row("N", score=None, rel_volume=None), _row("M", score=5)])[0]["symbol"] == "M"
+def test_top_list_ranks_weis_state_first_then_strength_then_volume():
+    rows = [_row("LOW", "SPRING", 100, "No setup", rel_volume=9.0),
+            _row("AV", "SPRING", 100, "Avoid", rel_volume=9.0),
+            _row("WA", "SPRING", 80, "Watching", rel_volume=1.0),
+            _row("SU", "SPRING", 70, "Setting Up", rel_volume=1.0),
+            _row("AR1", "SPRING", 60, "Armed", rel_volume=1.0),
+            _row("AR2", "SPRING", 90, "Armed", rel_volume=0.5),
+            _row("AR3", "SPRING", 90, "Armed", rel_volume=2.0)]
+    rows += [_row(f"Z{i}", "NONE", 40, "No setup") for i in range(12)]
+    top = [r["symbol"] for r in _top_by_weis_state(rows)]
+    assert top[:7] == ["AR3", "AR2", "AR1", "SU", "WA", "AV", "LOW"]
+    assert len(top) == 10
+    assert _top_by_weis_state([_row("N", score=None, rel_volume=None, status="Watching"), _row("M", score=5, status="Watching")])[0]["symbol"] == "M"
+
+
+def test_slim_carries_the_weis_direction():
+    r = _row("A", "SPRING", 100, "Armed"); r["status_direction"] = "short"
+    assert _slim(r)["status_direction"] == "short"
