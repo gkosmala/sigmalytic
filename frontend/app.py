@@ -82,6 +82,11 @@ except Exception:
     render_readiness_impact = None
 
 try:
+    from weis_state_preview_view import render_weis_state_preview
+except Exception:
+    render_weis_state_preview = None
+
+try:
     from live_opportunity_center import (
         build_live_opportunity_center as build_status_center,
         register_live_opportunity_center_callbacks,
@@ -6339,6 +6344,26 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         dcc.Loading(html.Div(id="readiness-impact-output"), type="default"),
     ], sx={"marginBottom":"16px"})
 
+    # ── Weis setup state preview (read-only diagnostic) ───────────────────
+    weis_state_block = _admin_card([
+        html.Div("WEIS SETUP STATE PREVIEW", style={"fontSize":"12px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
+        html.Div("Read-only. Runs the Weis-only setup states (spring / upthrust, with failed setups flipping to the "
+                 "other side) on a live sample and shows them next to today's radar status. Swing reads daily bars "
+                 "against the weekly trend. Day reads 15-minute bars against the 1-hour and daily trends. Nothing is "
+                 "saved or changed; the radar score and Status are untouched. The 45 degree angle cutoff, price unit "
+                 "and timeframe pairings are not from Weis. Takes about a minute.",
+                 style={"fontSize":"11px","color":WHITE,"marginBottom":"10px"}),
+        html.Button("Run swing preview (60 symbols)", id="btn-weis-state-swing", n_clicks=0,
+                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
+                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"10px","marginRight":"8px"}),
+        html.Button("Run day preview (30 symbols)", id="btn-weis-state-day", n_clicks=0,
+                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
+                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"10px","marginRight":"8px"}),
+        dcc.Loading(html.Div(id="weis-state-output"), type="default"),
+    ], sx={"marginBottom":"16px"})
+
     # ── Historical daily grade grid ────────────────────────────────────────
     # Get all unique symbols across all dates
     all_syms_set = set()
@@ -6436,6 +6461,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
         score_table,
         readiness_impact_block,
+        weis_state_block,
         grade_grid,
         setup_deployment_block,
         symbol_backtest_block,
@@ -6771,6 +6797,32 @@ def run_readiness_impact_check(n_clicks, session):
         return render_readiness_impact(r.json())
     except Exception as exc:
         return f"Could not run the check: {exc}"
+
+
+@app.callback(
+    Output("weis-state-output", "children"),
+    Input("btn-weis-state-swing", "n_clicks"),
+    Input("btn-weis-state-day", "n_clicks"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def run_weis_state_preview(n_swing, n_day, session):
+    trig = callback_context.triggered_id
+    if trig not in ("btn-weis-state-swing", "btn-weis-state-day"):
+        return no_update
+    if not is_admin(session):
+        return "Admin access required."
+    mode, limit = ("day", 30) if trig == "btn-weis-state-day" else ("swing", 60)
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/admin/weis-state-preview", params={"mode": mode, "limit": limit},
+                    headers=_auth_headers(session), timeout=170)
+        if not r.ok:
+            return f"The preview failed: HTTP {r.status_code}"
+        if render_weis_state_preview is None:
+            return "Result view did not import. Check frontend/weis_state_preview_view.py."
+        return render_weis_state_preview(r.json())
+    except Exception as exc:
+        return f"Could not run the preview: {exc}"
 
 
 # ADDED (2026-08-25): Weis Radar manual "Run Scan Now" trigger --

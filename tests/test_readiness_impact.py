@@ -149,4 +149,4 @@ def test_admin_card_and_view_render():
 
     src = open(os.path.join(ROOT, "frontend", "app.py")).read()
     assert 'id="btn-readiness-impact"' in src and 'Output("readiness-impact-output", "children")' in src
-    assert "readiness_impact_block,\n        grade_grid" in src
+    assert "readiness_impact_block,\n        weis_state_block,\n        grade_grid" in src
