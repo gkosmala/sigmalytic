@@ -4623,7 +4623,8 @@ def _render_weis_radar_table(results, filter_type="all", sort_by="most_hits"):
             html.Td(f"${r_.get('hits', [{}])[0].get('price', '—')}", style={"padding": "8px", "color": WHITE}),
             html.Td(hit_spans, style={"padding": "8px", "fontSize": "12px"}),
             html.Td((f"{r_['weis_state']} {r_.get('weis_direction') or ''}".strip()
-                     if r_.get("weis_state") else "No setup"),
+                     if r_.get("weis_state")
+                     else ("No setup" if "weis_state" in r_ else "Pending next scan")),
                     style={"padding": "8px", "fontWeight": "700", "fontSize": "12px",
                            "color": _WEIS_STATE_COLORS.get(r_.get("weis_state"), MUTED)}),
         ], id={"type": "weis-radar-row", "symbol": symbol}, n_clicks=0,

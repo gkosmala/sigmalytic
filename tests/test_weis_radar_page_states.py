@@ -102,3 +102,25 @@ def test_older_tables_say_pending_not_no_setup_before_the_first_new_scan():
                                "raw": {"armed": True, "entry_trigger": 46.17, "invalidation": 45.21}}],
          "candidate_count": 1}, app._weis_state_map({"weis_states": block})))
     assert "No setup" in known and "Pending next scan" not in known
+
+def test_event_list_says_pending_for_a_scan_without_setup_states():
+    import app
+    old = str(app._render_weis_radar_table([{"symbol": "GXO", "hits": [{"type": "SPRING", "price": 45.99, "score": 100}]}]))
+    assert "Pending next scan" in old and "No setup" not in old
+    new_none = str(app._render_weis_radar_table([{"symbol": "GXO", "weis_state": None, "weis_direction": None,
+                                                  "hits": [{"type": "SPRING", "price": 45.99, "score": 100}]}]))
+    assert "No setup" in new_none and "Pending next scan" not in new_none
+    armed = str(app._render_weis_radar_table([{"symbol": "TRV", "weis_state": "Armed", "weis_direction": "long",
+                                               "hits": [{"type": "SPRING", "price": 360.6, "score": 100}]}]))
+    assert "Armed long" in armed
+
+
+def test_target_is_never_zero_or_negative():
+    from types import SimpleNamespace as L
+    mk = lambda v, side: L(value_at=lambda b, v=v: v, side=side)
+    # short setup: the only line below the break extrapolates to -2.29, so there is no target
+    assert wss._target([mk(-2.29, "support")], "resistance", 10, 78.0) is None
+    # a valid line below the break is still found, and the negative one is ignored
+    assert wss._target([mk(-2.29, "support"), mk(70.0, "support"), mk(60.0, "support")], "resistance", 10, 78.0) == 70.0
+    # long setup unchanged
+    assert wss._target([mk(90.0, "resistance"), mk(95.0, "resistance")], "support", 10, 80.0) == 90.0
