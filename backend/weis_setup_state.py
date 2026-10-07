@@ -560,10 +560,14 @@ def angle_profile(bars: List[dict], timeframe: str = "1Day",
 
 
 def _target(lines: List[_Line], side: str, b: int, break_level: float) -> Optional[float]:
-    """Nearest line on the other side of the range at the break bar."""
+    """Nearest line on the other side of the range at the break bar. A line whose
+    extended value is zero or below is not a price, so it is never a target (a steep
+    falling channel can extrapolate below zero); with no valid line the target is None."""
     vals = []
     for ln in lines:
         v = ln.value_at(b)
+        if v is None or v <= 0:
+            continue
         if side == "support" and v > break_level and ln.side in ("resistance", "both"):
             vals.append(v)
         if side == "resistance" and v < break_level and ln.side in ("support", "both"):
