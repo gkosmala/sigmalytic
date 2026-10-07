@@ -72,6 +72,12 @@ CONFIG: Dict[str, Any] = {
     # Disables weis_lines' own "line broken by a later close" rejection, which
     # would delete the very line a spring closes below. NOT FROM WEIS.
     "line_break_tolerance_off": 1e6,
+    # Follow-through window: a break only counts as followed through (failed)
+    # if price closes beyond the break bar's low/high within the next 2 bars of
+    # the frame being read. NOT FROM WEIS as a bar count (Weis: the next day,
+    # a secondary test, pp.74, 78, 88). The 2-bar number is the user's, from
+    # Raschke's 2-period rule ("Raschke, per user").
+    "follow_through_bars": 2,
 }
 
 STATE_RANK = {"Armed": 3, "Setting Up": 2, "Watching": 1, "Avoid": 0}
@@ -264,21 +270,27 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
     while m + 1 < n and pen(m + 1):
         m += 1
 
+    W = CONFIG["follow_through_bars"]
+    win = range(b + 1, min(b + 1 + W, n))
     if side == "support":
         depth = max((L(i) - lo[i]) / L(i) for i in range(b, m + 1) if L(i) > 0)
-        extreme = min(lo[b:n])
-        follow = any(c[j] < lo[b] for j in range(b + 1, n))
+        stop0 = min(lo[b:m + 1])
+        follow = any(c[j] < lo[b] for j in win)
+        stopped = any(lo[j] < stop0 for j in range(m + 1, n))
     else:
         depth = max((h[i] - L(i)) / L(i) for i in range(b, m + 1) if L(i) > 0)
-        extreme = max(h[b:n])
-        follow = any(c[j] > h[b] for j in range(b + 1, n))
+        stop0 = max(h[b:m + 1])
+        follow = any(c[j] > h[b] for j in win)
+        stopped = any(h[j] > stop0 for j in range(m + 1, n))
     if depth > CONFIG["penetration_ceiling"]:
         return None
+    if stopped and not follow:
+        return None        # the stop failed after the window: the trade is over
 
     close_back = next((i for i in range(b, n) if back(i)), None)
 
     if follow:
-        state, reason = "Avoid", "follow-through after the break (p.74)"
+        state, reason = "Avoid", "follow-through after the break (p.74); flips below"
     elif close_back is None or not back(n - 1):
         state, reason = "Watching", "broke the line; not closed back inside (p.74)"
     elif close_back == n - 1:
@@ -291,7 +303,7 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
         "break_index": b, "break_time": bars[b]["t"],
         "line_source": line.source, "line_touches": line.touches,
         "line_value_at_break": round(L(b), 4), "penetration": round(depth, 5),
-        "stop": round(extreme, 4),
+        "stop": round(stop0, 4),
         "bars_since_break": n - 1 - b,
         "close_back_index": close_back,
         "followed_through": bool(follow),
@@ -323,14 +335,12 @@ def _flip(bars: List[dict], line: _Line, side: str, b: int) -> Optional[Dict[str
         f = next((j for j in range(b + 1, n) if c[j] < lo[b]), None)
         touch = lambda j: h[j] >= L(j)
         back = lambda j: c[j] <= L(j)
-        beyond = lambda j, r: c[j] > h[r]
         depth_of = lambda j: (h[j] - L(j)) / L(j)
         flip_side, direction = "resistance", "short"
     else:                                       # failed upthrust -> long
         f = next((j for j in range(b + 1, n) if c[j] > h[b]), None)
         touch = lambda j: lo[j] <= L(j)
         back = lambda j: c[j] >= L(j)
-        beyond = lambda j, r: c[j] < lo[r]
         depth_of = lambda j: (L(j) - lo[j]) / L(j)
         flip_side, direction = "support", "long"
     if f is None:
@@ -343,17 +353,18 @@ def _flip(bars: List[dict], line: _Line, side: str, b: int) -> Optional[Dict[str
         depth = 0.0
         close_back = None
     else:
-        if any(beyond(j, r) for j in range(r + 1, n)):
-            return None                         # the retest went through: not a flip
         m = r
         while m + 1 < n and touch(m + 1):
             m += 1
+        stop0 = max(h[r:m + 1]) if side == "support" else min(lo[r:m + 1])
+        if any((h[j] > stop0) if side == "support" else (lo[j] < stop0) for j in range(m + 1, n)):
+            return None                         # the flipped setup's own stop failed
         depth = max(depth_of(j) for j in range(r, m + 1) if L(j) > 0)
         if depth > CONFIG["penetration_ceiling"]:
             return None
         close_back = next((j for j in range(r, n) if back(j)), None)
         anchor = r
-        stop = max(h[r:]) if side == "support" else min(lo[r:])
+        stop = stop0
         if close_back is None or not back(n - 1):
             state, reason = "Watching", "retesting the broken line; not yet closed back (p.74, pp.112-113)"
         elif close_back == n - 1:
@@ -501,6 +512,8 @@ def evaluate_setup_state(bars: List[dict], timeframe: str = "1Day",
                         else (min(x["l"] for x in bars[bi:]) <= tgt)
                     if reached:
                         continue  # the move already happened
+                cbi = ep.get("close_back_index")
+                ep["close_back_time"] = bars[cbi]["t"] if cbi is not None else None
                 ep["target"] = None if tgt is None else round(tgt, 4)
                 ep.setdefault("direction", "long" if s == "support" else "short")
                 trend = _trend_before(bars, b, timeframe, htf_bars)

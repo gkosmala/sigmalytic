@@ -51,6 +51,7 @@ def _row(sym: str, res: Dict[str, Any], radar: Optional[dict]) -> Dict[str, Any]
         "line_touches": res.get("line_touches"),
         "break_time": res.get("break_time"),
         "bars_since_break": res.get("bars_since_break"),
+        "close_back_time": res.get("close_back_time"),
         "stop": res.get("stop"),
         "target": res.get("target"),
         "trend": res.get("trend"),
