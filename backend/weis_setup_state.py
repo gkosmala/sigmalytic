@@ -83,6 +83,12 @@ CONFIG: Dict[str, Any] = {
     # NOT FROM WEIS (he gives no bar count); "Raschke, per user" (pasted web
     # text said 3 to 5 bars; 5 used). Bar 6 with no close back = dead.
     "close_back_max_bars": 5,
+    # After a setup has closed back inside and then closes beyond the line
+    # again (stop still intact) it reverts to Setting Up and waits for a fresh
+    # close back. The re-break day is bar 1; this many CONSECUTIVE closes
+    # beyond the line kill it. NOT FROM WEIS (his secondary test may dip below
+    # the line and recover, p.78); the number is "Raschke, per user".
+    "rebreak_max_closes": 5,
     # A spring/upthrust that has not reached its target or failed its stop is
     # dropped once it is older than this many bars since the break ("zone
     # memory"). NOT FROM WEIS; "Raschke, per user", source unverified. Weis
@@ -275,15 +281,33 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
         pen = lambda i: h[i] > L(i)
         back = lambda i: c[i] <= L(i)
 
-    b = None
-    for i in range(n - 1, 0, -1):
-        if pen(i) and not pen(i - 1):
-            b = i
-            break
-    if b is None:
+    starts = [i for i in range(n - 1, 0, -1) if pen(i) and not pen(i - 1)]
+    if not starts:
         return None
-    if before_limit is not None and b != before_limit:
-        return None
+    if before_limit is not None:
+        if before_limit not in starts:
+            return None
+        b = before_limit
+    else:
+        b = starts[0]
+        # A later dip through the line while the earlier break's stop is intact
+        # is the SAME setup closing beyond the line again, not a new break.
+        for e in starts[1:]:
+            me = e
+            while me + 1 < n and pen(me + 1):
+                me += 1
+            if side == "support":
+                stop_e = min(lo[e:me + 1])
+                ok = all(lo[j] >= stop_e for j in range(me + 1, n)) and \
+                    not any(c[j] < lo[e] for j in range(e + 1, min(e + 1 + CONFIG["follow_through_bars"], n)))
+            else:
+                stop_e = max(h[e:me + 1])
+                ok = all(h[j] <= stop_e for j in range(me + 1, n)) and \
+                    not any(c[j] > h[e] for j in range(e + 1, min(e + 1 + CONFIG["follow_through_bars"], n)))
+            if ok and any(back(i) for i in range(e, b)):
+                b = e
+            else:
+                break
 
     # contiguous run of penetrating bars starting at b
     m = b
@@ -314,11 +338,30 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
     if not follow and (n - 1 - b) > CONFIG["setup_max_bars"]:
         return None        # zone memory expired
 
+    beyond_run = 0
+    k = n - 1
+    while k >= b and not back(k):
+        beyond_run += 1
+        k -= 1
+    rebreak = close_back is not None and not back(n - 1)
+    if rebreak and not follow and beyond_run >= CONFIG["rebreak_max_closes"]:
+        return None        # five straight closes beyond the line: price accepted it
+    if back(n - 1):
+        k = n - 1
+        while k - 1 >= b and back(k - 1):
+            k -= 1
+        latest_cb = k      # start of the final run of closes back inside
+    else:
+        latest_cb = close_back
+
     if follow:
         state, reason = "Avoid", "follow-through after the break (p.74); flips below"
-    elif close_back is None or not back(n - 1):
+    elif close_back is None:
         state, reason = "Watching", "broke the line; not closed back inside (p.74)"
-    elif close_back == n - 1:
+    elif not back(n - 1):
+        state, reason = ("Setting Up", "closed back inside earlier, then closed beyond the line again; "
+                         "waiting for a fresh close back (secondary test, p.78)")
+    elif latest_cb == n - 1:
         state, reason = "Setting Up", "closed back inside the line (p.74, p.76)"
     else:
         state, reason = "Armed", "no follow-through after the close back inside (p.78, p.88)"
@@ -330,7 +373,7 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
         "line_value_at_break": round(L(b), 4), "penetration": round(depth, 5),
         "stop": round(stop0, 4),
         "bars_since_break": n - 1 - b,
-        "close_back_index": close_back,
+        "close_back_index": latest_cb,
         "followed_through": bool(follow),
     }
 
@@ -427,6 +470,8 @@ def _flip(bars: List[dict], line: _Line, side: str, b: int) -> Optional[Dict[str
         depth = max(depth_of(j) for j in range(r, m + 1) if L(j) > 0)
         if depth > CONFIG["penetration_ceiling"]:
             return None
+        if n - 1 - r > CONFIG["flip_max_bars"]:
+            return None                         # 20-bar limit also applies in the retest stage (user)
         close_back = next((j for j in range(r, n) if back(j)), None)
         anchor = r
         stop = stop0
