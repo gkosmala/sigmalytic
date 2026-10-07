@@ -38,32 +38,28 @@ def render_radar_bars_check(payload: Dict[str, Any]) -> html.Div:
     rows = payload["rows"]
     if not rows:
         return html.Div(payload.get("note") or "No rows.", style={"color": YELLOW, "fontSize": "12px"})
-    head = ["Symbol", "Radar status", "State on radar bars", "State on fresh bars", "Fresh, same bar count",
-            "Radar bars", "Fresh bars", "Radar last close", "Fresh last close", "Last completed (radar / fresh)",
-            "Days only in radar", "Days only in fresh", "Different closes", "First different close"]
+    head = ["Symbol", "Radar status now", "State on fresh bars (all)", "State on fresh bars (last 252)",
+            "Radar = last 252?", "Fresh bars", "Fresh last close", "Last completed bar"]
     body = []
     for r in rows:
-        rb, fb = r.get("radar_bars") or {}, r.get("fresh_bars") or {}
-        fd = r.get("first_different_close")
-        same = r.get("state_on_radar_bars") == r.get("state_on_fresh_bars")
+        fb = r.get("fresh_bars") or {}
+        radar = f"{r.get('radar_status_direction') or '-'}/{r.get('radar_status_now')}"
+        if r.get("radar_status_now") == "No setup":
+            radar = "-/No setup"
+        s252 = r.get("state_on_fresh_last_252")
+        same = radar == s252
         body.append(html.Tr([
             _td(r["symbol"], bold=True, mono=True),
-            _td(f"{r.get('radar_status_direction') or '-'}/{r.get('radar_status_now')}"),
-            _td(r.get("state_on_radar_bars") or "-", WHITE if same else YELLOW),
-            _td(r.get("state_on_fresh_bars") or "-", WHITE if same else YELLOW),
-            _td(r.get("state_on_fresh_last_same_count") or "-"),
-            _td(_bars(rb), MUTED, mono=True),
+            _td(radar),
+            _td(r.get("state_on_fresh_bars") or "-"),
+            _td(s252 or "-", WHITE if same else YELLOW),
+            _td("yes" if same else "no", WHITE if same else RED, bold=True),
             _td(_bars(fb), MUTED, mono=True),
-            _td(str(rb.get("last_close")), mono=True),
             _td(str(fb.get("last_close")), mono=True),
-            _td(f"{rb.get('last_completed')} / {fb.get('last_completed')}", mono=True),
-            _td(", ".join(r.get("days_only_in_radar") or []) or "-", MUTED, mono=True),
-            _td(", ".join(r.get("days_only_in_fresh") or []) or "-", MUTED, mono=True),
-            _td(str(r.get("different_closes")), RED if r.get("different_closes") else WHITE, mono=True),
-            _td(f"{fd['day']}: {fd['radar']} vs {fd['fresh']}" if fd else "-", MUTED, mono=True),
+            _td(str(fb.get("last_completed")), mono=True),
         ]))
     return html.Div([
-        html.Div(f"{len(rows)} symbols compared. Radar cache holds {payload.get('radar_cache_symbols', '?')} symbols.",
+        html.Div(f"{len(rows)} symbols compared. Radar status comes from the worker's shared cache; the radar keeps at most 252 daily bars.",
                  style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}),
         html.Div(html.Table([html.Thead(html.Tr([_th(h) for h in head])), html.Tbody(body)],
                             style={"borderCollapse": "collapse", "width": "100%"}),

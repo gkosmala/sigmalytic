@@ -24,6 +24,7 @@ except Exception:  # run from inside backend/
 
 LOOKBACK_DAYS = 420          # same as the swing preview
 MAX_SYMBOLS = 20
+RADAR_BARS = 252             # the radar keeps at most this many daily bars (RADAR_HISTORICAL_BARS_LIMIT default)
 CLOSE_TOL = 5e-4             # relative difference that counts as "different close"
 
 
@@ -85,6 +86,7 @@ def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], rad
         "state_on_radar_bars": _state(radar_bars),
         "state_on_fresh_bars": _state(fresh_bars),
         "state_on_fresh_last_same_count": _state((fresh_bars or [])[-n_radar:]) if n_radar else None,
+        "state_on_fresh_last_252": _state((fresh_bars or [])[-RADAR_BARS:]),
     }
 
 
@@ -125,4 +127,10 @@ def radar_bars_check(symbols: str = "", _admin_email: str = Depends(_admin)):
     syms = [s for s in symbols.split(",") if s.strip()]
     if not syms:
         return {"rows": [], "note": "Pass ?symbols=AAA,BBB"}
-    return run_check(syms, rsvc._historical_bars, rsvc.RADAR_CACHE, rsvc.fetch_bars_multi)
+    try:
+        from backend.snapshot_service import _load_radar_cache_for_admin_report
+    except Exception:  # pragma: no cover
+        from snapshot_service import _load_radar_cache_for_admin_report
+    # The scan runs in a separate worker, so the web process holds no radar bars;
+    # radar status comes from the shared Redis cache (as in the swing preview).
+    return run_check(syms, rsvc._historical_bars, _load_radar_cache_for_admin_report(), rsvc.fetch_bars_multi)
