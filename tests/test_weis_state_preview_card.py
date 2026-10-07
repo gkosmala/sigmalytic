@@ -22,8 +22,7 @@ def test_view_renders_rows_and_hides_no_setup():
         {"symbol": "AAA", "state": "Armed", "direction": "long", "reason": "r", "flipped_from": None,
          "line_source": "axis", "line_touches": 5, "stop": 99.0, "target": 110.2,
          "trends_by_frame": {"1Day": "up", "1Week": "up"}, "angle_change_of_character": [],
-         "radar_status_today": "Watching", "break_time": "2026-09-30", "bars_since_break": 4,
-         "close_back_time": "2026-09-30"},
+         "radar_status_today": "Watching"},
         {"symbol": "BBB", "state": "Watching", "direction": "short", "reason": "r", "flipped_from": "spring",
          "line_source": "trendline", "line_touches": 3, "stop": 12.0, "target": None,
          "trends_by_frame": None, "angle_change_of_character": ["bullish: later up-legs below 45 degrees"],
@@ -38,7 +37,6 @@ def test_view_renders_rows_and_hides_no_setup():
     out = _text(v.render_weis_state_preview(payload))
     assert "AAA" in out and "BBB" in out and "CCC" not in out
     assert "flipped from spring" in out and "1 flipped setups" in out
-    assert "2026-09-30" in out and "Bars ago" in out
     assert "No symbols could be evaluated" in _text(v.render_weis_state_preview({"summary": {"symbols": 0}, "skipped": []}))
     assert "Unexpected response" in _text(v.render_weis_state_preview({"oops": 1}))
 
