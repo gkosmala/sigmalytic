@@ -28,15 +28,26 @@ from fastapi import APIRouter, Depends, Header
 
 try:
     from backend import weis_setup_state as wss
-    from backend.readiness_impact import pick_sample
 except Exception:  # run from inside backend/
     import weis_setup_state as wss
-    from readiness_impact import pick_sample
 
 # Calendar-day lookbacks per frame (enough completed higher-frame bars, and
 # for 15-minute bars a couple of weeks of sessions).
 LOOKBACK_DAYS = {"1Day": 420, "1Hour": 45, "15Min": 14}
 MAX_SYMBOLS = 80
+
+
+MAX_SAMPLE = 150
+
+
+def pick_sample(symbols: List[str], limit: int) -> List[str]:
+    """Evenly spaced through the sorted universe, so the sample is not just A's."""
+    syms = sorted(set(symbols))
+    limit = max(1, min(int(limit), MAX_SAMPLE, len(syms) or 1))
+    if len(syms) <= limit:
+        return syms
+    step = len(syms) / limit
+    return [syms[int(i * step)] for i in range(limit)]
 
 
 def _row(sym: str, res: Dict[str, Any], radar: Optional[dict]) -> Dict[str, Any]:

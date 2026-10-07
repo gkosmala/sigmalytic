@@ -945,7 +945,7 @@ def fetch_intraday_bars(symbol: str, timeframe: str = "5Min",
 
 # ── Layer 1 — Lightweight scoring engine (universe) ───────────────────────────
 
-def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = False) -> dict:
+def score_symbol(symbol: str, snap: dict, bars: list) -> dict:
     daily_bar    = snap.get("dailyBar",    {}) or {}
     prev_daily   = snap.get("prevDailyBar", {}) or {}
     latest_trade = snap.get("latestTrade", {}) or {}
@@ -1159,16 +1159,7 @@ def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = Fa
         "bme_regime"        : bme_regime,
     }
 
-    out = _attach_behavioral_transition(result)
-    if _return_factors:
-        # Diagnostic only (backend/readiness_impact.py). Off by default, so the
-        # normal scan output and what is cached/served are unchanged.
-        out["_factors"] = {
-            "confluence": confluence, "expansion_node": expansion,
-            "relative_strength": rel_strength, "volume_pressure": vol_pressure,
-            "behavioral": behavioral, "composite": composite,
-        }
-    return out
+    return _attach_behavioral_transition(result)
 
 
 def _calc_atr(highs, lows, closes, period=14) -> float:

@@ -7353,18 +7353,6 @@ except Exception as _imbalance_router_mount_error:
     _IMBALANCE_ROUTER_MOUNT_ERROR_EXCERPT = str(_imbalance_router_mount_error)[:500]
 # === SIGMALYTIC IMBALANCE ALERT ROUTER MOUNT END ===
 
-# === SIGMALYTIC READINESS IMPACT DIAGNOSTIC MOUNT START ===
-try:
-    try:
-        from backend.readiness_impact import readiness_router
-    except Exception:
-        from readiness_impact import readiness_router
-
-    app.include_router(readiness_router)
-except Exception as _readiness_router_mount_error:
-    _READINESS_ROUTER_MOUNT_ERROR_EXCERPT = str(_readiness_router_mount_error)[:500]
-# === SIGMALYTIC READINESS IMPACT DIAGNOSTIC MOUNT END ===
-
 # === SIGMALYTIC WEIS STATE PREVIEW MOUNT START ===
 try:
     try:
