@@ -58,34 +58,16 @@ def test_live_opportunity_center_table_shows_the_weis_state_column():
     assert "Weis state" in text and "Armed · long" in text
 
 
-def test_radar_screen_is_back_in_the_left_menu_and_wired():
+def test_radar_screen_is_not_in_the_menu():
     src = open(os.path.join(ROOT, "frontend", "app.py"), encoding="utf-8").read()
-    assert '("radar",       "Radar Screen")' in src
-    assert "'tab-status', 'tab-radar'," in src
-    assert 'Input("tab-status","n_clicks"),\n    Input("tab-radar","n_clicks"),' in src
-    assert 'elif tab=="radar":' in src and "build_radar_tab(session=session)" in src
+    assert '"Radar Screen")' not in src and "tab-radar" not in src
+    assert 'elif tab=="radar":' not in src and "from radar_tab import" not in src and "build_radar_tab(" not in src
+    # the clientside tab list and the callback inputs stay aligned
+    assert "'tab-status', 'tab-reports'" in src
+    assert 'Input("tab-status","n_clicks"),\n    Input("tab-reports","n_clicks"),' in src
 
 
 def test_radio_counts_use_the_weis_state():
     src = open(os.path.join(ROOT, "frontend", "app.py"), encoding="utf-8").read()
     assert "def _radio_state(s):" in src
     assert '"armed" in _radio_state(s).lower()' in src
-
-
-def test_radar_screen_renders_with_weis_badges_and_counts(monkeypatch):
-    import radar_tab
-    rows = [{"symbol": "AAA", "status": "Armed", "status_direction": "short", "opportunity_state": "Watching",
-             "composite_score": 90, "price": 10, "change_pct": 1.0, "rel_volume": 2.0, "readiness_score": 50},
-            {"symbol": "BBB", "status": "Setting Up", "status_direction": "long", "opportunity_state": "Armed",
-             "composite_score": 80, "price": 20, "change_pct": -1.0, "rel_volume": 1.0, "readiness_score": 60},
-            {"symbol": "CCC", "status": "No setup", "opportunity_state": "Armed",
-             "composite_score": 70, "price": 5, "change_pct": 0.0, "rel_volume": 1.0}]
-
-    class R:
-        ok = True
-        def json(self): return {"symbols": rows, "sort_mode": "x"}
-    monkeypatch.setattr("requests.get", lambda *a, **k: R())
-    monkeypatch.setattr(radar_tab, "shared_cache", None)
-    out = str(radar_tab.build_radar_tab().to_plotly_json())
-    assert "AAA" in out and "BBB" in out
-    assert "Setting Up" in out and "Armed" in out
