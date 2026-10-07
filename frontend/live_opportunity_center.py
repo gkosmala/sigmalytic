@@ -285,6 +285,34 @@ def _normalize_opportunities(payload: dict) -> list[dict]:
     return rows
 
 
+_WEIS_RANK = {"Armed": 4, "Setting Up": 3, "Watching": 2, "Avoid": 1}
+
+
+def _load_weis_states() -> dict:
+    """symbol -> {"state", "direction"}: the radar Status (Weis setup state). Empty when unavailable."""
+    path = "/api/radar/weis-states"
+
+    def _fetch():
+        return _get_json(path, timeout=8)
+
+    try:
+        payload = shared_cache.get_or_fetch(path, _fetch, ttl_seconds=60) if shared_cache else _fetch()
+    except Exception:
+        payload = {}
+    states = payload.get("states") if isinstance(payload, dict) else None
+    return states if isinstance(states, dict) else {}
+
+
+def _attach_weis_states(rows: list, states: dict) -> list:
+    """Add each row's Weis state and put Armed first: Weis state, then the existing stage/score order."""
+    for r in rows:
+        st = states.get(r.get("symbol")) or {}
+        r["weis_state"] = st.get("state") or "No setup"
+        r["weis_direction"] = st.get("direction")
+    rows.sort(key=lambda r: -_WEIS_RANK.get(r.get("weis_state"), 0))  # stable: keeps the existing order within a state
+    return rows
+
+
 def _load_opportunity_snapshot(force=False) -> dict:
     key = "/api/weis-radar/results"
     cached = shared_cache.peek(key, ttl_seconds=180) if shared_cache and not force else None
@@ -297,6 +325,8 @@ def _load_opportunity_snapshot(force=False) -> dict:
         elif not isinstance(cached, dict) or not cached.get("ok"):
             shared_cache._force_refresh(key, lambda: payload, ttl_seconds=180)
     rows = _normalize_opportunities(payload) if payload.get("ok") else []
+    if rows:
+        rows = _attach_weis_states(rows, _load_weis_states())
     return {
         "rows": rows,
         "config": payload.get("config") if isinstance(payload.get("config"), dict) else {},
@@ -350,6 +380,16 @@ def _stage_color(stage: str) -> str:
         "CONFIRMED": GREEN,
         "INVALIDATED": RED,
     }.get(stage, SUBTLE)
+
+
+def _weis_color(state) -> str:
+    return {"Armed": GREEN, "Setting Up": BLUE, "Watching": AMBER, "Avoid": RED}.get(state, SUBTLE)
+
+
+def _weis_label(row: dict) -> str:
+    st = row.get("weis_state") or "No setup"
+    d = row.get("weis_direction")
+    return f"{st} · {d}" if d in ("long", "short") and st != "No setup" else st
 
 
 def _direction_color(direction: str) -> str:
@@ -421,10 +461,11 @@ def _opportunity_table(rows: list[dict], page: int = 0):
         "textTransform": "uppercase",
         "letterSpacing": ".06em",
     }
-    grid = "56px 84px 110px 76px minmax(180px,2fr) 130px 72px"
+    grid = "56px 128px 84px 110px 76px minmax(180px,2fr) 130px 72px"
     header = html.Div(
         [
             html.Div("Symbol", style=header_style),
+            html.Div("Weis state", style=header_style),
             html.Div("Direction", style=header_style),
             html.Div("Stage", style=header_style),
             html.Div("Primary TF", style=header_style),
@@ -463,6 +504,7 @@ def _opportunity_table(rows: list[dict], page: int = 0):
             html.Div(
                 [
                     html.Div(row["symbol"], style={"fontWeight": "900", "color": WHITE, "fontFamily": "DM Mono, monospace"}),
+                    html.Div(_pill(_weis_label(row), _weis_color(row.get("weis_state")))),
                     html.Div(direction, style={"fontSize": "11px", "fontWeight": "800", "color": _direction_color(direction)}),
                     html.Div(_pill(stage, _stage_color(stage))),
                     html.Div(TIMEFRAME_LABELS.get(row["primary_tf"], row["primary_tf"]), style={"fontSize": "11px", "color": WHITE}),

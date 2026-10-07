@@ -84,6 +84,11 @@ except Exception:
     render_radar_bars_check = None
 
 try:
+    from radar_tab import build_radar_tab
+except Exception:
+    build_radar_tab = None
+
+try:
     from live_opportunity_center import (
         build_live_opportunity_center as build_status_center,
         register_live_opportunity_center_callbacks,
@@ -6587,6 +6592,14 @@ def _radio_narrate_market_wire(wire_data):
     return [{"id": f"market_snapshot_{bucket}", "text": text}]
 
 
+def _radio_state(s):
+    """The radar Status (Weis setup state) when the row has one, else the old opportunity state."""
+    st = s.get("status")
+    if st in ("No setup", "Watching", "Setting Up", "Armed", "Avoid"):
+        return st
+    return str(s.get("opportunity_state") or "")
+
+
 def _radio_narrate_alerts_headline(signals):
     """
     Cheap, every-30s headline: just counts, from data already fetched
@@ -6596,8 +6609,8 @@ def _radio_narrate_alerts_headline(signals):
     """
     if not signals:
         return []
-    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
-    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
+    armed = [s for s in signals if isinstance(s, dict) and "armed" in _radio_state(s).lower()]
+    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in _radio_state(s).lower()]
     if not armed and not setting_up:
         return []
     bucket = int(datetime.now(timezone.utc).timestamp() // 300)
@@ -6646,16 +6659,16 @@ def _radio_narrate_detailed(signals):
     # Up status, then readiness_score, then composite_score as the
     # final tiebreaker -- not an approximation.
     def _real_rank_key(x):
-        opportunity_state = str(x.get("opportunity_state", ""))
+        # Same order as the backend: Weis state first, then signal strength.
         return (
-            opportunity_state == "Armed",
-            opportunity_state == "Setting Up",
-            _safe_float_local(x, "readiness_score"),
+            _radio_state(x) == "Armed",
+            _radio_state(x) == "Setting Up",
             _safe_float_local(x, "composite_score"),
+            _safe_float_local(x, "rel_volume"),
         )
 
-    armed = [s for s in signals if isinstance(s, dict) and "armed" in str(s.get("opportunity_state") or "").lower()]
-    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in str(s.get("opportunity_state") or "").lower()]
+    armed = [s for s in signals if isinstance(s, dict) and "armed" in _radio_state(s).lower()]
+    setting_up = [s for s in signals if isinstance(s, dict) and "setting" in _radio_state(s).lower()]
     armed.sort(key=_real_rank_key, reverse=True)
     detail_targets = armed[:10] + setting_up
 
@@ -11306,6 +11319,7 @@ ALL_TABS = [
     ("command",     "Command Center"),
     ("weis_radar",  "Sigma Radar"),
     ("status",      "Live Opportunity Center"),
+    ("radar",       "Radar Screen"),
     ("weis",        "Sigma Analysis"),
     ("heatmap",     "Heat Map"),
     # ARCHIVED (later session, at explicit request): Radar Screen,
@@ -11855,7 +11869,7 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
+            'tab-status', 'tab-radar', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -11871,6 +11885,7 @@ app.clientside_callback(
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),
     Input("tab-status","n_clicks"),
+    Input("tab-radar","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
@@ -12700,6 +12715,20 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         else:
             return no_update, no_update, no_update, no_update
     # campaign/radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
+    elif tab=="radar":
+        if build_radar_tab is None:
+            main = card([
+                html.H2("Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                note_box("Radar Screen module did not import. Check frontend/radar_tab.py.", "blue"),
+            ])
+        else:
+            try:
+                main = build_radar_tab(session=session)
+            except Exception as e:
+                main = card([
+                    html.H2("Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    note_box("Radar Screen error: " + str(e), "blue"),
+                ])
     elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
     elif tab=="portfolio":
