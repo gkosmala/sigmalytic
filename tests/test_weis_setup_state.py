@@ -369,3 +369,46 @@ def test_armed_setup_is_dropped_after_twenty_bars():
     assert alive["state"] == "Armed" and alive["bars_since_break"] == 20
     dead = ws.evaluate_setup_state(_with([closed] + [_HOLD() for _ in range(21)]))
     assert dead["state"] == "No setup"
+
+
+# --- re-break after a close back (user rule; Weis secondary test p.78) ---
+_SPR = lambda: _bar(100.2, lo=99.0, hi=100.4)      # break (stop 99.0) closed back inside the 99.8 line
+_UP = lambda: _bar(100.8, lo=100.1, hi=101.0)      # holds above: Armed
+_REB = lambda: _bar(99.5, lo=99.2, hi=99.7)        # closes beyond the line again, stop 99.0 intact
+
+
+def test_armed_reverts_to_setting_up_when_it_closes_beyond_the_line_again():
+    assert ws.evaluate_setup_state(_with([_SPR(), _UP()]))["state"] == "Armed"
+    out = ws.evaluate_setup_state(_with([_SPR(), _UP(), _REB()]))
+    assert out["state"] == "Setting Up" and out["direction"] == "long" and out["stop"] == 99.0
+    assert "again" in out["reason"]
+
+
+def test_rebreak_dies_after_five_consecutive_closes_beyond_the_line():
+    four = ws.evaluate_setup_state(_with([_SPR(), _UP()] + [_REB() for _ in range(4)]))
+    assert four["state"] == "Setting Up" and four["direction"] == "long"
+    five = ws.evaluate_setup_state(_with([_SPR(), _UP()] + [_REB() for _ in range(5)]))
+    assert not (five.get("direction") == "long" and five.get("stop") == 99.0)
+
+
+def test_fresh_close_back_after_rebreak_needs_another_bar_to_arm():
+    base = [_SPR(), _UP(), _REB()]
+    s = ws.evaluate_setup_state(_with(base + [_bar(100.2, lo=99.6, hi=100.4)]))
+    assert s["state"] == "Setting Up" and s["bars_since_break"] == 3
+    a = ws.evaluate_setup_state(_with(base + [_bar(100.2, lo=99.6, hi=100.4), _bar(100.6, lo=100.1, hi=100.8)]))
+    assert a["state"] == "Armed"
+
+
+def test_rebreak_below_the_stop_kills_it():
+    out = ws.evaluate_setup_state(_with([_SPR(), _UP(), _bar(99.4, lo=98.7, hi=99.7)]))
+    assert not (out.get("direction") == "long" and out.get("stop") == 99.0)
+
+
+def test_retested_flip_dies_after_twenty_bars():
+    # 20-bar limit also applies once the flipped setup has been retested (user; not Weis)
+    base = [_bar(99.3, lo=99.0, hi=99.9), _bar(98.7, lo=98.5, hi=99.2), _bar(99.5, lo=99.0, hi=100.0)]
+    hold = lambda: _bar(98.9, lo=98.6, hi=99.4)
+    alive = ws.evaluate_setup_state(_with(base + [hold() for _ in range(20)]))
+    assert alive["state"] == "Armed" and alive["direction"] == "short"
+    dead = ws.evaluate_setup_state(_with(base + [hold() for _ in range(21)]))
+    assert dead.get("flipped_from") != "spring"
