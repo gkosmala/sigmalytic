@@ -573,12 +573,51 @@ def _target(lines: List[_Line], side: str, b: int, break_level: float) -> Option
     return min(vals) if side == "support" else max(vals)
 
 
+_BAR_SECONDS = {"1Min": 60, "5Min": 300, "15Min": 900, "30Min": 1800, "1Hour": 3600,
+                "2Hour": 7200, "4Hour": 14400}
+
+
+def drop_incomplete(bars: List[dict], timeframe: str = "1Day", now=None) -> List[dict]:
+    """Remove the last bar if it is still forming, so the state is always read
+    on the most recently COMPLETED bar (Weis reads a bar's close and enters on
+    the next open). Daily bars are complete at 16:00 New York time on their
+    date; intraday bars are complete once start + length has passed. A bar
+    whose timestamp cannot be parsed is kept."""
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    if not bars:
+        return bars
+    now = now or datetime.now(timezone.utc)
+    ny = ZoneInfo("America/New_York")
+    t = str(bars[-1].get("t", ""))
+    try:
+        if timeframe == "1Day":
+            d = datetime.fromisoformat(t.replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            day = d.date() if len(t) <= 10 else d.astimezone(ny).date()
+            close = datetime(day.year, day.month, day.day, 16, 0, tzinfo=ny)
+        else:
+            secs = _BAR_SECONDS.get(timeframe)
+            if secs is None:
+                return bars
+            start = datetime.fromisoformat(t.replace("Z", "+00:00"))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            close = start + timedelta(seconds=secs)
+    except (ValueError, TypeError):
+        return bars
+    return bars[:-1] if close > now else bars
+
+
 def evaluate_setup_state(bars: List[dict], timeframe: str = "1Day",
                          unit_mode: str = "box", atr_mult: float = 1.5,
-                         htf_bars: Optional[Dict[str, List[dict]]] = None) -> Dict[str, Any]:
-    """Weis-only state for the latest bar. Returns a dict with at least
-    state ('No setup' when nothing is broken), direction and evidence."""
-    bars = _normalize(bars)
+                         htf_bars: Optional[Dict[str, List[dict]]] = None,
+                         now=None) -> Dict[str, Any]:
+    """Weis-only state for the latest COMPLETED bar (a bar still forming is
+    dropped first). Returns a dict with at least state ('No setup' when
+    nothing is broken), direction and evidence."""
+    bars = drop_incomplete(_normalize(bars), timeframe, now)
     n = len(bars)
     none = {"state": "No setup", "direction": None, "reason": "no line has been broken"}
     if n < 12:

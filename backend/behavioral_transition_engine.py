@@ -120,7 +120,7 @@ def classify_behavioral_state(data: Dict[str, Any]) -> str:
     if "upthrust" in setup:
         return "Distribution / Upthrust Test"
 
-    if "distribution" in setup or "breakdown" in setup or "short" in status:
+    if "distribution" in setup or "breakdown" in setup or data.get("status_direction") == "short":
         if rel_volume >= 1.5 or volume_pressure >= 65:
             return "Distribution to Markdown Pressure"
         return "Distribution"

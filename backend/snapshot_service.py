@@ -330,10 +330,14 @@ def build_admin_report(radar_cache: dict) -> dict:
     # ── Live stats from cache ──────────────────────────────────────────────
     total    = len(symbols)
     armed    = sum(1 for s in symbols if s.get("status") == "Armed")
-    triggered= sum(1 for s in symbols if s.get("status") in ("Triggered","Confirmed"))
-    building = sum(1 for s in symbols if s.get("status") == "Building")
+    setting_up = sum(1 for s in symbols if s.get("status") == "Setting Up")
+    # Radar Status is now the Weis setup state, so there is no Triggered /
+    # Confirmed / Building any more; the old keys stay at 0 so stored
+    # snapshots keep the same shape.
+    triggered = 0
+    building  = 0
     avoid    = sum(1 for s in symbols if s.get("status") == "Avoid")
-    short_ct = sum(1 for s in symbols if "Short" in s.get("status",""))
+    short_ct = sum(1 for s in symbols if s.get("status") in ("Watching", "Setting Up", "Armed") and s.get("status_direction") == "short")
     avg_score= round(sum(s.get("composite_score",0) for s in symbols) / total, 1) if total else 0
 
     # ── Anomaly detection ──────────────────────────────────────────────────
@@ -447,6 +451,7 @@ def build_admin_report(radar_cache: dict) -> dict:
             "armed":         armed,
             "triggered":     triggered,
             "building":      building,
+            "setting_up":    setting_up,
             "avoid":         avoid,
             "short":         short_ct,
             "avg_score":     avg_score,
@@ -604,10 +609,10 @@ def _generate_regime_narrative(symbols, regimes, armed, triggered, avg_score) ->
 
     # Alert summary
     alert_read = ""
-    if armed + triggered >= 5:
-        alert_read = f" {armed} Armed + {triggered} Triggered setups active."
-    elif armed + triggered == 0:
-        alert_read = " No active armed or triggered setups."
+    if armed >= 5:
+        alert_read = f" {armed} Armed setups active."
+    elif armed == 0:
+        alert_read = " No active armed setups."
 
     return (
         f"{tone} "
