@@ -77,11 +77,6 @@ except Exception:
     build_imbalance_tab = None
 
 try:
-    from readiness_impact_view import render_readiness_impact
-except Exception:
-    render_readiness_impact = None
-
-try:
     from weis_state_preview_view import render_weis_state_preview
     from radar_bars_check_view import render_radar_bars_check
 except Exception:
@@ -6332,20 +6327,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Div([_sym_row(s) for s in top_scores]),
     ], sx={"marginBottom":"16px"})
 
-    # ── Readiness impact check (read-only diagnostic) ─────────────────────
-    readiness_impact_block = _admin_card([
-        html.Div("READINESS SCORE IMPACT CHECK", style={"fontSize":"12px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
-        html.Div("Read-only. Takes a live sample of symbols and shows how much the readiness score and opportunity "
-                 "state change if the five factor fields the radar stopped saving were passed to the engine again. "
-                 "Nothing is saved or changed. Takes about a minute.",
-                 style={"fontSize":"11px","color":WHITE,"marginBottom":"10px"}),
-        html.Button("Run check (60 symbols)", id="btn-readiness-impact", n_clicks=0,
-                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
-                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
-                           "cursor":"pointer","marginBottom":"10px"}),
-        dcc.Loading(html.Div(id="readiness-impact-output"), type="default"),
-    ], sx={"marginBottom":"16px"})
-
     # ── Weis setup state preview (read-only diagnostic) ───────────────────
     weis_state_block = _admin_card([
         html.Div("WEIS SETUP STATE PREVIEW", style={"fontSize":"12px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
@@ -6497,7 +6478,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         score_table,
-        readiness_impact_block,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
@@ -6813,29 +6793,6 @@ def toggle_radio(n_clicks, currently_enabled):
 def toggle_morning_report_admin_visibility(session):
     base = {"width": "100%", "marginBottom": "8px"}
     return {**base, "display": "block"} if is_admin(session) else {**base, "display": "none"}
-
-
-@app.callback(
-    Output("readiness-impact-output", "children"),
-    Input("btn-readiness-impact", "n_clicks"),
-    State("s-session", "data"),
-    prevent_initial_call=True,
-)
-def run_readiness_impact_check(n_clicks, session):
-    if not n_clicks:
-        return no_update
-    if not is_admin(session):
-        return "Admin access required."
-    try:
-        r = req.get(f"{BACKEND_HTTP}/api/admin/readiness-impact", params={"limit": 60},
-                    headers=_auth_headers(session), timeout=170)
-        if not r.ok:
-            return f"The check failed: HTTP {r.status_code}"
-        if render_readiness_impact is None:
-            return "Result view did not import. Check frontend/readiness_impact_view.py."
-        return render_readiness_impact(r.json())
-    except Exception as exc:
-        return f"Could not run the check: {exc}"
 
 
 @app.callback(
