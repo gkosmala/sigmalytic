@@ -51,4 +51,16 @@ def test_view_renders_rows():
         if isinstance(n, (list, tuple)): return " ".join(text(x) for x in n)
         return text(getattr(n, "children", None))
     out = text(v.render_radar_bars_check(payload))
-    assert "AAA" in out and "long/Armed" in out and "1 symbols compared" in out
+    assert "AAA" in out and "1 symbols compared" in out and "last 252" in out
+
+
+def test_state_on_last_252_uses_only_the_last_252_bars():
+    seen = []
+    orig = rbc._state
+    rbc._state = lambda bars: seen.append(len(bars)) or "x"
+    try:
+        fresh = [_b(f"2025-01-{(i % 28) + 1:02d}", 100) for i in range(300)]
+        r = rbc.compare_symbol("AAA", [], fresh, None)
+    finally:
+        rbc._state = orig
+    assert r["state_on_fresh_last_252"] == "x" and 252 in seen and 300 in seen
