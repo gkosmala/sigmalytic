@@ -110,6 +110,7 @@ def test_production_scan_fetches_the_universe_in_bounded_chunks():
         load_russell1000=lambda: symbols,
         min_bars_required_for=lambda requested: 1,
         trim_incomplete_bar=lambda bars, timeframe: bars,
+        _radar_bar_count=lambda: 289,
     )
     fake_engine_module = SimpleNamespace(WyckoffVerdictEngine=lambda: object())
 
@@ -124,7 +125,10 @@ def test_production_scan_fetches_the_universe_in_bounded_chunks():
         WEIS_RADAR_SCAN_CHUNK_SIZE,
         3,
     ]
-    assert all(call[1]["limit"] == 253 for call in fetch_calls)
+    # daily scans fetch at least the radar bar count + 1, so the Weis setup state
+    # reads the same window as the Radar Status (289 + 1 here, above the 252 + 1 default)
+    assert all(call[1]["limit"] == 290 for call in fetch_calls)
+    assert result["weis_states"]["available"] and result["weis_states"]["bar_count"] == 289
     assert result["scanned"] == len(symbols)
     assert result["errors"] == 0
 
