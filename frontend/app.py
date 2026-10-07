@@ -4550,7 +4550,7 @@ def _render_weis_state_table(block):
             html.Td(num(r.get("stop"))),
             html.Td(num(r.get("target")) if r.get("target") is not None else "No target defined"),
             html.Td(trend),
-            html.Td((r.get("reason") or "") + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
+            html.Td(_strip_book_pages(r.get("reason")) + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
                     style={"color": MUTED}),
         ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}))
     summary = " · ".join(f"{k}: {counts.get(k, 0)}" for k in ("Armed", "Setting Up", "Watching", "Avoid"))
@@ -4566,6 +4566,15 @@ def _render_weis_state_table(block):
                    style={"width": "100%", "borderCollapse": "collapse", "fontSize": "12px"})
         if rows else html.Div("No symbol has a Weis setup in this scan.", style={"color": MUTED, "fontSize": "12px"}),
     ], style=box)
+
+
+def _strip_book_pages(text):
+    """Drop the Weis book page citations, e.g. ' (p.78, p.88)' or ' (p.74, pp.112-113)',
+    from a reason shown on the Weis Radar page. The engine's own reason text is unchanged."""
+    import re
+    out = re.sub(r"\s*\((?:pp?\.[\d\-, ]+(?:,\s*)?)+\)", "", text or "")
+    out = re.sub(r"\s*,\s*pp?\.\d[\d\-]*(?=\))", "", out)   # '(secondary test, p.78)' -> '(secondary test)'
+    return out.strip()
 
 
 _OLDER_ENGINE_NOTE = ("Older engine: the Spring/Upthrust events, entry, stop and target on this table are not "

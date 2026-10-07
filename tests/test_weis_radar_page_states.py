@@ -124,3 +124,18 @@ def test_target_is_never_zero_or_negative():
     assert wss._target([mk(-2.29, "support"), mk(70.0, "support"), mk(60.0, "support")], "resistance", 10, 78.0) == 70.0
     # long setup unchanged
     assert wss._target([mk(90.0, "resistance"), mk(95.0, "resistance")], "support", 10, 80.0) == 90.0
+
+
+def test_book_page_citations_are_not_shown_on_the_weis_radar_page():
+    import app
+    f = app._strip_book_pages
+    assert f("no follow-through after the close back inside (p.78, p.88)") == "no follow-through after the close back inside"
+    assert f("retest of the broken line closed back away from it (p.76, pp.112-113)") == "retest of the broken line closed back away from it"
+    assert f("against the longer-term trend (p.87, p.96)") == "against the longer-term trend"
+    assert f("closed back inside earlier, then closed beyond the line again; waiting for a fresh close back (secondary test, p.78)") == \
+        "closed back inside earlier, then closed beyond the line again; waiting for a fresh close back (secondary test)"
+    assert f(None) == ""
+    block = wrs.build_block([{"symbol": "AAA", "state": "Armed", "direction": "long",
+                              "reason": "no follow-through after the close back inside (p.78, p.88)"}], 289, 10, "1Day")
+    text = str(app._render_weis_state_table(block))
+    assert "no follow-through after the close back inside" in text and "p.78" not in text
