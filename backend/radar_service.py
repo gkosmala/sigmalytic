@@ -1510,6 +1510,22 @@ def _stored_copy_needs_refresh(source: str) -> bool:
     return source in ("redis", "supabase")
 
 
+_stored_refresh_tried_at: float = 0.0
+
+
+def _stored_copy_due_for_refresh(now: float = None, retry_seconds: int = 600) -> bool:
+    """The held bars still come from a stored copy and no Alpaca refresh was started
+    in the last `retry_seconds`."""
+    now = time.time() if now is None else now
+    return (bool(_historical_bars) and not _bars_loading and _stored_copy_needs_refresh(_bars_source)
+            and now - _stored_refresh_tried_at > retry_seconds)
+
+
+def _mark_stored_refresh_attempt() -> None:
+    global _stored_refresh_tried_at
+    _stored_refresh_tried_at = time.time()
+
+
 def _save_bars_to_redis() -> bool:
     """Write the restart-safe Redis copy of the cached daily bars (24 hour life).
     Called after a Supabase load and after every Alpaca refresh, so the copy a
@@ -1801,6 +1817,11 @@ def run_radar_scan():
             # The stored copy (Redis/Supabase) can hold a last bar captured before the
             # official close; refresh from Alpaca now instead of waiting 30 minutes.
             threading.Thread(target=_refresh_historical_bars, daemon=True).start()
+    elif _stored_copy_due_for_refresh():
+        # The scheduler's startup thread loaded the stored copy (Redis/Supabase) before this
+        # first scan, so the empty-cache branch above never ran. Refresh from Alpaca now.
+        _mark_stored_refresh_attempt()
+        threading.Thread(target=_refresh_historical_bars, daemon=True).start()
     elif time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
     elif _bars_capacity and _radar_bar_count() + 1 > _bars_capacity and not _bars_loading:
