@@ -53,3 +53,31 @@ def test_state_is_computed_once_per_completed_bar(monkeypatch):
     rs._weis_cache.clear()
     rs._weis_status(b, "ZZZ"); rs._weis_status(b, "ZZZ")
     assert len(calls) == 1
+
+
+def test_corrected_last_bar_recomputes_the_cached_state(monkeypatch):
+    calls = []
+    monkeypatch.setattr(rs, "evaluate_setup_state", lambda bars: calls.append(bars[-1]["c"]) or {"state": "Watching", "direction": "long"})
+    b = [{"t": f"2026-01-{i + 1:02d}T05:00:00Z", "o": 1, "h": 2, "l": 0.5, "c": 1.0, "v": 1} for i in range(30)]
+    rs._weis_cache.clear()
+    rs._weis_status(b, "ZZZ")
+    rs._weis_status(b, "ZZZ")
+    assert len(calls) == 1                                   # same bars: reused
+    fixed = [dict(x) for x in b]
+    fixed[-1]["c"] = 1.5                                     # same date, corrected close
+    rs._weis_status(fixed, "ZZZ")
+    assert len(calls) == 2 and calls[-1] == 1.5
+
+
+def test_redis_copy_is_written_and_a_stored_load_is_refreshed(monkeypatch):
+    class R:
+        def __init__(self): self.sets = []
+        def set(self, k, v, ex=None): self.sets.append((k, ex))
+    r = R()
+    monkeypatch.setattr(rs, "_redis_client", r)
+    monkeypatch.setattr(rs, "_historical_bars", {"AAA": [{"t": "2026-01-01", "c": 1}]})
+    assert rs._save_bars_to_redis() is True and r.sets == [("historical_bars:v1", 86400)]
+    monkeypatch.setattr(rs, "_historical_bars", {})
+    assert rs._save_bars_to_redis() is False                 # nothing to save
+    assert rs._stored_copy_needs_refresh("redis") and rs._stored_copy_needs_refresh("supabase")
+    assert not rs._stored_copy_needs_refresh("alpaca") and not rs._stored_copy_needs_refresh("")
