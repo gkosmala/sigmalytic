@@ -1388,6 +1388,22 @@ def _bars_used(done: list) -> dict:
 _weis_cache: Dict[str, tuple] = {}
 
 
+def _weis_cache_key(done: list) -> str:
+    """Identity of the bars a Weis state was computed from: how many there are and
+    the date and open/high/low/close of the last three. A corrected last bar (same
+    date, different close) must change the key, or a stale state would be reused."""
+    if not done:
+        return ""
+    def v(b, *ks):
+        for k in ks:
+            if b.get(k) is not None:
+                return b[k]
+        return None
+    last = [(str(v(b, "t", "date", "timestamp")), v(b, "o", "open"), v(b, "h", "high"),
+             v(b, "l", "low"), v(b, "c", "close")) for b in done[-3:]]
+    return repr((len(done), last))
+
+
 def _weis_status(bars: list, symbol: str = "") -> dict:
     """Radar Status = the Weis setup state on the most recently COMPLETED
     daily bar (spring / upthrust rules: backend/weis_setup_state.py). One of
@@ -1397,7 +1413,7 @@ def _weis_status(bars: list, symbol: str = "") -> dict:
     on every scan in between. Never raises: on error 'No setup'."""
     try:
         done = drop_incomplete(bars or [], "1Day")
-        key = str(done[-1].get("t", "")) if done else ""
+        key = _weis_cache_key(done)
         hit = _weis_cache.get(symbol) if symbol and key else None
         if hit and hit[0] == key:
             return hit[1]
@@ -1475,6 +1491,27 @@ _bars_source: str = ""          # where the cached daily bars last came from: re
 _bars_loaded_at: float = 0.0    # when they were loaded (epoch seconds)
 
 
+def _stored_copy_needs_refresh(source: str) -> bool:
+    """True when the bars were loaded from a stored copy rather than fetched from Alpaca."""
+    return source in ("redis", "supabase")
+
+
+def _save_bars_to_redis() -> bool:
+    """Write the restart-safe Redis copy of the cached daily bars (24 hour life).
+    Called after a Supabase load and after every Alpaca refresh, so the copy a
+    restart reads is never older than the last refresh."""
+    if _redis_client is None or not _historical_bars:
+        return False
+    try:
+        import json as _hist_bars_json
+        _redis_client.set("historical_bars:v1", _hist_bars_json.dumps(_historical_bars), ex=86400)
+        log.info(f"Cached {len(_historical_bars)} symbols to Redis for next restart")
+        return True
+    except Exception as _redis_save_e:
+        log.warning(f"Failed to cache historical bars to Redis: {_redis_save_e}")
+        return False
+
+
 def _refresh_historical_bars(force_alpaca: bool = False):
     global _historical_bars, _bars_last_refresh, _bars_loading, _bars_source, _bars_loaded_at
     _bars_loading = True
@@ -1538,16 +1575,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                         # bars only genuinely change once a day (a new bar
                         # appended), so this is deliberately much longer than
                         # this app's usual 15-900s cache TTLs elsewhere.
-                        try:
-                            import json as _hist_bars_json
-                            _redis_client.set(
-                                "historical_bars:v1",
-                                _hist_bars_json.dumps(_historical_bars),
-                                ex=86400,
-                            )
-                            log.info(f"Cached {len(_historical_bars)} symbols to Redis for next restart")
-                        except Exception as _redis_save_e:
-                            log.warning(f"Failed to cache historical bars to Redis: {_redis_save_e}")
+                        _save_bars_to_redis()
                         # Trigger BME training from Supabase data
                         try:
                             from backend.behavioral_memory import train_batch as _bme_train
@@ -1580,6 +1608,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                 loaded += 1
         _bars_last_refresh = time.time()
         _bars_source, _bars_loaded_at = "alpaca", time.time()
+        _save_bars_to_redis()
         _log_mem(f"_refresh_historical_bars: after copying into _historical_bars ({loaded} loaded)")
         log.info(f"Historical bars loaded for {loaded}/{len(SYMBOLS)} symbols; cache={len(_historical_bars)}")
 
@@ -1752,6 +1781,10 @@ def run_radar_scan():
     if not _historical_bars and not _bars_loading:
         log.info("Historical bar cache empty — loading synchronously before first radar scan")
         _refresh_historical_bars()
+        if _stored_copy_needs_refresh(_bars_source):
+            # The stored copy (Redis/Supabase) can hold a last bar captured before the
+            # official close; refresh from Alpaca now instead of waiting 30 minutes.
+            threading.Thread(target=_refresh_historical_bars, daemon=True).start()
     elif time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
 
