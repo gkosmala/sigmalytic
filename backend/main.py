@@ -7365,6 +7365,18 @@ except Exception as _readiness_router_mount_error:
     _READINESS_ROUTER_MOUNT_ERROR_EXCERPT = str(_readiness_router_mount_error)[:500]
 # === SIGMALYTIC READINESS IMPACT DIAGNOSTIC MOUNT END ===
 
+# === SIGMALYTIC WEIS STATE PREVIEW MOUNT START ===
+try:
+    try:
+        from backend.weis_state_preview import weis_state_router
+    except Exception:
+        from weis_state_preview import weis_state_router
+
+    app.include_router(weis_state_router)
+except Exception as _weis_state_router_mount_error:
+    _WEIS_STATE_ROUTER_MOUNT_ERROR_EXCERPT = str(_weis_state_router_mount_error)[:500]
+# === SIGMALYTIC WEIS STATE PREVIEW MOUNT END ===
+
 # === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
 try:
     try:
