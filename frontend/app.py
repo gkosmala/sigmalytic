@@ -4489,13 +4489,20 @@ _WEIS_STATE_COLORS = {"Armed": "#34d399", "Setting Up": "#fbbf24", "Watching": "
 
 
 def _weis_state_map(payload):
-    """{symbol: row} from the scan's Weis setup-state block (empty if missing)."""
+    """{symbol: row} from the scan's Weis setup-state block. None when this scan has
+    no setup states (a scan from before the upgrade, or a non-daily timeframe), so the
+    older tables say so instead of claiming 'No setup'."""
     block = (payload or {}).get("weis_states") if isinstance(payload, dict) else None
-    return {r["symbol"]: r for r in ((block or {}).get("rows") or []) if r.get("symbol")}
+    if not isinstance(block, dict) or not block.get("available"):
+        return None
+    return {r["symbol"]: r for r in (block.get("rows") or []) if r.get("symbol")}
 
 
-def _weis_state_cell(row):
-    """Coloured 'Armed long' style label, or a dash when the symbol has no setup."""
+def _weis_state_cell(row, states=None):
+    """Coloured 'Armed long' style label. 'Pending next scan' when this scan has no
+    setup states at all; 'No setup' only when states exist and this symbol has none."""
+    if states is None and not row:
+        return html.Td("Pending next scan", style={"color": MUTED})
     if not row:
         return html.Td("No setup", style={"color": MUTED})
     side = {"long": "long", "short": "short"}.get(row.get("direction"), "")
@@ -4640,7 +4647,6 @@ def _render_weis_imminent_setups(payload, states=None):
     if not isinstance(payload, dict):
         return html.Div()
     setups = payload.get("setups") or []
-    states = states or {}
     headers = ("Symbol", "Side", "Prior wave", "Test wave", "Entry trigger", "Invalidation", "Target",
                "Armed (older rule)", "Weis setup state")
     rows = [html.Tr([
@@ -4655,7 +4661,7 @@ def _render_weis_imminent_setups(payload, states=None):
         html.Td(f"${item['invalidation']:,.2f}"),
         html.Td(f"${item['target']:,.2f}" if item.get("target") is not None else "No target defined"),
         html.Td("Yes" if item.get("armed") else "No"),
-        _weis_state_cell(states.get(item["symbol"])),
+        _weis_state_cell((states or {}).get(item["symbol"]), states),
     ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in setups]
     return html.Div([
         html.H3("Trades about to happen — sequential Weis setups",
@@ -4679,7 +4685,6 @@ def _render_weis_trade_finder(trade_finder, states=None):
     top = trade_finder.get("setups") or []
     summary = trade_finder.get("outcomes") or {}
     assumptions = trade_finder.get("assumptions") or {}
-    states = states or {}
     headers = ("Symbol", "Side", "Entry trigger", "Invalidation", "Target", "Reward/Risk", "Test wave",
                "Weis setup state")
     rows = [html.Tr([
@@ -4690,7 +4695,7 @@ def _render_weis_trade_finder(trade_finder, states=None):
         html.Td(f"${item['target']:,.2f}"),
         html.Td(f"{item['reward_risk']:.2f}:1"),
         html.Td(f"{item['wave_volume_ratio']:.2f}× prior volume"),
-        _weis_state_cell(states.get(item.get("symbol"))),
+        _weis_state_cell((states or {}).get(item.get("symbol")), states),
     ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}) for item in top]
     return html.Div([
         html.H3("Armed trade setups", style={"color": WHITE, "fontSize": "17px", "marginBottom": "5px"}),
@@ -4740,7 +4745,6 @@ def _render_weis_quantum_handoff(handoff, states=None):
     if not isinstance(handoff, dict):
         return html.Div()
     candidates = handoff.get("validated_events") or handoff.get("candidates") or []
-    states = states or {}
     return html.Div([
         html.H3("All validated Spring and Upthrust events", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(_OLDER_ENGINE_NOTE + f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
@@ -4753,7 +4757,7 @@ def _render_weis_quantum_handoff(handoff, states=None):
                                       for label in ("Symbol", "Side", "Armed (older rule)", "Weis setup state", "Entry trigger", "Invalidation", "Risk %", "Reward/Risk", "Wave volume", "Wave evidence", "Signal")])),
                     html.Tbody([html.Tr([html.Td(row.get("symbol")),
                                         html.Td(row.get("side")), html.Td("Yes" if row["raw"].get("armed") else "No"),
-                                        _weis_state_cell(states.get(row.get("symbol"))),
+                                        _weis_state_cell((states or {}).get(row.get("symbol")), states),
                                         html.Td(f"${row['raw']['entry_trigger']:,.2f}"),
                                         html.Td(f"${row['raw']['invalidation']:,.2f}"),
                                         html.Td(f"{row['raw']['risk_pct']:.2f}%" if row['raw'].get('risk_pct') is not None else "—"),

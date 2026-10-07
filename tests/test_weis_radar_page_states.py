@@ -85,3 +85,20 @@ def test_page_state_table_handles_missing_and_non_daily():
     import app
     assert "after the next scan" in str(app._render_weis_state_table(None))
     assert "daily-bar rule" in str(app._render_weis_state_table(wrs.unavailable_block("1Hour")))
+
+
+def test_older_tables_say_pending_not_no_setup_before_the_first_new_scan():
+    import app
+    assert app._weis_state_map({}) is None                       # scan from before the upgrade
+    assert app._weis_state_map({"weis_states": wrs.unavailable_block("1Hour")}) is None
+    pending = str(app._render_weis_quantum_handoff(
+        {"validated_events": [{"symbol": "GXO", "side": "Long", "signals": ["SPRING"],
+                               "raw": {"armed": True, "entry_trigger": 46.17, "invalidation": 45.21}}],
+         "candidate_count": 1}, None))
+    assert "Pending next scan" in pending and "No setup" not in pending
+    block = wrs.build_block([], 289, 10, "1Day")                 # new scan, GXO has no setup
+    known = str(app._render_weis_quantum_handoff(
+        {"validated_events": [{"symbol": "GXO", "side": "Long", "signals": ["SPRING"],
+                               "raw": {"armed": True, "entry_trigger": 46.17, "invalidation": 45.21}}],
+         "candidate_count": 1}, app._weis_state_map({"weis_states": block})))
+    assert "No setup" in known and "Pending next scan" not in known
