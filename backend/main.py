@@ -7377,6 +7377,18 @@ except Exception as _weis_state_router_mount_error:
     _WEIS_STATE_ROUTER_MOUNT_ERROR_EXCERPT = str(_weis_state_router_mount_error)[:500]
 # === SIGMALYTIC WEIS STATE PREVIEW MOUNT END ===
 
+# === SIGMALYTIC RADAR BARS CHECK MOUNT START ===
+try:
+    try:
+        from backend.radar_bars_check import radar_bars_check_router
+    except Exception:
+        from radar_bars_check import radar_bars_check_router
+
+    app.include_router(radar_bars_check_router)
+except Exception as _radar_bars_check_mount_error:
+    _RADAR_BARS_CHECK_MOUNT_ERROR_EXCERPT = str(_radar_bars_check_mount_error)[:500]
+# === SIGMALYTIC RADAR BARS CHECK MOUNT END ===
+
 # === SIGMALYTIC TRADE JOURNAL ROUTER MOUNT START ===
 try:
     try:
