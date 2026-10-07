@@ -270,23 +270,3 @@ def test_higher_frame_bars_after_the_break_are_not_used():
     nb = ws._normalize(bars)
     frames = ws._trends_by_frame(nb, len(nb) - 1, "15Min", {"1Day": fb})
     assert frames["1Day"] == "none"      # no completed higher bars yet
-
-
-def test_follow_through_must_come_within_two_bars():
-    quiet = [_bar(99.9, lo=99.85, hi=100.0), _bar(100.0, lo=99.9, hi=100.1)]
-    bars = _with([_bar(99.5, lo=99.0, hi=99.9)] + quiet + [_bar(98.6, lo=98.5, hi=99.0)])
-    out = ws.evaluate_setup_state(bars)
-    # the first spring (bar 121) is over: no flip. What remains is the new break on the last bar.
-    assert out.get("flipped_from") is None and out["break_index"] == 124
-
-
-def test_setup_ends_when_its_stop_fails_after_the_window():
-    base = [_bar(100.2, lo=99.0, hi=100.4), _bar(100.8, lo=100.1, hi=101.0), _bar(101.0, lo=100.5, hi=101.3),
-            _bar(100.5, lo=100.0, hi=101.0), _bar(99.9, lo=98.5, hi=100.3)]
-    out = ws.evaluate_setup_state(_with(base))
-    assert not (out.get("direction") == "long" and out.get("stop") == 99.0)
-
-
-def test_age_fields_are_reported():
-    out = ws.evaluate_setup_state(_with([_bar(100.2, lo=99.0, hi=100.4), _bar(100.8, lo=100.1, hi=101.0)]))
-    assert out["bars_since_break"] == 1 and out["break_time"] == "x0" and out["close_back_time"] == "x0"

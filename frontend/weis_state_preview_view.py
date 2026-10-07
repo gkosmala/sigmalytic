@@ -56,9 +56,6 @@ def render_weis_state_preview(payload: Dict[str, Any]) -> html.Div:
             _td(r["state"], STATE_COLOR.get(r["state"], WHITE), bold=True),
             _td(r.get("direction") or "-"),
             _td(f"{r.get('line_source') or '-'} x{r.get('line_touches') or '-'}", MUTED),
-            _td(str(r.get("break_time") or "-")[:16], mono=True),
-            _td(_num(r.get("bars_since_break")), mono=True),
-            _td(str(r.get("close_back_time") or "-")[:16], mono=True),
             _td(_num(r.get("stop")), mono=True), _td(_num(r.get("target")), mono=True),
             _td(_trends(r.get("trends_by_frame")), MUTED),
             _td("; ".join(r.get("angle_change_of_character") or []) or "-", MUTED),
@@ -67,7 +64,7 @@ def render_weis_state_preview(payload: Dict[str, Any]) -> html.Div:
             _td(str(r.get("reason") or ""), MUTED),
         ]))
     tbl = html.Table(
-        [html.Thead(html.Tr([_th(x) for x in ("Symbol", "State", "Side", "Line", "Break", "Bars ago", "Closed back", "Stop", "Target", "Trend by frame",
+        [html.Thead(html.Tr([_th(x) for x in ("Symbol", "State", "Side", "Line", "Stop", "Target", "Trend by frame",
                                               "Angle change", "Flip", "Radar status today", "Why")])),
          html.Tbody(detail)], style={"width": "100%", "borderCollapse": "collapse"})
     skipped = payload.get("skipped") or []
