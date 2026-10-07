@@ -355,16 +355,16 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
         latest_cb = close_back
 
     if follow:
-        state, reason = "Avoid", "follow-through after the break (p.74); flips below"
+        state, reason = "Avoid", "follow-through after the break; flips below"
     elif close_back is None:
-        state, reason = "Watching", "broke the line; not closed back inside (p.74)"
+        state, reason = "Watching", "broke the line; not closed back inside"
     elif not back(n - 1):
         state, reason = ("Setting Up", "closed back inside earlier, then closed beyond the line again; "
-                         "waiting for a fresh close back (secondary test, p.78)")
+                         "waiting for a fresh close back (secondary test)")
     elif latest_cb == n - 1:
-        state, reason = "Setting Up", "closed back inside the line (p.74, p.76)"
+        state, reason = "Setting Up", "closed back inside the line"
     else:
-        state, reason = "Armed", "no follow-through after the close back inside (p.78, p.88)"
+        state, reason = "Armed", "no follow-through after the close back inside"
 
     return {
         "side": side, "state": state, "reason": reason,
@@ -455,7 +455,7 @@ def _flip(bars: List[dict], line: _Line, side: str, b: int) -> Optional[Dict[str
     if r is None:
         if _flip_expired(bars, f, side) is not None:
             return None
-        state, reason, anchor = "Watching", "failed at the line; no retest of it yet (p.74, pp.112-113)", f
+        state, reason, anchor = "Watching", "failed at the line; no retest of it yet", f
         stop_ref = max(h[f:]) if side == "support" else min(lo[f:])
         stop = max(stop_ref, L(n - 1)) if side == "support" else min(stop_ref, L(n - 1))
         depth = 0.0
@@ -476,11 +476,11 @@ def _flip(bars: List[dict], line: _Line, side: str, b: int) -> Optional[Dict[str
         anchor = r
         stop = stop0
         if close_back is None or not back(n - 1):
-            state, reason = "Watching", "retesting the broken line; not yet closed back (p.74, pp.112-113)"
+            state, reason = "Watching", "retesting the broken line; not yet closed back"
         elif close_back == n - 1:
-            state, reason = "Setting Up", "retest of the broken line closed back away from it (p.76, pp.112-113)"
+            state, reason = "Setting Up", "retest of the broken line closed back away from it"
         else:
-            state, reason = "Armed", "no follow-through after the retest (p.78, p.88)"
+            state, reason = "Armed", "no follow-through after the retest"
     return {
         "side": flip_side, "state": state, "reason": reason,
         "break_index": anchor, "break_time": bars[anchor]["t"],
@@ -675,7 +675,7 @@ def evaluate_setup_state(bars: List[dict], timeframe: str = "1Day",
                 against = (ep["direction"] == "long" and trend == "down") or \
                           (ep["direction"] == "short" and trend == "up")
                 if against and ep["state"] != "Avoid":
-                    ep["state"], ep["reason"] = "Avoid", "against the longer-term trend (p.87, p.96)"
+                    ep["state"], ep["reason"] = "Avoid", "against the longer-term trend"
                 candidates.append(ep)
 
     if not candidates:
