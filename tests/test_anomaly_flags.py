@@ -34,7 +34,8 @@ def test_real_checks_still_fire():
     rows = _many([_row(symbol="ABNB", composite_score=100, status="Avoid", weis_signal="SPRING"),
                   _row(symbol="HOLX", rel_volume=12.3)])
     kinds = {(f["symbol"], f["type"]) for f in _detect_anomalies(rows)}
-    assert ("ABNB", "SCORE_STATUS_MISMATCH") in kinds and ("HOLX", "VOLUME_SPIKE") in kinds
+    assert ("HOLX", "VOLUME_SPIKE") in kinds
+    assert not any(t == "SCORE_STATUS_MISMATCH" for _, t in kinds)  # Avoid is a Weis state now
     assert _detect_anomalies([_row()])[0]["type"] == "LOW_DATA_COUNT"
 
 
