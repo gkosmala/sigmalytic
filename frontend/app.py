@@ -83,8 +83,10 @@ except Exception:
 
 try:
     from weis_state_preview_view import render_weis_state_preview
+    from radar_bars_check_view import render_radar_bars_check
 except Exception:
     render_weis_state_preview = None
+    render_radar_bars_check = None
 
 try:
     from live_opportunity_center import (
@@ -6364,6 +6366,21 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         dcc.Loading(html.Div(id="weis-state-output"), type="default"),
     ], sx={"marginBottom":"16px"})
 
+
+    # ── Radar bars vs fresh bars (read-only diagnostic) ───────────────────
+    radar_bars_block = _admin_card([
+        html.Div("RADAR BARS CHECK", style={"fontSize":"12px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
+        html.Div("Read-only. For 16 symbols (the 14 whose radar Status differed from the preview, plus ATI and VOYA "
+                 "as controls) compares the daily bars the radar holds in memory with freshly fetched bars, and the "
+                 "Weis state each produces. Nothing is saved or changed.",
+                 style={"fontSize":"11px","color":WHITE,"marginBottom":"10px"}),
+        html.Button("Run bars check (16 symbols)", id="btn-radar-bars-check", n_clicks=0,
+                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
+                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
+                           "cursor":"pointer","marginBottom":"10px"}),
+        dcc.Loading(html.Div(id="radar-bars-check-output"), type="default"),
+    ], sx={"marginBottom":"16px"})
+
     # ── Historical daily grade grid ────────────────────────────────────────
     # Get all unique symbols across all dates
     all_syms_set = set()
@@ -6462,6 +6479,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         score_table,
         readiness_impact_block,
         weis_state_block,
+        radar_bars_block,
         grade_grid,
         setup_deployment_block,
         symbol_backtest_block,
@@ -6823,6 +6841,32 @@ def run_weis_state_preview(n_swing, n_day, session):
         return render_weis_state_preview(r.json())
     except Exception as exc:
         return f"Could not run the preview: {exc}"
+
+
+RADAR_BARS_CHECK_SYMBOLS = "HUM,NIQ,TRV,ALSN,MKL,WPC,SNDK,GM,JAN,SHC,IONQ,CCL,XEL,P,ATI,VOYA"
+
+
+@app.callback(
+    Output("radar-bars-check-output", "children"),
+    Input("btn-radar-bars-check", "n_clicks"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def run_radar_bars_check(n_clicks, session):
+    if callback_context.triggered_id != "btn-radar-bars-check":
+        return no_update
+    if not is_admin(session):
+        return "Admin access required."
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/admin/radar-bars-check", params={"symbols": RADAR_BARS_CHECK_SYMBOLS},
+                    headers=_auth_headers(session), timeout=120)
+        if not r.ok:
+            return f"The check failed: HTTP {r.status_code}"
+        if render_radar_bars_check is None:
+            return "Result view did not import. Check frontend/radar_bars_check_view.py."
+        return render_radar_bars_check(r.json())
+    except Exception as exc:
+        return f"Could not run the check: {exc}"
 
 
 # ADDED (2026-08-25): Weis Radar manual "Run Scan Now" trigger --

@@ -47,6 +47,6 @@ def test_card_and_callback_are_wired_in_app_source():
     src = open(os.path.join(ROOT, "frontend", "app.py")).read()
     assert 'id="btn-weis-state-swing"' in src and 'id="btn-weis-state-day"' in src
     assert 'Output("weis-state-output", "children")' in src
-    assert "readiness_impact_block,\n        weis_state_block,\n        grade_grid" in src
+    assert "readiness_impact_block,\n        weis_state_block,\n        radar_bars_block,\n        grade_grid" in src
     assert "/api/admin/weis-state-preview" in src
     assert "from weis_state_preview_view import render_weis_state_preview" in src
