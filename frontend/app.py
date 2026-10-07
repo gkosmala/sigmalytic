@@ -84,11 +84,6 @@ except Exception:
     render_radar_bars_check = None
 
 try:
-    from radar_tab import build_radar_tab
-except Exception:
-    build_radar_tab = None
-
-try:
     from live_opportunity_center import (
         build_live_opportunity_center as build_status_center,
         register_live_opportunity_center_callbacks,
@@ -11428,7 +11423,6 @@ ALL_TABS = [
     ("command",     "Command Center"),
     ("weis_radar",  "Sigma Radar"),
     ("status",      "Live Opportunity Center"),
-    ("radar",       "Radar Screen"),
     ("weis",        "Sigma Analysis"),
     ("heatmap",     "Heat Map"),
     # ARCHIVED (later session, at explicit request): Radar Screen,
@@ -11978,7 +11972,7 @@ app.clientside_callback(
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
             'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
-            'tab-status', 'tab-radar', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
+            'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
         if (index < 0 || !arguments[index]) return dash_clientside.no_update;
@@ -11994,7 +11988,6 @@ app.clientside_callback(
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),
     Input("tab-status","n_clicks"),
-    Input("tab-radar","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
     Input("tab-briefing","n_clicks"),
@@ -12824,20 +12817,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         else:
             return no_update, no_update, no_update, no_update
     # campaign/radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
-    elif tab=="radar":
-        if build_radar_tab is None:
-            main = card([
-                html.H2("Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                note_box("Radar Screen module did not import. Check frontend/radar_tab.py.", "blue"),
-            ])
-        else:
-            try:
-                main = build_radar_tab(session=session)
-            except Exception as e:
-                main = card([
-                    html.H2("Radar Screen", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
-                    note_box("Radar Screen error: " + str(e), "blue"),
-                ])
     elif tab=="behavior":    main = build_behavior_tab(session=session)
     elif tab=="import":      main = build_import_tab()
     elif tab=="portfolio":
