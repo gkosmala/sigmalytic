@@ -6381,6 +6381,26 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         dcc.Loading(html.Div(id="radar-bars-check-output"), type="default"),
     ], sx={"marginBottom":"16px"})
 
+    # ── Radar bar count (user setting) ────────────────────────────────────
+    radar_bar_count_block = _admin_card([
+        html.Div("RADAR BAR COUNT", style={"fontSize":"12px","fontWeight":"800","color":WHITE,"marginBottom":"6px"}),
+        html.Div("How many completed daily bars the Weis state reads, for the radar Status and the swing preview. "
+                 "Weis gives no number, so you set it (60 to 1000; the default is 289). It applies at the next scan, "
+                 "within about a minute, with no deploy. Raising it above what the radar holds triggers a bar reload.",
+                 style={"fontSize":"11px","color":WHITE,"marginBottom":"10px"}),
+        dcc.Input(id="radar-bar-count-input", type="number", min=60, max=1000, step=1, value=289,
+                  style={"width":"100px","marginRight":"8px","padding":"6px","fontSize":"12px"}),
+        html.Button("Save", id="btn-radar-bar-count-save", n_clicks=0,
+                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
+                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
+                           "cursor":"pointer","marginRight":"8px"}),
+        html.Button("Show current", id="btn-radar-bar-count-show", n_clicks=0,
+                    style={"background":"transparent","border":f"1px solid {BORDER}","color":WHITE,
+                           "borderRadius":"8px","padding":"6px 12px","fontSize":"11px","fontWeight":"700",
+                           "cursor":"pointer"}),
+        html.Div(id="radar-bar-count-message", style={"fontSize":"12px","color":WHITE,"marginTop":"8px"}),
+    ], sx={"marginBottom":"16px"})
+
     # ── Historical daily grade grid ────────────────────────────────────────
     # Get all unique symbols across all dates
     all_syms_set = set()
@@ -6480,6 +6500,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         readiness_impact_block,
         weis_state_block,
         radar_bars_block,
+        radar_bar_count_block,
         grade_grid,
         setup_deployment_block,
         symbol_backtest_block,
@@ -6844,6 +6865,42 @@ def run_weis_state_preview(n_swing, n_day, session):
 
 
 RADAR_BARS_CHECK_SYMBOLS = "HUM,NIQ,TRV,ALSN,MKL,WPC,SNDK,GM,JAN,SHC,IONQ,CCL,XEL,P,ATI,VOYA"
+
+
+@app.callback(
+    Output("radar-bar-count-message", "children"),
+    Output("radar-bar-count-input", "value"),
+    Input("btn-radar-bar-count-save", "n_clicks"),
+    Input("btn-radar-bar-count-show", "n_clicks"),
+    State("radar-bar-count-input", "value"),
+    State("s-session", "data"),
+    prevent_initial_call=True,
+)
+def radar_bar_count_setting(n_save, n_show, value, session):
+    trig = callback_context.triggered_id
+    if trig not in ("btn-radar-bar-count-save", "btn-radar-bar-count-show"):
+        return no_update, no_update
+    if not is_admin(session):
+        return "Admin access required.", no_update
+    url = f"{BACKEND_HTTP}/api/admin/radar-bar-count"
+    try:
+        if trig == "btn-radar-bar-count-save":
+            r = req.post(url, json={"bar_count": value}, headers=_auth_headers(session), timeout=20)
+            if not r.ok:
+                try:
+                    detail = r.json().get("detail")
+                except Exception:
+                    detail = f"HTTP {r.status_code}"
+                return f"Not saved: {detail}", no_update
+            n = r.json().get("bar_count")
+            return f"Saved. The radar and the preview now read the last {n} completed daily bars.", n
+        r = req.get(url, headers=_auth_headers(session), timeout=20)
+        if not r.ok:
+            return f"Could not read the setting: HTTP {r.status_code}", no_update
+        n = r.json().get("bar_count")
+        return f"Current setting: {n} completed daily bars.", n
+    except Exception as exc:
+        return f"Could not reach the setting: {exc}", no_update
 
 
 @app.callback(

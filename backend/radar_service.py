@@ -1404,6 +1404,19 @@ def _weis_cache_key(done: list) -> str:
     return repr((len(done), last))
 
 
+def _radar_bar_count() -> int:
+    """How many completed daily bars the Weis state reads: the user's setting
+    (Admin tab, backend/radar_settings.py), default 289."""
+    try:
+        try:
+            from backend.radar_settings import get_bar_count
+        except Exception:
+            from radar_settings import get_bar_count
+        return get_bar_count()
+    except Exception:
+        return 289
+
+
 def _weis_status(bars: list, symbol: str = "") -> dict:
     """Radar Status = the Weis setup state on the most recently COMPLETED
     daily bar (spring / upthrust rules: backend/weis_setup_state.py). One of
@@ -1412,7 +1425,7 @@ def _weis_status(bars: list, symbol: str = "") -> dict:
     completes, so it is computed once per symbol per completed bar and reused
     on every scan in between. Never raises: on error 'No setup'."""
     try:
-        done = drop_incomplete(bars or [], "1Day")
+        done = drop_incomplete(bars or [], "1Day")[-_radar_bar_count():]
         key = _weis_cache_key(done)
         hit = _weis_cache.get(symbol) if symbol and key else None
         if hit and hit[0] == key:
@@ -1489,6 +1502,7 @@ _bars_last_refresh: float = 0
 _bars_loading: bool = False
 _bars_source: str = ""          # where the cached daily bars last came from: redis | supabase | alpaca
 _bars_loaded_at: float = 0.0    # when they were loaded (epoch seconds)
+_bars_capacity: int = 0         # bars per symbol the last load asked for
 
 
 def _stored_copy_needs_refresh(source: str) -> bool:
@@ -1513,11 +1527,13 @@ def _save_bars_to_redis() -> bool:
 
 
 def _refresh_historical_bars(force_alpaca: bool = False):
-    global _historical_bars, _bars_last_refresh, _bars_loading, _bars_source, _bars_loaded_at
+    global _historical_bars, _bars_last_refresh, _bars_loading, _bars_source, _bars_loaded_at, _bars_capacity
     _bars_loading = True
     log.info("Refreshing historical bars…")
     try:
-        target_limit = int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252"))
+        target_limit = max(int(os.getenv("RADAR_HISTORICAL_BARS_LIMIT", "252")),
+                           _radar_bar_count() + 1)  # +1: the forming bar is dropped
+        _bars_capacity = target_limit
 
         # ── Step 0: Try Redis first (2026-09-14) ───────────────────────────────
         # ADDED: confirmed via direct Supabase log inspection this session that
@@ -1787,6 +1803,10 @@ def run_radar_scan():
             threading.Thread(target=_refresh_historical_bars, daemon=True).start()
     elif time.time() - _bars_last_refresh > 1800 and not _bars_loading:
         threading.Thread(target=_refresh_historical_bars, daemon=True).start()
+    elif _bars_capacity and _radar_bar_count() + 1 > _bars_capacity and not _bars_loading:
+        # The user raised the bar count above what is held: reload from Alpaca now.
+        log.info(f"Bar count {_radar_bar_count()} exceeds held {_bars_capacity}; reloading bars")
+        threading.Thread(target=_refresh_historical_bars, kwargs={"force_alpaca": True}, daemon=True).start()
 
     log.info(f"Radar scan starting — {len(SYMBOLS)} symbols (lightweight)")
     snapshots = fetch_snapshots(SYMBOLS)

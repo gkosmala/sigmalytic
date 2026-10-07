@@ -52,7 +52,7 @@ def render_radar_bars_check(payload: Dict[str, Any]) -> html.Div:
     rows = payload["rows"]
     if not rows:
         return html.Div(payload.get("note") or "No rows.", style={"color": YELLOW, "fontSize": "12px"})
-    head = ["Symbol", "Radar status now", "State on fresh bars (last 252)",
+    head = ["Symbol", "Radar status now", "State on fresh bars (last N, your setting)",
             "State on fresh bars with the worker's last bars", "Reproduces radar?",
             "Same bars?", "Last-10 closes that differ", "Supabase copy (date: close, updated)"]
     body = []
@@ -66,7 +66,7 @@ def render_radar_bars_check(payload: Dict[str, Any]) -> html.Div:
         body.append(html.Tr([
             _td(r["symbol"], bold=True, mono=True),
             _td(radar),
-            _td(r.get("state_on_fresh_last_252") or "-"),
+            _td(r.get("state_on_fresh_last_setting") or "-"),
             _td(sub or "not yet"),
             _td({True: "yes", False: "NO", None: "not yet"}[repro],
                 RED if repro is False else WHITE, bold=True),
@@ -85,7 +85,7 @@ def render_radar_bars_check(payload: Dict[str, Any]) -> html.Div:
     redis_txt = ("Redis copy: " + (f"age {rc.get('age_hours')} h, {rc.get('bytes')} bytes" if rc.get("present")
                  else f"not present ({rc.get('reason') or rc.get('error') or rc.get('ttl')})"))
     return html.Div([
-        html.Div(f"{len(rows)} symbols compared. Radar status comes from the worker's shared cache; the radar keeps at most 252 daily bars.",
+        html.Div(f"{len(rows)} symbols compared. Radar status comes from the worker's shared cache; the radar reads the last {payload.get('radar_bar_count_setting') or '?'} completed daily bars (your setting).",
                  style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"}),
         html.Div(f"Worker loaded its bars from: {src.get('source') or 'not yet recorded'} at {when}. {redis_txt}.",
                  style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}),

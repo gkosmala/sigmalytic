@@ -51,10 +51,10 @@ def test_view_renders_rows():
         if isinstance(n, (list, tuple)): return " ".join(text(x) for x in n)
         return text(getattr(n, "children", None))
     out = text(v.render_radar_bars_check(payload))
-    assert "AAA" in out and "1 symbols compared" in out and "last 252" in out
+    assert "AAA" in out and "1 symbols compared" in out and "last N" in out
 
 
-def test_state_on_last_252_uses_only_the_last_252_bars():
+def test_state_on_last_setting_uses_only_the_last_n_bars():
     seen = []
     orig = rbc._state
     rbc._state = lambda bars: seen.append(len(bars)) or "x"
@@ -63,7 +63,7 @@ def test_state_on_last_252_uses_only_the_last_252_bars():
         r = rbc.compare_symbol("AAA", [], fresh, None)
     finally:
         rbc._state = orig
-    assert r["state_on_fresh_last_252"] == "x" and 252 in seen and 300 in seen
+    assert r["state_on_fresh_last_setting"] == "x" and rbc.current_bars() in seen and 300 in seen
 
 
 def _flat(n):
@@ -78,7 +78,8 @@ def test_bars_used_records_count_window_and_last_ten_closes():
     assert len(u["tail"]) == 10 and u["tail"][-1][0] == u["last"]
 
 
-def test_used_comparison_same_and_different():
+def test_used_comparison_same_and_different(monkeypatch):
+    monkeypatch.setattr(rbc, "current_bars", lambda: 252)
     from backend import radar_service as rs
     fresh = _flat(300)
     done = rbc.wss.drop_incomplete(rbc.wss._normalize(fresh), "1Day")[-252:]
@@ -91,7 +92,8 @@ def test_used_comparison_same_and_different():
     assert rbc._used_comparison(None, fresh)["same_window"] is None
 
 
-def test_state_with_radar_tail_swaps_the_workers_last_bars_in():
+def test_state_with_radar_tail_swaps_the_workers_last_bars_in(monkeypatch):
+    monkeypatch.setattr(rbc, "current_bars", lambda: 252)
     from backend import radar_service as rs
     fresh = _flat(300)
     done = rbc.wss.drop_incomplete(rbc.wss._normalize(fresh), "1Day")[-252:]

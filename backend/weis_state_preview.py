@@ -84,16 +84,22 @@ def _fetch_chunked(fetch_bars: Callable, symbols: List[str], timeframe: str, loo
 
 
 def run_preview(cache: Dict[str, dict], symbols: Optional[List[str]], limit: int, mode: str,
-                fetch_bars: Callable) -> Dict[str, Any]:
+                fetch_bars: Callable, bar_count: Optional[int] = None) -> Dict[str, Any]:
     sample = [s.strip().upper() for s in symbols] if symbols else pick_sample(list(cache.keys()), limit)
     sample = sample[:MAX_SYMBOLS]
     day = mode == "day"
     exec_tf = "15Min" if day else "1Day"
     needed = ["15Min", "1Hour", "1Day"] if day else ["1Day"]
-    bars = {tf: _fetch_chunked(fetch_bars, sample, tf, LOOKBACK_DAYS[tf]) for tf in needed}
+    days = dict(LOOKBACK_DAYS)
+    if bar_count:
+        days["1Day"] = max(days["1Day"], int(bar_count * 1.7))
+    bars = {tf: _fetch_chunked(fetch_bars, sample, tf, days[tf]) for tf in needed}
     rows, skipped = [], []
     for sym in sample:
         eb = bars[exec_tf].get(sym) or []
+        if bar_count and not day:
+            # same window as the radar: the last `bar_count` completed daily bars
+            eb = wss.drop_incomplete(wss._normalize(eb), "1Day")[-bar_count:]
         if len(eb) < 30:
             skipped.append({"symbol": sym, "reason": f"{len(eb)} {exec_tf} bars"})
             continue
@@ -146,4 +152,11 @@ def weis_state_preview(mode: str = "swing", limit: int = 60, symbols: str = "",
     mode = "day" if mode == "day" else "swing"
     cache = _load_radar_cache_for_admin_report()
     syms = [s for s in symbols.split(",") if s.strip()] or None
-    return run_preview(cache, syms, max(1, min(int(limit), MAX_SYMBOLS)), mode, rsvc.fetch_bars_multi)
+    try:
+        from backend.radar_settings import get_bar_count
+    except Exception:  # pragma: no cover
+        from radar_settings import get_bar_count
+    n = get_bar_count(force=True)
+    out = run_preview(cache, syms, max(1, min(int(limit), MAX_SYMBOLS)), mode, rsvc.fetch_bars_multi, bar_count=n)
+    out["bar_count"] = n
+    return out
