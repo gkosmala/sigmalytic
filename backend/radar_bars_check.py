@@ -70,7 +70,7 @@ def _used_comparison(radar_used: Optional[dict], fresh_bars: List[dict]) -> Dict
     if not radar_used:
         return {"radar_used": None, "fresh_window": f, "tail_differences": None, "same_window": None}
     f_close = {_day(b): _close(b) for b in done}
-    r_tail = {d: c for d, c in (radar_used.get("tail") or [])}
+    r_tail = {e[0]: (e[4] if len(e) >= 5 else e[-1]) for e in (radar_used.get("tail") or [])}
     diffs = []
     for d, c in r_tail.items():
         fc = f_close.get(d)
@@ -88,7 +88,59 @@ def _used_comparison(radar_used: Optional[dict], fresh_bars: List[dict]) -> Dict
             "fresh_window": f, "tail_differences": diffs, "same_window": same}
 
 
-def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], radar_row: Optional[dict]) -> Dict[str, Any]:
+def _with_radar_tail(fresh_bars: List[dict], radar_used: Optional[dict]) -> Optional[List[dict]]:
+    """Fresh completed bars (radar window) with the bars the worker recorded swapped in
+    for the same dates. None when the worker recorded no full bars."""
+    tail = (radar_used or {}).get("tail") or []
+    if not tail or len(tail[0]) < 6:
+        return None
+    done = wss.drop_incomplete(wss._normalize(fresh_bars or []), "1Day")[-RADAR_BARS:]
+    swap = {e[0]: {"t": e[0], "o": e[1], "h": e[2], "l": e[3], "c": e[4], "v": e[5]} for e in tail}
+    return [swap.get(_day(b), b) for b in done]
+
+
+def supabase_rows(symbols: List[str], since: str = "2026-10-05") -> Dict[str, List[dict]]:
+    """What the Supabase daily_bars copy holds for these symbols from `since` on
+    (date, close, updated_at). Empty dict when Supabase is not configured."""
+    try:
+        import requests
+        try:
+            from backend.supabase_bars import _get_client, _headers
+        except Exception:  # pragma: no cover
+            from supabase_bars import _get_client, _headers
+        url, key = _get_client()
+        if not url:
+            return {}
+        r = requests.get(
+            f"{url}/rest/v1/daily_bars", headers=_headers(key), timeout=30,
+            params={"select": "symbol,date,close,updated_at", "symbol": f"in.({','.join(symbols)})",
+                    "date": f"gte.{since}", "order": "symbol.asc,date.asc"})
+        out: Dict[str, List[dict]] = {}
+        for row in (r.json() if r.ok else []):
+            out.setdefault(row["symbol"], []).append(
+                {"date": row.get("date"), "close": row.get("close"), "updated_at": row.get("updated_at")})
+        return out
+    except Exception:
+        return {}
+
+
+def redis_copy_info(redis_client) -> Dict[str, Any]:
+    """Age and size of the restart-safe Redis copy of the bars, without loading it.
+    The key is written with a 24 hour life, so age = 24h minus time left."""
+    try:
+        if redis_client is None:
+            return {"present": False, "reason": "no redis client"}
+        ttl = redis_client.ttl("historical_bars:v1")
+        if ttl is None or ttl < 0:
+            return {"present": False, "ttl": ttl}
+        return {"present": True, "ttl_seconds": ttl, "age_hours": round((86400 - ttl) / 3600, 2),
+                "bytes": redis_client.strlen("historical_bars:v1")}
+    except Exception as exc:
+        return {"present": None, "error": str(exc)[:80]}
+
+
+def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], radar_row: Optional[dict],
+                   sb_rows: Optional[List[dict]] = None) -> Dict[str, Any]:
     r_by_day = {_day(b): _close(b) for b in radar_bars or []}
     f_by_day = {_day(b): _close(b) for b in fresh_bars or []}
     common = [d for d in r_by_day if d in f_by_day]
@@ -114,16 +166,22 @@ def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], rad
         "state_on_fresh_last_same_count": _state((fresh_bars or [])[-n_radar:]) if n_radar else None,
         "state_on_fresh_last_252": _state((fresh_bars or [])[-RADAR_BARS:]),
         **_used_comparison((radar_row or {}).get("status_bars"), fresh_bars),
+        "state_on_fresh_with_radar_tail": (_state(sub) if (sub := _with_radar_tail(
+            fresh_bars, (radar_row or {}).get("status_bars"))) is not None else None),
+        "radar_bars_source": (radar_row or {}).get("status_bars_source"),
+        "supabase_rows": sb_rows,
     }
 
 
 def run_check(symbols: List[str], radar_bars: Dict[str, list], cache: Dict[str, dict],
-              fetch_bars: Callable) -> Dict[str, Any]:
+              fetch_bars: Callable, redis_client=None, sb_fetch: Callable = None) -> Dict[str, Any]:
     syms = [s.strip().upper() for s in symbols if s.strip()][:MAX_SYMBOLS]
     fresh = fetch_bars(syms, timeframe="1Day", lookback_days=LOOKBACK_DAYS) or {}
-    rows = [compare_symbol(s, radar_bars.get(s) or [], fresh.get(s) or [], cache.get(s)) for s in syms]
+    sb = (sb_fetch or supabase_rows)(syms)
+    rows = [compare_symbol(s, radar_bars.get(s) or [], fresh.get(s) or [], cache.get(s), sb.get(s)) for s in syms]
     return {
         "rows": rows,
+        "redis_copy": redis_copy_info(redis_client),
         "radar_cache_symbols": len(radar_bars),
         "note": ("Read-only. 'radar' = the daily bars the radar holds in memory; 'fresh' = bars fetched now "
                  "(split-adjusted, same as the swing preview). Last-5 day lists show where the two sets differ."),
@@ -160,4 +218,5 @@ def radar_bars_check(symbols: str = "", _admin_email: str = Depends(_admin)):
         from snapshot_service import _load_radar_cache_for_admin_report
     # The scan runs in a separate worker, so the web process holds no radar bars;
     # radar status comes from the shared Redis cache (as in the swing preview).
-    return run_check(syms, rsvc._historical_bars, _load_radar_cache_for_admin_report(), rsvc.fetch_bars_multi)
+    return run_check(syms, rsvc._historical_bars, _load_radar_cache_for_admin_report(), rsvc.fetch_bars_multi,
+                     redis_client=getattr(rsvc, "_redis_client", None))

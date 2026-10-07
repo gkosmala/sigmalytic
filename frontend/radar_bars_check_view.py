@@ -52,31 +52,42 @@ def render_radar_bars_check(payload: Dict[str, Any]) -> html.Div:
     rows = payload["rows"]
     if not rows:
         return html.Div(payload.get("note") or "No rows.", style={"color": YELLOW, "fontSize": "12px"})
-    head = ["Symbol", "Radar status now", "State on fresh bars (all)", "State on fresh bars (last 252)",
-            "Radar = last 252?", "Radar used (count, first to last)", "Fresh window (count, first to last)",
-            "Same bars?", "Last-10 closes that differ"]
+    head = ["Symbol", "Radar status now", "State on fresh bars (last 252)",
+            "State on fresh bars with the worker's last bars", "Reproduces radar?",
+            "Same bars?", "Last-10 closes that differ", "Supabase copy (date: close, updated)"]
     body = []
     for r in rows:
-        fb = r.get("fresh_bars") or {}
         radar = f"{r.get('radar_status_direction') or '-'}/{r.get('radar_status_now')}"
-        if r.get("radar_status_now") == "No setup":
-            radar = "-/No setup"
-        s252 = r.get("state_on_fresh_last_252")
-        same = radar == s252
+        sub = r.get("state_on_fresh_with_radar_tail")
+        repro = None if sub is None else (sub == radar)
+        sb = r.get("supabase_rows")
+        sbtxt = "-" if sb is None else "; ".join(
+            f"{x.get('date')}: {x.get('close')} ({str(x.get('updated_at'))[:16]})" for x in sb[-3:]) or "no rows"
         body.append(html.Tr([
             _td(r["symbol"], bold=True, mono=True),
             _td(radar),
-            _td(r.get("state_on_fresh_bars") or "-"),
-            _td(s252 or "-", WHITE if same else YELLOW),
-            _td("yes" if same else "no", WHITE if same else RED, bold=True),
-            _td(_used(r.get("radar_used")), MUTED, mono=True),
-            _td(_used(r.get("fresh_window")), MUTED, mono=True),
+            _td(r.get("state_on_fresh_last_252") or "-"),
+            _td(sub or "not yet"),
+            _td({True: "yes", False: "NO", None: "not yet"}[repro],
+                RED if repro is False else WHITE, bold=True),
             _td({True: "yes", False: "NO", None: "not yet"}[r.get("same_window")],
                 RED if r.get("same_window") is False else WHITE, bold=True),
             _td(_diffs(r.get("tail_differences")), MUTED, mono=True),
+            _td(sbtxt, MUTED, mono=True),
         ]))
+    src = ((rows[0].get("radar_bars_source") or {}) if rows else {})
+    loaded = src.get("loaded_at")
+    when = "-"
+    if loaded:
+        from datetime import datetime, timezone
+        when = datetime.fromtimestamp(loaded, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    rc = payload.get("redis_copy") or {}
+    redis_txt = ("Redis copy: " + (f"age {rc.get('age_hours')} h, {rc.get('bytes')} bytes" if rc.get("present")
+                 else f"not present ({rc.get('reason') or rc.get('error') or rc.get('ttl')})"))
     return html.Div([
         html.Div(f"{len(rows)} symbols compared. Radar status comes from the worker's shared cache; the radar keeps at most 252 daily bars.",
+                 style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"}),
+        html.Div(f"Worker loaded its bars from: {src.get('source') or 'not yet recorded'} at {when}. {redis_txt}.",
                  style={"fontSize": "12px", "color": WHITE, "marginBottom": "8px"}),
         html.Div(html.Table([html.Thead(html.Tr([_th(h) for h in head])), html.Tbody(body)],
                             style={"borderCollapse": "collapse", "width": "100%"}),
