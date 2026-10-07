@@ -64,3 +64,28 @@ def test_state_on_last_252_uses_only_the_last_252_bars():
     finally:
         rbc._state = orig
     assert r["state_on_fresh_last_252"] == "x" and 252 in seen and 300 in seen
+
+
+def _flat(n):
+    return [_b(f"2025-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}", 100 + (i % 7)) for i in range(n)]
+
+
+def test_bars_used_records_count_window_and_last_ten_closes():
+    from backend import radar_service as rs
+    done = _flat(40)
+    u = rs._bars_used(done)
+    assert u["count"] == 40 and u["first"] == done[0]["t"][:10] and u["last"] == done[-1]["t"][:10]
+    assert len(u["tail"]) == 10 and u["tail"][-1][0] == u["last"]
+
+
+def test_used_comparison_same_and_different():
+    from backend import radar_service as rs
+    fresh = _flat(300)
+    done = rbc.wss.drop_incomplete(rbc.wss._normalize(fresh), "1Day")[-252:]
+    used = rs._bars_used(done)
+    same = rbc._used_comparison(used, fresh)
+    assert same["same_window"] is True and same["tail_differences"] == []
+    stale = rs._bars_used(done[:-3])                      # worker three bars behind
+    d = rbc._used_comparison(stale, fresh)
+    assert d["same_window"] is False and len(d["tail_differences"]) >= 3
+    assert rbc._used_comparison(None, fresh)["same_window"] is None

@@ -1130,6 +1130,7 @@ def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = Fa
         "status_reason":     weis["reason"],
         "status_stop":       weis["stop"],
         "status_target":     weis["target"],
+        "status_bars":       weis["bars"],
         "trigger":           trigger,
         "invalidation":      invalidation,
         "target1":           target1,
@@ -1364,6 +1365,22 @@ def _classify_setup(price, ma20, ma50, atr, day_high, day_low,
     return "Monitoring"
 
 
+def _bars_used(done: list) -> dict:
+    """What the Weis state was computed from (diagnostic: lets the admin bars
+    check compare the worker's bars with freshly fetched ones)."""
+    def day(b):
+        return str(b.get("t", b.get("date", b.get("timestamp", ""))))[:10]
+    def close(b):
+        v = b.get("c", b.get("close"))
+        try:
+            return round(float(v), 4)
+        except (TypeError, ValueError):
+            return None
+    return {"count": len(done), "first": day(done[0]) if done else None,
+            "last": day(done[-1]) if done else None,
+            "tail": [[day(b), close(b)] for b in done[-10:]]}
+
+
 _weis_cache: Dict[str, tuple] = {}
 
 
@@ -1382,14 +1399,15 @@ def _weis_status(bars: list, symbol: str = "") -> dict:
             return hit[1]
         r = evaluate_setup_state(done)
         out = {"state": r.get("state", "No setup"), "direction": r.get("direction"),
-               "reason": r.get("reason", ""), "stop": r.get("stop"), "target": r.get("target")}
+               "reason": r.get("reason", ""), "stop": r.get("stop"), "target": r.get("target"),
+               "bars": _bars_used(done)}
         if symbol and key:
             _weis_cache[symbol] = (key, out)
         return out
     except Exception as e:
         log.warning(f"weis status failed (non-fatal): {e}")
         return {"state": "No setup", "direction": None, "reason": "state unavailable",
-                "stop": None, "target": None}
+                "stop": None, "target": None, "bars": None}
 
 
 def _alert_label(s: dict) -> str:

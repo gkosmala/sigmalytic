@@ -62,6 +62,32 @@ def _state(bars: List[dict]) -> Optional[str]:
         return f"error: {str(exc)[:60]}"
 
 
+def _used_comparison(radar_used: Optional[dict], fresh_bars: List[dict]) -> Dict[str, Any]:
+    """Compare what the worker used (count, first/last date, last 10 closes) with
+    the fresh completed bars cut to the radar's window."""
+    done = wss.drop_incomplete(wss._normalize(fresh_bars or []), "1Day")[-RADAR_BARS:]
+    f = {"count": len(done), "first": _day(done[0]) if done else None, "last": _day(done[-1]) if done else None}
+    if not radar_used:
+        return {"radar_used": None, "fresh_window": f, "tail_differences": None, "same_window": None}
+    f_close = {_day(b): _close(b) for b in done}
+    r_tail = {d: c for d, c in (radar_used.get("tail") or [])}
+    diffs = []
+    for d, c in r_tail.items():
+        fc = f_close.get(d)
+        if fc is None:
+            diffs.append({"day": d, "radar": c, "fresh": None})
+        elif c is None or abs(c - fc) / max(abs(fc), 1e-9) > CLOSE_TOL:
+            diffs.append({"day": d, "radar": c, "fresh": fc})
+    f_tail_days = [_day(b) for b in done[-10:]]
+    for d in f_tail_days:
+        if d not in r_tail:
+            diffs.append({"day": d, "radar": None, "fresh": f_close.get(d)})
+    same = (radar_used.get("count") == f["count"] and radar_used.get("first") == f["first"]
+            and radar_used.get("last") == f["last"] and not diffs)
+    return {"radar_used": {k: radar_used.get(k) for k in ("count", "first", "last")},
+            "fresh_window": f, "tail_differences": diffs, "same_window": same}
+
+
 def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], radar_row: Optional[dict]) -> Dict[str, Any]:
     r_by_day = {_day(b): _close(b) for b in radar_bars or []}
     f_by_day = {_day(b): _close(b) for b in fresh_bars or []}
@@ -87,6 +113,7 @@ def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], rad
         "state_on_fresh_bars": _state(fresh_bars),
         "state_on_fresh_last_same_count": _state((fresh_bars or [])[-n_radar:]) if n_radar else None,
         "state_on_fresh_last_252": _state((fresh_bars or [])[-RADAR_BARS:]),
+        **_used_comparison((radar_row or {}).get("status_bars"), fresh_bars),
     }
 
 
