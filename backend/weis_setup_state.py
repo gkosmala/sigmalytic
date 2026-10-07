@@ -78,6 +78,17 @@ CONFIG: Dict[str, Any] = {
     # a secondary test, pp.74, 78, 88). The 2-bar number is the user's, from
     # Raschke's 2-period rule ("Raschke, per user").
     "follow_through_bars": 2,
+    # A break must close back inside the line within this many bars after the
+    # break bar, or it is a breakdown, not a spring, and the setup is dropped.
+    # NOT FROM WEIS (he gives no bar count); "Raschke, per user" (pasted web
+    # text said 3 to 5 bars; 5 used). Bar 6 with no close back = dead.
+    "close_back_max_bars": 5,
+    # A spring/upthrust that has not reached its target or failed its stop is
+    # dropped once it is older than this many bars since the break ("zone
+    # memory"). NOT FROM WEIS; "Raschke, per user", source unverified. Weis
+    # enters on the next open after a confirming bar or a secondary test that
+    # can come days later (p.78, Caterpillar), so he gives no fixed window.
+    "setup_max_bars": 20,
     # Expiry of a flipped setup that has NOT been retested ("failed at the line,
     # no retest"). NOT FROM WEIS; "Raschke, per user" (source: pasted web text,
     # unverified). If ANY one applies, the setup is dead.
@@ -297,6 +308,11 @@ def _episode(bars: List[dict], line: _Line, side: str, before_limit: Optional[in
         return None        # the stop failed after the window: the trade is over
 
     close_back = next((i for i in range(b, n) if back(i)), None)
+    late = close_back is None or close_back - b > CONFIG["close_back_max_bars"]
+    if late and not follow and (n - 1 - b) > CONFIG["close_back_max_bars"]:
+        return None        # never closed back in time: a breakdown, not a spring
+    if not follow and (n - 1 - b) > CONFIG["setup_max_bars"]:
+        return None        # zone memory expired
 
     if follow:
         state, reason = "Avoid", "follow-through after the break (p.74); flips below"

@@ -332,3 +332,40 @@ def test_flip_expiry_20_bar_limit_checked_directly():
     bars = ws._normalize(bars)
     assert ws._flip_expired(bars[:20], 0, "support") is None            # 19 bars since the failure
     assert "20 bars" in ws._flip_expired(bars[:23], 0, "support")       # 22 bars since the failure
+
+
+# --- close-back deadline and 20-bar zone memory (Raschke per user; not Weis) ---
+_BELOW = lambda: _bar(99.5, lo=99.1, hi=99.7)      # under the 99.8 line, no close back, no follow-through
+_SPRING = lambda: _bar(99.4, lo=99.0, hi=99.9)
+_HOLD = lambda: _bar(101.0, lo=100.6, hi=101.3)    # above the line, stop (99.0) intact, target (110.2) far
+
+
+def test_break_still_watching_on_the_fifth_bar_after():
+    out = ws.evaluate_setup_state(_with([_SPRING()] + [_BELOW() for _ in range(5)]))
+    assert out["state"] == "Watching" and out["bars_since_break"] == 5
+
+
+def test_break_with_no_close_back_after_five_bars_is_dropped():
+    out = ws.evaluate_setup_state(_with([_SPRING()] + [_BELOW() for _ in range(6)]))
+    assert out["state"] == "No setup"
+
+
+def test_late_close_back_does_not_revive_it():
+    out = ws.evaluate_setup_state(_with([_SPRING()] + [_BELOW() for _ in range(6)]
+                                        + [_bar(100.2, lo=99.5, hi=100.4)]))
+    # the old long is not revived; the late bar breaking the line from below is a NEW (short) setup
+    assert out["direction"] != "long" and out["break_index"] == 128
+
+
+def test_close_back_on_the_fifth_bar_still_counts():
+    out = ws.evaluate_setup_state(_with([_SPRING()] + [_BELOW() for _ in range(4)]
+                                        + [_bar(100.2, lo=99.5, hi=100.4)]))
+    assert out["direction"] == "long" and out["state"] == "Setting Up"
+
+
+def test_armed_setup_is_dropped_after_twenty_bars():
+    closed = _bar(100.2, lo=99.0, hi=100.4)
+    alive = ws.evaluate_setup_state(_with([closed] + [_HOLD() for _ in range(20)]))
+    assert alive["state"] == "Armed" and alive["bars_since_break"] == 20
+    dead = ws.evaluate_setup_state(_with([closed] + [_HOLD() for _ in range(21)]))
+    assert dead["state"] == "No setup"
