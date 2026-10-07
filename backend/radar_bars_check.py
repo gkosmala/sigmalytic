@@ -175,7 +175,7 @@ def compare_symbol(sym: str, radar_bars: List[dict], fresh_bars: List[dict], rad
         "state_on_radar_bars": _state(radar_bars),
         "state_on_fresh_bars": _state(fresh_bars),
         "state_on_fresh_last_same_count": _state((fresh_bars or [])[-n_radar:]) if n_radar else None,
-        "state_on_fresh_last_setting": _state((fresh_bars or [])[-current_bars():]),
+        "state_on_fresh_last_setting": _state(wss.drop_incomplete(wss._normalize(fresh_bars or []), "1Day")[-current_bars():]),
         **_used_comparison((radar_row or {}).get("status_bars"), fresh_bars),
         "state_on_fresh_with_radar_tail": (_state(sub) if (sub := _with_radar_tail(
             fresh_bars, (radar_row or {}).get("status_bars"))) is not None else None),
