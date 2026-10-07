@@ -1131,6 +1131,7 @@ def score_symbol(symbol: str, snap: dict, bars: list, _return_factors: bool = Fa
         "status_stop":       weis["stop"],
         "status_target":     weis["target"],
         "status_bars":       weis["bars"],
+        "status_bars_source": {"source": _bars_source, "loaded_at": _bars_loaded_at},
         "trigger":           trigger,
         "invalidation":      invalidation,
         "target1":           target1,
@@ -1370,15 +1371,18 @@ def _bars_used(done: list) -> dict:
     check compare the worker's bars with freshly fetched ones)."""
     def day(b):
         return str(b.get("t", b.get("date", b.get("timestamp", ""))))[:10]
-    def close(b):
-        v = b.get("c", b.get("close"))
-        try:
-            return round(float(v), 4)
-        except (TypeError, ValueError):
-            return None
+    def num(b, *keys):
+        for k in keys:
+            if b.get(k) is not None:
+                try:
+                    return round(float(b[k]), 4)
+                except (TypeError, ValueError):
+                    return None
+        return None
     return {"count": len(done), "first": day(done[0]) if done else None,
             "last": day(done[-1]) if done else None,
-            "tail": [[day(b), close(b)] for b in done[-10:]]}
+            "tail": [[day(b), num(b, "o", "open"), num(b, "h", "high"), num(b, "l", "low"),
+                      num(b, "c", "close"), num(b, "v", "volume")] for b in done[-10:]]}
 
 
 _weis_cache: Dict[str, tuple] = {}
@@ -1467,10 +1471,12 @@ def _infer_regime(change_pct, rel_vol, price, ma20, ma50, history_ready: bool = 
 _historical_bars: Dict[str, list] = {}
 _bars_last_refresh: float = 0
 _bars_loading: bool = False
+_bars_source: str = ""          # where the cached daily bars last came from: redis | supabase | alpaca
+_bars_loaded_at: float = 0.0    # when they were loaded (epoch seconds)
 
 
 def _refresh_historical_bars(force_alpaca: bool = False):
-    global _historical_bars, _bars_last_refresh, _bars_loading
+    global _historical_bars, _bars_last_refresh, _bars_loading, _bars_source, _bars_loaded_at
     _bars_loading = True
     log.info("Refreshing historical bars…")
     try:
@@ -1502,6 +1508,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                         for sym, bars in cached.items():
                             _historical_bars[sym] = bars[-target_limit:]
                         _bars_last_refresh = time.time()
+                        _bars_source, _bars_loaded_at = "redis", time.time()
                         log.info(f"Loaded {len(_historical_bars)} symbols from Redis cache (restart-safe)")
                         try:
                             from backend.behavioral_memory import train_batch as _bme_train
@@ -1523,6 +1530,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                         for sym, bars in sb_bars.items():
                             _historical_bars[sym] = bars[-target_limit:]
                         _bars_last_refresh = time.time()
+                        _bars_source, _bars_loaded_at = "supabase", time.time()
                         log.info(f"Loaded {len(_historical_bars)} symbols from Supabase cache")
                         # ADDED (2026-09-14): populate Redis too, so the NEXT
                         # backend restart hits Step 0 above instead of paying
@@ -1571,6 +1579,7 @@ def _refresh_historical_bars(force_alpaca: bool = False):
                 _historical_bars[sym] = bars[-target_limit:]
                 loaded += 1
         _bars_last_refresh = time.time()
+        _bars_source, _bars_loaded_at = "alpaca", time.time()
         _log_mem(f"_refresh_historical_bars: after copying into _historical_bars ({loaded} loaded)")
         log.info(f"Historical bars loaded for {loaded}/{len(SYMBOLS)} symbols; cache={len(_historical_bars)}")
 

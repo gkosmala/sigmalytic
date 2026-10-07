@@ -89,3 +89,26 @@ def test_used_comparison_same_and_different():
     d = rbc._used_comparison(stale, fresh)
     assert d["same_window"] is False and len(d["tail_differences"]) >= 3
     assert rbc._used_comparison(None, fresh)["same_window"] is None
+
+
+def test_state_with_radar_tail_swaps_the_workers_last_bars_in():
+    from backend import radar_service as rs
+    fresh = _flat(300)
+    done = rbc.wss.drop_incomplete(rbc.wss._normalize(fresh), "1Day")[-252:]
+    wrong = [dict(b) for b in done]
+    wrong[-1]["c"] = 123.45                                  # the worker's last close differs
+    used = rs._bars_used(wrong)
+    swapped = rbc._with_radar_tail(fresh, used)
+    assert swapped[-1]["c"] == 123.45 and swapped[-2]["c"] == done[-2]["c"] and len(swapped) == 252
+    assert rbc._with_radar_tail(fresh, {"tail": [["2025-01-01", 1.0]]}) is None       # old two-field shape
+
+
+def test_run_check_reports_redis_copy_and_supabase_rows():
+    class R:
+        def ttl(self, k): return 3600
+        def strlen(self, k): return 123
+    fresh = {"AAA": _flat(40)}
+    out = rbc.run_check(["AAA"], {}, {}, lambda syms, **kw: fresh, redis_client=R(),
+                        sb_fetch=lambda syms: {"AAA": [{"date": "2026-10-06", "close": 1.0, "updated_at": "x"}]})
+    assert out["redis_copy"]["present"] and out["redis_copy"]["age_hours"] == 23.0
+    assert out["rows"][0]["supabase_rows"][0]["date"] == "2026-10-06"
