@@ -1927,45 +1927,6 @@ def _render_behavioral_analysis_panel(live):
                    style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
         ], style={"marginTop": "12px"}))
 
-    # Real, validated research classification (Layer 1/2) -- the ACTUAL
-    # winning formula from the original research (OBS_Q4+PROG_Q4+
-    # SPD=Y|DEI=N), not the different, disconnected setup_type/bucket
-    # system used elsewhere in the app.
-    vc = live.get("validated_classification")
-    if vc:
-        state = vc.get("behavioral_state", "—")
-        is_optimal = vc.get("is_validated_optimal_entry", False)
-        state_color = TEAL_DIM if is_optimal else WHITE
-        state_text = (
-            f"{state} — the validated research's optimal entry window (SPD=Y, DEI=N)"
-            if is_optimal else
-            f"{state} (SPD={'Y' if vc.get('spd') else 'N'}, DEI={'Y' if vc.get('dei') else 'N'})"
-        )
-        children.append(html.Div([
-            slabel("Validated Research Classification"),
-            html.P(state_text, style={"fontSize": "11px", "color": state_color,
-                                        "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700" if is_optimal else "400"}),
-            html.P(f"Obstacle score: {vc.get('obstacle_score', '—')} (raw; population quartile not computed live)",
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real Wyckoff Verdict Engine -- stopping climax, supply absorption,
-    # spring, sign of strength, survival score, all computed from real
-    # daily bars.
-    wv = live.get("wyckoff_verdict")
-    if wv and wv.get("verdict"):
-        v = wv["verdict"]
-        verdict_color = TEAL_DIM if v.get("birth_eligible") else MUTED
-        children.append(html.Div([
-            slabel("Wyckoff Verdict"),
-            html.P(f"{v.get('verdict', '—')} — {v.get('phase', '—')}"
-                   f"{' (birth eligible)' if v.get('birth_eligible') else ''}",
-                   style={"fontSize": "11px", "color": verdict_color, "lineHeight": "1.6",
-                          "marginTop": "6px", "fontWeight": "700" if v.get("birth_eligible") else "400"}),
-            html.P(f"Score {v.get('wyckoff_score', '—')} · Survival {v.get('survival_score', '—')} · "
-                   f"Spring {v.get('spring_score', '—')} · SOS {v.get('sign_of_strength_score', '—')}",
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
 
     # Real Historical Analog Engine -- matched against actual closed
     # campaigns from this app's own database, with honest confidence
@@ -12440,37 +12401,6 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
     except Exception:
         pass
 
-    # Real, validated obstacle score / SPD-DEI behavioral state (Layer
-    # 1/2) -- meaningfully heavier than the other live-tick fetches
-    # above (fetches 500+ daily bars, runs real wave-variable
-    # computation), so throttled to roughly once every 5 minutes
-    # (30 ticks at the current 10s interval) rather than every tick.
-    # Carries forward the previous value from `current` between
-    # refreshes so it doesn't flicker to empty.
-    validated_classification = (current or {}).get("validated_classification")
-    if (seq or 0) % 30 == 0:
-        try:
-            vc_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/validated-classification", timeout=8)
-            if vc_r.ok:
-                vc_payload = vc_r.json()
-                if vc_payload.get("ok"):
-                    validated_classification = vc_payload
-        except Exception:
-            pass
-
-    # Real Wyckoff Verdict Engine -- also fetches bar data, same
-    # throttle as validated_classification above.
-    wyckoff_verdict = (current or {}).get("wyckoff_verdict")
-    if (seq or 0) % 30 == 0:
-        try:
-            wv_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/wyckoff-verdict", timeout=8)
-            if wv_r.ok:
-                wv_payload = wv_r.json()
-                if wv_payload.get("ok"):
-                    wyckoff_verdict = wv_payload
-        except Exception:
-            pass
-
     # Weis setup state for the Command Center's Direction Intelligence tile
     # (same engine and window as the Radar Status). Refreshed on the same
     # throttle; the state only changes when a daily bar completes.
@@ -12614,8 +12544,6 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
         "dominance_data": dominance_data,
         "transition_preview_data": transition_preview_data,
         "evidence_diagnostics_data": evidence_diagnostics_data,
-        "validated_classification": validated_classification,
-        "wyckoff_verdict": wyckoff_verdict,
         "weis_state": weis_state_data,
         "campaign_analogs": campaign_analogs_data,
         "timestamp": tick_time,
