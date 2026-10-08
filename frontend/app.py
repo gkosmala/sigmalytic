@@ -3254,38 +3254,42 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         "DEEP_NEGATIVE": "Deep negative gamma — high volatility risk",
     }
 
-    if has_real_options and real_call_walls and real_put_walls:
-        call_wall_level = real_call_walls[0]["strike"]
-        put_wall_level  = real_put_walls[0]["strike"]
-        gamma_pivot_level = real_gamma.get("zero_gamma_level") or price
+    # Live feed only: nothing here is estimated. A value the feed does not
+    # supply stays None and is shown as "—" (and is not drawn on the chart).
+    call_wall_level = real_call_walls[0].get("strike") if (has_real_options and real_call_walls) else None
+    put_wall_level = real_put_walls[0].get("strike") if (has_real_options and real_put_walls) else None
+    gamma_pivot_level = real_gamma.get("zero_gamma_level") if has_real_options else None
+    cp = pp = None
+    if call_wall_level is not None and put_wall_level is not None:
         _cs = max(0.0, float(real_call_walls[0].get("call_wall_strength") or 0))
         _ps = max(0.0, float(real_put_walls[0].get("put_wall_strength") or 0))
-        cp = round(_cs / (_cs + _ps) * 100) if (_cs + _ps) > 0 else 50
-        pp = 100 - cp
-        _regime = real_gamma.get("net_gamma_regime") or "NEUTRAL"
-        gamma_flip_subtitle = _REGIME_LABELS.get(_regime, _regime.replace("_"," ").title())
-        vs = max(18, min(96, round(abs(price - gamma_pivot_level) * 18 + (seq % 9) * 4)))
-        fb = _regime
+        if (_cs + _ps) > 0:
+            cp = round(_cs / (_cs + _ps) * 100)
+            pp = 100 - cp
+    _regime = (real_gamma.get("net_gamma_regime") or "") if has_real_options else ""
+    gamma_flip_subtitle = _REGIME_LABELS.get(_regime, _regime.replace("_", " ").title()) if _regime else "Not available"
+    fb = _regime or "NO LIVE OPTIONS DATA"
+    if has_real_options and call_wall_level is not None and put_wall_level is not None:
         options_note = f"Live options data — Alpaca chain snapshot, {real_gamma.get('contract_count', 0)} contracts."
+    elif has_real_options:
+        options_note = "Live options chain received, but it has no active gamma walls near the current price. Nothing is estimated."
     else:
-        call_wall_level, put_wall_level, gamma_pivot_level = kl.breakout, kl.fail, kl.confirm
-        vs   = max(18,min(96,round(abs(price-kl.trigger)*18+(seq%9)*4)))
-        cp   = max(12,min(94,round(score+(8 if price>kl.confirm else -10)+(seq%5))))
-        pp   = max(8,min(92,100-cp)); gp = max(20,min(95,round(55+(price-kl.confirm)*7)))
-        gamma_flip_subtitle = f"{gp}% dealer sensitivity (synthetic)"
-        fb   = "Call Accumulation / Supportive Flow" if price>=kl.confirm else "Neutral Rotation / Pinning"
-        # BUG FIX (2026-07-29): this only checked `has_real_options`, but
-        # we reach this branch whenever has_real_options is True AND the
-        # wall lists are empty (chain data came back, just no qualifying
-        # gamma walls near the current price) -- that case was wrongly
-        # showing "connect Tradier or CBOE", which implies no options
-        # data exists at all. That's misleading when real data genuinely
-        # was received; now distinguishes the two cases correctly.
-        if has_real_options:
-            options_note = "Live options chain received, but no active gamma walls found near the current price — showing the synthetic model instead."
-        else:
-            _reason = real_gamma.get("error") or real_gamma.get("status") or "unknown_reason"
-            options_note = f"Synthetic options layer — no live options data available ({_reason})."
+        _reason = real_gamma.get("error") or real_gamma.get("status") or "unknown_reason"
+        options_note = f"No live options data available ({_reason}). Nothing is estimated."
+    # Straight from the live chain, never estimated: net gamma exposure and the
+    # at-the-money implied volatility of the nearest monthly expiration.
+    _net_gex = real_gamma.get("net_gamma_exposure") if has_real_options else None
+    _net_gex_text = "—"
+    if isinstance(_net_gex, (int, float)):
+        _a = abs(_net_gex)
+        _net_gex_text = ("-" if _net_gex < 0 else "") + (
+            f"{_a/1e9:.2f}B" if _a >= 1e9 else f"{_a/1e6:.2f}M" if _a >= 1e6 else f"{_a/1e3:.1f}K" if _a >= 1e3 else f"{_a:.0f}")
+    _tpi = real_gamma.get("touch_probability_inputs") if has_real_options else None
+    _tpi = _tpi if isinstance(_tpi, dict) else {}
+    _atm_iv = _tpi.get("atm_implied_volatility") if _tpi.get("available") else None
+    _atm_iv_text = f"{_atm_iv*100:.1f}%" if isinstance(_atm_iv, (int, float)) else "—"
+    _atm_iv_sub = (f"Expires {_tpi.get('expiration_date')} ({_tpi.get('days_to_expiration')} days)"
+                   if _atm_iv_text != "—" else "Not available")
     as_  = "Expansion Alert" if score>=80 else ("Trap-Door Alert" if price<kl.trap else "Monitoring")
     aa   = as_ != "Monitoring"
     # REPLACED (later session): build_chart() (Plotly go.Figure, ~200
@@ -3606,17 +3610,21 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
                         style={"fontSize":"15px","fontWeight":"800","color":WHITE,"margin":"0 0 4px"}),
                 html.P(
                     "Live gamma-exposure data from your Alpaca options chain." if has_real_options
-                    else "Synthetic intelligence from price, volume, volatility proxy, and decision score.",
+                    else "Live options feed only. No data is estimated.",
                     style={"fontSize":"12px","color":WHITE})]),
             badge(fb,"blue"),
         ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
                    "flexWrap":"wrap","gap":"10px","marginBottom":"14px"}),
         html.Div([
-            zcard("Call Wall",   f"${round(call_wall_level):.0f}",   f"{cp}% call-side pressure", TEAL_DIM),
-            zcard("Put Wall",    f"${round(put_wall_level):.0f}",    f"{pp}% put-side pressure",  RED_DIM),
-            zcard("Gamma Flip Point", f"${round(gamma_pivot_level):.0f}", gamma_flip_subtitle, YELLOW_DIM),
-            zcard("Vol Trigger", "LIVE",                        f"{vs}% expansion energy",   TEAL_DIM),
-        ], style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px","marginBottom":"12px"}),
+            zcard("Call Wall",   "—" if call_wall_level is None else f"${round(call_wall_level):.0f}",
+                  "Not available" if cp is None else f"{cp}% call-side pressure", TEAL_DIM),
+            zcard("Put Wall",    "—" if put_wall_level is None else f"${round(put_wall_level):.0f}",
+                  "Not available" if pp is None else f"{pp}% put-side pressure", RED_DIM),
+            zcard("Gamma Flip Point", "—" if gamma_pivot_level is None else f"${round(gamma_pivot_level):.0f}",
+                  gamma_flip_subtitle, YELLOW_DIM),
+            zcard("Net Gamma Exposure", _net_gex_text, "Sum across the live chain" if _net_gex_text != "—" else "Not available", BLUE_DIM),
+            zcard("ATM Implied Vol", _atm_iv_text, _atm_iv_sub, TEAL_DIM),
+        ], style={"display":"grid","gridTemplateColumns":"repeat(auto-fit,minmax(150px,1fr))","gap":"12px","marginBottom":"12px"}),
         note_box(options_note, "blue"),
     ], sx={"marginBottom":"16px"})
 
