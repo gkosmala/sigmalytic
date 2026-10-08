@@ -9620,6 +9620,41 @@ setInterval(() => {
   if (!p || !p.data || !p.data.length) noteLog('BLANK: no chart data on screen (bars=' + (typeof RAW_BARS !== 'undefined' ? RAW_BARS.length : '?') + ')');
 }, 15000);
 
+// DIAGNOSTIC (2026-10-08, after "chart goes blank" with no chart-side error): the chart's
+// own data was intact when it looked blank, so also record what the PAGE does to the chart
+// frame -- its size, whether it is hidden, and whether the tab was hidden/shown.
+(function () {
+  let lastSize = '';
+  function frameState() {
+    const plot = document.getElementById('chart');
+    const r = plot ? plot.getBoundingClientRect() : null;
+    let fe = '';
+    try {
+      const f = window.frameElement;
+      if (f) {
+        const cs = getComputedStyle(f);
+        fe = ' frame ' + Math.round(f.getBoundingClientRect().width) + 'x' + Math.round(f.getBoundingClientRect().height) +
+          ' display=' + cs.display + ' visibility=' + cs.visibility + ' opacity=' + cs.opacity;
+      }
+    } catch (e) { fe = ' frame (not readable)'; }
+    return 'window ' + window.innerWidth + 'x' + window.innerHeight +
+      ' plot ' + (r ? Math.round(r.width) + 'x' + Math.round(r.height) : 'missing') + fe;
+  }
+  function check(why) {
+    const s = frameState();
+    if (s !== lastSize) { lastSize = s; noteLog(why + ': ' + s); }
+  }
+  window.addEventListener('resize', () => check('SIZE changed'));
+  document.addEventListener('visibilitychange', () => noteLog('tab ' + (document.hidden ? 'hidden' : 'shown') + ' (' + frameState() + ')'));
+  setInterval(() => {
+    const plot = document.getElementById('chart');
+    const r = plot ? plot.getBoundingClientRect() : null;
+    if (!r || r.width < 50 || r.height < 50 || window.innerHeight < 50) noteLog('TINY/HIDDEN chart: ' + frameState());
+    check('SIZE changed');
+  }, 5000);
+  check('start size');
+})();
+
 // Move the option-wall lines in place (Plotly.relayout) instead of redrawing the whole
 // chart. 2026-10-08: the on-screen redraw log showed these walls (the Gamma Flip in
 // particular) drifting past the $0.05 threshold every few minutes by design -- each
