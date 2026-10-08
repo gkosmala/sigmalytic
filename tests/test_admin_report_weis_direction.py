@@ -54,7 +54,7 @@ def test_slim_carries_signal_fields():
     assert d["signal_label"] == "Upthrust (bearish)" and d["signal_direction"] == "BEAR" and d["weis_signal"] == "UPTHRUST"
 
 
-def test_top_list_ranks_weis_state_first_then_strength_then_volume():
+def test_top_list_ranks_weis_state_first_then_volume():
     rows = [_row("LOW", "SPRING", 100, "No setup", rel_volume=9.0),
             _row("AV", "SPRING", 100, "Avoid", rel_volume=9.0),
             _row("WA", "SPRING", 80, "Watching", rel_volume=1.0),
@@ -64,9 +64,9 @@ def test_top_list_ranks_weis_state_first_then_strength_then_volume():
             _row("AR3", "SPRING", 90, "Armed", rel_volume=2.0)]
     rows += [_row(f"Z{i}", "NONE", 40, "No setup") for i in range(12)]
     top = [r["symbol"] for r in _top_by_weis_state(rows)]
-    assert top[:7] == ["AR3", "AR2", "AR1", "SU", "WA", "AV", "LOW"]
+    assert top[:7] == ["AR3", "AR1", "AR2", "SU", "WA", "AV", "LOW"]  # score no longer ranks; volume breaks ties
     assert len(top) == 10
-    assert _top_by_weis_state([_row("N", score=None, rel_volume=None, status="Watching"), _row("M", score=5, status="Watching")])[0]["symbol"] == "M"
+    assert _top_by_weis_state([_row("N", score=None, rel_volume=None, status="Watching"), _row("M", score=5, rel_volume=1.0, status="Watching")])[0]["symbol"] == "M"
 
 
 def test_slim_carries_the_weis_direction():

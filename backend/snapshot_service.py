@@ -311,13 +311,12 @@ _WEIS_STATE_RANK = {"Armed": 4, "Setting Up": 3, "Watching": 2, "Avoid": 1}
 def _top_by_weis_state(symbols: list, n: int = 10) -> list:
     """
     Top n by Weis setup state (Armed, Setting Up, Watching, Avoid, then No
-    setup), then by signal strength (composite_score), then by relative
-    volume so ties do not stay in alphabetical cache order.
+    setup), then by relative volume so ties do not stay in alphabetical
+    cache order.
     """
     return sorted(
         symbols,
-        key=lambda x: (_WEIS_STATE_RANK.get(x.get("status"), 0),
-                       x.get("composite_score") or 0, x.get("rel_volume") or 0),
+        key=lambda x: (_WEIS_STATE_RANK.get(x.get("status"), 0), x.get("rel_volume") or 0),
         reverse=True,
     )[:n]
 

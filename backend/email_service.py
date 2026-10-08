@@ -92,9 +92,11 @@ def user_wants_alert(prefs: dict, alert: dict) -> bool:
     if allowed_types and alert_type not in allowed_types:
         return False
 
-    min_score = prefs.get("min_score", 60)
-    if score < min_score:
-        return False
+    # Weis setup-state alerts carry no score, so the minimum-score setting does not apply to them.
+    if not alert.get("weis_state"):
+        min_score = prefs.get("min_score", 60)
+        if score < min_score:
+            return False
 
     if prefs.get("market_hours_only", True):
         weekday = ts.weekday()

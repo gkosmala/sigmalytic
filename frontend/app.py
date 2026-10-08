@@ -5248,7 +5248,7 @@ def build_preferences_tab(user_id="", session=None):
                             style=_on() if types.get("wyckoff")   else _off()),
                 html.Button("Vector Alerts",    id="pref-btn-gann",      n_clicks=0,
                             style=_on() if types.get("gann")      else _off()),
-                html.Button("Score Alerts",     id="pref-btn-ab_score",  n_clicks=0,
+                html.Button("Weis Setup Alerts", id="pref-btn-ab_score",  n_clicks=0,
                             style=_on() if types.get("ab_score")  else _off()),
                 html.Button("Cycle Alerts",     id="pref-btn-elliott",   n_clicks=0,
                             style=_on() if types.get("elliott")   else _off()),
@@ -6120,7 +6120,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     top_movers    = data.get("top_movers", [])
     anomalies     = data.get("anomalies", [])
     narrative     = data.get("narrative","—")
-    daily_grades  = data.get("daily_grades", [])
     regimes       = data.get("regime_distribution", {})
     generated_at  = data.get("generated_at","")
 
@@ -6269,15 +6268,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # numeric field read here now also coerces via `or 0`, so a None
     # value (key present) is caught the same as a missing key.
     def _sym_row(s):
-        score = s.get("composite_score", 0) or 0
-        # The score is signal STRENGTH, not direction: colour by the signal's
-        # direction when known so a bearish Upthrust is not shown in green.
-        if s.get("signal_direction") == "BEAR":
-            sc = RED_DIM
-        elif s.get("signal_direction") == "BULL":
-            sc = TEAL_DIM
-        else:
-            sc = TEAL_DIM if score >= 70 else (YELLOW_DIM if score >= 50 else RED_DIM)
+        # Colour by the Weis direction (a short setup is not shown in green).
+        sc = RED_DIM if s.get("status_direction") == "short" else TEAL_DIM
         chg   = s.get("change_pct", 0) or 0
         price = s.get("price", 0) or 0
         return html.Div([
@@ -6292,30 +6284,21 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 "flex":"1","fontSize":"12px","fontWeight":"700",
                 "color": TEAL_DIM if chg >= 0 else RED_DIM,
             }),
-            html.Div([
-                html.Span(f"{score:.0f}", style={"fontSize":"13px","fontWeight":"900","color":sc}),
-                _score_bar(score, width="80px"),
-            ], style={"flex":"1"}),
             html.Span(
                 (s.get("status") or "-") + (f" · {s.get('status_direction')}" if s.get("status_direction") and s.get("status") not in (None, "", "No setup") else ""),
                 style={"flex":"2","fontSize":"11px","fontWeight":"700","color":sc,"fontFamily":"monospace"}),
-            html.Span(s.get("regime",""), style={
-                "flex":"1","fontSize":"10px","color":WHITE,
-            }),
         ], style={"display":"flex","alignItems":"center","gap":"12px",
                   "padding":"10px 0","borderBottom":f"1px solid {BORDER}"})
 
     score_table = _admin_card([
-        html.Div("TOP 10 — WEIS SETUP STATE (Armed first, then signal strength, then relative volume)", style={"fontSize":"12px","fontWeight":"800",
+        html.Div("TOP 10 — WEIS SETUP STATE (Armed first, then relative volume)", style={"fontSize":"12px","fontWeight":"800",
                   "color":WHITE,"marginBottom":"12px"}),
         # Header
         html.Div([
             html.Span("Symbol",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Price",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Chg%",     style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Score",    style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
             html.Span("Weis state", style={"flex":"2","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
-            html.Span("Regime",   style={"flex":"1","fontSize":"9px","color":WHITE,"fontWeight":"700","textTransform":"uppercase","letterSpacing":".1em"}),
         ], style={"display":"flex","gap":"12px","paddingBottom":"8px",
                   "borderBottom":f"1px solid {BORDER}","marginBottom":"4px"}),
         html.Div([_sym_row(s) for s in top_scores]),
@@ -6375,89 +6358,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                            "cursor":"pointer"}),
         html.Div(id="radar-bar-count-message", style={"fontSize":"12px","color":WHITE,"marginTop":"8px"}),
     ], sx={"marginBottom":"16px"})
-
-    # ── Historical daily grade grid ────────────────────────────────────────
-    # Get all unique symbols across all dates
-    all_syms_set = set()
-    for day in daily_grades:
-        all_syms_set.update(day.get("symbols",{}).keys())
-    all_syms = sorted(all_syms_set)
-
-    if daily_grades and all_syms:
-        # Table header row — dates
-        date_headers = [
-            html.Th("Symbol", style={"padding":"6px 10px","textAlign":"left",
-                                      "fontSize":"9px","color":WHITE,"fontWeight":"700",
-                                      "textTransform":"uppercase","letterSpacing":".1em",
-                                      "background":NAVY_MID,"position":"sticky","left":0}),
-        ] + [
-            html.Th(day["date"][5:],  # MM-DD
-                    style={"padding":"6px 10px","textAlign":"center","minWidth":"56px",
-                           "fontSize":"9px","color":WHITE,"fontWeight":"700",
-                           "textTransform":"uppercase","letterSpacing":".06em",
-                           "background":NAVY_MID})
-            for day in daily_grades
-        ]
-
-        # Symbol rows
-        table_rows = []
-        for sym in all_syms:
-            cells = [
-                html.Td(sym, style={"padding":"6px 10px","fontWeight":"800","fontSize":"12px",
-                                     "color":WHITE,"fontFamily":"monospace",
-                                     "background":NAVY_MID,"position":"sticky","left":0,
-                                     "borderRight":f"1px solid {BORDER}"}),
-            ]
-            for day in daily_grades:
-                sym_data = day.get("symbols",{}).get(sym)
-                if sym_data:
-                    grade = sym_data.get("grade","—")
-                    gc    = _grade_color(grade)
-                    cells.append(html.Td(
-                        html.Div([
-                            html.Div(grade or "—", style={"fontSize":"12px","fontWeight":"900",
-                                                           "color":gc,"lineHeight":"1"}),
-                            html.Div(f"{sym_data.get('score',0):.0f}",
-                                     style={"fontSize":"9px","color":WHITE,"marginTop":"2px"}),
-                        ], style={"textAlign":"center"}),
-                        style={"padding":"5px 8px","background":f"{gc}12",
-                               "borderLeft":f"1px solid rgba(255,255,255,.04)"},
-                    ))
-                else:
-                    cells.append(html.Td("—", style={"padding":"5px 8px","textAlign":"center",
-                                                       "color":WHITE,"fontSize":"11px"}))
-            table_rows.append(html.Tr(cells, style={"borderBottom":f"1px solid {BORDER}"}))
-
-        grade_grid = _admin_card([
-            html.Div([
-                html.Div("CUMULATIVE SCOREBOARD — DAILY GRADE GRID",
-                         style={"fontSize":"12px","fontWeight":"800","color":WHITE}),
-                html.Div("Grade / Score · A=Full target · B=Partial · C=Neutral · F=Miss",
-                         style={"fontSize":"10px","color":WHITE,"marginTop":"4px"}),
-            ], style={"marginBottom":"16px"}),
-            html.Div([
-                html.Table([
-                    html.Thead(html.Tr(date_headers,
-                               style={"borderBottom":f"1px solid {BORDER}"})),
-                    html.Tbody(table_rows),
-                ], style={"width":"100%","borderCollapse":"collapse",
-                          "fontSize":"12px","color":WHITE}),
-            ], style={"overflowX":"auto","maxHeight":"480px","overflowY":"auto",
-                      "border":f"1px solid {BORDER}","borderRadius":"10px"}),
-
-            html.Div([
-                html.Span("* Starred dates = Pinning Report validation days",
-                          style={"fontSize":"10px","color":WHITE,"fontStyle":"italic"}),
-            ], style={"marginTop":"12px"}),
-        ], sx={"marginBottom":"16px"})
-    else:
-        grade_grid = _admin_card([
-            html.Div("CUMULATIVE SCOREBOARD", style={"fontSize":"12px","fontWeight":"800",
-                      "color":WHITE,"marginBottom":"8px"}),
-            html.Div("No daily close snapshots yet. The grade grid will populate automatically "
-                     "after 4:15 PM ET on the first trading day with the snapshot writer active.",
-                     style={"fontSize":"13px","color":WHITE,"lineHeight":"1.7"}),
-        ], sx={"marginBottom":"16px"})
 
     # ── Assemble full page ────────────────────────────────────────────────
     return html.Div([
@@ -6645,7 +6545,6 @@ def _radio_narrate_detailed(signals):
         return (
             _radio_state(x) == "Armed",
             _radio_state(x) == "Setting Up",
-            _safe_float_local(x, "composite_score"),
             _safe_float_local(x, "rel_volume"),
         )
 
@@ -6659,14 +6558,14 @@ def _radio_narrate_detailed(signals):
     items = []
 
     if armed:
-        items.append({"id": f"top10_intro_{bucket}", "text": "Top 10 by radar score."})
+        items.append({"id": f"top10_intro_{bucket}", "text": "Top 10 armed setups."})
 
     for s in detail_targets:
         symbol = s.get("symbol")
         if not symbol:
             continue
-        score = s.get("composite_score") or s.get("score")
-        score_txt = f", score {int(float(score))}" if score not in (None, "") else ""
+        _dir = {"long": "long", "short": "short"}.get(s.get("status_direction"))
+        score_txt = f", {_dir}" if _dir else ""
 
         structural_bits = []
         try:
