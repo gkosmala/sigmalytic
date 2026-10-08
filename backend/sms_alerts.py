@@ -44,42 +44,20 @@ def _status_emoji(status: str) -> str:
 
 
 def _build_sms(sym: dict, status: str) -> str:
-    """Build a concise SMS message — under 160 chars where possible."""
-    symbol    = sym.get("symbol", "")
-    price     = sym.get("price", 0)
-    score     = sym.get("composite_score", 0)
-    trigger   = sym.get("trigger", 0)
-    inval     = sym.get("invalidation", 0)
-    target1   = sym.get("target1", 0)
-    target2   = sym.get("target2", 0)
-    proximity = sym.get("trigger_proximity", 0)
-    atr       = sym.get("atr", 1)
-    emoji     = _status_emoji(status)
-    is_short  = "Short" in status
-
-    # Bear targets
-    bear1 = round(inval - atr, 2)
-    bear2 = round(inval - atr * 2, 2)
-
-    if is_short:
-        msg = (
-            f"{emoji} SIGMALYTIC ALERT\n"
-            f"{symbol} \u2192 {status.upper()}\n"
-            f"Price: ${price:,.2f} | Score: {score:.0f}\n"
-            f"Breakdown: ${inval:,.2f}\n"
-            f"Bear: ${bear1:,.2f} \u2192 ${bear2:,.2f}\n"
-            f"Not financial advice."
-        )
-    else:
-        msg = (
-            f"{emoji} SIGMALYTIC ALERT\n"
-            f"{symbol} \u2192 {status.upper()}\n"
-            f"Score: {score:.0f} | {proximity:+.1f}% to trigger\n"
-            f"Trigger: ${trigger:,.2f}\n"
-            f"Bull: ${target1:,.2f} \u2192 ${target2:,.2f}\n"
-            f"Not financial advice."
-        )
-    return msg
+    """Weis setup-state SMS: state, direction, stop and target. No score or trigger values."""
+    symbol = sym.get("symbol", "")
+    price = sym.get("price", 0) or 0
+    emoji = _status_emoji(status)
+    side = {"long": "Long (spring)", "short": "Short (upthrust)"}.get(sym.get("status_direction"), "")
+    stop = sym.get("status_stop")
+    target = sym.get("status_target")
+    lines = [f"{emoji} SIGMALYTIC ALERT", f"{symbol} \u2192 {status.upper()}" + (f" \u00b7 {side}" if side else ""),
+             f"Price: ${price:,.2f}"]
+    if isinstance(stop, (int, float)):
+        lines.append(f"Stop: ${stop:,.2f}")
+    lines.append(f"Target: ${target:,.2f}" if isinstance(target, (int, float)) else "Target: none defined")
+    lines.append("Not financial advice.")
+    return "\n".join(lines)
 
 
 def send_sms(sym: dict, status: str, to_number: str = None) -> bool:
@@ -199,10 +177,10 @@ def send_test_sms(to_number: str = None) -> dict:
         message = client.messages.create(
             body=(
                 "🎯 SIGMALYTIC TEST ALERT\n"
-                "XOM → ARMED\n"
-                "Score: 75 | +0.3% to trigger\n"
-                "Trigger: $158.36\n"
-                "Bull: $161.86 → $165.80\n"
+                "XOM → ARMED · Long (spring)\n"
+                "Price: $158.36\n"
+                "Stop: $154.10\n"
+                "Target: $165.80\n"
                 "SMS alerts are working correctly.\n"
                 "Not financial advice."
             ),
