@@ -86,3 +86,33 @@ console.log('ok');
             fh.write(harness)
         r = subprocess.run(["node", path], capture_output=True, text=True)
         assert r.returncode == 0 and "ok" in r.stdout, r.stderr + r.stdout
+
+
+def test_chart_reports_its_log_lines_to_the_server():
+    doc = _chart_html()
+    assert "/cc-client-log" in doc
+    assert 'window.__ccSym = "AAPL"' in doc
+    assert "chart document loaded" in doc
+    assert "BLANK: no chart data on screen" in doc
+
+
+def test_client_log_route_prints_and_is_rate_limited(capsys):
+    client = app.server.test_client()
+    app._CC_CLIENT_LOG_WINDOW.update({"minute": 0, "count": 0})
+    r = client.post("/cc-client-log", data="AAPL 2:05:01 PM FULL redraw: new-bar", content_type="text/plain")
+    assert r.status_code == 204
+    assert "[CC_BROWSER] AAPL 2:05:01 PM FULL redraw: new-bar" in capsys.readouterr().out
+    # flood: only the first 120 per minute are printed
+    app._CC_CLIENT_LOG_WINDOW.update({"minute": int(__import__("time").time() // 60), "count": 0})
+    for i in range(130):
+        client.post("/cc-client-log", data=f"x{i}", content_type="text/plain")
+    printed = [l for l in capsys.readouterr().out.splitlines() if l.startswith("[CC_BROWSER] x")]
+    assert len(printed) == 120
+
+
+def test_client_log_text_is_capped_and_single_line(capsys):
+    client = app.server.test_client()
+    app._CC_CLIENT_LOG_WINDOW.update({"minute": 0, "count": 0})
+    client.post("/cc-client-log", data="a\nb\r" + "z" * 1000, content_type="text/plain")
+    line = [l for l in capsys.readouterr().out.splitlines() if l.startswith("[CC_BROWSER]")][0]
+    assert len(line) < 330 and "\n" not in line and "\r" not in line

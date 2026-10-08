@@ -25,7 +25,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import dash
-from flask import Response
+from flask import Response, request
 from dash import dcc, html, Input, Output, State, no_update, callback_context, MATCH, ALL
 import plotly.graph_objects as go
 import requests as req
@@ -7212,6 +7212,7 @@ def _build_weis_radar_chart_html(chart_data, ma_period=20):
     gamma_checked, gamma_value, gamma_note = wall_fields(gamma_flip)
 
     html_doc = _WEIS_RADAR_CHART_TEMPLATE
+    html_doc = html_doc.replace("__SYMBOL_JSON__", json.dumps(str(symbol)))
     html_doc = html_doc.replace("__SYMBOL__", symbol)
     html_doc = html_doc.replace("__TIMEFRAME_LABEL__", str(chart_data.get("timeframe") or "5m"))
     html_doc = html_doc.replace("__TIMEFRAME__", json.dumps(chart_data.get("timeframe") or "5m"))
@@ -9602,9 +9603,22 @@ function noteLog(text) {
     window.__redrawLines = window.__redrawLines.slice(-6);
     box.textContent = 'chart log:\\n' + window.__redrawLines.join('\\n');
   } catch (e) { /* diagnostic only */ }
+  // Also report to the server (shows up in its logs as [CC_BROWSER]) so nobody has to
+  // read the note off the screen. Fire-and-forget; never throws.
+  try {
+    fetch('/cc-client-log', {method: 'POST', keepalive: true,
+      headers: {'Content-Type': 'text/plain'},
+      body: (window.__ccSym || '') + ' ' + text}).catch(() => {});
+  } catch (e) { /* diagnostic only */ }
 }
 window.addEventListener('error', (e) => noteLog('ERROR ' + (e.message || e.error) + ' @' + (e.lineno || '?')));
 window.addEventListener('unhandledrejection', (e) => noteLog('ERROR (promise) ' + (e.reason && e.reason.message || e.reason)));
+window.__ccSym = __SYMBOL_JSON__;
+noteLog('chart document loaded (a reload of the whole chart)');
+setInterval(() => {
+  const p = document.getElementById('chart');
+  if (!p || !p.data || !p.data.length) noteLog('BLANK: no chart data on screen (bars=' + (typeof RAW_BARS !== 'undefined' ? RAW_BARS.length : '?') + ')');
+}, 15000);
 
 // Move the option-wall lines in place (Plotly.relayout) instead of redrawing the whole
 // chart. 2026-10-08: the on-screen redraw log showed these walls (the Gamma Flip in
@@ -10295,6 +10309,25 @@ app.clientside_callback(
     State("s-radio-enabled", "data"),
     prevent_initial_call=True,
 )
+
+
+_CC_CLIENT_LOG_WINDOW = {"minute": 0, "count": 0}
+
+
+@server.route("/cc-client-log", methods=["POST"])
+def cc_client_log():
+    """The Command Center chart reports its own redraws / errors / blanks here so they can be
+    read from the server logs ([CC_BROWSER]) instead of off the screen. Text only, length
+    capped, and rate limited so it cannot be used to flood the logs."""
+    now_min = int(time.time() // 60)
+    if _CC_CLIENT_LOG_WINDOW["minute"] != now_min:
+        _CC_CLIENT_LOG_WINDOW["minute"] = now_min
+        _CC_CLIENT_LOG_WINDOW["count"] = 0
+    _CC_CLIENT_LOG_WINDOW["count"] += 1
+    if _CC_CLIENT_LOG_WINDOW["count"] <= 120:
+        text = request.get_data(as_text=True)[:300].replace("\n", " ").replace("\r", " ")
+        print(f"[CC_BROWSER] {text}", flush=True)
+    return Response(status=204)
 
 
 @server.route("/cc-chart/<token>")
