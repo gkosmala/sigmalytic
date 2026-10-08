@@ -9620,6 +9620,59 @@ setInterval(() => {
   if (!p || !p.data || !p.data.length) noteLog('BLANK: no chart data on screen (bars=' + (typeof RAW_BARS !== 'undefined' ? RAW_BARS.length : '?') + ')');
 }, 15000);
 
+// SELF-HEAL + EVIDENCE (2026-10-08): the chart sometimes looks blank while the page still
+// reports its data and a normal size. Look at what is actually DRAWN: count the candles
+// whose on-screen box overlaps the price panel. If none are visible (stale zoom range,
+// hidden/empty drawing, anything), log exactly what the drawing and the ranges look like,
+// then repair: first reset the zoom and redraw, and if that does not bring candles back
+// by the next check, reload this chart document (at most once a minute).
+const __loadedAt = Date.now();
+let __emptyStrikes = 0;
+function drawnCandles() {
+  const p = document.getElementById('chart');
+  const area = p && p.querySelector('.draglayer .xy .nsewdrag');
+  if (!area) return {drawn: 0, visible: 0, areaW: 0, areaH: 0};
+  const a = area.getBoundingClientRect();
+  const boxes = p.querySelectorAll('.subplot.xy path.box');
+  let visible = 0;
+  boxes.forEach(b => {
+    const r = b.getBoundingClientRect();
+    if (r.width > 0 && r.height >= 0 && r.right > a.left && r.left < a.right && r.bottom > a.top && r.top < a.bottom) visible++;
+  });
+  return {drawn: boxes.length, visible: visible, areaW: Math.round(a.width), areaH: Math.round(a.height)};
+}
+setInterval(() => {
+  try {
+    if (document.hidden || Date.now() - __loadedAt < 8000) return;
+    const p = document.getElementById('chart');
+    if (!p || !p._fullLayout || typeof RAW_BARS === 'undefined' || !RAW_BARS.length) return;
+    const d = drawnCandles();
+    if (window.innerWidth < 100 || window.innerHeight < 100) return;   // frame itself is tiny/hidden: not a drawing fault
+    if (d.visible > 0) { __emptyStrikes = 0; return; }
+    __emptyStrikes++;
+    const xr = p._fullLayout.xaxis.range, yr = p._fullLayout.yaxis.range;
+    const last = RAW_BARS[RAW_BARS.length - 1];
+    noteLog('EMPTY CHART strike ' + __emptyStrikes + ': candles drawn ' + d.drawn + ', visible ' + d.visible +
+      ' | panel ' + d.areaW + 'x' + d.areaH + ' | bars ' + RAW_BARS.length +
+      ' | x ' + (xr ? Number(xr[0]).toFixed(1) + '..' + Number(xr[1]).toFixed(1) : 'none') +
+      ' | y ' + (yr ? Number(yr[0]).toFixed(2) + '..' + Number(yr[1]).toFixed(2) : 'none') +
+      ' | last close ' + last.close.toFixed(2) + ' | traces ' + p.data.length);
+    if (__emptyStrikes === 1) {
+      noteLog('repair: reset zoom + redraw');
+      document.getElementById('resetZoomBtn').click();
+      render();
+    } else {
+      let lastReload = 0;
+      try { lastReload = Number(sessionStorage.getItem('ccReloadAt') || 0); } catch (e) { /* storage blocked */ }
+      if (Date.now() - lastReload > 60000) {
+        noteLog('repair: reloading the chart document');
+        try { sessionStorage.setItem('ccReloadAt', String(Date.now())); } catch (e) { /* storage blocked */ }
+        window.location.reload();
+      }
+    }
+  } catch (e) { noteLog('health check error ' + e.message); }
+}, 5000);
+
 // DIAGNOSTIC (2026-10-08, after "chart goes blank" with no chart-side error): the chart's
 // own data was intact when it looked blank, so also record what the PAGE does to the chart
 // frame -- its size, whether it is hidden, and whether the tab was hidden/shown.
