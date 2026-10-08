@@ -3252,6 +3252,21 @@ def _weis_engine_ok(r):
     return isinstance(r, dict) and r.get("status") in ("OK", "INSUFFICIENT_HISTORY")
 
 
+def _cc_norm_bar_date(d):
+    """One spelling for a bar's date. History from the backend says '...T15:45:00Z' while the
+    locally updated live bar says '...T15:45:00+00:00' for the same instant; compared as text
+    they differ, which rebuilt (reloaded) the chart 10 s after every timeframe switch."""
+    if not isinstance(d, str):
+        return d
+    try:
+        dt = datetime.fromisoformat(d.replace("Z", "+00:00"))
+    except ValueError:
+        return d
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _cc_chart_decision(cached_fp, fp, bars):
     """What the Command Center chart iframe should do this render. A rebuild changes the
     iframe's srcDoc and reloads the chart (the blink), so only a real change gets one.
@@ -3272,7 +3287,7 @@ def _cc_chart_decision(cached_fp, fp, bars):
     if len(cached_fp) == 5 and len(fp) == 5 and cached_fp[:3] == fp[:3]:
         if not bars:
             return "reuse"
-        if (len(bars) >= 2 and bars[-2]["date"] == cached_fp[4]
+        if (len(bars) >= 2 and _cc_norm_bar_date(bars[-2]["date"]) == cached_fp[4]
                 and cached_fp[3] in (len(bars) - 1, len(bars))):
             return "push"
     return "rebuild"
@@ -3461,7 +3476,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
     # change, a lookback change producing a differently-sized series,
     # or a multi-bar jump if a tick was somehow missed) still falls
     # through to a genuine rebuild -- the safe default.
-    _cc_fingerprint = (symbol, tf, chart_hours, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
+    _cc_fingerprint = (symbol, tf, chart_hours, len(_cc_bars), _cc_norm_bar_date(_cc_bars[-1]["date"]) if _cc_bars else None)
     _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
     _cc_new_bar_to_push = None
     _cc_plan = _cc_chart_decision(_cached_entry[0] if _cached_entry else None, _cc_fingerprint, _cc_bars)
