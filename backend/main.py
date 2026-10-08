@@ -4439,6 +4439,18 @@ def radar_symbol_lookup(symbol: str):
         return {"ok": False, "symbol": sym, "error": str(e)[:300]}
 
 
+@app.get("/api/radar/symbol/{symbol}/weis-state")
+def radar_symbol_weis_state(symbol: str):
+    """Weis setup state for one symbol (Command Center Direction Intelligence and
+    Behavioral Analysis). radar_router is not mounted in this app, so the route is
+    declared here and delegates to the handler in radar_service."""
+    try:
+        from backend.radar_service import get_symbol_weis_state
+        return get_symbol_weis_state(symbol)
+    except Exception as e:
+        return {"ok": False, "symbol": (symbol or "").upper(), "reason": str(e)[:200]}
+
+
 @app.get("/api/radar/symbol/{symbol}/sizing")
 def radar_symbol_sizing(symbol: str, portfolio_value: float = 100000.0):
     """

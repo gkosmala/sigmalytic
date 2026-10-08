@@ -83,3 +83,18 @@ def test_symbol_endpoint_reports_no_bars(monkeypatch):
     monkeypatch.setattr(rs, "_radar_bar_count", lambda: 289)
     monkeypatch.setattr(rs, "fetch_bars_multi", lambda syms, timeframe, lookback_days: {})
     assert rs.get_symbol_weis_state("ZZZ")["ok"] is False
+
+
+def test_weis_state_route_is_mounted_on_the_backend_app(monkeypatch):
+    """radar_router is not mounted in main.py; the route must exist on the real app (a 404 here
+    left the Command Center tile on LOADING in production)."""
+    from fastapi.testclient import TestClient
+    from backend import main, radar_service as rs
+    paths = {getattr(r, "path", "") for r in main.app.routes}
+    assert "/api/radar/symbol/{symbol}/weis-state" in paths
+    monkeypatch.setattr(rs, "_radar_rows_for_states", lambda: [
+        {"symbol": "GXO", "status": "Avoid", "status_direction": "long", "status_reason": "r",
+         "status_stop": 1.0, "status_target": None}])
+    monkeypatch.setattr(rs, "_radar_bar_count", lambda: 289)
+    r = TestClient(main.app).get("/api/radar/symbol/GXO/weis-state")
+    assert r.status_code == 200 and r.json()["state"] == "Avoid"
