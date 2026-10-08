@@ -6562,9 +6562,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     # ── Assemble full page ────────────────────────────────────────────────
     return html.Div([
         header,
-        accuracy_block,
         snap_block,
-        narrative_block,
 
         # Two-column row: anomalies + top scores
         html.Div([
