@@ -52,3 +52,30 @@ def test_symbol_timeframe_or_hours_change_rebuilds():
 
 def test_a_series_that_does_not_continue_the_old_one_rebuilds():
     assert app._cc_chart_decision(_fp(3, "c"), _fp(3, "z"), _bars("a", "b", "z")) == "rebuild"
+
+
+def test_same_instant_in_both_date_spellings_is_one_date():
+    assert (app._cc_norm_bar_date("2026-10-08T15:45:00Z")
+            == app._cc_norm_bar_date("2026-10-08T15:45:00+00:00"))
+    assert (app._cc_norm_bar_date("2026-10-08T04:00:00Z")
+            == app._cc_norm_bar_date("2026-10-08T00:00:00-04:00"))
+
+
+def test_unparseable_date_is_left_alone():
+    assert app._cc_norm_bar_date("not a date") == "not a date"
+    assert app._cc_norm_bar_date(None) is None
+
+
+def test_date_spelling_flip_does_not_rebuild():
+    n = app._cc_norm_bar_date
+    cached = ("AAPL", "5m", "all", 252, n("2026-10-08T15:45:00Z"))
+    fp = ("AAPL", "5m", "all", 252, n("2026-10-08T15:45:00+00:00"))
+    assert app._cc_chart_decision(cached, fp, _bars("a", "b")) == "reuse"
+
+
+def test_push_still_works_with_mixed_spellings():
+    n = app._cc_norm_bar_date
+    cached = ("AAPL", "5m", "all", 2, n("2026-10-08T15:45:00Z"))
+    fp = ("AAPL", "5m", "all", 2, n("2026-10-08T15:50:00Z"))
+    bars = [{"date": "2026-10-08T15:45:00+00:00"}, {"date": "2026-10-08T15:50:00+00:00"}]
+    assert app._cc_chart_decision(cached, fp, bars) == "push"
