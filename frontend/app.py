@@ -6209,16 +6209,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             setup_deployment_block,
-            symbol_backtest_block,
-            portfolio_rankings_block,
-            decay_monitor_block,
-            closure_engine_block,
-            state_transition_block,
-            campaign_outcome_block,
             journal_correction_block,
-            bme_memory_status_block,
-            operator_footprint_block,
-            enriched_campaign_table_block,
             subscriber_alerts_block,
         ])
 
@@ -6586,16 +6577,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         radar_bar_count_block,
         grade_grid,
         setup_deployment_block,
-        symbol_backtest_block,
-        portfolio_rankings_block,
-        decay_monitor_block,
-        closure_engine_block,
-        state_transition_block,
-        campaign_outcome_block,
         journal_correction_block,
-        bme_memory_status_block,
-        operator_footprint_block,
-        enriched_campaign_table_block,
         subscriber_alerts_block,
 
         # Footer
