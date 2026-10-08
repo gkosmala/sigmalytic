@@ -3449,6 +3449,32 @@ def get_radar_scores(limit: int = 100, offset: int = 0, status: str = None, min_
     }
 
 
+@radar_router.get("/symbol/{symbol}/weis-state")
+def get_symbol_weis_state(symbol: str):
+    """Weis setup state for one symbol (Command Center). Same engine and same window
+    as the Radar Status: the scan's own row when the symbol is in the scan, otherwise
+    computed now from the last N completed daily bars (N = the radar bar count)."""
+    sym = symbol.upper().strip()
+    n = _radar_bar_count()
+    for r in _radar_rows_for_states():
+        if r.get("symbol") == sym and r.get("status"):
+            return {"ok": True, "symbol": sym, "source": "radar scan", "bar_count": n,
+                    "state": r.get("status"), "direction": r.get("status_direction"),
+                    "reason": r.get("status_reason"), "stop": r.get("status_stop"),
+                    "target": r.get("status_target")}
+    try:
+        bars = fetch_bars_multi([sym], timeframe="1Day",
+                                lookback_days=max(420, int(n * 1.7))).get(sym) or []
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "reason": f"bars unavailable: {str(e)[:80]}"}
+    if not bars:
+        return {"ok": False, "symbol": sym, "reason": "no daily bars for this symbol"}
+    w = _weis_status(bars, sym)
+    return {"ok": True, "symbol": sym, "source": "live daily bars", "bar_count": n,
+            "state": w["state"], "direction": w["direction"], "reason": w["reason"],
+            "stop": w["stop"], "target": w["target"]}
+
+
 @radar_router.get("/symbol/{symbol}")
 def get_symbol_detail(symbol: str):
     sym = symbol.upper().strip()
