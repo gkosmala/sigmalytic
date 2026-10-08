@@ -137,9 +137,15 @@ services:
     # most every 5 minutes (restarts logged 13:08 and 13:13 UTC). Memory was
     # shown flat, so 20000 keeps the recycling as a safety net, about every
     # 1.5 to 2 hours at that rate.
+    # EXPERIMENT (2026-10-08): --keep-alive 75. Render's router intermittently answers
+    # /_dash-update-component with a 502 that never reaches the app (about 0.4% of
+    # updates while the page is open: 24 of ~5,600 between 15:14 and 16:38 UTC).
+    # gunicorn closes idle connections after 2 s by default; if the router reuses a
+    # connection gunicorn just closed, that would give exactly this. UNPROVEN: judge
+    # by the 502 rate per 1000 updates after this deploy; revert if it does not drop.
     # One process keeps memory usage bounded; a third thread keeps navigation
     # responsive while live updates and a chart request await backend data.
-    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 3 --max-requests 20000 --max-requests-jitter 2000 --bind 0.0.0.0:$PORT --timeout 240
+    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 3 --max-requests 20000 --max-requests-jitter 2000 --keep-alive 75 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
