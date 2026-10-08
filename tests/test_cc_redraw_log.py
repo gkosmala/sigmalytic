@@ -37,3 +37,52 @@ def test_chart_script_parses():
             fh.write("\n".join(scripts))
         r = subprocess.run(["node", "--check", path], capture_output=True, text=True)
         assert r.returncode == 0, r.stderr
+
+
+def test_walls_move_in_place_instead_of_a_full_redraw():
+    doc = _chart_html()
+    assert "function applyWallsInPlace" in doc
+    # the in-place path must come before the full-redraw diagnostic/render path
+    assert doc.index("applyWallsInPlace(msg)") < doc.index("full redraws:")
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_apply_walls_in_place_behaviour():
+    """Run the real function against a stub Plotly/DOM: it moves only the changed wall's
+    line + label, and refuses (so the caller does a full redraw) when the line isn't drawn."""
+    doc = _chart_html()
+    start = doc.index("function applyWallsInPlace")
+    end = doc.index("window.addEventListener('message'", start)
+    fn = doc[start:end]
+    harness = fn + r"""
+const inputs = {callWall: {value: '101'}, putWall: {value: '99'}, gammaFlip: {value: '100'}};
+const calls = [];
+global.Plotly = {relayout: (p, u) => calls.push(u)};
+function mk(shapes, anns) {
+  global.document = {getElementById: (id) => id === 'chart'
+    ? {layout: {shapes, annotations: anns}} : inputs[id]};
+}
+const S = (c) => ({line: {color: c, width: 1.5}});
+const A = (t) => ({text: t});
+mk([S('#aaaaaa'), S('#4da3ff'), S('#b06dff')], [A('x'), A('Call Wall'), A('Gamma Flip')]);
+// gamma flip moved 100 -> 100.40, call wall unchanged within 0.05
+let ok = applyWallsInPlace({callWall: 101.02, putWall: 99, gammaFlip: 100.4});
+if (!ok) throw new Error('should have moved in place');
+const u = calls[0];
+if (u['shapes[2].y0'] !== 100.4 || u['shapes[2].y1'] !== 100.4 || u['annotations[2].y'] !== 100.4) throw new Error('wrong update ' + JSON.stringify(u));
+if (Object.keys(u).some(k => k.indexOf('shapes[1]') === 0)) throw new Error('moved an unchanged wall');
+if (inputs.gammaFlip.value !== 100.4) throw new Error('input not updated');
+// put wall moved but no put-wall line is drawn -> must refuse
+calls.length = 0;
+ok = applyWallsInPlace({putWall: 97});
+if (ok || calls.length) throw new Error('should have fallen back');
+// nothing changed -> false
+if (applyWallsInPlace({callWall: 101, putWall: 99, gammaFlip: 100.4})) throw new Error('no-op must be false');
+console.log('ok');
+"""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "t.js")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(harness)
+        r = subprocess.run(["node", path], capture_output=True, text=True)
+        assert r.returncode == 0 and "ok" in r.stdout, r.stderr + r.stdout

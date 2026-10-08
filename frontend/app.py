@@ -9585,6 +9585,41 @@ function updateLivePriceOnly(price, volume) {
   }
 }
 
+// Move the option-wall lines in place (Plotly.relayout) instead of redrawing the whole
+// chart. 2026-10-08: the on-screen redraw log showed these walls (the Gamma Flip in
+// particular) drifting past the $0.05 threshold every few minutes by design -- each
+// time a full render() followed, which flashed the chart. A line moving a few cents
+// needs no recompute. Returns true only if EVERY wall that changed was found on the
+// chart and moved; otherwise the caller falls back to the full redraw as before.
+function applyWallsInPlace(msg) {
+  const plot = document.getElementById('chart');
+  if (!plot || !plot.layout || !Array.isArray(plot.layout.shapes)) return false;
+  const defs = [
+    {key: 'callWall', inputId: 'callWall', color: '#4da3ff', text: 'Call Wall'},
+    {key: 'putWall', inputId: 'putWall', color: '#ffa64d', text: 'Put Wall'},
+    {key: 'gammaFlip', inputId: 'gammaFlip', color: '#b06dff', text: 'Gamma Flip'},
+  ];
+  const update = {};
+  const newInputs = [];
+  for (const d of defs) {
+    const v = msg[d.key];
+    if (typeof v !== 'number' || isNaN(v)) continue;
+    const cur = parseFloat(document.getElementById(d.inputId).value);
+    if (!isNaN(cur) && Math.abs(v - cur) <= 0.05) continue;   // not a real change
+    const si = plot.layout.shapes.findIndex(sh => sh && sh.line && sh.line.color === d.color && sh.line.width === 1.5);
+    const ai = (plot.layout.annotations || []).findIndex(a => a && a.text === d.text);
+    if (si < 0 || ai < 0) return false;                        // line not drawn: let render() decide
+    update['shapes[' + si + '].y0'] = v;
+    update['shapes[' + si + '].y1'] = v;
+    update['annotations[' + ai + '].y'] = v;
+    newInputs.push([d.inputId, v]);
+  }
+  if (!newInputs.length) return false;
+  Plotly.relayout(plot, update);
+  for (const [id, v] of newInputs) document.getElementById(id).value = v;
+  return true;
+}
+
 window.addEventListener('message', (event) => {
   const msg = event.data;
   if (!msg || msg.type !== 'sigmalytic_live_price') return;
@@ -9684,6 +9719,14 @@ window.addEventListener('message', (event) => {
     // Common case, every ~10s: pure price movement within the current
     // bar. Lightweight path only -- no recompute, no reload, no
     // full redraw of anything but the current candle's own position.
+    if (typeof msg.price === 'number' && !isNaN(msg.price)) {
+      updateLivePriceOnly(msg.price, sameVerifiedBar ? msg.volume : undefined);
+    }
+    return;
+  }
+
+  if (hasWallChange && !tradeRolled && !hasNewBar && applyWallsInPlace(msg)) {
+    // Only the option walls moved: the lines were moved in place, no full redraw.
     if (typeof msg.price === 'number' && !isNaN(msg.price)) {
       updateLivePriceOnly(msg.price, sameVerifiedBar ? msg.volume : undefined);
     }
