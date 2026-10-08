@@ -1850,84 +1850,6 @@ def _render_behavioral_analysis_panel(live):
                     style={"paddingLeft": "18px"}),
         ]))
 
-    # Real, validated Phase 10 position sizing -- first time this
-    # research output is shown anywhere in the UI, not just the backend
-    # endpoint added earlier tonight.
-    sizing = live.get("sizing_data")
-    if sizing and sizing.get("sized"):
-        result = sizing.get("result", {})
-        if result.get("approved"):
-            children.append(html.Div([
-                slabel("Validated Position Sizing (Phase 10 research)"),
-                html.P(result.get("summary", ""), style={"fontSize": "11px", "color": TEAL_DIM,
-                                                            "lineHeight": "1.6", "marginTop": "6px"}),
-            ], style={"marginTop": "12px"}))
-        else:
-            children.append(html.Div([
-                slabel("Validated Position Sizing (Phase 10 research)"),
-                html.P(f"Not sized — {result.get('blocked_reason', 'blocked')}",
-                       style={"fontSize": "11px", "color": RED_DIM, "lineHeight": "1.6", "marginTop": "6px"}),
-            ], style={"marginTop": "12px"}))
-    elif sizing and not sizing.get("sized"):
-        children.append(html.Div([
-            slabel("Validated Position Sizing (Phase 10 research)"),
-            html.P(sizing.get("reason", "Not enough data to size."),
-                   style={"fontSize": "11px", "color": MUTED, "lineHeight": "1.6", "marginTop": "6px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real Livermore/ODS-style operator control score -- only present
-    # once an active campaign record exists for this symbol (Layer 5).
-    dominance = live.get("dominance_data")
-    if dominance:
-        score = dominance.get("score", {})
-        children.append(html.Div([
-            slabel("Operator Control Score"),
-            html.P(
-                f"{score.get('livermore_score', '—')}/100 — campaign state: {dominance.get('current_state', 'Unknown')}",
-                style={"fontSize": "11px", "color": BLUE_DIM, "lineHeight": "1.6", "marginTop": "6px"},
-            ),
-        ], style={"marginTop": "12px"}))
-
-    # Real, read-only transition preview -- what state this campaign
-    # is likely to move to next, with a specific rationale, without
-    # mutating anything.
-    tp = live.get("transition_preview_data")
-    if tp:
-        current = tp.get("current_state", "—")
-        proposed = tp.get("proposed_next_state")
-        rationale_list = tp.get("rationale") or []
-        rationale_text = rationale_list[0] if rationale_list else ""
-        if proposed and proposed != current:
-            preview_text = f"{current} → {proposed}"
-            preview_color = TEAL_DIM
-        else:
-            preview_text = f"{current} (no transition previewed)"
-            preview_color = MUTED
-        children.append(html.Div([
-            slabel("Transition Preview"),
-            html.P(preview_text, style={"fontSize": "11px", "color": preview_color,
-                                          "lineHeight": "1.6", "marginTop": "6px", "fontWeight": "700"}),
-            html.P(rationale_text, style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-    # Real, per-symbol evidence diagnostics -- confirmed genuine,
-    # database-only diagnostic (found via full audit of campaign_api.py,
-    # confirmed never called from the frontend at all).
-    ed = live.get("evidence_diagnostics_data")
-    if ed:
-        summary = ed.get("single_symbol_summary", {})
-        tier = summary.get("diagnostic_priority_tier", "—")
-        tier_color = TEAL_DIM if str(tier).startswith("A_") else (BLUE_DIM if str(tier).startswith("B_") else MUTED)
-        children.append(html.Div([
-            slabel("Evidence Diagnostics"),
-            html.P(f"{tier} — score {summary.get('diagnostic_priority_score', '—')}",
-                   style={"fontSize": "11px", "color": tier_color, "lineHeight": "1.6",
-                          "marginTop": "6px", "fontWeight": "700"}),
-            html.P(summary.get("campaign_explanation", ""),
-                   style={"fontSize": "10px", "color": MUTED, "lineHeight": "1.6", "marginTop": "4px"}),
-        ], style={"marginTop": "12px"}))
-
-
     # Real Historical Analog Engine -- matched against actual closed
     # campaigns from this app's own database, with honest confidence
     # labeling and graceful fallback to research benchmarks.
@@ -12349,58 +12271,6 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
     except Exception:
         pass
 
-    # Real, validated Phase 10 position sizing -- powers Behavioral
-    # Analysis's sizing guidance with actual research output instead of
-    # nothing at all. Same best-effort pattern as rel_volume above.
-    sizing_data = None
-    try:
-        sz_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/sizing", timeout=4)
-        if sz_r.ok:
-            sz_payload = sz_r.json()
-            if sz_payload.get("ok"):
-                sizing_data = sz_payload
-    except Exception:
-        pass
-
-    # Real Livermore/ODS-style operator control score -- only present
-    # once an active campaign record exists for this symbol (Layer 5).
-    dominance_data = None
-    try:
-        dom_r = req.get(f"{BACKEND_HTTP}/api/campaigns/{clean}/dominance", timeout=4)
-        if dom_r.ok:
-            dom_payload = dom_r.json()
-            if dom_payload.get("ok") and dom_payload.get("has_active_campaign"):
-                dominance_data = dom_payload
-    except Exception:
-        pass
-
-    # Real, read-only transition preview -- lightweight (computation
-    # only on already-fetched campaign data, no external API calls),
-    # so kept in the fast tier rather than throttled.
-    transition_preview_data = None
-    try:
-        tp_r = req.get(f"{BACKEND_HTTP}/api/campaigns/transition-preview",
-                        params={"symbol": clean, "limit": 50}, timeout=6)
-        if tp_r.ok:
-            tp_payload = tp_r.json()
-            if tp_payload.get("ok") and tp_payload.get("transitions"):
-                transition_preview_data = tp_payload["transitions"][0]
-    except Exception:
-        pass
-
-    # Real, per-symbol evidence diagnostics -- confirmed database-only
-    # (no live Alpaca calls anywhere in this chain), so kept in the
-    # fast tier too.
-    evidence_diagnostics_data = None
-    try:
-        ed_r = req.get(f"{BACKEND_HTTP}/api/campaign/evidence-diagnostics/{clean}", timeout=6)
-        if ed_r.ok:
-            ed_payload = ed_r.json()
-            if ed_payload.get("found"):
-                evidence_diagnostics_data = ed_payload
-    except Exception:
-        pass
-
     # Weis setup state for the Command Center's Direction Intelligence tile
     # (same engine and window as the Radar Status). Refreshed on the same
     # throttle; the state only changes when a daily bar completes.
@@ -12540,10 +12410,6 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
         "price": price,
         "volume": volume,
         "rel_volume": rel_volume,
-        "sizing_data": sizing_data,
-        "dominance_data": dominance_data,
-        "transition_preview_data": transition_preview_data,
-        "evidence_diagnostics_data": evidence_diagnostics_data,
         "weis_state": weis_state_data,
         "campaign_analogs": campaign_analogs_data,
         "timestamp": tick_time,
