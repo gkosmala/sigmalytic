@@ -6571,7 +6571,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Div(anomaly_block, style={"flex":"1","minWidth":"0"}),
         ], style={"marginBottom":"0"}),
 
-        score_table,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,

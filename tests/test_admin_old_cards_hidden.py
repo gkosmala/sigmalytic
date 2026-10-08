@@ -5,7 +5,7 @@ import re
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 HIDDEN = ["symbol_backtest_block", "portfolio_rankings_block", "decay_monitor_block", "closure_engine_block",
           "state_transition_block", "campaign_outcome_block", "bme_memory_status_block",
-          "operator_footprint_block", "enriched_campaign_table_block", "grade_grid"]
+          "operator_footprint_block", "enriched_campaign_table_block", "grade_grid", "score_table"]
 KEPT = ["setup_deployment_block", "journal_correction_block", "subscriber_alerts_block"]
 
 
