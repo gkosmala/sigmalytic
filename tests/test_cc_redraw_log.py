@@ -131,3 +131,9 @@ def test_chart_logs_when_visible_window_misses_the_candles():
     assert "EMPTY CHART strike" in doc
     assert "repair: reset zoom + redraw" in doc
     assert "repair: reloading the chart document" in doc
+
+
+def test_chart_checks_for_an_empty_drawing_right_after_resizes_and_fullscreen():
+    doc = _chart_html()
+    assert "window.__ccHeal = healEmptyChart" in doc
+    assert doc.count("window.__ccHeal && window.__ccHeal()") >= 3

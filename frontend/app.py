@@ -7543,12 +7543,12 @@ fitAllBars.addEventListener('change', render);
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(render, 150);
+  resizeTimer = setTimeout(() => { render(); setTimeout(() => window.__ccHeal && window.__ccHeal(), 500); }, 150);
 });
 try { window.parent.addEventListener('resize', () => {
   fitFrameToViewport();
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(render, 150);
+  resizeTimer = setTimeout(() => { render(); setTimeout(() => window.__ccHeal && window.__ccHeal(), 500); }, 150);
 }); }
 catch (e) { /* Standalone HTML has no parent resize listener. */ }
 
@@ -7644,7 +7644,7 @@ document.addEventListener('fullscreenchange', () => {
     settingsPanel.open = settingsOpenBeforeFullscreen;
     settingsOpenBeforeFullscreen = null;
   }
-  setTimeout(render, 80);
+  setTimeout(() => { render(); setTimeout(() => window.__ccHeal && window.__ccHeal(), 500); }, 80);
 });
 document.getElementById('chartSettings').addEventListener('toggle', () => setTimeout(render, 40));
 for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
@@ -9641,7 +9641,8 @@ function drawnCandles() {
   });
   return {drawn: boxes.length, visible: visible, areaW: Math.round(a.width), areaH: Math.round(a.height)};
 }
-setInterval(() => {
+let __lastStrikeAt = 0;
+function healEmptyChart() {
   try {
     if (document.hidden || Date.now() - __loadedAt < 3000) return;
     const p = document.getElementById('chart');
@@ -9649,6 +9650,8 @@ setInterval(() => {
     const d = drawnCandles();
     if (window.innerWidth < 100 || window.innerHeight < 100) return;   // frame itself is tiny/hidden: not a drawing fault
     if (d.visible > 0) { __emptyStrikes = 0; return; }
+    if (Date.now() - __lastStrikeAt < 1500) return;
+    __lastStrikeAt = Date.now();
     __emptyStrikes++;
     const xr = p._fullLayout.xaxis.range, yr = p._fullLayout.yaxis.range;
     const last = RAW_BARS[RAW_BARS.length - 1];
@@ -9671,7 +9674,9 @@ setInterval(() => {
       }
     }
   } catch (e) { noteLog('health check error ' + e.message); }
-}, 2000);
+}
+window.__ccHeal = healEmptyChart;
+setInterval(healEmptyChart, 2000);
 
 // DIAGNOSTIC (2026-10-08, after "chart goes blank" with no chart-side error): the chart's
 // own data was intact when it looked blank, so also record what the PAGE does to the chart
