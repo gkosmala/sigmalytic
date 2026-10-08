@@ -9643,7 +9643,7 @@ function drawnCandles() {
 }
 setInterval(() => {
   try {
-    if (document.hidden || Date.now() - __loadedAt < 8000) return;
+    if (document.hidden || Date.now() - __loadedAt < 3000) return;
     const p = document.getElementById('chart');
     if (!p || !p._fullLayout || typeof RAW_BARS === 'undefined' || !RAW_BARS.length) return;
     const d = drawnCandles();
@@ -9671,7 +9671,7 @@ setInterval(() => {
       }
     }
   } catch (e) { noteLog('health check error ' + e.message); }
-}, 5000);
+}, 2000);
 
 // DIAGNOSTIC (2026-10-08, after "chart goes blank" with no chart-side error): the chart's
 // own data was intact when it looked blank, so also record what the PAGE does to the chart
