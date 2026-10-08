@@ -1752,141 +1752,68 @@ def _build_clock_inline():
 # This function only builds the card SHELL — the inputs are defined once in the layout.
 
 # ── Behavioral Analysis Panel ────────────────────────────────────────────────
-def _score_tier(score):
-    """Matches the exact thresholds used in build_direction_panel's Score Tier."""
-    if score < 35:
-        return "Trap Door"
-    elif score < 55:
-        return "Monitoring"
-    elif score < 80:
-        return "Score Tier B"
-    else:
-        return "Score Tier A"
-
-
 def _build_behavioral_analysis(live):
     """
-    Interprets the app's own current, real data for whatever symbol is
-    loaded -- not generic trading advice, a live reading of this specific
-    tool's own logic (Bias/Confidence/Status/Grade/Mode/Score/Volume),
-    matching the style of a manual walkthrough of these exact metrics.
-    Rule-based and deterministic (no LLM call), so it can run on every
-    live-price tick without added latency or external dependencies.
+    Plain reading of the Weis setup state (the Radar Status engine, same
+    window) for the loaded symbol. Rule-based and deterministic (no LLM
+    call), so it can run on every live-price tick.
+
+    The older reading built from Bias / Status - Grade / Mode / Engine Score /
+    Score Tier is gone: that score was not a Weis rule.
+    Returns (symbol, price, bullets, verdict, gates); gates is None or
+    (long_gates, short_gates).
     """
-    symbol   = live.get("symbol", "—")
-    price    = live.get("price", 0)
-    decision = live.get("decision", {}) or {}
-    rel_vol  = live.get("rel_volume")
+    symbol  = live.get("symbol", "—")
+    price   = live.get("price", 0) or 0
+    rel_vol = live.get("rel_volume")
+    ws      = live.get("weis_state") if isinstance(live.get("weis_state"), dict) else None
 
-    bias       = str(decision.get("bias", "Neutral"))
-    status     = str(decision.get("status", "Watching"))
-    grade      = str(decision.get("grade", "—"))
-    mode       = str(decision.get("mode", "Standard"))
-    confidence = str(decision.get("confidence", ""))
-    score      = decision.get("score", 0) or 0
-    tier       = _score_tier(score)
+    if not ws or not ws.get("state"):
+        return symbol, price, [], "Weis setup state is loading.", None
 
-    bias_lower = bias.lower()
-    is_directional = bias_lower in ("bullish", "bearish")
-    is_qualified_status = status.upper() not in ("PROBE", "WATCHING")
-    is_qualified_grade = grade.upper() in ("A", "B")
-    is_expanding = rel_vol is not None and rel_vol >= 1.5
-    tier_actionable = tier in ("Score Tier A", "Score Tier B")
+    state  = ws["state"]
+    d      = ws.get("direction")
+    side   = {"long": "long (spring)", "short": "short (upthrust)"}.get(d)
+    reason = ws.get("reason") or ""
+    stop   = _fmt_level(ws.get("stop"))
+    target = _fmt_level(ws.get("target")) if ws.get("target") else "none defined"
 
-    bullets = []
-
-    # Bias/Confidence line
-    if is_directional:
-        bullets.append(
-            f"Bias: {bias.upper()}, Confidence: {confidence or 'n/a'} — the Decision Engine "
-            f"has committed to a {bias_lower} read on {symbol}."
-        )
-    else:
-        bullets.append(
-            f"Bias: {bias.upper()}, Confidence: {confidence or 'LOW'} — the Decision Engine "
-            f"hasn't picked a direction yet for {symbol}."
-        )
-
-    # Status/Grade line
-    if is_qualified_status and is_qualified_grade:
-        bullets.append(
-            f"Status - Grade: {status} - {grade} — a qualified status with a strong grade means "
-            f"the engine sees this as a real, actionable setup, not just an exploratory read."
-        )
-    else:
-        bullets.append(
-            f"Status - Grade: {status} - {grade} — "
-            f"{'a low-conviction status' if not is_qualified_status else 'a weak grade'} means "
-            f"the engine sees this as an exploratory read, not a qualified setup yet."
-        )
-
-    # Mode line
-    bullets.append(
-        f"Mode: {mode} — "
-        + ("the app is explicitly flagging this as a consolidation/absorption phase, not a trending one."
-           if "digestion" in mode.lower() or "caution" in mode.lower()
-           else "the app is reading current conditions as tradeable, not just noise.")
-    )
-
-    # Score/Tier line
-    if tier == "Trap Door":
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — a warning-style zone; conditions look deteriorating, not building.")
-    elif tier == "Monitoring":
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — sits in the \"watch, don't act\" middle zone (35-54), below the 55+ needed to reach Score Tier B.")
-    else:
-        bullets.append(f"Engine Score: {score}%, Score Tier: {tier} — real conviction behind the move, not just noise.")
-
-    # Volume line
+    bullets = [f"Weis setup state: {state.upper()}" + (f", {side}" if side and state != "No setup" else "") + "."]
+    if reason:
+        bullets.append(f"Why: {reason}.")
+    if state in ("Armed", "Setting Up", "Watching") and ws.get("stop"):
+        bullets.append(f"Stop: {stop} (the low of the break for a long, the high for a short). Target: {target}.")
     if rel_vol is None:
-        bullets.append("Volume: data unavailable right now — can't confirm whether real participation is behind this move.")
-    elif is_expanding:
-        bullets.append(
-            f"Volume: {rel_vol:.2f}x average, met — real, elevated participation is happening. "
-            f"But volume alone just means \"something's happening\" — it doesn't tell you which direction."
-        )
+        bullets.append("Volume: data unavailable right now.")
     else:
-        bullets.append(f"Volume: {rel_vol:.2f}x average, not met — no unusual participation behind the current move yet.")
+        bullets.append(f"Volume: {rel_vol:.2f}x the average.")
 
-    # Overall verdict + gates
-    fully_actionable = is_directional and is_qualified_status and is_qualified_grade and tier_actionable
-    if fully_actionable:
-        verdict = (
-            f"What the current combination says: {symbol} is showing a qualified, actionable "
-            f"{bias_lower} setup right now — Bias, Status, Grade, and Score Tier are all "
-            f"aligned. This is the kind of alignment a disciplined trader using this framework "
-            f"would treat as a real, engine-confirmed opportunity, not just a possibility."
-        )
+    nxt_long = "A close back above the broken support line, then a bar with no follow-through to the downside"
+    nxt_short = "A close back below the broken resistance line, then a bar with no follow-through to the upside"
+    if state == "Armed":
+        verdict = (f"{symbol} has an Armed {side} setup. The break closed back inside the line and the "
+                   f"bars after it show no follow-through. Stop {stop}, target {target}.")
         gates = None
+    elif state == "Setting Up":
+        verdict = (f"{symbol} is Setting Up {side}: the bar that broke the line closed back inside it. "
+                   f"It is not Armed until a later bar shows no follow-through.")
+        gates = ([f"A bar after the close back inside with no follow-through (then Armed)"] if d == "long" else
+                 ["Price trades below a support line and closes back above it"],
+                 [f"A bar after the close back inside with no follow-through (then Armed)"] if d == "short" else
+                 ["Price trades above a resistance line and closes back below it"])
+    elif state == "Watching":
+        verdict = (f"{symbol} is on Watching: price has broken a line and has not closed back inside it yet.")
+        gates = ([nxt_long] if d == "long" else ["Price trades below a support line (a spring position)"],
+                 [nxt_short] if d == "short" else ["Price trades above a resistance line (an upthrust position)"])
+    elif state == "Avoid":
+        verdict = (f"{symbol} is on Avoid: {reason or 'the setup failed or is against the longer-term trend'}. "
+                   f"No trade here under the Weis rules.")
+        gates = (["The longer-term trend turns up, or a new spring forms on a support line"],
+                 ["The longer-term trend turns down, or a new upthrust forms on a resistance line"])
     else:
-        verdict = (
-            f"What the current combination says: right now, nothing here is actionable yet"
-            + (f", despite {'strong' if is_expanding else 'available'} volume" if rel_vol is not None else "")
-            + f". The honest summary: {'you have fuel but no direction and no conviction' if is_expanding and not is_directional else 'the engine has not yet confirmed a real, qualified setup'}. "
-            f"A disciplined trader using this framework would treat this as \"stand aside, wait "
-            f"for the engine to actually commit\" rather than force a trade off any single signal "
-            f"alone — the whole point of Confidence/Grade/Status existing separately from raw "
-            f"score is to catch exactly this situation."
-        )
-        long_gates = []
-        if bias_lower != "bullish":
-            long_gates.append("Bias shifts from Neutral/Bearish → Bullish")
-        if not tier_actionable or tier == "Trap Door":
-            long_gates.append(f"Engine Score climbs out of {tier} into Score Tier B (55+) or Score Tier A (80+)")
-        if not is_qualified_status:
-            long_gates.append(f"Status upgrades out of \"{status}\" into a qualified state like Armed or Setting Up")
-        if not is_qualified_grade:
-            long_gates.append(f"Grade improves from {grade} to B or A")
-        if not long_gates:
-            long_gates.append("Price clears a defined trigger level, confirming the move is real")
-
-        short_gates = []
-        if bias_lower != "bearish":
-            short_gates.append("Bias shifts from Neutral/Bullish → Bearish")
-        short_gates.append("Score Tier moves toward Trap Door (below 35) rather than up")
-        short_gates.append("Price breaks down through a defined invalidation/support level")
-
-        gates = (long_gates, short_gates)
-
+        verdict = f"{symbol} has no setup: no support or resistance line has been broken."
+        gates = (["Price trades below a support line (a spring position)"],
+                 ["Price trades above a resistance line (an upthrust position)"])
     return symbol, price, bullets, verdict, gates
 
 
@@ -2755,84 +2682,66 @@ def _build_volume_expansion_note(price, rel_volume):
     )
 
 
-def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None):
-    """Compact, user-readable Direction & Confidence panel.
+def _direction_weis_colors():
+    return {"Armed": TEAL_DIM, "Setting Up": YELLOW_DIM, "Watching": BLUE_DIM, "Avoid": RED_DIM}
 
-    FIX (2026-08-04): merged in the previously-separate Symbol/Live
-    Price/Engine Score/Regime tile per request, so all of this related
-    context lives in one place instead of two side-by-side cards.
-    """
-    bias = decision.get("bias", "Neutral")
-    status = decision.get("status", "Watching")
-    confidence = decision.get("confidence", f"{score}%")
-    mode = decision.get("mode", "Standard")
-    grade = decision.get("grade", "—")
 
-    if str(bias).lower() == "bullish":
-        color = TEAL_DIM
-        icon = ""
-    elif str(bias).lower() == "bearish":
-        color = RED_DIM
-        icon = ""
-    else:
-        color = YELLOW_DIM
-        icon = ""
+def _fmt_level(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return f"${v:.2f}" if v > 0 else "—"
 
+
+def build_direction_panel(decision, score, symbol=None, price=None, regime=None, rel_volume=None,
+                          weis_state=None):
+    """Direction Intelligence = the Weis setup state (No setup, Watching, Setting Up,
+    Armed, Avoid; long = spring, short = upthrust), the same engine and window as the
+    Radar Status. The older score-based Bias / Status - Grade / Mode / Engine Score /
+    Score Tier tiles are gone: that score was not a Weis rule.
+    `decision`, `score` and `rel_volume` are kept in the signature for callers only."""
     extra_tiles = []
     if symbol is not None:
         extra_tiles.append(metric_tile("Symbol", symbol, WHITE))
     if price is not None:
         extra_tiles.append(metric_tile("Live Price", f"${price:.2f}", WHITE))
-    extra_tiles.append(metric_tile("Engine Score", f"{score}%", color))
     if regime is not None:
         extra_tiles.append(metric_tile("Regime", regime.replace("_", " ").title(), YELLOW_DIM))
 
-    # Persistent alert-tier indicator -- shows the CURRENT state at all
-    # times (not just a transient banner on a crossing), per request.
-    if score < 35:
-        tier_label, tier_color = "Trap Door", RED_DIM
-    elif score < 55:
-        tier_label, tier_color = "Monitoring", MUTED
-    elif score < 80:
-        tier_label, tier_color = "Score Tier B — Audio Active", BLUE_DIM
+    if not isinstance(weis_state, dict) or not weis_state.get("state"):
+        headline, color, reason = "LOADING", MUTED, "Weis setup state is loading."
+        direction_txt, stop_txt, target_txt, source_txt = "—", "—", "—", None
     else:
-        tier_label, tier_color = "Score Tier A — Audio Active", TEAL_DIM
-    extra_tiles.append(metric_tile("Score Tier", tier_label, tier_color))
+        st = weis_state["state"]
+        d = weis_state.get("direction")
+        color = _direction_weis_colors().get(st, MUTED)
+        headline = st.upper() + (f" · {d.upper()}" if d and st != "No setup" else "")
+        reason = weis_state.get("reason") or ""
+        direction_txt = {"long": "Long (spring)", "short": "Short (upthrust)"}.get(d, "—")
+        stop_txt = _fmt_level(weis_state.get("stop"))
+        target_txt = _fmt_level(weis_state.get("target")) if weis_state.get("target") else "No target defined"
+        n = weis_state.get("bar_count")
+        source_txt = (f"Weis setup state on the last {n} completed daily bars"
+                      f" ({weis_state.get('source')}). Same rules as the Radar Status." if n else None)
 
     return html.Div([
         slabel("Direction Intelligence"),
         html.Div(
-            f"{icon} {str(bias).upper()}",
-            style={
-                "color": color,
-                "fontSize": "28px",
-                "fontWeight": "900",
-                "lineHeight": "1",
-                "letterSpacing": "-.02em",
-                "margin": "6px 0 10px",
-            }
+            headline,
+            style={"color": color, "fontSize": "28px", "fontWeight": "900", "lineHeight": "1",
+                   "letterSpacing": "-.02em", "margin": "6px 0 10px"},
         ),
+        html.Div(reason, style={"fontSize": "12px", "color": WHITE, "marginBottom": "10px",
+                                "lineHeight": "1.5"}) if reason else None,
         html.Div([
-            metric_tile("Confidence", confidence, color),
-            metric_tile("Status - Grade", f"{status} - {grade}", color),
-            metric_tile("Mode", mode, BLUE_DIM),
+            metric_tile("Direction", direction_txt, color),
+            metric_tile("Stop", stop_txt, WHITE),
+            metric_tile("Target", target_txt, WHITE),
             *extra_tiles,
         ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "6px"}),
-        html.Div(
-            "Score Tier (below) is a separate alert system based on Engine Score -- not the same as Status - Grade above.",
-            style={"fontSize": "9px", "color": MUTED, "marginTop": "10px", "fontStyle": "italic"},
-        ),
-        html.Div([
-            html.Span("Below 35: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Trap Door\" (warning-style zone)", style={"color": RED_DIM}),
-            html.Span("  ·  ", style={"color": WHITE}),
-            html.Span("55-79: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Score Tier B — Audio Active\"", style={"color": BLUE_DIM}),
-            html.Span("  ·  ", style={"color": WHITE}),
-            html.Span("80+: ", style={"color": WHITE, "fontWeight": "700"}),
-            html.Span("\"Score Tier A — Audio Active\"", style={"color": TEAL_DIM}),
-        ], style={"fontSize": "10px", "marginTop": "10px", "lineHeight": "1.6"}),
-        html.Div(_build_volume_expansion_note(price, rel_volume), style={"marginTop": "10px"}) if price is not None else None,
+        html.Div(source_txt, style={"fontSize": "9px", "color": MUTED, "marginTop": "10px",
+                                    "fontStyle": "italic"}) if source_txt else None,
     ])
 
 
@@ -3663,7 +3572,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
             # Column A — Direction & Confidence Panel
             html.Div([
                 build_direction_panel(decision, score, symbol=symbol, price=price, regime=regime,
-                                       rel_volume=live.get("rel_volume")),
+                                       rel_volume=live.get("rel_volume"),
+                                       weis_state=live.get("weis_state")),
             ], style={"flex":"1.2","minWidth":"160px",
                        "borderRight":f"1px solid {BORDER}","paddingRight":"16px"}),
 
@@ -12243,6 +12153,20 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
         except Exception:
             pass
 
+    # Weis setup state for the Command Center's Direction Intelligence tile
+    # (same engine and window as the Radar Status). Refreshed on the same
+    # throttle; the state only changes when a daily bar completes.
+    weis_state_data = (current or {}).get("weis_state")
+    if (seq or 0) % 30 == 0 or (not weis_state_data and (seq or 0) % 5 == 0):
+        try:
+            ws_r = req.get(f"{BACKEND_HTTP}/api/radar/symbol/{clean}/weis-state", timeout=8)
+            if ws_r.ok:
+                ws_payload = ws_r.json()
+                if ws_payload.get("ok"):
+                    weis_state_data = ws_payload
+        except Exception:
+            pass
+
     # Real Historical Analog Engine -- lighter than the two above (no
     # bar fetching, just a database query), but still throttled for
     # consistency and to avoid an unnecessary query on every tick.
@@ -12374,6 +12298,7 @@ def on_tick(_, current, seq, candles, live_mode, symbol, tf, lookback=None, char
         "evidence_diagnostics_data": evidence_diagnostics_data,
         "validated_classification": validated_classification,
         "wyckoff_verdict": wyckoff_verdict,
+        "weis_state": weis_state_data,
         "campaign_analogs": campaign_analogs_data,
         "timestamp": tick_time,
         "sequence": new_seq,
