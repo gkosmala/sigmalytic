@@ -29,3 +29,12 @@ def test_kept_cards_are_in_both_admin_layouts():
 def test_snapshot_writer_card_stays_on_the_main_admin_layout():
     s = _src()
     assert len(re.findall(r"^[ ]+snap_block,\n", s, re.M)) == 1
+
+
+def test_imbalance_tab_sits_between_sigma_analysis_and_heat_map():
+    s = _src()
+    block = s[s.index("ALL_TABS = ["):s.index("]\n", s.index("ALL_TABS = ["))]
+    keys = re.findall(r'^\s+\("(\w+)",', block, re.M)
+    assert keys.index("imbalance") == keys.index("weis") + 1
+    assert keys.index("heatmap") == keys.index("imbalance") + 1
+    assert keys.count("imbalance") == 1
