@@ -130,9 +130,16 @@ services:
     # for this exact setting) -- still recycles periodically as a
     # general safety net, just no longer aggressively enough to be the
     # dominant source of restarts under ordinary load.
+    # UPDATE (2026-10-08): 1000 was recycling the worker about every 5 minutes
+    # while a Command Center tab is open (about 3 requests a second). Every
+    # recycle empties the in-process caches (the Command Center chart HTML,
+    # last-good panel values) and the chart reloads, which showed as a blink at
+    # most every 5 minutes (restarts logged 13:08 and 13:13 UTC). Memory was
+    # shown flat, so 20000 keeps the recycling as a safety net, about every
+    # 1.5 to 2 hours at that rate.
     # One process keeps memory usage bounded; a third thread keeps navigation
     # responsive while live updates and a chart request await backend data.
-    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 3 --max-requests 1000 --max-requests-jitter 200 --bind 0.0.0.0:$PORT --timeout 240
+    startCommand: gunicorn frontend.app:server --workers 1 --worker-class gthread --threads 3 --max-requests 20000 --max-requests-jitter 2000 --bind 0.0.0.0:$PORT --timeout 240
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
