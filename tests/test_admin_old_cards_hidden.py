@@ -5,7 +5,8 @@ import re
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 HIDDEN = ["symbol_backtest_block", "portfolio_rankings_block", "decay_monitor_block", "closure_engine_block",
           "state_transition_block", "campaign_outcome_block", "bme_memory_status_block",
-          "operator_footprint_block", "enriched_campaign_table_block", "grade_grid", "score_table"]
+          "operator_footprint_block", "enriched_campaign_table_block", "grade_grid", "score_table",
+          "accuracy_block", "narrative_block"]
 KEPT = ["setup_deployment_block", "journal_correction_block", "subscriber_alerts_block"]
 
 
@@ -23,3 +24,8 @@ def test_kept_cards_are_in_both_admin_layouts():
     s = _src()
     for name in KEPT:
         assert len(re.findall(r"^[ ]+" + name + r",\n", s, re.M)) == 2, name
+
+
+def test_snapshot_writer_card_stays_on_the_main_admin_layout():
+    s = _src()
+    assert len(re.findall(r"^[ ]+snap_block,\n", s, re.M)) == 1
