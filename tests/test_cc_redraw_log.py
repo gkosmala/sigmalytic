@@ -23,7 +23,7 @@ def _chart_html():
 
 def test_redraw_log_is_in_the_chart_document():
     doc = _chart_html()
-    assert "redrawLog" in doc and "full redraws:" in doc
+    assert "redrawLog" in doc and "chart log:" in doc
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
@@ -43,7 +43,7 @@ def test_walls_move_in_place_instead_of_a_full_redraw():
     doc = _chart_html()
     assert "function applyWallsInPlace" in doc
     # the in-place path must come before the full-redraw diagnostic/render path
-    assert doc.index("applyWallsInPlace(msg)") < doc.index("full redraws:")
+    assert doc.index("applyWallsInPlace(msg)") < doc.index("FULL redraw: ")
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
@@ -54,7 +54,7 @@ def test_apply_walls_in_place_behaviour():
     start = doc.index("function applyWallsInPlace")
     end = doc.index("window.addEventListener('message'", start)
     fn = doc[start:end]
-    harness = fn + r"""
+    harness = "function noteLog() {}\n" + fn + r"""
 const inputs = {callWall: {value: '101'}, putWall: {value: '99'}, gammaFlip: {value: '100'}};
 const calls = [];
 global.Plotly = {relayout: (p, u) => calls.push(u)};

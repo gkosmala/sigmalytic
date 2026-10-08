@@ -9585,6 +9585,27 @@ function updateLivePriceOnly(price, volume) {
   }
 }
 
+// DIAGNOSTIC (2026-10-08): small grey note, bottom-right, newest last. Records full
+// redraws, in-place wall moves and ANY script error, so a blink or a blank chart can be
+// matched to a cause without opening the browser console.
+function noteLog(text) {
+  try {
+    let box = document.getElementById('redrawLog');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'redrawLog';
+      box.style.cssText = 'position:fixed;left:8px;bottom:4px;font:10px monospace;color:#6b7280;text-align:left;pointer-events:none;z-index:5;white-space:pre';
+      document.body.appendChild(box);
+      window.__redrawLines = [];
+    }
+    window.__redrawLines.push(new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ' + text);
+    window.__redrawLines = window.__redrawLines.slice(-6);
+    box.textContent = 'chart log:\\n' + window.__redrawLines.join('\\n');
+  } catch (e) { /* diagnostic only */ }
+}
+window.addEventListener('error', (e) => noteLog('ERROR ' + (e.message || e.error) + ' @' + (e.lineno || '?')));
+window.addEventListener('unhandledrejection', (e) => noteLog('ERROR (promise) ' + (e.reason && e.reason.message || e.reason)));
+
 // Move the option-wall lines in place (Plotly.relayout) instead of redrawing the whole
 // chart. 2026-10-08: the on-screen redraw log showed these walls (the Gamma Flip in
 // particular) drifting past the $0.05 threshold every few minutes by design -- each
@@ -9616,6 +9637,7 @@ function applyWallsInPlace(msg) {
   }
   if (!newInputs.length) return false;
   Plotly.relayout(plot, update);
+  noteLog('walls moved in place ' + newInputs.map(([id, v]) => id + ' ' + v.toFixed(2)).join(' '));
   for (const [id, v] of newInputs) document.getElementById(id).value = v;
   return true;
 }
@@ -9733,18 +9755,8 @@ window.addEventListener('message', (event) => {
     return;
   }
 
-  // DIAGNOSTIC (2026-10-08): on-screen record of why this chart did a FULL redraw
-  // (the only thing that can flash it without a server-side rebuild). Last 4 shown
-  // bottom-right in small grey text so a reported blink can be matched to a reason.
-  try {
-    let box = document.getElementById('redrawLog');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'redrawLog';
-      box.style.cssText = 'position:fixed;right:8px;bottom:4px;font:10px monospace;color:#6b7280;text-align:right;pointer-events:none;z-index:5;white-space:pre';
-      document.body.appendChild(box);
-      window.__redrawLines = [];
-    }
+  // DIAGNOSTIC (2026-10-08): why this chart is doing a FULL redraw.
+  {
     const why = [];
     if (tradeRolled) why.push('new-bucket');
     if (hasNewBar) why.push('new-bar');
@@ -9752,10 +9764,8 @@ window.addEventListener('message', (event) => {
       [['call', msg.callWall, curCallWall], ['put', msg.putWall, curPutWall], ['flip', msg.gammaFlip, curGammaFlip]]
         .filter(w => typeof w[1] === 'number' && (isNaN(w[2]) || Math.abs(w[1] - w[2]) > EPS))
         .map(w => w[0] + ' ' + (isNaN(w[2]) ? '?' : w[2].toFixed(2)) + '>' + w[1].toFixed(2)).join(' '));
-    window.__redrawLines.push(new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ' + why.join(' + '));
-    window.__redrawLines = window.__redrawLines.slice(-4);
-    box.textContent = 'full redraws:\\n' + window.__redrawLines.join('\\n');
-  } catch (e) { /* diagnostic only */ }
+    noteLog('FULL redraw: ' + why.join(' + '));
+  }
 
   if (hasNewBar) {
     const nb = msg.newBar;
@@ -9787,6 +9797,10 @@ window.addEventListener('message', (event) => {
     document.getElementById('gammaFlip').value = msg.gammaFlip;
   }
   render();
+  {
+    const pd = document.getElementById('chart').data;
+    if (!pd || !pd.length) noteLog('BLANK after render (bars=' + RAW_BARS.length + ')');
+  }
 });
 
 restoreSettings();
