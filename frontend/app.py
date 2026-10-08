@@ -3153,7 +3153,11 @@ _CC_CHART_HTML_CACHE = {}
 _cc_bg_fetch_in_progress = set()
 _cc_bg_fetch_lock = threading.Lock()
 
-def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder=None):
+def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder=None, is_good=None):
+    """`is_good(result)`: when given and a refresh comes back bad (a 502 while the backend
+    restarts, a timeout), the last good value is kept instead of being overwritten by the
+    error, so a panel does not flip to "data not available" on a transient failure. With no
+    earlier good value the error is stored, so the reason still shows."""
     if not shared_cache:
         # No cache available at all (rare) -- fall back to the old
         # blocking call rather than showing empty data forever.
@@ -3172,6 +3176,11 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
         def _run():
             try:
                 result = fetch_fn()
+                if is_good is not None and not is_good(result):
+                    prior = shared_cache.peek_stale(cache_key)
+                    if prior is not None and is_good(prior):
+                        print(f"[CC_BG_FETCH_KEEP_LAST_GOOD] {cache_key}: {str(result)[:120]}", flush=True)
+                        return
                 shared_cache.get_or_fetch(cache_key, lambda: result, ttl_seconds=ttl_seconds)
             except Exception as _exc:
                 print(f"[CC_BG_FETCH_FAIL] {cache_key}: {type(_exc).__name__}: {_exc}", flush=True)
@@ -3201,6 +3210,11 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
         return stale
 
     return placeholder if placeholder is not None else {"status": "LOADING_IN_BACKGROUND"}
+
+
+def _weis_engine_ok(r):
+    """A usable Renko-Weis / PnF-Weis answer (data, or a real 'not enough history')."""
+    return isinstance(r, dict) and r.get("status") in ("OK", "INSUFFICIENT_HISTORY")
 
 
 def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="all"):
@@ -3261,6 +3275,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         f"cc-renko:{symbol}",
         lambda: _fetch_weis_engine(f"/api/research/renko-weis/{symbol}"),
         ttl_seconds=15,
+        is_good=_weis_engine_ok,
     )
     renko_weis_status = renko_weis.get("status", "UNKNOWN")
 
@@ -3268,6 +3283,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         f"cc-pnf:{symbol}",
         lambda: _fetch_weis_engine(f"/api/research/pnf-weis/{symbol}"),
         ttl_seconds=15,
+        is_good=_weis_engine_ok,
     )
     pnf_weis_status = pnf_weis.get("status", "UNKNOWN")
 
@@ -3755,6 +3771,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         rw_body = html.Div(
             f"Not enough daily history yet ({renko_weis.get('bars_available', 0)} bars available, 20+ needed).",
             style={"fontSize":"12px","color":MUTED})
+    elif renko_weis_status == "LOADING_IN_BACKGROUND":
+        rw_body = html.Div("Loading Renko-Weis…", style={"fontSize":"12px","color":MUTED})
     else:
         rw_body = html.Div(
             renko_weis.get("error") or "Renko-Weis data not available for this symbol right now.",
@@ -3831,6 +3849,8 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         pw_body = html.Div(
             f"Not enough daily history yet ({pnf_weis.get('bars_available', 0)} bars available, 20+ needed).",
             style={"fontSize":"12px","color":MUTED})
+    elif pnf_weis_status == "LOADING_IN_BACKGROUND":
+        pw_body = html.Div("Loading PnF-Weis…", style={"fontSize":"12px","color":MUTED})
     else:
         pw_body = html.Div(
             pnf_weis.get("error") or "PnF-Weis data not available for this symbol right now.",
