@@ -6575,7 +6575,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
-        grade_grid,
         setup_deployment_block,
         journal_correction_block,
         subscriber_alerts_block,
