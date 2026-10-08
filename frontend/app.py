@@ -9690,6 +9690,30 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // DIAGNOSTIC (2026-10-08): on-screen record of why this chart did a FULL redraw
+  // (the only thing that can flash it without a server-side rebuild). Last 4 shown
+  // bottom-right in small grey text so a reported blink can be matched to a reason.
+  try {
+    let box = document.getElementById('redrawLog');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'redrawLog';
+      box.style.cssText = 'position:fixed;right:8px;bottom:4px;font:10px monospace;color:#6b7280;text-align:right;pointer-events:none;z-index:5;white-space:pre';
+      document.body.appendChild(box);
+      window.__redrawLines = [];
+    }
+    const why = [];
+    if (tradeRolled) why.push('new-bucket');
+    if (hasNewBar) why.push('new-bar');
+    if (hasWallChange) why.push('walls ' +
+      [['call', msg.callWall, curCallWall], ['put', msg.putWall, curPutWall], ['flip', msg.gammaFlip, curGammaFlip]]
+        .filter(w => typeof w[1] === 'number' && (isNaN(w[2]) || Math.abs(w[1] - w[2]) > EPS))
+        .map(w => w[0] + ' ' + (isNaN(w[2]) ? '?' : w[2].toFixed(2)) + '>' + w[1].toFixed(2)).join(' '));
+    window.__redrawLines.push(new Date().toLocaleTimeString('en-US', {timeZone: 'America/New_York'}) + ' ' + why.join(' + '));
+    window.__redrawLines = window.__redrawLines.slice(-4);
+    box.textContent = 'full redraws:\\n' + window.__redrawLines.join('\\n');
+  } catch (e) { /* diagnostic only */ }
+
   if (hasNewBar) {
     const nb = msg.newBar;
     if (typeof nb.date === 'string' && typeof nb.close === 'number' &&
