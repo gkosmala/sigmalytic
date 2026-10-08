@@ -3152,6 +3152,7 @@ _CC_CHART_HTML_CACHE = {}
 # complete -- a background thread, not the user-facing render.
 _cc_bg_fetch_in_progress = set()
 _cc_bg_fetch_lock = threading.Lock()
+_cc_last_value = {}  # cache_key -> last value seen (last GOOD one when is_good is given)
 
 def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder=None, is_good=None):
     """`is_good(result)`: when given and a refresh comes back bad (a 502 while the backend
@@ -3177,10 +3178,13 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
             try:
                 result = fetch_fn()
                 if is_good is not None and not is_good(result):
-                    prior = shared_cache.peek_stale(cache_key)
-                    if prior is not None and is_good(prior):
+                    if cache_key in _cc_last_value:
                         print(f"[CC_BG_FETCH_KEEP_LAST_GOOD] {cache_key}: {str(result)[:120]}", flush=True)
                         return
+                with _cc_bg_fetch_lock:
+                    if len(_cc_last_value) > 500:
+                        _cc_last_value.clear()
+                    _cc_last_value[cache_key] = result
                 shared_cache.get_or_fetch(cache_key, lambda: result, ttl_seconds=ttl_seconds)
             except Exception as _exc:
                 print(f"[CC_BG_FETCH_FAIL] {cache_key}: {type(_exc).__name__}: {_exc}", flush=True)
@@ -3206,6 +3210,12 @@ def _cc_cached_background_fetch(cache_key, fetch_fn, ttl_seconds=15, placeholder
     # and only genuinely falls through to the placeholder on a true
     # cold start (this exact key has never been cached at all).
     stale = shared_cache.peek_stale(cache_key)
+    if stale is None:
+        # With Redis active a cached entry is deleted when its TTL ends, so
+        # peek_stale() finds nothing and the panel would drop to the loading
+        # placeholder every cycle. This process's own copy of the last value
+        # is the fallback.
+        stale = _cc_last_value.get(cache_key)
     if stale is not None:
         return stale
 
