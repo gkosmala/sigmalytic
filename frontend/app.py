@@ -3227,6 +3227,32 @@ def _weis_engine_ok(r):
     return isinstance(r, dict) and r.get("status") in ("OK", "INSUFFICIENT_HISTORY")
 
 
+def _cc_chart_decision(cached_fp, fp, bars):
+    """What the Command Center chart iframe should do this render. A rebuild changes the
+    iframe's srcDoc and reloads the chart (the blink), so only a real change gets one.
+
+      "reuse"    nothing changed, or this tick returned no bars: keep what is on screen
+      "push"     exactly one new bar on the same series (a routine 5-minute rollover): keep
+                 the page, hand the new bar to the open chart
+      "rebuild"  first chart for this symbol, or symbol / timeframe / hours changed, or a
+                 jump of more than one bar
+
+    The bar count may stay the same on a rollover: the series is a fixed window, so the new
+    bar pushes the oldest one off. (Before, only count + 1 counted as a rollover, so every
+    5-minute bar reloaded the chart once the window was full.)"""
+    if cached_fp is None:
+        return "rebuild"
+    if cached_fp == fp:
+        return "reuse"
+    if len(cached_fp) == 5 and len(fp) == 5 and cached_fp[:3] == fp[:3]:
+        if not bars:
+            return "reuse"
+        if (len(bars) >= 2 and bars[-2]["date"] == cached_fp[4]
+                and cached_fp[3] in (len(bars) - 1, len(bars))):
+            return "push"
+    return "rebuild"
+
+
 def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="all"):
     if tf in ("1D", "1W", "1M"):
         chart_hours = "all"
@@ -3413,16 +3439,12 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
     _cc_fingerprint = (symbol, tf, chart_hours, len(_cc_bars), _cc_bars[-1]["date"] if _cc_bars else None)
     _cached_entry = _CC_CHART_HTML_CACHE.get(symbol)
     _cc_new_bar_to_push = None
-    if _cached_entry and _cached_entry[0] == _cc_fingerprint:
+    _cc_plan = _cc_chart_decision(_cached_entry[0] if _cached_entry else None, _cc_fingerprint, _cc_bars)
+    if _cc_plan == "reuse":
         command_chart_html = _cached_entry[1]
-    elif (_cached_entry and _cc_bars and len(_cached_entry[0]) == 5
-          and _cached_entry[0][0] == symbol and _cached_entry[0][1] == tf
-          and _cached_entry[0][2] == chart_hours
-          and _cached_entry[0][3] == len(_cc_bars) - 1
-          and len(_cc_bars) >= 2 and _cc_bars[-2]["date"] == _cached_entry[0][4]):
-        # Exactly one new bar appended -- reuse the cached HTML as-is
-        # (no reload) and hand the new bar to the hidden div below so
-        # it gets pushed into the already-loaded chart instead.
+    elif _cc_plan == "push":
+        # Exactly one new bar -- reuse the cached HTML as-is (no reload) and hand the
+        # new bar to the hidden div below so it gets pushed into the loaded chart.
         command_chart_html = _cached_entry[1]
         _cc_new_bar_to_push = _cc_bars[-1]
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
