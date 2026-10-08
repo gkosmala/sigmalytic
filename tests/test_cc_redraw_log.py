@@ -124,3 +124,10 @@ def test_chart_reports_its_size_and_visibility():
     assert "TINY/HIDDEN chart" in doc
     assert "visibilitychange" in doc
     assert "window.frameElement" in doc
+
+
+def test_chart_logs_when_visible_window_misses_the_candles():
+    doc = _chart_html()
+    assert "EMPTY CHART strike" in doc
+    assert "repair: reset zoom + redraw" in doc
+    assert "repair: reloading the chart document" in doc
