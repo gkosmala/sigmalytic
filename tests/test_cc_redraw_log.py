@@ -116,3 +116,11 @@ def test_client_log_text_is_capped_and_single_line(capsys):
     client.post("/cc-client-log", data="a\nb\r" + "z" * 1000, content_type="text/plain")
     line = [l for l in capsys.readouterr().out.splitlines() if l.startswith("[CC_BROWSER]")][0]
     assert len(line) < 330 and "\n" not in line and "\r" not in line
+
+
+def test_chart_reports_its_size_and_visibility():
+    doc = _chart_html()
+    assert "SIZE changed" in doc
+    assert "TINY/HIDDEN chart" in doc
+    assert "visibilitychange" in doc
+    assert "window.frameElement" in doc
