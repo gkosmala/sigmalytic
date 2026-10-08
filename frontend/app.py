@@ -12,6 +12,8 @@ Includes: Behavioral Intelligence Layer v1.0
 
 # test build filter frontend
 from __future__ import annotations
+import collections
+import hashlib
 import json
 import os
 import re
@@ -23,6 +25,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import dash
+from flask import Response
 from dash import dcc, html, Input, Output, State, no_update, callback_context, MATCH, ALL
 import plotly.graph_objects as go
 import requests as req
@@ -3127,6 +3130,28 @@ def _pnf_count_guide_block(count_guide):
 # iframe on every 10-second live tick when nothing meaningful changed).
 _CC_CHART_HTML_CACHE = {}
 
+# The chart document used to travel inside every update response as the
+# iframe's srcDoc (~220 KB every ~10 s tick, even when nothing changed),
+# and Render's router intermittently answered those large responses with
+# a 502. It is now served from its own URL: the update only carries the
+# short URL, which stays identical until the chart genuinely changes.
+# Content-addressed (hash of the HTML), so the same chart = the same URL
+# = the browser never reloads the iframe. Bounded; oldest dropped first.
+_CC_CHART_BY_TOKEN = collections.OrderedDict()
+_CC_CHART_BY_TOKEN_MAX = 40
+
+
+def _cc_chart_url(chart_html):
+    """Register `chart_html` and return the short URL that serves it."""
+    token = hashlib.sha1(chart_html.encode("utf-8")).hexdigest()[:24]
+    if token in _CC_CHART_BY_TOKEN:
+        _CC_CHART_BY_TOKEN.move_to_end(token)
+    else:
+        _CC_CHART_BY_TOKEN[token] = chart_html
+        while len(_CC_CHART_BY_TOKEN) > _CC_CHART_BY_TOKEN_MAX:
+            _CC_CHART_BY_TOKEN.popitem(last=False)
+    return f"/cc-chart/{token}"
+
 # ADDED (later session): user reported Command Center "keeps blinking."
 # Network tab evidence (screenshot) ruled out the chart iframe itself --
 # no repeated plotly.min.js fetch -- and instead showed
@@ -3586,7 +3611,7 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         # into it -- fixing the chart appearing to "blink" on every
         # 10-second tick without going back to a frozen, non-live chart.
         html.Div(
-            html.Iframe(id="cc-weis-chart", srcDoc=command_chart_html, allow="fullscreen",
+            html.Iframe(id="cc-weis-chart", src=_cc_chart_url(command_chart_html), allow="fullscreen",
                         style={"width":"100%","height":"max(260px, calc(100dvh - 355px))","border":"none"}),
             style={"margin":"0 -20px -8px -20px","overflow":"visible"},
         ),
@@ -10174,6 +10199,18 @@ app.clientside_callback(
     State("s-radio-enabled", "data"),
     prevent_initial_call=True,
 )
+
+
+@server.route("/cc-chart/<token>")
+def serve_cc_chart(token):
+    """Serve a Command Center chart document registered by _cc_chart_url."""
+    chart_html = _CC_CHART_BY_TOKEN.get(token)
+    if chart_html is None:
+        return Response("Chart expired - it refreshes on the next update.",
+                        status=404, mimetype="text/plain")
+    resp = Response(chart_html, mimetype="text/html")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 
 # Allow Stripe scripts and iframes via CSP
