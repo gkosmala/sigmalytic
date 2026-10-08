@@ -11402,6 +11402,7 @@ ALL_TABS = [
     ("weis_radar",  "Sigma Radar"),
     ("status",      "Live Opportunity Center"),
     ("weis",        "Sigma Analysis"),
+    ("imbalance",   "Imbalance Alerts"),
     ("heatmap",     "Heat Map"),
     # ARCHIVED (later session, at explicit request): Radar Screen,
     # Intelligence Change Detector, and Scoreboard were removed from
@@ -11414,7 +11415,6 @@ ALL_TABS = [
     # set_tab() -- nothing to rebuild from scratch.
     ("broker_bi",   "Broker Behavioural Intelligence"),
     ("behavior",    "Behavioral Intelligence"),
-    ("imbalance",   "Imbalance Alerts"),
     ("import",      "Import History"),
     ("journal",     "Journal"),
     ("portfolio",   "Portfolio"),
