@@ -3426,7 +3426,14 @@ def build_command_tab(live, candles, symbol, tf, quote_data=None, chart_hours="a
         command_chart_html = _cached_entry[1]
         _cc_new_bar_to_push = _cc_bars[-1]
         _CC_CHART_HTML_CACHE[symbol] = (_cc_fingerprint, command_chart_html)
+        print(f"[CC_CHART_NEWBAR] {symbol} {tf} one new bar pushed without reload new={_cc_fingerprint}", flush=True)
     else:
+        # Diagnostic: a rebuild changes the iframe's srcDoc, which reloads the chart
+        # (the blink). Say why, in one line, so a blink can be matched to its cause.
+        _old_fp = _cached_entry[0] if _cached_entry else None
+        print(f"[CC_CHART_REBUILD] {symbol} {tf} "
+              f"{'cold cache (no earlier chart for this symbol in this process)' if _old_fp is None else 'fingerprint changed'}"
+              f" old={_old_fp} new={_cc_fingerprint}", flush=True)
         _cc_chart_data = {
             "symbol": symbol, "timeframe": tf, "session_hours": chart_hours,
             "bars": _cc_bars, "hits": [],
