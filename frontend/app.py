@@ -7207,11 +7207,11 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <div class="ctrl">
     <label>Weis Radar signals (scanHistoricalPatterns, matches app.py's WEIS_RADAR_SIGNAL_OPTIONS)</label>
     <div class="radio-group">
-      <label><input type="checkbox" id="sig_spring"> Spring</label>
-      <label><input type="checkbox" id="sig_upthrust"> Upthrust</label>
-      <label><input type="checkbox" id="sig_breakout"> Breakout</label>
-      <label><input type="checkbox" id="sig_breakdown"> Breakdown</label>
-      <label><input type="checkbox" id="sig_3bar"> 3-Bar Reversal</label>
+      <label><input type="checkbox" id="sig_spring" checked> Spring</label>
+      <label><input type="checkbox" id="sig_upthrust" checked> Upthrust</label>
+      <label><input type="checkbox" id="sig_breakout" checked> Breakout</label>
+      <label><input type="checkbox" id="sig_breakdown" checked> Breakdown</label>
+      <label><input type="checkbox" id="sig_3bar" checked> 3-Bar Reversal</label>
       <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Buying Climax</label>
       <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Selling Climax</label>
       <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Absorption / No Supply</label>
@@ -7228,9 +7228,9 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
       <label><input type="checkbox" id="showWeisAll"> All</label>
       <label><input type="checkbox" id="showWeisZigzag" checked> Zigzag</label>
       <label><input type="checkbox" id="showWeisPivots"> Pivots</label>
-      <label><input type="checkbox" id="showWeisAxisLines"> Axis Lines</label>
-      <label><input type="checkbox" id="showWeisTrendlines"> Trendlines</label>
-      <label><input type="checkbox" id="showWeisChannels"> Channels</label>
+      <label><input type="checkbox" id="showWeisAxisLines" checked> Axis Lines</label>
+      <label><input type="checkbox" id="showWeisTrendlines" checked> Trendlines</label>
+      <label><input type="checkbox" id="showWeisChannels" checked> Channels</label>
       <label><input type="checkbox" id="showWeisIceLine"> Ice Line</label>
       <label><input type="checkbox" id="showWeisConfluence"> Confluence</label>
     </div>
@@ -7246,6 +7246,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">&#10558; Reset Zoom</button>
   <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
 </div>
+<div id="quickToggles" style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:4px 0 8px 0;"></div>
 <div id="historyNav" style="background:#101722; border:1px solid #2b3b4e; border-radius:6px; padding:4px 8px; margin:2px 0;">
   <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:11px; margin-bottom:2px;">
     <label for="historySlider" style="font-weight:700; color:#dbeafe;">Chart History</label>
@@ -7477,6 +7478,59 @@ document.addEventListener('fullscreenchange', () => {
   }
   setTimeout(() => { render(); setTimeout(() => window.__ccHeal && window.__ccHeal(), 500); }, 80);
 });
+
+// One-click toggle chips: always visible above the chart, each one flips the
+// matching checkbox in the settings panel (so state/persistence stay in one place).
+const QUICK_TOGGLES = [
+  ['Zigzag','showWeisZigzag'],['Pivots','showWeisPivots'],['Axis lines','showWeisAxisLines'],
+  ['Trendlines','showWeisTrendlines'],['Channels','showWeisChannels'],['Ice line','showWeisIceLine'],
+  ['Confluence','showWeisConfluence'],['Spring','sig_spring'],['Upthrust','sig_upthrust'],
+  ['Breakout','sig_breakout'],['Breakdown','sig_breakdown'],['3-bar','sig_3bar'],
+  ['S/R','showSR'],['SOS/SOW','showSOSSOW'],['Effort/Result','showEffort'],['Absorption','showAbsorption'],
+  ['Ease of move','showEOM'],['Close meaning','showMOC'],['Thrust','showSOT'],
+  ['Call wall','showCallWall'],['Put wall','showPutWall'],['Gamma flip','showGammaFlip'],
+];
+function syncQuickToggles() {
+  for (const b of document.querySelectorAll('#quickToggles button[data-cb]')) {
+    const cb = document.getElementById(b.dataset.cb);
+    const on = !!(cb && cb.checked);
+    b.style.background = on ? '#1f6f4a' : '#1a2230';
+    b.style.borderColor = on ? '#4ade80' : '#3a4a5f';
+    b.style.color = on ? '#ffffff' : '#9fb0c0';
+  }
+}
+(function buildQuickToggles() {
+  const host = document.getElementById('quickToggles');
+  if (!host) return;
+  const mk = (label, cbId) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = label; if (cbId) b.dataset.cb = cbId;
+    b.style.cssText = 'border:1px solid #3a4a5f; border-radius:14px; padding:4px 11px; font-size:11px; font-weight:600; cursor:pointer;';
+    return b;
+  };
+  for (const [label, id] of QUICK_TOGGLES) {
+    const cb = document.getElementById(id);
+    if (!cb || cb.disabled) continue;
+    const b = mk(label, id);
+    b.addEventListener('click', () => {
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change', {bubbles:true}));
+      syncQuickToggles();
+    });
+    host.appendChild(b);
+  }
+  const all = mk('All lines on/off');
+  all.style.background = '#17324f';
+  all.addEventListener('click', () => {
+    const all_ = document.getElementById('showWeisAll');
+    all_.checked = !all_.checked;
+    all_.dispatchEvent(new Event('change', {bubbles:true}));
+    syncQuickToggles();
+  });
+  host.appendChild(all);
+  document.addEventListener('change', () => setTimeout(syncQuickToggles, 0), true);
+  syncQuickToggles();
+})();
 document.getElementById('chartSettings').addEventListener('toggle', () => setTimeout(render, 40));
 for (const [axis,id] of [['wave','waveLadder'],['bar','barLadder']]) {
   const ladder = document.getElementById(id);
@@ -8432,7 +8486,7 @@ const SUPPORT_TYPES = new Set(['SPRING', 'BREAKDOWN', 'SPRING_BUILDING']);
 // browser configurations restrict storage access in embedded frames;
 // if that happens here, this silently no-ops and behaves exactly as
 // before (settings just won't persist) rather than breaking anything.
-const SETTINGS_KEY = 'sigmalytic_chart_settings_v2';
+const SETTINGS_KEY = 'sigmalytic_chart_settings_v3';
 const PERSISTED_CHECKBOX_IDS = [
   'showCallWall','showPutWall','showGammaFlip','showSecUpper','showSecLower',
   'showSR','showEffort','showSOSSOW','showSOT','showEOM','showMOC','showAbsorption',
@@ -9982,7 +10036,7 @@ window.addEventListener('message', (event) => {
   }
 });
 
-restoreSettings();
+restoreSettings(); if (typeof syncQuickToggles === "function") syncQuickToggles();
 fitFrameToViewport();
 // Initial auto-calibration: unlike the standalone reference tool (which
 // triggers this from its "Activate" button after a CSV upload), this
