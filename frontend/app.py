@@ -7040,7 +7040,6 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   html:fullscreen, html:fullscreen body { width:100%; height:100%; }
   #chartSettings { background:#121821; border:1px solid #232c38; border-radius:7px; margin-bottom:4px; }
   #chartSettings summary { cursor:pointer; padding:5px 9px; color:#dbeafe; font-size:11px; font-weight:700; }
-  #chartSettings > summary { display:none; }
   .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
   .ctrl { display:flex; flex-direction:column; gap:4px; }
   .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8b98a5; }
@@ -7078,8 +7077,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <span><b>__SYMBOL__</b> · __TIMEFRAME_LABEL__ · <span id="sessionCaption">Regular hours</span></span>
   <button type="button" id="fullscreenBtn" style="background:#193d37;color:#dbeafe;border:1px solid #366c5d;border-radius:5px;padding:3px 9px;cursor:pointer;">⛶ Full screen</button>
 </div>
-<details id="chartSettings" open>
-<summary>Studies, volume settings and annotations</summary>
+<details id="chartSettings">
+<summary>⚙ Settings, studies and annotations (click to open)</summary>
 <div class="controls">
   <div class="ctrl" style="border-right:1px solid #2a3441; padding-right:18px;">
     <label>Symbol</label>
