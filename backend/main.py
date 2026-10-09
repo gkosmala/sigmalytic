@@ -283,6 +283,24 @@ def _get_market_wire_uncached():
                 prev_daily = snap.get("prevDailyBar") or {}
                 price = latest_trade.get("p")
                 prev_close = prev_daily.get("c")
+                # FIX: before the open (pre-market) the latest trade is dated today but the
+                # snapshot's dailyBar is still YESTERDAY's completed bar and prevDailyBar is
+                # the day before that, so the % change was measured against a two-day-old
+                # close. When the trade falls on a later calendar day (ET) than the dailyBar,
+                # yesterday's close (dailyBar) is the right baseline.
+                try:
+                    from zoneinfo import ZoneInfo
+                    daily_bar = snap.get("dailyBar") or {}
+                    trade_ts = latest_trade.get("t")
+                    bar_ts = daily_bar.get("t")
+                    if trade_ts and bar_ts and daily_bar.get("c"):
+                        trade_day = datetime.fromisoformat(str(trade_ts).replace("Z", "+00:00")).astimezone(
+                            ZoneInfo("America/New_York")).date()
+                        bar_day = datetime.strptime(str(bar_ts)[:10], "%Y-%m-%d").date()  # a daily bar's own calendar date
+                        if trade_day > bar_day:
+                            prev_close = daily_bar.get("c")
+                except Exception:
+                    pass
                 change_pct = None
                 if price is not None and prev_close:
                     change_pct = round((price - prev_close) / prev_close * 100, 2)
