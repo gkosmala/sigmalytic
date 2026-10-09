@@ -7035,13 +7035,13 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
 <title>__SYMBOL__ Weis Radar Chart</title>
 <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.32.0/dist/plotly.min.js"></script>
 <style>
-  html { overflow:hidden; }
-  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:6px 10px; box-sizing:border-box; overflow:hidden; }
+  html { overflow:auto; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0b0f14; color:#e6e9ee; margin:0; padding:16px; box-sizing:border-box; overflow:auto; }
   html:fullscreen, html:fullscreen body { width:100%; height:100%; }
   #chartSettings { background:#121821; border:1px solid #232c38; border-radius:7px; margin-bottom:4px; }
   #chartSettings summary { cursor:pointer; padding:5px 9px; color:#dbeafe; font-size:11px; font-weight:700; }
-  #chartSettings[open] { max-height:calc(100dvh - 260px); overflow:auto; }
-  .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border-radius:10px; padding:10px 12px; }
+  #chartSettings > summary { display:none; }
+  .controls { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; background:#121821; border:1px solid #232c38; border-radius:10px; padding:14px 16px; margin-bottom:14px; }
   .ctrl { display:flex; flex-direction:column; gap:4px; }
   .ctrl label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#8b98a5; }
   .ctrl input[type=number] { width:90px; background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
@@ -7050,7 +7050,7 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .ctrl select { background:#0b0f14; border:1px solid #2a3441; color:#e6e9ee; padding:6px 8px; border-radius:6px; }
   .radio-group { display:flex; flex-wrap:wrap; gap:10px; font-size:13px; }
   .vibval { font-weight:600; color:#7ee787; min-width:34px; display:inline-block; }
-  .stats { display:flex; gap:12px; font-size:11px; color:#a9b4bf; margin:2px 2px 3px 2px; flex-wrap:wrap; }
+  .stats { display:flex; gap:22px; font-size:12px; color:#a9b4bf; margin:10px 2px 4px 2px; flex-wrap:wrap; }
   .stats b { color:#e6e9ee; }
   .legend-note { font-size:12px; color:#8b98a5; margin-top:6px; }
   #chart { width:100%; min-width:0; }
@@ -7058,6 +7058,8 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   .volume-ladder { position:absolute; right:0; width:76px; z-index:3; cursor:ns-resize;
     touch-action:none; background:transparent; border-left:1px solid transparent; box-sizing:border-box; }
   .volume-ladder:hover, .volume-ladder:focus-visible { background:rgba(74,222,128,.1); border-left-color:#4ade80; outline:none; }
+  .volume-ladder span { opacity:0; transition:opacity .15s;}
+  .volume-ladder:hover span, .volume-ladder:focus-visible span { opacity:1; }
   .volume-ladder span { position:absolute; top:3px; right:4px; padding:2px 4px; border-radius:3px;
     font-size:10px; color:#dbeafe; background:#193d37; pointer-events:none; }
   .missing-note { font-size:11px; color:#5c6773; font-style:italic; }
@@ -7076,9 +7078,23 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <span><b>__SYMBOL__</b> · __TIMEFRAME_LABEL__ · <span id="sessionCaption">Regular hours</span></span>
   <button type="button" id="fullscreenBtn" style="background:#193d37;color:#dbeafe;border:1px solid #366c5d;border-radius:5px;padding:3px 9px;cursor:pointer;">⛶ Full screen</button>
 </div>
-<details id="chartSettings">
+<details id="chartSettings" open>
 <summary>Studies, volume settings and annotations</summary>
 <div class="controls">
+  <div class="ctrl" style="border-right:1px solid #2a3441; padding-right:18px;">
+    <label>Symbol</label>
+    <input type="text" id="symbolInput" value="__SYMBOL__" readonly style="width:100px; text-transform:uppercase;">
+  </div>
+  <div class="ctrl" style="border-right:1px solid #2a3441; padding-right:18px;">
+    <label>Data</label>
+    <span style="font-size:13px; color:#7ee787; font-weight:700; padding:6px 0;">Live Alpaca feed</span>
+    <span style="font-size:11px; color:#8b98a5;">__TIMEFRAME_LABEL__</span>
+  </div>
+  <div class="ctrl" style="justify-content:flex-end;">
+    <button id="generateReportBtn" style="background:#1f6feb; border:none; color:#fff; padding:10px 20px;
+             border-radius:6px; font-weight:700; font-size:13px; cursor:pointer;">Generate Report</button>
+    <span id="reportStatus" style="font-size:11px; color:#8b98a5; margin-top:4px;"></span>
+  </div>
   <div class="ctrl">
     <label>Vibration (% reversal)</label>
     <div style="display:flex; align-items:center; gap:8px;">
@@ -7148,38 +7164,6 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   </div>
 
   <div class="ctrl">
-    <label>Weis Radar signals (scanHistoricalPatterns, matches app.py's WEIS_RADAR_SIGNAL_OPTIONS)</label>
-    <div class="radio-group">
-      <label><input type="checkbox" id="sig_spring" checked> Spring</label>
-      <label><input type="checkbox" id="sig_upthrust" checked> Upthrust</label>
-      <label><input type="checkbox" id="sig_breakout" checked> Breakout</label>
-      <label><input type="checkbox" id="sig_breakdown" checked> Breakdown</label>
-      <label><input type="checkbox" id="sig_3bar" checked> 3-Bar Reversal</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Buying Climax</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Selling Climax</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Absorption / No Supply</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Distribution / No Demand</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Strength</label>
-      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Weakness</label>
-    </div>
-    <span class="missing-note">These mark every historical occurrence across the loaded chart (distinct from the live scanner's single most-recent-bar check). Climax/Absorption/Distribution/SOS/SOW use separate detectors (see Annotation layers above for SOS/SOW/Absorption) -- not wired up here. Spring/Upthrust/Breakout/Breakdown come from scanHistoricalPatterns() (price-only); 3-Bar Reversal comes from weis_lines.py's scanThreeBarReversalPivots(), ported to JS and validated against the Python output.</span>
-  </div>
-
-  <div class="ctrl">
-    <label>Weis Lines (PR #15 engine)</label>
-    <div class="radio-group">
-      <label><input type="checkbox" id="showWeisAll"> All</label>
-      <label><input type="checkbox" id="showWeisZigzag" checked> Zigzag</label>
-      <label><input type="checkbox" id="showWeisPivots"> Pivots</label>
-      <label><input type="checkbox" id="showWeisAxisLines"> Axis Lines</label>
-      <label><input type="checkbox" id="showWeisTrendlines"> Trendlines</label>
-      <label><input type="checkbox" id="showWeisChannels"> Channels</label>
-      <label><input type="checkbox" id="showWeisIceLine"> Ice Line</label>
-      <label><input type="checkbox" id="showWeisConfluence"> Confluence</label>
-    </div>
-  </div>
-
-  <div class="ctrl">
     <label>Line 1 (resistance, pink): type / from / to</label>
     <div style="display:flex; gap:6px;">
       <select id="manualType1">
@@ -7218,21 +7202,51 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
       <input type="text" id="secLowerDateB" placeholder="YYYY-MM-DD" style="width:100px;">
     </div>
   </div>
-</div>
+  <details class="ctrl" style="flex-basis:100%; border-top:1px solid #2a3441; padding-top:8px;">
+    <summary style="cursor:pointer; color:#8b98a5; font-size:11px; text-transform:uppercase; letter-spacing:.04em;">Platform extras (not part of the reference chart)</summary>
+    <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:flex-end; margin-top:10px;">
+  <div class="ctrl">
+    <label>Weis Radar signals (scanHistoricalPatterns, matches app.py's WEIS_RADAR_SIGNAL_OPTIONS)</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="sig_spring"> Spring</label>
+      <label><input type="checkbox" id="sig_upthrust"> Upthrust</label>
+      <label><input type="checkbox" id="sig_breakout"> Breakout</label>
+      <label><input type="checkbox" id="sig_breakdown"> Breakdown</label>
+      <label><input type="checkbox" id="sig_3bar"> 3-Bar Reversal</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Buying Climax</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Selling Climax</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Absorption / No Supply</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Distribution / No Demand</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Strength</label>
+      <label title="Not computed by scanHistoricalPatterns -- no detector wired up in this chart" style="opacity:.45;"><input type="checkbox" disabled> Sign of Weakness</label>
+    </div>
+    <span class="missing-note">These mark every historical occurrence across the loaded chart (distinct from the live scanner's single most-recent-bar check). Climax/Absorption/Distribution/SOS/SOW use separate detectors (see Annotation layers above for SOS/SOW/Absorption) -- not wired up here. Spring/Upthrust/Breakout/Breakdown come from scanHistoricalPatterns() (price-only); 3-Bar Reversal comes from weis_lines.py's scanThreeBarReversalPivots(), ported to JS and validated against the Python output.</span>
+  </div>
 
-<div class="stats" id="stats"></div>
-<div id="calibrationPanel" class="calibration-box"></div>
-</details>
-<div style="margin:3px 0 3px 0;">
-  <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">⤾ Reset Zoom</button>
-  <button id="generateReportBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px; margin-left:8px;">📄 Generate Report</button>
+  <div class="ctrl">
+    <label>Weis Lines (PR #15 engine)</label>
+    <div class="radio-group">
+      <label><input type="checkbox" id="showWeisAll"> All</label>
+      <label><input type="checkbox" id="showWeisZigzag" checked> Zigzag</label>
+      <label><input type="checkbox" id="showWeisPivots"> Pivots</label>
+      <label><input type="checkbox" id="showWeisAxisLines"> Axis Lines</label>
+      <label><input type="checkbox" id="showWeisTrendlines"> Trendlines</label>
+      <label><input type="checkbox" id="showWeisChannels"> Channels</label>
+      <label><input type="checkbox" id="showWeisIceLine"> Ice Line</label>
+      <label><input type="checkbox" id="showWeisConfluence"> Confluence</label>
+    </div>
+  </div>
+
+    </div>
+  </details>
 </div>
-<!-- ADDED (2026-09-10): on-screen report panel, per explicit request
-     -- no download, shown directly in the page. Hidden until the
-     button is clicked; built entirely from data already computed for
-     the chart itself (RAW_BARS, HITS, wave state, wall levels), so
-     no additional backend round-trip is needed to generate it. -->
-<div id="reportPanel" style="display:none; position:fixed; inset:4%; z-index:20; overflow:auto; background:#11161d; border:1px solid #3a4a5f; border-radius:8px; padding:16px; font-size:13px; line-height:1.6; color:#c8d3de; white-space:pre-wrap;"><button type="button" onclick="this.parentElement.style.display='none'" style="float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;">✕ Close</button></div>
+</details>
+<div id="calibrationPanel" class="calibration-box"></div>
+<div class="stats" id="stats"></div>
+<div style="margin:4px 0 8px 0;">
+  <button id="resetZoomBtn" style="background:#1a2230; border:1px solid #3a4a5f; color:#c8d3de; padding:6px 14px; border-radius:6px; cursor:pointer; font-size:12px;">&#10558; Reset Zoom</button>
+  <span style="color:#5c6773; font-size:11px; margin-left:10px;">Drag a box on any panel to zoom in. Double-click, or use the button, to return to normal.</span>
+</div>
 <div id="historyNav" style="background:#101722; border:1px solid #2b3b4e; border-radius:6px; padding:4px 8px; margin:2px 0;">
   <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-size:11px; margin-bottom:2px;">
     <label for="historySlider" style="font-weight:700; color:#dbeafe;">Chart History</label>
@@ -7251,18 +7265,24 @@ _WEIS_RADAR_CHART_TEMPLATE = """<!DOCTYPE html>
   <div id="waveLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Weis wave volume height" title="Drag or scroll here to change Weis wave volume height. Double-click to reset."><span>↕ Wave volume</span></div>
   <div id="barLadder" class="volume-ladder" role="slider" tabindex="0" aria-label="Regular volume height" title="Drag or scroll here to change regular volume height. Double-click to reset."><span>↕ Bar volume</span></div>
 </div>
-<div class="stats" id="trendlineInfo" style="display:none;"></div>
-<div class="legend-note" style="display:none;">
-  Green candles/waves = rising, red = falling. Drag or scroll either right-hand volume ladder to resize its bars.
-  Dashed blue/orange/purple =
+<div class="stats" id="trendlineInfo" style="margin-top:2px;"></div>
+<div class="legend-note">
+  Data is the live Alpaca feed for the symbol and timeframe shown above. In <b>Empirical Auto</b> mode the tool calibrates
+  vibration from that instrument/timeframe's own historical price action and uses the lowest stable structural threshold;
+  Manual Override remains available for comparison.<br>
+  Green candles/segments = up-wave, red = down-wave. Red line = zigzag wave. Dashed blue/orange/purple =
   Call Wall/Put Wall/Gamma Flip. Dashed gold = Secondary Channels. Dotted gray = well-defined S/R levels.
   Yellow arrows/text = Effort-vs-Result callouts (exploratory). Solid pink/cyan = manual Line 1/2.
-  Green/red dashed = Spring/Upthrust/Breakout/Breakdown pattern levels (existing Weis Radar scan hits).
+  Green/red dashed = Spring/Upthrust/Breakout/Breakdown pattern levels (detected directly from the loaded bars --
+  a breach of the recent trading range's floor/ceiling (last 40 bars) that reclaims within 5 bars is a Spring/Upthrust; one that holds is a Breakdown/Breakout).<br>
   Green/red "SOS"/"SOW" = classic Wyckoff Sign of Strength/Weakness (breakout on rising spread+volume).
   Orange "SOT" = Shortening of the Thrust (David Weis, "Trades About to Happen," p.174).
-  Small teal/salmon ▲▼ = Ease of Movement -- notably wide-range bars (Weis, same book, p.4/123).
+  Small teal/salmon triangles = Ease of Movement -- notably wide-range bars (Weis, same book, p.4/123).
   Blue "Absorption" = Weis, Ch.7 -- rising supports/falling resistance with failed follow-through.
-  Tiny green/red ● dots = Meaning of the Close -- strong/weak closes on above-average volume (Weis, throughout).
+  Tiny green/red dots = Meaning of the Close -- strong/weak closes on above-average volume (Weis, throughout).
+</div>
+<div id="reportPanel" style="display:none; background:#121821; border:1px solid #232c38; border-radius:10px;
+     padding:20px 24px; margin-top:14px; font-size:13px; line-height:1.7; color:#c8d3de; white-space:pre-wrap;">
 </div>
 
 <script>
@@ -7279,10 +7299,15 @@ document.getElementById('sessionCaption').textContent = {
 const historySlider = document.getElementById('historySlider');
 const fitAllBars = document.getElementById('fitAllBars');
 let historyReady = false;
+const IS_DAILY_TF = /^(1D|1Day|1W|1Week|1M|1Month)$/.test(TIMEFRAME);
+if (IS_DAILY_TF) {  // daily/weekly: show every loaded bar, like the reference chart
+  fitAllBars.checked = true;
+  document.getElementById('historyNav').style.display = 'none';
+}
 let waveScale = 1, barScale = 1;
-const VOLUME_DOMAINS = {wave:[0.265,0.45], bar:[0,0.22]};
-let CHART_HEIGHT = 500;
-const CHART_TOP = 8, CHART_BOTTOM = 36;
+const VOLUME_DOMAINS = {wave:[0.29,0.51], bar:[0,0.25]};
+let CHART_HEIGHT = 780;
+const CHART_TOP = 10, CHART_BOTTOM = 40;
 function fitFrameToViewport() {
   try {
     if (document.fullscreenElement || !window.frameElement) return;
@@ -7292,8 +7317,7 @@ function fitFrameToViewport() {
   } catch (e) { /* Keep the CSS viewport fallback if frame access is restricted. */ }
 }
 function fitChartHeight() {
-  const top = document.getElementById('chartHost').getBoundingClientRect().top;
-  CHART_HEIGHT = Math.max(180, Math.floor(window.innerHeight - top - 8));
+  CHART_HEIGHT = 780;  // fixed, as in the reference chart; the page scrolls instead
 }
 
 function getVisibleBarCount() {
@@ -7374,19 +7398,37 @@ function timeAxis(dates, start, count) {
   const tickvals = [], ticktext = [], shapes = [];
   const daily = /^(1D|1Day|1W|1Week|1M|1Month)$/.test(TIMEFRAME);
   const width = document.getElementById('chartHost').clientWidth || 1000;
+  if (daily) {
+    // Month boundaries only; keep every k-th one so labels never touch.
+    const months = [];
+    for (let i = start; i < start + count; i++) {
+      const date = barCalendar(dates[i]);
+      const prev = i > start ? barCalendar(dates[i-1]) : null;
+      const newMonth = !!prev && date.month !== prev.month;
+      if (newMonth) shapes.push({type:'line',xref:'x',yref:'paper',
+        x0:dates[i],x1:dates[i],y0:0,y1:1,line:{color:'#526074',width:1,dash:'dot'},layer:'below'});
+      if (i === start || newMonth) months.push({i, label: date.monthLabel});
+    }
+    const perLabel = 70;  // px each label needs
+    const barPx = (width - 120) / Math.max(1, count);
+    let k = 1;
+    while (months.length / k * perLabel > (width - 120) && k < months.length) k++;
+    months.forEach((m, n) => {
+      if (n % k === 0) { tickvals.push(dates[m.i]); ticktext.push(m.label); }
+    });
+    return {tickvals,ticktext,shapes};
+  }
   const stride = Math.max(1, Math.ceil(count / Math.max(5, Math.floor((width - 120) / 85))));
   let lastTick = start - stride;
   for (let i = start; i < start + count; i++) {
     const date = barCalendar(dates[i]);
     const prev = i > start ? barCalendar(dates[i-1]) : null;
     const newDay = !!prev && date.day !== prev.day;
-    const newMonth = !!prev && date.month !== prev.month;
-    if (newDay && !daily || newMonth && daily) shapes.push({type:'line',xref:'x',yref:'paper',
+    if (newDay) shapes.push({type:'line',xref:'x',yref:'paper',
       x0:dates[i],x1:dates[i],y0:0,y1:1,line:{color:'#526074',width:1,dash:'dot'},layer:'below'});
-    if (i === start || newMonth || (newDay && !daily) || i-lastTick >= stride) {
+    if (i === start || newDay || i-lastTick >= stride) {
       tickvals.push(dates[i]);
-      ticktext.push(daily ? (newMonth || i === start ? date.monthLabel : date.short)
-                          : (newDay || i === start ? date.short+'<br>'+date.time : date.time));
+      ticktext.push(newDay || i === start ? date.short+'<br>'+date.time : date.time);
       lastTick = i;
     }
   }
@@ -7944,15 +7986,15 @@ function computeWaveVolume(bars, pivots, finalState, finalExtremeIdx, mode) {
   const waveDir = new Array(n).fill(null);
   const waveMetric = new Array(n).fill(0);
   const segments = [];
-  let prevIdx = -1, prevType = null;
+  let prevIdx = 0, prevType = null;
   for (const p of pivots) {
-    const direction = prevType === null ? (p.type === 'H' ? 'up' : 'down')
-                                        : (prevType === 'L' ? 'up' : 'down');
-    segments.push([prevIdx + 1, p.idx, direction]);
+    if (prevType !== null) {
+      const direction = prevType === 'L' ? 'up' : 'down';
+      segments.push([prevIdx, p.idx, direction]);
+    }
     prevIdx = p.idx; prevType = p.type;
   }
-  if (prevIdx < n - 1) segments.push([prevIdx + 1, n - 1,
-    finalState || (bars[n-1].close >= bars[0].close ? 'up' : 'down')]);
+  if (finalState !== null) segments.push([prevIdx, n - 1, finalState]);
   for (const [start, end, direction] of segments) {
     let running = 0;
     for (let i = start; i <= end; i++) {
@@ -8324,7 +8366,10 @@ function classifyEffortResult(bars, pivots) {
 }
 
 function findNearestPivotOfType(bars, pivots, dateStr, type, toleranceDays=3) {
-  const targetIdx = bars.findIndex(b => b.date === dateStr);
+  let targetIdx = bars.findIndex(b => b.date === dateStr);
+  if (targetIdx === -1 && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dateStr)) {
+    targetIdx = bars.findIndex(b => barCalendar(b.date).day === dateStr || (etParts(b.date) || {}).day === dateStr);
+  }
   if (targetIdx === -1) return null;
   let best = null, bestDist = Infinity;
   for (const p of pivots) {
@@ -8388,7 +8433,7 @@ const SUPPORT_TYPES = new Set(['SPRING', 'BREAKDOWN', 'SPRING_BUILDING']);
 // browser configurations restrict storage access in embedded frames;
 // if that happens here, this silently no-ops and behaves exactly as
 // before (settings just won't persist) rather than breaking anything.
-const SETTINGS_KEY = 'sigmalytic_chart_settings_v1';
+const SETTINGS_KEY = 'sigmalytic_chart_settings_v2';
 const PERSISTED_CHECKBOX_IDS = [
   'showCallWall','showPutWall','showGammaFlip','showSecUpper','showSecLower',
   'showSR','showEffort','showSOSSOW','showSOT','showEOM','showMOC','showAbsorption',
@@ -8495,8 +8540,8 @@ function render() {
 
   const candleTrace = {
     type: 'candlestick', x: dates, open: opens, high: highs, low: lows, close: closes,
-    increasing: {line: {color:'#00d95b',width:1},fillcolor:'#00d95b'},
-    decreasing: {line:{color:'#f23645',width:1},fillcolor:'#f23645'},
+    increasing: {line: {color:'#2ecc71'}},
+    decreasing: {line:{color:'#e74c3c'}},
     name: 'Price', xaxis:'x', yaxis:'y'
   };
 
@@ -8506,18 +8551,10 @@ function render() {
   // weis_lines.py pivots below -- the two are meant to coexist, not
   // replace one another, per explicit product decision.
   const showZigzag = document.getElementById('showWeisZigzag').checked;
-  const upWave = {x:[],y:[]}, downWave = {x:[],y:[]};
-  if (showZigzag) {
-    for (let i=1; i<zx.length; i++) {
-      const points = zy[i] >= zy[i-1] ? upWave : downWave;
-      points.x.push(zx[i-1], zx[i], null);
-      points.y.push(zy[i-1], zy[i], null);
-    }
-  }
-  const waveTraces = showZigzag ? [
-    {type:'scatter',mode:'lines',x:upWave.x,y:upWave.y,line:{color:'#00d95b',width:1.7},name:'Rising wave',xaxis:'x',yaxis:'y'},
-    {type:'scatter',mode:'lines',x:downWave.x,y:downWave.y,line:{color:'#f23645',width:1.7},name:'Falling wave',xaxis:'x',yaxis:'y'}
-  ] : [];
+  const waveTraces = showZigzag ? [{
+    type: 'scatter', mode: 'lines', x: zx, y: zy,
+    line: {color:'#ff3b3b', width:1.5}, name: 'Wave', xaxis:'x', yaxis:'y'
+  }] : [];
 
   let allShapes = [];
   let allAnnotations = [];
@@ -8525,7 +8562,8 @@ function render() {
 
   // ---- Pattern hits (existing Weis Radar scan results) ----
   const lastDate = dates.length ? dates[dates.length-1] : null;
-  for (const h of HITS) {
+  const ALL_HITS = mergeHits(HITS, classifySpringsUpthrusts(RAW_BARS));
+  for (const h of ALL_HITS) {
     const color = PATTERN_COLORS[h.type] || '#94a3b8';
     const level = h.level;
     const eventDate = h.date || lastDate; // Spring/Upthrust have no date -- always "today" by design
@@ -8590,7 +8628,7 @@ function render() {
       x0: line.x0, x1: line.x1, y0: line.y0, y1: line.y1,
       line:{color:'#ffd166', width:1.3, dash:'dash'}});
     trendlineSummaries.push(
-      `<span style="color:#ffd166">■ ${cfg.label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${RAW_BARS[RAW_BARS.length-1].date}: $${line.extendedPrice.toFixed(2)}</span>`
+      `<span style="color:#ffd166">■ ${cfg.label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${displayBarDate(RAW_BARS[RAW_BARS.length-1].date)}: $${line.extendedPrice.toFixed(2)}</span>`
     );
   }
 
@@ -8823,17 +8861,20 @@ function render() {
   }
 
   let mocCount = 0;
+  let mocTrace = null;
   if (document.getElementById('showMOC').checked) {
     const events = classifyMeaningOfClose(RAW_BARS);
     mocCount = events.length;
-    for (const e of events) {
-      const color = e.type === 'strong' ? '#4ade80' : '#f87171';
-      allAnnotations.push({
-        xref:'x', yref:'y', x: dates[e.idx], y: e.price,
-        text: '●', showarrow: false, font: {color, size:6},
-        yshift: e.type === 'strong' ? -8 : 8,
-      });
-    }
+    mocTrace = {
+      type: 'scatter', mode: 'markers', xaxis:'x', yaxis:'y',
+      x: events.map(e => dates[e.idx]),
+      y: events.map(e => e.price),
+      marker: {
+        symbol: 'circle', size: 5,
+        color: events.map(e => e.type === 'strong' ? '#4ade80' : '#f87171'),
+      },
+      showlegend: false, hoverinfo: 'skip',
+    };
   }
 
   const manualLineConfigs = [
@@ -8853,21 +8894,21 @@ function render() {
       line:{color: cfg.color, width:2}});
     const label = type === 'H' ? 'Resistance' : 'Support';
     trendlineSummaries.push(
-      `<span style="color:${cfg.color}">■ ${label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${RAW_BARS[RAW_BARS.length-1].date}: $${line.extendedPrice.toFixed(2)}</span>`
+      `<span style="color:${cfg.color}">■ ${label}: ${d1} ($${line.p1.price.toFixed(2)}) → ${d2} ($${line.p2.price.toFixed(2)}), extended to ${displayBarDate(RAW_BARS[RAW_BARS.length-1].date)}: $${line.extendedPrice.toFixed(2)}</span>`
     );
   }
 
   const volTrace = {
-    type:'bar', x: dates, y: waveMetric, marker:{color: waveDir.map(d => d === 'up' ? '#00d95b' : (d === 'down' ? '#f23645' : '#64748b'))},
+    type:'bar', x: dates, y: waveMetric, marker:{color: waveDir.map(d => d === 'up' ? '#2ecc71' : (d === 'down' ? '#e74c3c' : '#555'))},
     name: mode === 'total' ? 'Wave Total Volume' : 'Wave Average Volume',
     xaxis:'x', yaxis:'y2'
   };
 
   const dailyVolumes = RAW_BARS.map(b => b.volume);
-  const dailyVolColors = RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645');
+  const dailyVolColors = RAW_BARS.map(b => b.close >= b.open ? '#2ecc71' : '#e74c3c');
   const dailyVolTrace = {
-    type:'bar', x: dates, y: dailyVolumes, marker:{color: dailyVolColors},
-    name: 'Bar Volume', xaxis:'x', yaxis:'y3'
+    type:'bar', x: dates, y: dailyVolumes, marker:{color: dailyVolColors, opacity:0.85},
+    name: 'Daily Volume', xaxis:'x', yaxis:'y3'
   };
   const maPeriod = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
   const maValues = movingAverage(dailyVolumes, maPeriod);
@@ -8886,7 +8927,7 @@ function render() {
 
   const layout = {
     paper_bgcolor:'#0b0f14', plot_bgcolor:'#0b0f14', font:{color:'#c8d3de'},
-    margin:{t:CHART_TOP, r:82, l:12, b:CHART_BOTTOM},
+    margin:{t:CHART_TOP, r:70, l:50, b:CHART_BOTTOM},
     height: CHART_HEIGHT,
     showlegend: false,
     uirevision: `command-chart-${TIMEFRAME}-${historyStart}-${visibleBars}`,
@@ -8895,23 +8936,20 @@ function render() {
     // Tick labels use the selected interval and New York session time.
     xaxis: {domain:[0,1], anchor:'y3', range:recentRange,
       rangeslider:{visible:false},
-      gridcolor:'#364050', type:'category', showgrid:true, zeroline:false,
+      gridcolor:'#1c232d', type:'category',
       tickmode:'array', tickvals:ticks.tickvals, ticktext:ticks.ticktext,
-      tickangle:0, automargin:false, tickfont:{size:10,color:'#aab5c6'}},
-    // Each panel has an independent right-hand ladder and explicit
-    // visible-window scale; the volume ladders can be dragged or scrolled.
-    yaxis:  {domain:[0.49,1], side:'right', tickformat:'.2f', gridcolor:'#293442', zeroline:false,
+      tickangle:0, automargin:false, tickfont:{size:10}},
+    yaxis:  {domain:[0.55, 1], title:'Price', gridcolor:'#1c232d',
       range: [priceMin - pricePad, priceMax + pricePad]},
-    yaxis2: {domain:VOLUME_DOMAINS.wave, side:'right', rangemode:'tozero', tickformat:'~s',
-      gridcolor:'#293442', zeroline:true, range:[0,currentVolumeMax.wave/waveScale]},
-    yaxis3: {domain:VOLUME_DOMAINS.bar, side:'right', rangemode:'tozero', tickformat:'~s',
-      gridcolor:'#293442', zeroline:true, range:[0,currentVolumeMax.bar/barScale]},
-    bargap:0.12,
+    yaxis2: {domain:VOLUME_DOMAINS.wave, title: (mode === 'total' ? 'Wave Total Vol' : 'Wave Avg Vol') + ' (cumulative)',
+      gridcolor:'#1c232d', rangemode:'tozero', range:[0,currentVolumeMax.wave/waveScale]},
+    yaxis3: {domain:VOLUME_DOMAINS.bar, title: `Daily Vol (${maPeriod}-bar MA)`,
+      gridcolor:'#1c232d', rangemode:'tozero', range:[0,currentVolumeMax.bar/barScale]},
     shapes: [...ticks.shapes, ...allShapes],
     annotations: allAnnotations
   };
 
-  Plotly.react('chart', [candleTrace, ...waveTraces, ...weisExtraTraces, volTrace, dailyVolTrace, maTrace], layout, {
+  Plotly.react('chart', [candleTrace, ...waveTraces, ...weisExtraTraces, volTrace, dailyVolTrace, maTrace, ...(mocTrace ? [mocTrace] : [])], layout, {
     responsive:true, displayModeBar:true, displaylogo:false,
     modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d','toggleSpikelines','hoverClosestCartesian','hoverCompareCartesian']
   });
@@ -8929,24 +8967,23 @@ function render() {
 
   const upBars = waveDir.filter(d => d === 'up').length;
   const downBars = waveDir.filter(d => d === 'down').length;
+  const calibrationStat = (document.getElementById('vibrationMode').value === 'auto' && CALIBRATION_RESULT && CALIBRATION_RESULT.ok)
+    ? `<span><b>${CALIBRATION_RESULT.selected.toFixed(2)}%</b> empirical vibration (${CALIBRATION_RESULT.confidence})</span>`
+    : `<span><b>${vib}%</b> manual vibration</span>`;
   document.getElementById('stats').innerHTML =
     `<span><b>__SYMBOL__</b></span>` +
+    calibrationStat +
     `<span><b>${pivots.length}</b> confirmed pivots</span>` +
     `<span><b>${upBars}</b> up-wave bars</span>` +
     `<span><b>${downBars}</b> down-wave bars</span>` +
     `<span><b>${srCount}</b> S/R levels</span>` +
-    `<span style="color:${HIST_PATTERN_COLORS.SPRING}"><b>${histPatternCounts.SPRING}</b> spring</span>` +
-    `<span style="color:${HIST_PATTERN_COLORS.UPTHRUST}"><b>${histPatternCounts.UPTHRUST}</b> upthrust</span>` +
-    `<span style="color:${HIST_PATTERN_COLORS.BREAKOUT}"><b>${histPatternCounts.BREAKOUT}</b> breakout</span>` +
-    `<span style="color:${HIST_PATTERN_COLORS.BREAKDOWN}"><b>${histPatternCounts.BREAKDOWN}</b> breakdown</span>` +
-    `<span style="color:${HIST_PATTERN_COLORS['3BAR_BULLISH']}"><b>${histPatternCounts['3BAR_BULLISH'] + histPatternCounts['3BAR_BEARISH']}</b> 3-bar reversal</span>` +
     `<span><b>${effortCount}</b> effort/result callouts</span>` +
     `<span><b>${sosSowCount}</b> SOS/SOW</span>` +
     `<span><b>${sotCount}</b> shortening of thrust</span>` +
     `<span><b>${absorptionCount}</b> absorption</span>` +
     `<span><b>${eomCount}</b> ease of movement</span>` +
     `<span><b>${mocCount}</b> meaning of close</span>` +
-    `<span><b>${HITS.length}</b> scan hits</span>` +
+    `<span><b>${ALL_HITS.length}</b> scan hits</span>` +
     `<span><b>${RAW_BARS.length}</b> total bars</span>` +
     (WEIS_LINES ? `<span><b>${(WEIS_LINES.pivots||[]).length}</b> weis pivots</span>` +
       `<span><b>${(WEIS_LINES.confluence||[]).length}</b> confluence zones</span>` : '');
@@ -9048,207 +9085,450 @@ document.getElementById('showWeisAll').addEventListener('change', (e) => {
 // the same zigzag/wave-volume analysis render() already performs
 // rather than introducing new shared state to pass values out of
 // render()'s own local scope.
+const currentSymbol = __SYMBOL_JSON__;
+const etNumeric = new Intl.DateTimeFormat('en-CA', {
+  timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit',
+  hour:'2-digit', minute:'2-digit', hour12:false
+});
+function etParts(raw) {
+  const t = new Date(/[zZ]|[+-][0-9]{2}:[0-9]{2}$/.test(String(raw)) ? raw : raw + 'Z');
+  if (Number.isNaN(t.getTime())) return null;
+  const f = Object.fromEntries(etNumeric.formatToParts(t).map(p => [p.type, p.value]));
+  return {day: f.year + '-' + f.month + '-' + f.day, time: (f.hour === '24' ? '00' : f.hour) + ':' + f.minute};
+}
+function displayBarDate(raw) {
+  if (IS_DAILY_TF) return barCalendar(raw).day;
+  const p = etParts(raw);
+  return p ? p.day + ' ' + p.time + ' ET' : String(raw);
+}
+function mergeHits(backendHits, clientHits) {
+  const seen = new Set(), out = [];
+  for (const h of [...(backendHits || []), ...(clientHits || [])]) {
+    const key = [h.type, Number.isFinite(Number(h.level)) ? Number(h.level).toFixed(2) : '', h.date || ''].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key); out.push(h);
+  }
+  return out;
+}
+function classifySpringsUpthrusts(bars, lookback=40, followThroughBars=5, maxBreachPct=15) {
+  const events = [];
+  let lastFlaggedIdx = -Infinity;
+  const minGap = followThroughBars;
+  for (let i = lookback; i < bars.length; i++) {
+    if (i - lastFlaggedIdx < minGap) continue;
+    const windowLows = bars.slice(i - lookback, i).map(b => b.low);
+    const windowHighs = bars.slice(i - lookback, i).map(b => b.high);
+    const rangeLow = Math.min(...windowLows);
+    const rangeHigh = Math.max(...windowHighs);
+    if (bars[i].low < rangeLow) {
+      const breachPct = (rangeLow - bars[i].low) / rangeLow * 100;
+      if (breachPct <= maxBreachPct) {
+        const windowEnd = Math.min(i + followThroughBars, bars.length - 1);
+        let reclaimedAt = -1;
+        for (let k = i; k <= windowEnd; k++) {
+          if (bars[k].close >= rangeLow) { reclaimedAt = k; break; }
+        }
+        if (reclaimedAt !== -1) {
+          events.push({idx: reclaimedAt, type: 'SPRING', level: rangeLow, date: bars[reclaimedAt].date});
+          lastFlaggedIdx = reclaimedAt;
+        } else if (windowEnd === bars.length - 1 && windowEnd - i < followThroughBars) {
+          events.push({idx: bars.length - 1, type: 'SPRING_BUILDING', level: rangeLow, date: bars[bars.length-1].date});
+          lastFlaggedIdx = bars.length;
+        } else {
+          events.push({idx: windowEnd, type: 'BREAKDOWN', level: rangeLow, date: bars[windowEnd].date});
+          lastFlaggedIdx = windowEnd;
+        }
+        continue;
+      }
+    }
+    if (bars[i].high > rangeHigh) {
+      const breachPct = (bars[i].high - rangeHigh) / rangeHigh * 100;
+      if (breachPct <= maxBreachPct) {
+        const windowEnd = Math.min(i + followThroughBars, bars.length - 1);
+        let reclaimedAt = -1;
+        for (let k = i; k <= windowEnd; k++) {
+          if (bars[k].close <= rangeHigh) { reclaimedAt = k; break; }
+        }
+        if (reclaimedAt !== -1) {
+          events.push({idx: reclaimedAt, type: 'UPTHRUST', level: rangeHigh, date: bars[reclaimedAt].date});
+          lastFlaggedIdx = reclaimedAt;
+        } else if (windowEnd === bars.length - 1 && windowEnd - i < followThroughBars) {
+          events.push({idx: bars.length - 1, type: 'UPTHRUST_BUILDING', level: rangeHigh, date: bars[bars.length-1].date});
+          lastFlaggedIdx = bars.length;
+        } else {
+          events.push({idx: windowEnd, type: 'BREAKOUT', level: rangeHigh, date: bars[windowEnd].date});
+          lastFlaggedIdx = windowEnd;
+        }
+      }
+    }
+  }
+  return events;
+}
+function fmtPct(x) { return (x >= 0 ? '+' : '') + x.toFixed(2) + '%'; }
+function generatePsychologicalNarrative(bars, pivots, n, sosSow, sot, eom, moc, absorption, effortResult, patterns, srLevels, state, extremeIdx) {
+  // ---- Weaves the same real, dated signals used in the factual
+  // sections below into ONE connected story, the way a person reading
+  // the tape actually would. Three things this version does that the
+  // first pass didn't: (1) opens by sizing the current move against
+  // the broader trend, so a pullback reads as "how big, compared to
+  // what"
+  // rather than floating context-free; (2) checks the wave that
+  // LED INTO the current swing, not just the last two-to-three legs,
+  // since "was the move that got us here contested" is real evidence
+  // even when it falls just outside a narrow recent window; (3)
+  // explicitly checks the last 10 Meaning-of-the-Close readings
+  // against the wave's own labeled direction and names it when they're
+  // in tension -- a down-wave with mostly strong closes underneath it
+  // is a genuinely different, more specific situation than a down-wave
+  // with mostly weak ones, and the earlier version never surfaced that
+  // distinction at all.
+  const segments = buildWaveSegments(bars, pivots);
+  if (extremeIdx !== null && extremeIdx !== undefined && state && pivots.length) {
+    const lastPivot = pivots[pivots.length - 1];
+    segments.push({startIdx: lastPivot.idx, endIdx: extremeIdx, direction: state, forming: true, startPrice: lastPivot.price});
+  }
+  if (!segments.length) {
+    return ["Not enough confirmed wave structure yet to build a psychological read -- try a lower vibration setting, or more data."];
+  }
+  function effortFor(seg) {
+    return effortResult.find(e => e.start === seg.startIdx && e.end === seg.endIdx);
+  }
+  function sotFor(seg) {
+    return sot.find(s => s.idx === seg.endIdx);
+  }
+  function effortClauseFor(ef) {
+    if (!ef) return '';
+    if (ef.label === 'Supply') return `, but only after real sellers pushed back hard enough to force ${ef.relEffort}x the usual volume for a move this size -- genuine resistance, not an empty path higher`;
+    if (ef.label === 'Demand') return `, but only after real buyers defended hard enough to force ${ef.relEffort}x the usual volume for a move this size -- genuine support, not a freefall`;
+    if (ef.label === 'Weak demand') return `, and did so on just ${ef.relEffort}x the usual volume -- more a case of sellers stepping aside than buyers pressing with conviction`;
+    if (ef.label === 'Weak supply') return `, and did so on just ${ef.relEffort}x the usual volume -- more a lack of buying interest than sellers pressing with conviction`;
+    return '';
+  }
+  function describeWave(seg, isForming) {
+    const startPrice = (seg.startPrice !== undefined) ? seg.startPrice : bars[seg.startIdx].close;
+    const endPrice = isForming ? bars[seg.endIdx].close : (seg.endPrice !== undefined ? seg.endPrice : bars[seg.endIdx].close);
+    const startDate = bars[seg.startIdx].date, endDate = bars[seg.endIdx].date;
+    const dirWord = seg.direction === 'up' ? 'rally' : 'decline';
+    const ef = effortFor(seg);
+    const st = sotFor(seg);
+    const effortClause = effortClauseFor(ef);
+    let thrustClause = '';
+    if (st) thrustClause = ` This leg also made noticeably less progress than the ${seg.direction}-waves before it -- the move was already losing steam before it ended.`;
+    const formingNote = isForming ? ' (still developing)' : '';
+    return `From ${startPrice.toFixed(2)} on ${startDate} to ${endPrice.toFixed(2)} on ${endDate}${formingNote}, the ${dirWord} ran its course${effortClause}.${thrustClause}`;
+  }
+  const paragraphs = [];
+  const recentSegs = segments.slice(-3); // last 2 confirmed + the forming one, when available
+  // Opening: size the current move against the broader trend, so the
+  // reader knows whether this is a minor wobble or something bigger.
+  {
+    const first = bars[0], lastBar = bars[n - 1];
+    const totalChangePct = (lastBar.close - first.close) / first.close * 100;
+    const current = segments[segments.length - 1];
+    const priorExtreme = current.startPrice !== undefined ? current.startPrice : bars[current.startIdx].close;
+    const nowPrice = bars[n - 1].close;
+    const legPct = (nowPrice - priorExtreme) / priorExtreme * 100;
+    const trendWord = totalChangePct >= 0 ? 'advanced' : 'declined';
+    let sizeWord;
+    const absLeg = Math.abs(legPct);
+    if (absLeg < 2) sizeWord = 'a minor, so-far unremarkable';
+    else if (absLeg < 5) sizeWord = 'a moderate';
+    else sizeWord = 'a sharp, sizeable';
+    paragraphs.push(`${bars[0] === first ? '' : ''}Over the full period shown, price has ${trendWord} ${fmtPct(totalChangePct)}. The current ${current.direction === 'up' ? 'rally' : 'pullback'} off ${priorExtreme.toFixed(2)} is, so far, ${sizeWord} move (${fmtPct(legPct)}) -- worth keeping in mind as scale for everything below: not every wiggle in the data is structurally significant, and this framing is here so the signals that follow aren't read as more dramatic than the price action actually justifies.`);
+  }
+  const waveNarrative = recentSegs.map((seg, i) => describeWave(seg, seg.forming === true)).join(' ');
+  paragraphs.push(waveNarrative);
+  // The wave that LED INTO the story -- not just the last 2-3 legs.
+  // Whether the move that produced the current swing's starting point
+  // was itself contested is real, relevant evidence for whether the
+  // current swing is likely to hold or reverse, even when it falls
+  // just outside a narrow "last 3 waves" window.
+  if (segments.length > recentSegs.length) {
+    const leadIn = segments[segments.length - recentSegs.length - 1];
+    const ef = effortFor(leadIn);
+    if (ef) {
+      const leadInPrice = leadIn.endPrice !== undefined ? leadIn.endPrice : bars[leadIn.endIdx].close;
+      const leadInDate = bars[leadIn.endIdx].date;
+      paragraphs.push(`Worth noting for context: the ${leadIn.direction}-wave that led into this stretch (ending ${leadInPrice.toFixed(2)} on ${leadInDate})${effortClauseFor(ef)}. That's relevant to how much weight the current swing deserves -- ${ef.label.startsWith('Weak') ? "the move that set up this level wasn't itself built on much conviction" : "real effort was already being spent defending or contesting this level before the current swing even began"}.`);
+    }
+  }
+  // Neither leg built on conviction -- drift, not a fight
+  if (recentSegs.length >= 2) {
+    const a = effortFor(recentSegs[recentSegs.length - 2]);
+    const b = effortFor(recentSegs[recentSegs.length - 1]);
+    const aWeak = a && a.label.startsWith('Weak');
+    const bWeak = b && b.label.startsWith('Weak');
+    if (aWeak && bWeak) {
+      paragraphs.push(`Neither leg was built on real conviction from either side -- that combination usually reads as drift within an existing trend rather than a genuine change of control.`);
+    }
+  }
+  // Last-10-closes tension check against the wave's own labeled
+  // direction -- this is the specific thing the first version missed
+  // entirely. A down-wave riding mostly strong closes underneath it is
+  // a meaningfully different, more specific read than a down-wave with
+  // mostly weak ones, and it's a real point of interest either way.
+  if (moc.length >= 3) {
+    const recentMoc = moc.slice(-10);
+    const strongCount = recentMoc.filter(e => e.type === 'strong').length;
+    const weakCount = recentMoc.filter(e => e.type === 'weak').length;
+    const current = segments[segments.length - 1];
+    if (current.direction === 'down' && strongCount > weakCount) {
+      paragraphs.push(`There's a real tension worth naming here: the wave structure is currently labeled a decline, but of the last ${recentMoc.length} notable closes, ${strongCount} were strong versus ${weakCount} weak -- buyers have been reasserting themselves into the close more often than not, even while the broader swing points down. That combination often shows up when a pullback is running out of sellers rather than gathering new ones -- worth watching for confirmation rather than assuming the down-wave has full control.`);
+    } else if (current.direction === 'up' && weakCount > strongCount) {
+      paragraphs.push(`There's a real tension worth naming here: the wave structure is currently labeled a rally, but of the last ${recentMoc.length} notable closes, ${weakCount} were weak versus ${strongCount} strong -- sellers have been reasserting themselves into the close more often than not, even while the broader swing points up. That combination often shows up when a rally is running out of genuine demand rather than gathering more of it -- worth watching for confirmation rather than assuming the up-wave has full control.`);
+    } else if (current.direction === 'down' && weakCount > strongCount) {
+      paragraphs.push(`The last ${recentMoc.length} notable closes lean the same way as the broader wave -- ${weakCount} weak versus ${strongCount} strong -- meaning the day-to-day closing behavior is confirming the decline, not contradicting it.`);
+    } else if (current.direction === 'up' && strongCount > weakCount) {
+      paragraphs.push(`The last ${recentMoc.length} notable closes lean the same way as the broader wave -- ${strongCount} strong versus ${weakCount} weak -- meaning the day-to-day closing behavior is confirming the rally, not contradicting it.`);
+    }
+  }
+  // Current wave volume vs. its own recent history
+  const current = segments[segments.length - 1];
+  const sameDir = segments.filter(s => s.direction === current.direction).slice(0, -1).slice(-3);
+  if (sameDir.length) {
+    let curVol = 0;
+    for (let i = current.startIdx; i <= current.endIdx; i++) curVol += bars[i].volume;
+    const medVol = _median(sameDir.map(s => {
+      let v = 0; for (let i = s.startIdx; i <= s.endIdx; i++) v += bars[i].volume; return v;
+    }));
+    const ratio = medVol ? curVol / medVol : 1;
+    if (ratio >= 1.15) {
+      paragraphs.push(`The ${current.direction}-wave now underway is running at ${ratio.toFixed(2)}x the volume of its recent predecessors -- real, fresh participation behind this specific move, not just an absence of the other side.`);
+    } else if (ratio <= 0.85) {
+      paragraphs.push(`The ${current.direction}-wave now underway is running at just ${ratio.toFixed(2)}x the volume of its recent predecessors -- this move has less committed participation behind it than the pattern that came before it.`);
+    }
+  }
+  // Absorption, SOS/SOW -- woven in when they fall within the wave structure just narrated
+  const storyStartIdx = recentSegs[0].startIdx;
+  const recentAbsorption = absorption.filter(a => a.idx >= storyStartIdx);
+  if (recentAbsorption.length) {
+    const latest = recentAbsorption[recentAbsorption.length - 1];
+    const date = bars[latest.idx].date;
+    const text = latest.type === 'top'
+      ? `Also within this stretch, on ${date}: a wide, high-volume bar near the high failed to follow through, with support levels still rising behind it -- the signature of large, patient buying quietly absorbing supply rather than panicking out.`
+      : `Also within this stretch, on ${date}: a wide, high-volume bar near the low failed to follow through, with resistance levels still falling behind it -- the signature of persistent selling quietly overwhelming buying interest.`;
+    paragraphs.push(text);
+  }
+  const recentSosSow = sosSow.filter(e => e.idx >= storyStartIdx);
+  if (recentSosSow.length) {
+    const latest = recentSosSow[recentSosSow.length - 1];
+    const date = bars[latest.idx].date;
+    const text = latest.type === 'SOS'
+      ? `This same stretch also produced a confirmed Sign of Strength on ${date} at ${latest.price.toFixed(2)} -- a genuine break above a meaningful prior high that the next wave held rather than gave back.`
+      : `This same stretch also produced a confirmed Sign of Weakness on ${date} at ${latest.price.toFixed(2)} -- a genuine break below a meaningful prior low that the next wave held rather than reclaimed.`;
+    paragraphs.push(text);
+  }
+  // Pattern TRACK RECORD, not just the single latest event -- how
+  // reliable have breakouts/breakdowns actually been in this
+  // instrument's own recent history, versus failed springs/upthrusts.
+  if (patterns.length) {
+    const recent = patterns.slice(-5);
+    const held = recent.filter(p => p.type === 'BREAKOUT' || p.type === 'BREAKDOWN').length;
+    const failed = recent.filter(p => p.type === 'SPRING' || p.type === 'UPTHRUST').length;
+    const latest = recent[recent.length - 1];
+    let latestText = null;
+    if (latest.type === 'SPRING') latestText = `a Spring confirmed on ${latest.date} at ${latest.level.toFixed(2)} -- anyone who sold that breakdown expecting it to hold is now trapped and facing pressure to cover`;
+    else if (latest.type === 'UPTHRUST') latestText = `an Upthrust confirmed on ${latest.date} at ${latest.level.toFixed(2)} -- anyone who bought that breakout expecting it to hold is now trapped and facing pressure to sell`;
+    else if (latest.type === 'BREAKDOWN') latestText = `a genuine Breakdown confirmed on ${latest.date} at ${latest.level.toFixed(2)} -- that level gave way for real, not a shakeout`;
+    else if (latest.type === 'BREAKOUT') latestText = `a genuine Breakout confirmed on ${latest.date} at ${latest.level.toFixed(2)} -- that level gave way for real, not a failed test`;
+    let trackText = '';
+    if (held > failed && recent.length >= 3) trackText = ` More broadly, ${held} of the last ${recent.length} level tests in this data have genuinely held versus ${failed} that failed and trapped one side -- a track record that's favored whichever side breaks a level cleanly, which matters for how much weight to put on the most recent one.`;
+    else if (failed > held && recent.length >= 3) trackText = ` More broadly, ${failed} of the last ${recent.length} level tests in this data have been failed springs or upthrusts versus only ${held} that genuinely held -- a track record of false breaks, which argues for more caution before assuming the most recent one is different.`;
+    if (latestText) paragraphs.push(`The most recent level test was ${latestText}.${trackText}`);
+  }
+  // Close on the nearest real level
+  if (srLevels && srLevels.length) {
+    const lastClose = bars[n - 1].close;
+    const nearby = srLevels
+      .map(lv => ({...lv, dist: (lv.price - lastClose) / lastClose * 100}))
+      .sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist))[0];
+    if (nearby && Math.abs(nearby.dist) <= 3) {
+      const direction = nearby.dist >= 0 ? 'above' : 'below';
+      const verb = nearby.dist >= 0 ? 'push through' : 'hold';
+      paragraphs.push(`The level to watch is ${nearby.price.toFixed(2)} (${nearby.touches} touches, ${Math.abs(nearby.dist).toFixed(1)}% ${direction} the current close) -- whether price can genuinely ${verb} it, especially on continued volume, is the next real test of which side actually has the upper hand here.`);
+    }
+  }
+  if (!paragraphs.length) {
+    return ["Not enough distinct signal activity in the current wave structure to build a connected psychological read -- try a lower vibration setting for a finer-grained view."];
+  }
+  return paragraphs;
+}
 function generateReport() {
-  if (!RAW_BARS.length) {
-    const emptyPanel = document.getElementById('reportPanel');
-    emptyPanel.innerHTML = '';
-    const emptyCloseBtn = document.createElement('button');
-    emptyCloseBtn.type = 'button';
-    emptyCloseBtn.textContent = '✕ Close';
-    emptyCloseBtn.style.cssText = 'float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;padding:4px 10px;border-radius:4px;margin-bottom:8px;';
-    emptyCloseBtn.addEventListener('click', () => { emptyPanel.style.display = 'none'; });
-    emptyPanel.appendChild(emptyCloseBtn);
-    const emptyText = document.createElement('div');
-    emptyText.style.cssText = 'clear:both;';
-    emptyText.textContent = 'No bar data available to report on yet.';
-    emptyPanel.appendChild(emptyText);
-    emptyPanel.style.display = 'block';
-    return;
-  }
-
+  const BARS = RAW_BARS.map(b => Object.assign({}, b, {date: displayBarDate(b.date)}));
+  if (!BARS.length) return;
   const vib = parseFloat(document.getElementById('vibNumber').value);
-  const mode = document.querySelector('input[name=volmode]:checked').value;
-  const {pivots, state, extremeIdx, extremePrice} = computeZigZag(RAW_BARS, vib);
-  const {waveDir, waveMetric} = computeWaveVolume(RAW_BARS, pivots, state, extremeIdx, mode);
-
-  const lastBar = RAW_BARS[RAW_BARS.length - 1];
-  const price = lastBar.close;
-  const lows = RAW_BARS.map(b => b.low), highs = RAW_BARS.map(b => b.high);
-  const priceMin = Math.min(...lows), priceMax = Math.max(...highs);
-  const priceMid = (priceMin + priceMax) / 2;
-
-  const lines = [];
-  lines.push(`MARKET INTELLIGENCE REPORT -- __SYMBOL__`);
-  lines.push(`Generated ${new Date().toLocaleString()}`);
-  lines.push(`Current price: ${price.toFixed(2)}  |  Range over loaded history: ${priceMin.toFixed(2)} - ${priceMax.toFixed(2)}`);
-  lines.push('');
-  lines.push('This report describes what the data shows and how similar setups');
-  lines.push('have behaved historically for this symbol. It does not tell you');
-  lines.push('what to do -- treat it as information to weigh, not a signal to act on.');
-  lines.push('');
-
-  // -- Backstory: reuses buildWaveSegments() (already used elsewhere
-  // in this file for SOS/SOW and Shortening of Thrust) to narrate the
-  // last few completed waves -- size, duration, and volume relative
-  // to the median of prior same-direction waves. Purely descriptive
-  // of what already happened, not a forecast of what happens next.
-  lines.push('BACKSTORY');
-  const allSegments = buildWaveSegments(RAW_BARS, pivots);
-  if (allSegments.length >= 2) {
-    const recentSegments = allSegments.slice(-4);
-    for (const seg of recentSegments) {
-      const priorSameDir = allSegments.filter(s => s.direction === seg.direction && s.endIdx < seg.endIdx).slice(-3);
-      const medVol = priorSameDir.length ? _median(priorSameDir.map(s => s.volume)) : null;
-      const volNote = medVol ? `on ${(seg.volume / medVol).toFixed(2)}x the usual volume` : 'with no prior same-direction wave to compare volume against';
-      const pctMove = seg.startPrice > 0 ? Math.abs(seg.endPrice - seg.startPrice) / seg.startPrice * 100 : 0;
-      lines.push(`From ${seg.startPrice.toFixed(2)} (${formatEasternTime(RAW_BARS[seg.startIdx].date)}) to ${seg.endPrice.toFixed(2)} (${formatEasternTime(RAW_BARS[seg.endIdx].date)}), a ${seg.direction} move of ${pctMove.toFixed(2)}%, ${volNote}.`);
-    }
-  } else {
-    lines.push('Not enough completed waves yet in the loaded history to build a wave-by-wave backstory.');
-  }
-  lines.push('');
-
-  // -- Current status (previously "CURRENT WAVE") --
-  lines.push('CURRENT STATUS');
-  if (waveMetric && waveMetric.length >= 2) {
-    const current = waveMetric[waveMetric.length - 1];
-    const prior = waveMetric[waveMetric.length - 2];
-    const dirLabel = waveDir > 0 ? 'UP' : (waveDir < 0 ? 'DOWN' : 'FLAT');
-    if (current > prior) {
-      lines.push(`Current swing is ${dirLabel}, printing more volume than the prior swing -- fresh participation, the move is building rather than fading.`);
-    } else if (current < prior) {
-      lines.push(`Current swing is ${dirLabel}, printing less volume than the prior swing -- effort is fading, a genuine warning sign for this swing's continuation.`);
-    } else {
-      lines.push(`Current swing is ${dirLabel}, with volume roughly matching the prior swing -- no clear building or fading signal yet.`);
-    }
-  } else {
-    lines.push('Not enough completed swings yet in the loaded history to compare wave-over-wave volume.');
-  }
-  lines.push('');
-
-  // -- Volatility (unchanged from the original report) --
-  const recentBars = RAW_BARS.slice(-20);
-  const recentRanges = recentBars.map(b => b.high - b.low);
-  const allRanges = RAW_BARS.map(b => b.high - b.low);
-  const avgRecentRange = recentRanges.reduce((a,b) => a+b, 0) / recentRanges.length;
-  const avgAllRange = allRanges.reduce((a,b) => a+b, 0) / allRanges.length;
-  const volRatio = avgAllRange > 0 ? avgRecentRange / avgAllRange : 1;
-  lines.push('VOLATILITY');
-  if (volRatio > 1.3) {
-    lines.push(`Recent bar ranges are running ${((volRatio-1)*100).toFixed(0)}% wider than this symbol's own average over the loaded history -- elevated movement right now, not necessarily directional.`);
-  } else if (volRatio < 0.7) {
-    lines.push(`Recent bar ranges are running ${((1-volRatio)*100).toFixed(0)}% narrower than this symbol's own average -- a quieter, more contracted period than usual.`);
-  } else {
-    lines.push(`Recent bar ranges are broadly in line with this symbol's own average over the loaded history -- no unusual expansion or contraction right now.`);
-  }
-  lines.push('');
-
-  // -- Historical pattern track record: uses scanHistoricalPatterns()
-  // (module-level, defined near isValidLevel above) to list every
-  // detected Spring/Upthrust/Breakout/Breakdown across the ENTIRE
-  // loaded history, not just the current bar -- distinct from the
-  // ACTIVE PATTERNS section below, which only reflects right now.
-  lines.push('HISTORICAL PATTERN TRACK RECORD');
-  const historicalEvents = scanHistoricalPatterns(RAW_BARS);
-  if (historicalEvents.length) {
-    const failed = historicalEvents.filter(e => e.type === 'SPRING' || e.type === 'UPTHRUST').length;
-    const held = historicalEvents.filter(e => e.type === 'BREAKOUT' || e.type === 'BREAKDOWN').length;
-    lines.push(`${historicalEvents.length} level test(s) detected over the loaded history: ${held} held (confirmed Breakout/Breakdown), ${failed} failed (reverted as Spring/Upthrust).`);
-    const recentEvents = historicalEvents.slice(-5);
-    for (const e of recentEvents) {
-      lines.push(`- ${formatEasternTime(e.date)}: ${e.type} at ${e.level.toFixed(2)}`);
-    }
-  } else {
-    lines.push('No level tests detected over the loaded history at the current lookback settings.');
-  }
-  lines.push('');
-
-  // -- Active patterns (current bar only, from the existing Weis
-  // Radar scan) -- kept separate from the historical list above since
-  // they answer a genuinely different question (right now vs. ever).
-  lines.push('ACTIVE PATTERNS (current bar)');
-  if (HITS.length) {
-    for (const h of HITS) {
-      const lvl = (h.level !== null && h.level !== undefined) ? ` at ${h.level.toFixed(2)}` : '';
-      lines.push(`- ${h.type}${lvl}${h.date ? ' (' + formatEasternTime(h.date) + ')' : ' (current bar)'}`);
-    }
-  } else {
-    lines.push('No Spring, Upthrust, Breakout, or Breakdown pattern currently active for this symbol.');
-  }
-  lines.push('');
-
-  // -- Effort vs. Result: reuses classifyEffortResult() (already used
-  // to annotate the chart itself) to surface any notable effort/
-  // result imbalance in the most recent completed waves.
-  lines.push('EFFORT VS. RESULT');
-  const effortEvents = classifyEffortResult(RAW_BARS, pivots);
-  if (effortEvents.length) {
-    const recent = effortEvents.slice(-3);
-    for (const e of recent) {
-      lines.push(`${formatEasternTime(RAW_BARS[e.end].date)}: ${e.direction}-wave -- ${e.label} (relative effort ${e.relEffort}x median)`);
-    }
-  } else {
-    lines.push('No notable effort/result imbalance detected in the loaded history.');
-  }
-  lines.push('');
-
-  // -- Risk/Reward: nearest well-defined support (below price) and
-  // resistance (above price) from findWellDefinedLevels() (already
-  // used to draw the chart's own S/R lines), with Call Wall/Put Wall
-  // explicitly noted alongside as additional, options-derived
-  // reference points -- per explicit request, structural distance
-  // only, never a recommendation of what to do with it.
-  lines.push('RISK / REWARD (structural distance only -- not a recommendation)');
+  const {pivots, state, extremeIdx, extremePrice} = computeZigZag(BARS, vib);
+  const n = BARS.length;
+  const first = BARS[0], last = BARS[n - 1];
+  const totalChangePct = (last.close - first.close) / first.close * 100;
+  const sosSow = classifySOSSOW(BARS, pivots, 5);
+  const sot = classifyShorteningOfThrust(BARS, pivots);
+  const eom = classifyEaseOfMovement(BARS);
+  const moc = classifyMeaningOfClose(BARS);
+  const absorption = classifyAbsorption(BARS, pivots);
+  const effortResult = classifyEffortResult(BARS, pivots);
   const srLevels = findWellDefinedLevels(pivots, 0.5);
-  const supportLevels = srLevels.filter(l => l.price < price).sort((a,b) => b.price - a.price);
-  const resistanceLevels = srLevels.filter(l => l.price > price).sort((a,b) => a.price - b.price);
-  const nearestSupport = supportLevels.length ? supportLevels[0] : null;
-  const nearestResistance = resistanceLevels.length ? resistanceLevels[0] : null;
-
-  if (nearestSupport) {
-    lines.push(`Nearest well-defined support: ${nearestSupport.price.toFixed(2)} (${nearestSupport.touches} touches), ${(((price - nearestSupport.price) / price) * 100).toFixed(1)}% below current price.`);
+  const patterns = classifySpringsUpthrusts(BARS);
+  const lines = [];
+  lines.push(`WEIS RADAR REPORT -- ${currentSymbol || '(symbol not entered)'}`);
+  const vibrationMode = document.getElementById('vibrationMode').value;
+  const vibLabel = vibrationMode === 'auto' ? `${vib}% empirically calibrated vibration` : `${vib}% manual vibration`;
+  lines.push(`${first.date} through ${last.date}  (${n} bars, ${vibLabel})`);
+  lines.push('='.repeat(70));
+  lines.push('');
+  lines.push('VIBRATION CALIBRATION');
+  if (CALIBRATION_RESULT && CALIBRATION_RESULT.ok) {
+    const c = CALIBRATION_RESULT;
+    lines.push(`  Mode: ${vibrationMode === 'auto' ? 'EMPIRICAL AUTO' : 'MANUAL OVERRIDE (empirical result shown for comparison)'}`);
+    lines.push(`  Empirically calibrated threshold: ${c.selected.toFixed(2)}%`);
+    lines.push(`  Stable historical range: ${c.stableMin.toFixed(2)}% to ${c.stableMax.toFixed(2)}%`);
+    lines.push(`  Confidence: ${c.confidence}`);
+    lines.push(`  Historical median True Range: ${c.medianTRPct.toFixed(2)}%`);
+    lines.push(`  Pivot topology stability: ${(c.stability * 100).toFixed(0)}%`);
+    if (c.medianWavePct != null) lines.push(`  Median completed wave at calibrated threshold: ${c.medianWavePct.toFixed(2)}% over ${Number(c.medianWaveBars).toFixed(1)} bars`);
+    lines.push(`  Method: ${c.reason}`);
+    lines.push("  Principle: select the lowest threshold that preserves stable behavioral structure from the instrument\\'s own historical price action; do not optimize for the number of signals.");
   } else {
-    lines.push('No well-defined support level found below current price in the loaded history.');
+    lines.push('  Empirical calibration unavailable for this dataset.');
   }
-  if (nearestResistance) {
-    lines.push(`Nearest well-defined resistance: ${nearestResistance.price.toFixed(2)} (${nearestResistance.touches} touches), ${(((nearestResistance.price - price) / price) * 100).toFixed(1)}% above current price.`);
-  } else {
-    lines.push('No well-defined resistance level found above current price in the loaded history.');
+  lines.push('');
+  lines.push('PRICE ACTION');
+  lines.push(`  ${first.close.toFixed(2)} -> ${last.close.toFixed(2)}  (${fmtPct(totalChangePct)} over the full period)`);
+  lines.push(`  Current wave: ${state || 'not yet confirmed'} (${pivots.length} confirmed pivots at this vibration setting)`);
+  if (pivots.length >= 2) {
+    const recentPivots = pivots.slice(-3);
+    lines.push(`  Most recent pivots: ` + recentPivots.map(p => `${p.type}@${p.price.toFixed(2)} (${BARS[p.idx].date})`).join('  ->  '));
   }
-  if (nearestSupport && nearestResistance) {
-    const risk = price - nearestSupport.price;
-    const reward = nearestResistance.price - price;
-    if (risk > 0) {
-      lines.push(`Structural risk/reward from current price to these two levels: ${(reward / risk).toFixed(2)}:1 (reward ${reward.toFixed(2)} vs. risk ${risk.toFixed(2)}).`);
+  lines.push('');
+  lines.push('PSYCHOLOGICAL READ (most recent signals)');
+  lines.push('  The section below interprets what the signals above suggest about');
+  lines.push('  market participants\\' likely behavior -- this is inference, not');
+  lines.push('  certainty. The same signal can sometimes be read more than one way,');
+  lines.push('  and markets can behave irrationally regardless of what the tape');
+  lines.push('  suggests. Treat this as a hypothesis to test against your own');
+  lines.push('  reading, not a conclusion.');
+  lines.push('');
+  const psychNarrative = generatePsychologicalNarrative(BARS, pivots, n, sosSow, sot, eom, moc, absorption, effortResult, patterns, srLevels, state, extremeIdx);
+  psychNarrative.forEach(p => { lines.push('  ' + p); lines.push(''); });
+  lines.push('VOLUME');
+  {
+    // Wave volume: include the current, still-forming wave (from the
+    // last confirmed pivot to the present bar) alongside the fully
+    // confirmed ones, since "what's the volume doing right now" is
+    // exactly the question this section exists to answer.
+    const segments = buildWaveSegments(BARS, pivots);
+    if (extremeIdx !== null && extremeIdx !== undefined && state) {
+      const lastPivotIdx = pivots.length ? pivots[pivots.length - 1].idx : 0;
+      let curVol = 0;
+      for (let i = lastPivotIdx; i <= extremeIdx; i++) curVol += BARS[i].volume;
+      segments.push({direction: state, volume: curVol, startIdx: lastPivotIdx, endIdx: extremeIdx, forming: true});
     }
+    if (segments.length) {
+      const current = segments[segments.length - 1];
+      const sameDir = segments.filter(s => s.direction === current.direction).slice(0, -1).slice(-3);
+      if (sameDir.length) {
+        const medVol = _median(sameDir.map(s => s.volume));
+        const ratio = medVol ? current.volume / medVol : 1;
+        lines.push(`  Current ${current.direction}-wave${current.forming ? ' (still forming)' : ''}: ${current.volume.toLocaleString()} volume, ${ratio.toFixed(2)}x the median of the last ${sameDir.length} ${current.direction}-waves.`);
+      } else {
+        lines.push(`  Current ${current.direction}-wave${current.forming ? ' (still forming)' : ''}: ${current.volume.toLocaleString()} volume (no prior same-direction waves yet to compare against).`);
+      }
+    }
+    // Daily volume trend: recent average vs. the preceding period, plus
+    // the single highest-volume bar in the dataset as a climax marker.
+    const recentN = Math.min(10, n);
+    const recent = BARS.slice(-recentN).map(b => b.volume);
+    const priorN = Math.min(10, n - recentN);
+    const recentAvg = recent.reduce((a, v) => a + v, 0) / recent.length;
+    if (priorN > 0) {
+      const prior = BARS.slice(-(recentN + priorN), -recentN).map(b => b.volume);
+      const priorAvg = prior.reduce((a, v) => a + v, 0) / prior.length;
+      const changePct = priorAvg ? (recentAvg - priorAvg) / priorAvg * 100 : 0;
+      lines.push(`  Daily volume, last ${recentN} bars vs. the ${priorN} before that: ${fmtPct(changePct)} (${changePct >= 0 ? 'expanding' : 'contracting'}).`);
+    }
+    let maxVolIdx = 0;
+    for (let i = 1; i < n; i++) if (BARS[i].volume > BARS[maxVolIdx].volume) maxVolIdx = i;
+    const barsAgo = n - 1 - maxVolIdx;
+    lines.push(`  Highest single-bar volume in this dataset: ${BARS[maxVolIdx].volume.toLocaleString()} on ${BARS[maxVolIdx].date} (${barsAgo === 0 ? 'the most recent bar' : barsAgo + ' bars ago'}).`);
   }
-
-  const callWall = parseFloat(document.getElementById('callWall').value);
-  const putWall = parseFloat(document.getElementById('putWall').value);
-  const gammaFlip = parseFloat(document.getElementById('gammaFlip').value);
-  if (isValidLevel(callWall, priceMid)) {
-    lines.push(`Also note: Call Wall at ${callWall.toFixed(2)}, ${(((callWall - price) / price) * 100).toFixed(1)}% ${callWall > price ? 'above' : 'below'} current price -- an options-derived level, not a price-structure one.`);
+  lines.push('');
+  lines.push('EFFORT VS. RESULT (Weis -- core theme throughout the book)');
+  if (effortResult.length) {
+    effortResult.slice(-5).forEach(c => {
+      lines.push(`  ${BARS[c.end].date}  ${c.direction === 'up' ? 'up-wave' : 'down-wave'} -- ${c.label} (relative effort ${c.relEffort}x median)`);
+    });
+  } else {
+    lines.push('  None detected at the current vibration setting.');
   }
-  if (isValidLevel(putWall, priceMid)) {
-    lines.push(`Also note: Put Wall at ${putWall.toFixed(2)}, ${(Math.abs((putWall - price) / price * 100)).toFixed(1)}% ${putWall > price ? 'above' : 'below'} current price -- an options-derived level, not a price-structure one.`);
+  lines.push('');
+  lines.push('SHORTENING OF THE THRUST (Weis, "Trades About to Happen," p.174)');
+  if (sot.length) {
+    sot.slice(-5).forEach(e => lines.push(`  ${BARS[e.idx].date}  ${e.direction}-wave thrust notably shorter than the two preceding it`));
+  } else {
+    lines.push('  None detected.');
   }
-  if (isValidLevel(gammaFlip, priceMid)) {
-    lines.push(`Also note: Gamma Flip at ${gammaFlip.toFixed(2)} -- price is currently ${price > gammaFlip ? 'above' : 'below'} this level.`);
+  lines.push('');
+  lines.push('EASE OF MOVEMENT (Weis, p.4 / p.123)');
+  if (eom.length) {
+    const upCount = eom.filter(e => e.direction === 'up').length;
+    const downCount = eom.filter(e => e.direction === 'down').length;
+    lines.push(`  ${eom.length} notably wide-range bars (${upCount} up, ${downCount} down). Most recent: ${BARS[eom[eom.length-1].idx].date} (${eom[eom.length-1].direction}).`);
+  } else {
+    lines.push('  None detected.');
   }
-
+  lines.push('');
+  lines.push('MEANING OF THE CLOSE (Weis, throughout the book)');
+  if (moc.length) {
+    const strongCount = moc.filter(e => e.type === 'strong').length;
+    const weakCount = moc.filter(e => e.type === 'weak').length;
+    const recentMoc = moc.slice(-10);
+    const recentStrong = recentMoc.filter(e => e.type === 'strong').length;
+    const recentWeak = recentMoc.filter(e => e.type === 'weak').length;
+    lines.push(`  ${moc.length} total (${strongCount} strong, ${weakCount} weak) on above-average volume. Of the last 10: ${recentStrong} strong, ${recentWeak} weak.`);
+  } else {
+    lines.push('  None detected.');
+  }
+  lines.push('');
+  lines.push('ABSORPTION (Weis, Ch.7)');
+  if (absorption.length) {
+    absorption.forEach(e => lines.push(`  ${BARS[e.idx].date}  ${e.type === 'top' ? 'bullish, at a high' : 'bearish, at a low'} -- wide, high-volume bar with no follow-through, rising supports/falling resistance behind it`));
+  } else {
+    lines.push('  None detected.');
+  }
+  lines.push('');
+  lines.push('SIGN OF STRENGTH / SIGN OF WEAKNESS (classic Wyckoff Method, not from Weis\\'s own book)');
+  if (sosSow.length) {
+    sosSow.slice(-5).forEach(e => lines.push(`  ${BARS[e.idx].date}  ${e.type} confirmed at ${e.price.toFixed(2)} (held on the following wave)`));
+  } else {
+    lines.push('  None confirmed at the current vibration setting.');
+  }
+  lines.push('');
+  lines.push('SPRING / UPTHRUST / BREAKOUT / BREAKDOWN (classic Wyckoff Method)');
+  if (patterns.length) {
+    patterns.slice(-5).forEach(e => lines.push(`  ${e.date}  ${e.type} at ${e.level.toFixed(2)}`));
+  } else {
+    lines.push('  None detected.');
+  }
+  lines.push('');
+  lines.push('WELL-DEFINED SUPPORT/RESISTANCE (2+ pivot touches within 0.5%)');
+  if (srLevels.length) {
+    const nearby = srLevels.map(lv => ({...lv, dist: Math.abs(lv.price - last.close) / last.close * 100}))
+                            .sort((a, b) => a.dist - b.dist).slice(0, 5);
+    nearby.forEach(lv => lines.push(`  ${lv.price.toFixed(2)}  (${lv.touches} touches, ${lv.dist.toFixed(1)}% from current close)`));
+  } else {
+    lines.push('  None found.');
+  }
+  lines.push('');
+  lines.push('='.repeat(70));
+  lines.push('This is an algorithmic summary of the pattern-detection layers built into this');
+  lines.push('tool -- it is not David Weis\\'s own judgment, and it is not a recommendation.');
+  lines.push('Weis himself is explicit that reading a chart this way "is an art, not an');
+  lines.push('automatic trading device." Use this as a starting point for your own reading');
+  lines.push('of the chart, not a substitute for it.');
   const panel = document.getElementById('reportPanel');
-  panel.innerHTML = '';
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.textContent = '✕ Close';
-  closeBtn.style.cssText = 'float:right;color:#e6e9ee;background:#263548;border:0;cursor:pointer;padding:4px 10px;border-radius:4px;margin-bottom:8px;';
-  closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
-  panel.appendChild(closeBtn);
-  const textNode = document.createElement('div');
-  textNode.style.cssText = 'clear:both;';
-  textNode.textContent = lines.join('\\n');
-  panel.appendChild(textNode);
+  panel.textContent = lines.join('\\n');
   panel.style.display = 'block';
+  document.getElementById('reportStatus').textContent = 'Report generated.';
 }
 document.getElementById('generateReportBtn').addEventListener('click', generateReport);
 document.addEventListener('keydown', (e) => {
@@ -9336,10 +9616,13 @@ function updateLivePriceOnly(price, volume) {
   const lows = RAW_BARS.map(b => b.low);
   Plotly.restyle('chart', {close: [closes], high: [highs], low: [lows]}, [0]);
   const plot = document.getElementById('chart');
-  const barColors = plot.data && plot.data[4] && plot.data[4].marker.color;
-  const lastColor = last.close >= last.open ? '#00d95b' : '#f23645';
+  const iVol = plot.data.findIndex(t => /^Wave (Total|Average) Volume$/.test(t.name || ''));
+  const iBar = plot.data.findIndex(t => t.name === 'Daily Volume');
+  const iMa = plot.data.findIndex(t => /Vol MA$/.test(t.name || ''));
+  const barColors = iBar >= 0 && plot.data[iBar].marker.color;
+  const lastColor = last.close >= last.open ? '#2ecc71' : '#e74c3c';
   if (Array.isArray(barColors) && barColors[barColors.length-1] !== lastColor) {
-    Plotly.restyle(plot, {'marker.color':[RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645')]}, [4]);
+    Plotly.restyle(plot, {'marker.color':[RAW_BARS.map(b => b.close >= b.open ? '#2ecc71' : '#e74c3c')]}, [iBar]);
   }
   const priceRange = plot._fullLayout && plot._fullLayout.yaxis.range;
   if (priceRange && (price > priceRange[1] || price < priceRange[0])) {
@@ -9354,14 +9637,14 @@ function updateLivePriceOnly(price, volume) {
     last.volume = volume;
     const volumes = RAW_BARS.map(b => b.volume);
     const period = Math.max(1, parseInt(document.getElementById('volMaPeriod').value, 10) || 10);
-    const colors = RAW_BARS.map(b => b.close >= b.open ? '#00d95b' : '#f23645');
-    Plotly.restyle(plot, {y:[volumes], 'marker.color':[colors]}, [4]);
-    Plotly.restyle(plot, {y:[movingAverage(volumes, period)]}, [5]);
+    const colors = RAW_BARS.map(b => b.close >= b.open ? '#2ecc71' : '#e74c3c');
+    Plotly.restyle(plot, {y:[volumes], 'marker.color':[colors]}, [iBar]);
+    Plotly.restyle(plot, {y:[movingAverage(volumes, period)]}, [iMa]);
     const vib = parseFloat(document.getElementById('vibNumber').value);
     const {pivots,state,extremeIdx} = computeZigZag(RAW_BARS, vib);
     const mode = document.querySelector('input[name=volmode]:checked').value;
     const {waveMetric,waveDir} = computeWaveVolume(RAW_BARS, pivots, state, extremeIdx, mode);
-    Plotly.restyle(plot, {y:[waveMetric], 'marker.color':[waveDir.map(d => d === 'up' ? '#00d95b' : '#f23645')]}, [3]);
+    Plotly.restyle(plot, {y:[waveMetric], 'marker.color':[waveDir.map(d => d === 'up' ? '#2ecc71' : (d === 'down' ? '#e74c3c' : '#555'))]}, [iVol]);
     const {start,count} = getWindow();
     const barMax = Math.max(...volumes.slice(start,start+count));
     const waveMax = Math.max(...waveMetric.slice(start,start+count));
@@ -9385,7 +9668,7 @@ function noteLog(text) {
     if (!box) {
       box = document.createElement('div');
       box.id = 'redrawLog';
-      box.style.cssText = 'position:fixed;left:8px;bottom:4px;font:10px monospace;color:#6b7280;text-align:left;pointer-events:none;z-index:5;white-space:pre';
+      box.style.cssText = 'display:none;position:fixed;left:8px;bottom:4px;font:10px monospace;color:#6b7280;text-align:left;pointer-events:none;z-index:5;white-space:pre';
       document.body.appendChild(box);
       window.__redrawLines = [];
     }
