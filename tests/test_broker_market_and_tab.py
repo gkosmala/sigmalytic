@@ -34,6 +34,68 @@ def test_parse_date_formats():
     assert md.parse_date("not a date") is None and md.parse_date("") is None
 
 
+def test_parse_date_accepts_us_dates_with_times():
+    for s in ("08/10/2026 09:35:00", "08/10/2026 09:35", "8/10/2026 9:35:00 AM", "8/10/2026 9:35 PM",
+              "08/10/26 09:35:00"):
+        d = md.parse_date(s)
+        assert d is not None and (d.year, d.month, d.day) == (2026, 8, 10), s
+    assert md.parse_date("8/10/2026 9:35 PM").hour == 21
+
+
+def test_reason_when_no_price_history(monkeypatch):
+    monkeypatch.setattr(md, "fetch_daily_bars", lambda s, a, b: {x: [] for x in s})
+    out = md.point_in_time_readings([{"symbol": "AAPL", "date": "2026-02-02", "side": "BUY"}])
+    assert out[("AAPL", "2026-02-02")] is None
+    assert "No daily price history" in md.last_reading_reasons()[("AAPL", "2026-02-02")]
+
+
+def test_reason_when_too_few_bars(monkeypatch):
+    monkeypatch.setattr(md, "fetch_daily_bars", lambda s, a, b: {x: _bars(n=30, start="2026-01-02") for x in s})
+    md.point_in_time_readings([{"symbol": "AAPL", "date": "2026-02-02", "side": "BUY"}])
+    assert "daily bars" in md.last_reading_reasons()[("AAPL", "2026-02-02")]
+
+
+def test_reason_when_alpaca_rejects_the_request(monkeypatch):
+    class Resp:
+        status_code, text = 403, "forbidden"
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(md.requests, "get", lambda *a, **k: Resp())
+    md.point_in_time_readings([{"symbol": "AAPL", "date": "2026-02-02", "side": "BUY"}])
+    assert "HTTP 403" in md.last_reading_reasons()[("AAPL", "2026-02-02")]
+
+
+def test_reason_for_unrecognized_date():
+    assert md.point_in_time_readings([{"symbol": "AAPL", "date": "garbage", "side": "BUY"}]) == {}
+    assert "not recognized" in md.last_reading_reasons()[("AAPL", "garbage")]
+
+
+def _review_for(rows):
+    st = vs.MemoryVaultStore()
+    st.add_statement("u", 1, {"kind": "trades", "rows": rows, "row_count": len(rows), "filename": "f"})
+    return broker_review.build_review({"slot": 1}, st.list_statements("u", 1, with_rows=True), md)
+
+
+def test_review_row_carries_the_reason(monkeypatch):
+    monkeypatch.setattr(md, "fetch_daily_bars", lambda s, a, b: {x: [] for x in s})
+    rows = [{"date": f"2026-03-{i:02d}", "symbol": "AAPL", "side": "BUY" if i % 2 else "SELL",
+             "quantity": 10, "price": 100, "fees": 1} for i in range(1, 9)]
+    trades = _review_for(rows)["russell_1000"]["trades"]
+    assert trades and all(t["alignment"] == "not read" for t in trades)
+    assert all("No daily price history" in t["reading_reason"] for t in trades)
+
+
+def test_review_reads_trades_dated_in_us_style_with_times(monkeypatch):
+    data = {"AAPL": _bars()}
+    monkeypatch.setattr(md, "fetch_daily_bars", lambda s, a, b: {x: data.get(x, []) for x in s})
+    rows = [{"date": f"03/{i:02d}/2026 15:00:00", "symbol": "AAPL", "side": "BUY" if i % 2 else "SELL",
+             "quantity": 10, "price": 100, "fees": 1} for i in range(2, 10)]
+    counts = _review_for(rows)["russell_1000"]["alignment_counts"]
+    assert counts["not read"] == 0
+
+
 def test_alignment_rules():
     long_ok = {"sequence_confirmed": True, "setup_side": "Long"}
     short_ok = {"sequence_confirmed": True, "setup_side": "Short"}

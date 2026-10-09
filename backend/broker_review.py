@@ -85,11 +85,15 @@ def build_review(vault: Dict[str, Any], statements: List[Dict[str, Any]], market
 
     # Russell 1000: every buy/sell of an index symbol, read as of the trade date
     readings: Dict[Any, Any] = {}
+    reasons: Dict[Any, str] = {}   # (symbol, date) -> why that trade could not be read
     if market and executions:
         in_index = [e for e in executions
                     if str(e.get("symbol", "")).upper() in layers.load_russell_map()
                     and str(e.get("side", "")).upper() in ("BUY", "SELL")]
         readings = market.point_in_time_readings(in_index) if in_index else {}
+        if in_index:
+            # Optional on the injected market object (older fakes do not provide it).
+            reasons = getattr(market, "last_reading_reasons", lambda: {})()
 
     def reading_fn(sym: str, date: str):
         return readings.get((sym, date))
@@ -102,6 +106,9 @@ def build_review(vault: Dict[str, Any], statements: List[Dict[str, Any]], market
             if r is None:
                 counts["not read"] += 1
                 row["alignment"] = "not read"
+                why = reasons.get((row["symbol"], str(row.get("date"))))
+                if why:
+                    row["reading_reason"] = why
                 continue
             row["alignment"] = market.alignment(row["side"], r)
             counts[row["alignment"]] += 1
