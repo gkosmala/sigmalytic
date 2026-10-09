@@ -234,7 +234,8 @@ def render_review(review: Dict[str, Any]) -> html.Div:
             al = t.get("alignment", "not read")
             col = TEAL_DIM if al == "with the setup" else RED_DIM if al == "against the setup" else WHITE
             cells = [str(t.get("date", ""))[:10], t.get("symbol"), t.get("side"), t.get("sector"),
-                     f"{rd.get('wyckoff_verdict', '—')} / {rd.get('wyckoff_phase', '—')}" if rd else "—",
+                     f"{rd.get('wyckoff_verdict', '—')} / {rd.get('wyckoff_phase', '—')}" if rd
+                     else (t.get("reading_reason") or "—"),
                      f"{rd.get('setup_side')} {rd.get('setup_grade')}" if rd else "—", al]
             rows.append(html.Tr([html.Td(str(c), style={"fontSize": "11px", "padding": "4px 8px",
                                                          "color": col if i == 6 else WHITE}) for i, c in enumerate(cells)]))
@@ -245,6 +246,10 @@ def render_review(review: Dict[str, Any]) -> html.Div:
                         f"Against it: {counts.get('against the setup', 0)}. "
                         f"No confirmed setup: {counts.get('no confirmed setup', 0)}. "
                         f"Not read: {counts.get('not read', 0)}.")
+            reasons = [t.get("reading_reason") for t in r.get("trades", []) if t.get("reading_reason")]
+            if reasons:
+                top = max(set(reasons), key=reasons.count)
+                summary += f" Most common reason: {top}"
         parts.append(_card([_section("Russell 1000 trades read as of the trade date"),
                             html.Div(summary, style={"fontSize": "12px", "color": WHITE, "marginBottom": "10px"}),
                             html.Div(html.Table(rows, style={"width": "100%", "borderCollapse": "collapse"}),
