@@ -210,7 +210,7 @@ MARKET_WIRE_SYMBOLS = {
     "QQQ": "Nasdaq",
     "IWM": "Russell 2000",
     "GLD": "Gold",
-    "USO": "Oil",
+    "USO": "USO",
 }
 
 # ADDED (2026-08-21): currencies, extending the existing market-wire
