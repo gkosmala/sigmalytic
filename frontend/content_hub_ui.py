@@ -54,6 +54,16 @@ def _teaser_card(d: dict):
                                  "marginBottom": "12px", "background": "rgba(255,255,255,.02)"})
 
 
+def _raw_card(raw):
+    if not raw:
+        return html.Div()
+    return html.Div([
+        html.Div("UNPROCESSED AI TEXT (the reply could not be turned into a report; you were billed for it, so it is kept here)",
+                 style={"fontSize": "12px", "fontWeight": "800", "color": RED, "marginBottom": "4px"}),
+        _copy(raw, "Copy AI text"), _pre(raw)],
+        style={"border": f"1px dashed {RED}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})
+
+
 def _private_card(p):
     if not p:
         return html.Div()
@@ -120,6 +130,7 @@ def render_package(pkg: dict):
                   _copy(blog["head_tags"], "Copy head tags"),
                   html.Span("  Markdown", style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "marginLeft": "14px"}),
                   _copy(blog["markdown"], "Copy markdown")], style={"marginTop": "6px"}),
+        _raw_card(blog.get("raw_ai_text")),
         _private_card(blog.get("private")),
         html.Div(f"SEO CHECKLIST ({seo.get('warnings', 0)} to fix before publishing)" if seo else "",
                  style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "18px 0 6px"}),
