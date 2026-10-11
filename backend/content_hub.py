@@ -291,7 +291,7 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     trend = _trend_word(f)
     title = f"{s} Market Structure: Price {trend} its 20-day average at {_usd(f['last_close'])}"
     meta = (f"{s} closed at {_usd(f['last_close'])} ({_sgn(f['change_1d_pct'])} on the day), "
-            f"{_sgn(f['from_high_pct'])} from its 52-week high. Wyckoff/Weis read from Sigmalytic.")[:158]
+            f"{_sgn(f['from_high_pct'])} from its 52-week high. Wyckoff/Weis pattern read, key levels and volume from Sigmalytic.")[:158]
     sections: List[Dict[str, str]] = []
 
     p = [f"{s} closed at {_usd(f['last_close'])} on {f['as_of']}, "
