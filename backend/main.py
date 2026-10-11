@@ -2914,7 +2914,7 @@ def weis_radar_trade_backtest(symbol: str, timeframe: str = "1Day", _admin: str 
 
 
 @app.get("/api/weis-radar/chart/{symbol}")
-def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252):
+def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252, include_options: bool = True):
     """
     ADDED (2026-08-25): on-demand, single-symbol bar+hit data for the
     new click-to-chart feature. Deliberately NOT part of the cached
@@ -2987,6 +2987,8 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
         # when the value is None.
         call_wall = put_wall = gamma_flip = None
         try:
+            if not include_options:  # Content Hub's extra timeframes do not need a second options-chain fetch
+                raise RuntimeError("options skipped")
             from backend.gamma.alpaca_option_chain_adapter import AlpacaOptionChainAdapter
             from backend.gamma.gamma_strike_matrix_engine import GammaStrikeMatrixEngine
 

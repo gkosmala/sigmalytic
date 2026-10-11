@@ -26,6 +26,7 @@ import html as _html
 import json
 import os
 import re
+import time
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -36,9 +37,9 @@ BLOG_PATH = os.getenv("CONTENT_HUB_BLOG_PATH", "/research-and-intelligence").rst
 AI_MODEL = os.getenv("CONTENT_HUB_MODEL", "claude-sonnet-5-5")
 
 DISCLAIMER = (
-    "This report is provided for research and educational use only. It is not investment advice, a "
-    "recommendation, or an offer to buy or sell any security. Past price and volume behavior does not "
-    "predict future results, and trading involves risk of loss."
+    "This material is provided solely for research and educational purposes. It does not constitute personalized "
+    "investment advice, a recommendation, or an offer or solicitation to buy or sell any security. Market conditions "
+    "can change rapidly, and historical or modeled observations do not guarantee future results."
 )
 SHORT_DISCLAIMER = "Educational research, not investment advice."
 
@@ -155,17 +156,138 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
         "gamma_flip": _f(chart.get("gamma_flip")),
         "ice_line": _f(wl.get("ice_line_level")) if isinstance(wl, dict) else None,
         "bars_used": len(bars),
+        "session_high": round(highs[-1], 2) if highs[-1] is not None else None,
+        "session_low": round(lows[-1], 2) if lows[-1] is not None else None,
+        "prev_close": round(back(1), 2) if back(1) is not None else None,
+        "timeframes": {},
     }
+    facts["levels"] = key_levels(facts)
     return facts
+
+
+# Extra timeframes read alongside the daily bars: (key, platform timeframe, bars requested).
+EXTRA_TIMEFRAMES = [("weekly", "1Week", 104), ("4h", "4Hour", 160), ("2h", "2Hour", 200)]
+TF_LABELS = {"weekly": "weekly", "4h": "4-hour", "2h": "2-hour"}
+
+
+def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
+    """Pure: reduces one extra timeframe's chart payload to the few facts the report may use."""
+    bars = chart.get("bars") or []
+    closes = [_f(b.get("close")) for b in bars]
+    highs = [_f(b.get("high")) for b in bars]
+    lows = [_f(b.get("low")) for b in bars]
+    vols = [_f(b.get("volume")) for b in bars]
+    if len(bars) < 21 or closes[-1] is None:
+        raise ValueError(f"Not enough {label} bars.")
+    last = closes[-1]
+
+    def sma(n: int) -> Optional[float]:
+        w = [c for c in closes[-n:] if c is not None]
+        return round(sum(w) / len(w), 2) if len(closes) >= n and w else None
+
+    def span(n: int):
+        h = [x for x in highs[-n:] if x is not None]
+        l = [x for x in lows[-n:] if x is not None]
+        return (round(max(h), 2) if h else None), (round(min(l), 2) if l else None)
+
+    def back(n: int) -> Optional[float]:
+        return closes[-1 - n] if len(closes) > n else None
+
+    v20 = [v for v in vols[-21:-1] if v is not None]
+    vol_ratio = round(vols[-1] / (sum(v20) / len(v20)), 2) if (v20 and vols[-1] is not None and sum(v20)) else None
+    wl = chart.get("weis_lines") if isinstance(chart.get("weis_lines"), dict) else {}
+    pivots = sorted((wl.get("pivots") or []), key=lambda p: p.get("bar_index", 0))[-6:]
+    sma20, sma50 = sma(20), sma(50)
+    h20, l20 = span(20)
+    h60, l60 = span(60)
+    return {
+        "label": label, "bars_used": len(bars), "last_bar": str(bars[-1].get("date") or "")[:16],
+        "last_close": round(last, 2), "change_5_bars_pct": _pct(last, back(5)), "change_20_bars_pct": _pct(last, back(20)),
+        "sma20": sma20, "vs_sma20_pct": _pct(last, sma20), "sma50": sma50, "vs_sma50_pct": _pct(last, sma50),
+        "high_20_bars": h20, "low_20_bars": l20, "high_60_bars": h60, "low_60_bars": l60,
+        "volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
+        "recent_pivots": [{"kind": str(p.get("kind")), "price": _f(p.get("price"))} for p in pivots if _f(p.get("price"))],
+        "pattern_signals": [{"type": str(h.get("type") or "").replace("_", " ").title(), "level": _f(h.get("level") or h.get("price"))}
+                            for h in (chart.get("hits") or [])[:3]],
+    }
+
+
+def key_levels(f: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """Nearest reference levels above and below the last close, gathered from every timeframe in the facts."""
+    px = f.get("last_close")
+    cands: List[Any] = []
+
+    def add(price: Any, label: str) -> None:
+        v = _f(price)
+        if v:
+            cands.append((round(v, 2), label))
+
+    for k, lab in (("sma20", "20-day average"), ("sma50", "50-day average"), ("sma200", "200-day average"),
+                   ("high_20d", "20-day high"), ("low_20d", "20-day low"), ("high_60d", "60-day high"),
+                   ("low_60d", "60-day low"), ("high_52w", "52-week high"), ("low_52w", "52-week low"),
+                   ("call_wall", "largest call-open-interest strike"), ("put_wall", "largest put-open-interest strike"),
+                   ("gamma_flip", "estimated gamma flip level"), ("ice_line", "daily ice line")):
+        add(f.get(k), lab)
+    for x in (f.get("pattern_signals") or []):
+        add(x.get("level"), f"daily {x.get('type', 'pattern')} flag level")
+    for key, tf in (f.get("timeframes") or {}).items():
+        name = TF_LABELS.get(key, key)
+        for k, lab in (("sma20", "20-bar average"), ("high_20_bars", "20-bar high"), ("low_20_bars", "20-bar low"),
+                       ("ice_line", "ice line")):
+            add(tf.get(k), f"{name} {lab}")
+        for pv in tf.get("recent_pivots") or []:
+            add(pv.get("price"), f"{name} {str(pv.get('kind')).replace('_', ' ')}")
+    if not px:
+        return {"above": [], "below": []}
+    seen: List[float] = []
+    uniq = []
+    for price, lab in cands:
+        if any(abs(price - s) <= max(0.01, s * 0.001) for s in seen):
+            continue
+        seen.append(price)
+        uniq.append({"price": price, "label": lab})
+    above = sorted([c for c in uniq if c["price"] > px], key=lambda c: c["price"])[:5]
+    below = sorted([c for c in uniq if c["price"] <= px], key=lambda c: -c["price"])[:5]
+    return {"above": above, "below": below}
+
+
+def attach_timeframes(f: Dict[str, Any], charts: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    tfs, missing = {}, []
+    for key, chart in charts.items():
+        try:
+            if not chart.get("ok"):
+                raise ValueError(chart.get("error") or "no data")
+            tfs[key] = timeframe_facts(chart, TF_LABELS.get(key, key))
+        except Exception as e:
+            missing.append(f"{TF_LABELS.get(key, key)} ({str(e)[:60]})")
+    f["timeframes"] = tfs
+    f["timeframes_missing"] = missing
+    f["levels"] = key_levels(f)
+    return f
 
 
 def build_facts(symbol: str) -> Dict[str, Any]:
     """Fetches live data through the existing chart endpoint function and reduces it to facts."""
     from backend.main import weis_radar_chart_data  # lazy: avoids a circular import at module load
-    chart = weis_radar_chart_data(symbol.upper().strip(), timeframe="1Day", limit=252)
+    sym = symbol.upper().strip()
+    chart = weis_radar_chart_data(sym, timeframe="1Day", limit=252)
     if not chart.get("ok"):
         raise ValueError(chart.get("error") or f"No data for {symbol}.")
-    return facts_from_chart_data(symbol, chart)
+    f = facts_from_chart_data(symbol, chart)
+    extra: Dict[str, Dict[str, Any]] = {}
+    for key, tf, limit in EXTRA_TIMEFRAMES:
+        for attempt in range(2):  # one retry per timeframe
+            try:
+                extra[key] = weis_radar_chart_data(sym, timeframe=tf, limit=limit, include_options=False)
+            except Exception as e:
+                extra[key] = {"ok": False, "error": str(e)}
+            if extra[key].get("ok"):
+                break
+    f = attach_timeframes(f, extra)
+    if "weekly" not in f["timeframes"]:  # the weekly view is required; stop before any AI cost is incurred
+        why = next((m for m in f["timeframes_missing"] if m.startswith("weekly")), "weekly (no data)")
+        raise ValueError(f"Weekly data could not be loaded for {sym}: {why}. No report was generated and nothing was charged.")
+    return f
 
 
 # ───────────────────────────── formatting helpers ─────────────────────────────
@@ -329,9 +451,18 @@ SUMMARY_LABELS = [("condition", "Current condition"), ("risk", "Principal risk")
 
 
 def attribution_text() -> str:
-    return (f"The underlying market data for this report was obtained through {DATA_SOURCE}. {DATA_SOURCE} distributes "
-            "market data from multiple exchanges and providers. The analysis and commentary are the work of "
-            "Sigmalytic Quant Corporation.")
+    return (f"Underlying market data used in this report were obtained through {DATA_SOURCE}. {DATA_SOURCE} distributes "
+            "market data from multiple securities exchanges and market-data providers.\n\n"
+            "Sigmalytic Quant Corporation's proprietary analytical framework was used to interpret the supplied market "
+            "information. Proprietary formulas, calibration procedures, internal thresholds, scoring methodology, "
+            "computational logic, and analytical calculations are intentionally excluded from this public report.")
+
+
+def _long_date(d: str) -> str:
+    try:
+        return datetime.strptime(d[:10], "%Y-%m-%d").strftime("%B %-d, %Y")
+    except Exception:
+        return d
 
 
 def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
@@ -408,6 +539,17 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     if lv:
         sections.append({"heading": "Levels the platform is tracking", "body": " ".join(lv)})
 
+    lvls = f.get("levels") or {}
+    if lvls.get("above") or lvls.get("below"):
+        parts = []
+        if lvls.get("above"):
+            parts.append("Nearest reference levels above the last close: " + "; ".join(
+                f"{_usd(x['price'])} ({x['label']})" for x in lvls["above"][:3]) + ".")
+        if lvls.get("below"):
+            parts.append("Nearest reference levels below: " + "; ".join(
+                f"{_usd(x['price'])} ({x['label']})" for x in lvls["below"][:3]) + ".")
+        sections.append({"heading": "Key Levels", "body": " ".join(parts)})
+
     private = _norm_private({"selected": "none"})
     for k in "ABC":
         private[k]["reasoning"] = "Not assessed. Template mode makes no determination; run the draft with an AI key."
@@ -425,15 +567,20 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
     year = (f.get("as_of") or f.get("generated_at") or "")[:4] or str(datetime.now(timezone.utc).year)
     summary = blog.get("summary") or _template_summary(f)
     news = blog.get("news") or {}
-    sections = list(blog["sections"])
-    for key in ("us", "international", "geopolitical", "company", "institutional"):
-        if news.get(key):
-            sections.append({"heading": NEWS_HEADINGS[key].format(s=f["symbol"]), "body": news[key]["text"]})
-    sections.append({"heading": "Market Data and Attribution", "body": attribution_text()})
+    analysis = list(blog["sections"])
+    news_secs = [{"heading": NEWS_HEADINGS[k].format(s=f["symbol"]), "body": news[k]["text"]}
+                 for k in ("us", "international", "geopolitical", "company", "institutional") if news.get(k)]
+    # News sits just before the closing "what to watch" section, as in the house format.
+    if analysis and analysis[-1]["heading"].lower().startswith("what traders"):
+        sections = analysis[:-1] + news_secs + analysis[-1:]
+    else:
+        sections = analysis + news_secs
     sections.append({"heading": "Sigmalytic Summary", "body": "\n\n".join(
         f"{label}: {summary[k]}" for k, label in SUMMARY_LABELS if summary.get(k))})
     sources = [{"title": x["title"], "url": x["url"]} for x in (blog.get("sources") or [])]
     copyright_line = f"© {year} Sigmalytic Quant Corporation. All rights reserved."
+    dates = f"Report Date: {_long_date(f.get('generated_at') or f['as_of'])}  ·  Market Data Through: {_long_date(f['as_of'])}"
+    level_line = re.compile(r"^[A-Za-z0-9 \-–/'’,]{3,60}: ~?\$[\d,.\-–$ ]+$")
 
     def para_html(sec: Dict[str, str]) -> str:
         out = []
@@ -441,21 +588,25 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
             if sec["heading"] == "Sigmalytic Summary" and ": " in t:
                 lab, rest = t.split(": ", 1)
                 out.append(f"<p><strong>{esc(lab)}:</strong> {esc(rest)}</p>")
+            elif "\n" not in t and level_line.match(t):
+                out.append(f"<p><strong>{esc(t)}</strong></p>")
             else:
                 out.append(f"<p>{esc(t)}</p>")
         return "\n".join(out)
 
     body_html = "".join(f"<h2>{esc(s['heading'])}</h2>\n{para_html(s)}\n" for s in sections)
-    src_html = f"<li>Market data: {esc(DATA_SOURCE)}</li>" + "".join(
+    attr = attribution_text().split("\n\n")
+    src_html = f"<li>{esc(DATA_SOURCE)}: market data used for this report.</li>" + "".join(
         f"<li><a href=\"{esc(x['url'])}\" rel=\"nofollow noopener\">{esc(x['title'])}</a></li>" for x in sources)
     html_doc = (
         f"<!-- Paste into the Research & Intelligence page. Canonical: {url} -->\n"
         f"<article class=\"sigmalytic-research\">\n<h1>{esc(blog['title'])}</h1>\n"
-        f"<p class=\"byline\">Sigmalytic Quant Corporation · Data as of {esc(f['as_of'])}</p>\n{body_html}"
+        f"<p class=\"byline\">Sigmalytic Quant Corporation Market Structure Report<br>{esc(dates)}</p>\n{body_html}"
         f"<p><strong>{esc(TAGLINES[0])}</strong><br>{esc(TAGLINES[1])}</p>\n"
         f"<p><a href=\"{SITE_LINK_HREF}\">{SITE_LINK_TEXT}</a></p>\n"
-        f"<p class=\"disclaimer\"><em>{esc(DISCLAIMER)}</em></p>\n"
-        f"<h2>Sources</h2>\n<ul>{src_html}</ul>\n<p class=\"copyright\">{esc(copyright_line)}</p>\n</article>"
+        f"<h2>Market Data and Attribution</h2>\n" + "".join(f"<p>{esc(x)}</p>\n" for x in attr) +
+        f"<h2>Reference Sources</h2>\n<ul>{src_html}</ul>\n<p class=\"copyright\">{esc(copyright_line)}</p>\n"
+        f"<p class=\"disclaimer\"><em>{esc(DISCLAIMER)}</em></p>\n</article>"
     )
     md_parts = []
     for sec in sections:
@@ -464,12 +615,14 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
             md_parts.append(f"## {sec['heading']}\n\n" + "\n\n".join(ps))
         else:
             md_parts.append(f"## {sec['heading']}\n\n{sec['body']}")
-    md = (f"# {blog['title']}\n\n" + "\n\n".join(md_parts) + f"\n\n**{TAGLINES[0]}**  \n{TAGLINES[1]}\n\n"
-          f"[{SITE_LINK_TEXT}]({SITE_LINK_HREF})\n\n*{DISCLAIMER}*\n\n## Sources\n\n- Market data: {DATA_SOURCE}\n"
-          + "".join(f"- [{x['title']}]({x['url']})\n" for x in sources) + f"\n{copyright_line}\n")
+    md = (f"# {blog['title']}\n\nSigmalytic Quant Corporation Market Structure Report  \n{dates}\n\n" + "\n\n".join(md_parts) +
+          f"\n\n**{TAGLINES[0]}**  \n{TAGLINES[1]}\n\n[{SITE_LINK_TEXT}]({SITE_LINK_HREF})\n\n"
+          "## Market Data and Attribution\n\n" + "\n\n".join(attr) +
+          f"\n\n## Reference Sources\n\n- {DATA_SOURCE}: market data used for this report.\n"
+          + "".join(f"- [{x['title']}]({x['url']})\n" for x in sources) + f"\n{copyright_line}\n\n*{DISCLAIMER}*\n")
     from backend.content_seo import build_seo
-    seo_blog = {**blog, "sections": sections}
-    seo = build_seo(f, seo_blog, url, SITE_URL, BLOG_PATH)
+    # Word and section counts for SEO cover the analysis and news only, not the summary or boilerplate.
+    seo = build_seo(f, {**blog, "sections": [x for x in sections if x["heading"] != "Sigmalytic Summary"]}, url, SITE_URL, BLOG_PATH)
     return {**blog, "sections": sections, "slug": _slug(f["symbol"], f["as_of"]), "url": url, "html": html_doc,
             "markdown": md, "head_tags": seo["head_tags"], "seo": seo, "disclaimer": DISCLAIMER,
             "copyright": copyright_line, "sources": sources}
@@ -490,7 +643,7 @@ _USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usa
 
 WEB_SEARCH_PRICE = 0.01  # USD per search ($10 per 1,000), from Anthropic's web search tool documentation
 WEB_SEARCH_ON = os.getenv("CONTENT_HUB_WEB_SEARCH", "1").strip() != "0"
-WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "5") or 5)
+WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "4") or 4)
 
 
 def _record_usage(provider: str, model: str, tokens_in: int, tokens_out: int, reasoning: int = 0, searches: int = 0) -> None:
@@ -564,11 +717,20 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
         payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
         if web_search:
             payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json=payload, timeout=240 if web_search else 90)
+        for attempt in range(2):  # a 429 (rate limit) is not billed; wait as told, once
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json=payload, timeout=240 if web_search else 90)
+            if getattr(r, "status_code", 200) == 429 and attempt == 0:
+                try:
+                    wait = min(float(r.headers.get("retry-after", "20")), 45.0)
+                except ValueError:
+                    wait = 20.0
+                time.sleep(wait)
+                continue
+            break
         r.raise_for_status()
         body = r.json()
         u = body.get("usage") or {}
@@ -584,7 +746,11 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
             messages = messages + [{"role": "assistant", "content": content}]
             continue
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        if body.get("stop_reason") == "max_tokens":
+            raise ValueError(f"AI reply was cut off at the {max_tokens}-token limit before the JSON finished.")
         break
+    if "{" not in text:
+        raise ValueError("AI reply had no JSON object (stop reason: %s; reply began: %r)." % (body.get("stop_reason"), text[:160]))
     out = _extract_json(text)
     if web_search:
         out["_search_results"] = seen
@@ -608,7 +774,8 @@ _BLOG_STYLE = (
     "Single vertical column: no tables, no side-by-side layout, no footnotes, no numbered notes, no markdown. "
     "Never repeat the same level, fact or conclusion in more than one section. "
     "Do not write a disclaimer, attribution, sources list or copyright line; they are added separately. "
-    "Reply with one JSON object and nothing else."
+    "Reply with one JSON object and nothing else. If you search the web, write no text before or between searches; "
+    "your only text output is the final JSON."
 )
 
 
@@ -623,21 +790,31 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         if use_search else
         "Web search is not available in this run, so set all five news items to null. Do not write news from memory.")
     user = (
-        f"Create today's website report for {s} from the FACTS (daily bars, pattern flags and key levels). {news_rule}\n"
-        "Review the short, medium and long horizons in the FACTS together (5, 20 and 60 sessions, the 20, 50 and 200-day "
-        "averages, the 52-week range) and identify market structure, momentum, participation, important support and "
-        "resistance, developing risk, and any meaningful change from the prior structure.\n"
+        f"Create today's website report for {s} from the FACTS. {news_rule}\n"
+        "FACTS holds the daily view at the top level plus weekly, 4-hour and 2-hour views under 'timeframes' (a view that "
+        "is missing is listed in 'timeframes_missing'; never describe a view that is not supplied), and a ranked list of "
+        "nearby reference levels under 'levels'. Review all supplied timeframes together. Say where they agree and where "
+        "they conflict, and identify market structure, momentum, participation, important support and resistance, "
+        "developing risk, and any meaningful change from the recent structure.\n"
+        "WRITE THESE SECTIONS, with exactly these headings, in this order, as short paragraphs separated by blank lines: "
+        "'Executive Summary' (2 to 3 short paragraphs and the central question), 'Market Structure' (where the closes "
+        "sit and how each timeframe reads), 'What Changed?' (the most important change over the recent sessions), "
+        "'Current Momentum', 'Key Levels', 'Participation and Volume', 'What Traders Should Watch Next'. "
+        "In 'Key Levels', write each level as a one-line label and price (for example 'Immediate Resistance: $123.45') "
+        "followed by one sentence on why it matters, using levels from FACTS.levels. Never repeat a level, fact or "
+        "conclusion in more than one section except the Executive Summary. The title should be a specific, accurate "
+        "hook, ideally a question that names the symbol and the key level.\n"
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
         "activity from price and volume. If nothing is found, set it to null.\n"
         "HEADLINE ASSESSMENT (private, never published). Decide whether each option is supported:\n"
         f'A: "{OPTION_TITLES["A"].format(s=s)}" (needs sourced evidence of institutional or dark-pool accumulation)\n'
-        f'B: "{OPTION_TITLES["B"].format(s=s)}" (needs evidence of distribution or exhaustion risk)\n'
+        f'B: "{OPTION_TITLES["B"].format(s=s)}" (needs evidence of distribution or exhaustion risk, and of short-duration selling)\n'
         f'C: "{OPTION_TITLES["C"].format(s=s)}" (needs evidence of a high-volatility squeeze setup)\n'
-        'Be strict. If none is sufficiently supported, selected is "none" and "title" must be a more accurate alternative '
-        "headline of at most 90 characters that contains the symbol.\n"
+        'Be strict. If none is sufficiently supported, selected is "none" and "title" must be your accurate headline '
+        "of at most 90 characters that contains the symbol.\n"
         "Return JSON: {\"title\": str, \"meta_description\": str (110-155 chars, contains the symbol), "
-        "\"sections\": [{\"heading\": str, \"body\": str}] (4-5 analysis sections, 450-650 words in total, "
+        "\"sections\": [{\"heading\": str, \"body\": str}] (the seven sections above, 700-1000 words in total, "
         "the first paragraph must name the symbol), "
         "\"news\": {\"us\": {\"text\": str, \"urls\": [str]} | null, \"international\": ..., \"geopolitical\": ..., "
         "\"company\": ..., \"institutional\": ...}, "
@@ -645,12 +822,12 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
         "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
     try:
-        out = _ai_json(_BLOG_STYLE, user, max_tokens=4500, web_search=use_search)
+        out = _ai_json(_BLOG_STYLE, user, max_tokens=9000, web_search=use_search)
     except Exception as e:
         resp = getattr(e, "response", None)
         if use_search and getattr(resp, "status_code", None) == 400:  # search not enabled for this account: no charge
             out = _ai_json(_BLOG_STYLE, user.replace(news_rule, "Web search is not available in this run, so set all five "
-                                                     "news items to null."), max_tokens=4500)
+                                                     "news items to null."), max_tokens=9000)
             out["_search_unavailable"] = True
         else:
             raise
@@ -707,9 +884,8 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             cand["summary"] = summary
             guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], summary)
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
-            if bad or banned:
-                note = "AI draft rejected (" + ("numbers not in data: " + ", ".join(bad) + "; " if bad else "") + \
-                       ("advice wording: " + ", ".join(banned) if banned else "") + "); template used."
+            if banned:
+                note = "AI draft rejected (advice wording: " + ", ".join(banned) + "); template used."
             else:
                 news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
                 private = _norm_private(cand.get("private"))
@@ -724,6 +900,9 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
                 extra = []
                 if cand.pop("_search_unavailable", False):
                     extra.append("Web search is not enabled for this Anthropic account, so no news sections were written.")
+                if bad:
+                    extra.append("Review before publishing: these numbers are not in the platform data (derived or "
+                                 "invented): " + ", ".join(bad) + ".")
                 if dropped:
                     extra.append("News left out: " + "; ".join(dropped) + ".")
                 if ai_provider() == "openai":
@@ -798,7 +977,8 @@ def ai_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
         "Do NOT put URLs in any text; links are added separately. Use at most the allowed hashtags.\n"
         'Return JSON: {"linkedin": {"text"}, "x": {"text", "reply"}, "reddit": {"title", "text", "reply"}, '
         '"pinterest": {"title", "text"}, "facebook": {"text"}, "tiktok": {"text", "video_script": [str]}}\n\n'
-        f"PLATFORM RULES:\n{json.dumps(rules, indent=1)}\n\nBLOG TITLE: {blog['title']}\n\nFACTS:\n{json.dumps(f, indent=1)}")
+        f"PLATFORM RULES:\n{json.dumps(rules, indent=1)}\n\nBLOG TITLE: {blog['title']}\n\nFACTS:\n"
+        f"{json.dumps({k: v for k, v in f.items() if k != 'timeframes'}, indent=1)}")
     return _ai_json(_AI_STYLE, user, max_tokens=3000)
 
 

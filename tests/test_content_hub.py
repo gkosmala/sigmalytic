@@ -75,14 +75,6 @@ def test_validator_flags_problems():
     assert any("Link is in the main text" in i for i in ch.validate_teaser("reddit", {"title": "t", "text": "see https://a.co"}))
 
 
-def test_ai_blog_with_invented_number_is_rejected(facts, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
-                                                   "sections": [{"heading": "h", "body": "Price hit $9,999.99 today."}]})
-    blog = ch.generate_blog(facts, use_ai=True)
-    assert blog["ai"] is False and "rejected" in blog["note"]
-
-
 def test_ai_blog_clean_is_accepted(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     body = f"Closed at ${facts['last_close']:,.2f}."
@@ -234,9 +226,11 @@ def test_report_structure_and_no_tables(facts, monkeypatch):
                    "What would strengthen the bullish case", "What would weaken it", "What traders should monitor next",
                    "Better Opportunities. Better Decisions. Better Trading Results.",
                    "Every decision creates information. Every outcome creates evidence.",
-                   "www.sigmalyticquantcorp.com", "All rights reserved.", "<h2>Sources</h2>", "Market data: Alpaca Markets"):
+                   "www.sigmalyticquantcorp.com", "All rights reserved.", "<h2>Reference Sources</h2>", "Alpaca Markets: market data",
+                   "Report Date:", "Market Data Through:", "proprietary analytical framework"):
         assert needle in h, needle
-    assert h.index("Sigmalytic Summary") < h.index("Better Opportunities") < h.index("<h2>Sources</h2>") < h.index("All rights")
+    assert (h.index("Sigmalytic Summary") < h.index("Better Opportunities") < h.index("Market Data and Attribution")
+            < h.index("<h2>Reference Sources</h2>") < h.index("All rights") < h.index("research and educational purposes"))
     assert "<table" not in h.lower() and "FINRA" not in h and "footnote" not in h.lower()
     assert "PRIVATE" not in h and "Option A" not in h and "Option A" not in blog["markdown"]
 
@@ -295,3 +289,87 @@ def test_web_search_request_pause_and_usage(monkeypatch):
     assert out["k"] == 1 and out["_search_results"] == {"https://a.com/x": "A"}
     assert u["searches"] == 2 and u["calls"] == 2
     assert u["cost_usd"] == round(150 / 1e6 * 2 + 30 / 1e6 * 10 + 2 * 0.01, 5)
+
+
+def test_truncated_reply_gives_clear_error_and_template_fallback(facts, monkeypatch):
+    import requests
+
+    class R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"model": "claude-sonnet-5-5", "stop_reason": "max_tokens",
+                                "usage": {"input_tokens": 10, "output_tokens": 9000},
+                                "content": [{"type": "text", "text": '{"title": "cut off'}]}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is False and "cut off" in blog["note"]
+
+
+def test_rate_limit_retried_once(monkeypatch):
+    import requests
+    calls = []
+
+    class R:
+        def __init__(self, code): self.status_code = code; self.headers = {"retry-after": "0"}
+        def raise_for_status(self): pass
+        def json(self): return {"model": "claude-sonnet-5-5", "usage": {"input_tokens": 1, "output_tokens": 1},
+                                "content": [{"type": "text", "text": '{"ok": 1}'}]}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (calls.append(1), R(429 if len(calls) == 1 else 200))[1])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    assert ch._ai_json("s", "u") == {"ok": 1} and len(calls) == 2
+
+
+def _tf_chart(n=80, drift=0.5, with_pivots=True):
+    c = _chart(n, drift)
+    c["weis_lines"] = {"ice_line_level": 140.5,
+                       "pivots": [{"kind": "swing_high", "price": 150.0, "bar_index": 70},
+                                  {"kind": "swing_low", "price": 130.0, "bar_index": 60}] if with_pivots else []}
+    return c
+
+
+def test_timeframes_and_levels(facts):
+    f = ch.attach_timeframes(dict(facts), {"weekly": _tf_chart(), "4h": _tf_chart(), "2h": {"ok": False, "error": "no bars"}})
+    assert set(f["timeframes"]) == {"weekly", "4h"} and any("2-hour" in m for m in f["timeframes_missing"])
+    assert f["timeframes"]["weekly"]["recent_pivots"][-1]["price"] in (150.0, 130.0)
+    lv = f["levels"]
+    assert all(x["price"] > f["last_close"] for x in lv["above"]) and all(x["price"] <= f["last_close"] for x in lv["below"])
+    assert [x["price"] for x in lv["above"]] == sorted(x["price"] for x in lv["above"])
+    # numbers from the extra timeframes are allowed by the guard
+    assert ch.numbers_trace_to_facts("Weekly swing high near $150.00 and ice line near $140.50.", f) == []
+
+
+def test_numbers_flagged_for_review_but_draft_kept(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": "Price recovered $987.65 in a week."}]})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is True and "987.65" in blog["note"]
+
+
+def test_weekly_is_required(monkeypatch):
+    import sys, types
+    calls = {"1Week": 0}
+
+    def fake(sym, timeframe="1Day", limit=252, include_options=True):
+        if timeframe == "1Week":
+            calls["1Week"] += 1
+            return {"ok": False, "error": "Insufficient bar history for XYZ."}
+        return _tf_chart(260) if timeframe == "1Day" else _tf_chart()
+    mod = types.ModuleType("backend.main"); mod.weis_radar_chart_data = fake
+    monkeypatch.setitem(sys.modules, "backend.main", mod)
+    with pytest.raises(ValueError, match="Weekly data could not be loaded"):
+        ch.build_facts("XYZ")
+    assert calls["1Week"] == 2  # tried twice
+
+
+def test_weekly_present_when_available(monkeypatch):
+    import sys, types
+    mod = types.ModuleType("backend.main")
+    mod.weis_radar_chart_data = lambda sym, timeframe="1Day", limit=252, include_options=True: (
+        _tf_chart(260) if timeframe == "1Day" else _tf_chart())
+    monkeypatch.setitem(sys.modules, "backend.main", mod)
+    f = ch.build_facts("XYZ")
+    assert {"weekly", "4h", "2h"} <= set(f["timeframes"])
