@@ -643,6 +643,7 @@ _USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usa
 
 WEB_SEARCH_PRICE = 0.01  # USD per search ($10 per 1,000), from Anthropic's web search tool documentation
 WEB_SEARCH_ON = os.getenv("CONTENT_HUB_WEB_SEARCH", "1").strip() != "0"
+AI_EFFORT = (os.getenv("CONTENT_HUB_EFFORT", "low") or "low").strip().lower()  # Claude thinking effort; thinking is billed as output
 WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "4") or 4)
 
 
@@ -768,8 +769,12 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
     seen: Dict[str, str] = {}
     text = ""
     truncated = False
+    thinking_total = 0
+    stop = None
     for _turn in range(3):  # a paused web-search turn is continued by sending it back, at most twice
         payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
+        if AI_EFFORT in ("low", "medium", "high", "xhigh", "max"):
+            payload["output_config"] = {"effort": AI_EFFORT}
         if web_search:
             payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
         for attempt in range(2):  # a 429 (rate limit) is not billed; wait as told, once
@@ -778,6 +783,9 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
                 headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
                 json=payload, timeout=240 if web_search else 90)
+            if getattr(r, "status_code", 200) == 400 and "output_config" in payload and attempt == 0:
+                payload.pop("output_config", None)  # this model/account rejects the effort setting; a 400 is not billed
+                continue
             if getattr(r, "status_code", 200) == 429 and attempt == 0:
                 try:
                     wait = min(float(r.headers.get("retry-after", "20")), 45.0)
@@ -789,8 +797,10 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
         r.raise_for_status()
         body = r.json()
         u = body.get("usage") or {}
+        think = int((u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0)
+        thinking_total += think
         _record_usage("anthropic", body.get("model") or AI_MODEL, u.get("input_tokens", 0), u.get("output_tokens", 0),
-                      searches=(u.get("server_tool_use") or {}).get("web_search_requests", 0))
+                      reasoning=think, searches=(u.get("server_tool_use") or {}).get("web_search_requests", 0))
         content = body.get("content", [])
         for b in content:
             if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
@@ -801,11 +811,13 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
             messages = messages + [{"role": "assistant", "content": content}]
             continue
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
-        truncated = body.get("stop_reason") == "max_tokens"
+        stop = body.get("stop_reason")
+        truncated = stop == "max_tokens"
         break
     if "{" not in text:
         raise AIParseError("AI reply had no JSON object (stop reason: %s)." % body.get("stop_reason"), text)
     out = _extract_json(text)
+    out["_stop"], out["_thinking"] = stop, thinking_total
     if truncated:
         out["_recovered"] = True
     if web_search:
@@ -898,7 +910,8 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
-            "_recovered": bool(out.get("_recovered")), "ai": True}
+            "_recovered": bool(out.get("_recovered")), "_stop": out.get("_stop"), "_thinking": out.get("_thinking") or 0,
+            "ai": True}
 
 
 _TAG_RE = re.compile(r"[<(]\s*/?\s*cite\b[^<>]*>|</?\s*[A-Za-z][^<>]*>")
@@ -985,10 +998,12 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
             extra = []
+            stop, thinking = cand.pop("_stop", None), cand.pop("_thinking", 0)
             if cand.pop("_recovered", False):
                 have = {x["heading"].strip().lower() for x in cand["sections"]}
                 gone = [h for h in EXPECTED_SECTIONS if h.lower() not in have]
-                extra.append("The AI reply was cut off or damaged and was repaired; everything complete was kept."
+                extra.append(f"The AI reply was cut off or damaged and was repaired (stop reason: {stop}; thinking tokens: {thinking:,}); "
+                             "everything complete was kept."
                              + (" Missing sections: " + ", ".join(gone) + "." if gone else "")
                              + (" The summary was filled in from the data." if missing_summary else ""))
             if cand.pop("_search_unavailable", False):

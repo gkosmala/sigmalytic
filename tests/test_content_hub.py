@@ -351,7 +351,8 @@ def test_rate_limit_retried_once(monkeypatch):
     monkeypatch.setattr(requests, "post", lambda *a, **k: (calls.append(1), R(429 if len(calls) == 1 else 200))[1])
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
-    assert ch._ai_json("s", "u") == {"ok": 1} and len(calls) == 2
+    out = ch._ai_json("s", "u")
+    assert out["ok"] == 1 and len(calls) == 2
 
 
 def _tf_chart(n=80, drift=0.5, with_pivots=True):
@@ -425,3 +426,31 @@ def test_citation_markup_is_stripped(facts, monkeypatch):
     blog = ch.generate_blog(facts, use_ai=True)
     assert "cite" not in blog["html"].lower() and "cite" not in blog["markdown"].lower()
     assert "Musk said Tesla and SpaceX would own Terafab." in blog["html"] and "<cite" not in blog["title"]
+
+
+def test_effort_sent_thinking_recorded_and_400_fallback(monkeypatch):
+    import requests
+    sent = []
+
+    class R:
+        def __init__(self, code, body=None): self.status_code = code; self.headers = {}; self._b = body
+        def raise_for_status(self): pass
+        def json(self): return self._b
+
+    ok = {"model": "claude-sonnet-5-5", "stop_reason": "end_turn",
+          "usage": {"input_tokens": 100, "output_tokens": 900, "output_tokens_details": {"thinking_tokens": 600}},
+          "content": [{"type": "text", "text": '{"k": 1}'}]}
+
+    def post(url, headers=None, json=None, timeout=None):
+        sent.append(dict(json))
+        return R(400) if ("output_config" in json) and len(sent) == 1 else R(200, ok)
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    token = ch._USAGE.set([])
+    try:
+        out = ch._ai_json("s", "u"); u = ch.summarize_usage(ch._USAGE.get())
+    finally:
+        ch._USAGE.reset(token)
+    assert sent[0]["output_config"] == {"effort": "low"} and "output_config" not in sent[1]
+    assert out["k"] == 1 and out["_thinking"] == 600 and u["reasoning_tokens"] == 600
