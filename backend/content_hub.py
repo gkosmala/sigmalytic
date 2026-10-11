@@ -26,6 +26,7 @@ import html as _html
 import json
 import os
 import re
+import time
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -490,7 +491,7 @@ _USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usa
 
 WEB_SEARCH_PRICE = 0.01  # USD per search ($10 per 1,000), from Anthropic's web search tool documentation
 WEB_SEARCH_ON = os.getenv("CONTENT_HUB_WEB_SEARCH", "1").strip() != "0"
-WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "5") or 5)
+WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "4") or 4)
 
 
 def _record_usage(provider: str, model: str, tokens_in: int, tokens_out: int, reasoning: int = 0, searches: int = 0) -> None:
@@ -564,11 +565,20 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
         payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
         if web_search:
             payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
-                     "content-type": "application/json"},
-            json=payload, timeout=240 if web_search else 90)
+        for attempt in range(2):  # a 429 (rate limit) is not billed; wait as told, once
+            r = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                json=payload, timeout=240 if web_search else 90)
+            if getattr(r, "status_code", 200) == 429 and attempt == 0:
+                try:
+                    wait = min(float(r.headers.get("retry-after", "20")), 45.0)
+                except ValueError:
+                    wait = 20.0
+                time.sleep(wait)
+                continue
+            break
         r.raise_for_status()
         body = r.json()
         u = body.get("usage") or {}
@@ -584,7 +594,11 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
             messages = messages + [{"role": "assistant", "content": content}]
             continue
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        if body.get("stop_reason") == "max_tokens":
+            raise ValueError(f"AI reply was cut off at the {max_tokens}-token limit before the JSON finished.")
         break
+    if "{" not in text:
+        raise ValueError("AI reply had no JSON object (stop reason: %s; reply began: %r)." % (body.get("stop_reason"), text[:160]))
     out = _extract_json(text)
     if web_search:
         out["_search_results"] = seen
@@ -608,7 +622,8 @@ _BLOG_STYLE = (
     "Single vertical column: no tables, no side-by-side layout, no footnotes, no numbered notes, no markdown. "
     "Never repeat the same level, fact or conclusion in more than one section. "
     "Do not write a disclaimer, attribution, sources list or copyright line; they are added separately. "
-    "Reply with one JSON object and nothing else."
+    "Reply with one JSON object and nothing else. If you search the web, write no text before or between searches; "
+    "your only text output is the final JSON."
 )
 
 
@@ -645,12 +660,12 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
         "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
     try:
-        out = _ai_json(_BLOG_STYLE, user, max_tokens=4500, web_search=use_search)
+        out = _ai_json(_BLOG_STYLE, user, max_tokens=9000, web_search=use_search)
     except Exception as e:
         resp = getattr(e, "response", None)
         if use_search and getattr(resp, "status_code", None) == 400:  # search not enabled for this account: no charge
             out = _ai_json(_BLOG_STYLE, user.replace(news_rule, "Web search is not available in this run, so set all five "
-                                                     "news items to null."), max_tokens=4500)
+                                                     "news items to null."), max_tokens=9000)
             out["_search_unavailable"] = True
         else:
             raise

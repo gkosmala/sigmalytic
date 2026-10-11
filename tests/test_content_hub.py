@@ -295,3 +295,34 @@ def test_web_search_request_pause_and_usage(monkeypatch):
     assert out["k"] == 1 and out["_search_results"] == {"https://a.com/x": "A"}
     assert u["searches"] == 2 and u["calls"] == 2
     assert u["cost_usd"] == round(150 / 1e6 * 2 + 30 / 1e6 * 10 + 2 * 0.01, 5)
+
+
+def test_truncated_reply_gives_clear_error_and_template_fallback(facts, monkeypatch):
+    import requests
+
+    class R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"model": "claude-sonnet-5-5", "stop_reason": "max_tokens",
+                                "usage": {"input_tokens": 10, "output_tokens": 9000},
+                                "content": [{"type": "text", "text": '{"title": "cut off'}]}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is False and "cut off" in blog["note"]
+
+
+def test_rate_limit_retried_once(monkeypatch):
+    import requests
+    calls = []
+
+    class R:
+        def __init__(self, code): self.status_code = code; self.headers = {"retry-after": "0"}
+        def raise_for_status(self): pass
+        def json(self): return {"model": "claude-sonnet-5-5", "usage": {"input_tokens": 1, "output_tokens": 1},
+                                "content": [{"type": "text", "text": '{"ok": 1}'}]}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: (calls.append(1), R(429 if len(calls) == 1 else 200))[1])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    assert ch._ai_json("s", "u") == {"ok": 1} and len(calls) == 2
