@@ -347,3 +347,29 @@ def test_numbers_flagged_for_review_but_draft_kept(facts, monkeypatch):
                         "sections": [{"heading": "h", "body": "Price recovered $987.65 in a week."}]})
     blog = ch.generate_blog(facts, use_ai=True)
     assert blog["ai"] is True and "987.65" in blog["note"]
+
+
+def test_weekly_is_required(monkeypatch):
+    import sys, types
+    calls = {"1Week": 0}
+
+    def fake(sym, timeframe="1Day", limit=252, include_options=True):
+        if timeframe == "1Week":
+            calls["1Week"] += 1
+            return {"ok": False, "error": "Insufficient bar history for XYZ."}
+        return _tf_chart(260) if timeframe == "1Day" else _tf_chart()
+    mod = types.ModuleType("backend.main"); mod.weis_radar_chart_data = fake
+    monkeypatch.setitem(sys.modules, "backend.main", mod)
+    with pytest.raises(ValueError, match="Weekly data could not be loaded"):
+        ch.build_facts("XYZ")
+    assert calls["1Week"] == 2  # tried twice
+
+
+def test_weekly_present_when_available(monkeypatch):
+    import sys, types
+    mod = types.ModuleType("backend.main")
+    mod.weis_radar_chart_data = lambda sym, timeframe="1Day", limit=252, include_options=True: (
+        _tf_chart(260) if timeframe == "1Day" else _tf_chart())
+    monkeypatch.setitem(sys.modules, "backend.main", mod)
+    f = ch.build_facts("XYZ")
+    assert {"weekly", "4h", "2h"} <= set(f["timeframes"])

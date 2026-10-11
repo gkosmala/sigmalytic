@@ -276,11 +276,18 @@ def build_facts(symbol: str) -> Dict[str, Any]:
     f = facts_from_chart_data(symbol, chart)
     extra: Dict[str, Dict[str, Any]] = {}
     for key, tf, limit in EXTRA_TIMEFRAMES:
-        try:
-            extra[key] = weis_radar_chart_data(sym, timeframe=tf, limit=limit, include_options=False)
-        except Exception as e:
-            extra[key] = {"ok": False, "error": str(e)}
-    return attach_timeframes(f, extra)
+        for attempt in range(2):  # one retry per timeframe
+            try:
+                extra[key] = weis_radar_chart_data(sym, timeframe=tf, limit=limit, include_options=False)
+            except Exception as e:
+                extra[key] = {"ok": False, "error": str(e)}
+            if extra[key].get("ok"):
+                break
+    f = attach_timeframes(f, extra)
+    if "weekly" not in f["timeframes"]:  # the weekly view is required; stop before any AI cost is incurred
+        why = next((m for m in f["timeframes_missing"] if m.startswith("weekly")), "weekly (no data)")
+        raise ValueError(f"Weekly data could not be loaded for {sym}: {why}. No report was generated and nothing was charged.")
+    return f
 
 
 # ───────────────────────────── formatting helpers ─────────────────────────────
