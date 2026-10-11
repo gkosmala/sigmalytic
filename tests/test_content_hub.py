@@ -405,3 +405,23 @@ def test_weekly_present_when_available(monkeypatch):
     monkeypatch.setitem(sys.modules, "backend.main", mod)
     f = ch.build_facts("XYZ")
     assert {"weekly", "4h", "2h"} <= set(f["timeframes"])
+
+
+def test_citation_markup_is_stripped(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    dirty = '<cite index="8-10">Musk said Tesla and SpaceX would own Terafab.</cite> (<cite index="2-11">Earnings are October 21.</cite>'
+    _fake_anthropic(monkeypatch, __import__("json").dumps({
+        "title": "T <cite index='1-1'>x</cite>", "meta_description": "m",
+        "sections": [{"heading": "Executive Summary", "body": f"TEST closed at ${facts['last_close']:,.2f}."}],
+        "news": {"company": {"text": dirty, "urls": ["https://a.com/x"]}}, "summary": {}, "private": {}}))
+    import requests
+    orig = requests.post
+    def post(*a, **k):
+        r = orig(*a, **k); b = r.json()
+        b["content"].insert(0, {"type": "web_search_tool_result", "content": [{"url": "https://a.com/x", "title": "A"}]})
+        r.json = lambda: b
+        return r
+    monkeypatch.setattr(requests, "post", post)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert "cite" not in blog["html"].lower() and "cite" not in blog["markdown"].lower()
+    assert "Musk said Tesla and SpaceX would own Terafab." in blog["html"] and "<cite" not in blog["title"]

@@ -831,7 +831,7 @@ _BLOG_STYLE = (
     "Never repeat the same level, fact or conclusion in more than one section. "
     "Do not write a disclaimer, attribution, sources list or copyright line; they are added separately. "
     "Reply with one JSON object and nothing else. If you search the web, write no text before or between searches; "
-    "your only text output is the final JSON."
+    "your only text output is the final JSON. Never include citation tags, XML or HTML in any text value; plain sentences only."
 )
 
 
@@ -887,6 +887,9 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             out["_search_unavailable"] = True
         else:
             raise
+    for k in ("title", "meta_description", "sections", "news", "summary", "private"):
+        if k in out:
+            out[k] = _clean_obj(out[k])
     secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in (out.get("sections") or [])
             if isinstance(x, dict) and x.get("heading") and x.get("body")]
     if not secs:
@@ -896,6 +899,24 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
             "_recovered": bool(out.get("_recovered")), "ai": True}
+
+
+_TAG_RE = re.compile(r"[<(]\s*/?\s*cite\b[^<>]*>|</?\s*[A-Za-z][^<>]*>")
+
+
+def clean_ai_text(x: Any) -> str:
+    """Removes markup the web-search tool can leave in text (for example <cite index="8-10">...</cite>)."""
+    return re.sub(r"[ \t]{2,}", " ", _TAG_RE.sub("", str(x))).strip()
+
+
+def _clean_obj(o: Any) -> Any:
+    if isinstance(o, str):
+        return clean_ai_text(o)
+    if isinstance(o, list):
+        return [_clean_obj(v) for v in o]
+    if isinstance(o, dict):
+        return {k: (v if k == "urls" else _clean_obj(v)) for k, v in o.items()}
+    return o
 
 
 def _guarded_text(title: str, meta: str, sections: List[Dict[str, str]], summary: Dict[str, str]) -> str:
