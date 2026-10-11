@@ -3054,6 +3054,24 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
         return {"ok": False, "error": str(e)[:300]}
 
 
+@app.post("/api/admin/content-hub/generate")
+def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
+    """
+    Content Hub (admin only): builds a blog draft and one teaser draft per social platform for a symbol,
+    from live platform data. Drafts only -- nothing is posted anywhere. See backend/content_hub.py.
+    """
+    import re
+    from backend import content_hub
+
+    symbol = str((payload or {}).get("symbol") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", symbol):
+        return {"ok": False, "error": "Enter a valid stock symbol."}
+    try:
+        return {"ok": True, **content_hub.build_package(symbol, use_ai=bool((payload or {}).get("use_ai", True)))}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/weis-radar/run-now")
 def weis_radar_run_now(_admin: str = Depends(require_admin)):
     """

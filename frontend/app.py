@@ -69,6 +69,11 @@ except Exception:
     build_trade_journal_tab = None
 
 try:
+    from content_hub_ui import render_package as _content_hub_render
+except Exception:
+    _content_hub_render = None
+
+try:
     from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
 except Exception:
     build_broker_bi_tab = None
@@ -5817,6 +5822,26 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                    "fontSize": "12px", "fontFamily": "DM Mono, monospace", "lineHeight": "1.7"}),
     ], sx={"marginBottom": "16px"})
 
+    # ── Content Hub -- blog + social teaser drafts for one symbol (drafts only, nothing posts). ──
+    content_hub_block = _admin_card([
+        html.Div("CONTENT HUB", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("Enter a symbol to draft a blog post for the Research & Intelligence page plus a teaser for LinkedIn, "
+                 "X, Reddit, Pinterest, Facebook and TikTok. Each teaser is checked against that platform's limits and "
+                 "a banned-phrase list. Nothing is posted anywhere.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Input(id="content-hub-symbol", type="text", placeholder="Symbol (e.g. AAPL)", debounce=False,
+                      style={"width": "160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                             "borderRadius": "8px", "padding": "8px 12px", "color": WHITE, "fontSize": "13px",
+                             "marginRight": "8px"}),
+            html.Button("Generate drafts", id="content-hub-run-btn", n_clicks=0,
+                style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                       "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="content-hub-result", style={"fontSize": "12px", "color": WHITE}),
+                    type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # ── Symbol Backtest -- single-symbol, full-history check against the
     # production lookup table's own profile definitions, powered by the
     # new /api/admin/symbol-backtest/{symbol} endpoint. Defined here,
@@ -6108,6 +6133,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 html.Div("Backend may be initializing. Refresh in 30 seconds.",
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
+            content_hub_block,
             setup_deployment_block,
             journal_correction_block,
             subscriber_alerts_block,
@@ -6369,6 +6395,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Div(anomaly_block, style={"flex":"1","minWidth":"0"}),
         ], style={"marginBottom":"0"}),
 
+        content_hub_block,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
@@ -10907,6 +10934,35 @@ def handle_delete_report(submit_n_clicks, selected_date, session):
         )
     except Exception as exc:
         return f"Could not reach the backend: {exc}", no_update, no_update
+
+@app.callback(Output("content-hub-result", "children"),
+              Input("content-hub-run-btn", "n_clicks"),
+              State("content-hub-symbol", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_content_hub_generate(n_clicks, symbol, session):
+    """Admin-only: asks the backend for a blog + per-platform teaser drafts. Drafts only; nothing is posted."""
+    if not symbol or not symbol.strip():
+        return "Please enter a symbol."
+    if _content_hub_render is None:
+        return "Content Hub display module did not import. Check frontend/content_hub_ui.py."
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/content-hub/generate",
+                     json={"symbol": symbol.strip().upper(), "use_ai": True},
+                     headers=_auth_headers(session), timeout=150)
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Could not generate (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Could not generate: {payload.get('error', 'unknown error')}"
+        return _content_hub_render(payload)
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
 
 @app.callback(Output("backtest-result", "children"),
               Input("backtest-run-btn", "n_clicks"),
