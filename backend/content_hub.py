@@ -26,6 +26,7 @@ import html as _html
 import json
 import os
 import re
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
@@ -359,6 +360,40 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
 
 # ───────────────────────────── AI (optional) ─────────────────────────────
 
+# USD per 1,000,000 tokens (input, output), from the providers' own pricing pages, checked 2026-10-11.
+# A model missing from this table is reported with its exact token counts and "price not in table".
+MODEL_PRICES: Dict[str, Any] = {
+    "claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.0, 10.0), "claude-opus-5-5": (4.0, 20.0),
+    "claude-fable-5-1": (10.0, 50.0),
+    "gpt-5.6-luna": (0.20, 1.20), "gpt-5.6-terra": (2.0, 12.0), "gpt-5.6-sol": (5.0, 30.0),
+}
+
+_USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usage", default=None)
+
+
+def _record_usage(provider: str, model: str, tokens_in: int, tokens_out: int, reasoning: int = 0) -> None:
+    log = _USAGE.get()
+    if log is not None:
+        log.append({"provider": provider, "model": model, "input_tokens": int(tokens_in or 0),
+                    "output_tokens": int(tokens_out or 0), "reasoning_tokens": int(reasoning or 0)})
+
+
+def summarize_usage(log: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Exact token counts as reported by the API, and the dollar cost when the model's price is known."""
+    tin = sum(c["input_tokens"] for c in log)
+    tout = sum(c["output_tokens"] for c in log)
+    cost: Optional[float] = 0.0
+    for c in log:
+        price = MODEL_PRICES.get(c["model"])
+        if price is None:
+            cost = None
+            break
+        cost += c["input_tokens"] / 1e6 * price[0] + c["output_tokens"] / 1e6 * price[1]
+    return {"calls": len(log), "models": sorted({c["model"] for c in log}), "input_tokens": tin,
+            "output_tokens": tout, "reasoning_tokens": sum(c["reasoning_tokens"] for c in log),
+            "cost_usd": None if cost is None else round(cost, 5)}
+
+
 def ai_provider() -> Optional[str]:
     """'anthropic' or 'openai', whichever has a key. CONTENT_HUB_PROVIDER picks one when both are set."""
     want = (os.getenv("CONTENT_HUB_PROVIDER") or "").strip().lower()
@@ -392,7 +427,12 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
             timeout=120,
         )
         r.raise_for_status()
-        return _extract_json(r.json()["choices"][0]["message"]["content"] or "")
+        body = r.json()
+        u = body.get("usage") or {}
+        _record_usage("openai", body.get("model") or os.getenv("CONTENT_HUB_OPENAI_MODEL", "gpt-5.5"),
+                      u.get("prompt_tokens", 0), u.get("completion_tokens", 0),
+                      (u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0))
+        return _extract_json(body["choices"][0]["message"]["content"] or "")
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
@@ -402,7 +442,10 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
         timeout=90,
     )
     r.raise_for_status()
-    return _extract_json("".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text"))
+    body = r.json()
+    u = body.get("usage") or {}
+    _record_usage("anthropic", body.get("model") or AI_MODEL, u.get("input_tokens", 0), u.get("output_tokens", 0))
+    return _extract_json("".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"))
 
 
 _AI_STYLE = (
@@ -558,6 +601,15 @@ def generate_teasers(f: Dict[str, Any], blog: Dict[str, Any], use_ai: bool = Tru
 # ───────────────────────────── entry point ─────────────────────────────
 
 def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    log: List[Dict[str, Any]] = []
+    token = _USAGE.set(log)
+    try:
+        return _build_package(symbol, use_ai, facts, log)
+    finally:
+        _USAGE.reset(token)
+
+
+def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], log: List[Dict[str, Any]]) -> Dict[str, Any]:
     f = facts or build_facts(symbol)
     blog = generate_blog(f, use_ai=use_ai)
     teasers = generate_teasers(f, blog, use_ai=use_ai)
@@ -567,4 +619,4 @@ def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, An
                   (["Advice wording: " + ", ".join(find_banned_phrases(_blog_text(blog)))]
                    if find_banned_phrases(_blog_text(blog)) else [])
     return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "blog": blog, "blog_issues": blog_issues,
-            "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "notes": notes}
+            "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "usage": summarize_usage(log), "notes": notes}

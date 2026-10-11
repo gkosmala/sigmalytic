@@ -62,6 +62,13 @@ def render_package(pkg: dict):
         html.Div(f"{pkg['symbol']} · data as of {pkg['as_of']} · {mode}",
                  style={"fontSize": "13px", "fontWeight": "800", "color": WHITE, "marginBottom": "4px"}),
     ]
+    u = pkg.get("usage") or {}
+    if u.get("calls"):
+        cost = f"${u['cost_usd']:.4f}" if u.get("cost_usd") is not None else "price for this model is not in the table"
+        extra = f" (including {u['reasoning_tokens']:,} reasoning tokens)" if u.get("reasoning_tokens") else ""
+        out.append(html.Div(f"AI usage this run: {u['calls']} calls, {u['input_tokens']:,} tokens in, "
+                            f"{u['output_tokens']:,} out{extra}. Cost: {cost}. Model: {', '.join(u['models'])}.",
+                            style={"fontSize": "11px", "color": MUTED, "marginBottom": "4px"}))
     for n in pkg.get("notes") or []:
         out.append(html.Div(n, style={"fontSize": "11px", "color": AMBER, "marginBottom": "4px"}))
     for i in pkg.get("blog_issues") or []:
