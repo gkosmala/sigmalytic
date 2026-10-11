@@ -100,8 +100,9 @@ def test_ai_teaser_failing_checks_falls_back(facts, monkeypatch):
 
 def test_no_key_uses_template(facts, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     pkg = ch.build_package("TEST", use_ai=True, facts=facts)
-    assert pkg["ai_used"] is False and any("ANTHROPIC_API_KEY" in n for n in pkg["notes"])
+    assert pkg["ai_used"] is False and any("AI key" in n for n in pkg["notes"])
 
 
 def test_seo_markup(facts, monkeypatch):
@@ -128,3 +129,35 @@ def test_seo_checklist_flags_thin_copy_and_missing_image(facts, monkeypatch):
     flagged = {c["name"] for c in seo["checks"] if c["level"] != "ok"}
     assert "Enough original copy" in flagged and "Share image (Open Graph)" in flagged
     assert seo["warnings"] >= 2
+
+
+def test_provider_selection(monkeypatch):
+    for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CONTENT_HUB_PROVIDER"):
+        monkeypatch.delenv(k, raising=False)
+    assert ch.ai_provider() is None and not ch.ai_available()
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    assert ch.ai_provider() == "openai"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    assert ch.ai_provider() == "anthropic"
+    monkeypatch.setenv("CONTENT_HUB_PROVIDER", "openai")
+    assert ch.ai_provider() == "openai"
+
+
+def test_openai_request_shape(monkeypatch):
+    import requests
+    seen = {}
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"choices": [{"message": {"content": 'noise {"a": 1} noise'}}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        seen.update(url=url, headers=headers, body=json); return R()
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    monkeypatch.setenv("CONTENT_HUB_OPENAI_MODEL", "gpt-test")
+    assert ch._ai_json("sys", "usr") == {"a": 1}
+    assert seen["url"].endswith("/v1/chat/completions") and seen["headers"]["Authorization"] == "Bearer sk-x"
+    assert seen["body"]["model"] == "gpt-test" and seen["body"]["response_format"] == {"type": "json_object"}
+    assert seen["body"]["messages"][0]["role"] == "system"

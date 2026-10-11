@@ -359,12 +359,40 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
 
 # ───────────────────────────── AI (optional) ─────────────────────────────
 
+def ai_provider() -> Optional[str]:
+    """'anthropic' or 'openai', whichever has a key. CONTENT_HUB_PROVIDER picks one when both are set."""
+    want = (os.getenv("CONTENT_HUB_PROVIDER") or "").strip().lower()
+    has = {"anthropic": bool(os.getenv("ANTHROPIC_API_KEY")), "openai": bool(os.getenv("OPENAI_API_KEY"))}
+    if want in has and has[want]:
+        return want
+    return "anthropic" if has["anthropic"] else ("openai" if has["openai"] else None)
+
+
 def ai_available() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    return ai_provider() is not None
+
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        raise ValueError("AI reply had no JSON object.")
+    return json.loads(m.group(0))
 
 
 def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
     import requests
+    if ai_provider() == "openai":
+        r = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"], "Content-Type": "application/json"},
+            json={"model": os.getenv("CONTENT_HUB_OPENAI_MODEL", "gpt-5.5"),
+                  "max_completion_tokens": max_tokens * 4,  # headroom for reasoning tokens on GPT-5 family models
+                  "response_format": {"type": "json_object"},
+                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]},
+            timeout=120,
+        )
+        r.raise_for_status()
+        return _extract_json(r.json()["choices"][0]["message"]["content"] or "")
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
@@ -374,11 +402,7 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
         timeout=90,
     )
     r.raise_for_status()
-    text = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise ValueError("AI reply had no JSON object.")
-    return json.loads(m.group(0))
+    return _extract_json("".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text"))
 
 
 _AI_STYLE = (
@@ -419,7 +443,7 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
         except Exception as e:
             note = f"AI unavailable ({str(e)[:120]}); template used."
     elif use_ai:
-        note = "No ANTHROPIC_API_KEY set; template draft used."
+        note = "No AI key set (ANTHROPIC_API_KEY or OPENAI_API_KEY); template draft used."
     blog = blog or template_blog(f)
     out = _render_blog(f, blog)
     out["note"] = note
@@ -543,4 +567,4 @@ def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, An
                   (["Advice wording: " + ", ".join(find_banned_phrases(_blog_text(blog)))]
                    if find_banned_phrases(_blog_text(blog)) else [])
     return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "blog": blog, "blog_issues": blog_issues,
-            "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "notes": notes}
+            "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "notes": notes}

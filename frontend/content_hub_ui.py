@@ -56,7 +56,8 @@ def _teaser_card(d: dict):
 
 def render_package(pkg: dict):
     blog = pkg["blog"]
-    mode = "Written by Claude from your data" if pkg.get("ai_used") else "Template draft built from your data"
+    prov = {"anthropic": "Claude", "openai": "OpenAI"}.get(pkg.get("ai_provider") or "", "AI")
+    mode = f"Written by {prov} from your data" if pkg.get("ai_used") else "Template draft built from your data"
     out = [
         html.Div(f"{pkg['symbol']} · data as of {pkg['as_of']} · {mode}",
                  style={"fontSize": "13px", "fontWeight": "800", "color": WHITE, "marginBottom": "4px"}),
