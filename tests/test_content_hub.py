@@ -75,14 +75,6 @@ def test_validator_flags_problems():
     assert any("Link is in the main text" in i for i in ch.validate_teaser("reddit", {"title": "t", "text": "see https://a.co"}))
 
 
-def test_ai_blog_with_invented_number_is_rejected(facts, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
-                                                   "sections": [{"heading": "h", "body": "Price hit $9,999.99 today."}]})
-    blog = ch.generate_blog(facts, use_ai=True)
-    assert blog["ai"] is False and "rejected" in blog["note"]
-
-
 def test_ai_blog_clean_is_accepted(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     body = f"Closed at ${facts['last_close']:,.2f}."
@@ -234,9 +226,11 @@ def test_report_structure_and_no_tables(facts, monkeypatch):
                    "What would strengthen the bullish case", "What would weaken it", "What traders should monitor next",
                    "Better Opportunities. Better Decisions. Better Trading Results.",
                    "Every decision creates information. Every outcome creates evidence.",
-                   "www.sigmalyticquantcorp.com", "All rights reserved.", "<h2>Sources</h2>", "Market data: Alpaca Markets"):
+                   "www.sigmalyticquantcorp.com", "All rights reserved.", "<h2>Reference Sources</h2>", "Alpaca Markets: market data",
+                   "Report Date:", "Market Data Through:", "proprietary analytical framework"):
         assert needle in h, needle
-    assert h.index("Sigmalytic Summary") < h.index("Better Opportunities") < h.index("<h2>Sources</h2>") < h.index("All rights")
+    assert (h.index("Sigmalytic Summary") < h.index("Better Opportunities") < h.index("Market Data and Attribution")
+            < h.index("<h2>Reference Sources</h2>") < h.index("All rights") < h.index("research and educational purposes"))
     assert "<table" not in h.lower() and "FINRA" not in h and "footnote" not in h.lower()
     assert "PRIVATE" not in h and "Option A" not in h and "Option A" not in blog["markdown"]
 
@@ -326,3 +320,30 @@ def test_rate_limit_retried_once(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
     assert ch._ai_json("s", "u") == {"ok": 1} and len(calls) == 2
+
+
+def _tf_chart(n=80, drift=0.5, with_pivots=True):
+    c = _chart(n, drift)
+    c["weis_lines"] = {"ice_line_level": 140.5,
+                       "pivots": [{"kind": "swing_high", "price": 150.0, "bar_index": 70},
+                                  {"kind": "swing_low", "price": 130.0, "bar_index": 60}] if with_pivots else []}
+    return c
+
+
+def test_timeframes_and_levels(facts):
+    f = ch.attach_timeframes(dict(facts), {"weekly": _tf_chart(), "4h": _tf_chart(), "2h": {"ok": False, "error": "no bars"}})
+    assert set(f["timeframes"]) == {"weekly", "4h"} and any("2-hour" in m for m in f["timeframes_missing"])
+    assert f["timeframes"]["weekly"]["recent_pivots"][-1]["price"] in (150.0, 130.0)
+    lv = f["levels"]
+    assert all(x["price"] > f["last_close"] for x in lv["above"]) and all(x["price"] <= f["last_close"] for x in lv["below"])
+    assert [x["price"] for x in lv["above"]] == sorted(x["price"] for x in lv["above"])
+    # numbers from the extra timeframes are allowed by the guard
+    assert ch.numbers_trace_to_facts("Weekly swing high near $150.00 and ice line near $140.50.", f) == []
+
+
+def test_numbers_flagged_for_review_but_draft_kept(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": "Price recovered $987.65 in a week."}]})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is True and "987.65" in blog["note"]
