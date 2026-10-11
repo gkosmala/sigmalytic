@@ -66,6 +66,14 @@ def render_package(pkg: dict):
     for i in pkg.get("blog_issues") or []:
         out.append(html.Div("Blog check: " + i, style={"fontSize": "12px", "color": RED}))
 
+    seo = blog.get("seo") or {}
+    seo_rows = []
+    for c in seo.get("checks") or []:
+        ok = c["level"] == "ok"
+        seo_rows.append(html.Div([html.Span("✓ " if ok else "! ", style={"color": GREEN if ok else AMBER, "fontWeight": "800"}),
+                                  html.Span(c["name"] + ": ", style={"color": WHITE, "fontSize": "12px"}),
+                                  html.Span(c["detail"], style={"color": MUTED, "fontSize": "11px"})],
+                                 style={"marginBottom": "2px"}))
     out += [
         html.Div("BLOG POST", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "14px 0 4px"}),
         html.Div("Review it, then paste the HTML into the Research & Intelligence page. Copy the head tags into the "
@@ -82,6 +90,9 @@ def render_package(pkg: dict):
                   _copy(blog["head_tags"], "Copy head tags"),
                   html.Span("  Markdown", style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "marginLeft": "14px"}),
                   _copy(blog["markdown"], "Copy markdown")], style={"marginTop": "6px"}),
+        html.Div(f"SEO CHECKLIST ({seo.get('warnings', 0)} to fix before publishing)" if seo else "",
+                 style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "18px 0 6px"}),
+        html.Div(seo_rows),
         html.Div("SOCIAL TEASERS", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "18px 0 6px"}),
         html.Div("Drafts only. Nothing is posted. Every link carries tracking tags so you can see which platform "
                  "sends readers.", style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"}),

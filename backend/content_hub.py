@@ -350,15 +350,11 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
         f"<p class=\"disclaimer\"><em>{esc(DISCLAIMER)}</em></p>\n</article>"
     )
     md = f"# {blog['title']}\n\n" + "\n\n".join(f"## {s['heading']}\n\n{s['body']}" for s in blog["sections"]) + f"\n\n*{DISCLAIMER}*\n"
-    head = (
-        f"<title>{esc(blog['title'])}</title>\n<meta name=\"description\" content=\"{esc(blog['meta_description'])}\">\n"
-        f"<link rel=\"canonical\" href=\"{url}\">\n<meta property=\"og:type\" content=\"article\">\n"
-        f"<meta property=\"og:title\" content=\"{esc(blog['title'])}\">\n"
-        f"<meta property=\"og:description\" content=\"{esc(blog['meta_description'])}\">\n"
-        f"<meta property=\"og:url\" content=\"{url}\">\n<meta name=\"twitter:card\" content=\"summary_large_image\">"
-    )
+    from backend.content_seo import build_seo
+    seo = build_seo(f, blog, url, SITE_URL, BLOG_PATH)
+    head = seo["head_tags"]
     return {**blog, "slug": _slug(f["symbol"], f["as_of"]), "url": url, "html": html_doc, "markdown": md,
-            "head_tags": head, "disclaimer": DISCLAIMER}
+            "head_tags": head, "seo": seo, "disclaimer": DISCLAIMER}
 
 
 # ───────────────────────────── AI (optional) ─────────────────────────────

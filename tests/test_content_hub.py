@@ -102,3 +102,29 @@ def test_no_key_uses_template(facts, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     pkg = ch.build_package("TEST", use_ai=True, facts=facts)
     assert pkg["ai_used"] is False and any("ANTHROPIC_API_KEY" in n for n in pkg["notes"])
+
+
+def test_seo_markup(facts, monkeypatch):
+    import json, re
+    monkeypatch.setenv("CONTENT_HUB_OG_IMAGE", "https://example.com/og/test.png")
+    monkeypatch.setenv("CONTENT_HUB_LOGO_URL", "https://example.com/logo.png")
+    blog = ch.generate_blog(facts, use_ai=False)
+    seo = blog["seo"]
+    assert len(seo["title_tag"]) <= 60 and seo["title_tag"].startswith("TEST Stock Analysis")
+    assert len(seo["meta_description"]) <= 155
+    head = blog["head_tags"]
+    for needle in ('rel="canonical"', 'name="robots"', 'property="og:image"', 'name="twitter:card"',
+                   'application/ld+json', 'article:published_time'):
+        assert needle in head, needle
+    ld = json.loads(re.search(r'<script type="application/ld\+json">\n(.*?)\n</script>', head, re.S).group(1))
+    types = [n["@type"] for n in ld["@graph"]]
+    assert types == ["Article", "BreadcrumbList"]
+    assert ld["@graph"][0]["image"] == ["https://example.com/og/test.png"]
+
+
+def test_seo_checklist_flags_thin_copy_and_missing_image(facts, monkeypatch):
+    monkeypatch.delenv("CONTENT_HUB_OG_IMAGE", raising=False)
+    seo = ch.generate_blog(facts, use_ai=False)["seo"]
+    flagged = {c["name"] for c in seo["checks"] if c["level"] != "ok"}
+    assert "Enough original copy" in flagged and "Share image (Open Graph)" in flagged
+    assert seo["warnings"] >= 2
