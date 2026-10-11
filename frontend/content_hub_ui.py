@@ -54,6 +54,27 @@ def _teaser_card(d: dict):
                                  "marginBottom": "12px", "background": "rgba(255,255,255,.02)"})
 
 
+def _private_card(p):
+    if not p:
+        return html.Div()
+    rows = [html.Div("PRIVATE EDITORIAL ASSESSMENT (not part of the published report)",
+                     style={"fontSize": "12px", "fontWeight": "800", "color": AMBER, "marginBottom": "4px"})]
+    names = {"A": "A. Institutional accumulation", "B": "B. Distribution / exhaustion risk", "C": "C. High-volatility squeeze"}
+    for k in ("A", "B", "C"):
+        v = p.get(k) or {}
+        ok = bool(v.get("supported"))
+        rows.append(html.Div([html.Span(("SUPPORTED  " if ok else "Not supported  "),
+                                        style={"color": GREEN if ok else MUTED, "fontWeight": "800", "fontSize": "11px"}),
+                              html.Span(names[k] + ": ", style={"color": WHITE, "fontSize": "12px"}),
+                              html.Span(v.get("reasoning") or "", style={"color": MUTED, "fontSize": "11px"})],
+                             style={"marginBottom": "3px"}))
+    sel = p.get("selected")
+    rows.append(html.Div("Headline used: " + (f"Option {sel}" if sel in ("A", "B", "C") else "alternative headline (no option sufficiently supported)"),
+                         style={"color": WHITE, "fontSize": "12px", "marginTop": "4px"}))
+    rows.append(html.Div(p.get("data_limits") or "", style={"color": MUTED, "fontSize": "11px", "marginTop": "2px"}))
+    return html.Div(rows, style={"border": f"1px dashed {AMBER}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})
+
+
 def render_package(pkg: dict):
     blog = pkg["blog"]
     prov = {"anthropic": "Claude", "openai": "OpenAI"}.get(pkg.get("ai_provider") or "", "AI")
@@ -66,7 +87,8 @@ def render_package(pkg: dict):
     if u.get("calls"):
         cost = f"${u['cost_usd']:.4f}" if u.get("cost_usd") is not None else "price for this model is not in the table"
         extra = f" (including {u['reasoning_tokens']:,} reasoning tokens)" if u.get("reasoning_tokens") else ""
-        out.append(html.Div(f"AI usage this run: {u['calls']} calls, {u['input_tokens']:,} tokens in, "
+        srch = f", {u['searches']} web searches" if u.get("searches") else ""
+        out.append(html.Div(f"AI usage this run: {u['calls']} calls{srch}, {u['input_tokens']:,} tokens in, "
                             f"{u['output_tokens']:,} out{extra}. Cost: {cost}. Model: {', '.join(u['models'])}.",
                             style={"fontSize": "11px", "color": MUTED, "marginBottom": "4px"}))
     for n in pkg.get("notes") or []:
@@ -98,6 +120,7 @@ def render_package(pkg: dict):
                   _copy(blog["head_tags"], "Copy head tags"),
                   html.Span("  Markdown", style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "marginLeft": "14px"}),
                   _copy(blog["markdown"], "Copy markdown")], style={"marginTop": "6px"}),
+        _private_card(blog.get("private")),
         html.Div(f"SEO CHECKLIST ({seo.get('warnings', 0)} to fix before publishing)" if seo else "",
                  style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "margin": "18px 0 6px"}),
         html.Div(seo_rows),

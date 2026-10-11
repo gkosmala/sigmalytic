@@ -36,9 +36,9 @@ BLOG_PATH = os.getenv("CONTENT_HUB_BLOG_PATH", "/research-and-intelligence").rst
 AI_MODEL = os.getenv("CONTENT_HUB_MODEL", "claude-sonnet-5-5")
 
 DISCLAIMER = (
-    "This is educational market research from Sigmalytic Quant Corporation. It is not investment "
-    "advice, a recommendation, or an offer to buy or sell any security. Patterns describe past price "
-    "and volume behavior and do not predict future results. Trading involves risk of loss."
+    "This report is provided for research and educational use only. It is not investment advice, a "
+    "recommendation, or an offer to buy or sell any security. Past price and volume behavior does not "
+    "predict future results, and trading involves risk of loss."
 )
 SHORT_DISCLAIMER = "Educational research, not investment advice."
 
@@ -117,6 +117,19 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
                      "date": str(h.get("date") or "")[:10], "level": _f(h.get("level") or h.get("price"))})
 
     wl = chart.get("weis_lines") or {}
+
+    def sma(n: int) -> Optional[float]:
+        w = [c for c in closes[-n:] if c is not None]
+        return round(sum(w) / len(w), 2) if len(closes) >= n and w else None
+
+    def span(n: int):
+        h = [x for x in highs[-n:] if x is not None]
+        l = [x for x in lows[-n:] if x is not None]
+        return (round(max(h), 2) if h else None), (round(min(l), 2) if l else None)
+
+    sma50, sma200 = sma(50), sma(200)
+    hi20, lo20 = span(20)
+    hi60, lo60 = span(60)
     facts = {
         "symbol": symbol.upper(),
         "as_of": str(bars[-1].get("date") or "")[:10],
@@ -131,6 +144,10 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
         "from_low_pct": _pct(last, lo),
         "sma20": round(sma20, 2),
         "vs_sma20_pct": _pct(last, sma20),
+        "sma50": sma50, "vs_sma50_pct": _pct(last, sma50),
+        "sma200": sma200, "vs_sma200_pct": _pct(last, sma200),
+        "change_60d_pct": _pct(last, back(60)),
+        "high_20d": hi20, "low_20d": lo20, "high_60d": hi60, "low_60d": lo60,
         "volume_vs_20d_avg": vol_ratio,
         "pattern_signals": hits,
         "call_wall": _f(chart.get("call_wall")),
@@ -224,7 +241,7 @@ def _allowed_numbers(facts: Dict[str, Any]) -> List[float]:
             for v in x:
                 walk(v)
     walk(facts)
-    nums.extend([20, 52, 252])  # window lengths named in the copy ("20-day average", "52-week range")
+    nums.extend([20, 50, 52, 60, 200, 252])  # window lengths named in the copy ("20-day average", "52-week range")
     return nums
 
 
@@ -287,6 +304,64 @@ def validate_teaser(platform: str, draft: Dict[str, Any], facts: Optional[Dict[s
 
 # ───────────────────────────── blog ─────────────────────────────
 
+SITE_LINK_TEXT = "www.sigmalyticquantcorp.com"
+SITE_LINK_HREF = "https://www.sigmalyticquantcorp.com"
+TAGLINES = ["Better Opportunities. Better Decisions. Better Trading Results.",
+            "Every decision creates information. Every outcome creates evidence."]
+DATA_SOURCE = os.getenv("CONTENT_HUB_DATA_SOURCE", "Alpaca Markets")
+
+# The three headline options. Used verbatim by code, only when the assessment (and, for A, a sourced
+# institutional finding) supports them. Otherwise the model's more accurate alternative headline is used.
+OPTION_TITLES = {
+    "A": "{s} Order Flow Divergence: Institutional Dark-Pool Accumulation Defends Critical Macro Trend",
+    "B": "{s} Trend Geometry Facing Immediate Strain as Short-Duration Selling Overwhelms Order Book",
+    "C": "{s} Liquidity Mapping Signals Imminent Volatility Squeeze at Key Volume-Weighted Pivot",
+}
+DATA_LIMITS = ("Evidence available to this tool: daily price and volume bars, pattern flags, and option-level references. "
+               "There is no order-book, tape, block-trade or dark-pool feed, so Options A, B and C can only be "
+               "supported by sourced online findings or by what the daily bars alone show.")
+NEWS_HEADINGS = {"us": "U.S. Market and Economic Developments", "international": "International Developments",
+                 "geopolitical": "Geopolitical Developments", "company": "{s} Company and Industry News",
+                 "institutional": "Institutional and Liquidity Evidence"}
+SUMMARY_LABELS = [("condition", "Current condition"), ("risk", "Principal risk"),
+                  ("strengthen", "What would strengthen the bullish case"),
+                  ("weaken", "What would weaken it"), ("monitor", "What traders should monitor next")]
+
+
+def attribution_text() -> str:
+    return (f"The underlying market data for this report was obtained through {DATA_SOURCE}. {DATA_SOURCE} distributes "
+            "market data from multiple exchanges and providers. The analysis and commentary are the work of "
+            "Sigmalytic Quant Corporation.")
+
+
+def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
+    s, trend = f["symbol"], _trend_word(f)
+    return {
+        "condition": (f"{s} closed at {_usd(f['last_close'])} on {f['as_of']}, {trend} its 20-day average of "
+                      f"{_usd(f['sma20'])}, with a {_sgn(f['change_20d_pct'])} move over twenty sessions."),
+        "risk": (f"The principal risk is a failure to hold the 20-day average at {_usd(f['sma20'])}, which would bring the "
+                 f"recent low near {_usd(f.get('low_20d'))} back into view."),
+        "strengthen": (f"A sustained close above the 20-day high near {_usd(f.get('high_20d'))}, supported by volume above "
+                       "its 20-day average, would strengthen the bullish case."),
+        "weaken": (f"A close below the 20-day low near {_usd(f.get('low_20d'))}, particularly on heavier volume, would "
+                   "weaken it."),
+        "monitor": (f"Traders should monitor the 20-day average at {_usd(f['sma20'])}, the 60-day range from "
+                    f"{_usd(f.get('low_60d'))} to {_usd(f.get('high_60d'))}, and volume against its 20-day average."),
+    }
+
+
+def _norm_private(p: Any) -> Dict[str, Any]:
+    p = p if isinstance(p, dict) else {}
+    out: Dict[str, Any] = {}
+    for k in "ABC":
+        v = p.get(k) if isinstance(p.get(k), dict) else {}
+        out[k] = {"supported": bool(v.get("supported")), "reasoning": str(v.get("reasoning") or "")[:700]}
+    sel = str(p.get("selected") or "none").strip().upper()
+    out["selected"] = sel if sel in ("A", "B", "C") and out[sel]["supported"] else "none"
+    out["data_limits"] = DATA_LIMITS
+    return out
+
+
 def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     s, name = f["symbol"], f["symbol"]
     trend = _trend_word(f)
@@ -333,29 +408,71 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     if lv:
         sections.append({"heading": "Levels the platform is tracking", "body": " ".join(lv)})
 
-    sections.append({"heading": "What to watch", "body":
-                     f"Traders following {name} will want to see whether price holds above or below its 20-day average "
-                     f"({_usd(f['sma20'])}) and how volume behaves near the levels above. Sigmalytic updates these "
-                     "readings as new bars arrive."})
-    return {"title": title, "meta_description": meta, "sections": sections, "ai": False}
+    private = _norm_private({"selected": "none"})
+    for k in "ABC":
+        private[k]["reasoning"] = "Not assessed. Template mode makes no determination; run the draft with an AI key."
+    return {"title": title, "meta_description": meta, "sections": sections, "summary": _template_summary(f),
+            "news": {}, "sources": [], "private": private, "ai": False}
+
+
+def _paras(text: str) -> List[str]:
+    return [x.strip() for x in str(text).split("\n\n") if x.strip()]
 
 
 def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
     url = blog_url(f["symbol"], f["as_of"])
     esc = _html.escape
-    body_html = "".join(f"<h2>{esc(s['heading'])}</h2>\n<p>{esc(s['body'])}</p>\n" for s in blog["sections"])
+    year = (f.get("as_of") or f.get("generated_at") or "")[:4] or str(datetime.now(timezone.utc).year)
+    summary = blog.get("summary") or _template_summary(f)
+    news = blog.get("news") or {}
+    sections = list(blog["sections"])
+    for key in ("us", "international", "geopolitical", "company", "institutional"):
+        if news.get(key):
+            sections.append({"heading": NEWS_HEADINGS[key].format(s=f["symbol"]), "body": news[key]["text"]})
+    sections.append({"heading": "Market Data and Attribution", "body": attribution_text()})
+    sections.append({"heading": "Sigmalytic Summary", "body": "\n\n".join(
+        f"{label}: {summary[k]}" for k, label in SUMMARY_LABELS if summary.get(k))})
+    sources = [{"title": x["title"], "url": x["url"]} for x in (blog.get("sources") or [])]
+    copyright_line = f"© {year} Sigmalytic Quant Corporation. All rights reserved."
+
+    def para_html(sec: Dict[str, str]) -> str:
+        out = []
+        for t in _paras(sec["body"]):
+            if sec["heading"] == "Sigmalytic Summary" and ": " in t:
+                lab, rest = t.split(": ", 1)
+                out.append(f"<p><strong>{esc(lab)}:</strong> {esc(rest)}</p>")
+            else:
+                out.append(f"<p>{esc(t)}</p>")
+        return "\n".join(out)
+
+    body_html = "".join(f"<h2>{esc(s['heading'])}</h2>\n{para_html(s)}\n" for s in sections)
+    src_html = f"<li>Market data: {esc(DATA_SOURCE)}</li>" + "".join(
+        f"<li><a href=\"{esc(x['url'])}\" rel=\"nofollow noopener\">{esc(x['title'])}</a></li>" for x in sources)
     html_doc = (
         f"<!-- Paste into the Research & Intelligence page. Canonical: {url} -->\n"
         f"<article class=\"sigmalytic-research\">\n<h1>{esc(blog['title'])}</h1>\n"
         f"<p class=\"byline\">Sigmalytic Quant Corporation · Data as of {esc(f['as_of'])}</p>\n{body_html}"
-        f"<p class=\"disclaimer\"><em>{esc(DISCLAIMER)}</em></p>\n</article>"
+        f"<p><strong>{esc(TAGLINES[0])}</strong><br>{esc(TAGLINES[1])}</p>\n"
+        f"<p><a href=\"{SITE_LINK_HREF}\">{SITE_LINK_TEXT}</a></p>\n"
+        f"<p class=\"disclaimer\"><em>{esc(DISCLAIMER)}</em></p>\n"
+        f"<h2>Sources</h2>\n<ul>{src_html}</ul>\n<p class=\"copyright\">{esc(copyright_line)}</p>\n</article>"
     )
-    md = f"# {blog['title']}\n\n" + "\n\n".join(f"## {s['heading']}\n\n{s['body']}" for s in blog["sections"]) + f"\n\n*{DISCLAIMER}*\n"
+    md_parts = []
+    for sec in sections:
+        if sec["heading"] == "Sigmalytic Summary":
+            ps = [("**" + t.split(": ", 1)[0] + ":** " + t.split(": ", 1)[1]) if ": " in t else t for t in _paras(sec["body"])]
+            md_parts.append(f"## {sec['heading']}\n\n" + "\n\n".join(ps))
+        else:
+            md_parts.append(f"## {sec['heading']}\n\n{sec['body']}")
+    md = (f"# {blog['title']}\n\n" + "\n\n".join(md_parts) + f"\n\n**{TAGLINES[0]}**  \n{TAGLINES[1]}\n\n"
+          f"[{SITE_LINK_TEXT}]({SITE_LINK_HREF})\n\n*{DISCLAIMER}*\n\n## Sources\n\n- Market data: {DATA_SOURCE}\n"
+          + "".join(f"- [{x['title']}]({x['url']})\n" for x in sources) + f"\n{copyright_line}\n")
     from backend.content_seo import build_seo
-    seo = build_seo(f, blog, url, SITE_URL, BLOG_PATH)
-    head = seo["head_tags"]
-    return {**blog, "slug": _slug(f["symbol"], f["as_of"]), "url": url, "html": html_doc, "markdown": md,
-            "head_tags": head, "seo": seo, "disclaimer": DISCLAIMER}
+    seo_blog = {**blog, "sections": sections}
+    seo = build_seo(f, seo_blog, url, SITE_URL, BLOG_PATH)
+    return {**blog, "sections": sections, "slug": _slug(f["symbol"], f["as_of"]), "url": url, "html": html_doc,
+            "markdown": md, "head_tags": seo["head_tags"], "seo": seo, "disclaimer": DISCLAIMER,
+            "copyright": copyright_line, "sources": sources}
 
 
 # ───────────────────────────── AI (optional) ─────────────────────────────
@@ -371,18 +488,25 @@ MODEL_PRICES: Dict[str, Any] = {
 _USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usage", default=None)
 
 
-def _record_usage(provider: str, model: str, tokens_in: int, tokens_out: int, reasoning: int = 0) -> None:
+WEB_SEARCH_PRICE = 0.01  # USD per search ($10 per 1,000), from Anthropic's web search tool documentation
+WEB_SEARCH_ON = os.getenv("CONTENT_HUB_WEB_SEARCH", "1").strip() != "0"
+WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "5") or 5)
+
+
+def _record_usage(provider: str, model: str, tokens_in: int, tokens_out: int, reasoning: int = 0, searches: int = 0) -> None:
     log = _USAGE.get()
     if log is not None:
         log.append({"provider": provider, "model": model, "input_tokens": int(tokens_in or 0),
-                    "output_tokens": int(tokens_out or 0), "reasoning_tokens": int(reasoning or 0)})
+                    "output_tokens": int(tokens_out or 0), "reasoning_tokens": int(reasoning or 0),
+                    "searches": int(searches or 0)})
 
 
 def summarize_usage(log: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Exact token counts as reported by the API, and the dollar cost when the model's price is known."""
+    """Exact token and search counts as reported by the API, and the dollar cost when the model's price is known."""
     tin = sum(c["input_tokens"] for c in log)
     tout = sum(c["output_tokens"] for c in log)
-    cost: Optional[float] = 0.0
+    searches = sum(c.get("searches", 0) for c in log)
+    cost: Optional[float] = searches * WEB_SEARCH_PRICE
     for c in log:
         price = MODEL_PRICES.get(c["model"])
         if price is None:
@@ -391,7 +515,7 @@ def summarize_usage(log: List[Dict[str, Any]]) -> Dict[str, Any]:
         cost += c["input_tokens"] / 1e6 * price[0] + c["output_tokens"] / 1e6 * price[1]
     return {"calls": len(log), "models": sorted({c["model"] for c in log}), "input_tokens": tin,
             "output_tokens": tout, "reasoning_tokens": sum(c["reasoning_tokens"] for c in log),
-            "cost_usd": None if cost is None else round(cost, 5)}
+            "searches": searches, "cost_usd": None if cost is None else round(cost, 5)}
 
 
 def ai_provider() -> Optional[str]:
@@ -414,7 +538,7 @@ def _extract_json(text: str) -> Dict[str, Any]:
     return json.loads(m.group(0))
 
 
-def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
+def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = False) -> Dict[str, Any]:
     import requests
     if ai_provider() == "openai":
         r = requests.post(
@@ -433,19 +557,38 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500) -> Dict[str, Any]:
                       u.get("prompt_tokens", 0), u.get("completion_tokens", 0),
                       (u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0))
         return _extract_json(body["choices"][0]["message"]["content"] or "")
-    r = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
-                 "content-type": "application/json"},
-        json={"model": AI_MODEL, "max_tokens": max_tokens, "system": system,
-              "messages": [{"role": "user", "content": user}]},
-        timeout=90,
-    )
-    r.raise_for_status()
-    body = r.json()
-    u = body.get("usage") or {}
-    _record_usage("anthropic", body.get("model") or AI_MODEL, u.get("input_tokens", 0), u.get("output_tokens", 0))
-    return _extract_json("".join(b.get("text", "") for b in body.get("content", []) if b.get("type") == "text"))
+    messages: List[Dict[str, Any]] = [{"role": "user", "content": user}]
+    seen: Dict[str, str] = {}
+    text = ""
+    for _turn in range(3):  # a paused web-search turn is continued by sending it back, at most twice
+        payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
+        if web_search:
+            payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            json=payload, timeout=240 if web_search else 90)
+        r.raise_for_status()
+        body = r.json()
+        u = body.get("usage") or {}
+        _record_usage("anthropic", body.get("model") or AI_MODEL, u.get("input_tokens", 0), u.get("output_tokens", 0),
+                      searches=(u.get("server_tool_use") or {}).get("web_search_requests", 0))
+        content = body.get("content", [])
+        for b in content:
+            if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
+                for x in b["content"]:
+                    if isinstance(x, dict) and x.get("url"):
+                        seen[x["url"]] = str(x.get("title") or x["url"])
+        if body.get("stop_reason") == "pause_turn":
+            messages = messages + [{"role": "assistant", "content": content}]
+            continue
+        text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        break
+    out = _extract_json(text)
+    if web_search:
+        out["_search_results"] = seen
+    return out
 
 
 _AI_STYLE = (
@@ -455,20 +598,101 @@ _AI_STYLE = (
     "Do not write a disclaimer; it is added separately. Reply with one JSON object and nothing else."
 )
 
+_BLOG_STYLE = (
+    "You write website research reports for Sigmalytic Quant Corporation, a market-structure research firm. "
+    "Voice: professional, plain, precise, no hype. Observations only; never advise, recommend, predict, or promise. "
+    "Spelling, grammar, punctuation, capitalization and commas must be correct. "
+    "In the analysis sections and the summary, use ONLY numbers that appear in the FACTS JSON; never compute or add others. "
+    "The proprietary platform data must not be disclosed: do not reveal or describe formulas, thresholds, calibration, "
+    "scoring logic, internal calculations or methodology; state levels and observations only. "
+    "Single vertical column: no tables, no side-by-side layout, no footnotes, no numbered notes, no markdown. "
+    "Never repeat the same level, fact or conclusion in more than one section. "
+    "Do not write a disclaimer, attribution, sources list or copyright line; they are added separately. "
+    "Reply with one JSON object and nothing else."
+)
 
-def ai_blog(f: Dict[str, Any]) -> Dict[str, Any]:
-    out = _ai_json(
-        _AI_STYLE,
-        "Write a blog post (350-550 words) from these FACTS.\nReturn JSON: "
-        '{"title": str (<=70 chars), "meta_description": str (<=155 chars), '
-        '"sections": [{"heading": str, "body": str}] (4-6 sections)}\n\nFACTS:\n' + json.dumps(f, indent=1))
-    secs = [{"heading": str(s["heading"]), "body": str(s["body"])} for s in out["sections"]]
-    return {"title": str(out["title"])[:90], "meta_description": str(out["meta_description"])[:158],
-            "sections": secs, "ai": True}
+
+def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, Any]:
+    use_search = (WEB_SEARCH_ON and ai_provider() == "anthropic") if web_search is None else web_search
+    s = f["symbol"]
+    news_rule = (
+        f"Use web search first. Find developments from the last few days that bear on {s}: US domestic market or economic, "
+        "international, geopolitical, and company- or industry-specific. Write one or two sentences for each category you "
+        "can support, and list the exact URLs from your search results that support it. If you find nothing relevant for a "
+        "category, set it to null. Do not write from memory."
+        if use_search else
+        "Web search is not available in this run, so set all five news items to null. Do not write news from memory.")
+    user = (
+        f"Create today's website report for {s} from the FACTS (daily bars, pattern flags and key levels). {news_rule}\n"
+        "Review the short, medium and long horizons in the FACTS together (5, 20 and 60 sessions, the 20, 50 and 200-day "
+        "averages, the 52-week range) and identify market structure, momentum, participation, important support and "
+        "resistance, developing risk, and any meaningful change from the prior structure.\n"
+        "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
+        "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
+        "activity from price and volume. If nothing is found, set it to null.\n"
+        "HEADLINE ASSESSMENT (private, never published). Decide whether each option is supported:\n"
+        f'A: "{OPTION_TITLES["A"].format(s=s)}" (needs sourced evidence of institutional or dark-pool accumulation)\n'
+        f'B: "{OPTION_TITLES["B"].format(s=s)}" (needs evidence of distribution or exhaustion risk)\n'
+        f'C: "{OPTION_TITLES["C"].format(s=s)}" (needs evidence of a high-volatility squeeze setup)\n'
+        'Be strict. If none is sufficiently supported, selected is "none" and "title" must be a more accurate alternative '
+        "headline of at most 90 characters that contains the symbol.\n"
+        "Return JSON: {\"title\": str, \"meta_description\": str (110-155 chars, contains the symbol), "
+        "\"sections\": [{\"heading\": str, \"body\": str}] (4-5 analysis sections, 450-650 words in total, "
+        "the first paragraph must name the symbol), "
+        "\"news\": {\"us\": {\"text\": str, \"urls\": [str]} | null, \"international\": ..., \"geopolitical\": ..., "
+        "\"company\": ..., \"institutional\": ...}, "
+        "\"summary\": {\"condition\": str, \"risk\": str, \"strengthen\": str, \"weaken\": str, \"monitor\": str}, "
+        "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
+        "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
+    try:
+        out = _ai_json(_BLOG_STYLE, user, max_tokens=4500, web_search=use_search)
+    except Exception as e:
+        resp = getattr(e, "response", None)
+        if use_search and getattr(resp, "status_code", None) == 400:  # search not enabled for this account: no charge
+            out = _ai_json(_BLOG_STYLE, user.replace(news_rule, "Web search is not available in this run, so set all five "
+                                                     "news items to null."), max_tokens=4500)
+            out["_search_unavailable"] = True
+        else:
+            raise
+    secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in out["sections"]]
+    return {"title": str(out["title"])[:90], "meta_description": str(out["meta_description"])[:158], "sections": secs,
+            "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
+            "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
+            "ai": True}
+
+
+def _guarded_text(title: str, meta: str, sections: List[Dict[str, str]], summary: Dict[str, str]) -> str:
+    return " ".join([title, meta] + [x["heading"] + " " + x["body"] for x in sections] + [str(v) for v in summary.values()])
 
 
 def _blog_text(blog: Dict[str, Any]) -> str:
-    return " ".join([blog["title"], blog["meta_description"]] + [s["heading"] + " " + s["body"] for s in blog["sections"]])
+    """The part of the post that must trace to the platform data. News (sourced online) and fixed text are excluded."""
+    return blog.get("guarded_text") or " ".join(
+        [blog["title"], blog["meta_description"]] + [s["heading"] + " " + s["body"] for s in blog["sections"]])
+
+
+def _vet_news(raw: Any, found: Dict[str, str]):
+    """Keeps a news item only if it has text and at least one URL that really came back from the search."""
+    news: Dict[str, Dict[str, Any]] = {}
+    sources: Dict[str, str] = {}
+    dropped: List[str] = []
+    if not isinstance(raw, dict):
+        return news, [], dropped
+    for key in NEWS_HEADINGS:
+        item = raw.get(key)
+        if not isinstance(item, dict) or not str(item.get("text") or "").strip():
+            continue
+        urls = [u for u in (item.get("urls") or []) if isinstance(u, str) and u in found]
+        text = str(item["text"]).strip()
+        if not urls:
+            dropped.append(f"{NEWS_HEADINGS[key].format(s='')} (no verifiable source)")
+        elif find_banned_phrases(text):
+            dropped.append(f"{NEWS_HEADINGS[key].format(s='')} (advice wording)")
+        else:
+            news[key] = {"text": text, "urls": urls}
+            for u in urls:
+                sources[u] = found[u]
+    return news, [{"title": t, "url": u} for u, t in sources.items()], dropped
 
 
 def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
@@ -477,17 +701,42 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
     if use_ai and ai_available():
         try:
             cand = ai_blog(f)
-            bad, banned = numbers_trace_to_facts(_blog_text(cand), f), find_banned_phrases(_blog_text(cand))
+            summary = {k: str((cand.get("summary") or {}).get(k) or "").strip() for k, _ in SUMMARY_LABELS}
+            if not all(summary.values()):
+                summary = _template_summary(f)
+            cand["summary"] = summary
+            guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], summary)
+            bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
             if bad or banned:
                 note = "AI draft rejected (" + ("numbers not in data: " + ", ".join(bad) + "; " if bad else "") + \
                        ("advice wording: " + ", ".join(banned) if banned else "") + "); template used."
             else:
+                news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
+                private = _norm_private(cand.get("private"))
+                sel = private["selected"]
+                if sel == "A" and "institutional" not in news:
+                    sel = private["selected"] = "none"
+                    private["A"]["reasoning"] += " (Marked not supported by the tool: no sourced institutional finding was returned.)"
+                title = OPTION_TITLES[sel].format(s=f["symbol"]) if sel in OPTION_TITLES else cand["title"]
+                cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
+                for k in ("_search_results",):
+                    cand.pop(k, None)
+                extra = []
+                if cand.pop("_search_unavailable", False):
+                    extra.append("Web search is not enabled for this Anthropic account, so no news sections were written.")
+                if dropped:
+                    extra.append("News left out: " + "; ".join(dropped) + ".")
+                if ai_provider() == "openai":
+                    extra.append("Web search is only wired for Anthropic; no news sections were written in this run.")
+                note = " ".join(extra) or None
                 blog = cand
         except Exception as e:
             note = f"AI unavailable ({str(e)[:120]}); template used."
     elif use_ai:
         note = "No AI key set (ANTHROPIC_API_KEY or OPENAI_API_KEY); template draft used."
-    blog = blog or template_blog(f)
+    if blog is None:
+        blog = template_blog(f)
+        blog["guarded_text"] = _guarded_text(blog["title"], blog["meta_description"], blog["sections"], blog["summary"])
     out = _render_blog(f, blog)
     out["note"] = note
     return out

@@ -208,3 +208,90 @@ def test_openai_reasoning_tokens_counted(monkeypatch):
         ch._USAGE.reset(token)
     assert u["output_tokens"] == 900 and u["reasoning_tokens"] == 700
     assert u["cost_usd"] == round(100 / 1e6 * 2 + 900 / 1e6 * 12, 5)
+
+
+# ───────────── website report requirements ─────────────
+
+def _ai_cand(facts, **over):
+    body = f"{facts['symbol']} closed at ${facts['last_close']:,.2f}."
+    cand = {"title": f"{facts['symbol']} Holds Its Trend", "meta_description": "m", "ai": True,
+            "sections": [{"heading": "h", "body": body}],
+            "news": {"us": {"text": "Treasury yields moved 12 basis points this week.", "urls": ["https://a.com/x"]},
+                     "geopolitical": {"text": "Invented claim.", "urls": ["https://not-searched.com"]},
+                     "institutional": None},
+            "summary": {}, "private": {"A": {"supported": True, "reasoning": "r"}, "B": {"supported": False},
+                                       "C": {"supported": False}, "selected": "A"},
+            "_search_results": {"https://a.com/x": "Source A"}}
+    cand.update(over)
+    return cand
+
+
+def test_report_structure_and_no_tables(facts, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    blog = ch.generate_blog(facts, use_ai=False)
+    h = blog["html"]
+    for needle in ("Market Data and Attribution", "Sigmalytic Summary", "Current condition", "Principal risk",
+                   "What would strengthen the bullish case", "What would weaken it", "What traders should monitor next",
+                   "Better Opportunities. Better Decisions. Better Trading Results.",
+                   "Every decision creates information. Every outcome creates evidence.",
+                   "www.sigmalyticquantcorp.com", "All rights reserved.", "<h2>Sources</h2>", "Market data: Alpaca Markets"):
+        assert needle in h, needle
+    assert h.index("Sigmalytic Summary") < h.index("Better Opportunities") < h.index("<h2>Sources</h2>") < h.index("All rights")
+    assert "<table" not in h.lower() and "FINRA" not in h and "footnote" not in h.lower()
+    assert "PRIVATE" not in h and "Option A" not in h and "Option A" not in blog["markdown"]
+
+
+def test_news_needs_real_search_source_and_option_a_needs_institutional(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: _ai_cand(facts))
+    blog = ch.generate_blog(facts, use_ai=True)
+    heads = [s["heading"] for s in blog["sections"]]
+    assert "U.S. Market and Economic Developments" in heads
+    assert "Geopolitical Developments" not in heads          # URL never came back from the search
+    assert "Institutional and Liquidity Evidence" not in heads
+    assert [x["url"] for x in blog["sources"]] == ["https://a.com/x"]
+    assert blog["private"]["selected"] == "none" and "Dark-Pool" not in blog["title"]   # A needs sourced evidence
+    assert "Geopolitical" in blog["note"]
+
+
+def test_option_b_headline_used_when_supported(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    cand = _ai_cand(facts, private={"A": {"supported": False}, "B": {"supported": True, "reasoning": "r"},
+                                    "C": {"supported": False}, "selected": "B"})
+    monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["title"] == ch.OPTION_TITLES["B"].format(s="TEST")
+    assert blog["private"]["selected"] == "B" and "Option B" not in blog["html"] and "reasoning" not in blog["html"]
+
+
+def test_web_search_request_pause_and_usage(monkeypatch):
+    import requests
+    sent = []
+
+    class R:
+        def __init__(self, b): self._b = b
+        def raise_for_status(self): pass
+        def json(self): return self._b
+
+    replies = [
+        {"model": "claude-sonnet-5-5", "stop_reason": "pause_turn", "usage": {"input_tokens": 100, "output_tokens": 10,
+         "server_tool_use": {"web_search_requests": 2}},
+         "content": [{"type": "web_search_tool_result", "content": [{"url": "https://a.com/x", "title": "A"}]}]},
+        {"model": "claude-sonnet-5-5", "stop_reason": "end_turn", "usage": {"input_tokens": 50, "output_tokens": 20},
+         "content": [{"type": "text", "text": 'pre {"k": 1}'}]},
+    ]
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.append(json); return R(replies[len(sent) - 1])
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    token = ch._USAGE.set([])
+    try:
+        out = ch._ai_json("s", "u", web_search=True); u = ch.summarize_usage(ch._USAGE.get())
+    finally:
+        ch._USAGE.reset(token)
+    assert sent[0]["tools"][0]["name"] == "web_search" and sent[1]["messages"][-1]["role"] == "assistant"
+    assert out["k"] == 1 and out["_search_results"] == {"https://a.com/x": "A"}
+    assert u["searches"] == 2 and u["calls"] == 2
+    assert u["cost_usd"] == round(150 / 1e6 * 2 + 30 / 1e6 * 10 + 2 * 0.01, 5)
