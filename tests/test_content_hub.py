@@ -161,3 +161,50 @@ def test_openai_request_shape(monkeypatch):
     assert seen["url"].endswith("/v1/chat/completions") and seen["headers"]["Authorization"] == "Bearer sk-x"
     assert seen["body"]["model"] == "gpt-test" and seen["body"]["response_format"] == {"type": "json_object"}
     assert seen["body"]["messages"][0]["role"] == "system"
+
+
+def test_usage_exact_cost_and_unknown_model(monkeypatch, facts):
+    import requests
+    calls = []
+
+    class R:
+        def __init__(self, body): self._b = body
+        def raise_for_status(self): pass
+        def json(self): return self._b
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append(url)
+        return R({"model": "claude-sonnet-5-5", "usage": {"input_tokens": 1000, "output_tokens": 500},
+                  "content": [{"type": "text", "text": '{"x": 1}'}]})
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    token = ch._USAGE.set([])
+    try:
+        ch._ai_json("s", "u"); ch._ai_json("s", "u")
+        u = ch.summarize_usage(ch._USAGE.get())
+    finally:
+        ch._USAGE.reset(token)
+    assert u["input_tokens"] == 2000 and u["output_tokens"] == 1000 and u["calls"] == 2
+    assert u["cost_usd"] == round(2000 / 1e6 * 2 + 1000 / 1e6 * 10, 5)  # Sonnet 5.5: $2 in, $10 out per 1M
+    assert ch.summarize_usage([{"model": "mystery", "input_tokens": 5, "output_tokens": 5, "reasoning_tokens": 0,
+                                "provider": "x"}])["cost_usd"] is None
+
+
+def test_openai_reasoning_tokens_counted(monkeypatch):
+    import requests
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"model": "gpt-5.6-terra", "choices": [{"message": {"content": "{}"}}],
+                                "usage": {"prompt_tokens": 100, "completion_tokens": 900,
+                                          "completion_tokens_details": {"reasoning_tokens": 700}}}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R())
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False); monkeypatch.setenv("OPENAI_API_KEY", "k")
+    token = ch._USAGE.set([])
+    try:
+        ch._ai_json("s", "u"); u = ch.summarize_usage(ch._USAGE.get())
+    finally:
+        ch._USAGE.reset(token)
+    assert u["output_tokens"] == 900 and u["reasoning_tokens"] == 700
+    assert u["cost_usd"] == round(100 / 1e6 * 2 + 900 / 1e6 * 12, 5)
