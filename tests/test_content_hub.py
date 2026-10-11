@@ -291,20 +291,52 @@ def test_web_search_request_pause_and_usage(monkeypatch):
     assert u["cost_usd"] == round(150 / 1e6 * 2 + 30 / 1e6 * 10 + 2 * 0.01, 5)
 
 
-def test_truncated_reply_gives_clear_error_and_template_fallback(facts, monkeypatch):
+def _fake_anthropic(monkeypatch, text, stop="end_turn"):
     import requests
 
     class R:
         status_code = 200
         def raise_for_status(self): pass
-        def json(self): return {"model": "claude-sonnet-5-5", "stop_reason": "max_tokens",
+        def json(self): return {"model": "claude-sonnet-5-5", "stop_reason": stop,
                                 "usage": {"input_tokens": 10, "output_tokens": 9000},
-                                "content": [{"type": "text", "text": '{"title": "cut off'}]}
+                                "content": [{"type": "text", "text": text}]}
     monkeypatch.setattr(requests, "post", lambda *a, **k: R())
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+
+
+def test_truncated_reply_is_repaired_and_kept(facts, monkeypatch):
+    cut = ('{"title": "TEST: Can It Hold?", "meta_description": "m", "sections": ['
+           '{"heading": "Executive Summary", "body": "TEST closed at $%.2f."}, '
+           '{"heading": "Market Structure", "body": "Price is above its average."}, '
+           '{"heading": "What Changed?", "body": "The rebound was cut o' % facts["last_close"])
+    _fake_anthropic(monkeypatch, cut, stop="max_tokens")
     blog = ch.generate_blog(facts, use_ai=True)
-    assert blog["ai"] is False and "cut off" in blog["note"]
+    heads = [s["heading"] for s in blog["sections"]]
+    assert blog["ai"] is True and heads[:2] == ["Executive Summary", "Market Structure"]
+    assert "repaired" in blog["note"] and "Key Levels" in blog["note"]       # tells the editor what is missing
+    assert "raw_ai_text" not in blog
+
+
+def test_unreadable_reply_is_handed_back_raw(facts, monkeypatch):
+    _fake_anthropic(monkeypatch, "Here is the report you asked for, written as prose with no JSON at all.")
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is False and "written as prose" in blog["raw_ai_text"]
+    assert "not wasted" in blog["note"]
+
+
+def test_repair_json_cases():
+    assert ch._repair_json('{"a": [1, 2, {"b": "x"}, {"c": "cut')["a"][:3] == [1, 2, {"b": "x"}]
+    assert ch._repair_json('{"a": 1, "b": ') == {"a": 1}
+    assert ch._repair_json("no braces") is None
+
+
+def test_advice_wording_is_flagged_not_discarded(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": "This stock will soar."}]})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["ai"] is True and "advice or promise wording" in blog["note"]
 
 
 def test_rate_limit_retried_once(monkeypatch):

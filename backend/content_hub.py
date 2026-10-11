@@ -684,11 +684,65 @@ def ai_available() -> bool:
     return ai_provider() is not None
 
 
+class AIParseError(ValueError):
+    """The model replied (and was billed) but the reply could not be read. Carries the raw text so it is never wasted."""
+
+    def __init__(self, msg: str, raw: str = ""):
+        super().__init__(msg)
+        self.raw = raw
+
+
+def _repair_json(t: str) -> Optional[Dict[str, Any]]:
+    """Closes a JSON object that was cut off mid-way, keeping everything that is complete."""
+    start = t.find("{")
+    if start < 0:
+        return None
+    t = t[start:]
+    stack: List[str] = []
+    in_str = esc = False
+    cuts: List[Any] = []  # (position, closers) at every comma outside a string
+    for i, ch in enumerate(t):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if stack:
+                stack.pop()
+        elif ch == ",":
+            cuts.append((i, "".join(reversed(stack))))
+    tries = [t + ('"' if in_str else "") + "".join(reversed(stack))]
+    tries += [t[:pos] + closers for pos, closers in reversed(cuts)]
+    for cand in tries:
+        try:
+            obj = json.loads(cand)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            continue
+    return None
+
+
 def _extract_json(text: str) -> Dict[str, Any]:
     m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise ValueError("AI reply had no JSON object.")
-    return json.loads(m.group(0))
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    fixed = _repair_json(text)
+    if fixed is None:
+        raise AIParseError("AI reply had no readable JSON object.", text)
+    fixed["_recovered"] = True
+    return fixed
 
 
 def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = False) -> Dict[str, Any]:
@@ -713,6 +767,7 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
     messages: List[Dict[str, Any]] = [{"role": "user", "content": user}]
     seen: Dict[str, str] = {}
     text = ""
+    truncated = False
     for _turn in range(3):  # a paused web-search turn is continued by sending it back, at most twice
         payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
         if web_search:
@@ -746,12 +801,13 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
             messages = messages + [{"role": "assistant", "content": content}]
             continue
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
-        if body.get("stop_reason") == "max_tokens":
-            raise ValueError(f"AI reply was cut off at the {max_tokens}-token limit before the JSON finished.")
+        truncated = body.get("stop_reason") == "max_tokens"
         break
     if "{" not in text:
-        raise ValueError("AI reply had no JSON object (stop reason: %s; reply began: %r)." % (body.get("stop_reason"), text[:160]))
+        raise AIParseError("AI reply had no JSON object (stop reason: %s)." % body.get("stop_reason"), text)
     out = _extract_json(text)
+    if truncated:
+        out["_recovered"] = True
     if web_search:
         out["_search_results"] = seen
     return out
@@ -831,11 +887,15 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             out["_search_unavailable"] = True
         else:
             raise
-    secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in out["sections"]]
-    return {"title": str(out["title"])[:90], "meta_description": str(out["meta_description"])[:158], "sections": secs,
+    secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in (out.get("sections") or [])
+            if isinstance(x, dict) and x.get("heading") and x.get("body")]
+    if not secs:
+        raise AIParseError("AI reply had no complete sections.", json.dumps(out, indent=1)[:60000])
+    return {"title": str(out.get("title") or f"{s} Market Structure Report")[:90],
+            "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
-            "ai": True}
+            "_recovered": bool(out.get("_recovered")), "ai": True}
 
 
 def _guarded_text(title: str, meta: str, sections: List[Dict[str, str]], summary: Dict[str, str]) -> str:
@@ -872,45 +932,62 @@ def _vet_news(raw: Any, found: Dict[str, str]):
     return news, [{"title": t, "url": u} for u, t in sources.items()], dropped
 
 
+EXPECTED_SECTIONS = ["Executive Summary", "Market Structure", "What Changed?", "Current Momentum", "Key Levels",
+                     "Participation and Volume", "What Traders Should Watch Next"]
+
+
 def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
+    """Paid AI output is never thrown away: problems are flagged for the editor, damaged replies are repaired,
+    and a reply that cannot be read at all is handed back as raw text."""
     note = None
     blog = None
+    raw_ai_text = None
     if use_ai and ai_available():
         try:
             cand = ai_blog(f)
+            if not cand.get("meta_description"):
+                cand["meta_description"] = template_blog(f)["meta_description"]
             summary = {k: str((cand.get("summary") or {}).get(k) or "").strip() for k, _ in SUMMARY_LABELS}
-            if not all(summary.values()):
+            missing_summary = not all(summary.values())
+            if missing_summary:
                 summary = _template_summary(f)
             cand["summary"] = summary
             guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], summary)
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
+            news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
+            private = _norm_private(cand.get("private"))
+            sel = private["selected"]
+            if sel == "A" and "institutional" not in news:
+                sel = private["selected"] = "none"
+                private["A"]["reasoning"] += " (Marked not supported by the tool: no sourced institutional finding was returned.)"
+            title = OPTION_TITLES[sel].format(s=f["symbol"]) if sel in OPTION_TITLES else cand["title"]
+            cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
+            cand.pop("_search_results", None)
+            extra = []
+            if cand.pop("_recovered", False):
+                have = {x["heading"].strip().lower() for x in cand["sections"]}
+                gone = [h for h in EXPECTED_SECTIONS if h.lower() not in have]
+                extra.append("The AI reply was cut off or damaged and was repaired; everything complete was kept."
+                             + (" Missing sections: " + ", ".join(gone) + "." if gone else "")
+                             + (" The summary was filled in from the data." if missing_summary else ""))
+            if cand.pop("_search_unavailable", False):
+                extra.append("Web search is not enabled for this Anthropic account, so no news sections were written.")
             if banned:
-                note = "AI draft rejected (advice wording: " + ", ".join(banned) + "); template used."
-            else:
-                news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
-                private = _norm_private(cand.get("private"))
-                sel = private["selected"]
-                if sel == "A" and "institutional" not in news:
-                    sel = private["selected"] = "none"
-                    private["A"]["reasoning"] += " (Marked not supported by the tool: no sourced institutional finding was returned.)"
-                title = OPTION_TITLES[sel].format(s=f["symbol"]) if sel in OPTION_TITLES else cand["title"]
-                cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
-                for k in ("_search_results",):
-                    cand.pop(k, None)
-                extra = []
-                if cand.pop("_search_unavailable", False):
-                    extra.append("Web search is not enabled for this Anthropic account, so no news sections were written.")
-                if bad:
-                    extra.append("Review before publishing: these numbers are not in the platform data (derived or "
-                                 "invented): " + ", ".join(bad) + ".")
-                if dropped:
-                    extra.append("News left out: " + "; ".join(dropped) + ".")
-                if ai_provider() == "openai":
-                    extra.append("Web search is only wired for Anthropic; no news sections were written in this run.")
-                note = " ".join(extra) or None
-                blog = cand
+                extra.append("Review before publishing: advice or promise wording found: " + ", ".join(banned) + ".")
+            if bad:
+                extra.append("Review before publishing: these numbers are not in the platform data (derived or "
+                             "invented): " + ", ".join(bad) + ".")
+            if dropped:
+                extra.append("News left out: " + "; ".join(dropped) + ".")
+            if ai_provider() == "openai":
+                extra.append("Web search is only wired for Anthropic; no news sections were written in this run.")
+            note = " ".join(extra) or None
+            blog = cand
         except Exception as e:
-            note = f"AI unavailable ({str(e)[:120]}); template used."
+            note = f"AI reply could not be used ({str(e)[:140]}); template used."
+            raw_ai_text = getattr(e, "raw", None) or None
+            if raw_ai_text:
+                note += " The AI's unprocessed text is shown below so the cost is not wasted."
     elif use_ai:
         note = "No AI key set (ANTHROPIC_API_KEY or OPENAI_API_KEY); template draft used."
     if blog is None:
@@ -918,6 +995,8 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
         blog["guarded_text"] = _guarded_text(blog["title"], blog["meta_description"], blog["sections"], blog["summary"])
     out = _render_blog(f, blog)
     out["note"] = note
+    if raw_ai_text:
+        out["raw_ai_text"] = raw_ai_text[:60000]
     return out
 
 
