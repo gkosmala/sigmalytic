@@ -108,7 +108,7 @@ def _raw_card(raw):
 def _private_card(p):
     if not p:
         return html.Div()
-    rows = [html.Div("PRIVATE EDITORIAL ASSESSMENT (not part of the published report)",
+    rows = [html.Div("PRIVATE TRADING-IDEA ASSESSMENT (not part of the published report)",
                      style={"fontSize": "12px", "fontWeight": "800", "color": AMBER, "marginBottom": "4px"})]
     names = {"A": "A. Institutional accumulation", "B": "B. Distribution / exhaustion risk", "C": "C. High-volatility squeeze"}
     for k in ("A", "B", "C"):
@@ -120,7 +120,7 @@ def _private_card(p):
                               html.Span(v.get("reasoning") or "", style={"color": MUTED, "fontSize": "11px"})],
                              style={"marginBottom": "3px"}))
     sel = p.get("selected")
-    rows.append(html.Div("Headline used: " + (f"Option {sel}" if sel in ("A", "B", "C") else "alternative headline (no option sufficiently supported)"),
+    rows.append(html.Div("Strongest supported idea: " + (f"Option {sel}" if sel in ("A", "B", "C") else "none (no idea is sufficiently supported)"),
                          style={"color": WHITE, "fontSize": "12px", "marginTop": "4px"}))
     rows.append(html.Div(p.get("data_limits") or "", style={"color": MUTED, "fontSize": "11px", "marginTop": "2px"}))
     return html.Div(rows, style={"border": f"1px dashed {AMBER}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})
