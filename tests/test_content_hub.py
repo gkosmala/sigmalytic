@@ -490,3 +490,9 @@ def test_share_image_failure_never_breaks_report(facts, monkeypatch):
     f = dict(facts); f["_chart_bars"] = _bars_for()
     pkg = ch.build_package("TEST", use_ai=False, facts=f)
     assert pkg["share_image"] is None and any("Share image could not be drawn" in n for n in pkg["notes"])
+
+
+def test_logo_file_is_found_and_drawn(facts):
+    from backend import content_chart as cc
+    assert cc._logo_path() and cc._logo_path().endswith("sigmalytic_logo.png")
+    assert cc.render_share_image(facts, _bars_for(), title="TEST", view_text="x")[:4] == b"\x89PNG"

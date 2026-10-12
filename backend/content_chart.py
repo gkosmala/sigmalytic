@@ -8,7 +8,7 @@ Draws the report's hero / share image in the house layout: logo block, report ti
 written from, and the Sigmalytic View text is the blog's own "current condition" sentence.
 
 Output is 1800 x 945 (1.91:1, the shape social sites use; it downsizes cleanly to 1200 x 630).
-If a logo file exists (CONTENT_HUB_LOGO_FILE, or assets/sigmalytic_logo.png) it is drawn in place of the built-in mark.
+If a logo file exists (CONTENT_HUB_LOGO_FILE, or backend/assets/sigmalytic_logo.png) it is drawn in place of the built-in mark.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 W, H, DPI = 1800, 945, 100
-BG, PANEL, GRID, FRAME = "#071433", "#0b1b3f", "#1c2d58", "#2a5bd7"
+BG, PANEL, GRID, FRAME = "#111c32", "#152448", "#223460", "#2a5bd7"
 UP, DOWN = "#22c55e", "#ef4444"
 TXT, MUTED, GOLD, BLUE, CYAN = "#eef3ff", "#93a7d1", "#f5b82e", "#2f6bff", "#38bdf8"
 MAX_BARS = 130
@@ -47,7 +47,7 @@ def _long_date(d: str) -> str:
 
 def _logo_path() -> Optional[str]:
     here = os.path.dirname(os.path.abspath(__file__))
-    for cand in (os.getenv("CONTENT_HUB_LOGO_FILE", ""), os.path.join(here, "..", "assets", "sigmalytic_logo.png")):
+    for cand in (os.getenv("CONTENT_HUB_LOGO_FILE", ""), os.path.join(here, "assets", "sigmalytic_logo.png")):
         if cand and os.path.isfile(cand):
             return cand
     return None
@@ -89,7 +89,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     # ── header: logo, title, dates, tagline
     logo = _logo_path()
     if logo:
-        lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_axis_off(); lax.imshow(mpimg.imread(logo))
+        lax = fig.add_axes([0.014, 0.832, 0.235, 0.15]); lax.set_axis_off(); lax.imshow(mpimg.imread(logo), interpolation="lanczos")
     else:
         lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_xlim(0, 2.1); lax.set_ylim(0, 1); lax.set_axis_off()
         lax.set_aspect("auto")
