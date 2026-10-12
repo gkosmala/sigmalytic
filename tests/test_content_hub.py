@@ -730,3 +730,14 @@ def test_image_ladder_uses_report_labels(facts):
 def cc_png_ok(f):
     from backend import content_chart as cc
     return cc.render_share_image(f, _bars_for())[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_instagram_draft_sits_after_x_and_passes_checks(facts):
+    assert ch.PLATFORM_ORDER[:3] == ["linkedin", "x", "instagram"]
+    blog = ch.generate_blog(facts, use_ai=False)
+    t = ch.generate_teasers(facts, blog, use_ai=False)["instagram"]
+    assert t["ok"], t["issues"]
+    assert "link in bio" in t["text"] and "http" not in t["text"] and t["limit"] == 2200
+    assert "4:5" in t["image_spec"]
+    bad = ch.validate_teaser("instagram", {"text": "See https://example.com now"}, facts)
+    assert any("Link is in the main text" in x for x in bad)
