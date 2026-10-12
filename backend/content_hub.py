@@ -61,6 +61,8 @@ PLATFORM_RULES: Dict[str, Dict[str, Any]] = {
                  "image": "1200x627 chart image (or 1080x1080)"},
     "x": {"label": "X", "max_chars": 280, "max_hashtags": 2, "link": "in a reply (link posts cost far more via the API)",
           "image": "1600x900 chart image", "link_weight": 23},
+    "instagram": {"label": "Instagram", "max_chars": 2200, "max_hashtags": 5,
+                  "link": "link in bio (captions are not clickable)", "image": "1080x1350 (4:5) chart image"},
     "reddit": {"label": "Reddit", "max_chars": 3000, "title_max": 300, "max_hashtags": 0,
                "link": "in a comment, only where the subreddit allows it; read its rules first",
                "image": "optional chart image"},
@@ -71,7 +73,7 @@ PLATFORM_RULES: Dict[str, Dict[str, Any]] = {
     "tiktok": {"label": "TikTok", "max_chars": 2200, "max_hashtags": 5,
                "link": "link in bio (captions are not clickable)", "image": "1080x1920 (9:16) video or photo carousel"},
 }
-PLATFORM_ORDER = ["linkedin", "x", "reddit", "pinterest", "facebook", "tiktok"]
+PLATFORM_ORDER = ["linkedin", "x", "instagram", "reddit", "pinterest", "facebook", "tiktok"]
 
 
 # ───────────────────────────── facts ─────────────────────────────
@@ -517,7 +519,7 @@ def validate_teaser(platform: str, draft: Dict[str, Any], facts: Optional[Dict[s
     banned = find_banned_phrases(" ".join([text, title or "", draft.get("reply") or ""]))
     if banned:
         issues.append("Advice/promise wording: " + ", ".join(banned))
-    if platform in ("x", "reddit", "tiktok") and re.search(r"https?://", text):
+    if platform in ("x", "instagram", "reddit", "tiktok") and re.search(r"https?://", text):
         issues.append("Link is in the main text; this platform wants it elsewhere (see link placement).")
     if facts is not None:
         bad = numbers_trace_to_facts(" ".join([text, title or ""]), facts)
@@ -1341,6 +1343,10 @@ def template_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Dict[
         f"{SHORT_DISCLAIMER}\n\nRead the analysis: {link['linkedin']}\n\n{_tags(f, 3)}")}
     out["x"] = {"text": f"${s} {px} ({d1}), {trend} its 20-day average. Scan shows {sig}. {_tags(f, 1)}",
                 "reply": f"Full market-structure read: {link['x']}\n{SHORT_DISCLAIMER}"}
+    out["instagram"] = {"text": (f"{s} market structure, {asof}\n\n"
+                                 f"Price {_verb(f)} {px} ({d1}), {trend} its 20-day average. Sigmalytic's Wyckoff/Weis scan "
+                                 f"shows {sig}.\n\nSwipe the chart, then read the full analysis: link in bio.\n\n"
+                                 f"{SHORT_DISCLAIMER}\n\n{_tags(f, 5)}")}
     out["reddit"] = {"title": f"{s}: price {trend} its 20-day average at {px}; Wyckoff/Weis scan shows {sig}"[:300],
                      "text": (f"Notes from our nightly scan on {s} (data as of {asof}).\n\n"
                               f"- {'Last' if (f.get('session') or {}).get('live') else 'Close'}: {px} ({d1}); 5-day {_sgn(f['change_5d_pct'])}; 20-day {_sgn(f['change_20d_pct'])}\n"
@@ -1371,12 +1377,13 @@ def ai_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
         "Write one social teaser per platform for this blog post. Each teaser must make the reader curious about the "
         "full post, state one concrete data point, and stay inside the platform's limits (characters include everything). "
         f"End every text with: {SHORT_DISCLAIMER}\n"
-        "Do NOT put URLs in any text; links are added separately. Use at most the allowed hashtags.\n"
-        'Return JSON: {"linkedin": {"text"}, "x": {"text", "reply"}, "reddit": {"title", "text", "reply"}, '
+        "Do NOT put URLs in any text; links are added separately. Use at most the allowed hashtags. "
+        "The Instagram caption has no clickable link: end its body with 'link in bio' before the disclaimer.\n"
+        'Return JSON: {"linkedin": {"text"}, "x": {"text", "reply"}, "instagram": {"text"}, "reddit": {"title", "text", "reply"}, '
         '"pinterest": {"title", "text"}, "facebook": {"text"}, "tiktok": {"text", "video_script": [str]}}\n\n'
         f"PLATFORM RULES:\n{json.dumps(rules, indent=1)}\n\nBLOG TITLE: {blog['title']}\n\nFACTS:\n"
         f"{json.dumps({k: v for k, v in f.items() if k != 'timeframes'}, indent=1)}")
-    return _ai_json(_AI_STYLE, user, max_tokens=3000)
+    return _ai_json(_AI_STYLE, user, max_tokens=3600)
 
 
 def _attach_links(f: Dict[str, Any], plat: str, d: Dict[str, Any]) -> Dict[str, Any]:

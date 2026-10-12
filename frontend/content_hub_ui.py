@@ -182,7 +182,7 @@ def render_package(pkg: dict):
         html.Div("Drafts only. Nothing is posted. Every link carries tracking tags so you can see which platform "
                  "sends readers.", style={"fontSize": "11px", "color": MUTED, "marginBottom": "8px"}),
     ]
-    for p in ("linkedin", "x", "reddit", "pinterest", "facebook", "tiktok"):
+    for p in ("linkedin", "x", "instagram", "reddit", "pinterest", "facebook", "tiktok"):
         if p in pkg["teasers"]:
             out.append(_teaser_card(pkg["teasers"][p]))
     return html.Div(out)
