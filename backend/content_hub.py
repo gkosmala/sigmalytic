@@ -193,8 +193,10 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
     def back(n: int) -> Optional[float]:
         return closes[-1 - n] if len(closes) > n else None
 
-    v20 = [v for v in vols[-21:-1] if v is not None]
-    vol_ratio = round(vols[-1] / (sum(v20) / len(v20)), 2) if (v20 and vols[-1] is not None and sum(v20)) else None
+    # The newest weekly / 4-hour / 2-hour bar is often still forming, which makes its volume look tiny. The ratio is
+    # therefore taken on the previous bar, which is complete, against the 20 bars before it.
+    v20 = [v for v in vols[-22:-2] if v is not None]
+    vol_ratio = round(vols[-2] / (sum(v20) / len(v20)), 2) if (len(vols) >= 23 and v20 and vols[-2] is not None and sum(v20)) else None
     wl = chart.get("weis_lines") if isinstance(chart.get("weis_lines"), dict) else {}
     pivots = sorted((wl.get("pivots") or []), key=lambda p: p.get("bar_index", 0))[-6:]
     sma20, sma50 = sma(20), sma(50)
@@ -205,7 +207,7 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
         "last_close": round(last, 2), "change_5_bars_pct": _pct(last, back(5)), "change_20_bars_pct": _pct(last, back(20)),
         "sma20": sma20, "vs_sma20_pct": _pct(last, sma20), "sma50": sma50, "vs_sma50_pct": _pct(last, sma50),
         "high_20_bars": h20, "low_20_bars": l20, "high_60_bars": h60, "low_60_bars": l60,
-        "volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
+        "prior_bar_volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
         "recent_pivots": [{"kind": str(p.get("kind")), "price": _f(p.get("price"))} for p in pivots if _f(p.get("price"))],
         "pattern_signals": [{"type": str(h.get("type") or "").replace("_", " ").title(), "level": _f(h.get("level") or h.get("price"))}
                             for h in (chart.get("hits") or [])[:3]],
@@ -270,10 +272,12 @@ def build_facts(symbol: str) -> Dict[str, Any]:
     """Fetches live data through the existing chart endpoint function and reduces it to facts."""
     from backend.main import weis_radar_chart_data  # lazy: avoids a circular import at module load
     sym = symbol.upper().strip()
-    chart = weis_radar_chart_data(sym, timeframe="1Day", limit=252)
+    chart = weis_radar_chart_data(sym, timeframe="1Day", limit=400)  # 400 so the 200-day line spans the whole chart image
     if not chart.get("ok"):
         raise ValueError(chart.get("error") or f"No data for {symbol}.")
     f = facts_from_chart_data(symbol, chart)
+    f["_chart_bars"] = [[str(b.get("date"))[:10], b.get("open"), b.get("high"), b.get("low"), b.get("close"), b.get("volume")]
+                        for b in (chart.get("bars") or [])]
     extra: Dict[str, Dict[str, Any]] = {}
     for key, tf, limit in EXTRA_TIMEFRAMES:
         for attempt in range(2):  # one retry per timeframe
@@ -481,6 +485,16 @@ def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def _template_image_text(f: Dict[str, Any]) -> Dict[str, str]:
+    wk = (f.get("timeframes") or {}).get("weekly") or {}
+    vol = []
+    if f.get("volume_vs_20d_avg") is not None:
+        vol.append(f"Daily volume ran {f['volume_vs_20d_avg']:.2f} times its 20-day average.")
+    if wk.get("prior_bar_volume_vs_20_bar_avg") is not None:
+        vol.append(f"The previous weekly bar ran {wk['prior_bar_volume_vs_20_bar_avg']:.2f} times its 20-week average.")
+    return {"view": _template_summary(f)["condition"], "volume": " ".join(vol)}
+
+
 def _norm_private(p: Any) -> Dict[str, Any]:
     p = p if isinstance(p, dict) else {}
     out: Dict[str, Any] = {}
@@ -554,7 +568,7 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     for k in "ABC":
         private[k]["reasoning"] = "Not assessed. Template mode makes no determination; run the draft with an AI key."
     return {"title": title, "meta_description": meta, "sections": sections, "summary": _template_summary(f),
-            "news": {}, "sources": [], "private": private, "ai": False}
+            "news": {}, "sources": [], "private": private, "image_text": _template_image_text(f), "ai": False}
 
 
 def _paras(text: str) -> List[str]:
@@ -643,6 +657,7 @@ _USAGE: ContextVar[Optional[List[Dict[str, Any]]]] = ContextVar("content_hub_usa
 
 WEB_SEARCH_PRICE = 0.01  # USD per search ($10 per 1,000), from Anthropic's web search tool documentation
 WEB_SEARCH_ON = os.getenv("CONTENT_HUB_WEB_SEARCH", "1").strip() != "0"
+AI_EFFORT = (os.getenv("CONTENT_HUB_EFFORT", "low") or "low").strip().lower()  # Claude thinking effort; thinking is billed as output
 WEB_SEARCH_MAX = int(os.getenv("CONTENT_HUB_MAX_SEARCHES", "4") or 4)
 
 
@@ -768,8 +783,12 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
     seen: Dict[str, str] = {}
     text = ""
     truncated = False
+    thinking_total = 0
+    stop = None
     for _turn in range(3):  # a paused web-search turn is continued by sending it back, at most twice
         payload: Dict[str, Any] = {"model": AI_MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
+        if AI_EFFORT in ("low", "medium", "high", "xhigh", "max"):
+            payload["output_config"] = {"effort": AI_EFFORT}
         if web_search:
             payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
         for attempt in range(2):  # a 429 (rate limit) is not billed; wait as told, once
@@ -778,6 +797,9 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
                 headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
                 json=payload, timeout=240 if web_search else 90)
+            if getattr(r, "status_code", 200) == 400 and "output_config" in payload and attempt == 0:
+                payload.pop("output_config", None)  # this model/account rejects the effort setting; a 400 is not billed
+                continue
             if getattr(r, "status_code", 200) == 429 and attempt == 0:
                 try:
                     wait = min(float(r.headers.get("retry-after", "20")), 45.0)
@@ -789,8 +811,10 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
         r.raise_for_status()
         body = r.json()
         u = body.get("usage") or {}
+        think = int((u.get("output_tokens_details") or {}).get("thinking_tokens", 0) or 0)
+        thinking_total += think
         _record_usage("anthropic", body.get("model") or AI_MODEL, u.get("input_tokens", 0), u.get("output_tokens", 0),
-                      searches=(u.get("server_tool_use") or {}).get("web_search_requests", 0))
+                      reasoning=think, searches=(u.get("server_tool_use") or {}).get("web_search_requests", 0))
         content = body.get("content", [])
         for b in content:
             if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
@@ -801,11 +825,13 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
             messages = messages + [{"role": "assistant", "content": content}]
             continue
         text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
-        truncated = body.get("stop_reason") == "max_tokens"
+        stop = body.get("stop_reason")
+        truncated = stop == "max_tokens"
         break
     if "{" not in text:
         raise AIParseError("AI reply had no JSON object (stop reason: %s)." % body.get("stop_reason"), text)
     out = _extract_json(text)
+    out["_stop"], out["_thinking"] = stop, thinking_total
     if truncated:
         out["_recovered"] = True
     if web_search:
@@ -831,7 +857,7 @@ _BLOG_STYLE = (
     "Never repeat the same level, fact or conclusion in more than one section. "
     "Do not write a disclaimer, attribution, sources list or copyright line; they are added separately. "
     "Reply with one JSON object and nothing else. If you search the web, write no text before or between searches; "
-    "your only text output is the final JSON."
+    "your only text output is the final JSON. Never include citation tags, XML or HTML in any text value; plain sentences only."
 )
 
 
@@ -858,7 +884,9 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "'Current Momentum', 'Key Levels', 'Participation and Volume', 'What Traders Should Watch Next'. "
         "In 'Key Levels', write each level as a one-line label and price (for example 'Immediate Resistance: $123.45') "
         "followed by one sentence on why it matters, using levels from FACTS.levels. Never repeat a level, fact or "
-        "conclusion in more than one section except the Executive Summary. The title should be a specific, accurate "
+        "conclusion in more than one section except the Executive Summary. The newest weekly, 4-hour and 2-hour bar may "
+        "still be forming, so their volume figure (prior_bar_volume_vs_20_bar_avg) is for the previous complete bar; "
+        "describe it that way. The title should be a specific, accurate "
         "hook, ideally a question that names the symbol and the key level.\n"
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
@@ -875,18 +903,23 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"news\": {\"us\": {\"text\": str, \"urls\": [str]} | null, \"international\": ..., \"geopolitical\": ..., "
         "\"company\": ..., \"institutional\": ...}, "
         "\"summary\": {\"condition\": str, \"risk\": str, \"strengthen\": str, \"weaken\": str, \"monitor\": str}, "
+        "\"image\": {\"view\": str (1-2 sentences, at most 200 characters, the day's overall read), \"volume\": str "
+        "(1-2 sentences, at most 200 characters, what volume says about confirmation)}, "
         "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
         "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
     try:
-        out = _ai_json(_BLOG_STYLE, user, max_tokens=9000, web_search=use_search)
+        out = _ai_json(_BLOG_STYLE, user, max_tokens=16000, web_search=use_search)
     except Exception as e:
         resp = getattr(e, "response", None)
         if use_search and getattr(resp, "status_code", None) == 400:  # search not enabled for this account: no charge
             out = _ai_json(_BLOG_STYLE, user.replace(news_rule, "Web search is not available in this run, so set all five "
-                                                     "news items to null."), max_tokens=9000)
+                                                     "news items to null."), max_tokens=16000)
             out["_search_unavailable"] = True
         else:
             raise
+    for k in ("title", "meta_description", "sections", "news", "summary", "private", "image"):
+        if k in out:
+            out[k] = _clean_obj(out[k])
     secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in (out.get("sections") or [])
             if isinstance(x, dict) and x.get("heading") and x.get("body")]
     if not secs:
@@ -894,8 +927,28 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
     return {"title": str(out.get("title") or f"{s} Market Structure Report")[:90],
             "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
+            "image": out.get("image") or {},
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
-            "_recovered": bool(out.get("_recovered")), "ai": True}
+            "_recovered": bool(out.get("_recovered")), "_stop": out.get("_stop"), "_thinking": out.get("_thinking") or 0,
+            "ai": True}
+
+
+_TAG_RE = re.compile(r"[<(]\s*/?\s*cite\b[^<>]*>|</?\s*[A-Za-z][^<>]*>")
+
+
+def clean_ai_text(x: Any) -> str:
+    """Removes markup the web-search tool can leave in text (for example <cite index="8-10">...</cite>)."""
+    return re.sub(r"[ \t]{2,}", " ", _TAG_RE.sub("", str(x))).strip()
+
+
+def _clean_obj(o: Any) -> Any:
+    if isinstance(o, str):
+        return clean_ai_text(o)
+    if isinstance(o, list):
+        return [_clean_obj(v) for v in o]
+    if isinstance(o, dict):
+        return {k: (v if k == "urls" else _clean_obj(v)) for k, v in o.items()}
+    return o
 
 
 def _guarded_text(title: str, meta: str, sections: List[Dict[str, str]], summary: Dict[str, str]) -> str:
@@ -952,7 +1005,13 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             if missing_summary:
                 summary = _template_summary(f)
             cand["summary"] = summary
-            guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], summary)
+            tpl_img = _template_image_text(f)
+            img = {k: str((cand.get("image") or {}).get(k) or "").strip() for k in ("view", "volume")}
+            for k in img:
+                if not img[k] or len(img[k]) > 215:
+                    img[k] = tpl_img[k]
+            cand["image_text"] = img
+            guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], {**summary, **{"i" + k: v for k, v in img.items()}})
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
             news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
             private = _norm_private(cand.get("private"))
@@ -964,10 +1023,12 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
             extra = []
+            stop, thinking = cand.pop("_stop", None), cand.pop("_thinking", 0)
             if cand.pop("_recovered", False):
                 have = {x["heading"].strip().lower() for x in cand["sections"]}
                 gone = [h for h in EXPECTED_SECTIONS if h.lower() not in have]
-                extra.append("The AI reply was cut off or damaged and was repaired; everything complete was kept."
+                extra.append(f"The AI reply was cut off or damaged and was repaired (stop reason: {stop}; thinking tokens: {thinking:,}); "
+                             "everything complete was kept."
                              + (" Missing sections: " + ", ".join(gone) + "." if gone else "")
                              + (" The summary was filled in from the data." if missing_summary else ""))
             if cand.pop("_search_unavailable", False):
@@ -1119,6 +1180,7 @@ def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, An
 
 def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], log: List[Dict[str, Any]]) -> Dict[str, Any]:
     f = facts or build_facts(symbol)
+    chart_bars = f.pop("_chart_bars", None)
     blog = generate_blog(f, use_ai=use_ai)
     teasers = generate_teasers(f, blog, use_ai=use_ai)
     notes = [n for n in (blog.get("note"), (teasers.pop("_note", {}) or {}).get("note")) if n]
@@ -1126,5 +1188,17 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
                    if numbers_trace_to_facts(_blog_text(blog), f) else []) + \
                   (["Advice wording: " + ", ".join(find_banned_phrases(_blog_text(blog)))]
                    if find_banned_phrases(_blog_text(blog)) else [])
-    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "blog": blog, "blog_issues": blog_issues,
+    share_image = None
+    if chart_bars:
+        try:
+            import base64
+            from backend.content_chart import render_share_image, W as IMG_W, H as IMG_H
+            share_image = {"png_b64": base64.b64encode(render_share_image(
+                f, chart_bars, title=blog.get("title", ""), view_text=(blog.get("image_text") or {}).get("view", ""),
+                volume_text=(blog.get("image_text") or {}).get("volume", ""))).decode("ascii"),
+                           "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
+        except Exception as e:  # the image is a convenience; it must never break the report
+            notes.append(f"Share image could not be drawn: {str(e)[:120]}.")
+    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "daily_bars": chart_bars or [], "share_image": share_image, "blog": blog,
+            "blog_issues": blog_issues,
             "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "usage": summarize_usage(log), "notes": notes}

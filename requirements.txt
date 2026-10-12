@@ -22,3 +22,4 @@ stripe>=7.0.0
 alpaca-py>=0.8.0
 xhtml2pdf
 weasyprint
+matplotlib>=3.8,<4

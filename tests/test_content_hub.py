@@ -351,7 +351,8 @@ def test_rate_limit_retried_once(monkeypatch):
     monkeypatch.setattr(requests, "post", lambda *a, **k: (calls.append(1), R(429 if len(calls) == 1 else 200))[1])
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
-    assert ch._ai_json("s", "u") == {"ok": 1} and len(calls) == 2
+    out = ch._ai_json("s", "u")
+    assert out["ok"] == 1 and len(calls) == 2
 
 
 def _tf_chart(n=80, drift=0.5, with_pivots=True):
@@ -405,3 +406,137 @@ def test_weekly_present_when_available(monkeypatch):
     monkeypatch.setitem(sys.modules, "backend.main", mod)
     f = ch.build_facts("XYZ")
     assert {"weekly", "4h", "2h"} <= set(f["timeframes"])
+
+
+def test_citation_markup_is_stripped(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    dirty = '<cite index="8-10">Musk said Tesla and SpaceX would own Terafab.</cite> (<cite index="2-11">Earnings are October 21.</cite>'
+    _fake_anthropic(monkeypatch, __import__("json").dumps({
+        "title": "T <cite index='1-1'>x</cite>", "meta_description": "m",
+        "sections": [{"heading": "Executive Summary", "body": f"TEST closed at ${facts['last_close']:,.2f}."}],
+        "news": {"company": {"text": dirty, "urls": ["https://a.com/x"]}}, "summary": {}, "private": {}}))
+    import requests
+    orig = requests.post
+    def post(*a, **k):
+        r = orig(*a, **k); b = r.json()
+        b["content"].insert(0, {"type": "web_search_tool_result", "content": [{"url": "https://a.com/x", "title": "A"}]})
+        r.json = lambda: b
+        return r
+    monkeypatch.setattr(requests, "post", post)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert "cite" not in blog["html"].lower() and "cite" not in blog["markdown"].lower()
+    assert "Musk said Tesla and SpaceX would own Terafab." in blog["html"] and "<cite" not in blog["title"]
+
+
+def test_effort_sent_thinking_recorded_and_400_fallback(monkeypatch):
+    import requests
+    sent = []
+
+    class R:
+        def __init__(self, code, body=None): self.status_code = code; self.headers = {}; self._b = body
+        def raise_for_status(self): pass
+        def json(self): return self._b
+
+    ok = {"model": "claude-sonnet-5-5", "stop_reason": "end_turn",
+          "usage": {"input_tokens": 100, "output_tokens": 900, "output_tokens_details": {"thinking_tokens": 600}},
+          "content": [{"type": "text", "text": '{"k": 1}'}]}
+
+    def post(url, headers=None, json=None, timeout=None):
+        sent.append(dict(json))
+        return R(400) if ("output_config" in json) and len(sent) == 1 else R(200, ok)
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    token = ch._USAGE.set([])
+    try:
+        out = ch._ai_json("s", "u"); u = ch.summarize_usage(ch._USAGE.get())
+    finally:
+        ch._USAGE.reset(token)
+    assert sent[0]["output_config"] == {"effort": "low"} and "output_config" not in sent[1]
+    assert out["k"] == 1 and out["_thinking"] == 600 and u["reasoning_tokens"] == 600
+
+
+def _bars_for(n=252):
+    import random
+    random.seed(1); p = 300.0; out = []
+    for i in range(n):
+        p += random.uniform(-5, 5.5); o = p + random.uniform(-2, 2)
+        out.append([f"2026-01-{(i % 28) + 1:02d}", o, max(o, p) + 2, min(o, p) - 2, p, 90e6])
+    return out
+
+
+def test_share_image_is_png_of_expected_size(facts):
+    import struct
+    from backend import content_chart as cc
+    bars = _bars_for()
+    png = cc.render_share_image(facts, bars)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h = struct.unpack(">II", png[16:24])
+    assert (w, h) == (1800, 945)
+    with pytest.raises(ValueError):
+        cc.render_share_image(facts, bars[:10])
+
+
+def test_package_includes_share_image_and_keeps_bars_out_of_facts(facts):
+    f = dict(facts); f["_chart_bars"] = _bars_for()
+    pkg = ch.build_package("TEST", use_ai=False, facts=f)
+    assert pkg["share_image"]["filename"].endswith("-share-image.png") and len(pkg["share_image"]["png_b64"]) > 1000
+    assert "_chart_bars" not in pkg["facts"]
+
+
+def test_share_image_failure_never_breaks_report(facts, monkeypatch):
+    from backend import content_chart as cc
+    monkeypatch.setattr(cc, "render_share_image", lambda f, b: (_ for _ in ()).throw(RuntimeError("boom")))
+    f = dict(facts); f["_chart_bars"] = _bars_for()
+    pkg = ch.build_package("TEST", use_ai=False, facts=f)
+    assert pkg["share_image"] is None and any("Share image could not be drawn" in n for n in pkg["notes"])
+
+
+def test_logo_file_is_found_and_drawn(facts):
+    from backend import content_chart as cc
+    assert cc._logo_path() and cc._logo_path().endswith("sigmalytic_logo.png")
+    assert cc.render_share_image(facts, _bars_for(), title="TEST", view_text="x")[:4] == b"\x89PNG"
+
+
+def test_image_text_from_ai_is_used_and_number_checked(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    body = f"TEST closed at ${facts['last_close']:,.2f}."
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": body}],
+                        "image": {"view": "Constructive rebound, but price is still below long-term resistance.",
+                                  "volume": "Volume was light and price reached $987.65."}})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["image_text"]["view"].startswith("Constructive rebound")
+    assert "987.65" in blog["note"]                      # an invented number in the image text is flagged too
+
+
+def test_image_text_falls_back_to_template(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": "Plain text."}], "image": {"view": "", "volume": "x" * 400}})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["image_text"]["view"] and len(blog["image_text"]["volume"]) <= 215
+
+
+def test_timeframe_volume_uses_previous_complete_bar():
+    c = _tf_chart(80)
+    for i, b in enumerate(c["bars"]):
+        b["volume"] = 1000.0
+    c["bars"][-1]["volume"] = 5.0           # the newest bar is still forming
+    tf = ch.timeframe_facts(c, "weekly")
+    assert tf["prior_bar_volume_vs_20_bar_avg"] == 1.0 and "volume_vs_20_bar_avg" not in tf
+
+
+def test_renderer_takes_volume_text(facts):
+    from backend import content_chart as cc
+    png = cc.render_share_image(facts, _bars_for(), title="TEST", view_text="a b c", volume_text="Volume ran lighter than usual.")
+    assert png[:4] == b"\x89PNG"
+
+
+def test_panel_text_never_cut_mid_sentence():
+    from backend import content_chart as cc
+    long = "First sentence is here. " * 12
+    lines = cc._fit_lines(long)
+    assert len(lines) <= 5 and lines[-1].endswith(".")
+    one = cc._fit_lines("word " * 80)
+    assert len(one) == 5 and one[-1].endswith("…")

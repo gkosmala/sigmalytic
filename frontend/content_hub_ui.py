@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dash import dcc, html
+import base64
+import json
 
 WHITE, MUTED, BORDER = "#f8fafc", "#94a3b8", "rgba(255,255,255,.08)"
 GREEN, RED, AMBER = "#34d399", "#f87171", "#f59e0b"
@@ -52,6 +54,45 @@ def _teaser_card(d: dict):
         kids.append(html.Div("• " + i, style={"fontSize": "12px", "color": RED, "marginTop": "2px"}))
     return html.Div(kids, style={"border": f"1px solid {BORDER}", "borderRadius": "12px", "padding": "12px",
                                  "marginBottom": "12px", "background": "rgba(255,255,255,.02)"})
+
+
+def _share_card(img):
+    if not img:
+        return html.Div()
+    src = "data:image/png;base64," + img["png_b64"]
+    return html.Div([
+        html.Div("SHARE IMAGE (for link previews and social posts)", style={"fontSize": "12px", "fontWeight": "800",
+                                                                          "color": WHITE, "marginBottom": "4px"}),
+        html.Div(f"{img['width']} x {img['height']} PNG drawn from this report's own data. Download it, then upload it in "
+                 "GoDaddy as this post's social/share image. Its fixed text uses only numbers from the report.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "6px"}),
+        html.Img(src=src, style={"width": "100%", "maxWidth": "900px", "borderRadius": "10px", "border": f"1px solid {BORDER}"}),
+        html.Div(html.A("Download share image", href=src, download=img["filename"],
+                        style={"color": WHITE, "fontWeight": "700", "fontSize": "12px"}), style={"marginTop": "6px"}),
+    ], style={"marginTop": "14px"})
+
+
+def _raw_data_card(pkg):
+    """The exact numbers the report was built from, so they can be compared with another source."""
+    facts, bars = pkg.get("facts") or {}, pkg.get("daily_bars") or []
+    sym = pkg.get("symbol", "symbol").lower()
+    js = json.dumps(facts, indent=2, default=str)
+    csv = "date,open,high,low,close,volume\n" + "\n".join(",".join(str(x) for x in b) for b in bars)
+    link = lambda txt, name, body, mime: html.A(txt, href=f"data:{mime};base64," + base64.b64encode(body.encode()).decode(),
+                                                 download=name, style={"color": WHITE, "fontWeight": "700", "fontSize": "12px",
+                                                                       "marginRight": "16px"})
+    return html.Div([
+        html.Div("RAW DATA USED (for checking against another source)", style={"fontSize": "12px", "fontWeight": "800",
+                                                                              "color": WHITE, "marginBottom": "4px"}),
+        html.Div("Every figure the report was built from: all timeframes, levels, averages and volume ratios, plus the daily "
+                 "bars behind the chart. Source and bar dates are listed in the data.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "6px"}),
+        html.Div([link("Download computed data (JSON)", f"{sym}-{pkg.get('as_of')}-data.json", js, "application/json"),
+                  link(f"Download daily bars (CSV, {len(bars)} rows)", f"{sym}-{pkg.get('as_of')}-daily-bars.csv", csv, "text/csv"),
+                  _copy(js, "Copy JSON")]),
+        html.Details([html.Summary("Show computed data", style={"color": WHITE, "fontSize": "12px", "cursor": "pointer"}), _pre(js)],
+                     style={"marginTop": "6px"}),
+    ], style={"border": f"1px solid {BORDER}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})
 
 
 def _raw_card(raw):
@@ -130,6 +171,8 @@ def render_package(pkg: dict):
                   _copy(blog["head_tags"], "Copy head tags"),
                   html.Span("  Markdown", style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "marginLeft": "14px"}),
                   _copy(blog["markdown"], "Copy markdown")], style={"marginTop": "6px"}),
+        _share_card(pkg.get("share_image")),
+        _raw_data_card(pkg),
         _raw_card(blog.get("raw_ai_text")),
         _private_card(blog.get("private")),
         html.Div(f"SEO CHECKLIST ({seo.get('warnings', 0)} to fix before publishing)" if seo else "",
