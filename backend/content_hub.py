@@ -812,17 +812,24 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
         if AI_EFFORT in ("low", "medium", "high", "xhigh", "max"):
             payload["output_config"] = {"effort": AI_EFFORT}
         if web_search:
-            payload["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}]
-        for attempt in range(2):  # a 429 (rate limit) is not billed; wait as told, once
+            tool: Dict[str, Any] = {"type": "web_search_20250305", "name": "web_search", "max_uses": WEB_SEARCH_MAX}
+            if SEARCH_TRUSTED_ONLY:
+                tool["allowed_domains"] = search_domains()      # search only major sources, so no paid search is wasted on weak ones
+            payload["tools"] = [tool]
+        for attempt in range(3):  # a 429 (rate limit) is not billed; wait as told, once
             r = requests.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01",
                          "content-type": "application/json"},
                 json=payload, timeout=240 if web_search else 90)
-            if getattr(r, "status_code", 200) == 400 and "output_config" in payload and attempt == 0:
+            if getattr(r, "status_code", 200) == 400 and "output_config" in payload and attempt < 2:
                 payload.pop("output_config", None)  # this model/account rejects the effort setting; a 400 is not billed
                 continue
-            if getattr(r, "status_code", 200) == 429 and attempt == 0:
+            if (getattr(r, "status_code", 200) == 400 and attempt < 2 and payload.get("tools")
+                    and "allowed_domains" in payload["tools"][0]):
+                payload["tools"][0].pop("allowed_domains", None)   # domain filter rejected; the code-side source rule still applies
+                continue
+            if getattr(r, "status_code", 200) == 429 and attempt < 2:
                 try:
                     wait = min(float(r.headers.get("retry-after", "20")), 45.0)
                 except ValueError:
@@ -1002,6 +1009,13 @@ TRUSTED_NEWS_DOMAINS = (
 def _trusted_domains() -> tuple:
     extra = tuple(d.strip().lower() for d in os.getenv("CONTENT_HUB_TRUSTED_NEWS_DOMAINS", "").split(",") if d.strip())
     return TRUSTED_NEWS_DOMAINS + extra
+
+
+SEARCH_TRUSTED_ONLY = os.getenv("CONTENT_HUB_SEARCH_TRUSTED_ONLY", "1").strip() not in ("0", "false", "no")
+
+
+def search_domains() -> List[str]:
+    return sorted(set(_trusted_domains()))
 
 
 def is_trusted_source(url: str) -> bool:
