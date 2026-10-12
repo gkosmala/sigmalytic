@@ -193,8 +193,10 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
     def back(n: int) -> Optional[float]:
         return closes[-1 - n] if len(closes) > n else None
 
-    v20 = [v for v in vols[-21:-1] if v is not None]
-    vol_ratio = round(vols[-1] / (sum(v20) / len(v20)), 2) if (v20 and vols[-1] is not None and sum(v20)) else None
+    # The newest weekly / 4-hour / 2-hour bar is often still forming, which makes its volume look tiny. The ratio is
+    # therefore taken on the previous bar, which is complete, against the 20 bars before it.
+    v20 = [v for v in vols[-22:-2] if v is not None]
+    vol_ratio = round(vols[-2] / (sum(v20) / len(v20)), 2) if (len(vols) >= 23 and v20 and vols[-2] is not None and sum(v20)) else None
     wl = chart.get("weis_lines") if isinstance(chart.get("weis_lines"), dict) else {}
     pivots = sorted((wl.get("pivots") or []), key=lambda p: p.get("bar_index", 0))[-6:]
     sma20, sma50 = sma(20), sma(50)
@@ -205,7 +207,7 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
         "last_close": round(last, 2), "change_5_bars_pct": _pct(last, back(5)), "change_20_bars_pct": _pct(last, back(20)),
         "sma20": sma20, "vs_sma20_pct": _pct(last, sma20), "sma50": sma50, "vs_sma50_pct": _pct(last, sma50),
         "high_20_bars": h20, "low_20_bars": l20, "high_60_bars": h60, "low_60_bars": l60,
-        "volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
+        "prior_bar_volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
         "recent_pivots": [{"kind": str(p.get("kind")), "price": _f(p.get("price"))} for p in pivots if _f(p.get("price"))],
         "pattern_signals": [{"type": str(h.get("type") or "").replace("_", " ").title(), "level": _f(h.get("level") or h.get("price"))}
                             for h in (chart.get("hits") or [])[:3]],
@@ -483,6 +485,16 @@ def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def _template_image_text(f: Dict[str, Any]) -> Dict[str, str]:
+    wk = (f.get("timeframes") or {}).get("weekly") or {}
+    vol = []
+    if f.get("volume_vs_20d_avg") is not None:
+        vol.append(f"Daily volume ran {f['volume_vs_20d_avg']:.2f} times its 20-day average.")
+    if wk.get("prior_bar_volume_vs_20_bar_avg") is not None:
+        vol.append(f"The previous weekly bar ran {wk['prior_bar_volume_vs_20_bar_avg']:.2f} times its 20-week average.")
+    return {"view": _template_summary(f)["condition"], "volume": " ".join(vol)}
+
+
 def _norm_private(p: Any) -> Dict[str, Any]:
     p = p if isinstance(p, dict) else {}
     out: Dict[str, Any] = {}
@@ -556,7 +568,7 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     for k in "ABC":
         private[k]["reasoning"] = "Not assessed. Template mode makes no determination; run the draft with an AI key."
     return {"title": title, "meta_description": meta, "sections": sections, "summary": _template_summary(f),
-            "news": {}, "sources": [], "private": private, "ai": False}
+            "news": {}, "sources": [], "private": private, "image_text": _template_image_text(f), "ai": False}
 
 
 def _paras(text: str) -> List[str]:
@@ -872,7 +884,9 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "'Current Momentum', 'Key Levels', 'Participation and Volume', 'What Traders Should Watch Next'. "
         "In 'Key Levels', write each level as a one-line label and price (for example 'Immediate Resistance: $123.45') "
         "followed by one sentence on why it matters, using levels from FACTS.levels. Never repeat a level, fact or "
-        "conclusion in more than one section except the Executive Summary. The title should be a specific, accurate "
+        "conclusion in more than one section except the Executive Summary. The newest weekly, 4-hour and 2-hour bar may "
+        "still be forming, so their volume figure (prior_bar_volume_vs_20_bar_avg) is for the previous complete bar; "
+        "describe it that way. The title should be a specific, accurate "
         "hook, ideally a question that names the symbol and the key level.\n"
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
@@ -889,6 +903,8 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"news\": {\"us\": {\"text\": str, \"urls\": [str]} | null, \"international\": ..., \"geopolitical\": ..., "
         "\"company\": ..., \"institutional\": ...}, "
         "\"summary\": {\"condition\": str, \"risk\": str, \"strengthen\": str, \"weaken\": str, \"monitor\": str}, "
+        "\"image\": {\"view\": str (1-2 sentences, at most 200 characters, the day's overall read), \"volume\": str "
+        "(1-2 sentences, at most 200 characters, what volume says about confirmation)}, "
         "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
         "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
     try:
@@ -901,7 +917,7 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             out["_search_unavailable"] = True
         else:
             raise
-    for k in ("title", "meta_description", "sections", "news", "summary", "private"):
+    for k in ("title", "meta_description", "sections", "news", "summary", "private", "image"):
         if k in out:
             out[k] = _clean_obj(out[k])
     secs = [{"heading": str(x["heading"]), "body": str(x["body"])} for x in (out.get("sections") or [])
@@ -911,6 +927,7 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
     return {"title": str(out.get("title") or f"{s} Market Structure Report")[:90],
             "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
+            "image": out.get("image") or {},
             "_search_results": out.get("_search_results") or {}, "_search_unavailable": bool(out.get("_search_unavailable")),
             "_recovered": bool(out.get("_recovered")), "_stop": out.get("_stop"), "_thinking": out.get("_thinking") or 0,
             "ai": True}
@@ -988,7 +1005,13 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             if missing_summary:
                 summary = _template_summary(f)
             cand["summary"] = summary
-            guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], summary)
+            tpl_img = _template_image_text(f)
+            img = {k: str((cand.get("image") or {}).get(k) or "").strip() for k in ("view", "volume")}
+            for k in img:
+                if not img[k] or len(img[k]) > 215:
+                    img[k] = tpl_img[k]
+            cand["image_text"] = img
+            guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], {**summary, **{"i" + k: v for k, v in img.items()}})
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
             news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
             private = _norm_private(cand.get("private"))
@@ -1171,7 +1194,8 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
             import base64
             from backend.content_chart import render_share_image, W as IMG_W, H as IMG_H
             share_image = {"png_b64": base64.b64encode(render_share_image(
-                f, chart_bars, title=blog.get("title", ""), view_text=(blog.get("summary") or {}).get("condition", ""))).decode("ascii"),
+                f, chart_bars, title=blog.get("title", ""), view_text=(blog.get("image_text") or {}).get("view", ""),
+                volume_text=(blog.get("image_text") or {}).get("volume", ""))).decode("ascii"),
                            "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
         except Exception as e:  # the image is a convenience; it must never break the report
             notes.append(f"Share image could not be drawn: {str(e)[:120]}.")

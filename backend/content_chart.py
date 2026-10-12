@@ -53,12 +53,26 @@ def _logo_path() -> Optional[str]:
     return None
 
 
+def _fit_lines(text: str, width: int = 46, max_lines: int = 5) -> List[str]:
+    """Wraps text for a panel; if it is too long, whole trailing sentences are dropped rather than cutting mid-sentence."""
+    import re
+    sents = re.split(r"(?<=[.!?])\s+", _money_text(text).strip())
+    while sents:
+        lines = textwrap.wrap(" ".join(sents), width)
+        if len(lines) <= max_lines:
+            return lines
+        if len(sents) == 1:
+            return lines[:max_lines - 1] + [lines[max_lines - 1].rstrip(" ,;:") + "…"]
+        sents.pop()
+    return []
+
+
 def _money_text(s: str) -> str:
     return s.replace("$", "\\$")
 
 
 def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: str = "",
-                       view_text: str = "") -> bytes:
+                       view_text: str = "", volume_text: str = "") -> bytes:
     """bars: [[date, open, high, low, close, volume], ...] oldest first. Returns PNG bytes."""
     import matplotlib
     matplotlib.use("Agg")
@@ -191,7 +205,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
             yy -= 0.145
 
     cond = view_text or ""
-    view = textwrap.wrap(_money_text(cond), 46)[:5] if cond else ["No summary was available for this run."]
+    view = _fit_lines(cond) if cond else ["No summary was available for this run."]
     panel(0.02, 0.31, "SIGMALYTIC VIEW", BLUE, CYAN, view)
 
     def join(items: List[Dict[str, Any]]) -> List[str]:
@@ -200,15 +214,15 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     kl: List[Any] = [("Resistance:", GOLD, True)] + join(above)[:2] + [("Support:", GOLD, True)] + join(below)[:2]
     panel(0.345, 0.325, "KEY LEVELS", GOLD, GOLD, kl)
 
-    vol = []
-    if facts.get("volume_vs_20d_avg") is not None:
-        vol.append(f"Daily volume ran {facts['volume_vs_20d_avg']:.2f}x its 20-day average")
-    wk = (facts.get("timeframes") or {}).get("weekly") or {}
-    if wk.get("volume_vs_20_bar_avg") is not None:
-        vol.append(f"and weekly volume {wk['volume_vs_20_bar_avg']:.2f}x its 20-week average.")
-    vol += [f"5-day change: {facts['change_5d_pct']:+.2f}%" if facts.get("change_5d_pct") is not None else "",
-            f"20-day change: {facts['change_20d_pct']:+.2f}%" if facts.get("change_20d_pct") is not None else ""]
-    panel(0.68, 0.30, "VOLUME INSIGHTS", BLUE, CYAN, [t for t in vol if t])
+    if volume_text:
+        vol: List[Any] = _fit_lines(volume_text)      # the written read stands alone, never cut mid-sentence
+    else:
+        vol = []
+        if facts.get("volume_vs_20d_avg") is not None:
+            vol.append(f"Daily volume ran {facts['volume_vs_20d_avg']:.2f}x its 20-day average")
+        vol += [f"5-day change: {facts['change_5d_pct']:+.2f}%" if facts.get("change_5d_pct") is not None else "",
+                f"20-day change: {facts['change_20d_pct']:+.2f}%" if facts.get("change_20d_pct") is not None else ""]
+    panel(0.68, 0.30, "VOLUME INSIGHTS", BLUE, CYAN, [x_ for x_ in vol if x_][:5])
 
     fig.text(0.02, 0.035, "www.sigmalyticquantcorp.com", color=MUTED, fontsize=13, va="center")
     year = (facts.get("as_of") or "")[:4] or "2026"

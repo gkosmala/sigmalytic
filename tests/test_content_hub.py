@@ -496,3 +496,47 @@ def test_logo_file_is_found_and_drawn(facts):
     from backend import content_chart as cc
     assert cc._logo_path() and cc._logo_path().endswith("sigmalytic_logo.png")
     assert cc.render_share_image(facts, _bars_for(), title="TEST", view_text="x")[:4] == b"\x89PNG"
+
+
+def test_image_text_from_ai_is_used_and_number_checked(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    body = f"TEST closed at ${facts['last_close']:,.2f}."
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": body}],
+                        "image": {"view": "Constructive rebound, but price is still below long-term resistance.",
+                                  "volume": "Volume was light and price reached $987.65."}})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["image_text"]["view"].startswith("Constructive rebound")
+    assert "987.65" in blog["note"]                      # an invented number in the image text is flagged too
+
+
+def test_image_text_falls_back_to_template(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(ch, "ai_blog", lambda f: {"title": "T", "meta_description": "m", "ai": True,
+                        "sections": [{"heading": "h", "body": "Plain text."}], "image": {"view": "", "volume": "x" * 400}})
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert blog["image_text"]["view"] and len(blog["image_text"]["volume"]) <= 215
+
+
+def test_timeframe_volume_uses_previous_complete_bar():
+    c = _tf_chart(80)
+    for i, b in enumerate(c["bars"]):
+        b["volume"] = 1000.0
+    c["bars"][-1]["volume"] = 5.0           # the newest bar is still forming
+    tf = ch.timeframe_facts(c, "weekly")
+    assert tf["prior_bar_volume_vs_20_bar_avg"] == 1.0 and "volume_vs_20_bar_avg" not in tf
+
+
+def test_renderer_takes_volume_text(facts):
+    from backend import content_chart as cc
+    png = cc.render_share_image(facts, _bars_for(), title="TEST", view_text="a b c", volume_text="Volume ran lighter than usual.")
+    assert png[:4] == b"\x89PNG"
+
+
+def test_panel_text_never_cut_mid_sentence():
+    from backend import content_chart as cc
+    long = "First sentence is here. " * 12
+    lines = cc._fit_lines(long)
+    assert len(lines) <= 5 and lines[-1].endswith(".")
+    one = cc._fit_lines("word " * 80)
+    assert len(one) == 5 and one[-1].endswith("…")
