@@ -576,3 +576,20 @@ def test_live_session_wording_in_template(facts, monkeypatch):
     blog = ch.generate_blog(facts, use_ai=False)
     assert "is trading at" in blog["html"] and "closed at" not in blog["html"]
     assert "As of 11:05 a.m. ET, this is the current market" in blog["html"]
+
+
+def test_headline_limit_65_is_flagged(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    long_title = "TEST " + "x" * 70
+    cand = _ai_cand(facts, title=long_title, private={"A": {"supported": False}, "B": {"supported": False},
+                                                       "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert "GoDaddy allows 65" in (blog.get("note") or "")
+    assert any(c["name"] == "Headline length" and c["level"] == "warn" for c in blog["seo"]["checks"])
+    short = _ai_cand(facts, title="TEST Holds Its Trend", private={"A": {"supported": False}, "B": {"supported": False},
+                                                                    "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda f: short)
+    ok = ch.generate_blog(facts, use_ai=True)
+    assert "GoDaddy allows" not in (ok.get("note") or "")
+    assert any(c["name"] == "Headline length" and c["level"] == "ok" for c in ok["seo"]["checks"])
