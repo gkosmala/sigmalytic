@@ -576,3 +576,32 @@ def test_live_session_wording_in_template(facts, monkeypatch):
     blog = ch.generate_blog(facts, use_ai=False)
     assert "is trading at" in blog["html"] and "closed at" not in blog["html"]
     assert "As of 11:05 a.m. ET, this is the current market" in blog["html"]
+
+
+def test_search_restricted_to_major_domains_with_400_fallback(monkeypatch):
+    import requests, copy
+    sent = []
+
+    class R:
+        def __init__(self, code, body=None): self.status_code = code; self.headers = {}; self._b = body
+        def raise_for_status(self): pass
+        def json(self): return self._b
+
+    ok = {"model": "m", "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1},
+          "content": [{"type": "text", "text": '{"k": 1}'}]}
+
+    def post(url, headers=None, json=None, timeout=None):
+        sent.append(copy.deepcopy(json))
+        tools = json.get("tools") or [{}]
+        return R(400) if "allowed_domains" in tools[0] else R(200, ok)
+    monkeypatch.setattr(requests, "post", post)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    token = ch._USAGE.set([])
+    try:
+        out = ch._ai_json("s", "u", web_search=True)
+    finally:
+        ch._USAGE.reset(token)
+    first = sent[0]["tools"][0]
+    assert "reuters.com" in first["allowed_domains"] and "cnbc.com" in first["allowed_domains"]
+    assert "allowed_domains" not in sent[-1]["tools"][0] and out["k"] == 1       # rejected filter: retried without it
