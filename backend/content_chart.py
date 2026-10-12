@@ -2,159 +2,218 @@
 """
 backend/content_chart.py
 ------------------------
-Draws the share image (Open Graph / social card) for a Content Hub report: daily candles, 20/50/200-day averages,
-volume, the nearest reference levels as price tags, and three summary panels. Every number on the image comes from
-the same `facts` the blog was written from, so the picture cannot disagree with the text.
+Draws the report's hero / share image in the house layout: logo block, report title and dates, daily candles with the
+200-day average, volume, numbered resistance (R1-R4 + Major) and support (S1-S4 + Major) tags, and three panels
+(Sigmalytic View, Key Levels, Volume Insights). Every number on the image comes from the same `facts` the blog was
+written from, and the Sigmalytic View text is the blog's own "current condition" sentence.
 
-Output is 1800 x 945 (the 1.91:1 shape social sites use; it downsizes cleanly to 1200 x 630).
+Output is 1800 x 945 (1.91:1, the shape social sites use; it downsizes cleanly to 1200 x 630).
+If a logo file exists (CONTENT_HUB_LOGO_FILE, or assets/sigmalytic_logo.png) it is drawn in place of the built-in mark.
 """
 
 from __future__ import annotations
 
 import io
+import os
+import textwrap
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
 W, H, DPI = 1800, 945, 100
-BG, PANEL, GRID = "#0a1530", "#0d1c3d", "#1e2f57"
+BG, PANEL, GRID, FRAME = "#071433", "#0b1b3f", "#1c2d58", "#2a5bd7"
 UP, DOWN = "#22c55e", "#ef4444"
-TXT, MUTED, GOLD, BLUE, CYAN = "#e8eefc", "#8fa3cc", "#f5b82e", "#2f6bff", "#38bdf8"
-MAX_BARS = 120
+TXT, MUTED, GOLD, BLUE, CYAN = "#eef3ff", "#93a7d1", "#f5b82e", "#2f6bff", "#38bdf8"
+MAX_BARS = 130
 
 
 def _m(v: float) -> str:
-    return f"\\${v:,.2f}"
+    return f"\\${v:,.2f}"          # matplotlib reads paired $ as math text, so it is escaped
 
 
-def _short(label: str) -> str:
-    return (str(label).replace("swing high", "high").replace("swing low", "low").replace("largest ", "")
-            .replace("open-interest strike", "OI strike").replace("estimated ", ""))
+def _p(v: float) -> str:
+    return f"{v:,.2f}"
 
 
 def _sma(vals: Sequence[float], n: int) -> List[Optional[float]]:
-    out: List[Optional[float]] = []
-    for i in range(len(vals)):
-        out.append(sum(vals[i - n + 1:i + 1]) / n if i >= n - 1 else None)
-    return out
+    return [sum(vals[i - n + 1:i + 1]) / n if i >= n - 1 else None for i in range(len(vals))]
 
 
-def _date_label(d: str) -> str:
+def _long_date(d: str) -> str:
     try:
         return datetime.strptime(d[:10], "%Y-%m-%d").strftime("%B %-d, %Y")
     except Exception:
         return d
 
 
-def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]]) -> bytes:
+def _logo_path() -> Optional[str]:
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.getenv("CONTENT_HUB_LOGO_FILE", ""), os.path.join(here, "..", "assets", "sigmalytic_logo.png")):
+        if cand and os.path.isfile(cand):
+            return cand
+    return None
+
+
+def _money_text(s: str) -> str:
+    return s.replace("$", "\\$")
+
+
+def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: str = "",
+                       view_text: str = "") -> bytes:
     """bars: [[date, open, high, low, close, volume], ...] oldest first. Returns PNG bytes."""
     import matplotlib
     matplotlib.use("Agg")
+    import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyBboxPatch
+    from matplotlib.patches import Circle, FancyBboxPatch
 
     if len(bars) < 30:
         raise ValueError("Not enough bars to draw the share image.")
     d = [str(b[0])[:10] for b in bars]
     o, h, l, c = ([float(b[i]) for b in bars] for i in (1, 2, 3, 4))
     v = [float(b[5] or 0) for b in bars]
-    s20, s50, s200 = _sma(c, 20), _sma(c, 50), _sma(c, 200)
+    s200 = _sma(c, 200)
     n = min(MAX_BARS, len(bars))
-    sl = slice(len(bars) - n, len(bars))
+    off = len(bars) - n
     x = list(range(n))
-    O, Hh, L, C, V = o[sl], h[sl], l[sl], c[sl], v[sl]
+    O, Hh, L, C, V = o[off:], h[off:], l[off:], c[off:], v[off:]
+    sym, last = facts["symbol"], facts["last_close"]
+    lv = facts.get("levels") or {}
+    far = lambda y: abs(y["price"] - last) / last > 0.25          # levels very far from price add nothing to the picture
+    above = [y for y in (lv.get("above") or []) if not far(y)][:5]
+    below = [y for y in (lv.get("below") or []) if not far(y)][:5]
 
     fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor=BG)
-    sym, last = facts["symbol"], facts["last_close"]
-    ch1 = facts.get("change_1d_pct")
-    fig.text(0.03, 0.935, "SIGMALYTIC QUANT CORPORATION  ·  MARKET STRUCTURE REPORT", color=GOLD, fontsize=15, fontweight="bold")
-    t_px = fig.text(0.03, 0.865, f"{sym}  {_m(last)}", color=TXT, fontsize=40, fontweight="bold")
-    if ch1 is not None:
-        right_edge = t_px.get_window_extent(fig.canvas.get_renderer()).x1 / W
-        fig.text(right_edge + 0.012, 0.8665, f"{ch1:+.2f}%", color=UP if ch1 >= 0 else DOWN, fontsize=26, fontweight="bold")
-    fig.text(0.97, 0.935, f"Daily chart · Market data through {_date_label(facts['as_of'])}", color=MUTED, fontsize=15, ha="right")
+    fig.add_artist(FancyBboxPatch((0.004, 0.006), 0.992, 0.988, boxstyle="round,pad=0,rounding_size=0.01", fc="none",
+                                  ec=FRAME, linewidth=2.2, transform=fig.transFigure))
 
-    ax = fig.add_axes([0.03, 0.40, 0.84, 0.43], facecolor=PANEL)
-    axv = fig.add_axes([0.03, 0.335, 0.84, 0.065], facecolor=PANEL, sharex=ax)
-    levels = facts.get("levels") or {}
-    near = lambda p: abs(p - last) / last <= 0.14
-    above = [x_ for x_ in (levels.get("above") or [])[:3] if near(x_["price"])]
-    below = [x_ for x_ in (levels.get("below") or [])[:3] if near(x_["price"])]
-    lo = min(L + [y["price"] for y in below] + [last]) * 0.985
-    hi = max(Hh + [y["price"] for y in above] + [last]) * 1.015
-    ax.set_xlim(-2, n + 13)
+    # ── header: logo, title, dates, tagline
+    logo = _logo_path()
+    if logo:
+        lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_axis_off(); lax.imshow(mpimg.imread(logo))
+    else:
+        lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_xlim(0, 2.1); lax.set_ylim(0, 1); lax.set_axis_off()
+        lax.set_aspect("auto")
+        lax.add_patch(Circle((0.3, 0.52), 0.28, fc="#10265a", ec=GOLD, linewidth=2.6))
+        lax.text(0.3, 0.50, "Σ", color=GOLD, fontsize=44, fontweight="bold", ha="center", va="center")
+        lax.text(0.68, 0.70, "Sigmalytic Quant", color=TXT, fontsize=19, fontweight="bold", va="center")
+        lax.text(0.68, 0.45, "CORPORATION", color=GOLD, fontsize=17, fontweight="bold", va="center")
+        lax.text(0.68, 0.20, "DATA · DISCIPLINE · ALPHA", color=MUTED, fontsize=9.5, va="center")
+    ttl = title or f"{sym} at ${last:,.2f}"
+    tt = fig.text(0.54, 0.925, _money_text(ttl), color=TXT, fontsize=27, fontweight="bold", ha="center", va="center")
+    rend = fig.canvas.get_renderer()
+    while tt.get_window_extent(rend).width > 0.56 * W and tt.get_fontsize() > 15:
+        tt.set_fontsize(tt.get_fontsize() - 0.5)
+    fig.text(0.54, 0.862, f"Market Data Through: {_long_date(facts['as_of'])}", color=TXT, fontsize=19, fontweight="bold",
+             ha="center", va="center")
+    fig.text(0.985, 0.955, f"Report Date: {_long_date(facts.get('generated_at') or facts['as_of'])}", color=TXT, fontsize=13,
+             ha="right", va="center", bbox=dict(boxstyle="round,pad=0.3", fc=PANEL, ec=FRAME))
+    for i, ln in enumerate(("Better Opportunities.", "Better Decisions.", "Better Trading Results.")):
+        fig.text(0.985, 0.905 - i * 0.026, ln, color=MUTED, fontsize=11.5, ha="right", va="center")
+
+    # ── price chart
+    ax = fig.add_axes([0.05, 0.39, 0.77, 0.42], facecolor=PANEL)
+    axv = fig.add_axes([0.05, 0.31, 0.77, 0.07], facecolor=PANEL, sharex=ax)
+    near = lambda p: abs(p - last) / last <= 0.16
+    lo = min(L + [y["price"] for y in below if near(y["price"])] + [last]) * 0.985
+    hi = max(Hh + [y["price"] for y in above if near(y["price"])] + [last]) * 1.012
+    ax.set_xlim(-1.5, n + 1.5)
     ax.set_ylim(lo, hi)
     ax.grid(color=GRID, linewidth=0.8, alpha=0.8)
     for xi in x:
         col = UP if C[xi] >= O[xi] else DOWN
         ax.vlines(xi, L[xi], Hh[xi], color=col, linewidth=1.3, zorder=3)
         ax.bar(xi, abs(C[xi] - O[xi]) or (hi - lo) * 0.0008, bottom=min(O[xi], C[xi]), width=0.68, color=col, zorder=4)
-    for series, col, name in ((s20, GOLD, "20-day"), (s50, CYAN, "50-day"), (s200, "#ffffff", "200-day")):
-        pts = [(i, series[len(bars) - n + i]) for i in x if series[len(bars) - n + i] is not None]
-        if pts:
-            ax.plot([p[0] for p in pts], [p[1] for p in pts], color=col, linewidth=2.2, zorder=5, label=name)
-    ax.legend(loc="lower right", frameon=False, labelcolor=TXT, fontsize=13, ncol=3)
-    tags = [(y["price"], f" {_m(y['price'])}  {_short(y['label'])}", color, "white") for y, color in
-            [(y, DOWN) for y in above] + [(y, BLUE) for y in below]] + [(last, f" {_m(last)}  last close", UP, "#04210f")]
-    for price, _t, color, _c in tags:
-        ax.axhline(price, color=color, linestyle=(0, (6, 5)) if color != UP else "-", linewidth=1.4, alpha=0.9, zorder=2)
-    gap, placed = (hi - lo) * 0.058, []
-    for price, text, color, fcol in sorted(tags, key=lambda t: -t[0]):
-        y = price if not placed else min(price, placed[-1] - gap)
-        placed.append(y)
-        ax.text(n + 0.6, y, text, color=fcol, fontsize=11.5, va="center", ha="left", zorder=6, clip_on=False,
-                bbox=dict(boxstyle="round,pad=0.25", fc=color, ec="none"))
+    pts = [(i, s200[off + i]) for i in x if s200[off + i] is not None]
+    if pts:
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], color=GOLD, linewidth=2.0, zorder=5)
+        ax.text(0.5, 0.965, f"200-Day Average ({_p(pts[-1][1])})", transform=ax.transAxes, color=GOLD, fontsize=12.5,
+                ha="center", va="top", zorder=8, bbox=dict(boxstyle="round,pad=0.2", fc=PANEL, ec="none"))
+    ax.text(0.008, 0.965, f"{sym}  ·  Daily", transform=ax.transAxes, color=TXT, fontsize=14, fontweight="bold", va="top",
+            zorder=8)
+    hi_i, lo_i = max(x, key=lambda i: Hh[i]), min(x, key=lambda i: L[i])
+    ax.annotate(f"High {_p(Hh[hi_i])}", (hi_i, Hh[hi_i]), xytext=(0, 12), textcoords="offset points", color=TXT, fontsize=11,
+                ha="center", zorder=8)
+    ax.annotate(f"Low {_p(L[lo_i])}", (lo_i, L[lo_i]), xytext=(0, -20), textcoords="offset points", color=TXT, fontsize=11,
+                ha="center", zorder=8)
+    for y in above + below:
+        if lo < y["price"] < hi:
+            ax.axhline(y["price"], color=DOWN if y["price"] > last else BLUE, linewidth=0.9, linestyle=(0, (2, 4)), alpha=0.6,
+                       zorder=2)
+    ax.axhline(last, color=UP, linewidth=1.1, alpha=0.9, zorder=2)
     ax.tick_params(colors=MUTED, labelsize=12, labelbottom=False)
-    ax.yaxis.tick_left()
     for sp in ax.spines.values():
         sp.set_color(GRID)
 
-    axv.bar(x, V, width=0.68, color=[UP if C[i] >= O[i] else DOWN for i in x], alpha=0.85)
+    axv.bar(x, [vv / 1e6 for vv in V], width=0.68, color=[UP if C[i] >= O[i] else DOWN for i in x], alpha=0.85)
     axv.grid(color=GRID, linewidth=0.8, alpha=0.8)
-    axv.set_yticks([])
-    ticks = [i for i in x if i % 20 == 0]
+    ticks = [i for i in x if i % 22 == 0]
     axv.set_xticks(ticks)
-    axv.set_xticklabels([datetime.strptime(d[len(bars) - n + i], "%Y-%m-%d").strftime("%b %-d") for i in ticks])
-    axv.tick_params(colors=MUTED, labelsize=12)
-    axv.text(0.006, 0.88, "Volume", transform=axv.transAxes, color=MUTED, fontsize=11, va="top", zorder=9,
+    axv.set_xticklabels([datetime.strptime(d[off + i], "%Y-%m-%d").strftime("%b %-d") for i in ticks])
+    axv.tick_params(colors=MUTED, labelsize=11.5)
+    axv.yaxis.set_major_formatter(lambda val, pos: f"{val:,.0f}M")
+    axv.locator_params(axis="y", nbins=3)
+    axv.text(0.006, 0.9, "Volume (Daily)", transform=axv.transAxes, color=MUTED, fontsize=11, va="top", zorder=9,
              bbox=dict(boxstyle="round,pad=0.15", fc=PANEL, ec="none"))
     for sp in axv.spines.values():
         sp.set_color(GRID)
 
-    def panel(x0: float, w: float, title: str, lines: List[str], edge: str, tcolor: str) -> None:
-        pax = fig.add_axes([x0, 0.085, w, 0.215])
+    # ── level tags in a column right of the chart (R1..R4 + Major, last price, S1..S4 + Major)
+    def tag_rows():
+        rows = []
+        for i, y in enumerate(above):
+            rows.append((y["price"], "Major Resistance" if i == len(above) - 1 and len(above) == 5 else f"R{i + 1}", DOWN, "white"))
+        rows.append((last, "Latest Price", UP, "#04210f"))
+        for i, y in enumerate(below):
+            rows.append((y["price"], "Major Support" if i == len(below) - 1 and len(below) == 5 else f"S{i + 1}", BLUE, "white"))
+        return rows
+
+    rows = sorted(tag_rows(), key=lambda r: -r[0])
+    top, bot = 0.79, 0.43
+    ys = [top - i * (top - bot) / max(1, len(rows) - 1) for i in range(len(rows))] if len(rows) > 1 else [0.6]
+    for (price, lab, color, fcol), y in zip(rows, ys):
+        wide = lab.startswith("Major") or lab == "Latest Price"
+        fig.text(0.835, y, f"{lab}  {_p(price)}" if wide else f"{lab}   {_p(price)}", color=fcol, fontsize=12.5,
+                 fontweight="bold", va="center", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="white" if wide else "none", linewidth=1.0))
+
+    # ── three panels
+    def panel(x0: float, w: float, head: str, edge: str, hcolor: str, lines: List[Any]) -> None:
+        pax = fig.add_axes([x0, 0.075, w, 0.185])
         pax.set_axis_off()
-        pax.add_patch(FancyBboxPatch((0.0, 0.0), 1, 1, boxstyle="round,pad=0,rounding_size=0.04", fc=PANEL, ec=edge,
-                                     linewidth=2.2, transform=pax.transAxes))
-        pax.text(0.04, 0.86, title, color=tcolor, fontsize=15, fontweight="bold", va="center", transform=pax.transAxes)
-        for i, ln in enumerate(lines[:5]):
-            pax.text(0.04, 0.68 - i * 0.145, ln, color=TXT, fontsize=13.2, va="center", transform=pax.transAxes)
+        pax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0,rounding_size=0.05", fc=PANEL, ec=edge,
+                                     linewidth=2.4, transform=pax.transAxes))
+        pax.text(0.04, 0.87, head, color=hcolor, fontsize=16, fontweight="bold", va="center", transform=pax.transAxes)
+        yy = 0.68
+        for ln in lines:
+            text, color, bold = (ln if isinstance(ln, tuple) else (ln, TXT, False))
+            pax.text(0.04, yy, text, color=color, fontsize=13.4, fontweight="bold" if bold else "normal", va="center",
+                     transform=pax.transAxes)
+            yy -= 0.145
 
-    def rel(pct: Optional[float], word: str) -> str:
-        return f"{abs(pct):.2f}% {'above' if pct >= 0 else 'below'} {word}" if pct is not None else "n/a"
+    cond = view_text or ""
+    view = textwrap.wrap(_money_text(cond), 46)[:5] if cond else ["No summary was available for this run."]
+    panel(0.02, 0.31, "SIGMALYTIC VIEW", BLUE, CYAN, view)
 
-    tfs = facts.get("timeframes") or {}
-    left = [f"Daily: {rel(facts.get('vs_sma20_pct'), '20-day avg')}"]
-    for key, name in (("weekly", "Weekly"), ("4h", "4-hour"), ("2h", "2-hour")):
-        t = tfs.get(key)
-        left.append(f"{name}: {rel(t.get('vs_sma20_pct'), '20-bar avg')}" if t else f"{name}: not available")
-    left.append(f"Daily vs 200-day avg: {rel(facts.get('vs_sma200_pct'), '200-day avg')}" if facts.get("vs_sma200_pct") is not None else "")
-    centre = [f"Above  {_m(y['price'])}  {_short(y['label'])}" for y in above] or ["Above: none within range"]
-    centre += [f"Below  {_m(y['price'])}  {_short(y['label'])}" for y in below]
-    right = []
+    def join(items: List[Dict[str, Any]]) -> List[str]:
+        s = "  |  ".join(_p(y["price"]) for y in items)
+        return textwrap.wrap(s, 50) or ["none within range"]
+    kl: List[Any] = [("Resistance:", GOLD, True)] + join(above)[:2] + [("Support:", GOLD, True)] + join(below)[:2]
+    panel(0.345, 0.325, "KEY LEVELS", GOLD, GOLD, kl)
+
+    vol = []
     if facts.get("volume_vs_20d_avg") is not None:
-        right.append(f"Daily volume: {facts['volume_vs_20d_avg']:.2f}x its 20-day avg")
-    wk = tfs.get("weekly") or {}
+        vol.append(f"Daily volume ran {facts['volume_vs_20d_avg']:.2f}x its 20-day average")
+    wk = (facts.get("timeframes") or {}).get("weekly") or {}
     if wk.get("volume_vs_20_bar_avg") is not None:
-        right.append(f"Weekly volume: {wk['volume_vs_20_bar_avg']:.2f}x its 20-week avg")
-    right += [f"5-day change: {facts['change_5d_pct']:+.2f}%" if facts.get("change_5d_pct") is not None else "",
-              f"20-day change: {facts['change_20d_pct']:+.2f}%" if facts.get("change_20d_pct") is not None else "",
-              f"52-week range: {_m(facts['low_52w'])} to {_m(facts['high_52w'])}" if facts.get("high_52w") else ""]
-    panel(0.03, 0.27, "TIMEFRAME VIEW", [t for t in left if t], BLUE, CYAN)
-    panel(0.31, 0.37, "KEY LEVELS", centre, GOLD, GOLD)
-    panel(0.69, 0.28, "PARTICIPATION & RANGE", [t for t in right if t], BLUE, CYAN)
+        vol.append(f"and weekly volume {wk['volume_vs_20_bar_avg']:.2f}x its 20-week average.")
+    vol += [f"5-day change: {facts['change_5d_pct']:+.2f}%" if facts.get("change_5d_pct") is not None else "",
+            f"20-day change: {facts['change_20d_pct']:+.2f}%" if facts.get("change_20d_pct") is not None else ""]
+    panel(0.68, 0.30, "VOLUME INSIGHTS", BLUE, CYAN, [t for t in vol if t])
 
-    fig.text(0.03, 0.035, "Better Opportunities. Better Decisions. Better Trading Results.", color=GOLD, fontsize=14.5, fontweight="bold")
-    fig.text(0.97, 0.035, "www.sigmalyticquantcorp.com  ·  Educational research, not investment advice.", color=MUTED, fontsize=13, ha="right")
+    fig.text(0.02, 0.035, "www.sigmalyticquantcorp.com", color=MUTED, fontsize=13, va="center")
+    year = (facts.get("as_of") or "")[:4] or "2026"
+    fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation. All rights reserved.", color=MUTED, fontsize=13,
+             ha="right", va="center")
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
     plt.close(fig)

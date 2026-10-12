@@ -270,7 +270,7 @@ def build_facts(symbol: str) -> Dict[str, Any]:
     """Fetches live data through the existing chart endpoint function and reduces it to facts."""
     from backend.main import weis_radar_chart_data  # lazy: avoids a circular import at module load
     sym = symbol.upper().strip()
-    chart = weis_radar_chart_data(sym, timeframe="1Day", limit=252)
+    chart = weis_radar_chart_data(sym, timeframe="1Day", limit=400)  # 400 so the 200-day line spans the whole chart image
     if not chart.get("ok"):
         raise ValueError(chart.get("error") or f"No data for {symbol}.")
     f = facts_from_chart_data(symbol, chart)
@@ -1170,7 +1170,8 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
         try:
             import base64
             from backend.content_chart import render_share_image, W as IMG_W, H as IMG_H
-            share_image = {"png_b64": base64.b64encode(render_share_image(f, chart_bars)).decode("ascii"),
+            share_image = {"png_b64": base64.b64encode(render_share_image(
+                f, chart_bars, title=blog.get("title", ""), view_text=(blog.get("summary") or {}).get("condition", ""))).decode("ascii"),
                            "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
         except Exception as e:  # the image is a convenience; it must never break the report
             notes.append(f"Share image could not be drawn: {str(e)[:120]}.")
