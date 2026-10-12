@@ -964,6 +964,9 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "bar is incomplete. Say \"is trading at\" and never \"closed at\" for the latest price, begin the Executive Summary "
         "with \"As of \" followed by FACTS.session.stamp and \", this is the current market.\", call the day's change and "
         "range \"so far today\", and describe today's daily volume as \"so far today\", never as a full-day total. "
+        "Pattern signals are named Bull Trap (a failed breakout above resistance), Bear Trap (a failed breakdown below "
+        "support), Breakout and Breakdown; a name ending in Forming has not resolved. Use these names exactly and never "
+        "write the words upthrust or spring. "
         "FACTS.day_range gives today's low, high and where price sits in that range; use its 'half' exactly (never say upper "
         "half when it says lower). Each timeframe has swing_low_direction and swing_high_direction (rising, falling or mixed); "
         "describe swing lows or highs as rising only when that field says rising, otherwise say mixed or falling. State a "
@@ -1143,6 +1146,8 @@ def consistency_issues(f: Dict[str, Any], blocks: List[str]) -> List[str]:
                 and re.search(r"volume|participation", xl) and re.search(r"\b" + _VOL_WEAK + r"\b", xl)
                 and not re.search(r"not establish|does not show", xl)):
             issues.append("labels today's partial-session volume light or thin; during a live session only the figure can be stated")
+        if re.search(r"\bupthrust\b|\bspring (?:flag|signal|pattern)\b", xl):
+            issues.append("uses the terms upthrust or spring; published text must say bull trap or bear trap")
         if re.search(_MACRO, xl):
             issues.append("mentions a market, rates, energy or macro backdrop outside the sourced news sections")
     seen, out = set(), []
