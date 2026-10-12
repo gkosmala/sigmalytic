@@ -22,7 +22,7 @@ def test_facts_computed(facts):
     assert facts["symbol"] == "TEST"
     assert facts["last_close"] == round(100 + 0.3 * 60, 2)
     assert facts["high_52w"] >= facts["last_close"]
-    assert facts["pattern_signals"][0]["type"] == "Spring"
+    assert facts["pattern_signals"][0]["type"] == "Bear Trap"
     assert facts["ice_line"] == 108.25
 
 
@@ -672,3 +672,12 @@ def test_generate_blog_notes_flag_contradictions_and_format_prices(facts, monkey
     blog = ch.generate_blog(f, use_ai=True)
     assert "lower half" in (blog.get("note") or "") and "Review before publishing" in blog["note"]
     assert "$337.60" in blog["html"]
+
+def test_pattern_names_are_traps():
+    assert ch.pattern_name("UPTHRUST") == "Bull Trap" and ch.pattern_name("UPTHRUST_BUILDING") == "Bull Trap Forming"
+    assert ch.pattern_name("SPRING") == "Bear Trap" and ch.pattern_name("SPRING_BUILDING") == "Bear Trap Forming"
+    assert ch.pattern_name("BREAKOUT") == "Breakout"
+    f = ch.facts_from_chart_data("TEST", {"ok": True, "bars": _chart()["bars"], "hits": [{"type": "UPTHRUST_BUILDING", "level": 339.3}]})
+    assert f["pattern_signals"][0]["type"] == "Bull Trap Forming" and "bull trap" in ch._signal_phrase(f).lower()
+    out = " ".join(ch.consistency_issues(f, ["The 2-hour view shows an upthrust signal near the high."]))
+    assert "bull trap" in out
