@@ -46,8 +46,11 @@ def _long_date(d: str) -> str:
         return d
 
 
+LOGO_GREEN = (0.30, 0.98, 0.52)   # bright green (#4CFA85), same hue family as the original lettering
+
+
 def _pop_lettering(img):
-    """Recolor the muted-green company lettering in the logo to bright white; the gold sigma is left as is."""
+    """Recolor the muted-green company lettering in the logo to a bright, vivid green; the gold sigma is left as is."""
     import numpy as np
     a = np.array(img, dtype=float)
     if a.ndim != 3 or a.shape[2] < 3:
@@ -57,8 +60,8 @@ def _pop_lettering(img):
     k = np.clip((g - 0.2) / 0.35, 0, 1)                              # soft edge so letters stay smooth
     m = np.where(green, k, 0.0)
     out = a.copy()
-    for c in range(3):
-        out[..., c] = a[..., c] * (1 - m) + 1.0 * m
+    for c, v in enumerate(LOGO_GREEN):
+        out[..., c] = a[..., c] * (1 - m) + v * m
     return np.clip(out, 0, 1)
 
 
