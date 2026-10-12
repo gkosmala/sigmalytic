@@ -137,7 +137,11 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     rend = fig.canvas.get_renderer()
     while tt.get_window_extent(rend).width > 0.56 * W and tt.get_fontsize() > 15:
         tt.set_fontsize(tt.get_fontsize() - 0.5)
-    fig.text(0.54, 0.862, f"Market Data Through: {_long_date(facts['as_of'])}", color=TXT, fontsize=19, fontweight="bold",
+    sess = facts.get("session") or {}
+    through = f"Market Data Through: {_long_date(facts['as_of'])}"
+    if sess.get("live"):
+        through += f"  ·  Live as of {sess.get('stamp', '')}"
+    fig.text(0.54, 0.862, through, color=TXT, fontsize=19, fontweight="bold",
              ha="center", va="center")
     fig.text(0.985, 0.955, f"Report Date: {_long_date(facts.get('generated_at') or facts['as_of'])}", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center", bbox=dict(boxstyle="round,pad=0.3", fc=PANEL, ec=FRAME))
@@ -145,8 +149,8 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
         fig.text(0.985, 0.905 - i * 0.026, ln, color=WHITE, fontsize=11.5, fontweight="bold", ha="right", va="center")
 
     # ── price chart
-    ax = fig.add_axes([0.05, 0.39, 0.77, 0.42], facecolor=PANEL)
-    axv = fig.add_axes([0.05, 0.31, 0.77, 0.07], facecolor=PANEL, sharex=ax)
+    ax = fig.add_axes([0.175, 0.39, 0.76, 0.42], facecolor=PANEL)
+    axv = fig.add_axes([0.175, 0.31, 0.76, 0.07], facecolor=PANEL, sharex=ax)
     near = lambda p: abs(p - last) / last <= 0.16
     lo = min(L + [y["price"] for y in below if near(y["price"])] + [last]) * 0.985
     hi = max(Hh + [y["price"] for y in above if near(y["price"])] + [last]) * 1.012
@@ -166,15 +170,26 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
             zorder=8)
     hi_i, lo_i = max(x, key=lambda i: Hh[i]), min(x, key=lambda i: L[i])
     ax.annotate(f"High {_p(Hh[hi_i])}", (hi_i, Hh[hi_i]), xytext=(0, 12), textcoords="offset points", color=TXT, fontsize=11,
-                ha="center", zorder=8)
-    ax.annotate(f"Low {_p(L[lo_i])}", (lo_i, L[lo_i]), xytext=(0, -20), textcoords="offset points", color=TXT, fontsize=11,
-                ha="center", zorder=8)
+                ha="right" if hi_i > n - 9 else "center", zorder=8)
+    low_near_floor = (L[lo_i] - lo) < (hi - lo) * 0.08            # keep the Low label inside the chart
+    ax.annotate(f"Low {_p(L[lo_i])}", (lo_i, L[lo_i]), xytext=(0, 12 if low_near_floor else -20), textcoords="offset points",
+                color=TXT, fontsize=11, ha="left" if lo_i < 8 else "center", zorder=8)
+    if sess.get("live"):                                          # today's candle is still forming: call it out
+        ax.scatter([x[-1]], [C[-1]], s=170, facecolors="none", edgecolors="white", linewidths=2.0, zorder=9)
+        ax.annotate(f"TODAY · in progress\n{sess.get('stamp', '')}", (x[-1], C[-1]), xytext=(-175, -85),
+                    textcoords="offset points", color="white", fontsize=12, fontweight="bold", ha="center", va="center", zorder=10,
+                    bbox=dict(boxstyle="round,pad=0.35", fc=PANEL, ec="white", linewidth=1.4),
+                    arrowprops=dict(arrowstyle="-|>", color="white", linewidth=1.6, shrinkA=2, shrinkB=8))
     for y in above + below:
         if lo < y["price"] < hi:
             ax.axhline(y["price"], color=DOWN if y["price"] > last else BLUE, linewidth=0.9, linestyle=(0, (2, 4)), alpha=0.6,
                        zorder=2)
     ax.axhline(last, color=UP, linewidth=1.1, alpha=0.9, zorder=2)
-    ax.tick_params(colors=MUTED, labelsize=12, labelbottom=False)
+    ax.yaxis.tick_right()                                    # price scale on the right, bold bright white
+    ax.tick_params(axis="y", colors=WHITE, labelsize=13.5, labelcolor=WHITE)
+    for tl in ax.get_yticklabels():
+        tl.set_fontweight("bold")
+    ax.tick_params(axis="x", colors=MUTED, labelbottom=False)
     for sp in ax.spines.values():
         sp.set_color(GRID)
 
@@ -183,7 +198,11 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     ticks = [i for i in x if i % 22 == 0]
     axv.set_xticks(ticks)
     axv.set_xticklabels([datetime.strptime(d[off + i], "%Y-%m-%d").strftime("%b %-d") for i in ticks])
-    axv.tick_params(colors=MUTED, labelsize=11.5)
+    axv.yaxis.tick_right()
+    axv.tick_params(axis="y", colors=WHITE, labelsize=12.5, labelcolor=WHITE)
+    axv.tick_params(axis="x", colors=WHITE, labelsize=12.5, labelcolor=WHITE)
+    for tl in axv.get_xticklabels():
+        tl.set_fontweight("bold")
     axv.yaxis.set_major_formatter(lambda val, pos: f"{val:,.0f}M")
     axv.locator_params(axis="y", nbins=3)
     axv.text(0.006, 0.9, "Volume (Daily)", transform=axv.transAxes, color=MUTED, fontsize=11, va="top", zorder=9,
@@ -191,7 +210,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     for sp in axv.spines.values():
         sp.set_color(GRID)
 
-    # ── level tags in a column right of the chart (R1..R4 + Major, last price, S1..S4 + Major)
+    # ── level ladder in a column left of the chart (R1..R4 + Major, last price, S1..S4 + Major)
     def tag_rows():
         rows = []
         for i, y in enumerate(above):
@@ -206,7 +225,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     ys = [top - i * (top - bot) / max(1, len(rows) - 1) for i in range(len(rows))] if len(rows) > 1 else [0.6]
     for (price, lab, color, fcol), y in zip(rows, ys):
         wide = lab.startswith("Major") or lab == "Latest Price"
-        fig.text(0.835, y, f"{lab}  {_p(price)}" if wide else f"{lab}   {_p(price)}", color=fcol, fontsize=12.5,
+        fig.text(0.02, y, f"{lab}  {_p(price)}" if wide else f"{lab}   {_p(price)}", color=fcol, fontsize=12.5,
                  fontweight="bold", va="center", ha="left",
                  bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="white" if wide else "none", linewidth=1.0))
 
@@ -248,6 +267,10 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     year = (facts.get("as_of") or "")[:4] or "2026"
     fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation. All rights reserved.", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center")
+    fig.canvas.draw()                                         # tick labels exist only after a draw; make them bold
+    for a_ in (ax, axv):
+        for tl in a_.get_yticklabels() + a_.get_xticklabels():
+            tl.set_fontweight("bold")
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
     plt.close(fig)

@@ -556,3 +556,23 @@ def test_weaker_sources_never_listed_or_used_alone(facts, monkeypatch):
     assert "only weaker sources" in blog["note"]
     assert ch.is_trusted_source("https://news.sec.gov/x") and ch.is_trusted_source("https://www.reuters.com/a")
     assert not ch.is_trusted_source("https://evilreuters.com/a") and not ch.is_trusted_source("https://finbold.com/y")
+
+
+def test_session_state_live_and_closed():
+    from datetime import datetime, timezone
+    live = ch.session_state("2026-10-12", now=datetime(2026, 10, 12, 15, 5, tzinfo=timezone.utc))      # 11:05 a.m. ET Monday
+    assert live["live"] and live["stamp"] == "11:05 a.m. ET" and live["verb"] == "is trading at"
+    after = ch.session_state("2026-10-12", now=datetime(2026, 10, 12, 21, 0, tzinfo=timezone.utc))     # 5:00 p.m. ET
+    assert not after["live"] and after["verb"] == "closed at"
+    fri = ch.session_state("2026-10-09", now=datetime(2026, 10, 12, 15, 5, tzinfo=timezone.utc))       # last bar is Friday
+    assert not fri["live"]
+    sat = ch.session_state("2026-10-10", now=datetime(2026, 10, 10, 15, 0, tzinfo=timezone.utc))
+    assert not sat["live"]
+
+
+def test_live_session_wording_in_template(facts, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    facts["session"] = {"live": True, "stamp": "11:05 a.m. ET", "verb": "is trading at", "day_word": "so far today"}
+    blog = ch.generate_blog(facts, use_ai=False)
+    assert "is trading at" in blog["html"] and "closed at" not in blog["html"]
+    assert "As of 11:05 a.m. ET, this is the current market" in blog["html"]
