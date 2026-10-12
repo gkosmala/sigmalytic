@@ -715,3 +715,18 @@ def test_key_levels_use_plain_platform_labels_and_hide_methods(facts, monkeypatc
     assert "apex" not in blog["html"].lower() and "Latest price:" in blog["html"]
     assert ch.method_words_in("held on 4 touches near the apex") == ["touches", "apex"]
     assert ch.method_words_in("Support at $330.00") == []
+
+
+def test_image_ladder_uses_report_labels(facts):
+    import inspect
+    from backend import content_chart as cc
+    src = inspect.getsource(cc.render_share_image)
+    assert 'y["label"]' in src and '"R{i' not in src and "Major Resistance" not in src and "Major Support" not in src
+    f = _aapl_like(facts)
+    f["levels"]["below"] = [{"price": 330.0, "label": "Support"}]
+    assert cc_png_ok(f)
+
+
+def cc_png_ok(f):
+    from backend import content_chart as cc
+    return cc.render_share_image(f, _bars_for())[:8] == b"\x89PNG\r\n\x1a\n"

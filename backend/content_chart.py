@@ -3,7 +3,7 @@
 backend/content_chart.py
 ------------------------
 Draws the report's hero / share image in the house layout: logo block, report title and dates, daily candles with the
-200-day average, volume, numbered resistance (R1-R4 + Major) and support (S1-S4 + Major) tags, and three panels
+200-day average, volume, labeled level tags (same labels as the report's Key Levels), and three panels
 (Sigmalytic View, Key Levels, Volume Insights). Every number on the image comes from the same `facts` the blog was
 written from, and the Sigmalytic View text is the blog's own "current condition" sentence.
 
@@ -210,24 +210,23 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     for sp in axv.spines.values():
         sp.set_color(GRID)
 
-    # ── level ladder in a column left of the chart (R1..R4 + Major, last price, S1..S4 + Major)
+    # ── level ladder in a column left of the chart: price and the same label the report's Key Levels section uses
     def tag_rows():
         rows = []
-        for i, y in enumerate(above):
-            rows.append((y["price"], "Major Resistance" if i == len(above) - 1 and len(above) == 5 else f"R{i + 1}", DOWN, "white"))
+        for y in above:
+            rows.append((y["price"], y["label"], DOWN, "white"))
         rows.append((last, "Latest Price", UP, "#04210f"))
-        for i, y in enumerate(below):
-            rows.append((y["price"], "Major Support" if i == len(below) - 1 and len(below) == 5 else f"S{i + 1}", BLUE, "white"))
+        for y in below:
+            rows.append((y["price"], y["label"], BLUE, "white"))
         return rows
 
     rows = sorted(tag_rows(), key=lambda r: -r[0])
     top, bot = 0.79, 0.43
     ys = [top - i * (top - bot) / max(1, len(rows) - 1) for i in range(len(rows))] if len(rows) > 1 else [0.6]
     for (price, lab, color, fcol), y in zip(rows, ys):
-        wide = lab.startswith("Major") or lab == "Latest Price"
-        fig.text(0.02, y, f"{lab}  {_p(price)}" if wide else f"{lab}   {_p(price)}", color=fcol, fontsize=12.5,
-                 fontweight="bold", va="center", ha="left",
-                 bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="white" if wide else "none", linewidth=1.0))
+        latest = lab == "Latest Price"
+        fig.text(0.02, y, f"{_p(price)}  {lab}", color=fcol, fontsize=11, fontweight="bold", va="center", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="white" if latest else "none", linewidth=1.0))
 
     # ── three panels
     def panel(x0: float, w: float, head: str, edge: str, hcolor: str, lines: List[Any]) -> None:
@@ -250,7 +249,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     def join(items: List[Dict[str, Any]]) -> List[str]:
         s = "  |  ".join(_p(y["price"]) for y in items)
         return textwrap.wrap(s, 50) or ["none within range"]
-    kl: List[Any] = [("Resistance:", WHITE, True)] + join(above)[:2] + [("Support:", WHITE, True)] + join(below)[:2]
+    kl: List[Any] = [("Levels above the price:", WHITE, True)] + join(above)[:2] + [("Levels below the price:", WHITE, True)] + join(below)[:2]
     panel(0.345, 0.325, "KEY LEVELS", GOLD, GOLD, kl)
 
     if volume_text:
