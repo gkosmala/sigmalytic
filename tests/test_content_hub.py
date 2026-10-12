@@ -681,3 +681,13 @@ def test_pattern_names_are_traps():
     assert f["pattern_signals"][0]["type"] == "Bull Trap Forming" and "bull trap" in ch._signal_phrase(f).lower()
     out = " ".join(ch.consistency_issues(f, ["The 2-hour view shows an upthrust signal near the high."]))
     assert "bull trap" in out
+
+
+def test_teaser_failure_note_gives_the_reason(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    blog = ch.generate_blog(facts, use_ai=False)
+    too_long = {"text": "x" * 400}
+    monkeypatch.setattr(ch, "ai_teasers", lambda f, b: {"x": too_long})
+    out = ch.generate_teasers(facts, blog, use_ai=True)
+    note = out["_note"]["note"] if "_note" in out else ""
+    assert "X AI draft failed checks (" in note and "limit is" in note

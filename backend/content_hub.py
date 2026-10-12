@@ -1366,10 +1366,12 @@ def generate_teasers(f: Dict[str, Any], blog: Dict[str, Any], use_ai: bool = Tru
         cand = ai.get(p) if isinstance(ai, dict) else None
         if isinstance(cand, dict) and cand.get("text"):
             merged = _attach_links(f, p, {k: cand[k] for k in cand if isinstance(cand[k], (str, list))})
-            if not validate_teaser(p, merged, f):
+            problems = validate_teaser(p, merged, f)
+            if not problems:
                 draft, source = merged, "ai"
             else:
-                note = (note or "") + f" {PLATFORM_RULES[p]['label']} AI draft failed checks; template used."
+                why = "; ".join(str(x) for x in problems[:3])
+                note = (note or "") + f" {PLATFORM_RULES[p]['label']} AI draft failed checks ({why}); template used."
         issues = validate_teaser(p, draft, f)
         result[p] = {**draft, "platform": p, "label": PLATFORM_RULES[p]["label"], "source": source,
                      "chars": weighted_len(p, draft.get("text", "")), "limit": PLATFORM_RULES[p]["max_chars"],
