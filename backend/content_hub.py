@@ -1199,6 +1199,6 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
                            "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
         except Exception as e:  # the image is a convenience; it must never break the report
             notes.append(f"Share image could not be drawn: {str(e)[:120]}.")
-    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "share_image": share_image, "blog": blog,
+    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "daily_bars": chart_bars or [], "share_image": share_image, "blog": blog,
             "blog_issues": blog_issues,
             "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "usage": summarize_usage(log), "notes": notes}
