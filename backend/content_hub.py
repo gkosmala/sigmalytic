@@ -90,6 +90,23 @@ def _pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
     return round((a - b) / b * 100, 2)
 
 
+def session_state(last_bar_date: str, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Is the newest daily bar still forming? Regular session is 9:30 a.m. to 4:00 p.m. Eastern, Monday to Friday."""
+    from zoneinfo import ZoneInfo
+    et = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/New_York"))
+    mins = et.hour * 60 + et.minute
+    live = (et.weekday() < 5 and 9 * 60 + 30 <= mins < 16 * 60 and last_bar_date == et.strftime("%Y-%m-%d"))
+    h12 = et.hour % 12 or 12
+    stamp = f"{h12}:{et.minute:02d} {'a.m.' if et.hour < 12 else 'p.m.'} ET"
+    return {"live": live, "stamp": stamp, "date_et": et.strftime("%Y-%m-%d"),
+            "verb": "is trading at" if live else "closed at", "day_word": "so far today" if live else "on the day"}
+
+
+def _verb(f: Dict[str, Any]) -> str:
+    return (f.get("session") or {}).get("verb") or "closed at"
+
+
+
 def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
     """Pure function: turns the /api/weis-radar/chart payload into the facts the content is allowed to use."""
     bars = chart.get("bars") or []
@@ -134,7 +151,8 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
     facts = {
         "symbol": symbol.upper(),
         "as_of": str(bars[-1].get("date") or "")[:10],
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "generated_at": datetime.now(timezone.utc).astimezone(__import__("zoneinfo").ZoneInfo("America/New_York")).strftime("%Y-%m-%d"),
+        "session": session_state(str(bars[-1].get("date") or "")[:10]),
         "last_close": round(last, 2),
         "change_1d_pct": _pct(last, back(1)),
         "change_5d_pct": _pct(last, back(5)),
@@ -472,7 +490,7 @@ def _long_date(d: str) -> str:
 def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
     s, trend = f["symbol"], _trend_word(f)
     return {
-        "condition": (f"{s} closed at {_usd(f['last_close'])} on {f['as_of']}, {trend} its 20-day average of "
+        "condition": (f"{s} {_verb(f)} {_usd(f['last_close'])} on {f['as_of']}, {trend} its 20-day average of "
                       f"{_usd(f['sma20'])}, with a {_sgn(f['change_20d_pct'])} move over twenty sessions."),
         "risk": (f"The principal risk is a failure to hold the 20-day average at {_usd(f['sma20'])}, which would bring the "
                  f"recent low near {_usd(f.get('low_20d'))} back into view."),
@@ -511,11 +529,11 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     s, name = f["symbol"], f["symbol"]
     trend = _trend_word(f)
     title = f"{s} Market Structure: Price {trend} its 20-day average at {_usd(f['last_close'])}"
-    meta = (f"{s} closed at {_usd(f['last_close'])} ({_sgn(f['change_1d_pct'])} on the day), "
+    meta = (f"{s} {_verb(f)} {_usd(f['last_close'])} ({_sgn(f['change_1d_pct'])} on the day), "
             f"{_sgn(f['from_high_pct'])} from its 52-week high. Wyckoff/Weis pattern read, key levels and volume from Sigmalytic.")[:158]
     sections: List[Dict[str, str]] = []
 
-    p = [f"{s} closed at {_usd(f['last_close'])} on {f['as_of']}, "
+    p = [f"{s} {_verb(f)} {_usd(f['last_close'])} on {f['as_of']}, "
          f"{_sgn(f['change_1d_pct'])} on the day, {_sgn(f['change_5d_pct'])} over five sessions and "
          f"{_sgn(f['change_20d_pct'])} over twenty."]
     if f.get("vs_sma20_pct") is not None:
@@ -594,6 +612,8 @@ def _render_blog(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Any]:
     sources = [{"title": x["title"], "url": x["url"]} for x in (blog.get("sources") or [])]
     copyright_line = f"© {year} Sigmalytic Quant Corporation. All rights reserved."
     dates = f"Report Date: {_long_date(f.get('generated_at') or f['as_of'])}  ·  Market Data Through: {_long_date(f['as_of'])}"
+    if (f.get("session") or {}).get("live"):
+        dates += f"  ·  As of {f['session']['stamp']}, this is the current market; the session is still in progress"
     level_line = re.compile(r"^[A-Za-z0-9 \-–/'’,]{3,60}: ~?\$[\d,.\-–$ ]+$")
 
     def para_html(sec: Dict[str, str]) -> str:
@@ -890,7 +910,11 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "followed by one sentence on why it matters, using levels from FACTS.levels. Never repeat a level, fact or "
         "conclusion in more than one section except the Executive Summary. The newest weekly, 4-hour and 2-hour bar may "
         "still be forming, so their volume figure (prior_bar_volume_vs_20_bar_avg) is for the previous complete bar; "
-        "describe it that way. The title should be a specific, accurate "
+        "describe it that way. If FACTS.session.live is true, today's trading session is still in progress: the newest daily "
+        "bar is incomplete. Say \"is trading at\" and never \"closed at\" for the latest price, begin the Executive Summary "
+        "with \"As of \" followed by FACTS.session.stamp and \", this is the current market.\", call the day's change and "
+        "range \"so far today\", and describe today's daily volume as \"so far today\", never as a full-day total. "
+        "The title should be a specific, accurate "
         "hook, ideally a question that names the symbol and the key level.\n"
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
@@ -1105,23 +1129,23 @@ def template_teasers(f: Dict[str, Any], blog: Dict[str, Any]) -> Dict[str, Dict[
     out: Dict[str, Dict[str, Any]] = {}
     out["linkedin"] = {"text": (
         f"{s} market structure, {asof}\n\n"
-        f"Price closed at {px} ({d1}), {trend} its 20-day average. Sigmalytic's Wyckoff/Weis scan shows {sig}.\n\n"
+        f"Price {_verb(f)} {px} ({d1}), {trend} its 20-day average. Sigmalytic's Wyckoff/Weis scan shows {sig}.\n\n"
         f"The full read covers the 52-week range, volume against its 20-day average, and the levels we are tracking.\n\n"
         f"{SHORT_DISCLAIMER}\n\nRead the analysis: {link['linkedin']}\n\n{_tags(f, 3)}")}
     out["x"] = {"text": f"${s} {px} ({d1}), {trend} its 20-day average. Scan shows {sig}. {_tags(f, 1)}",
                 "reply": f"Full market-structure read: {link['x']}\n{SHORT_DISCLAIMER}"}
     out["reddit"] = {"title": f"{s}: price {trend} its 20-day average at {px}; Wyckoff/Weis scan shows {sig}"[:300],
                      "text": (f"Notes from our nightly scan on {s} (data as of {asof}).\n\n"
-                              f"- Close: {px} ({d1}); 5-day {_sgn(f['change_5d_pct'])}; 20-day {_sgn(f['change_20d_pct'])}\n"
+                              f"- {'Last' if (f.get('session') or {}).get('live') else 'Close'}: {px} ({d1}); 5-day {_sgn(f['change_5d_pct'])}; 20-day {_sgn(f['change_20d_pct'])}\n"
                               f"- 52-week range: {_usd(f['low_52w'])} to {_usd(f['high_52w'])}\n"
                               f"- Pattern read: {sig}\n\n"
                               f"Happy to answer questions on how we read these. {SHORT_DISCLAIMER}"),
                      "reply": f"Longer write-up with the levels (only if the subreddit allows links): {link['reddit']}"}
     out["pinterest"] = {"title": f"{s} Stock Analysis: Wyckoff & Weis Market Structure"[:100],
-                        "text": (f"{s} closed at {px} ({d1}), {trend} its 20-day average. See the 52-week range, volume "
+                        "text": (f"{s} {_verb(f)} {px} ({d1}), {trend} its 20-day average. See the 52-week range, volume "
                                  f"and the pattern read behind it. {SHORT_DISCLAIMER} {_tags(f, 3)}"),
                         "destination_link": link["pinterest"]}
-    out["facebook"] = {"text": (f"{s} update: closed at {px} ({d1}), {trend} its 20-day average, with {sig}. "
+    out["facebook"] = {"text": (f"{s} update: {_verb(f)} {px} ({d1}), {trend} its 20-day average, with {sig}. "
                                 f"Full read: {link['facebook']}\n{SHORT_DISCLAIMER}")}
     out["tiktok"] = {"text": (f"{s} in 20 seconds: {px}, {d1}, {trend} the 20-day average. "
                               f"Pattern read: {sig}. Full analysis, link in bio. {SHORT_DISCLAIMER} {_tags(f, 4)}"),

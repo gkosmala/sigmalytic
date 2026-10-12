@@ -137,7 +137,11 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     rend = fig.canvas.get_renderer()
     while tt.get_window_extent(rend).width > 0.56 * W and tt.get_fontsize() > 15:
         tt.set_fontsize(tt.get_fontsize() - 0.5)
-    fig.text(0.54, 0.862, f"Market Data Through: {_long_date(facts['as_of'])}", color=TXT, fontsize=19, fontweight="bold",
+    sess = facts.get("session") or {}
+    through = f"Market Data Through: {_long_date(facts['as_of'])}"
+    if sess.get("live"):
+        through += f"  ·  Live as of {sess.get('stamp', '')}"
+    fig.text(0.54, 0.862, through, color=TXT, fontsize=19, fontweight="bold",
              ha="center", va="center")
     fig.text(0.985, 0.955, f"Report Date: {_long_date(facts.get('generated_at') or facts['as_of'])}", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center", bbox=dict(boxstyle="round,pad=0.3", fc=PANEL, ec=FRAME))
@@ -166,9 +170,16 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
             zorder=8)
     hi_i, lo_i = max(x, key=lambda i: Hh[i]), min(x, key=lambda i: L[i])
     ax.annotate(f"High {_p(Hh[hi_i])}", (hi_i, Hh[hi_i]), xytext=(0, 12), textcoords="offset points", color=TXT, fontsize=11,
-                ha="center", zorder=8)
-    ax.annotate(f"Low {_p(L[lo_i])}", (lo_i, L[lo_i]), xytext=(0, -20), textcoords="offset points", color=TXT, fontsize=11,
-                ha="center", zorder=8)
+                ha="right" if hi_i > n - 9 else "center", zorder=8)
+    low_near_floor = (L[lo_i] - lo) < (hi - lo) * 0.08            # keep the Low label inside the chart
+    ax.annotate(f"Low {_p(L[lo_i])}", (lo_i, L[lo_i]), xytext=(0, 12 if low_near_floor else -20), textcoords="offset points",
+                color=TXT, fontsize=11, ha="left" if lo_i < 8 else "center", zorder=8)
+    if sess.get("live"):                                          # today's candle is still forming: call it out
+        ax.scatter([x[-1]], [C[-1]], s=170, facecolors="none", edgecolors="white", linewidths=2.0, zorder=9)
+        ax.annotate(f"TODAY · in progress\n{sess.get('stamp', '')}", (x[-1], C[-1]), xytext=(-175, -85),
+                    textcoords="offset points", color="white", fontsize=12, fontweight="bold", ha="center", va="center", zorder=10,
+                    bbox=dict(boxstyle="round,pad=0.35", fc=PANEL, ec="white", linewidth=1.4),
+                    arrowprops=dict(arrowstyle="-|>", color="white", linewidth=1.6, shrinkA=2, shrinkB=8))
     for y in above + below:
         if lo < y["price"] < hi:
             ax.axhline(y["price"], color=DOWN if y["price"] > last else BLUE, linewidth=0.9, linestyle=(0, (2, 4)), alpha=0.6,
