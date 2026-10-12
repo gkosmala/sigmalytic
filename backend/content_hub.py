@@ -180,7 +180,37 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
         "timeframes": {},
     }
     facts["levels"] = key_levels(facts)
-    return facts
+    return add_derived(facts)
+
+
+def _direction(vals: List[float]) -> str:
+    """Chronological prices -> 'rising' (each above the last), 'falling', or 'mixed'."""
+    v = [x for x in vals if x is not None][-3:]
+    if len(v) < 2:
+        return "insufficient"
+    ups = [b > a for a, b in zip(v, v[1:])]
+    downs = [b < a for a, b in zip(v, v[1:])]
+    return "rising" if all(ups) else "falling" if all(downs) else "mixed"
+
+
+def add_derived(f: Dict[str, Any]) -> Dict[str, Any]:
+    """Facts the report must use exactly as computed here: where price sits in today's range, the real direction of each
+    timeframe's swing lows and highs, and which levels today's session has already traded through."""
+    lo, hi, px = f.get("session_low"), f.get("session_high"), f.get("last_close")
+    if lo is not None and hi is not None and px is not None and hi > lo:
+        pos = round((px - lo) / (hi - lo) * 100, 1)
+        f["day_range"] = {"low": lo, "high": hi, "midpoint": round((lo + hi) / 2, 3), "position_pct": pos,
+                          "half": "upper" if pos > 50 else "lower" if pos < 50 else "middle"}
+    for tf in (f.get("timeframes") or {}).values():
+        piv = tf.get("recent_pivots") or []
+        tf["swing_low_direction"] = _direction([p["price"] for p in piv if "low" in str(p.get("kind"))])
+        tf["swing_high_direction"] = _direction([p["price"] for p in piv if "high" in str(p.get("kind"))])
+    if lo is not None and hi is not None:
+        for side in ("above", "below"):
+            for it in (f.get("levels") or {}).get(side, []):
+                it["traded_today"] = lo <= it["price"] <= hi
+    return f
+
 
 
 # Extra timeframes read alongside the daily bars: (key, platform timeframe, bars requested).
@@ -283,7 +313,7 @@ def attach_timeframes(f: Dict[str, Any], charts: Dict[str, Dict[str, Any]]) -> D
     f["timeframes"] = tfs
     f["timeframes_missing"] = missing
     f["levels"] = key_levels(f)
-    return f
+    return add_derived(f)
 
 
 def build_facts(symbol: str) -> Dict[str, Any]:
@@ -923,6 +953,15 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "bar is incomplete. Say \"is trading at\" and never \"closed at\" for the latest price, begin the Executive Summary "
         "with \"As of \" followed by FACTS.session.stamp and \", this is the current market.\", call the day's change and "
         "range \"so far today\", and describe today's daily volume as \"so far today\", never as a full-day total. "
+        "FACTS.day_range gives today's low, high and where price sits in that range; use its 'half' exactly (never say upper "
+        "half when it says lower). Each timeframe has swing_low_direction and swing_high_direction (rising, falling or mixed); "
+        "describe swing lows or highs as rising only when that field says rising, otherwise say mixed or falling. State a "
+        "swing sequence once, in Market Structure only. Levels in FACTS.levels with traded_today true have already traded in "
+        "today's session; never describe them as not yet reached, and frame the question as holding or reclaiming them. "
+        "During a live session, state today's volume figure only and never call it light, thin, heavy or normal; say that a "
+        "partial session figure alone does not show whether participation is above or below normal for the time of day. "
+        "Write no statement about indexes, rates, energy, inflation, the Fed or the wider market outside the sourced news "
+        "items; if no news item supports it, leave it out. Write every price with a dollar sign and two decimals. "
         "The title should be a specific, accurate "
         "hook, ideally a question that names the symbol and the key level.\n"
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
@@ -1051,6 +1090,87 @@ def _vet_news(raw: Any, found: Dict[str, str]):
     return news, [{"title": t, "url": u} for u, t in sources.items()], dropped
 
 
+_RISING = r"(?:rising|higher|ascending|stepp\w+ up|stepping up|climbing|upward)"
+_VOL_WEAK = r"(?:light|thin|low|weak|muted|subdued|quiet|soft|below (?:normal|average))"
+_MACRO = (r"risk appetite|market backdrop|index moves|energy prices|oil prices|crude|treasury|yields|federal reserve|"
+          r"\bfed\b|inflation|\bcpi\b|geopolit|broader market|macro")
+
+
+def _sentences(text: str) -> List[str]:
+    return [x for x in re.split(r"(?<=[.!?])\s+|\n+", text) if x.strip()]
+
+
+def _nums(sentence: str) -> List[float]:
+    out = []
+    for m in re.finditer(r"(?<![\w.])\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d%])", sentence):
+        try:
+            out.append(float(m.group(1).replace(",", "")))
+        except ValueError:
+            pass
+    return out
+
+
+def consistency_issues(f: Dict[str, Any], blocks: List[str]) -> List[str]:
+    """Flags (never deletes) statements that contradict the computed facts. Blocks are the AI-written body texts."""
+    issues: List[str] = []
+    sents = [x for b in blocks for x in _sentences(b)]
+    dr = f.get("day_range") or {}
+    for x in sents:
+        xl = x.lower()
+        if dr.get("half") in ("upper", "lower"):
+            wrong = "lower" if dr["half"] == "upper" else "upper"
+            if f"{wrong} half" in xl and "range" in xl:
+                issues.append(f"says price is in the {wrong} half of today's range, but it is in the {dr['half']} half "
+                              f"({dr['position_pct']}% of the way up from the low)")
+        for tf in (f.get("timeframes") or {}).values():
+            lows = [p["price"] for p in tf.get("recent_pivots") or [] if "low" in str(p.get("kind"))]
+            nums = _nums(x)
+            hit = [v for v in lows if any(abs(v - n) < 0.006 for n in nums)]
+            if len(hit) >= 2 and re.search(_RISING, xl) and re.search(r"\blows?\b", xl) and tf.get("swing_low_direction") != "rising":
+                issues.append(f"calls the {tf.get('label')} swing lows rising, but they are {tf.get('swing_low_direction')}")
+        if ((f.get("session") or {}).get("live") and re.search(r"today|daily volume", xl)
+                and re.search(r"volume|participation", xl) and re.search(r"\b" + _VOL_WEAK + r"\b", xl)
+                and not re.search(r"not establish|does not show", xl)):
+            issues.append("labels today's partial-session volume light or thin; during a live session only the figure can be stated")
+        if re.search(_MACRO, xl):
+            issues.append("mentions a market, rates, energy or macro backdrop outside the sourced news sections")
+    seen, out = set(), []
+    for i in issues:
+        if i not in seen:
+            seen.add(i); out.append(i)
+    return out
+
+
+def _known_prices(f: Dict[str, Any]) -> set:
+    vals = []
+    for k in ("last_close", "prev_close", "session_high", "session_low", "sma20", "sma50", "sma200", "high_20d", "low_20d",
+              "high_60d", "low_60d", "high_52w", "low_52w", "call_wall", "put_wall", "gamma_flip", "ice_line"):
+        vals.append(f.get(k))
+    for side in ("above", "below"):
+        vals += [x["price"] for x in (f.get("levels") or {}).get(side, [])]
+    for tf in (f.get("timeframes") or {}).values():
+        for k in ("last_close", "sma20", "sma50", "high_20_bars", "low_20_bars", "high_60_bars", "low_60_bars", "ice_line"):
+            vals.append(tf.get(k))
+        vals += [p.get("price") for p in tf.get("recent_pivots") or []]
+    return {round(float(v), 2) for v in vals if isinstance(v, (int, float))}
+
+
+def format_prices(text: str, f: Dict[str, Any]) -> str:
+    """Presentation only: a number that is one of the report's known prices is written as $1,234.50. Percentages,
+    multiples and ratios are left alone, and the underlying values are never changed."""
+    known = _known_prices(f)
+
+    def fix(m: "re.Match") -> str:
+        raw = m.group(0)
+        num = float(m.group(1).replace(",", ""))
+        tail = text[m.end():m.end() + 8].lower()
+        if round(num, 2) not in known or re.match(r"\s*(?:%|x\b|of\b|times|-|sessions?|bars?|days?)", tail):
+            return raw
+        return f"${num:,.2f}"
+    return re.sub(r"(?<![\w$.])\$?(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{1,2})(?![\d.]|\w)", fix, text)
+
+
+
 EXPECTED_SECTIONS = ["Executive Summary", "Market Structure", "What Changed?", "Current Momentum", "Key Levels",
                      "Participation and Volume", "What Traders Should Watch Next"]
 
@@ -1076,7 +1196,14 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             for k in img:
                 if not img[k] or len(img[k]) > 215:
                     img[k] = tpl_img[k]
+            for sec in cand.get("sections") or []:
+                sec["body"] = format_prices(str(sec.get("body") or ""), f)
+            summary = {k: format_prices(v, f) for k, v in summary.items()}
+            cand["summary"] = summary
+            img = {k: format_prices(v, f) for k, v in img.items()}
             cand["image_text"] = img
+            review = consistency_issues(f, [str(x.get("body") or "") for x in cand.get("sections") or []]
+                                        + list(summary.values()) + list(img.values()))
             guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], {**summary, **{"i" + k: v for k, v in img.items()}})
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
             news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
@@ -1089,6 +1216,8 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
             extra = []
+            for r_ in review:
+                extra.append("Review before publishing: the text " + r_ + ".")
             if len(title) > HEADLINE_MAX:
                 extra.append(f"Headline is {len(title)} characters; GoDaddy allows {HEADLINE_MAX}. Shorten it before publishing.")
             stop, thinking = cand.pop("_stop", None), cand.pop("_thinking", 0)
