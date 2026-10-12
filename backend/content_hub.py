@@ -107,6 +107,17 @@ def _verb(f: Dict[str, Any]) -> str:
 
 
 
+PATTERN_NAMES = {"SPRING": "Bear Trap", "SPRING_BUILDING": "Bear Trap Forming",
+                 "UPTHRUST": "Bull Trap", "UPTHRUST_BUILDING": "Bull Trap Forming"}
+
+
+def pattern_name(raw: Any) -> str:
+    """Published pattern names: an upthrust is called a bull trap and a spring a bear trap."""
+    key = str(raw or "").strip().upper().replace(" ", "_")
+    return PATTERN_NAMES.get(key) or str(raw or "").replace("_", " ").title()
+
+
+
 def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
     """Pure function: turns the /api/weis-radar/chart payload into the facts the content is allowed to use."""
     bars = chart.get("bars") or []
@@ -131,7 +142,7 @@ def facts_from_chart_data(symbol: str, chart: Dict[str, Any]) -> Dict[str, Any]:
 
     hits = []
     for h in (chart.get("hits") or [])[:6]:
-        hits.append({"type": str(h.get("type") or "").replace("_", " ").title(),
+        hits.append({"type": pattern_name(h.get("type")),
                      "date": str(h.get("date") or "")[:10], "level": _f(h.get("level") or h.get("price"))})
 
     wl = chart.get("weis_lines") or {}
@@ -257,7 +268,7 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
         "high_20_bars": h20, "low_20_bars": l20, "high_60_bars": h60, "low_60_bars": l60,
         "prior_bar_volume_vs_20_bar_avg": vol_ratio, "ice_line": _f(wl.get("ice_line_level")),
         "recent_pivots": [{"kind": str(p.get("kind")), "price": _f(p.get("price"))} for p in pivots if _f(p.get("price"))],
-        "pattern_signals": [{"type": str(h.get("type") or "").replace("_", " ").title(), "level": _f(h.get("level") or h.get("price"))}
+        "pattern_signals": [{"type": pattern_name(h.get("type")), "level": _f(h.get("level") or h.get("price"))}
                             for h in (chart.get("hits") or [])[:3]],
     }
 
@@ -380,7 +391,7 @@ def _signal_phrase(f: Dict[str, Any]) -> str:
     s = sig[0]
     where = f" near {_usd(s['level'])}" if s.get("level") else ""
     when = f" on {s['date']}" if s.get("date") else ""
-    return f"a {s['type']} flag{where}{when}"
+    return f"a {s['type']} signal{where}{when}"
 
 
 # ───────────────────────────── numbers guard / compliance ─────────────────────────────
@@ -588,7 +599,7 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
         body = (f"Sigmalytic's Wyckoff/Weis scan flagged: {items}. These describe how price and volume behaved around "
                 "a prior level; they are observations of past behavior, not forecasts.")
     else:
-        body = "Sigmalytic's Wyckoff/Weis scan found no recent Spring, Upthrust, Breakout or Breakdown flags."
+        body = "Sigmalytic's Wyckoff/Weis scan found no recent Bear Trap, Bull Trap, Breakout or Breakdown flags."
     sections.append({"heading": "Wyckoff/Weis pattern read", "body": body})
 
     lv = []
