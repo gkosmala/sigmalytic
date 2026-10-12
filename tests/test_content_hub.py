@@ -621,3 +621,54 @@ def test_headline_limit_65_is_flagged(facts, monkeypatch):
     ok = ch.generate_blog(facts, use_ai=True)
     assert "GoDaddy allows" not in (ok.get("note") or "")
     assert any(c["name"] == "Headline length" and c["level"] == "ok" for c in ok["seo"]["checks"])
+
+
+def _aapl_like(facts):
+    facts.update({"session_high": 342.63, "session_low": 337.60, "last_close": 339.63, "prev_close": 336.64,
+                  "session": {"live": True, "stamp": "11:36 a.m. ET", "verb": "is trading at", "day_word": "so far today"}})
+    facts["timeframes"] = {"4h": {"label": "4-hour", "recent_pivots": [
+        {"kind": "swing_low", "price": 328.7}, {"kind": "swing_low", "price": 325.81}, {"kind": "swing_low", "price": 330.62}]}}
+    facts["levels"] = {"above": [{"price": 340.0, "label": "put wall"}, {"price": 345.34, "label": "high"}], "below": []}
+    return ch.add_derived(facts)
+
+
+def test_derived_facts_range_swings_and_traded_through(facts):
+    f = _aapl_like(facts)
+    assert f["day_range"]["half"] == "lower" and abs(f["day_range"]["position_pct"] - 40.4) < 0.1
+    assert f["timeframes"]["4h"]["swing_low_direction"] == "mixed"
+    lv = {x["price"]: x["traded_today"] for x in f["levels"]["above"]}
+    assert lv[340.0] is True and lv[345.34] is False
+
+
+def test_consistency_flags_contradictions(facts):
+    f = _aapl_like(facts)
+    bad = ["The price is in the upper half of today's range of $337.60 to $342.63.",
+           "The recent swing lows are 328.7, 325.81 and 330.62, so lows are rising only modestly.",
+           "Participation is thin so far today.",
+           "Index moves and energy prices have been shaping risk appetite this week."]
+    out = " | ".join(ch.consistency_issues(f, bad))
+    assert "lower half" in out and "swing lows rising" in out and "light or thin" in out and "backdrop" in out
+    good = ["Price is in the lower half of today's range.", "The swing lows are mixed.",
+            "Daily volume so far today is 0.26 of the 20-day average; this alone does not establish whether participation is normal."]
+    assert ch.consistency_issues(f, good) == []
+
+
+def test_price_formatting_only_touches_known_prices(facts):
+    f = _aapl_like(facts)
+    t = ch.format_prices("The 50-day is 323.0 and the swing low 300.0 and 339.3; volume was 0.26 of average, up 0.89%, 1.16x.", f)
+    assert "0.26 of" in t and "0.89%" in t and "1.16x" in t
+    t2 = ch.format_prices("Support near 328.7 and 340.0 and $339.63.", f)
+    assert "$328.70" in t2 and "$340.00" in t2 and "$339.63" in t2
+
+
+def test_generate_blog_notes_flag_contradictions_and_format_prices(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    f = _aapl_like(facts)
+    cand = _ai_cand(f, title="TEST Holds Its Trend", sections=[
+        {"heading": "Market Structure", "body": "The latest low is 337.6 and the price is in the upper half of today's range."}],
+        news={"institutional": None}, private={"A": {"supported": False}, "B": {"supported": False},
+                                               "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda ff: cand)
+    blog = ch.generate_blog(f, use_ai=True)
+    assert "lower half" in (blog.get("note") or "") and "Review before publishing" in blog["note"]
+    assert "$337.60" in blog["html"]
