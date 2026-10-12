@@ -274,6 +274,8 @@ def build_facts(symbol: str) -> Dict[str, Any]:
     if not chart.get("ok"):
         raise ValueError(chart.get("error") or f"No data for {symbol}.")
     f = facts_from_chart_data(symbol, chart)
+    f["_chart_bars"] = [[str(b.get("date"))[:10], b.get("open"), b.get("high"), b.get("low"), b.get("close"), b.get("volume")]
+                        for b in (chart.get("bars") or [])]
     extra: Dict[str, Dict[str, Any]] = {}
     for key, tf, limit in EXTRA_TIMEFRAMES:
         for attempt in range(2):  # one retry per timeframe
@@ -1155,6 +1157,7 @@ def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, An
 
 def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], log: List[Dict[str, Any]]) -> Dict[str, Any]:
     f = facts or build_facts(symbol)
+    chart_bars = f.pop("_chart_bars", None)
     blog = generate_blog(f, use_ai=use_ai)
     teasers = generate_teasers(f, blog, use_ai=use_ai)
     notes = [n for n in (blog.get("note"), (teasers.pop("_note", {}) or {}).get("note")) if n]
@@ -1162,5 +1165,15 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
                    if numbers_trace_to_facts(_blog_text(blog), f) else []) + \
                   (["Advice wording: " + ", ".join(find_banned_phrases(_blog_text(blog)))]
                    if find_banned_phrases(_blog_text(blog)) else [])
-    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "blog": blog, "blog_issues": blog_issues,
+    share_image = None
+    if chart_bars:
+        try:
+            import base64
+            from backend.content_chart import render_share_image, W as IMG_W, H as IMG_H
+            share_image = {"png_b64": base64.b64encode(render_share_image(f, chart_bars)).decode("ascii"),
+                           "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
+        except Exception as e:  # the image is a convenience; it must never break the report
+            notes.append(f"Share image could not be drawn: {str(e)[:120]}.")
+    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "share_image": share_image, "blog": blog,
+            "blog_issues": blog_issues,
             "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "usage": summarize_usage(log), "notes": notes}

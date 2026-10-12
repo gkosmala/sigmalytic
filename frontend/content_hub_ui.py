@@ -54,6 +54,22 @@ def _teaser_card(d: dict):
                                  "marginBottom": "12px", "background": "rgba(255,255,255,.02)"})
 
 
+def _share_card(img):
+    if not img:
+        return html.Div()
+    src = "data:image/png;base64," + img["png_b64"]
+    return html.Div([
+        html.Div("SHARE IMAGE (for link previews and social posts)", style={"fontSize": "12px", "fontWeight": "800",
+                                                                          "color": WHITE, "marginBottom": "4px"}),
+        html.Div(f"{img['width']} x {img['height']} PNG drawn from this report's own data. Download it, then upload it in "
+                 "GoDaddy as this post's social/share image. Its fixed text uses only numbers from the report.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "6px"}),
+        html.Img(src=src, style={"width": "100%", "maxWidth": "900px", "borderRadius": "10px", "border": f"1px solid {BORDER}"}),
+        html.Div(html.A("Download share image", href=src, download=img["filename"],
+                        style={"color": WHITE, "fontWeight": "700", "fontSize": "12px"}), style={"marginTop": "6px"}),
+    ], style={"marginTop": "14px"})
+
+
 def _raw_card(raw):
     if not raw:
         return html.Div()
@@ -130,6 +146,7 @@ def render_package(pkg: dict):
                   _copy(blog["head_tags"], "Copy head tags"),
                   html.Span("  Markdown", style={"color": WHITE, "fontSize": "12px", "fontWeight": "700", "marginLeft": "14px"}),
                   _copy(blog["markdown"], "Copy markdown")], style={"marginTop": "6px"}),
+        _share_card(pkg.get("share_image")),
         _raw_card(blog.get("raw_ai_text")),
         _private_card(blog.get("private")),
         html.Div(f"SEO CHECKLIST ({seo.get('warnings', 0)} to fix before publishing)" if seo else "",

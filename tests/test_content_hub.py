@@ -454,3 +454,39 @@ def test_effort_sent_thinking_recorded_and_400_fallback(monkeypatch):
         ch._USAGE.reset(token)
     assert sent[0]["output_config"] == {"effort": "low"} and "output_config" not in sent[1]
     assert out["k"] == 1 and out["_thinking"] == 600 and u["reasoning_tokens"] == 600
+
+
+def _bars_for(n=252):
+    import random
+    random.seed(1); p = 300.0; out = []
+    for i in range(n):
+        p += random.uniform(-5, 5.5); o = p + random.uniform(-2, 2)
+        out.append([f"2026-01-{(i % 28) + 1:02d}", o, max(o, p) + 2, min(o, p) - 2, p, 90e6])
+    return out
+
+
+def test_share_image_is_png_of_expected_size(facts):
+    import struct
+    from backend import content_chart as cc
+    bars = _bars_for()
+    png = cc.render_share_image(facts, bars)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    w, h = struct.unpack(">II", png[16:24])
+    assert (w, h) == (1800, 945)
+    with pytest.raises(ValueError):
+        cc.render_share_image(facts, bars[:10])
+
+
+def test_package_includes_share_image_and_keeps_bars_out_of_facts(facts):
+    f = dict(facts); f["_chart_bars"] = _bars_for()
+    pkg = ch.build_package("TEST", use_ai=False, facts=f)
+    assert pkg["share_image"]["filename"].endswith("-share-image.png") and len(pkg["share_image"]["png_b64"]) > 1000
+    assert "_chart_bars" not in pkg["facts"]
+
+
+def test_share_image_failure_never_breaks_report(facts, monkeypatch):
+    from backend import content_chart as cc
+    monkeypatch.setattr(cc, "render_share_image", lambda f, b: (_ for _ in ()).throw(RuntimeError("boom")))
+    f = dict(facts); f["_chart_bars"] = _bars_for()
+    pkg = ch.build_package("TEST", use_ai=False, facts=f)
+    assert pkg["share_image"] is None and any("Share image could not be drawn" in n for n in pkg["notes"])
