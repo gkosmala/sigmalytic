@@ -208,12 +208,12 @@ def _ai_cand(facts, **over):
     body = f"{facts['symbol']} closed at ${facts['last_close']:,.2f}."
     cand = {"title": f"{facts['symbol']} Holds Its Trend", "meta_description": "m", "ai": True,
             "sections": [{"heading": "h", "body": body}],
-            "news": {"us": {"text": "Treasury yields moved 12 basis points this week.", "urls": ["https://a.com/x"]},
+            "news": {"us": {"text": "Treasury yields moved 12 basis points this week.", "urls": ["https://www.reuters.com/x"]},
                      "geopolitical": {"text": "Invented claim.", "urls": ["https://not-searched.com"]},
                      "institutional": None},
             "summary": {}, "private": {"A": {"supported": True, "reasoning": "r"}, "B": {"supported": False},
                                        "C": {"supported": False}, "selected": "A"},
-            "_search_results": {"https://a.com/x": "Source A"}}
+            "_search_results": {"https://www.reuters.com/x": "Source A"}}
     cand.update(over)
     return cand
 
@@ -243,7 +243,7 @@ def test_news_needs_real_search_source_and_option_a_needs_institutional(facts, m
     assert "U.S. Market and Economic Developments" in heads
     assert "Geopolitical Developments" not in heads          # URL never came back from the search
     assert "Institutional and Liquidity Evidence" not in heads
-    assert [x["url"] for x in blog["sources"]] == ["https://a.com/x"]
+    assert [x["url"] for x in blog["sources"]] == ["https://www.reuters.com/x"]
     assert blog["private"]["selected"] == "none" and "Dark-Pool" not in blog["title"]   # A needs sourced evidence
     assert "Geopolitical" in blog["note"]
 
@@ -270,7 +270,7 @@ def test_web_search_request_pause_and_usage(monkeypatch):
     replies = [
         {"model": "claude-sonnet-5-5", "stop_reason": "pause_turn", "usage": {"input_tokens": 100, "output_tokens": 10,
          "server_tool_use": {"web_search_requests": 2}},
-         "content": [{"type": "web_search_tool_result", "content": [{"url": "https://a.com/x", "title": "A"}]}]},
+         "content": [{"type": "web_search_tool_result", "content": [{"url": "https://www.reuters.com/x", "title": "A"}]}]},
         {"model": "claude-sonnet-5-5", "stop_reason": "end_turn", "usage": {"input_tokens": 50, "output_tokens": 20},
          "content": [{"type": "text", "text": 'pre {"k": 1}'}]},
     ]
@@ -286,7 +286,7 @@ def test_web_search_request_pause_and_usage(monkeypatch):
     finally:
         ch._USAGE.reset(token)
     assert sent[0]["tools"][0]["name"] == "web_search" and sent[1]["messages"][-1]["role"] == "assistant"
-    assert out["k"] == 1 and out["_search_results"] == {"https://a.com/x": "A"}
+    assert out["k"] == 1 and out["_search_results"] == {"https://www.reuters.com/x": "A"}
     assert u["searches"] == 2 and u["calls"] == 2
     assert u["cost_usd"] == round(150 / 1e6 * 2 + 30 / 1e6 * 10 + 2 * 0.01, 5)
 
@@ -414,12 +414,12 @@ def test_citation_markup_is_stripped(facts, monkeypatch):
     _fake_anthropic(monkeypatch, __import__("json").dumps({
         "title": "T <cite index='1-1'>x</cite>", "meta_description": "m",
         "sections": [{"heading": "Executive Summary", "body": f"TEST closed at ${facts['last_close']:,.2f}."}],
-        "news": {"company": {"text": dirty, "urls": ["https://a.com/x"]}}, "summary": {}, "private": {}}))
+        "news": {"company": {"text": dirty, "urls": ["https://www.reuters.com/x"]}}, "summary": {}, "private": {}}))
     import requests
     orig = requests.post
     def post(*a, **k):
         r = orig(*a, **k); b = r.json()
-        b["content"].insert(0, {"type": "web_search_tool_result", "content": [{"url": "https://a.com/x", "title": "A"}]})
+        b["content"].insert(0, {"type": "web_search_tool_result", "content": [{"url": "https://www.reuters.com/x", "title": "A"}]})
         r.json = lambda: b
         return r
     monkeypatch.setattr(requests, "post", post)
@@ -540,3 +540,19 @@ def test_panel_text_never_cut_mid_sentence():
     assert len(lines) <= 5 and lines[-1].endswith(".")
     one = cc._fit_lines("word " * 80)
     assert len(one) == 5 and one[-1].endswith("…")
+
+
+def test_weaker_sources_never_listed_or_used_alone(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    found = {"https://www.cnbc.com/a": "CNBC", "https://albertodd.substack.com/p/x": "Substack", "https://finbold.com/y": "Finbold"}
+    cand = _ai_cand(facts, news={
+        "us": {"text": "Yields rose.", "urls": ["https://albertodd.substack.com/p/x", "https://www.cnbc.com/a"]},
+        "company": {"text": "A forecast.", "urls": ["https://finbold.com/y"]}, "institutional": None}, _search_results=found)
+    monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
+    blog = ch.generate_blog(facts, use_ai=True)
+    heads = [s["heading"] for s in blog["sections"]]
+    assert "U.S. Market and Economic Developments" in heads and not any("Company" in h for h in heads)
+    assert [x["url"] for x in blog["sources"]] == ["https://www.cnbc.com/a"]       # weaker URL never listed
+    assert "only weaker sources" in blog["note"]
+    assert ch.is_trusted_source("https://news.sec.gov/x") and ch.is_trusted_source("https://www.reuters.com/a")
+    assert not ch.is_trusted_source("https://evilreuters.com/a") and not ch.is_trusted_source("https://finbold.com/y")
