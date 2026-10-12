@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Sequence
 W, H, DPI = 1800, 945, 100
 BG, PANEL, GRID, FRAME = "#111c32", "#152448", "#223460", "#2a5bd7"
 UP, DOWN = "#22c55e", "#ef4444"
+WHITE = "#FFFFFF"
 TXT, MUTED, GOLD, BLUE, CYAN = "#eef3ff", "#93a7d1", "#f5b82e", "#2f6bff", "#38bdf8"
 MAX_BARS = 130
 
@@ -119,10 +120,10 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
         tt.set_fontsize(tt.get_fontsize() - 0.5)
     fig.text(0.54, 0.862, f"Market Data Through: {_long_date(facts['as_of'])}", color=TXT, fontsize=19, fontweight="bold",
              ha="center", va="center")
-    fig.text(0.985, 0.955, f"Report Date: {_long_date(facts.get('generated_at') or facts['as_of'])}", color=TXT, fontsize=13,
+    fig.text(0.985, 0.955, f"Report Date: {_long_date(facts.get('generated_at') or facts['as_of'])}", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center", bbox=dict(boxstyle="round,pad=0.3", fc=PANEL, ec=FRAME))
     for i, ln in enumerate(("Better Opportunities.", "Better Decisions.", "Better Trading Results.")):
-        fig.text(0.985, 0.905 - i * 0.026, ln, color=MUTED, fontsize=11.5, ha="right", va="center")
+        fig.text(0.985, 0.905 - i * 0.026, ln, color=WHITE, fontsize=11.5, fontweight="bold", ha="right", va="center")
 
     # ── price chart
     ax = fig.add_axes([0.05, 0.39, 0.77, 0.42], facecolor=PANEL)
@@ -199,7 +200,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
         pax.text(0.04, 0.87, head, color=hcolor, fontsize=16, fontweight="bold", va="center", transform=pax.transAxes)
         yy = 0.68
         for ln in lines:
-            text, color, bold = (ln if isinstance(ln, tuple) else (ln, TXT, False))
+            text, color, bold = (ln if isinstance(ln, tuple) else (ln, WHITE, True))
             pax.text(0.04, yy, text, color=color, fontsize=13.4, fontweight="bold" if bold else "normal", va="center",
                      transform=pax.transAxes)
             yy -= 0.145
@@ -211,7 +212,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     def join(items: List[Dict[str, Any]]) -> List[str]:
         s = "  |  ".join(_p(y["price"]) for y in items)
         return textwrap.wrap(s, 50) or ["none within range"]
-    kl: List[Any] = [("Resistance:", GOLD, True)] + join(above)[:2] + [("Support:", GOLD, True)] + join(below)[:2]
+    kl: List[Any] = [("Resistance:", WHITE, True)] + join(above)[:2] + [("Support:", WHITE, True)] + join(below)[:2]
     panel(0.345, 0.325, "KEY LEVELS", GOLD, GOLD, kl)
 
     if volume_text:
@@ -224,9 +225,9 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
                 f"20-day change: {facts['change_20d_pct']:+.2f}%" if facts.get("change_20d_pct") is not None else ""]
     panel(0.68, 0.30, "VOLUME INSIGHTS", BLUE, CYAN, [x_ for x_ in vol if x_][:5])
 
-    fig.text(0.02, 0.035, "www.sigmalyticquantcorp.com", color=MUTED, fontsize=13, va="center")
+    fig.text(0.02, 0.035, "www.sigmalyticquantcorp.com", color=WHITE, fontsize=13, fontweight="bold", va="center")
     year = (facts.get("as_of") or "")[:4] or "2026"
-    fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation. All rights reserved.", color=MUTED, fontsize=13,
+    fig.text(0.985, 0.035, f"© {year} Sigmalytic Quant Corporation. All rights reserved.", color=WHITE, fontsize=13, fontweight="bold",
              ha="right", va="center")
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
