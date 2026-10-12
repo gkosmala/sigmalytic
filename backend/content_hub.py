@@ -273,6 +273,16 @@ def timeframe_facts(chart: Dict[str, Any], label: str) -> Dict[str, Any]:
     }
 
 
+def _signal_level_label(kind: Any) -> str:
+    """Published label for a pattern-signal level, in the platform's own terms."""
+    k = str(kind or "")
+    if k.startswith("Bear Trap"):
+        return "Support"
+    if k.startswith("Bull Trap"):
+        return "Resistance"
+    return f"{k} level" if k else "Pattern level"
+
+
 def key_levels(f: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     """Nearest reference levels above and below the last close, gathered from every timeframe in the facts."""
     px = f.get("last_close")
@@ -286,18 +296,19 @@ def key_levels(f: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     for k, lab in (("sma20", "20-day average"), ("sma50", "50-day average"), ("sma200", "200-day average"),
                    ("high_20d", "20-day high"), ("low_20d", "20-day low"), ("high_60d", "60-day high"),
                    ("low_60d", "60-day low"), ("high_52w", "52-week high"), ("low_52w", "52-week low"),
-                   ("call_wall", "largest call-open-interest strike"), ("put_wall", "largest put-open-interest strike"),
-                   ("gamma_flip", "estimated gamma flip level"), ("ice_line", "daily ice line")):
+                   ("call_wall", "Call wall"), ("put_wall", "Put wall"),
+                   ("gamma_flip", "Gamma flip level"), ("ice_line", "Daily ice line")):
         add(f.get(k), lab)
     for x in (f.get("pattern_signals") or []):
-        add(x.get("level"), f"daily {x.get('type', 'pattern')} flag level")
+        add(x.get("level"), _signal_level_label(x.get("type")))
     for key, tf in (f.get("timeframes") or {}).items():
         name = TF_LABELS.get(key, key)
         for k, lab in (("sma20", "20-bar average"), ("high_20_bars", "20-bar high"), ("low_20_bars", "20-bar low"),
                        ("ice_line", "ice line")):
             add(tf.get(k), f"{name} {lab}")
         for pv in tf.get("recent_pivots") or []:
-            add(pv.get("price"), f"{name} {str(pv.get('kind')).replace('_', ' ')}")
+            kind = str(pv.get("kind")).lower()
+            add(pv.get("price"), f"{name} swing " + ("high" if "high" in kind else "low"))
     if not px:
         return {"above": [], "below": []}
     seen: List[float] = []
@@ -310,6 +321,34 @@ def key_levels(f: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
     above = sorted([c for c in uniq if c["price"] > px], key=lambda c: c["price"])[:5]
     below = sorted([c for c in uniq if c["price"] <= px], key=lambda c: -c["price"])[:5]
     return {"above": above, "below": below}
+
+
+def key_levels_body(f: Dict[str, Any]) -> str:
+    """The Key Levels section, written by code: a price and a plain platform label per level, highest first, with the
+    latest price in the middle. No method detail (touch counts, line math, scores) ever reaches the published text."""
+    lv = f.get("levels") or {}
+    above, below = lv.get("above") or [], lv.get("below") or []
+    if not (above or below):
+        return ""
+    live = (f.get("session") or {}).get("live")
+
+    def row(x: Dict[str, Any]) -> str:
+        tail = (" Traded through so far today." if live else " Traded through today.") if x.get("traded_today") else ""
+        return f"{_usd(x['price'])}: {x['label']}.{tail}"
+
+    paras = [row(x) for x in sorted(above, key=lambda c: -c["price"])]
+    paras.append(f"Latest price: {_usd(f['last_close'])}.")
+    paras += [row(x) for x in below]
+    return "\n\n".join(paras)
+
+
+METHOD_WORDS = ["touches", "touch count", "axis line", "apex", "confluence", "slope", "tolerance", "lookback",
+                "trendline", "channel", "swing point", "algorithm", "score"]
+
+
+def method_words_in(text: str) -> List[str]:
+    t = text.lower()
+    return [w for w in METHOD_WORDS if re.search(r"\b" + re.escape(w), t)]
 
 
 def attach_timeframes(f: Dict[str, Any], charts: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
@@ -614,16 +653,9 @@ def template_blog(f: Dict[str, Any]) -> Dict[str, Any]:
     if lv:
         sections.append({"heading": "Levels the platform is tracking", "body": " ".join(lv)})
 
-    lvls = f.get("levels") or {}
-    if lvls.get("above") or lvls.get("below"):
-        parts = []
-        if lvls.get("above"):
-            parts.append("Nearest reference levels above the last close: " + "; ".join(
-                f"{_usd(x['price'])} ({x['label']})" for x in lvls["above"][:3]) + ".")
-        if lvls.get("below"):
-            parts.append("Nearest reference levels below: " + "; ".join(
-                f"{_usd(x['price'])} ({x['label']})" for x in lvls["below"][:3]) + ".")
-        sections.append({"heading": "Key Levels", "body": " ".join(parts)})
+    kl = key_levels_body(f)
+    if kl:
+        sections.append({"heading": "Key Levels", "body": kl})
 
     private = _norm_private({"selected": "none"})
     for k in "ABC":
@@ -956,8 +988,9 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "'Executive Summary' (2 to 3 short paragraphs and the central question), 'Market Structure' (where the closes "
         "sit and how each timeframe reads), 'What Changed?' (the most important change over the recent sessions), "
         "'Current Momentum', 'Key Levels', 'Participation and Volume', 'What Traders Should Watch Next'. "
-        "In 'Key Levels', write each level as a one-line label and price (for example 'Immediate Resistance: $123.45') "
-        "followed by one sentence on why it matters, using levels from FACTS.levels. Never repeat a level, fact or "
+        "For 'Key Levels' write only the heading and leave the body empty; the platform fills it in from FACTS.levels. "
+        "Elsewhere, use the words support and resistance only for a level FACTS.levels labels Support or Resistance, and "
+        "never describe how the platform finds levels (no touch counts, line angles, scores or methods). Never repeat a level, fact or "
         "conclusion in more than one section except the Executive Summary. The newest weekly, 4-hour and 2-hour bar may "
         "still be forming, so their volume figure (prior_bar_volume_vs_20_bar_avg) is for the previous complete bar; "
         "describe it that way. If FACTS.session.live is true, today's trading session is still in progress: the newest daily "
@@ -1214,6 +1247,14 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
                     img[k] = tpl_img[k]
             for sec in cand.get("sections") or []:
                 sec["body"] = format_prices(str(sec.get("body") or ""), f)
+            kl = key_levels_body(f)
+            if kl:
+                for sec in cand.get("sections") or []:
+                    if str(sec.get("heading") or "").strip().lower() == "key levels":
+                        sec["body"] = kl
+                        break
+                else:
+                    cand.setdefault("sections", []).insert(min(4, len(cand.get("sections") or [])), {"heading": "Key Levels", "body": kl})
             summary = {k: format_prices(v, f) for k, v in summary.items()}
             cand["summary"] = summary
             img = {k: format_prices(v, f) for k, v in img.items()}
@@ -1232,6 +1273,9 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
             extra = []
+            mw = method_words_in(str(guarded))
+            if mw:
+                extra.append("Review before publishing: method wording found (" + ", ".join(mw) + "); the platform's methods are not published.")
             for r_ in review:
                 extra.append("Review before publishing: the text " + r_ + ".")
             if len(title) > HEADLINE_MAX:
