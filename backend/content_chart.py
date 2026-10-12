@@ -113,8 +113,8 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     sym, last = facts["symbol"], facts["last_close"]
     lv = facts.get("levels") or {}
     far = lambda y: abs(y["price"] - last) / last > 0.25          # levels very far from price add nothing to the picture
-    above = [y for y in (lv.get("above") or []) if not far(y)][:2]
-    below = [y for y in (lv.get("below") or []) if not far(y)][:2]   # only the two nearest levels each side
+    above = [y for y in (lv.get("above") or []) if not far(y)][:5]
+    below = [y for y in (lv.get("below") or []) if not far(y)][:5]
 
     fig = plt.figure(figsize=(W / DPI, H / DPI), dpi=DPI, facecolor=BG)
     fig.add_artist(FancyBboxPatch((0.004, 0.006), 0.992, 0.988, boxstyle="round,pad=0,rounding_size=0.01", fc="none",
@@ -202,16 +202,24 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     for sp in axv.spines.values():
         sp.set_color(GRID)
 
-    # ── price tags in a column right of the chart: the two nearest resistance prices, the latest price, the two nearest
-    #    support prices (prices only, no ladder labels)
-    rows = sorted([(y["price"], DOWN, "white", False) for y in above] + [(last, UP, "#04210f", True)]
-                  + [(y["price"], BLUE, "white", False) for y in below], key=lambda r: -r[0])
-    top, bot = 0.74, 0.46
+    # ── level tags in a column right of the chart (R1..R4 + Major, last price, S1..S4 + Major)
+    def tag_rows():
+        rows = []
+        for i, y in enumerate(above):
+            rows.append((y["price"], "Major Resistance" if i == len(above) - 1 and len(above) == 5 else f"R{i + 1}", DOWN, "white"))
+        rows.append((last, "Latest Price", UP, "#04210f"))
+        for i, y in enumerate(below):
+            rows.append((y["price"], "Major Support" if i == len(below) - 1 and len(below) == 5 else f"S{i + 1}", BLUE, "white"))
+        return rows
+
+    rows = sorted(tag_rows(), key=lambda r: -r[0])
+    top, bot = 0.79, 0.43
     ys = [top - i * (top - bot) / max(1, len(rows) - 1) for i in range(len(rows))] if len(rows) > 1 else [0.6]
-    for (price, color, fcol, is_last), y in zip(rows, ys):
-        fig.text(0.835, y, f"Latest Price  {_p(price)}" if is_last else _p(price), color=fcol, fontsize=14, fontweight="bold",
-                 va="center", ha="left",
-                 bbox=dict(boxstyle="round,pad=0.3", fc=color, ec="white" if is_last else "none", linewidth=1.0))
+    for (price, lab, color, fcol), y in zip(rows, ys):
+        wide = lab.startswith("Major") or lab == "Latest Price"
+        fig.text(0.835, y, f"{lab}  {_p(price)}" if wide else f"{lab}   {_p(price)}", color=fcol, fontsize=12.5,
+                 fontweight="bold", va="center", ha="left",
+                 bbox=dict(boxstyle="round,pad=0.28", fc=color, ec="white" if wide else "none", linewidth=1.0))
 
     # ── three panels
     def panel(x0: float, w: float, head: str, edge: str, hcolor: str, lines: List[Any]) -> None:
