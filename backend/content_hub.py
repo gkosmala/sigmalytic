@@ -868,7 +868,11 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         f"Use web search first. Find developments from the last few days that bear on {s}: US domestic market or economic, "
         "international, geopolitical, and company- or industry-specific. Write one or two sentences for each category you "
         "can support, and list the exact URLs from your search results that support it. If you find nothing relevant for a "
-        "category, set it to null. Do not write from memory."
+        "category, set it to null. Do not write from memory. SOURCE RULE: rely only on major sources (Reuters, AP, "
+        "Bloomberg, CNBC, Wall Street Journal, Financial Times, Barron's, MarketWatch, SEC and other government sites, "
+        "company press releases, exchanges). Use a blog, newsletter, forecast or aggregator site only if a major source "
+        "reported or cited the same item first, and then list the major source's URL. If only a weaker site has the "
+        "item, leave it out and set the category to null."
         if use_search else
         "Web search is not available in this run, so set all five news items to null. Do not write news from memory.")
     user = (
@@ -961,6 +965,25 @@ def _blog_text(blog: Dict[str, Any]) -> str:
         [blog["title"], blog["meta_description"]] + [s["heading"] + " " + s["body"] for s in blog["sections"]])
 
 
+# News must come from strong sources. Weaker sites are never listed and never support an item on their own.
+TRUSTED_NEWS_DOMAINS = (
+    "reuters.com", "cnbc.com", "bloomberg.com", "wsj.com", "apnews.com", "ft.com", "barrons.com", "marketwatch.com",
+    "sec.gov", "federalreserve.gov", "bls.gov", "treasury.gov", "bea.gov", "nasdaq.com", "nyse.com", "cmegroup.com",
+    "businesswire.com", "prnewswire.com", "globenewswire.com",
+)
+
+
+def _trusted_domains() -> tuple:
+    extra = tuple(d.strip().lower() for d in os.getenv("CONTENT_HUB_TRUSTED_NEWS_DOMAINS", "").split(",") if d.strip())
+    return TRUSTED_NEWS_DOMAINS + extra
+
+
+def is_trusted_source(url: str) -> bool:
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == d or host.endswith("." + d) for d in _trusted_domains()) or host.endswith(".gov")
+
+
 def _vet_news(raw: Any, found: Dict[str, str]):
     """Keeps a news item only if it has text and at least one URL that really came back from the search."""
     news: Dict[str, Dict[str, Any]] = {}
@@ -972,9 +995,12 @@ def _vet_news(raw: Any, found: Dict[str, str]):
         item = raw.get(key)
         if not isinstance(item, dict) or not str(item.get("text") or "").strip():
             continue
-        urls = [u for u in (item.get("urls") or []) if isinstance(u, str) and u in found]
+        found_urls = [u for u in (item.get("urls") or []) if isinstance(u, str) and u in found]
+        urls = [u for u in found_urls if is_trusted_source(u)]
         text = str(item["text"]).strip()
-        if not urls:
+        if found_urls and not urls:
+            dropped.append(f"{NEWS_HEADINGS[key].format(s='')} (only weaker sources, no major source)")
+        elif not urls:
             dropped.append(f"{NEWS_HEADINGS[key].format(s='')} (no verifiable source)")
         elif find_banned_phrases(text):
             dropped.append(f"{NEWS_HEADINGS[key].format(s='')} (advice wording)")
