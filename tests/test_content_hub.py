@@ -314,7 +314,7 @@ def test_truncated_reply_is_repaired_and_kept(facts, monkeypatch):
     blog = ch.generate_blog(facts, use_ai=True)
     heads = [s["heading"] for s in blog["sections"]]
     assert blog["ai"] is True and heads[:2] == ["Executive Summary", "Market Structure"]
-    assert "repaired" in blog["note"] and "Key Levels" in blog["note"]       # tells the editor what is missing
+    assert "repaired" in blog["note"] and "Key Levels" not in blog["note"]   # Key Levels is written by code, so it is never missing
     assert "raw_ai_text" not in blog
 
 
@@ -691,3 +691,27 @@ def test_teaser_failure_note_gives_the_reason(facts, monkeypatch):
     out = ch.generate_teasers(facts, blog, use_ai=True)
     note = out["_note"]["note"] if "_note" in out else ""
     assert "X AI draft failed checks (" in note and "limit is" in note
+
+
+def test_key_levels_use_plain_platform_labels_and_hide_methods(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    f = _aapl_like(facts)
+    f["pattern_signals"] = [{"type": "Bear Trap Forming", "level": 330.0}, {"type": "Bull Trap", "level": 345.0}]
+    f["levels"] = ch.key_levels(f)
+    labels = {x["label"] for s in ("above", "below") for x in f["levels"][s]}
+    assert "Support" in labels and "Resistance" in labels
+    assert not any("flag level" in l or "pivot" in l or "touch" in l for l in labels)
+    body = ch.key_levels_body(f)
+    assert "Latest price:" in body and body.index("Latest price:") > 0
+    prices = [float(p.split(":")[0].replace("$", "").replace(",", "")) for p in body.split("\n\n")
+              if p.startswith("$")]
+    assert prices == sorted(prices, reverse=True)
+    cand = _ai_cand(f, title="TEST Holds Its Trend", sections=[
+        {"heading": "Key Levels", "body": "Support at 330 held on 4 touches near the apex of a channel."}],
+        news={"institutional": None}, private={"A": {"supported": False}, "B": {"supported": False},
+                                               "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda ff: cand)
+    blog = ch.generate_blog(f, use_ai=True)
+    assert "apex" not in blog["html"].lower() and "Latest price:" in blog["html"]
+    assert ch.method_words_in("held on 4 touches near the apex") == ["touches", "apex"]
+    assert ch.method_words_in("Support at $330.00") == []
