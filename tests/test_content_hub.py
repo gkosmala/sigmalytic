@@ -248,13 +248,13 @@ def test_news_needs_real_search_source_and_option_a_needs_institutional(facts, m
     assert "Geopolitical" in blog["note"]
 
 
-def test_option_b_headline_used_when_supported(facts, monkeypatch):
+def test_option_b_is_private_idea_and_never_the_headline(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     cand = _ai_cand(facts, private={"A": {"supported": False}, "B": {"supported": True, "reasoning": "r"},
                                     "C": {"supported": False}, "selected": "B"})
     monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
     blog = ch.generate_blog(facts, use_ai=True)
-    assert blog["title"] == ch.OPTION_TITLES["B"].format(s="TEST")
+    assert blog["title"] == "TEST Holds Its Trend"                # the model's own headline, not the option text
     assert blog["private"]["selected"] == "B" and "Option B" not in blog["html"] and "reasoning" not in blog["html"]
 
 
@@ -605,3 +605,19 @@ def test_search_restricted_to_major_domains_with_400_fallback(monkeypatch):
     first = sent[0]["tools"][0]
     assert "reuters.com" in first["allowed_domains"] and "cnbc.com" in first["allowed_domains"]
     assert "allowed_domains" not in sent[-1]["tools"][0] and out["k"] == 1       # rejected filter: retried without it
+
+def test_headline_limit_65_is_flagged(facts, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    long_title = "TEST " + "x" * 70
+    cand = _ai_cand(facts, title=long_title, private={"A": {"supported": False}, "B": {"supported": False},
+                                                       "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
+    blog = ch.generate_blog(facts, use_ai=True)
+    assert "GoDaddy allows 65" in (blog.get("note") or "")
+    assert any(c["name"] == "Headline length" and c["level"] == "warn" for c in blog["seo"]["checks"])
+    short = _ai_cand(facts, title="TEST Holds Its Trend", private={"A": {"supported": False}, "B": {"supported": False},
+                                                                    "C": {"supported": False}, "selected": "none"})
+    monkeypatch.setattr(ch, "ai_blog", lambda f: short)
+    ok = ch.generate_blog(facts, use_ai=True)
+    assert "GoDaddy allows" not in (ok.get("note") or "")
+    assert any(c["name"] == "Headline length" and c["level"] == "ok" for c in ok["seo"]["checks"])

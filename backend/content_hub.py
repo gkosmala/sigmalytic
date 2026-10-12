@@ -454,8 +454,10 @@ TAGLINES = ["Better Opportunities. Better Decisions. Better Trading Results.",
             "Every decision creates information. Every outcome creates evidence."]
 DATA_SOURCE = os.getenv("CONTENT_HUB_DATA_SOURCE", "Alpaca Markets")
 
-# The three headline options. Used verbatim by code, only when the assessment (and, for A, a sourced
-# institutional finding) supports them. Otherwise the model's more accurate alternative headline is used.
+# The three private trading ideas (A, B, C), assessed for support in the evidence. They are never used as the published
+# headline; the headline is always the model's own accurate headline.
+HEADLINE_MAX = 65   # GoDaddy's headline limit
+
 OPTION_TITLES = {
     "A": "{s} Order Flow Divergence: Institutional Dark-Pool Accumulation Defends Critical Macro Trend",
     "B": "{s} Trend Geometry Facing Immediate Strain as Short-Duration Selling Overwhelms Order Book",
@@ -926,12 +928,12 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
         "activity from price and volume. If nothing is found, set it to null.\n"
-        "HEADLINE ASSESSMENT (private, never published). Decide whether each option is supported:\n"
-        f'A: "{OPTION_TITLES["A"].format(s=s)}" (needs sourced evidence of institutional or dark-pool accumulation)\n'
-        f'B: "{OPTION_TITLES["B"].format(s=s)}" (needs evidence of distribution or exhaustion risk, and of short-duration selling)\n'
-        f'C: "{OPTION_TITLES["C"].format(s=s)}" (needs evidence of a high-volatility squeeze setup)\n'
-        'Be strict. If none is sufficiently supported, selected is "none" and "title" must be your accurate headline '
-        "of at most 90 characters that contains the symbol.\n"
+        "TRADING-IDEA ASSESSMENT (private, never published, and unrelated to the headline). Decide whether each trading idea is supported by the evidence:\n"
+        f'A: "{OPTION_TITLES["A"].format(s=s)}" (idea; needs sourced evidence of institutional or dark-pool accumulation)\n'
+        f'B: "{OPTION_TITLES["B"].format(s=s)}" (idea; needs evidence of distribution or exhaustion risk, and of short-duration selling)\n'
+        f'C: "{OPTION_TITLES["C"].format(s=s)}" (idea; needs evidence of a high-volatility squeeze setup)\n'
+        'Be strict. If none is sufficiently supported, selected is "none". Never use these idea texts as the headline. '
+        f"The \"title\" is always your own accurate headline of at most {HEADLINE_MAX} characters (GoDaddy's limit; count them) that contains the symbol.\n"
         "Return JSON: {\"title\": str, \"meta_description\": str (110-155 chars, contains the symbol), "
         "\"sections\": [{\"heading\": str, \"body\": str}] (the seven sections above, 700-1000 words in total, "
         "the first paragraph must name the symbol), "
@@ -959,7 +961,7 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
             if isinstance(x, dict) and x.get("heading") and x.get("body")]
     if not secs:
         raise AIParseError("AI reply had no complete sections.", json.dumps(out, indent=1)[:60000])
-    return {"title": str(out.get("title") or f"{s} Market Structure Report")[:90],
+    return {"title": str(out.get("title") or f"{s} Market Structure Report")[:140],
             "meta_description": str(out.get("meta_description") or "")[:158], "sections": secs,
             "news": out.get("news") or {}, "summary": out.get("summary") or {}, "private": out.get("private") or {},
             "image": out.get("image") or {},
@@ -1083,10 +1085,12 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             if sel == "A" and "institutional" not in news:
                 sel = private["selected"] = "none"
                 private["A"]["reasoning"] += " (Marked not supported by the tool: no sourced institutional finding was returned.)"
-            title = OPTION_TITLES[sel].format(s=f["symbol"]) if sel in OPTION_TITLES else cand["title"]
+            title = cand["title"]            # A/B/C are private trading-idea assessments; they never set the published headline
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
             extra = []
+            if len(title) > HEADLINE_MAX:
+                extra.append(f"Headline is {len(title)} characters; GoDaddy allows {HEADLINE_MAX}. Shorten it before publishing.")
             stop, thinking = cand.pop("_stop", None), cand.pop("_thinking", 0)
             if cand.pop("_recovered", False):
                 have = {x["heading"].strip().lower() for x in cand["sections"]}

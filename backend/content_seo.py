@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 TITLE_MAX, TITLE_MIN = 60, 30
+HEADLINE_MAX = 65   # GoDaddy headline limit
 DESC_MAX, DESC_MIN = 155, 110
 MIN_WORDS = 300
 
@@ -148,6 +149,8 @@ def build_seo(facts: Dict[str, Any], blog: Dict[str, Any], url: str, site_url: s
     h2 = len(blog["sections"])
     first_para = blog["sections"][0]["body"].lower() if blog["sections"] else ""
     checks: List[Dict[str, Any]] = [
+        {"name": "Headline length", "level": "ok" if len(blog["title"]) <= HEADLINE_MAX else "warn",
+         "detail": f"{len(blog['title'])} characters (GoDaddy allows {HEADLINE_MAX})"},
         {"name": "Title tag length", "level": "ok" if TITLE_MIN <= len(title_tag) <= TITLE_MAX else "warn",
          "detail": f"{len(title_tag)} characters (target {TITLE_MIN}-{TITLE_MAX})"},
         {"name": "Meta description length", "level": "ok" if DESC_MIN <= len(description) <= DESC_MAX else "warn",
