@@ -908,12 +908,12 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
         "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
     try:
-        out = _ai_json(_BLOG_STYLE, user, max_tokens=9000, web_search=use_search)
+        out = _ai_json(_BLOG_STYLE, user, max_tokens=16000, web_search=use_search)
     except Exception as e:
         resp = getattr(e, "response", None)
         if use_search and getattr(resp, "status_code", None) == 400:  # search not enabled for this account: no charge
             out = _ai_json(_BLOG_STYLE, user.replace(news_rule, "Web search is not available in this run, so set all five "
-                                                     "news items to null."), max_tokens=9000)
+                                                     "news items to null."), max_tokens=16000)
             out["_search_unavailable"] = True
         else:
             raise
