@@ -46,6 +46,22 @@ def _long_date(d: str) -> str:
         return d
 
 
+def _pop_lettering(img):
+    """Recolor the muted-green company lettering in the logo to bright white; the gold sigma is left as is."""
+    import numpy as np
+    a = np.array(img, dtype=float)
+    if a.ndim != 3 or a.shape[2] < 3:
+        return img
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    green = (g > r * 1.12) & (g > b * 1.05) & (g > 0.25)            # green lettering only (gold has r > g)
+    k = np.clip((g - 0.2) / 0.35, 0, 1)                              # soft edge so letters stay smooth
+    m = np.where(green, k, 0.0)
+    out = a.copy()
+    for c in range(3):
+        out[..., c] = a[..., c] * (1 - m) + 1.0 * m
+    return np.clip(out, 0, 1)
+
+
 def _logo_path() -> Optional[str]:
     here = os.path.dirname(os.path.abspath(__file__))
     for cand in (os.getenv("CONTENT_HUB_LOGO_FILE", ""), os.path.join(here, "assets", "sigmalytic_logo.png")):
@@ -104,7 +120,7 @@ def render_share_image(facts: Dict[str, Any], bars: List[Sequence[Any]], title: 
     # ── header: logo, title, dates, tagline
     logo = _logo_path()
     if logo:
-        lax = fig.add_axes([0.014, 0.832, 0.235, 0.15]); lax.set_axis_off(); lax.imshow(mpimg.imread(logo), interpolation="lanczos")
+        lax = fig.add_axes([0.014, 0.832, 0.235, 0.15]); lax.set_axis_off(); lax.imshow(_pop_lettering(mpimg.imread(logo)), interpolation="lanczos")
     else:
         lax = fig.add_axes([0.016, 0.835, 0.2, 0.15]); lax.set_xlim(0, 2.1); lax.set_ylim(0, 1); lax.set_axis_off()
         lax.set_aspect("auto")
