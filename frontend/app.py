@@ -4316,8 +4316,8 @@ PATTERN_COLORS = {
 }
 
 WEIS_RADAR_SIGNAL_OPTIONS = [
-    {"label": "Spring", "value": "spring"},
-    {"label": "Upthrust", "value": "upthrust"},
+    {"label": "Spring (Bear Trap)", "value": "spring"},
+    {"label": "Upthrust (Bull Trap)", "value": "upthrust"},
     {"label": "Buying Climax", "value": "climaxup"},
     {"label": "Selling Climax", "value": "climaxdown"},
     {"label": "3-Bar Reversal", "value": "3bar"},
@@ -4656,7 +4656,7 @@ def _render_weis_quantum_handoff(handoff, states=None):
         return html.Div()
     candidates = handoff.get("validated_events") or handoff.get("candidates") or []
     return html.Div([
-        html.H3("All validated Spring and Upthrust events", style={"color": WHITE, "fontSize": "17px"}),
+        html.H3("All validated Spring (Bear Trap) and Upthrust (Bull Trap) events", style={"color": WHITE, "fontSize": "17px"}),
         html.Div(_OLDER_ENGINE_NOTE + f"{handoff.get('candidate_count', 0)} validated events shown without a weighted rank. "
                  "Each breached a prior multi-touch level and closed back inside. "
                  "Prior-wave effort and later test-wave behavior are shown separately. "
@@ -7319,9 +7319,9 @@ const WEIS_LINES = __WEIS_LINES_JSON__;  // null if unavailable -- see weis_line
 const TIMEFRAME = __TIMEFRAME__;
 const SESSION_HOURS = __SESSION_HOURS__;
 document.getElementById('sessionCaption').textContent = {
-  all:'All reported SIP hours', premarket:'Premarket 4:00–9:30 ET',
-  regular:'Regular 9:30–16:00 ET',
-  extended:'Extended 4:00–20:00 ET'
+  all:'All reported SIP hours', premarket:'Premarket 4:00–9:30 a.m. ET',
+  regular:'Regular 9:30 a.m.–4:00 p.m. ET',
+  extended:'Extended 4:00 a.m.–8:00 p.m. ET'
 }[SESSION_HOURS] || 'All reported SIP hours';
 const historySlider = document.getElementById('historySlider');
 const fitAllBars = document.getElementById('fitAllBars');
@@ -11823,7 +11823,7 @@ ALL_TABS = [
     # the exact steps to restore it: re-add its ALL_TABS entry here,
     # its elif branch in render_main()'s tab routing, and its Input in
     # set_tab() -- nothing to rebuild from scratch.
-    ("broker_bi",   "Broker Behavioural Intelligence"),
+    ("broker_bi",   "Broker Behavioral Intelligence"),
     ("behavior",    "Behavioral Intelligence"),
     ("import",      "Import History"),
     ("journal",     "Journal"),
@@ -12049,10 +12049,10 @@ app.layout = html.Div([
                                      style={"width":"110px","color":"#111"}),
                         dcc.Dropdown(id="cc-session-hours", clearable=False, value="all",
                                      options=[{"label":"All SIP hours","value":"all"},
-                                              {"label":"Premarket 4:00–9:30 ET","value":"premarket"},
-                                              {"label":"Regular 9:30–16:00 ET","value":"regular"},
-                                              {"label":"Extended 4:00–20:00 ET","value":"extended"}],
-                                     style={"width":"185px","color":"#111"}),
+                                              {"label":"Premarket 4:00–9:30 a.m. ET","value":"premarket"},
+                                              {"label":"Regular 9:30 a.m.–4:00 p.m. ET","value":"regular"},
+                                              {"label":"Extended 4:00 a.m.–8:00 p.m. ET","value":"extended"}],
+                                     style={"width":"240px","color":"#111"}),
                         html.Button("Apply", id="cc-apply-chart-view", n_clicks=0,
                                     style={"cursor":"pointer","padding":"6px 12px"}),
                     ], style={"display":"flex","gap":"6px","alignItems":"center","marginTop":"6px"}),
@@ -13301,7 +13301,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
             return no_update, no_update, no_update, no_update
         if build_broker_bi_tab is None:
             main = card([
-                html.H2("Broker Behavioural Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                html.H2("Broker Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box("Broker tab module did not import. Check frontend/broker_bi_tab.py.", "blue"),
             ])
         else:
@@ -13309,7 +13309,7 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                 main = build_broker_bi_tab(session=session)
             except Exception as e:
                 main = card([
-                    html.H2("Broker Behavioural Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
+                    html.H2("Broker Behavioral Intelligence", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                     note_box("Broker tab error: " + str(e), "blue"),
                 ])
     elif tab=="imbalance":
