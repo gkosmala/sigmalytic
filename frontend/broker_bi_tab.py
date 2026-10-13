@@ -2,14 +2,14 @@
 """
 frontend/broker_bi_tab.py
 -------------------------
-Broker Behavioural Intelligence tab: five account vaults, each holding the
+Broker Behavioral Intelligence tab: five account vaults, each holding the
 statements of one broker or adviser, graded A-F with the same behavioural
 engine used for the subscriber, plus portfolio, benchmark, fee, cash,
 tax-lot and Russell 1000 sections.
 
 Plugs into app.py:
   1. from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
-  2. ALL_TABS: ("broker_bi", "Broker Behavioural Intelligence")
+  2. ALL_TABS: ("broker_bi", "Broker Behavioral Intelligence")
   3. render_main: elif tab == "broker_bi": main = build_broker_bi_tab(session)
   4. register_broker_bi_callbacks(app)  (after `app` is created)
 """
@@ -326,7 +326,7 @@ def build_broker_bi_tab(session: Optional[dict] = None) -> html.Div:
 
     return html.Div([
         _card([
-            html.Div("Broker Behavioural Intelligence", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
+            html.Div("Broker Behavioral Intelligence", style={"fontSize": "18px", "fontWeight": "900", "color": WHITE}),
             html.Div("Grade a broker or adviser the same way Sigmalytic grades you. Each vault holds the statements of one "
                      "account. Upload transaction CSVs to grade how the account was traded, and a holdings CSV to add "
                      "portfolio health, cash and benchmark comparison. Grades run from A to F. Sections a statement "
