@@ -12559,8 +12559,9 @@ def open_guide_from_welcome(n_clicks):
 @app.callback(
     [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
     Input("s-tab", "data"),
+    Input("s-session", "data"),
 )
-def sync_active_tab_styles(active_tab):
+def sync_active_tab_styles(active_tab, session=None):
     active_tab = active_tab or "home"
 
     base = {
@@ -12590,7 +12591,13 @@ def sync_active_tab_styles(active_tab):
         "boxShadow": "none",
     })
 
-    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
+    out = []
+    for key, _label in ALL_TABS:
+        st = active_style if key == active_tab else inactive_style
+        if key == "admin" and not is_admin(session):
+            st = {**st, "display": "none"}   # the Admin button is not shown to guests or subscribers
+        out.append(st)
+    return out
 
 
 @app.callback(Output("welcome-after-main", "style"),
@@ -13374,6 +13381,10 @@ def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,t
                 html.H2("️ Preferences", style={"color":WHITE,"fontSize":"18px","fontWeight":"900","marginBottom":"12px"}),
                 note_box("Preferences loading. Please refresh in a moment.", "blue"),
             ])
+    elif tab=="admin" and not is_admin(session):
+        # Admin is for the administrator only. Checked BEFORE any admin panel is built, so a
+        # guest or subscriber never triggers the diagnostics or sees anything from them.
+        main = build_admin_tab(session=session if isinstance(session, dict) else {}, backend_url=BACKEND_HTTP)
     elif tab=="admin":
         # FIX (2026-08-04): same bug class already fixed for Heatmap and
         # Reports -- this callback rebuilds every tab from scratch on every
