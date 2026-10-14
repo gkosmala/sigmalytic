@@ -70,8 +70,10 @@ except Exception:
 
 try:
     from content_hub_ui import render_package as _content_hub_render
+    from astro_research_ui import render_table as _astro_table, render_report as _astro_run, render_backtest as _astro_bt
 except Exception:
     _content_hub_render = None
+    _astro_table = _astro_run = _astro_bt = None
 
 try:
     from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
@@ -5763,6 +5765,48 @@ def build_cache_diagnostics_panel():
     ])
 
 
+def build_astro_tab(session: dict) -> html.Div:
+    """Astro Research (admin only): its own entry, separate from the Admin page."""
+    if not is_admin(session):
+        return html.Div("Admin access only.", style={"color": WHITE, "fontSize": "13px", "padding": "16px"})
+    # ── Astro Research -- admin-only research tool (drafts only; nothing trades or posts). ──
+    _astro_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+                 "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
+    _astro_btn = {"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px", "padding": "10px 16px",
+                  "fontSize": "13px", "fontWeight": "700", "cursor": "pointer", "marginRight": "8px"}
+    return _admin_card([
+        html.Div("ASTRO RESEARCH", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("Enter a date and a symbol. The tool takes that symbol's headquarters-at-IPO latitude, longitude and elevation, builds "
+                 "an ephemeris report, adds the daily and weekly pivots from Alpaca bars, and turns them into Gann price and time levels and an "
+                 "hourly tactical plan. Research drafts only. The second box is the date the pivot cycle starts.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL']], value="MSFT", clearable=False,
+                         style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-start", type="text", placeholder="Date, e.g. 2026-10-14", debounce=False,
+                      style={**_astro_in, "width": "170px"}),
+            dcc.Input(id="astro-since", type="text", value="2020-01-01", debounce=False, title="Pivot cycle start date",
+                      style={**_astro_in, "width": "130px"}),
+            html.Button("Generate report", id="astro-run-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Download .txt", id="astro-dl-btn", n_clicks=0, style=_astro_btn),
+            dcc.Download(id="astro-download"), dcc.Store(id="astro-draft"),
+            html.Button("Show symbol table", id="astro-table-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "10px"}),
+        html.Div([
+            dcc.Dropdown(id="astro-event", options=[{"label": "New moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"new\"}"}, {"label": "Full moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"full\"}"}, {"label": "Mercury turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"retrograde\"}"}, {"label": "Mercury turns direct", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"direct\"}"}, {"label": "Venus turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Venus\", \"to\": \"retrograde\"}"}, {"label": "Mars turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mars\", \"to\": \"retrograde\"}"}, {"label": "Mars conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Mars\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Jupiter conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Jupiter\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn square IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"square\", \"orb\": 1.0}"}, {"label": "Sun conjunct IPO Sun (solar return)", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Sun\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}], value='{"kind": "moon_phase", "phase": "new"}', clearable=False,
+                         style={"width": "300px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-years", type="number", value=8, min=2, max=15, style={**_astro_in, "width": "80px"}),
+            html.Button("Backtest event", id="astro-bt-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-run-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
+
+
 def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     Build the full admin monitoring page.
@@ -10935,6 +10979,63 @@ def handle_delete_report(submit_n_clicks, selected_date, session):
     except Exception as exc:
         return f"Could not reach the backend: {exc}", no_update, no_update
 
+def _astro_call(method, path, session, payload=None):
+    try:
+        url = f"{BACKEND_HTTP}/api/admin/astro-research/{path}"
+        r = req.get(url, headers=_auth_headers(session), timeout=60) if method == "GET" else \
+            req.post(url, json=payload, headers=_auth_headers(session), timeout=150)
+        if r.status_code == 401:
+            return None, "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return None, "Admin access only."
+        if not r.ok:
+            return None, f"Could not run (error {r.status_code}): {r.text[:200]}"
+        return r.json(), None
+    except Exception as exc:
+        return None, f"Could not reach the backend: {exc}"
+
+
+@app.callback(Output("astro-table-result", "children"), Input("astro-table-btn", "n_clicks"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_table(n, session):
+    if _astro_table is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    data, err = _astro_call("GET", "symbols", session)
+    return err or _astro_table(data)
+
+
+@app.callback(Output("astro-run-result", "children"), Output("astro-draft", "data"), Input("astro-run-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("astro-start", "value"), State("astro-since", "value"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_run(n, symbol, day, since, session):
+    if _astro_run is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py.", no_update
+    data, err = _astro_call("POST", "report", session, {"symbol": symbol, "date": (day or "").strip(),
+                                                         "pivots_since": (since or "2020-01-01").strip()})
+    if err:
+        return err, no_update
+    return _astro_run(data), (data.get("draft") if data.get("ok") else None)
+
+
+@app.callback(Output("astro-download", "data"), Input("astro-dl-btn", "n_clicks"), State("astro-draft", "data"),
+              State("astro-symbol", "value"), State("astro-start", "value"), prevent_initial_call=True)
+def download_astro_report(n, draft, symbol, day):
+    if not draft:
+        return no_update
+    return {"content": draft, "filename": f"astro_report_{symbol}_{(day or '').strip()}.txt"}
+
+
+@app.callback(Output("astro-bt-result", "children"), Input("astro-bt-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("astro-event", "value"), State("astro-years", "value"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_backtest(n, symbol, event, years, session):
+    if _astro_bt is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    import json as _json
+    data, err = _astro_call("POST", "backtest", session, {"symbol": symbol, "event": _json.loads(event), "years": years or 8})
+    return err or _astro_bt(data)
+
+
 @app.callback(Output("content-hub-result", "children"),
               Input("content-hub-run-btn", "n_clicks"),
               State("content-hub-symbol", "value"),
@@ -11834,6 +11935,7 @@ ALL_TABS = [
     ("billing",     "Billing"),
     ("guide",       "User Guide"),
     ("admin",       "Admin"),
+    ("astro",       "Astro Research"),
 ]
 
 app.layout = html.Div([
@@ -12359,7 +12461,7 @@ app.clientside_callback(
         const buttons = [
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
-            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
+            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin', 'tab-astro',
             'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
@@ -12375,6 +12477,7 @@ app.clientside_callback(
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),
+    Input("tab-astro","n_clicks"),
     Input("tab-status","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
@@ -12398,8 +12501,9 @@ def open_guide_from_welcome(n_clicks):
 @app.callback(
     [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
     Input("s-tab", "data"),
+    Input("s-session", "data"),
 )
-def sync_active_tab_styles(active_tab):
+def sync_active_tab_styles(active_tab, session=None):
     active_tab = active_tab or "home"
 
     base = {
@@ -12429,7 +12533,9 @@ def sync_active_tab_styles(active_tab):
         "boxShadow": "none",
     })
 
-    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
+    hidden = {"display": "none"}
+    return [hidden if (key == "astro" and not is_admin(session)) else (active_style if key == active_tab else inactive_style)
+            for key, _label in ALL_TABS]
 
 
 @app.callback(Output("welcome-after-main", "style"),
@@ -13269,6 +13375,13 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                     "padding": "18px",
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+    elif tab=="astro":
+        if not tab_switched:
+            return no_update, no_update, no_update, no_update
+        try:
+            main = build_astro_tab(session)
+        except Exception as e:
+            main = card([html.Div("Astro Research could not load. Please refresh.", style={"color": WHITE})])
     elif tab=="reports":
         # FIX (2026-07-31): user reported the Reports tab kept "switching"
         # back to the latest date while reading an older one. Root cause:

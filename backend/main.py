@@ -3074,6 +3074,45 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.get("/api/admin/astro-research/symbols")
+def astro_research_symbols(_admin: str = Depends(require_admin)):
+    """Astro Research (admin only): the per-symbol IPO date, location and elevation table, with source and status."""
+    from backend import astro_research
+    return {"ok": True, "symbols": astro_research.table()}
+
+
+@app.post("/api/admin/astro-research/report")
+def astro_research_report(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): ephemeris report, pivots, Gann levels and an hourly plan for one symbol and date."""
+    import re
+    from backend import astro_research
+    p = payload or {}
+    day = str(p.get("date") or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return {"ok": False, "error": "Enter the date as YYYY-MM-DD."}
+    try:
+        return {"ok": True, **astro_research.report(str(p.get("symbol") or "").upper(), day,
+                                                      str(p.get("pivots_since") or "2020-01-01"))}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/astro-research/backtest")
+def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): event study of one astro event against Alpaca daily bars."""
+    from backend import astro_research
+    p = payload or {}
+    sym = str(p.get("symbol") or "").upper()
+    try:
+        if sym not in astro_research.BY_SYMBOL:
+            return {"ok": False, "error": "Symbol is not in the Astro Research table."}
+        years = max(2, min(int(p.get("years") or 8), 15))
+        res = astro_research.backtest(astro_research.fetch_bars(sym, years), dict(p.get("event") or {}), sym)
+        return {"ok": "error" not in res, **res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/weis-radar/run-now")
 def weis_radar_run_now(_admin: str = Depends(require_admin)):
     """
