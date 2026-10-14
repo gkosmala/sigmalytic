@@ -78,6 +78,15 @@ def invalidate_prefs_cache() -> None:
 
 # ── Filter logic ──────────────────────────────────────────────────────────────
 
+def enabled_alert_types(raw) -> set:
+    """The alert types a user has switched on (empty when none, or nothing is saved)."""
+    if isinstance(raw, dict):
+        return {str(k) for k, v in raw.items() if v is True and k != "daily_report_email"}
+    if isinstance(raw, (list, tuple, set)):
+        return {str(x) for x in raw}
+    return set()
+
+
 def user_wants_alert(prefs: dict, alert: dict) -> bool:
     symbol      = alert.get("symbol", "").upper()
     alert_type  = alert.get("alert_type", "")
@@ -88,8 +97,10 @@ def user_wants_alert(prefs: dict, alert: dict) -> bool:
     if watchlist and symbol not in [s.upper() for s in watchlist]:
         return False
 
-    allowed_types = prefs.get("alert_types") or []
-    if allowed_types and alert_type not in allowed_types:
+    # Default is NO alerts: a user receives only the types they switched on. Saved settings are a dict of
+    # on/off flags ({"ab_score": True, ...}, which also holds the daily-report flag) or an older list of
+    # enabled types. Nothing saved, or everything off, means nothing is sent.
+    if alert_type not in enabled_alert_types(prefs.get("alert_types")):
         return False
 
     # Weis setup-state alerts carry no score, so the minimum-score setting does not apply to them.

@@ -5113,7 +5113,7 @@ def build_preferences_tab(user_id="", session=None):
     prefs = {
         "delivery_mode":     "realtime",
         "min_score":         60,
-        "alert_types":       {"wyckoff":True,"gann":True,"ab_score":True,"elliott":False,"fibonacci":False},
+        "alert_types":       {"wyckoff":False,"gann":False,"ab_score":False,"elliott":False,"fibonacci":False},
         "watchlist":         [],
         "market_hours_only": True,
         "hurst_profile":     "MEDIUM",
