@@ -13,8 +13,8 @@ def _symbols(trs):
     return [tr.children[0].children for tr in trs]
 
 
-def test_default_order_is_kept():
-    assert _symbols(dash_app._weis_state_rows(ROWS, None)) == ["AAA", "BBB", "CCC", "DDD"]
+def test_default_order_is_state_priority_on_sample():
+    assert _symbols(dash_app._weis_state_rows(ROWS, None)) == ["AAA", "DDD", "BBB", "CCC"]
 
 
 def test_ascending_and_descending_put_missing_values_last():
@@ -40,3 +40,11 @@ def test_table_has_centered_header_and_sort_button():
     block = {"available": True, "rows": ROWS, "counts": {}, "bar_count": 252, "scanned": 4}
     html_str = str(dash_app._render_weis_state_table(block))
     assert "weis-state-sort-bars" in html_str and "weis-state-tbody" in html_str and "'textAlign': 'center'" in html_str
+
+
+def test_default_order_is_state_priority():
+    rows = [{"symbol": s, "state": st, "bars_since_break": i}
+            for i, (s, st) in enumerate([("A", "Avoid"), ("B", "Watching"), ("C", "Armed"),
+                                         ("D", "Setting Up"), ("E", "Armed"), ("F", "Avoid")])]
+    out = [r.children[0].children for r in dash_app._weis_state_rows(rows, None)]
+    assert out == ["C", "E", "D", "B", "A", "F"]
