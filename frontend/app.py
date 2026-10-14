@@ -4387,6 +4387,7 @@ def _format_weis_radar_hit(h):
     ])
 
 
+_WEIS_STATE_PRIORITY = {"Armed": 0, "Setting Up": 1, "Watching": 2, "Avoid": 3}
 _WEIS_STATE_COLORS = {"Armed": "#34d399", "Setting Up": "#fbbf24", "Watching": "#60a5fa", "Avoid": "#f87171"}
 
 
@@ -4413,7 +4414,7 @@ def _weis_state_cell(row, states=None):
 
 
 def _weis_state_rows(rows_in, sort_dir):
-    """Table rows for the Weis setup states. sort_dir: None keeps the engine's order (Armed first);
+    """Table rows for the Weis setup states. sort_dir: None orders by state priority (Armed, Setting Up, Watching, Avoid);
     'asc' or 'desc' sorts by Bars ago, with rows that have no value always last."""
     def day(t):
         return str(t)[:10] if t else "-"
@@ -4421,7 +4422,10 @@ def _weis_state_rows(rows_in, sort_dir):
     def num(v):
         return f"${v:,.2f}" if isinstance(v, (int, float)) else "-"
 
-    items = list(rows_in or [])
+    # Default order is by priority: Armed, Setting Up, Watching, Avoid last. The sort is stable,
+    # so rows keep the engine's order inside each state. Sorting by Bars ago uses the same
+    # priority as the tiebreaker for equal values.
+    items = sorted(rows_in or [], key=lambda r: _WEIS_STATE_PRIORITY.get(r.get("state"), len(_WEIS_STATE_PRIORITY)))
     if sort_dir in ("asc", "desc"):
         have = [r for r in items if isinstance(r.get("bars_since_break"), (int, float))]
         none = [r for r in items if not isinstance(r.get("bars_since_break"), (int, float))]
