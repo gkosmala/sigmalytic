@@ -4481,7 +4481,9 @@ def _render_weis_state_table(block):
                  f"{block.get('scanned', 0)} symbols scanned. {summary}. Symbols with no setup are not listed. "
                  "Springs are long setups, upthrusts are short setups.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
-        dcc.Store(id="s-weis-state-rows", data=rows_in),
+        # The browser copy used for re-sorting carries no book page citations either.
+        dcc.Store(id="s-weis-state-rows",
+                  data=[{**r, "reason": _strip_book_pages(r.get("reason"))} for r in rows_in]),
         html.Table([html.Thead(html.Tr([
             html.Th(html.Button("Bars ago", id="weis-state-sort-bars", n_clicks=0,
                                 title="Click to sort: ascending, then descending, and so on",
