@@ -113,3 +113,25 @@ def test_report_uses_only_bars_before_the_date(monkeypatch):
     r = ar.report("AAPL", day)
     assert r["ref_date"] < day and r["actual"] is not None
     assert all(p["date"] < day for p in r["pivot_rows"])
+
+
+def test_admin_page_builds_with_astro_section():
+    """Regression: an invalid Dash property once broke the Astro Research controls. The admin builder must produce them."""
+    import os
+    import sys
+    os.environ["SIGMALYTIC_ADMIN_EMAILS"] = "admin@example.com"
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend"))
+    import app as dash_app
+
+    def ids(x, out):
+        if getattr(x, "id", None):
+            out.append(x.id)
+        ch = getattr(x, "children", None)
+        for c in (ch if isinstance(ch, list) else [ch]):
+            if c is not None and not isinstance(c, (str, int, float)):
+                ids(c, out)
+        return out
+
+    found = ids(dash_app.build_astro_tab({"email": "admin@example.com"}), [])
+    assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn"} <= set(found)
+    assert dash_app.build_astro_tab({"email": "other@example.com"}).children == "Admin access only."
