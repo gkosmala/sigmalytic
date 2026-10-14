@@ -16,6 +16,21 @@ import ephem
 from backend import astro_ephemeris as ae
 
 ET = ZoneInfo("America/New_York")
+import os
+
+OWNER_DEFAULT = "greg.kosmala@gmail.com"
+
+
+def owner_emails() -> set:
+    """Who may use Astro Research. Default is the owner only; ASTRO_RESEARCH_EMAILS (comma separated) overrides it."""
+    raw = os.getenv("ASTRO_RESEARCH_EMAILS") or OWNER_DEFAULT
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_owner(email: str) -> bool:
+    return bool(email) and email.strip().lower() in owner_emails()
+
+
 NOTE_GEOCODER = "Census geocoder point for the street address"
 NOTE_USER = "Supplied by the user; not independently verified"
 
