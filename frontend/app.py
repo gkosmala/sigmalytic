@@ -70,8 +70,10 @@ except Exception:
 
 try:
     from content_hub_ui import render_package as _content_hub_render
+    from astro_research_ui import render_table as _astro_table, render_run as _astro_run, render_backtest as _astro_bt
 except Exception:
     _content_hub_render = None
+    _astro_table = _astro_run = _astro_bt = None
 
 try:
     from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
@@ -5842,6 +5844,38 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
+    # ── Astro Research -- admin-only research tool (drafts only; nothing trades or posts). ──
+    _astro_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+                 "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
+    _astro_btn = {"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px", "padding": "10px 16px",
+                  "fontSize": "13px", "fontWeight": "700", "cursor": "pointer", "marginRight": "8px"}
+    astro_research_block = _admin_card([
+        html.Div("ASTRO RESEARCH", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("Hourly planetary positions at each company's headquarters-at-IPO location, transits to its IPO chart, "
+                 "price pivots from Alpaca daily bars, and an event backtest against all days. Research drafts only.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL']], value="MSFT", clearable=False,
+                         style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-start", type="text", placeholder="Start, ET (blank = now) 2026-10-14 09:30", debounce=False,
+                      style={**_astro_in, "width": "280px"}),
+            dcc.Input(id="astro-hours", type="number", value=48, min=1, max=168, style={**_astro_in, "width": "80px"}),
+            html.Button("Run", id="astro-run-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Show symbol table", id="astro-table-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "10px"}),
+        html.Div([
+            dcc.Dropdown(id="astro-event", options=[{"label": "New moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"new\"}"}, {"label": "Full moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"full\"}"}, {"label": "Mercury turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"retrograde\"}"}, {"label": "Mercury turns direct", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"direct\"}"}, {"label": "Venus turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Venus\", \"to\": \"retrograde\"}"}, {"label": "Mars turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mars\", \"to\": \"retrograde\"}"}, {"label": "Mars conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Mars\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Jupiter conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Jupiter\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn square IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"square\", \"orb\": 1.0}"}, {"label": "Sun conjunct IPO Sun (solar return)", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Sun\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}], value='{"kind": "moon_phase", "phase": "new"}', clearable=False,
+                         style={"width": "300px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-years", type="number", value=8, min=2, max=15, style={**_astro_in, "width": "80px"}),
+            html.Button("Backtest event", id="astro-bt-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-run-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # ── Symbol Backtest -- single-symbol, full-history check against the
     # production lookup table's own profile definitions, powered by the
     # new /api/admin/symbol-backtest/{symbol} endpoint. Defined here,
@@ -6134,6 +6168,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             content_hub_block,
+            astro_research_block,
             setup_deployment_block,
             journal_correction_block,
             subscriber_alerts_block,
@@ -6396,6 +6431,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         content_hub_block,
+        astro_research_block,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
@@ -10934,6 +10970,52 @@ def handle_delete_report(submit_n_clicks, selected_date, session):
         )
     except Exception as exc:
         return f"Could not reach the backend: {exc}", no_update, no_update
+
+def _astro_call(method, path, session, payload=None):
+    try:
+        url = f"{BACKEND_HTTP}/api/admin/astro-research/{path}"
+        r = req.get(url, headers=_auth_headers(session), timeout=60) if method == "GET" else \
+            req.post(url, json=payload, headers=_auth_headers(session), timeout=150)
+        if r.status_code == 401:
+            return None, "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return None, "Admin access only."
+        if not r.ok:
+            return None, f"Could not run (error {r.status_code}): {r.text[:200]}"
+        return r.json(), None
+    except Exception as exc:
+        return None, f"Could not reach the backend: {exc}"
+
+
+@app.callback(Output("astro-table-result", "children"), Input("astro-table-btn", "n_clicks"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_table(n, session):
+    if _astro_table is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    data, err = _astro_call("GET", "symbols", session)
+    return err or _astro_table(data)
+
+
+@app.callback(Output("astro-run-result", "children"), Input("astro-run-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("astro-start", "value"), State("astro-hours", "value"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_run(n, symbol, start, hours, session):
+    if _astro_run is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    data, err = _astro_call("POST", "run", session, {"symbol": symbol, "start": (start or "").strip(), "hours": hours or 48})
+    return err or _astro_run(data)
+
+
+@app.callback(Output("astro-bt-result", "children"), Input("astro-bt-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("astro-event", "value"), State("astro-years", "value"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_backtest(n, symbol, event, years, session):
+    if _astro_bt is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    import json as _json
+    data, err = _astro_call("POST", "backtest", session, {"symbol": symbol, "event": _json.loads(event), "years": years or 8})
+    return err or _astro_bt(data)
+
 
 @app.callback(Output("content-hub-result", "children"),
               Input("content-hub-run-btn", "n_clicks"),

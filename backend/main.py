@@ -3074,6 +3074,46 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.get("/api/admin/astro-research/symbols")
+def astro_research_symbols(_admin: str = Depends(require_admin)):
+    """Astro Research (admin only): the per-symbol IPO date, location and elevation table, with source and status."""
+    from backend import astro_research
+    return {"ok": True, "symbols": astro_research.table()}
+
+
+@app.post("/api/admin/astro-research/run")
+def astro_research_run(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): hourly positions, IPO-chart transit windows, Alpaca pivots and a plan draft."""
+    from datetime import datetime, timezone
+    from backend import astro_research
+    p = payload or {}
+    try:
+        raw = str(p.get("start") or "").strip()
+        start = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else datetime.now(timezone.utc)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=astro_research.ET)
+        return {"ok": True, **astro_research.run(str(p.get("symbol") or "").upper(), start, int(p.get("hours") or 48),
+                                                  str(p.get("pivots_since") or "2020-01-01"))}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
+@app.post("/api/admin/astro-research/backtest")
+def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): event study of one astro event against Alpaca daily bars."""
+    from backend import astro_research
+    p = payload or {}
+    sym = str(p.get("symbol") or "").upper()
+    try:
+        if sym not in astro_research.BY_SYMBOL:
+            return {"ok": False, "error": "Symbol is not in the Astro Research table."}
+        years = max(2, min(int(p.get("years") or 8), 15))
+        res = astro_research.backtest(astro_research.fetch_bars(sym, years), dict(p.get("event") or {}), sym)
+        return {"ok": "error" not in res, **res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/weis-radar/run-now")
 def weis_radar_run_now(_admin: str = Depends(require_admin)):
     """
