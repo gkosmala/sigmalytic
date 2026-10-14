@@ -4412,6 +4412,43 @@ def _weis_state_cell(row, states=None):
                    style={"color": _WEIS_STATE_COLORS.get(row.get("state"), WHITE), "fontWeight": "700"})
 
 
+def _weis_state_rows(rows_in, sort_dir):
+    """Table rows for the Weis setup states. sort_dir: None keeps the engine's order (Armed first);
+    'asc' or 'desc' sorts by Bars ago, with rows that have no value always last."""
+    def day(t):
+        return str(t)[:10] if t else "-"
+
+    def num(v):
+        return f"${v:,.2f}" if isinstance(v, (int, float)) else "-"
+
+    items = list(rows_in or [])
+    if sort_dir in ("asc", "desc"):
+        have = [r for r in items if isinstance(r.get("bars_since_break"), (int, float))]
+        none = [r for r in items if not isinstance(r.get("bars_since_break"), (int, float))]
+        have.sort(key=lambda r: r["bars_since_break"], reverse=(sort_dir == "desc"))
+        items = have + none
+    rows = []
+    for r in items:
+        frames = r.get("trends_by_frame") or {}
+        trend = " / ".join(f"{k}:{v}" for k, v in frames.items()) if isinstance(frames, dict) and frames else (r.get("trend") or "-")
+        line = f"{r.get('line_source') or '-'} x{r.get('line_touches')}" if r.get("line_touches") else (r.get("line_source") or "-")
+        rows.append(html.Tr([
+            html.Td(r.get("symbol"), style={"fontWeight": "700"}),
+            html.Td(r.get("state"), style={"color": _WEIS_STATE_COLORS.get(r.get("state"), WHITE), "fontWeight": "700"}),
+            html.Td(r.get("direction") or "-"),
+            html.Td(line),
+            html.Td(day(r.get("break_time"))),
+            html.Td("-" if r.get("bars_since_break") is None else str(r.get("bars_since_break")), style={"textAlign": "center"}),
+            html.Td(day(r.get("close_back_time"))),
+            html.Td(num(r.get("stop"))),
+            html.Td(num(r.get("target")) if r.get("target") is not None else "No target defined"),
+            html.Td(trend),
+            html.Td(_strip_book_pages(r.get("reason")) + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
+                    style={"color": MUTED}),
+        ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}))
+    return rows
+
+
 def _render_weis_state_table(block):
     """The Weis setup states for the whole scanned universe (the same engine and
     window as the Radar Status), Armed first. This is the page's main table."""
@@ -4430,31 +4467,7 @@ def _render_weis_state_table(block):
     rows_in = block.get("rows") or []
     headers = ("Symbol", "State", "Side", "Line", "Break", "Bars ago", "Closed back", "Stop", "Target", "Trend", "Why")
 
-    def day(t):
-        return str(t)[:10] if t else "-"
-
-    def num(v):
-        return f"${v:,.2f}" if isinstance(v, (int, float)) else "-"
-
-    rows = []
-    for r in rows_in:
-        frames = r.get("trends_by_frame") or {}
-        trend = " / ".join(f"{k}:{v}" for k, v in frames.items()) if isinstance(frames, dict) and frames else (r.get("trend") or "-")
-        line = f"{r.get('line_source') or '-'} x{r.get('line_touches')}" if r.get("line_touches") else (r.get("line_source") or "-")
-        rows.append(html.Tr([
-            html.Td(r.get("symbol"), style={"fontWeight": "700"}),
-            html.Td(r.get("state"), style={"color": _WEIS_STATE_COLORS.get(r.get("state"), WHITE), "fontWeight": "700"}),
-            html.Td(r.get("direction") or "-"),
-            html.Td(line),
-            html.Td(day(r.get("break_time"))),
-            html.Td("-" if r.get("bars_since_break") is None else str(r.get("bars_since_break"))),
-            html.Td(day(r.get("close_back_time"))),
-            html.Td(num(r.get("stop"))),
-            html.Td(num(r.get("target")) if r.get("target") is not None else "No target defined"),
-            html.Td(trend),
-            html.Td(_strip_book_pages(r.get("reason")) + (f" (flipped from {r['flipped_from']})" if r.get("flipped_from") else ""),
-                    style={"color": MUTED}),
-        ], style={"borderBottom": f"1px solid {BORDER}", "color": WHITE}))
+    rows = _weis_state_rows(rows_in, None)
     summary = " · ".join(f"{k}: {counts.get(k, 0)}" for k in ("Armed", "Setting Up", "Watching", "Avoid"))
     return html.Div([
         title,
@@ -4463,8 +4476,15 @@ def _render_weis_state_table(block):
                  f"{block.get('scanned', 0)} symbols scanned. {summary}. Symbols with no setup are not listed. "
                  "Springs are long setups, upthrusts are short setups.",
                  style={"color": MUTED, "fontSize": "12px", "marginBottom": "8px"}),
-        html.Table([html.Thead(html.Tr([html.Th(h, style={"padding": "8px", "textAlign": "left", "color": MUTED})
-                                       for h in headers])), html.Tbody(rows)],
+        dcc.Store(id="s-weis-state-rows", data=rows_in),
+        html.Table([html.Thead(html.Tr([
+            html.Th(html.Button("Bars ago", id="weis-state-sort-bars", n_clicks=0,
+                                title="Click to sort: ascending, then descending, and so on",
+                                style={"background": "transparent", "border": "none", "color": MUTED, "fontWeight": "700",
+                                       "fontSize": "12px", "cursor": "pointer", "padding": "0"}),
+                    style={"padding": "8px", "textAlign": "center", "color": MUTED})
+            if h == "Bars ago" else html.Th(h, style={"padding": "8px", "textAlign": "left", "color": MUTED})
+            for h in headers])), html.Tbody(rows, id="weis-state-tbody")],
                    style={"width": "100%", "borderCollapse": "collapse", "fontSize": "12px"})
         if rows else html.Div("No symbol has a Weis setup in this scan.", style={"color": MUTED, "fontSize": "12px"}),
     ], style=box)
@@ -11058,6 +11078,14 @@ def handle_astro_backtest(n, symbol, event, years, session):
     import json as _json
     data, err = _astro_call("POST", "backtest", session, {"symbol": symbol, "event": _json.loads(event), "years": years or 8})
     return err or _astro_bt(data)
+
+
+@app.callback(Output("weis-state-tbody", "children"), Output("weis-state-sort-bars", "children"),
+              Input("weis-state-sort-bars", "n_clicks"), State("s-weis-state-rows", "data"), prevent_initial_call=True)
+def sort_weis_state_by_bars_ago(n_clicks, rows):
+    """First click sorts Bars ago ascending, the next descending, and so on."""
+    asc = (n_clicks or 0) % 2 == 1
+    return _weis_state_rows(rows, "asc" if asc else "desc"), ("Bars ago \u25B2" if asc else "Bars ago \u25BC")
 
 
 @app.callback(Output("content-hub-result", "children"),
