@@ -4422,15 +4422,16 @@ def _weis_state_rows(rows_in, sort_dir):
     def num(v):
         return f"${v:,.2f}" if isinstance(v, (int, float)) else "-"
 
-    # Default order is by priority: Armed, Setting Up, Watching, Avoid last. The sort is stable,
-    # so rows keep the engine's order inside each state. Sorting by Bars ago uses the same
-    # priority as the tiebreaker for equal values.
-    items = sorted(rows_in or [], key=lambda r: _WEIS_STATE_PRIORITY.get(r.get("state"), len(_WEIS_STATE_PRIORITY)))
+    # Armed always on top and Avoid always last. Clicking Bars ago sorts only inside each state;
+    # rows with no Bars ago value go last inside their state.
+    rank = lambda r: _WEIS_STATE_PRIORITY.get(r.get("state"), len(_WEIS_STATE_PRIORITY))
+    items = sorted(rows_in or [], key=rank)
     if sort_dir in ("asc", "desc"):
-        have = [r for r in items if isinstance(r.get("bars_since_break"), (int, float))]
-        none = [r for r in items if not isinstance(r.get("bars_since_break"), (int, float))]
-        have.sort(key=lambda r: r["bars_since_break"], reverse=(sort_dir == "desc"))
-        items = have + none
+        def key(r):
+            v = r.get("bars_since_break")
+            has = isinstance(v, (int, float))
+            return (rank(r), 0 if has else 1, (v if sort_dir == "asc" else -v) if has else 0)
+        items = sorted(items, key=key)
     rows = []
     for r in items:
         frames = r.get("trends_by_frame") or {}
