@@ -77,6 +77,6 @@ def test_daily_summary_with_no_weis_setups_sends_nothing():
 def test_min_score_does_not_gate_weis_alerts():
     from datetime import datetime, timezone
     ts = datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)  # Wednesday, market hours
-    prefs = {"min_score": 90, "market_hours_only": True}
+    prefs = {"min_score": 90, "market_hours_only": True, "alert_types": {"ab_score": True}}
     assert email_service.user_wants_alert(prefs, {"symbol": "X", "alert_type": "ab_score", "score": 0, "timestamp": ts}) is False
     assert email_service.user_wants_alert(prefs, {"symbol": "X", "alert_type": "ab_score", "score": 0, "weis_state": True, "timestamp": ts}) is True
