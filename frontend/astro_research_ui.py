@@ -31,36 +31,55 @@ def render_table(payload: dict):
         _table(["Symbol", "IPO date", "Chart moment", "Address at IPO", "Lat, Lon", "Elev.", "Source"], rows)])
 
 
-def render_run(p: dict):
+def render_report(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
-    kids = [html.Div(f"{p['row']['symbol']} natal chart moment: {p['row']['ipo_utc']}", style={"fontWeight": "800", "color": WHITE})]
-    kids += [_h("Positions at start (chart location)"),
-             _table(list(p["start_chart"].keys()), [list(p["start_chart"].values())]),
+    row = p["row"]
+    kids = [html.Div(f"{row['symbol']} on {p['day']}  |  reference ${p['ref_price']} (close of {p['ref_date']})  |  ${p['unit']:g} per degree",
+                     style={"fontWeight": "800", "color": WHITE})]
+    for n in p.get("notes", []):
+        kids.append(html.Div(n, style={"color": AMBER, "fontSize": "11px"}))
+    if p.get("actual"):
+        a = p["actual"]
+        kids.append(html.Div(f"Actual that day: open {a['open']}, high {a['high']}, low {a['low']}, close {a['close']}",
+                             style={"color": MUTED, "fontSize": "11px"}))
+    oc = p["open_chart"]
+    kids += [_h("1. Ephemeris at the open (9:30 a.m. ET, chart location)"), _table(list(oc.keys()), [[v["position"] for v in oc.values()], [f"{v['lon']}" for v in oc.values()]]),
+             html.Div(f"Moon phase at the open: {p['moon_phase_open']} (0 new, 0.5 full)", style={"color": MUTED, "fontSize": "11px"})]
+    if p["day_events"]:
+        kids.append(html.Div("Today: " + "; ".join(p["day_events"]), style={"color": WHITE, "fontSize": "11px"}))
+    kids += [_h("Exact aspects during the session"),
+             _table(["Time (ET)", "Aspect"], [[e["time"], e["text"]] for e in p["exact_events"]]) if p["exact_events"]
+             else html.Div("None.", style={"color": MUTED, "fontSize": "11px"}),
+             _h("Hourly positions"), _table(["ET", "UTC", "Moon phase"] + list(p["hourly"][0]["bodies"].keys()),
+                                           [[h["time_et"], h["time_utc"], h["moon_phase"]] + list(h["bodies"].values()) for h in p["hourly"]]),
              _h("IPO chart"), _table(list(p["ipo_chart"].keys()), [list(p["ipo_chart"].values())])]
-    kids += [_h("Transit aspects to the IPO chart (within 1 degree)"),
-             _table(["Transit", "Aspect", "Natal", "From", "To", "Tightest"],
-                    [[w["transit"], w["aspect"], w["natal"], w["from"], w["to"], f"{w['tightest_orb']} deg {w['tightest_at']}"]
-                     for w in p["windows"]]) if p["windows"] else html.Div("None in this window.", style={"color": MUTED, "fontSize": "11px"})]
-    piv = p.get("pivots") or {}
-    if piv.get("error"):
-        kids += [_h("Pivots"), html.Div(piv["error"], style={"color": AMBER, "fontSize": "11px"})]
-    else:
-        kids += [_h(f"Pivots from Alpaca daily bars (since {piv.get('since')})"),
-                 _table(["Pivot", "Price", "Date"], [[x["name"], f"${x['price']:.2f}", x["date"]] for x in piv.get("pivots", [])])]
-        if p.get("pivot_check"):
-            kids += [_h("Cross-check against your pasted pivot table"),
-                     _table(["Pivot", "Pasted", "Computed", "Computed date", "Difference", "Month matches"],
-                            [[c["name"], f"${c['pasted']}", c["computed"], c.get("computed_date", ""),
-                              "" if c["diff_pct"] is None else f"{c['diff_pct']}%",
-                              "" if c["date_match"] is None else ("yes" if c["date_match"] else "no")] for c in p["pivot_check"]])]
-    kids += [_h("Hourly positions (first 72 hours, chart location)"),
-             _table(["ET", "UTC", "Moon phase"] + list(p["hourly"][0]["bodies"].keys()) if p["hourly"] else [],
-                    [[h["time_et"], h["time_utc"], h["moon_phase"]] + list(h["bodies"].values()) for h in p["hourly"]]),
-             _h("Plan draft"), html.Pre(p["draft"], style={"whiteSpace": "pre-wrap", "background": "rgba(0,0,0,.3)",
-                                                         "border": f"1px solid {BORDER}", "borderRadius": "8px", "padding": "10px",
-                                                         "fontSize": "12px", "color": WHITE, "fontFamily": "DM Mono, monospace"}),
-             dcc.Clipboard(content=p["draft"], title="Copy draft", style={"cursor": "pointer", "color": WHITE})]
+    kids.append(_h("2. Major market structure and intermediate pivots (daily and weekly, Alpaca split-adjusted)"))
+    kids.append(_table(["Frame", "Pivot", "Price", "Date", "Days", "Weeks", "Gann count"],
+                       [[x["frame"], x["name"], f"${x['price']:.2f}", x["date"], x["counts"]["days"], x["counts"]["weeks"],
+                         (f"near {x['counts']['nearest_day_number']}d / {x['counts']['nearest_week_number']}w" if x["counts"]["flag"] else "")]
+                        for x in p["pivot_rows"]]))
+    if p.get("pivot_check"):
+        kids += [_h("Cross-check against your pasted pivot table"),
+                 _table(["Pivot", "Pasted", "Computed", "Computed date", "Difference", "Month matches"],
+                        [[c["name"], f"${c['pasted']}", c["computed"], c.get("computed_date", ""),
+                          "" if c["diff_pct"] is None else f"{c['diff_pct']}%",
+                          "" if c["date_match"] is None else ("yes" if c["date_match"] else "no")] for c in p["pivot_check"]])]
+    kids += [_h("3. Gann confluence zones (two or more methods within 0.2%)"),
+             _table(["Price", "Score", "Methods", "Members"], [[f"${z['price']:.2f}", z["score"], ", ".join(z["families"]), "; ".join(z["members"][:5])]
+                                                                for z in p["top_zones"]]) if p["top_zones"]
+             else html.Div("No confluence zones within range.", style={"color": MUTED, "fontSize": "11px"})]
+    kids += [_h("4. Hourly tactical plan"),
+             _table(["Time (ET)", "Rule window", "Attention", "Moon", "Astro and time marks", "Zones above", "Zones below"],
+                    [[b["time_et"], b["phase"], b["attention"], b["moon"], "; ".join(b["events"] + b["marks"]) or "-",
+                      ", ".join(f"${z['price']:.2f}" for z in b["above"]) or "-", ", ".join(f"${z['price']:.2f}" for z in b["below"]) or "-"]
+                     for b in p["blocks"]]),
+             html.Div("A reversal needs location, structure and volume to agree. Mid-range prices are a no-trade area. Zones are references, not forecasts.",
+                      style={"color": AMBER, "fontSize": "11px"}),
+             _h("Report text"), html.Pre(p["draft"], style={"whiteSpace": "pre-wrap", "background": "rgba(0,0,0,.3)",
+                                                           "border": f"1px solid {BORDER}", "borderRadius": "8px", "padding": "10px",
+                                                           "fontSize": "12px", "color": WHITE, "fontFamily": "DM Mono, monospace"}),
+             dcc.Clipboard(content=p["draft"], title="Copy report", style={"cursor": "pointer", "color": WHITE})]
     return html.Div(kids)
 
 

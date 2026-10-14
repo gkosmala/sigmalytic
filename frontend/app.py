@@ -70,7 +70,7 @@ except Exception:
 
 try:
     from content_hub_ui import render_package as _content_hub_render
-    from astro_research_ui import render_table as _astro_table, render_run as _astro_run, render_backtest as _astro_bt
+    from astro_research_ui import render_table as _astro_table, render_report as _astro_run, render_backtest as _astro_bt
 except Exception:
     _content_hub_render = None
     _astro_table = _astro_run = _astro_bt = None
@@ -5776,17 +5776,21 @@ def build_astro_tab(session: dict) -> html.Div:
                   "fontSize": "13px", "fontWeight": "700", "cursor": "pointer", "marginRight": "8px"}
     return _admin_card([
         html.Div("ASTRO RESEARCH", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
-        html.Div("Hourly planetary positions at each company's headquarters-at-IPO location, transits to its IPO chart, "
-                 "price pivots from Alpaca daily bars, and an event backtest against all days. Research drafts only.",
+        html.Div("Enter a date and a symbol. The tool takes that symbol's headquarters-at-IPO latitude, longitude and elevation, builds "
+                 "an ephemeris report, adds the daily and weekly pivots from Alpaca bars, and turns them into Gann price and time levels and an "
+                 "hourly tactical plan. Research drafts only. The second box is the date the pivot cycle starts.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
         html.Div([
             dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL']], value="MSFT", clearable=False,
                          style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
                                 "color": "#0b0f14"}),
-            dcc.Input(id="astro-start", type="text", placeholder="Start, ET (blank = now) 2026-10-14 09:30", debounce=False,
-                      style={**_astro_in, "width": "280px"}),
-            dcc.Input(id="astro-hours", type="number", value=48, min=1, max=168, style={**_astro_in, "width": "80px"}),
-            html.Button("Run", id="astro-run-btn", n_clicks=0, style=_astro_btn),
+            dcc.Input(id="astro-start", type="text", placeholder="Date, e.g. 2026-10-14", debounce=False,
+                      style={**_astro_in, "width": "170px"}),
+            dcc.Input(id="astro-since", type="text", value="2020-01-01", debounce=False, title="Pivot cycle start date",
+                      style={**_astro_in, "width": "130px"}),
+            html.Button("Generate report", id="astro-run-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Download .txt", id="astro-dl-btn", n_clicks=0, style=_astro_btn),
+            dcc.Download(id="astro-download"), dcc.Store(id="astro-draft"),
             html.Button("Show symbol table", id="astro-table-btn", n_clicks=0, style=_astro_btn),
         ], style={"marginBottom": "10px"}),
         html.Div([
@@ -11000,14 +11004,25 @@ def handle_astro_table(n, session):
     return err or _astro_table(data)
 
 
-@app.callback(Output("astro-run-result", "children"), Input("astro-run-btn", "n_clicks"),
-              State("astro-symbol", "value"), State("astro-start", "value"), State("astro-hours", "value"),
+@app.callback(Output("astro-run-result", "children"), Output("astro-draft", "data"), Input("astro-run-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("astro-start", "value"), State("astro-since", "value"),
               State("s-session", "data"), prevent_initial_call=True)
-def handle_astro_run(n, symbol, start, hours, session):
+def handle_astro_run(n, symbol, day, since, session):
     if _astro_run is None:
-        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
-    data, err = _astro_call("POST", "run", session, {"symbol": symbol, "start": (start or "").strip(), "hours": hours or 48})
-    return err or _astro_run(data)
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py.", no_update
+    data, err = _astro_call("POST", "report", session, {"symbol": symbol, "date": (day or "").strip(),
+                                                         "pivots_since": (since or "2020-01-01").strip()})
+    if err:
+        return err, no_update
+    return _astro_run(data), (data.get("draft") if data.get("ok") else None)
+
+
+@app.callback(Output("astro-download", "data"), Input("astro-dl-btn", "n_clicks"), State("astro-draft", "data"),
+              State("astro-symbol", "value"), State("astro-start", "value"), prevent_initial_call=True)
+def download_astro_report(n, draft, symbol, day):
+    if not draft:
+        return no_update
+    return {"content": draft, "filename": f"astro_report_{symbol}_{(day or '').strip()}.txt"}
 
 
 @app.callback(Output("astro-bt-result", "children"), Input("astro-bt-btn", "n_clicks"),

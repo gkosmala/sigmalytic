@@ -62,5 +62,54 @@ def test_windows_and_hourly():
     assert w and all(x["tightest_orb"] <= 1.0 for x in w)
     h = ar.hourly_table("MSFT", start, 6)
     assert len(h) == 6 and "Moon" in h[0]["bodies"]
-    d = ar.plan_draft("MSFT", start, 48, w, ar.compute_pivots(_bars()))
-    assert "Not a signal and not investment advice" in d
+
+
+def test_square_of_nine_matches_the_source_example():
+    # source material: pivot 7002.28, 45 degrees down -> about 6,960.50, 90 down -> 6,918.85, 360 down -> 6,671.56
+    lv = {x["label"]: x["price"] for x in ar.sq9_levels(7002.28, "p")}
+    assert abs(lv["p down 45 deg"] - 6960.50) < 0.1 and abs(lv["p down 90 deg"] - 6918.85) < 0.1
+    assert abs(lv["p down 360 deg"] - 6671.56) < 0.1
+
+
+def test_natal_lines_match_the_source_for_aapl():
+    n = ar.ipo_chart("AAPL")
+    assert abs(n["Jupiter"]["lon"] - 187.59) < 0.1 and abs(n["Sun"]["lon"] - 260.74) < 0.1
+    mof = ar.mean_lons(n)["Mean of Five"]
+    assert abs(mof - 215.91) < 0.1
+    lines = ar.planet_lines({"Jupiter": n["Jupiter"]["lon"]}, 190.0, 1.0, 0.1, "natal")
+    assert abs(lines[0]["price"] - 187.59) < 0.1
+
+
+def test_time_counts_match_the_source_example():
+    c = ar.time_counts("2026-01-28", "2026-05-01")
+    assert c["days"] == 93 and c["nearest_day_number"] == 90 and c["nearest_week_number"] == 13 and c["flag"]
+
+
+def test_price_unit():
+    assert ar.price_unit(6400) == 10 and ar.price_unit(305) == 1 and ar.price_unit(5) == 0.1
+
+
+def test_confluence_needs_two_families():
+    lv = [{"price": 100.0, "family": "sq9", "label": "a"}, {"price": 100.1, "family": "pivot", "label": "b"},
+          {"price": 120.0, "family": "sq9", "label": "c"}, {"price": 120.05, "family": "sq9", "label": "d"}]
+    z = ar.confluence(lv)
+    assert len(z) == 1 and 99.9 < z[0]["price"] < 100.2
+
+
+def test_report_end_to_end_with_synthetic_bars(monkeypatch):
+    monkeypatch.setattr(ar, "fetch_bars", lambda s, y=8: _bars(2100))
+    r = ar.report("MSFT", "2026-06-15")
+    assert len(r["blocks"]) == 7 and r["pivot_rows"] and r["ref_date"] < "2026-06-15"
+    assert "HOURLY TACTICAL PLAN" in r["draft"] and "Not a signal and not investment advice" in r["draft"]
+    assert all(b["time_et"] for b in r["blocks"])
+    # exact events carry real aspect names and times inside the session
+    assert all(e["time"].endswith("ET") for e in r["exact_events"])
+
+
+def test_report_uses_only_bars_before_the_date(monkeypatch):
+    bars = _bars(2100)
+    monkeypatch.setattr(ar, "fetch_bars", lambda s, y=8: bars)
+    day = bars[1500]["t"][:10]
+    r = ar.report("AAPL", day)
+    assert r["ref_date"] < day and r["actual"] is not None
+    assert all(p["date"] < day for p in r["pivot_rows"])

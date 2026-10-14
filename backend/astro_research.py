@@ -281,55 +281,270 @@ def hourly_table(symbol: str, start: datetime, hours: int) -> List[Dict[str, Any
     return out
 
 
-def plan_draft(symbol: str, start: datetime, hours: int, windows: List[Dict[str, Any]], pivots: Optional[Dict[str, Any]],
-               bt: Optional[Dict[str, Any]] = None) -> str:
-    r = BY_SYMBOL[symbol]
-    L = [f"ASTRO RESEARCH DRAFT: {symbol} ({r['name']})",
-         f"Window: {ae._utc(start).astimezone(ET).strftime('%a %b %d, %Y %I:%M %p ET')} for {hours} hours",
-         f"Natal chart: {r['ipo_date']} at {r['first_trade_et']} ET, {r['address']} ({r['lat']:.4f}, {r['lon']:.4f}, {r['elev_m']} m)",
-         ""]
-    L.append("Transit aspects to the IPO chart within 1 degree:")
-    if windows:
-        for w in windows[:40]:
-            L.append(f"- {w['transit']} {w['aspect']} natal {w['natal']}: {w['from']} to {w['to']}, tightest {w['tightest_orb']} deg at {w['tightest_at']}")
-    else:
-        L.append("- none in this window")
-    L.append("")
-    if pivots and pivots.get("pivots"):
-        L.append(f"Price pivots from Alpaca daily bars (split-adjusted, since {pivots['since']}):")
-        for p in pivots["pivots"]:
-            L.append(f"- {p['name']}: ${p['price']:.2f} ({p['date']})")
-        L.append("")
-    if bt and bt.get("results"):
-        L.append(f"Backtest of {bt['event']}: {bt['events_found']} events, {bt['first_bar']} to {bt['last_bar']}")
-        for x in bt["results"]:
-            if x.get("n"):
-                L.append(f"- {x['horizon']} day(s): mean {x['mean_pct']}% vs {x['baseline_mean_pct']}% all days, "
-                         f"hit rate {x['hit_rate_pct']}% vs {x['baseline_hit_rate_pct']}%, p={x['p_value']} (n={x['n']})")
-        L.append(bt["caveat"])
-        L.append("")
-    L.append("Research draft only. Not a signal and not investment advice. Entry times assume 9:30 a.m. ET opens; first-trade time for older listings is unverified.")
-    return "\n".join(L)
+# ── Gann tools (from the attached material) ──
+GANN_DAY_NUMBERS = (30, 45, 60, 90, 120, 135, 144, 180, 225, 360)
+GANN_WEEK_NUMBERS = (13, 26, 39, 52)
+OUTER = ("Jupiter", "Saturn", "Uranus", "Neptune", "Pluto")
+COE_BODIES = OUTER + ("Sun", "Mercury", "Venus")
+LINE_BODIES = [n for n, _ in ae.PLANETS] + ["Moon's Node"]
+FAMILY_LABEL = {"transit": "Planet line", "natal": "Natal planet line", "mean": "Mean of Five / Cycle of Eight",
+                "sq9": "Square of 9", "pivot": "Pivot"}
+SESSION_BLOCKS = [(9, 30), (10, 30), (11, 30), (12, 30), (13, 30), (14, 30), (15, 30)]
+PHASE = {(9, 30): "Opening drive; false-move risk", (10, 30): "True direction usually shows", (11, 30): "True direction usually shows (to 12:00)",
+         (12, 30): "Midday", (13, 30): "Secondary move; trap risk", (14, 30): "Between rule windows",
+         (15, 30): "Expansion or unwind (from 3:00 p.m.)"}
 
 
-def run(symbol: str, start: datetime, hours: int = 48, pivots_since: str = "2020-01-01") -> Dict[str, Any]:
+def price_unit(price: float) -> float:
+    """Price per degree for planetary lines: 10 for index-size prices, 1 for ordinary stocks, 0.1 for low-priced ones."""
+    return 10.0 if price >= 2000 else (1.0 if price >= 10 else 0.1)
+
+
+def planet_lines(lons: Dict[str, float], ref: float, unit: float, band: float, family: str, tag: str = "") -> List[Dict[str, Any]]:
+    """Planetary longitude to price: (longitude + 360 k) x unit, kept when within `band` (fraction) of the reference price."""
+    out = []
+    for name, lon in lons.items():
+        k0 = round((ref / unit - lon) / 360.0)
+        for k in (k0 - 1, k0, k0 + 1):
+            price = (lon + 360.0 * k) * unit
+            if price > 0 and abs(price / ref - 1) <= band:
+                out.append({"price": price, "family": family, "label": f"{tag}{name} {lon:.2f} deg" + (f" (+{360 * k} deg)" if k else "")})
+    return out
+
+
+def mean_lons(pos: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
+    """Mean of Five (Jupiter..Pluto) and Cycle of Eight (adds Sun, Mercury, Venus): plain averages of the longitudes."""
+    return {"Mean of Five": sum(pos[b]["lon"] for b in OUTER) / 5.0, "Cycle of Eight": sum(pos[b]["lon"] for b in COE_BODIES) / 8.0}
+
+
+def sq9_levels(price: float, label: str, steps: int = 8) -> List[Dict[str, Any]]:
+    """(sqrt(price) +/- n x 0.25)^2; each 0.25 of the root is 45 degrees, 2.0 is a full 360-degree turn."""
+    root = math.sqrt(price)
+    out = []
+    for n in range(1, steps + 1):
+        for sign, word in ((1, "up"), (-1, "down")):
+            r = root + sign * 0.25 * n
+            if r > 0:
+                out.append({"price": r * r, "family": "sq9", "label": f"{label} {word} {45 * n} deg"})
+    return out
+
+
+def time_counts(pivot_date: str, day: str) -> Dict[str, Any]:
+    d = (date.fromisoformat(day) - date.fromisoformat(pivot_date[:10])).days
+    nd = min(GANN_DAY_NUMBERS, key=lambda g: abs(g - d))
+    nw = min(GANN_WEEK_NUMBERS, key=lambda g: abs(g - d / 7.0))
+    return {"days": d, "weeks": round(d / 7.0, 2), "nearest_day_number": nd, "day_diff": d - nd,
+            "nearest_week_number": nw, "week_diff": round(d / 7.0 - nw, 2),
+            "flag": abs(d - nd) <= 3 or abs(d / 7.0 - nw) <= 0.5}
+
+
+def confluence(levels: List[Dict[str, Any]], tol_pct: float = 0.2) -> List[Dict[str, Any]]:
+    """Group levels within tol_pct of each other; keep groups that mix at least two families."""
+    pts = sorted(levels, key=lambda x: x["price"])
+    groups: List[List[Dict[str, Any]]] = []
+    for p in pts:
+        if groups and p["price"] <= groups[-1][-1]["price"] * (1 + tol_pct / 100.0):
+            groups[-1].append(p)
+        else:
+            groups.append([p])
+    out = []
+    for g in groups:
+        fams = {x["family"] for x in g}
+        if len(fams) >= 2:
+            out.append({"price": round(sum(x["price"] for x in g) / len(g), 2), "low": round(g[0]["price"], 2), "high": round(g[-1]["price"], 2),
+                        "score": len(fams) * 10 + len(g), "families": sorted(FAMILY_LABEL[f] for f in fams),
+                        "members": [f"{x['label']} ${x['price']:.2f}" for x in g]})
+    return out
+
+
+def weekly_bars(bars: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    wk: Dict[Any, Dict[str, Any]] = {}
+    for b in bars:
+        d = date.fromisoformat(str(b["t"])[:10])
+        key = d.isocalendar()[:2]
+        w = wk.get(key)
+        if not w:
+            wk[key] = {"t": str(b["t"])[:10], "o": float(b["o"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"])}
+        else:
+            w["h"], w["l"], w["c"] = max(w["h"], float(b["h"])), min(w["l"], float(b["l"])), float(b["c"])
+    return list(wk.values())
+
+
+def _signed(a: float, b: float, ang: float) -> float:
+    return ((a - b - ang + 180) % 360) - 180
+
+
+def exact_events(natal: Dict[str, Dict[str, Any]], t0: datetime, t1: datetime, step_min: int = 5) -> List[Dict[str, Any]]:
+    """Exact planet-to-planet and transit-to-IPO-chart aspects between t0 and t1 (5-minute steps, linear interpolation)."""
+    names = [n for n, _ in ae.PLANETS]
+    n_steps = int((t1 - t0).total_seconds() // 60 // step_min)
+    times = [t0 + timedelta(minutes=step_min * i) for i in range(n_steps + 1)]
+    lons = [{n: _lon(n, t) for n in names} for t in times]
+    ev: List[Dict[str, Any]] = []
+
+    def scan(fa, fb, a, b, kind):
+        for asp, ang in ae.ASPECTS.items():
+            for sgn in ({1} if ang in (0, 180) else {1, -1}):
+                d = [_signed(fa(i), fb(i), sgn * ang) for i in range(len(times))]
+                for i in range(len(d) - 1):
+                    if d[i] == d[i + 1] or d[i] * d[i + 1] > 0 or abs(d[i] - d[i + 1]) > 30:
+                        continue
+                    frac = d[i] / (d[i] - d[i + 1])
+                    ev.append({"time": times[i] + timedelta(minutes=step_min * frac), "kind": kind, "a": a, "b": b, "aspect": asp})
+
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            scan(lambda k, a=a: lons[k][a], lambda k, b=b: lons[k][b], a, b, "planets")
+        for b in names:
+            nl = natal[b]["lon"]
+            scan(lambda k, a=a: lons[k][a], lambda k, nl=nl: nl, a, b, "natal")
+    return sorted(ev, key=lambda e: e["time"])
+
+
+def day_events(day: str) -> List[Dict[str, Any]]:
+    """Sign ingresses, stations and (via exact_events) the lunar phases for the whole ET calendar day."""
+    y, m, d = (int(x) for x in day.split("-"))
+    t0 = datetime(y, m, d, 0, 0, tzinfo=ET).astimezone(timezone.utc)
+    out = []
+    for name, _ in ae.PLANETS:
+        lons = [_lon(name, t0 + timedelta(hours=h)) for h in range(0, 25)]
+        for h in range(24):
+            if int(lons[h] // 30) != int(lons[h + 1] // 30) and abs(lons[h] - lons[h + 1]) < 20:
+                out.append(f"{name} enters {ae.SIGNS[int(lons[h + 1] // 30)]} around {(t0 + timedelta(hours=h)).astimezone(ET).strftime('%I:%M %p ET').lstrip('0')}")
+        sp = [((lons[h + 1] - lons[h] + 180) % 360 - 180) for h in range(24)]
+        for h in range(23):
+            if name not in ("Sun", "Moon") and sp[h] * sp[h + 1] < 0:
+                out.append(f"{name} stations {'retrograde' if sp[h + 1] < 0 else 'direct'} around {(t0 + timedelta(hours=h + 1)).astimezone(ET).strftime('%I:%M %p ET').lstrip('0')}")
+    return out
+
+
+def _fmt_et(t: datetime) -> str:
+    return t.astimezone(ET).strftime("%I:%M %p ET").lstrip("0")
+
+
+def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Optional[float] = None, band: float = 0.12) -> Dict[str, Any]:
+    """Ephemeris report + pivots + Gann levels + hourly tactical plan for one symbol and one date (all admin research)."""
     if symbol not in BY_SYMBOL:
         raise ValueError("Symbol is not in the Astro Research table.")
-    hours = max(1, min(int(hours), 168))
-    r = BY_SYMBOL[symbol]
-    nat = ipo_chart(symbol)
-    now = ae.positions(start, r["lat"], r["lon"], r["elev_m"])
-    windows = transit_windows(symbol, start, hours)
-    piv: Dict[str, Any] = {}
-    check: List[Dict[str, Any]] = []
-    try:
-        piv = compute_pivots(fetch_bars(symbol), pivots_since)
-        check = check_pivots(symbol, piv)
-    except Exception as exc:
-        piv = {"error": f"Could not load Alpaca bars: {str(exc)[:160]}"}
-    return {"row": {**r, "ipo_utc": ipo_moment_utc(r).strftime("%Y-%m-%d %H:%M UTC")},
-            "ipo_chart": {k: v["position"] + (" R" if v["retrograde"] else "") for k, v in nat.items()},
-            "start_chart": {k: v["position"] + (" R" if v["retrograde"] else "") for k, v in now.items()},
-            "start_aspects": ae.aspects(now, bodies=[n for n, _ in ae.PLANETS])[:20],
-            "hourly": hourly_table(symbol, start, min(hours, 72)), "windows": windows, "pivots": piv, "pivot_check": check,
-            "draft": plan_draft(symbol, start, hours, windows, piv)}
+    d0 = date.fromisoformat(day)
+    row = BY_SYMBOL[symbol]
+    lat, lon_, elev = row["lat"], row["lon"], row["elev_m"]
+    bars = fetch_bars(symbol)
+    before = [b for b in bars if str(b["t"])[:10] < day]
+    same = [b for b in bars if str(b["t"])[:10] == day]
+    if len(before) < 120:
+        raise ValueError("Not enough Alpaca daily history before that date.")
+    ref = float(before[-1]["c"])
+    unit = float(unit) if unit else price_unit(ref)
+    notes: List[str] = []
+    if d0.weekday() >= 5:
+        notes.append("That date is a weekend; hours are shown for reference but the market is closed.")
+
+    dp = compute_pivots(before, pivots_since)
+    wp = compute_pivots(weekly_bars(before), pivots_since)
+    check = check_pivots(symbol, dp)
+    piv_rows = []
+    for tag, pv in (("Daily", dp), ("Weekly", wp)):
+        for p in pv.get("pivots", []):
+            piv_rows.append({"frame": tag, **p, "counts": time_counts(p["date"], day)})
+    uniq: List[Dict[str, Any]] = []
+    for p in piv_rows:
+        if not any(abs(p["price"] / q["price"] - 1) < 0.005 for q in uniq):
+            uniq.append(p)
+
+    natal = ipo_chart(symbol)
+    open_t = open_utc(day)
+    t_end = datetime(d0.year, d0.month, d0.day, 16, 0, tzinfo=ET).astimezone(timezone.utc)
+    events = exact_events(natal, open_t, t_end)
+    # keep the report readable: Moon aspects, hard aspects between planets, and hard aspects to the IPO chart
+    keep = [e for e in events if e["kind"] == "natal" and e["aspect"] in ("conjunction", "square", "opposition")
+            or e["kind"] == "planets" and ("Moon" in (e["a"], e["b"]) or e["aspect"] in ("conjunction", "square", "opposition"))]
+    static = [dict(l) for p in uniq for l in sq9_levels(p["price"], f"{p['name']} ${p['price']:.2f}")]
+    static += [{"price": p["price"], "family": "pivot", "label": p["name"]} for p in uniq]
+    static = [l for l in static if abs(l["price"] / ref - 1) <= band]
+    natal_lons = {n: natal[n]["lon"] for n in LINE_BODIES}
+    nm = mean_lons(natal)
+    static += planet_lines(natal_lons, ref, unit, band, "natal", "Natal ") + planet_lines(nm, ref, unit, band, "mean", "Natal ")
+
+    blocks = []
+    zones_all: List[Dict[str, Any]] = []
+    for hh, mm in SESSION_BLOCKS:
+        t = datetime(d0.year, d0.month, d0.day, hh, mm, tzinfo=ET).astimezone(timezone.utc)
+        t_next = t + timedelta(minutes=60 if (hh, mm) != (15, 30) else 30)
+        pos = ae.positions(t, lat, lon_, elev)
+        dyn = planet_lines({n: pos[n]["lon"] for n in LINE_BODIES}, ref, unit, band, "transit", "Transit ")
+        dyn += planet_lines(mean_lons(pos), ref, unit, band, "mean", "Transit ")
+        zones = confluence(static + dyn)
+        above = sorted([z for z in zones if z["price"] > ref], key=lambda z: z["price"])[:2]
+        below = sorted([z for z in zones if z["price"] <= ref], key=lambda z: -z["price"])[:2]
+        zones_all.extend(zones)
+        evs = [e for e in keep if t <= e["time"] < t_next]
+        marks = []
+        if t <= datetime(d0.year, d0.month, d0.day, 12, 0, tzinfo=ET).astimezone(timezone.utc) < t_next:
+            marks.append("Wheel of 24: 12:00 ET = 180 degrees")
+        if t <= datetime(d0.year, d0.month, d0.day, 15, 0, tzinfo=ET).astimezone(timezone.utc) < t_next:
+            marks.append("Wheel of 24: 3:00 p.m. ET = 225 degrees")
+        if (hh, mm) == (12, 30):
+            marks.append("Octagon: 3 hours (45 degrees) after the open")
+        if (hh, mm) == (15, 30):
+            marks.append("Octagon: 6 hours (90 degrees) after the open")
+        hard = [e for e in evs if e["aspect"] in ("conjunction", "square", "opposition")]
+        label = lambda e: (f"{e['a']} {e['aspect']} {e['b']}" if e["kind"] == "planets" else f"{e['a']} {e['aspect']} IPO-chart {e['b']}") + f" at {_fmt_et(e['time'])}"
+        blocks.append({"time_et": f"{t.astimezone(ET).strftime('%I:%M %p').lstrip('0')} - {_fmt_et(t_next)}", "time_utc": t.strftime("%H:%M"),
+                       "phase": PHASE[(hh, mm)], "moon": pos["Moon"]["position"], "sun": pos["Sun"]["position"],
+                       "events": [label(e) for e in evs], "marks": marks, "attention": "High" if hard or marks else "Normal",
+                       "above": above, "below": below})
+    top = sorted({(z["price"], z["score"]): z for z in zones_all}.values(), key=lambda z: -z["score"])[:12]
+    result = {"row": {**row, "ipo_utc": ipo_moment_utc(row).strftime("%Y-%m-%d %H:%M UTC")}, "day": day, "ref_price": round(ref, 2),
+              "ref_date": str(before[-1]["t"])[:10], "unit": unit, "band_pct": band * 100, "notes": notes,
+              "actual": ({"open": same[0]["o"], "high": same[0]["h"], "low": same[0]["l"], "close": same[0]["c"]} if same else None),
+              "open_chart": {k: {"position": v["position"] + (" R" if v["retrograde"] else ""), "lon": round(v["lon"], 2)}
+                             for k, v in ae.positions(open_t, lat, lon_, elev).items()},
+              "ipo_chart": {k: v["position"] + (" R" if v["retrograde"] else "") for k, v in natal.items()},
+              "moon_phase_open": round(ae.moon_phase(open_t), 3), "day_events": day_events(day),
+              "exact_events": [{"time": _fmt_et(e["time"]), "text": (f"{e['a']} {e['aspect']} {e['b']}" if e["kind"] == "planets" else f"{e['a']} {e['aspect']} IPO-chart {e['b']}")}
+                               for e in keep],
+              "windows": transit_windows(symbol, open_t, 7),
+              "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
+              "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "blocks": blocks,
+              "hourly": hourly_table(symbol, open_t, 7)}
+    result["draft"] = report_text(result)
+    return result
+
+
+def report_text(r: Dict[str, Any]) -> str:
+    row = r["row"]
+    L = [f"ASTRO RESEARCH REPORT: {row['symbol']} ({row['name']}) for {r['day']}",
+         f"Location used: {row['address']} ({row['lat']:.4f}, {row['lon']:.4f}, {row['elev_m']} m)",
+         f"IPO chart: {row['ipo_utc']}. Reference price: ${r['ref_price']:.2f} (close of {r['ref_date']}). Price per degree: ${r['unit']:g}.", ""]
+    L.append("1. EPHEMERIS AT THE OPEN (9:30 a.m. ET)")
+    L.append("   " + "; ".join(f"{k} {v['position']}" for k, v in r["open_chart"].items()))
+    L.append(f"   Moon phase at the open: {r['moon_phase_open']} (0 new, 0.5 full)")
+    if r["day_events"]:
+        L += ["   Today: " + "; ".join(r["day_events"])]
+    L.append("   Exact aspects during the session: " + ("; ".join(f"{e['text']} at {e['time']}" for e in r["exact_events"]) or "none"))
+    L.append("")
+    L.append("2. MAJOR MARKET STRUCTURE AND INTERMEDIATE PIVOTS (Alpaca split-adjusted bars before the report date)")
+    for p in r["pivot_rows"]:
+        c = p["counts"]
+        L.append(f"   {p['frame']:<6} {p['name']:<20} ${p['price']:>9.2f}  {p['date']}  {c['days']} days / {c['weeks']} weeks ago"
+                 + (f"  [near Gann count {c['nearest_day_number']}d / {c['nearest_week_number']}w]" if c["flag"] else ""))
+    L.append("")
+    L.append("3. GANN CONFLUENCE ZONES (price levels where two or more methods agree within 0.2%)")
+    for z in r["top_zones"]:
+        L.append(f"   ${z['price']:.2f} (score {z['score']}): " + "; ".join(z["members"][:6]))
+    L.append("")
+    L.append("4. HOURLY TACTICAL PLAN (levels are references, not forecasts)")
+    for b in r["blocks"]:
+        L.append(f"   {b['time_et']}  [{b['phase']}]  Attention: {b['attention']}  Moon {b['moon']}")
+        for x in b["events"] + b["marks"]:
+            L.append(f"      - {x}")
+        up = ", ".join(f"${z['price']:.2f}" for z in b["above"]) or "none within range"
+        dn = ", ".join(f"${z['price']:.2f}" for z in b["below"]) or "none within range"
+        L.append(f"      Reversal-watch zones above ${r['ref_price']:.2f}: {up}   below: {dn}")
+    L.append("")
+    L.append("   Rules from the source material: a reversal needs location (a zone above), structure and volume to agree; a candle alone does not count. "
+             "Mid-range prices and conflicting signals are a no-trade area. Do not chase a move that is already extended into a zone.")
+    L.append("")
+    L.append("Research draft only. Not a signal and not investment advice. The first-trade time and the symbol-table elevations are unverified; see the table notes.")
+    return "\n".join(L)

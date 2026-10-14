@@ -3081,19 +3081,18 @@ def astro_research_symbols(_admin: str = Depends(require_admin)):
     return {"ok": True, "symbols": astro_research.table()}
 
 
-@app.post("/api/admin/astro-research/run")
-def astro_research_run(payload: dict, _admin: str = Depends(require_admin)):
-    """Astro Research (admin only): hourly positions, IPO-chart transit windows, Alpaca pivots and a plan draft."""
-    from datetime import datetime, timezone
+@app.post("/api/admin/astro-research/report")
+def astro_research_report(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): ephemeris report, pivots, Gann levels and an hourly plan for one symbol and date."""
+    import re
     from backend import astro_research
     p = payload or {}
+    day = str(p.get("date") or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return {"ok": False, "error": "Enter the date as YYYY-MM-DD."}
     try:
-        raw = str(p.get("start") or "").strip()
-        start = datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else datetime.now(timezone.utc)
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=astro_research.ET)
-        return {"ok": True, **astro_research.run(str(p.get("symbol") or "").upper(), start, int(p.get("hours") or 48),
-                                                  str(p.get("pivots_since") or "2020-01-01"))}
+        return {"ok": True, **astro_research.report(str(p.get("symbol") or "").upper(), day,
+                                                      str(p.get("pivots_since") or "2020-01-01"))}
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:300]}
 
