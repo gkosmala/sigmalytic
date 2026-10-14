@@ -5765,6 +5765,44 @@ def build_cache_diagnostics_panel():
     ])
 
 
+def build_astro_tab(session: dict) -> html.Div:
+    """Astro Research (admin only): its own entry, separate from the Admin page."""
+    if not is_admin(session):
+        return html.Div("Admin access only.", style={"color": WHITE, "fontSize": "13px", "padding": "16px"})
+    # ── Astro Research -- admin-only research tool (drafts only; nothing trades or posts). ──
+    _astro_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+                 "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
+    _astro_btn = {"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px", "padding": "10px 16px",
+                  "fontSize": "13px", "fontWeight": "700", "cursor": "pointer", "marginRight": "8px"}
+    return _admin_card([
+        html.Div("ASTRO RESEARCH", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("Hourly planetary positions at each company's headquarters-at-IPO location, transits to its IPO chart, "
+                 "price pivots from Alpaca daily bars, and an event backtest against all days. Research drafts only.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL']], value="MSFT", clearable=False,
+                         style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-start", type="text", placeholder="Start, ET (blank = now) 2026-10-14 09:30", debounce=False,
+                      style={**_astro_in, "width": "280px"}),
+            dcc.Input(id="astro-hours", type="number", value=48, min=1, max=168, style={**_astro_in, "width": "80px"}),
+            html.Button("Run", id="astro-run-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Show symbol table", id="astro-table-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "10px"}),
+        html.Div([
+            dcc.Dropdown(id="astro-event", options=[{"label": "New moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"new\"}"}, {"label": "Full moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"full\"}"}, {"label": "Mercury turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"retrograde\"}"}, {"label": "Mercury turns direct", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"direct\"}"}, {"label": "Venus turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Venus\", \"to\": \"retrograde\"}"}, {"label": "Mars turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mars\", \"to\": \"retrograde\"}"}, {"label": "Mars conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Mars\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Jupiter conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Jupiter\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn square IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"square\", \"orb\": 1.0}"}, {"label": "Sun conjunct IPO Sun (solar return)", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Sun\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}], value='{"kind": "moon_phase", "phase": "new"}', clearable=False,
+                         style={"width": "300px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
+                                "color": "#0b0f14"}),
+            dcc.Input(id="astro-years", type="number", value=8, min=2, max=15, style={**_astro_in, "width": "80px"}),
+            html.Button("Backtest event", id="astro-bt-btn", n_clicks=0, style=_astro_btn),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="astro-run-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
+
+
 def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     """
     Build the full admin monitoring page.
@@ -5842,38 +5880,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom": "14px"}),
         dcc.Loading(html.Div(id="content-hub-result", style={"fontSize": "12px", "color": WHITE}),
                     type="dot", color=TEAL),
-    ], sx={"marginBottom": "16px"})
-
-    # ── Astro Research -- admin-only research tool (drafts only; nothing trades or posts). ──
-    _astro_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
-                 "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
-    _astro_btn = {"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px", "padding": "10px 16px",
-                  "fontSize": "13px", "fontWeight": "700", "cursor": "pointer", "marginRight": "8px"}
-    astro_research_block = _admin_card([
-        html.Div("ASTRO RESEARCH", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
-        html.Div("Hourly planetary positions at each company's headquarters-at-IPO location, transits to its IPO chart, "
-                 "price pivots from Alpaca daily bars, and an event backtest against all days. Research drafts only.",
-                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
-        html.Div([
-            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL']], value="MSFT", clearable=False,
-                         style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
-                                "color": "#0b0f14"}),
-            dcc.Input(id="astro-start", type="text", placeholder="Start, ET (blank = now) 2026-10-14 09:30", debounce=False,
-                      style={**_astro_in, "width": "280px"}),
-            dcc.Input(id="astro-hours", type="number", value=48, min=1, max=168, style={**_astro_in, "width": "80px"}),
-            html.Button("Run", id="astro-run-btn", n_clicks=0, style=_astro_btn),
-            html.Button("Show symbol table", id="astro-table-btn", n_clicks=0, style=_astro_btn),
-        ], style={"marginBottom": "10px"}),
-        html.Div([
-            dcc.Dropdown(id="astro-event", options=[{"label": "New moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"new\"}"}, {"label": "Full moon", "value": "{\"kind\": \"moon_phase\", \"phase\": \"full\"}"}, {"label": "Mercury turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"retrograde\"}"}, {"label": "Mercury turns direct", "value": "{\"kind\": \"station\", \"body\": \"Mercury\", \"to\": \"direct\"}"}, {"label": "Venus turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Venus\", \"to\": \"retrograde\"}"}, {"label": "Mars turns retrograde", "value": "{\"kind\": \"station\", \"body\": \"Mars\", \"to\": \"retrograde\"}"}, {"label": "Mars conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Mars\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Jupiter conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Jupiter\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn conjunct IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}, {"label": "Saturn square IPO Sun", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Saturn\", \"natal\": \"Sun\", \"aspect\": \"square\", \"orb\": 1.0}"}, {"label": "Sun conjunct IPO Sun (solar return)", "value": "{\"kind\": \"ipo_aspect\", \"body\": \"Sun\", \"natal\": \"Sun\", \"aspect\": \"conjunction\", \"orb\": 1.0}"}], value='{"kind": "moon_phase", "phase": "new"}', clearable=False,
-                         style={"width": "300px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
-                                "color": "#0b0f14"}),
-            dcc.Input(id="astro-years", type="number", value=8, min=2, max=15, style={**_astro_in, "width": "80px"}),
-            html.Button("Backtest event", id="astro-bt-btn", n_clicks=0, style=_astro_btn),
-        ], style={"marginBottom": "14px"}),
-        dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
-        dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
-        dcc.Loading(html.Div(id="astro-run-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
     # ── Symbol Backtest -- single-symbol, full-history check against the
@@ -6168,7 +6174,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             content_hub_block,
-            astro_research_block,
             setup_deployment_block,
             journal_correction_block,
             subscriber_alerts_block,
@@ -6431,7 +6436,6 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         content_hub_block,
-        astro_research_block,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
@@ -11916,6 +11920,7 @@ ALL_TABS = [
     ("billing",     "Billing"),
     ("guide",       "User Guide"),
     ("admin",       "Admin"),
+    ("astro",       "Astro Research"),
 ]
 
 app.layout = html.Div([
@@ -12441,7 +12446,7 @@ app.clientside_callback(
         const buttons = [
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
-            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
+            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin', 'tab-astro',
             'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
@@ -12457,6 +12462,7 @@ app.clientside_callback(
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),
+    Input("tab-astro","n_clicks"),
     Input("tab-status","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
@@ -12480,8 +12486,9 @@ def open_guide_from_welcome(n_clicks):
 @app.callback(
     [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
     Input("s-tab", "data"),
+    Input("s-session", "data"),
 )
-def sync_active_tab_styles(active_tab):
+def sync_active_tab_styles(active_tab, session=None):
     active_tab = active_tab or "home"
 
     base = {
@@ -12511,7 +12518,9 @@ def sync_active_tab_styles(active_tab):
         "boxShadow": "none",
     })
 
-    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
+    hidden = {"display": "none"}
+    return [hidden if (key == "astro" and not is_admin(session)) else (active_style if key == active_tab else inactive_style)
+            for key, _label in ALL_TABS]
 
 
 @app.callback(Output("welcome-after-main", "style"),
@@ -13351,6 +13360,13 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                     "padding": "18px",
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
+    elif tab=="astro":
+        if not tab_switched:
+            return no_update, no_update, no_update, no_update
+        try:
+            main = build_astro_tab(session)
+        except Exception as e:
+            main = card([html.Div("Astro Research could not load. Please refresh.", style={"color": WHITE})])
     elif tab=="reports":
         # FIX (2026-07-31): user reported the Reports tab kept "switching"
         # back to the latest date while reading an older one. Root cause:
