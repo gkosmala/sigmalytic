@@ -3077,6 +3077,9 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
 @app.get("/api/admin/astro-research/symbols")
 def astro_research_symbols(_admin: str = Depends(require_admin)):
     """Astro Research (admin only): the per-symbol IPO date, location and elevation table, with source and status."""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
     from backend import astro_research
     return {"ok": True, "symbols": astro_research.table()}
 
@@ -3084,6 +3087,9 @@ def astro_research_symbols(_admin: str = Depends(require_admin)):
 @app.post("/api/admin/astro-research/report")
 def astro_research_report(payload: dict, _admin: str = Depends(require_admin)):
     """Astro Research (admin only): ephemeris report, pivots, Gann levels and an hourly plan for one symbol and date."""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
     import re
     from backend import astro_research
     p = payload or {}
@@ -3100,6 +3106,9 @@ def astro_research_report(payload: dict, _admin: str = Depends(require_admin)):
 @app.post("/api/admin/astro-research/backtest")
 def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin)):
     """Astro Research (admin only): event study of one astro event against Alpaca daily bars."""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
     from backend import astro_research
     p = payload or {}
     sym = str(p.get("symbol") or "").upper()

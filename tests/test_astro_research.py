@@ -115,11 +115,12 @@ def test_report_uses_only_bars_before_the_date(monkeypatch):
     assert all(p["date"] < day for p in r["pivot_rows"])
 
 
-def test_admin_page_builds_with_astro_section():
+def test_admin_page_builds_with_astro_section(monkeypatch):
     """Regression: an invalid Dash property once broke the Astro Research controls. The admin builder must produce them."""
     import os
     import sys
-    os.environ["SIGMALYTIC_ADMIN_EMAILS"] = "admin@example.com"
+    monkeypatch.setenv("SIGMALYTIC_ADMIN_EMAILS", "admin@example.com")
+    monkeypatch.setenv("ASTRO_RESEARCH_EMAILS", "admin@example.com")
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend"))
     import app as dash_app
 
@@ -134,4 +135,13 @@ def test_admin_page_builds_with_astro_section():
 
     found = ids(dash_app.build_astro_tab({"email": "admin@example.com"}), [])
     assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn"} <= set(found)
-    assert dash_app.build_astro_tab({"email": "other@example.com"}).children == "Admin access only."
+    assert dash_app.is_astro_owner({"email": "admin@example.com"})
+    assert not dash_app.is_astro_owner({"email": "other@example.com"})
+    assert "restricted" in dash_app.build_astro_tab({"email": "other@example.com"}).children
+
+
+def test_owner_gate(monkeypatch):
+    monkeypatch.delenv("ASTRO_RESEARCH_EMAILS", raising=False)
+    assert ar.is_owner("Greg.Kosmala@gmail.com") and not ar.is_owner("someone@else.com") and not ar.is_owner("")
+    monkeypatch.setenv("ASTRO_RESEARCH_EMAILS", "a@b.com, c@d.com")
+    assert ar.is_owner("c@d.com") and not ar.is_owner("greg.kosmala@gmail.com")

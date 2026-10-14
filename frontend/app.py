@@ -5765,6 +5765,13 @@ def build_cache_diagnostics_panel():
     ])
 
 
+def is_astro_owner(session: dict) -> bool:
+    """Astro Research is for the owner only (ASTRO_RESEARCH_EMAILS overrides the default)."""
+    raw = os.getenv("ASTRO_RESEARCH_EMAILS") or "greg.kosmala@gmail.com"
+    email = (session or {}).get("email", "").strip().lower()
+    return bool(email) and is_admin(session) and email in {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
 def _safe_astro_tab(session: dict):
     """Never let Astro Research break the Admin page."""
     try:
@@ -5775,8 +5782,8 @@ def _safe_astro_tab(session: dict):
 
 def build_astro_tab(session: dict) -> html.Div:
     """Astro Research (admin only): its own entry, separate from the Admin page."""
-    if not is_admin(session):
-        return html.Div("Admin access only.", style={"color": WHITE, "fontSize": "13px", "padding": "16px"})
+    if not is_astro_owner(session):
+        return html.Div("Astro Research is restricted to its owner.", style={"color": WHITE, "fontSize": "13px", "padding": "16px"})
     # ── Astro Research -- admin-only research tool (drafts only; nothing trades or posts). ──
     _astro_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
                  "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
@@ -5899,7 +5906,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         html.Summary("ASTRO RESEARCH (admin only)", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
                                                           "cursor": "pointer", "padding": "8px 0"}),
         _safe_astro_tab(session),
-    ], style={"marginBottom": "16px"})
+    ], style={"marginBottom": "16px"}) if is_astro_owner(session) else None
 
     # ── Symbol Backtest -- single-symbol, full-history check against the
     # production lookup table's own profile definitions, powered by the
