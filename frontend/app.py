@@ -4685,7 +4685,7 @@ def _render_weis_quantum_handoff(handoff, states=None):
     ], style={"border": f"1px solid {BORDER_T}", "padding": "14px", "marginBottom": "20px"})
 
 
-def build_weis_radar_tab(session=None):
+def build_weis_radar_tab(session=None, scan_note=None):
     """
     ADDED (2026-08-24): Weis Radar -- shows the results of the
     configurable Russell 1000 signal scan (see
@@ -4720,7 +4720,7 @@ def build_weis_radar_tab(session=None):
                        "borderRadius": "8px", "color": "#60a5fa", "cursor": "pointer",
                        "fontSize": "11px", "fontWeight": "700", "padding": "6px 12px",
                        "fontFamily": "DM Sans, sans-serif", "verticalAlign": "middle"}))
-            children.append(html.Div(id="weis-radar-run-message", style={"color": MUTED, "fontSize": "11px", "marginTop": "6px"}))
+            children.append(html.Div(scan_note, id="weis-radar-run-message", style={"color": MUTED, "fontSize": "11px", "marginTop": "6px"}))
             children.append(dcc.Interval(id="i-weis-radar-poll", interval=4000, disabled=True))
         return html.Div(children)
 
@@ -6890,6 +6890,7 @@ def handle_run_weis_radar(n_clicks, session):
 @app.callback(
     Output("weis-radar-run-message", "children", allow_duplicate=True),
     Output("i-weis-radar-poll", "disabled", allow_duplicate=True),
+    Output("s-weis-radar-refresh", "data"),
     Input("i-weis-radar-poll", "n_intervals"),
     State("s-session", "data"),
     prevent_initial_call=True,
@@ -6907,13 +6908,14 @@ def poll_weis_radar_status(n_intervals, session):
 
     status = payload.get("status", "unknown")
     if status == "done":
-        return (f"Scan complete -- {payload.get('hits', 0)} hits out of {payload.get('scanned', 0)} scanned. "
-                f"Refresh or switch tabs to see updated results.", True)
+        # Tell the page to reload the latest scan results by itself (see render_main's weis_radar branch).
+        note = f"Scan complete -- {payload.get('hits', 0)} hits out of {payload.get('scanned', 0)} scanned. Results below are updated."
+        return note, True, {"note": note, "ts": time.time()}
     if status == "error":
-        return f"Scan failed: {payload.get('error', 'unknown error')}", True
+        return f"Scan failed: {payload.get('error', 'unknown error')}", True, no_update
     if n_intervals and n_intervals >= 200:
-        return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True
-    return f"Scanning... ({n_intervals * 4}s elapsed)", no_update
+        return "Lost track of the scan's progress. Check Render logs, or refresh in a few minutes.", True, no_update
+    return f"Scanning... ({n_intervals * 4}s elapsed)", no_update, no_update
 
 
 @app.callback(
@@ -12026,6 +12028,7 @@ app.layout = html.Div([
     dcc.Interval(id="i-quote-fast", interval=1_000, n_intervals=0),
     dcc.Store(id="s-quote-box", data=None),
     dcc.Store(id="s-reports-refresh", data=None),
+    dcc.Store(id="s-weis-radar-refresh", data=None),
     # ADDED (2026-08-20): "Market Radio" -- continuous, ambient spoken
     # narration of live market context and radar alerts, via the
     # browser's own built-in text-to-speech (no third-party service,
@@ -13077,13 +13080,14 @@ def render_quote_box(q):
     Input("s-candles","data"),
     Input("s-symbol","data"),
     Input("s-reports-refresh","data"),
+    Input("s-weis-radar-refresh","data"),
     State("s-live-mode","data"),
     State("s-tf","data"),
     State("s-session","data"),
     State("s-quote-box","data"),
     State("s-chart-hours","data"),
 )
-def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=None,quote_data=None,chart_hours="all"):
+def render_main(tab,live,candles,symbol,reports_refresh,weis_refresh,live_mode,tf,session=None,quote_data=None,chart_hours="all"):
     HIDDEN = {"display":"none"}
     SHOWN  = {"display":"flex","gap":"16px","alignItems":"start"}
 
@@ -13251,8 +13255,8 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
         # wiping whichever chart was open (and its volume-mode choice)
         # every single tick. Same fix, same reason: only rebuild on a
         # genuine tab switch (s-tab).
-        if tab_switched:
-            main = build_weis_radar_tab(session)
+        if tab_switched or ("s-weis-radar-refresh" in changed and weis_refresh):
+            main = build_weis_radar_tab(session, scan_note=(weis_refresh or {}).get("note") if not tab_switched else None)
         else:
             return no_update, no_update, no_update, no_update
     # campaign/radar/scoreboard/divergence routing removed -- see ALL_TABS comment above
