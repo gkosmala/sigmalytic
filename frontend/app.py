@@ -5765,6 +5765,14 @@ def build_cache_diagnostics_panel():
     ])
 
 
+def _safe_astro_tab(session: dict):
+    """Never let Astro Research break the Admin page."""
+    try:
+        return build_astro_tab(session)
+    except Exception as exc:
+        return html.Div(f"Astro Research could not load: {exc}", style={"color": WHITE, "fontSize": "12px"})
+
+
 def build_astro_tab(session: dict) -> html.Div:
     """Astro Research (admin only): its own entry, separate from the Admin page."""
     if not is_admin(session):
@@ -5786,7 +5794,7 @@ def build_astro_tab(session: dict) -> html.Div:
                                 "color": "#0b0f14"}),
             dcc.Input(id="astro-start", type="text", placeholder="Date, e.g. 2026-10-14", debounce=False,
                       style={**_astro_in, "width": "170px"}),
-            dcc.Input(id="astro-since", type="text", value="2020-01-01", debounce=False, title="Pivot cycle start date",
+            dcc.Input(id="astro-since", type="text", value="2020-01-01", debounce=False, placeholder="Pivot start",
                       style={**_astro_in, "width": "130px"}),
             html.Button("Generate report", id="astro-run-btn", n_clicks=0, style=_astro_btn),
             html.Button("Download .txt", id="astro-dl-btn", n_clicks=0, style=_astro_btn),
@@ -5885,6 +5893,13 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         dcc.Loading(html.Div(id="content-hub-result", style={"fontSize": "12px", "color": WHITE}),
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
+
+    # Astro Research: its own collapsed entry inside Admin; the builder itself re-checks admin access.
+    astro_research_block = html.Details([
+        html.Summary("ASTRO RESEARCH (admin only)", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                                          "cursor": "pointer", "padding": "8px 0"}),
+        _safe_astro_tab(session),
+    ], style={"marginBottom": "16px"})
 
     # ── Symbol Backtest -- single-symbol, full-history check against the
     # production lookup table's own profile definitions, powered by the
@@ -6178,6 +6193,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             content_hub_block,
+            astro_research_block,
             setup_deployment_block,
             journal_correction_block,
             subscriber_alerts_block,
@@ -6440,6 +6456,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         content_hub_block,
+        astro_research_block,
         weis_state_block,
         radar_bars_block,
         radar_bar_count_block,
@@ -11935,7 +11952,6 @@ ALL_TABS = [
     ("billing",     "Billing"),
     ("guide",       "User Guide"),
     ("admin",       "Admin"),
-    ("astro",       "Astro Research"),
 ]
 
 app.layout = html.Div([
@@ -12461,7 +12477,7 @@ app.clientside_callback(
         const buttons = [
             'tab-home', 'tab-command', 'tab-heatmap', 'tab-weis_radar',
             'tab-weis', 'tab-behavior', 'tab-import', 'tab-portfolio',
-            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin', 'tab-astro',
+            'tab-journal', 'tab-billing', 'tab-preferences', 'tab-admin',
             'tab-status', 'tab-reports', 'tab-guide', 'tab-briefing', 'tab-broker_bi', 'tab-imbalance'
         ];
         const index = buttons.indexOf(id);
@@ -12477,7 +12493,6 @@ app.clientside_callback(
     Input("tab-portfolio","n_clicks"),    Input("tab-journal","n_clicks"),
     Input("tab-billing","n_clicks"),      Input("tab-preferences","n_clicks"),
     Input("tab-admin","n_clicks"),
-    Input("tab-astro","n_clicks"),
     Input("tab-status","n_clicks"),
     Input("tab-reports","n_clicks"),
     Input("tab-guide","n_clicks"),
@@ -12501,9 +12516,8 @@ def open_guide_from_welcome(n_clicks):
 @app.callback(
     [Output(f"tab-{key}", "style") for key, _label in ALL_TABS],
     Input("s-tab", "data"),
-    Input("s-session", "data"),
 )
-def sync_active_tab_styles(active_tab, session=None):
+def sync_active_tab_styles(active_tab):
     active_tab = active_tab or "home"
 
     base = {
@@ -12533,9 +12547,7 @@ def sync_active_tab_styles(active_tab, session=None):
         "boxShadow": "none",
     })
 
-    hidden = {"display": "none"}
-    return [hidden if (key == "astro" and not is_admin(session)) else (active_style if key == active_tab else inactive_style)
-            for key, _label in ALL_TABS]
+    return [active_style if key == active_tab else inactive_style for key, _label in ALL_TABS]
 
 
 @app.callback(Output("welcome-after-main", "style"),
@@ -13375,13 +13387,6 @@ def render_main(tab,live,candles,symbol,reports_refresh,live_mode,tf,session=Non
                     "padding": "18px",
                 }),
             ], style={"display":"flex","flexDirection":"column","gap":"16px"})
-    elif tab=="astro":
-        if not tab_switched:
-            return no_update, no_update, no_update, no_update
-        try:
-            main = build_astro_tab(session)
-        except Exception as e:
-            main = card([html.Div("Astro Research could not load. Please refresh.", style={"color": WHITE})])
     elif tab=="reports":
         # FIX (2026-07-31): user reported the Reports tab kept "switching"
         # back to the latest date while reading an older one. Root cause:
