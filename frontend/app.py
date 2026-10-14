@@ -11048,6 +11048,22 @@ def _astro_call(method, path, session, payload=None):
         return None, f"Could not reach the backend: {exc}"
 
 
+@app.callback(Output("imbalance-scan-result", "children"), Output("imbalance-panels", "children"),
+              Input("imbalance-scan-btn", "n_clicks"), State("s-session", "data"), prevent_initial_call=True)
+def handle_imbalance_scan_now(n, session):
+    """Admin-only manual Imbalance scan; then reloads the track record and recent alerts."""
+    if not n:
+        return no_update, no_update
+    if not is_admin(session):
+        return "Admin access only.", no_update
+    import imbalance_tab as _it
+    try:
+        result = _it._post("/api/imbalance/scan", session)
+    except Exception as exc:
+        return _it._note(f"Scan could not run: {exc}", RED_DIM), no_update
+    return _it.render_scan_result(result), _it.build_panels(session)
+
+
 @app.callback(Output("astro-table-result", "children"), Input("astro-table-btn", "n_clicks"),
               State("s-session", "data"), prevent_initial_call=True)
 def handle_astro_table(n, session):

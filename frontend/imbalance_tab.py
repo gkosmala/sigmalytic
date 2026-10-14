@@ -18,7 +18,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 import requests as _rq
-from dash import html
+from dash import dcc, html
 
 BACKEND_HTTP = os.getenv("BACKEND_URL", "http://localhost:8000")
 
@@ -43,6 +43,13 @@ def _headers(session: Optional[dict]) -> Dict[str, str]:
 
 def _get(path: str, session: Optional[dict]) -> Any:
     r = _rq.get(f"{BACKEND_HTTP}{path}", headers=_headers(session), timeout=20)
+    if r.status_code != 200:
+        raise RuntimeError(f"{path} returned {r.status_code}")
+    return r.json()
+
+
+def _post(path: str, session: Optional[dict], timeout: int = 180) -> Any:
+    r = _rq.post(f"{BACKEND_HTTP}{path}", headers=_headers(session), timeout=timeout)
     if r.status_code != 200:
         raise RuntimeError(f"{path} returned {r.status_code}")
     return r.json()
@@ -173,6 +180,40 @@ def render_log(rows: List[Dict[str, Any]]) -> html.Div:
                            style={"overflowX": "auto"})])
 
 
+def render_scan_result(res: Dict[str, Any]) -> html.Div:
+    """What one manual scan did: how many symbols it covered, what fired, what was skipped, and any errors."""
+    fired, skipped, errors = res.get("fired") or [], res.get("skipped") or [], res.get("errors") or []
+    lines = [f"Scanned {res.get('scanned', 0)} symbols: {len(fired)} alert(s) fired, "
+             f"{len(skipped)} skipped, {len(errors)} error(s)."]
+    box: List[Any] = [_note(lines[0], RED_DIM if errors else TEAL_DIM)]
+    if fired:
+        box.append(html.Div("Fired: " + ", ".join(f"{f['symbol']} {f['direction']} ({f['tier']})" for f in fired),
+                            style={"fontSize": "12px", "color": WHITE, "marginBottom": "6px"}))
+    if skipped:
+        box.append(html.Div("Skipped: " + "; ".join(f"{x['symbol']} ({x['reason']})" for x in skipped),
+                            style={"fontSize": "12px", "color": MUTED, "marginBottom": "6px"}))
+    if errors:
+        box.append(html.Div("Errors: " + "; ".join(f"{x['symbol']}: {x['error']}" for x in errors),
+                            style={"fontSize": "12px", "color": RED_DIM, "marginBottom": "6px"}))
+    if not fired and not errors:
+        box.append(html.Div("Nothing fired: no symbol had at least two pillars agreeing with none against.",
+                            style={"fontSize": "12px", "color": MUTED}))
+    return html.Div(box)
+
+
+def build_panels(session: Optional[dict]) -> List[Any]:
+    """The Track record and Recent alerts panels (reloaded after a manual scan)."""
+    parts: List[Any] = []
+    for label, path, renderer in (("Track record", "/api/imbalance/track-record", render_track_record),
+                                  ("Recent alerts", "/api/imbalance/log?limit=100",
+                                   lambda d: render_log(d.get("alerts") or []))):
+        try:
+            parts.append(renderer(_get(path, session)))
+        except Exception as exc:
+            parts.append(_card([_section(label), _note(f"Could not load: {exc}", RED_DIM)]))
+    return parts
+
+
 def build_imbalance_tab(session: Optional[dict] = None, admin: bool = False) -> html.Div:
     intro = html.Div(
         "Raised when options flow, price structure and volume flow line up on the same side. "
@@ -183,12 +224,19 @@ def build_imbalance_tab(session: Optional[dict] = None, admin: bool = False) -> 
                          _card([_note("Imbalance Alerts are being tested and will be available to subscribers soon.",
                                       TEAL_DIM)])])
     parts: List[Any] = [_title(), intro]
-    for label, path, renderer in (("Status", "/api/imbalance/universe", render_status),
-                                  ("Track record", "/api/imbalance/track-record", render_track_record),
-                                  ("Recent alerts", "/api/imbalance/log?limit=100",
-                                   lambda d: render_log(d.get("alerts") or []))):
-        try:
-            parts.append(renderer(_get(path, session)))
-        except Exception as exc:
-            parts.append(_card([_section(label), _note(f"Could not load: {exc}", RED_DIM)]))
+    try:
+        parts.append(render_status(_get("/api/imbalance/universe", session)))
+    except Exception as exc:
+        parts.append(_card([_section("Status"), _note(f"Could not load: {exc}", RED_DIM)]))
+    parts.append(_card([
+        _section("Scan now"),
+        html.Div("Runs one scan over every symbol right now and updates the outcomes. Alerts it fires are logged "
+                 "like scheduled ones (and emailed to administrators if admin preview is on). Takes up to a minute.",
+                 style={"fontSize": "12px", "color": MUTED, "marginBottom": "10px"}),
+        html.Button("Scan now", id="imbalance-scan-btn", n_clicks=0,
+                    style={"background": TEAL_DIM, "color": "#06281f", "border": "none", "borderRadius": "10px",
+                           "padding": "9px 18px", "fontWeight": "800", "fontSize": "13px", "cursor": "pointer"}),
+        dcc.Loading(html.Div(id="imbalance-scan-result", style={"marginTop": "12px"}), type="dot", color=TEAL_DIM),
+    ]))
+    parts.append(html.Div(build_panels(session), id="imbalance-panels"))
     return html.Div(parts)
