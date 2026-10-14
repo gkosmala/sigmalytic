@@ -19,7 +19,9 @@ def _bars(n=1800, seed=1):
 
 def test_table_has_all_symbols_and_utc_moments():
     t = {r["symbol"]: r for r in ar.table()}
-    assert set(t) == set("MSFT AAPL AMD NVDA MU AMZN GOOGL META ORCL IBM TSLA CSCO DELL".split())
+    assert set("MSFT AAPL AMD NVDA MU AMZN GOOGL META ORCL IBM TSLA CSCO DELL".split()) <= set(t)
+    assert set("AVGO JPM BRK.B LLY XOM WMT ABBV COST PLTR BAC INTC".split()) <= set(t)
+    assert t["WMT"]["ipo_utc"] == "1970-10-01 13:30 UTC" and t["INTC"]["ipo_utc"] == "1971-10-13 13:30 UTC"   # EDT; 1970-71 DST ended in late October
     assert t["MSFT"]["ipo_utc"] == "1986-03-13 14:30 UTC"      # EST
     assert t["TSLA"]["ipo_utc"] == "2010-06-29 13:30 UTC"      # EDT
     assert all(r["elev_status"].startswith("user-supplied") for r in t.values())
