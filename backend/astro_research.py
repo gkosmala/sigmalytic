@@ -379,6 +379,46 @@ def planet_lines(lons: Dict[str, float], ref: float, unit: float, band: float, f
     return out
 
 
+OCTAGON = tuple(range(0, 360, 45))
+
+
+def octagon_levels(lons: Dict[str, float], ref: float, unit: float, band: float, source: str) -> List[Dict[str, Any]]:
+    """Mean of Five and Cycle of Eight at every 45-degree octagon offset (and every 360-degree cycle) that lands within `band` of the price."""
+    out = []
+    for body in ("Mean of Five", "Cycle of Eight"):
+        lon = lons[body]
+        for off in OCTAGON:
+            k0 = round((ref / unit - lon - off) / 360.0)
+            for k in range(k0 - 1, k0 + 2):
+                price = (lon + off + 360.0 * k) * unit
+                if price > 0 and abs(price / ref - 1) <= band:
+                    out.append({"price": price, "body": body, "source": source, "offset": off, "cycle": k,
+                                "label": f"{source} {body} {lon:.2f} deg + {off} deg" + (f" (+{360 * k} deg)" if k else "")})
+    return out
+
+
+def mean_bands(levels: List[Dict[str, Any]], others: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Bands between a Mean of Five level and the nearest Cycle of Eight level from the same source (and the reverse).
+    The band's width is the measure of how tight the zone is; no tolerance is applied. `others` are the levels from the
+    other methods; those inside a band are listed with it."""
+    seen = {}
+    for src in sorted({x["source"] for x in levels}):
+        m = [x for x in levels if x["source"] == src and x["body"] == "Mean of Five"]
+        c = [x for x in levels if x["source"] == src and x["body"] == "Cycle of Eight"]
+        pairs = [(a, min(c, key=lambda y: abs(y["price"] - a["price"]))) for a in m if c] + \
+                [(min(m, key=lambda y: abs(y["price"] - b["price"])), b) for b in c if m]
+        for a, b in pairs:
+            lo, hi = sorted((a["price"], b["price"]))
+            key = (src, a["offset"], a["cycle"], b["offset"], b["cycle"])
+            if key in seen:
+                continue
+            inside = [f"{o['label']} ${o['price']:.2f}" for o in others if lo <= o["price"] <= hi]
+            seen[key] = {"key": list(key), "source": src, "low": round(lo, 2), "high": round(hi, 2), "width_pct": round((hi / lo - 1) * 100, 2),
+                         "mean_of_five": f"{a['label']} ${a['price']:.2f}", "cycle_of_eight": f"{b['label']} ${b['price']:.2f}",
+                         "inside": inside}
+    return sorted(seen.values(), key=lambda z: z["width_pct"])
+
+
 def mean_lons(pos: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
     """Mean of Five (Jupiter..Pluto) and Cycle of Eight (adds Sun, Mercury, Venus): plain averages of the longitudes."""
     return {"Mean of Five": sum(pos[b]["lon"] for b in OUTER) / 5.0, "Cycle of Eight": sum(pos[b]["lon"] for b in COE_BODIES) / 8.0}
@@ -548,7 +588,9 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     nm = mean_lons(natal)
     static += planet_lines(natal_lons, ref, unit, band, "natal", "Natal ") + planet_lines(nm, ref, unit, band, "mean", "Natal ")
 
+    natal_oct = octagon_levels(nm, ref, unit, band, "Natal")
     blocks = []
+    bands_all: List[Dict[str, Any]] = []
     zones_all: List[Dict[str, Any]] = []
     diag_gap: Optional[Dict[str, Any]] = None
     diag_levels = 0
@@ -562,6 +604,10 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         lv_all = static + dyn
         near_up = sorted([x for x in lv_all if x["price"] > ref], key=lambda x: x["price"])[:2]
         near_dn = sorted([x for x in lv_all if x["price"] <= ref], key=lambda x: -x["price"])[:2]
+        others = [x for x in lv_all if x["family"] != "mean"]
+        bands = mean_bands(natal_oct + octagon_levels(mean_lons(pos), ref, unit, band, "Transit"), others)
+        bands.sort(key=lambda z: (0 if z["low"] <= ref <= z["high"] else 1, abs((z["low"] + z["high"]) / 2 - ref)))
+        bands_all.extend(bands)
         gap = closest_cross_family_gap(lv_all)
         if gap and (diag_gap is None or gap["gap_pct"] < diag_gap["gap_pct"]):
             diag_gap = gap
@@ -585,9 +631,11 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
                        "phase": PHASE[(hh, mm)], "moon": pos["Moon"]["position"], "sun": pos["Sun"]["position"],
                        "events": [label(e) for e in evs], "marks": marks, "attention": "High" if hard or marks else "Normal",
                        "above": above, "below": below,
+                       "mean_bands": bands[:3],
                        "near_above": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_up],
                        "near_below": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_dn]})
     top = sorted({(z["price"], z["score"]): z for z in zones_all}.values(), key=lambda z: -z["score"])[:12]
+    top_bands = sorted({tuple(z["key"]): z for z in bands_all}.values(), key=lambda z: z["width_pct"])[:8]
     result = {"row": {**row, "ipo_utc": ipo_moment_utc(row).strftime("%Y-%m-%d %H:%M UTC")}, "day": day, "ref_price": round(ref, 2),
               "ref_date": str(before[-1]["t"])[:10], "unit": unit, "band_pct": band * 100, "notes": notes,
               "actual": ({"open": same[0]["o"], "high": same[0]["h"], "low": same[0]["l"], "close": same[0]["c"]} if same else None),
@@ -599,7 +647,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
                                for e in keep],
               "windows": transit_windows(symbol, open_t, 7),
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
-              "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "blocks": blocks,
+              "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
               "hourly": hourly_table(symbol, open_t, 7)}
     result["draft"] = report_text(result)
@@ -640,6 +688,13 @@ def report_text(r: Dict[str, Any]) -> str:
     if not r["top_zones"]:
         L.append("   " + no_confluence_note(r))
     L.append("")
+    L.append("3b. MEAN OF FIVE / CYCLE OF EIGHT OCTAGON BANDS (price between the two means at 45-degree octagon offsets; the band width is the tightness, no tolerance applied)")
+    for z in r.get("top_bands", []):
+        L.append(f"   ${z['low']:.2f} to ${z['high']:.2f} (width {z['width_pct']}%, {z['source'].lower()}): {z['mean_of_five']}; {z['cycle_of_eight']}"
+                 + (f"; inside the band: " + "; ".join(z["inside"][:4]) if z["inside"] else ""))
+    if not r.get("top_bands"):
+        L.append("   No Mean of Five / Cycle of Eight octagon levels fall within range.")
+    L.append("")
     L.append("4. HOURLY TACTICAL PLAN (levels are references, not forecasts)")
     for b in r["blocks"]:
         L.append(f"   {b['time_et']}  [{b['phase']}]  Attention: {b['attention']}  Moon {b['moon']}")
@@ -648,6 +703,10 @@ def report_text(r: Dict[str, Any]) -> str:
         up = ", ".join(f"${z['price']:.2f}" for z in b["above"]) or "none within range"
         dn = ", ".join(f"${z['price']:.2f}" for z in b["below"]) or "none within range"
         L.append(f"      Reversal-watch zones above ${r['ref_price']:.2f}: {up}   below: {dn}")
+        if b.get("mean_bands"):
+            L.append("      Mean/Cycle bands: " + "; ".join(
+                f"${z['low']:.2f}-${z['high']:.2f} ({z['width_pct']}% wide, {z['source'].lower()})" + (" [holds the reference price]" if z["low"] <= r["ref_price"] <= z["high"] else "")
+                for z in b["mean_bands"]))
         if not b["above"] and not b["below"]:
             nu = ", ".join(f"${x['price']:.2f} ({x['label']})" for x in b.get("near_above", [])) or "none in range"
             nd = ", ".join(f"${x['price']:.2f} ({x['label']})" for x in b.get("near_below", [])) or "none in range"

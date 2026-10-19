@@ -69,10 +69,16 @@ def render_report(p: dict):
              _table(["Price", "Score", "Methods", "Members"], [[f"${z['price']:.2f}", z["score"], ", ".join(z["families"]), "; ".join(z["members"][:5])]
                                                                 for z in p["top_zones"]]) if p["top_zones"]
              else html.Div(_no_conf(p), style={"color": AMBER, "fontSize": "12px"})]
+    kids += [_h("3b. Mean of Five / Cycle of Eight octagon bands (band width is the tightness; no tolerance applied)"),
+             _table(["Band", "Width", "Source", "Mean of Five level", "Cycle of Eight level", "Other methods inside"],
+                    [[f"${z['low']:.2f} to ${z['high']:.2f}", f"{z['width_pct']}%", z["source"], z["mean_of_five"], z["cycle_of_eight"],
+                      "; ".join(z["inside"][:4]) or "-"] for z in p.get("top_bands", [])])
+             if p.get("top_bands") else html.Div("No Mean of Five / Cycle of Eight octagon levels fall within range.", style={"color": MUTED, "fontSize": "11px"})]
     kids += [_h("4. Hourly tactical plan"),
-             _table(["Time (ET)", "Rule window", "Attention", "Moon", "Astro and time marks", "Zones above", "Zones below"],
+             _table(["Time (ET)", "Rule window", "Attention", "Moon", "Astro and time marks", "Zones above", "Zones below", "Mean/Cycle bands"],
                     [[b["time_et"], b["phase"], b["attention"], b["moon"], "; ".join(b["events"] + b["marks"]) or "-",
-                      _zones_cell(b, "above", "near_above"), _zones_cell(b, "below", "near_below")]
+                      _zones_cell(b, "above", "near_above"), _zones_cell(b, "below", "near_below"),
+                      "; ".join(f"${z['low']:.2f}-${z['high']:.2f}" for z in b.get("mean_bands", [])) or "-"]
                      for b in p["blocks"]]),
              html.Div("A reversal needs location, structure and volume to agree. Mid-range prices are a no-trade area. Zones are references, not forecasts.",
                       style={"color": AMBER, "fontSize": "11px"}),
