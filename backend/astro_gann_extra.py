@@ -395,3 +395,43 @@ def natal_breakout(ipo_date: str, day: str, bars_before: List[Dict[str, Any]], r
     flagged = flag_once or flag_rep
     return {"matrix": matrix, "flag_once": flag_once, "flag_repeating": flag_rep, "references": refs, "listing_bar_found": bool(lb),
             "levels": breakout_levels(refs, ref_price, band) if flagged else []}
+
+
+def natal_base(ipo_date: str, bars: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Owner-supplied idea: the highs and lows made inside the exact natal windows of the FIRST year after listing become permanent
+    support and resistance. For each window (the day counts and month anniversaries) take the highest high and lowest low of the bars
+    inside it. A window that falls on a non-trading day uses the next trading bar (my rule). Needs the first-year bars in the
+    Alpaca history fetched; windows that cannot be covered are reported as missing."""
+    d0 = date.fromisoformat(ipo_date)
+    rows = [(date.fromisoformat(str(b["t"])[:10]), b) for b in bars if b.get("h") and b.get("l")]
+    have_start = bool(rows) and rows[0][0] <= d0 + timedelta(days=1)
+
+    def window(lo_d: date, hi_d: date):
+        inside = [b for d, b in rows if lo_d <= d <= hi_d]
+        if not inside:
+            nxt = next(((d, b) for d, b in rows if d >= lo_d and (d - lo_d).days <= 5), None)
+            inside = [nxt[1]] if nxt else []
+        return inside
+    out, missing = [], []
+    spans = [(label, d0 + timedelta(days=lo), d0 + timedelta(days=hi)) for label, lo, hi in CYCLE_DAYS]
+    spans += [(f"{m}-month anniversary", _add_months(d0, m), _add_months(d0, m)) for m in CYCLE_MONTHS]
+    for label, a, b in spans:
+        w = window(a, b) if have_start else []
+        if not w:
+            missing.append(label)
+            continue
+        hi = max(w, key=lambda x: float(x["h"]))
+        lo = min(w, key=lambda x: float(x["l"]))
+        out.append({"window": label, "from": a.isoformat(), "to": b.isoformat(), "high": float(hi["h"]), "high_date": str(hi["t"])[:10],
+                    "low": float(lo["l"]), "low_date": str(lo["t"])[:10]})
+    return {"windows": out, "missing": missing, "history_starts_at_listing": have_start}
+
+
+def natal_base_levels(base: Dict[str, Any], ref_price: float, band: float) -> List[Dict[str, Any]]:
+    lv = []
+    for w in base.get("windows", []):
+        for kind in ("high", "low"):
+            p = w[kind]
+            if abs(p / ref_price - 1) <= band:
+                lv.append({"price": p, "label": f"Natal base {kind} of the {w['window']} window ({w[kind + '_date']})"})
+    return sorted(lv, key=lambda x: x["price"])

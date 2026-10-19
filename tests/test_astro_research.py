@@ -292,7 +292,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
-    assert len(res["groups"]) == 9 and all("metrics" in g or "error" in g for g in res["groups"])
+    assert len(res["groups"]) == 10 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)
     i = 1600
@@ -454,3 +454,32 @@ def test_natal_breakout_formula_matches_the_owner_example_and_needs_a_window():
     assert out["flag_once"] and out["levels"] and out["listing_bar_found"]
     quiet = gx.natal_breakout("2020-01-01", "2020-02-13", bars, 100.0, 0.12)        # day 43: no cycle lands here
     assert not quiet["flag_once"] and not quiet["flag_repeating"] and quiet["levels"] == []
+
+
+def test_natal_base_reads_first_year_windows_and_reports_missing_history():
+    from datetime import date, timedelta
+    from backend import astro_gann_extra as gx
+    d0 = date(2020, 1, 6)
+    bars = []
+    for i in range(400):
+        d = d0 + timedelta(days=i)
+        if d.weekday() < 5:
+            bars.append({"t": d.isoformat(), "o": 100, "h": 100 + i * 0.1, "l": 90 + i * 0.05, "c": 100})
+    base = gx.natal_base("2020-01-06", bars)
+    w = {x["window"]: x for x in base["windows"]}
+    assert base["history_starts_at_listing"] and "49 to 52 days" in w and "3-month anniversary" in w
+    seven = w["7 days"]                                   # 2020-01-13 is a Monday, a trading day
+    assert seven["from"] == "2020-01-13" and seven["high_date"] == "2020-01-13"
+    wk = w["49 to 52 days"]                               # the window covers several bars: high is the latest, low the earliest
+    assert wk["high_date"] > wk["low_date"] or wk["high_date"] == wk["low_date"]
+    lv = gx.natal_base_levels(base, w["180 days"]["high"], 0.02)
+    assert any(abs(x["price"] - w["180 days"]["high"]) < 1e-9 for x in lv)
+    late = gx.natal_base("2010-01-04", bars)              # history starts years after the listing
+    assert not late["history_starts_at_listing"] and late["windows"] == [] and late["missing"]
+
+
+def test_report_has_natal_base_section():
+    from backend import astro_research as ar
+    bars = _bars(2100)
+    r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
+    assert "natal_base" in r and "3e3. NATAL BASE" in r["draft"]

@@ -195,6 +195,18 @@ def gann_extra_components(p: dict) -> list:
     else:
         kids.append(html.Div("No natal window today, so no breakout levels are computed." if not hits else "No breakout level falls within range.",
                              style={"color": MUTED, "fontSize": "11px"}))
+    nbase = p.get("natal_base") or {}
+    kids.append(_h("3e3. Natal base (owner-supplied: highs and lows of the first-year natal windows, carried forward as support and resistance)"))
+    if not nbase.get("history_starts_at_listing"):
+        kids.append(html.Div("Not available: the Alpaca history fetched does not reach back to the listing date, so the first-year windows cannot be read.",
+                             style={"color": AMBER, "fontSize": "11px"}))
+    else:
+        kids.append(_table(["Window", "Dates", "High", "Low"],
+                           [[w["window"], w["from"] + ("" if w["to"] == w["from"] else f" to {w['to']}"), f"${w['high']:.2f} ({w['high_date']})",
+                             f"${w['low']:.2f} ({w['low_date']})"] for w in nbase.get("windows", [])]))
+        kids.append(html.Div("In range today: " + (", ".join(f"${x['price']:.2f}" for x in nbase.get("levels", [])) or "none")
+                             + ". A window on a non-trading day uses the next trading bar (my rule). Not weighted in the master confluence.",
+                             style={"color": WHITE, "fontSize": "12px"}))
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
