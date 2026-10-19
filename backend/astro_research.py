@@ -375,7 +375,7 @@ OUTER = ("Jupiter", "Saturn", "Uranus", "Neptune", "Pluto")
 COE_BODIES = OUTER + ("Sun", "Mercury", "Venus")
 LINE_BODIES = [n for n, _ in ae.PLANETS] + ["Moon's Node"]
 FAMILY_LABEL = {"transit": "Planet line", "natal": "Natal planet line", "mean": "Mean of Five / Cycle of Eight",
-                "sq9": "Square of 9", "pivot": "Pivot", "sq144": "Square of 144"}
+                "sq9": "Square of 9", "pivot": "Pivot", "sq144": "Square of 144", "price_aspect": "Price-wheel aspect"}
 SESSION_BLOCKS = [(9, 30), (10, 30), (11, 30), (12, 30), (13, 30), (14, 30), (15, 30)]
 PHASE = {(9, 30): "Opening drive; false-move risk", (10, 30): "True direction usually shows", (11, 30): "True direction usually shows (to 12:00)",
          (12, 30): "Midday", (13, 30): "Secondary move; trap risk", (14, 30): "Between rule windows",
@@ -383,8 +383,10 @@ PHASE = {(9, 30): "Opening drive; false-move risk", (10, 30): "True direction us
 
 
 def price_unit(price: float) -> float:
-    """Price per degree for planetary lines: 10 for index-size prices, 1 for ordinary stocks, 0.1 for low-priced ones."""
-    return 10.0 if price >= 2000 else (1.0 if price >= 10 else 0.1)
+    """Price per degree for planetary lines (owner-supplied scaling table): up to $5 = 0.01 (price x 100), over $5 to $500 = 1,
+    over $500 to $3,000 = 10 (price / 10), over $3,000 = 100 (price / 100). The table's tiers share their edge values; the
+    lower tier owns $5, $500 and $3,000."""
+    return 0.01 if price <= 5 else (1.0 if price <= 500 else (10.0 if price <= 3000 else 100.0))
 
 
 def planet_lines(lons: Dict[str, float], ref: float, unit: float, band: float, family: str, tag: str = "") -> List[Dict[str, Any]]:
@@ -619,7 +621,23 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
                   "cycles": gx.natal_cycle_dates(row["ipo_date"], nv["vibration"], day)}
     numerology["day_matches_natal"] = numerology["day_vibration"] == nv["vibration"]
-    cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS, ref=ref, unit=unit, band=band)
+    def exact_fn(body, target, hours=96):
+        """Nearest time within +/-96 hours (2-hour steps) when `body` is at longitude `target` (degrees)."""
+        if body not in _CLS:
+            return None
+        prev, best = None, None
+        for h in range(-hours, hours + 1, 2):
+            t = open_t + timedelta(hours=h)
+            e = (_lon(body, t) - target + 180) % 360 - 180
+            if prev is not None and prev[1] * e <= 0 and abs(prev[1]) < 90 and abs(e) < 90 and prev[1] != e:
+                tc = prev[0] + (t - prev[0]) * (abs(prev[1]) / (abs(prev[1]) + abs(e)))
+                if best is None or abs((tc - open_t).total_seconds()) < abs((best - open_t).total_seconds()):
+                    best = tc
+            prev = (t, e)
+        return best.astimezone(ET) if best else None
+
+    cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS, ref=ref, unit=unit, band=band,
+                         exact_fn=None if with_levels else exact_fn, day=day)
 
     natal_oct = octagon_levels(nm, ref, unit, band, "Natal")
     blocks = []
@@ -628,6 +646,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     diag_gap: Optional[Dict[str, Any]] = None
     diag_levels = 0
     raw_levels: Dict[str, List[float]] = {}
+    master_levels: List[List[Dict[str, Any]]] = []
     for hh, mm in SESSION_BLOCKS:
         t = datetime(d0.year, d0.month, d0.day, hh, mm, tzinfo=ET).astimezone(timezone.utc)
         t_next = t + timedelta(minutes=60 if (hh, mm) != (15, 30) else 30)
@@ -636,6 +655,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         dyn += planet_lines(mean_lons(pos), ref, unit, band, "mean", "Transit ")
         zones = confluence(static + dyn)
         lv_all = static + dyn
+        master_levels.append(lv_all)
         if with_levels and (hh, mm) == (9, 30):
             for x in lv_all:
                 raw_levels.setdefault(x["family"], []).append(round(x["price"], 4))
@@ -671,6 +691,15 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
                        "mean_bands": bands[:3],
                        "near_above": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_up],
                        "near_below": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_dn]})
+    pa = [{"price": x["price"], "family": "price_aspect", "label": x["label"]} for x in cosmo["price_wheel"]["levels"]] if cosmo.get("price_wheel") else []
+    master_all: List[Dict[str, Any]] = []
+    for lv in master_levels:
+        master_all.extend(gx.master_confluence(lv + pa))
+    master: List[Dict[str, Any]] = []
+    for z in sorted({(z["price"], z["score"]): z for z in master_all}.values(), key=lambda z: (-z["score"], z["price"])):
+        if not any(abs(z["price"] / k["price"] - 1) * 100 <= gx.MASTER_TOL_PCT for k in master):   # overlapping clusters: keep the best
+            master.append(z)
+    master = master[:12]
     top = sorted({(z["price"], z["score"]): z for z in zones_all}.values(), key=lambda z: -z["score"])[:12]
     for z in top:
         k = int(round(z["price"] / unit))
@@ -690,7 +719,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
-              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo,
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
@@ -750,11 +779,24 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
     if pw:
         L.append("")
         L.append(f"3g. COSMOGRAM, PRICE WHEEL (owner-supplied method): reference ${pw['price']:.2f} at ${pw['unit']:g} per degree = {pw['degree']} deg. This is the WHERE view")
+        L.append("   Tolerances (owner-supplied): price within 3 degrees of the aspect; exact aspect within 1 trading day of the report date (weekends skipped, holidays not).")
         for p in pw["pairs"][:8]:
-            L.append(f"   {p['body']} {p['lon']} deg is {p['angle']} deg from the price degree, nearest {p['aspect']} (off by {p['orb']} deg)")
+            tail = ""
+            if "square_out" in p:
+                tail = (f"; exact {p['exact_et'] or 'not within 4 days'}" + (f" ({p['trading_days']:+d} trading days)" if p["trading_days"] is not None else "")
+                        + f" -> price {'PASS' if p['pass_price'] else 'fail'}, time {'PASS' if p['pass_time'] else 'fail'}"
+                        + (", SQUARE-OUT" if p["square_out"] else ""))
+            L.append(f"   {p['body']} {p['lon']} deg is {p['angle']} deg from the price degree, nearest {p['aspect']} (off by {p['orb']} deg){tail}")
         L.append("   Prices where a planet at the open would aspect the price degree (60, 90, 120, 180): "
                  + (", ".join(f"${x['price']:.2f}" for x in pw["levels"]) or "none in range"))
-        L.append("   Not scored in the confluence list. The conjunction levels are the planet lines in section 3.")
+        L.append("   Not in the 0.2% list above; these levels are scored in the master confluence list below. The conjunction levels are the planet lines in section 3.")
+    L.append("")
+    L.append("3h. MASTER CONFLUENCE (owner-supplied: geometric methods weighted 60%, astrological 40%; a cluster counts only if a geometric and an astrological level are within 0.5% of each other)")
+    L.append("   Geometric: pivots, Square of 9, Square of 144. Astrological: transit, natal and mean planet lines, and price-wheel aspect levels. Score = 100 x (0.6 x share of geometric methods + 0.4 x share of astrological methods).")
+    for z in r.get("master_zones", []):
+        L.append(f"   ${z['price']:.2f} (${z['low']:.2f}-${z['high']:.2f}, score {z['score']}; geometric: {', '.join(FAMILY_LABEL[f] for f in z['geometric'])}; astrological: {', '.join(FAMILY_LABEL[f] for f in z['astrological'])}): " + "; ".join(z["members"][:6]))
+    if not r.get("master_zones"):
+        L.append("   None: no geometric level had an astrological level within 0.5%.")
     L.append("")
     return L
 

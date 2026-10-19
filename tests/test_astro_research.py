@@ -88,7 +88,9 @@ def test_time_counts_match_the_source_example():
 
 
 def test_price_unit():
-    assert ar.price_unit(6400) == 10 and ar.price_unit(305) == 1 and ar.price_unit(5) == 0.1
+    # owner-supplied table: under $5 x100, $5-$500 1:1, over $500-$3,000 /10, over $3,000 /100
+    assert ar.price_unit(6400) == 100 and ar.price_unit(3000) == 10 and ar.price_unit(800) == 10
+    assert ar.price_unit(500) == 1 and ar.price_unit(305) == 1 and ar.price_unit(5.01) == 1 and ar.price_unit(5) == 0.01 and ar.price_unit(4.99) == 0.01
 
 
 def test_confluence_needs_two_families():
@@ -269,7 +271,7 @@ def test_level_test_groups_split_zones_by_source():
         calls.append(d)
         return ar.report("MDB", d, bars=bars)
     res = lt.level_test_groups(bars, fn, max_days=10, draws=20, step=2)
-    assert len(res["groups"]) == 4 and len(calls) == len(set(calls))
+    assert len(res["groups"]) == 5 and len(calls) == len(set(calls))
 
 
 def test_level_test_render_handles_single_and_grouped():
@@ -393,3 +395,39 @@ def test_report_has_the_price_wheel_section():
     r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     assert r["cosmogram"]["price_wheel"]["degree"] == round((r["ref_price"] / r["unit"]) % 360.0, 2)
     assert "3g. COSMOGRAM, PRICE WHEEL" in r["draft"]
+
+
+def test_master_confluence_needs_geometric_and_astrological_within_half_a_percent():
+    from backend import astro_gann_extra as gx
+    lv = [{"price": 100.0, "family": "pivot", "label": "P"}, {"price": 100.4, "family": "transit", "label": "T"},
+          {"price": 100.2, "family": "sq144", "label": "S"}, {"price": 120.0, "family": "pivot", "label": "P2"},
+          {"price": 121.0, "family": "sq9", "label": "Q"}, {"price": 140.0, "family": "natal", "label": "N"}]
+    out = gx.master_confluence(lv)
+    assert len(out) == 1 and out[0]["geometric"] == ["pivot", "sq144"] and out[0]["astrological"] == ["transit"]
+    assert out[0]["score"] == round(100 * (0.6 * 2 / 3 + 0.4 * 1 / 4), 1)
+    assert gx.master_confluence([{"price": 100.0, "family": "pivot", "label": "P"}, {"price": 100.6, "family": "transit", "label": "T"}]) == []
+
+
+def test_square_out_uses_the_three_degree_and_one_trading_day_tolerances():
+    from datetime import date, datetime, timezone
+    from backend import astro_gann_extra as gx, astro_ephemeris as ae
+    assert gx.trading_days_between(date(2026, 10, 16), date(2026, 10, 19)) == 1      # Friday to Monday
+    assert gx.trading_days_between(date(2026, 10, 19), date(2026, 10, 16)) == -1
+    pos = {"Sun": {"lon": 52.0}, "Mars": {"lon": 140.0}}
+    ex = lambda body, target: datetime(2026, 10, 20, 15, 0, tzinfo=timezone.utc)      # one trading day after the report day
+    pw = gx.cosmogram(pos, {}, ae.ASPECTS, ref=410.0, unit=1.0, band=0.12, exact_fn=ex, day="2026-10-19")["price_wheel"]
+    by = {r["body"]: r for r in pw["pairs"]}
+    assert by["Sun"]["orb"] == 2.0 and by["Sun"]["pass_price"] and by["Sun"]["pass_time"] and by["Sun"]["square_out"]
+    ex2 = lambda body, target: datetime(2026, 10, 23, 15, 0, tzinfo=timezone.utc)     # four trading days away
+    pw2 = gx.cosmogram(pos, {}, ae.ASPECTS, ref=410.0, unit=1.0, band=0.12, exact_fn=ex2, day="2026-10-19")["price_wheel"]
+    assert not {r["body"]: r for r in pw2["pairs"]}["Sun"]["square_out"]
+    pw3 = gx.cosmogram({"Sun": {"lon": 54.5}}, {}, ae.ASPECTS, ref=410.0, unit=1.0, band=0.12, exact_fn=ex, day="2026-10-19")["price_wheel"]
+    assert pw3["pairs"][0]["orb"] == 4.5 and not pw3["pairs"][0]["pass_price"]
+
+
+def test_report_has_square_out_flags_and_master_confluence():
+    from backend import astro_research as ar
+    bars = _bars(2100)
+    r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
+    assert all("square_out" in p for p in r["cosmogram"]["price_wheel"]["pairs"])
+    assert "master_zones" in r and "3h. MASTER CONFLUENCE" in r["draft"]

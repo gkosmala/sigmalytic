@@ -187,11 +187,25 @@ def gann_extra_components(p: dict) -> list:
     if pw:
         kids += [_h(f"3g. Cosmogram, price wheel: where (reference ${pw['price']:.2f} at ${pw['unit']:g} per degree = {pw['degree']} deg)"),
                  _price_wheel(c, pw),
-                 _table(["Planet", "Longitude", "Angle to price", "Nearest aspect", "Off by"],
-                        [[x["body"], f"{x['lon']} deg", f"{x['angle']} deg", x["aspect"], f"{x['orb']} deg"] for x in pw["pairs"]]),
+                 html.Div("Tolerances (owner-supplied): price within 3 degrees of the aspect; exact aspect within 1 trading day of the report date "
+                          "(weekends skipped, holidays not).", style={"color": MUTED, "fontSize": "11px"}),
+                 _table(["Planet", "Longitude", "Angle to price", "Nearest aspect", "Off by", "Exact aspect (ET)", "Price", "Time", "Square-out"],
+                        [[x["body"], f"{x['lon']} deg", f"{x['angle']} deg", x["aspect"], f"{x['orb']} deg",
+                          (x.get("exact_et") or "not within 4 days") + (f" ({x['trading_days']:+d} trading days)" if x.get("trading_days") is not None else ""),
+                          "PASS" if x.get("pass_price") else "fail", "PASS" if x.get("pass_time") else "fail",
+                          "SQUARE-OUT" if x.get("square_out") else ""] for x in pw["pairs"]]),
                  html.Div("Prices where a planet at the open would aspect the price degree (60, 90, 120, 180): "
                           + (", ".join(f"${x['price']:.2f}" for x in pw["levels"]) or "none in range"), style={"color": WHITE, "fontSize": "12px"}),
-                 html.Div("Owner-supplied method. Not scored in the confluence list.", style={"color": MUTED, "fontSize": "11px"})]
+                 html.Div("Owner-supplied method. Scored in the master confluence list below, not in the 0.2% list.", style={"color": MUTED, "fontSize": "11px"})]
+    fam = {"pivot": "Pivot", "sq9": "Square of 9", "sq144": "Square of 144", "transit": "Planet line", "natal": "Natal planet line",
+           "mean": "Mean of Five / Cycle of Eight", "price_aspect": "Price-wheel aspect"}
+    kids += [_h("3h. Master confluence (geometric 60%, astrological 40%; a geometric and an astrological level within 0.5%)"),
+             _table(["Price", "Range", "Score", "Geometric", "Astrological", "Members"],
+                    [[f"${z['price']:.2f}", f"${z['low']:.2f}-${z['high']:.2f}", z["score"], ", ".join(fam[f] for f in z["geometric"]),
+                      ", ".join(fam[f] for f in z["astrological"]), "; ".join(z["members"][:5])] for z in p.get("master_zones", [])])
+             if p.get("master_zones") else html.Div("None: no geometric level had an astrological level within 0.5%.", style={"color": AMBER, "fontSize": "12px"}),
+             html.Div("Score = 100 x (0.6 x share of geometric methods present + 0.4 x share of astrological methods present). Owner-supplied weights.",
+                      style={"color": MUTED, "fontSize": "11px"})]
     return kids
 
 

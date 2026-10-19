@@ -202,7 +202,26 @@ def sq144(anchors: List[Dict[str, Any]], day: str, ref: float, unit: float, band
 PRICE_ASPECTS = (60.0, 90.0, 120.0, 180.0)
 
 
-def price_wheel(open_pos: Dict[str, Dict[str, Any]], aspects: Dict[str, float], ref: float, unit: float, band: float) -> Dict[str, Any]:
+PRICE_ORB = 3.0          # owner-supplied: +/-3 degrees of longitude
+TIME_TOLERANCE_DAYS = 1  # owner-supplied: +/-1 trading day
+
+
+def trading_days_between(a: date, b: date) -> int:
+    """Signed weekdays from a to b (holidays are not removed)."""
+    step = 1 if b >= a else -1
+    n, d = 0, a
+    while d != b:
+        d += timedelta(days=step)
+        if d.weekday() < 5:
+            n += step
+    return n
+
+
+AspectOffset = {"conjunction": 0.0, "sextile": 60.0, "square": 90.0, "trine": 120.0, "opposition": 180.0}
+
+
+def price_wheel(open_pos: Dict[str, Dict[str, Any]], aspects: Dict[str, float], ref: float, unit: float, band: float,
+                exact_fn=None, day: Optional[str] = None) -> Dict[str, Any]:
     """Owner-supplied method: the price is converted to a degree (price / unit, minus whole turns of 360; $410 at 1 per degree is 50)
     and placed against the planets. Rows give each planet's angle to the price degree, the nearest aspect and its distance.
     Levels are the prices where a planet at the open would sit in a 60, 90, 120 or 180 degree aspect to the price degree
@@ -218,7 +237,21 @@ def price_wheel(open_pos: Dict[str, Dict[str, Any]], aspects: Dict[str, float], 
             continue
         ang = sep(open_pos[n]["lon"], deg)
         asp, tgt = min(aspects.items(), key=lambda kv: abs(ang - kv[1]))
-        rows.append({"body": n, "lon": round(open_pos[n]["lon"], 2), "angle": round(ang, 2), "aspect": asp, "orb": round(abs(ang - tgt), 2)})
+        row = {"body": n, "lon": round(open_pos[n]["lon"], 2), "angle": round(ang, 2), "aspect": asp, "orb": round(abs(ang - tgt), 2)}
+        row["pass_price"] = row["orb"] <= PRICE_ORB
+        if exact_fn is not None and day:
+            lon = open_pos[n]["lon"]
+            # which side of the price degree the planet is on decides whether the exact aspect is at +tgt or -tgt
+            off = tgt if ((lon - deg + 180) % 360 - 180) >= 0 else -tgt
+            ex = exact_fn(n, deg + off)
+            if ex is not None:
+                td = trading_days_between(date.fromisoformat(day), ex.date())
+                row.update({"exact_et": ex.strftime("%Y-%m-%d %H:%M"), "trading_days": td})
+                row["pass_time"] = abs(td) <= TIME_TOLERANCE_DAYS
+            else:
+                row.update({"exact_et": None, "trading_days": None, "pass_time": False})
+            row["square_out"] = bool(row["pass_price"] and row["pass_time"])
+        rows.append(row)
     rows.sort(key=lambda r: r["orb"])
     levels = []
     for n in allowed:
@@ -237,7 +270,7 @@ def price_wheel(open_pos: Dict[str, Dict[str, Any]], aspects: Dict[str, float], 
 
 
 def cosmogram(open_pos: Dict[str, Dict[str, Any]], natal: Dict[str, Dict[str, Any]], aspects: Dict[str, float], top: int = 14,
-              ref: Optional[float] = None, unit: float = 1.0, band: float = 0.12) -> Dict[str, Any]:
+              ref: Optional[float] = None, unit: float = 1.0, band: float = 0.12, exact_fn=None, day: Optional[str] = None) -> Dict[str, Any]:
     """Angles between the planets at the open and to the IPO chart, with the nearest aspect and its distance, tightest first."""
     def sep(a, b):
         return abs((a - b + 180) % 360 - 180)
@@ -254,7 +287,36 @@ def cosmogram(open_pos: Dict[str, Dict[str, Any]], natal: Dict[str, Dict[str, An
         asp, tgt = min(aspects.items(), key=lambda kv: abs(ang - kv[1]))
         out.append({"kind": kind, "a": a, "b": b, "angle": round(ang, 2), "aspect": asp, "orb": round(abs(ang - tgt), 2)})
     out.sort(key=lambda r: r["orb"])
-    pw = price_wheel(open_pos, aspects, ref, unit, band) if ref else None
+    pw = price_wheel(open_pos, aspects, ref, unit, band, exact_fn, day) if ref else None
     return {"pairs": out[:top], "price_wheel": pw,
             "wheel": {"sky": {n: round(open_pos[n]["lon"], 2) for n in names},
                       "ipo": {n: round(natal[n]["lon"], 2) for n in natal if n in allowed}}}
+
+
+# ── master confluence (owner-supplied scoring) ──
+GEOMETRIC = ("pivot", "sq9", "sq144")                       # price-structure methods
+ASTRO = ("transit", "natal", "mean", "price_aspect")        # converted planet-to-price levels
+GEOMETRIC_WEIGHT, ASTRO_WEIGHT, MASTER_TOL_PCT = 0.6, 0.4, 0.5
+
+
+def master_confluence(levels: List[Dict[str, Any]], tol_pct: float = MASTER_TOL_PCT) -> List[Dict[str, Any]]:
+    """A cluster counts only if a geometric level and an astrological level are within tol_pct of each other. A cluster is built
+    around each geometric level (every level within tol_pct of it). Score = 100 x (0.6 x share of geometric methods present +
+    0.4 x share of astrological methods present)."""
+    geo = [x for x in levels if x["family"] in GEOMETRIC]
+    out, seen = [], set()
+    for g in geo:
+        mem = [x for x in levels if abs(x["price"] / g["price"] - 1) * 100 <= tol_pct]
+        if not any(x["family"] in ASTRO for x in mem):
+            continue
+        key = tuple(sorted((round(x["price"], 4), x["family"]) for x in mem))
+        if key in seen:
+            continue
+        seen.add(key)
+        gf = sorted({x["family"] for x in mem if x["family"] in GEOMETRIC})
+        af = sorted({x["family"] for x in mem if x["family"] in ASTRO})
+        score = round(100 * (GEOMETRIC_WEIGHT * len(gf) / len(GEOMETRIC) + ASTRO_WEIGHT * len(af) / len(ASTRO)), 1)
+        prices = [x["price"] for x in mem]
+        out.append({"price": round(sum(prices) / len(prices), 2), "low": round(min(prices), 2), "high": round(max(prices), 2), "score": score,
+                    "geometric": gf, "astrological": af, "members": [f"{x['label']} ${x['price']:.2f}" for x in sorted(mem, key=lambda m: m["price"])]})
+    return out
