@@ -281,3 +281,26 @@ def test_level_test_render_handles_single_and_grouped():
            "touches_baseline_mean": 4, "metrics": m, "caveat": "c"}
     assert render_level_test(one) is not None
     assert render_level_test({"ok": True, "groups": [{**one, "label": "G"}, {"label": "H", "error": "none"}]}) is not None
+
+
+def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
+    import random
+    from backend import astro_research as ar, astro_level_test as lt
+    bars = _bars(2100)
+    rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
+    assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
+    res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
+    assert len(res["groups"]) == 5 and all("metrics" in g or "error" in g for g in res["groups"])
+    # real-result touch counts agree with the scalar classifier
+    rng = random.Random(3)
+    i = 1600
+    ref = bars[i - 1]["c"]
+    for _ in range(200):
+        price = ref * (1 + rng.uniform(-0.1, 0.1))
+        sc = lt.classify({"kind": "zone", "lo": price, "hi": price}, ref, bars[i], bars[i + 5]["c"])
+        o, h, l, c = (float(bars[i][k]) for k in "ohlc")
+        up = price > ref
+        touch = (o < price <= h) if up else (l <= price < o)
+        assert (sc is not None) == touch
+        if sc and sc["result"] != "stalled":
+            assert (sc["result"] == "through") == ((c > price) if up else (c < price))
