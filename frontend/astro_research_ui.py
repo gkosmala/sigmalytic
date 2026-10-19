@@ -178,7 +178,23 @@ def gann_extra_components(p: dict) -> list:
     kids += [_h("3e. Natal cycle dates (PDF p. 24)"),
              _table(["Cycle", "Today?", "Previous", "Next"], [[c["cycle"], "YES" if c["on_report_day"] else "", c["previous"] or "-",
                                                               ", ".join(x["date"] for x in c["next"])] for c in n.get("cycles", [])]),
-             html.Div("The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.", style={"color": AMBER, "fontSize": "11px"})]
+             ]
+    nb = p.get("natal_breakout") or {}
+    hits = [m for m in nb.get("matrix", []) if m["once"] or m["repeating"]]
+    kids += [_h("3e2. Natal breakout (owner-supplied: date matrix from the listing date, then (sqrt(reference) +/- factor)^2, factors 0.125 to 2.0)"),
+             html.Div(f"Days since listing: {nb['matrix'][0]['days_since_listing'] if nb.get('matrix') else '-'}. Cycles hit today: "
+                      + ("; ".join(f"{m['cycle']} ({'counted once' if m['once'] else 'repeating only'})" for m in hits) or "none"),
+                      style={"color": WHITE, "fontSize": "12px"}),
+             html.Div("The text does not say whether the day counts repeat, so both readings are shown: counted once = that count from the listing date a "
+                      "single time; repeating only = it recurs (every 7 days, every 3 months...).", style={"color": MUTED, "fontSize": "11px"})]
+    if nb.get("levels"):
+        kids += [_table(["Reference", "Price", "Date"], [[x["label"], f"${x['price']:.2f}", x["date"]] for x in nb["references"]]),
+                 html.Div("Breakout levels in range: " + ", ".join(f"${x['price']:.2f}" for x in nb["levels"]), style={"color": WHITE, "fontSize": "12px"})]
+        if not nb.get("listing_bar_found"):
+            kids.append(html.Div("The listing-day bar is not in the Alpaca history fetched, so only the swing references are used.", style={"color": AMBER, "fontSize": "11px"}))
+    else:
+        kids.append(html.Div("No natal window today, so no breakout levels are computed." if not hits else "No breakout level falls within range.",
+                             style={"color": MUTED, "fontSize": "11px"}))
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],

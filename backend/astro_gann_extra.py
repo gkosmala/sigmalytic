@@ -320,3 +320,78 @@ def master_confluence(levels: List[Dict[str, Any]], tol_pct: float = MASTER_TOL_
         out.append({"price": round(sum(prices) / len(prices), 2), "low": round(min(prices), 2), "high": round(max(prices), 2), "score": score,
                     "geometric": gf, "astrological": af, "members": [f"{x['label']} ${x['price']:.2f}" for x in sorted(mem, key=lambda m: m["price"])]})
     return out
+
+
+# ── natal breakout (owner-supplied method) ──
+# Phase 1, the date matrix, counted from the listing date.
+CYCLE_DAYS = (("7 days", 7, 7), ("14 days", 14, 14), ("21 days", 21, 21), ("28 days", 28, 28), ("42 days", 42, 42), ("45 days", 45, 45),
+              ("49 to 52 days", 49, 52), ("90 to 98 days", 90, 98), ("135 days", 135, 135), ("180 days", 180, 180))
+CYCLE_MONTHS = (3, 6, 9, 12)
+BREAKOUT_FACTORS = (0.125, 0.25, 0.5, 1.0, 2.0)   # 2.0 = 360 degrees, 1.0 = 180, 0.5 = 90, 0.25 = 45, 0.125 = 22.5
+
+
+def natal_matrix(ipo_date: str, day: str) -> List[Dict[str, Any]]:
+    """Which listing-date cycles the report day falls on. 'once' counts the cycle from the listing date a single time (the literal
+    reading); 'repeating' lets the cycle recur (every 7 days, every 3 months...). The text does not say which is meant, so both are shown."""
+    d0, d = date.fromisoformat(ipo_date), date.fromisoformat(day)
+    n = (d - d0).days
+    out = []
+    for label, lo, hi in CYCLE_DAYS:
+        once = lo <= n <= hi
+        rep = n >= lo and (n % lo) <= (hi - lo)      # recurs every `lo` days; a range such as 49 to 52 is a window of (hi - lo + 1) days
+        out.append({"cycle": label, "once": once, "repeating": rep})
+    months = (d.year - d0.year) * 12 + d.month - d0.month
+    for m in CYCLE_MONTHS:
+        once = d == _add_months(d0, m)
+        rep = any(_add_months(d0, m * k) == d for k in range(1, months // m + 2))
+        out.append({"cycle": f"{m}-month anniversary", "once": once, "repeating": rep})
+    return [{**r, "days_since_listing": n} for r in out]
+
+
+def swing_extremes(bars: List[Dict[str, Any]], window: int = SWING_WINDOW) -> Dict[str, Optional[Dict[str, Any]]]:
+    """Most recent confirmed swing high and swing low (extreme of +/-window bars) in the bars given. My definition, not Gann's."""
+    rows = [b for b in bars if b.get("h") and b.get("l")]
+    out: Dict[str, Optional[Dict[str, Any]]] = {"high": None, "low": None}
+    for i in range(len(rows) - window - 1, window - 1, -1):
+        if out["high"] is None and float(rows[i]["h"]) == max(float(b["h"]) for b in rows[i - window:i + window + 1]):
+            out["high"] = {"price": float(rows[i]["h"]), "date": str(rows[i]["t"])[:10]}
+        if out["low"] is None and float(rows[i]["l"]) == min(float(b["l"]) for b in rows[i - window:i + window + 1]):
+            out["low"] = {"price": float(rows[i]["l"]), "date": str(rows[i]["t"])[:10]}
+        if out["high"] and out["low"]:
+            break
+    return out
+
+
+def breakout_levels(refs: List[Dict[str, Any]], ref_price: float, band: float) -> List[Dict[str, Any]]:
+    """Natal breakout level = (sqrt(reference price) +/- factor)^2, for the factors 0.125 to 2.0."""
+    import math
+    out = []
+    for r in refs:
+        root = math.sqrt(r["price"])
+        for f in BREAKOUT_FACTORS:
+            for sign in (1, -1):
+                v = root + sign * f
+                if v > 0:
+                    p = v * v
+                    if abs(p / ref_price - 1) <= band:
+                        out.append({"price": p, "label": f"Natal breakout from {r['label']} ${r['price']:.2f}: sqrt {'+' if sign > 0 else '-'} {f:g}"})
+    return sorted(out, key=lambda x: x["price"])
+
+
+def natal_breakout(ipo_date: str, day: str, bars_before: List[Dict[str, Any]], ref_price: float, band: float) -> Dict[str, Any]:
+    matrix = natal_matrix(ipo_date, day)
+    flag_once = any(m["once"] for m in matrix)
+    flag_rep = any(m["repeating"] for m in matrix)
+    refs: List[Dict[str, Any]] = []
+    lb = next((b for b in bars_before if str(b["t"])[:10] == ipo_date), None)
+    if lb:
+        refs += [{"label": "Listing-day high", "price": float(lb["h"]), "date": ipo_date}, {"label": "Listing-day low", "price": float(lb["l"]), "date": ipo_date},
+                 {"label": "Listing-day close", "price": float(lb["c"]), "date": ipo_date}]
+    sw = swing_extremes(bars_before)
+    if sw["high"]:
+        refs.append({"label": "Latest swing high", **sw["high"]})
+    if sw["low"]:
+        refs.append({"label": "Latest swing low", **sw["low"]})
+    flagged = flag_once or flag_rep
+    return {"matrix": matrix, "flag_once": flag_once, "flag_repeating": flag_rep, "references": refs, "listing_bar_found": bool(lb),
+            "levels": breakout_levels(refs, ref_price, band) if flagged else []}

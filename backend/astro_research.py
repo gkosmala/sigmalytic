@@ -229,7 +229,7 @@ def check_pivots(symbol: str, computed: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def fetch_bars(symbol: str, years: int = 8) -> List[Dict[str, Any]]:
+def fetch_bars(symbol: str, years: int = 12) -> List[Dict[str, Any]]:
     from backend import broker_market_data as bmd
     end = datetime.now(timezone.utc)
     return bmd.fetch_daily_bars([symbol], end - timedelta(days=int(365.25 * years) + 5), end).get(symbol) or []
@@ -267,6 +267,12 @@ def _event_days(bars: List[Dict[str, Any]], event: Dict[str, Any], symbol: str) 
         inside = [abs(_sep(_lon(body, t), nat) - ang) <= orb for t in opens]
         for i in range(1, len(inside)):
             if inside[i] and not inside[i - 1]:
+                idx.append(i)
+    elif kind == "natal_matrix":
+        ipo = BY_SYMBOL[symbol]["ipo_date"]
+        key = "repeating" if event.get("mode") == "repeating" else "once"
+        for i, b in enumerate(bars):
+            if any(m[key] for m in gx.natal_matrix(ipo, str(b["t"])[:10])):
                 idx.append(i)
     elif kind == "natal_cycle":
         # PDF p. 24: turning points every N days / weeks / months from the listing date; N = natal vibration, or the 49 Jubilee.
@@ -636,6 +642,8 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
             prev = (t, e)
         return best.astimezone(ET) if best else None
 
+    nb = gx.natal_breakout(row["ipo_date"], day, before, ref, band)
+    static_nb = [{"price": x["price"], "family": "natal_breakout", "label": x["label"]} for x in nb["levels"]]
     cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS, ref=ref, unit=unit, band=band,
                          exact_fn=None if with_levels else exact_fn, day=day)
 
@@ -719,11 +727,12 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
-              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master,
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
         raw_levels["price_aspect"] = [round(x["price"], 4) for x in cosmo["price_wheel"]["levels"]]
+        raw_levels["natal_breakout"] = [round(x["price"], 4) for x in nb["levels"]]
         result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
@@ -770,7 +779,19 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
     for c in n.get("cycles", []):
         nx = ", ".join(x["date"] for x in c["next"])
         L.append(f"   {c['cycle']}: " + ("TODAY is a cycle date. " if c["on_report_day"] else "") + f"previous {c['previous'] or 'none'}; next {nx}")
-    L.append("   The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.")
+    L.append("")
+    nb = r.get("natal_breakout") or {}
+    L.append("3e2. NATAL BREAKOUT (owner-supplied method: date matrix from the listing date, then (sqrt(reference) +/- factor)^2 with factors 0.125 to 2.0)")
+    hits = [m for m in nb.get("matrix", []) if m["once"] or m["repeating"]]
+    L.append(f"   Days since listing: {nb['matrix'][0]['days_since_listing'] if nb.get('matrix') else '-'}. Cycles hit today: "
+             + ("; ".join(f"{m['cycle']} ({'counted once' if m['once'] else 'repeating only'})" for m in hits) or "none"))
+    L.append("   The text does not say whether the day counts repeat, so both readings are shown: 'counted once' = that count from the listing date a single time; 'repeating only' = it recurs (every 7 days, every 3 months...).")
+    if nb.get("levels"):
+        L.append("   Reference prices: " + "; ".join(f"{x['label']} ${x['price']:.2f} ({x['date']})" for x in nb["references"])
+                 + ("" if nb.get("listing_bar_found") else "  [the listing-day bar is not in the Alpaca history fetched]"))
+        L.append("   Breakout levels in range: " + ", ".join(f"${x['price']:.2f}" for x in nb["levels"]))
+    else:
+        L.append("   No natal window today, so no breakout levels are computed." if not hits else "   No breakout level falls within range.")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):
