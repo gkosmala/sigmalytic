@@ -95,12 +95,21 @@ SYMBOLS: List[Dict[str, Any]] = [
      "coord_source": "Census geocoder point; the predecessor date is the user's choice and the same date was earlier listed for JPM. User's minute value: 35°13'N 80°50'W.", "status": "address-user"},
     {"symbol": 'INTC', "name": 'Intel', "ipo_date": '1971-10-13', "address": '365 Middlefield Rd, Mountain View, CA',
      "lat": 37.38333333333333, "lon": -122.08333333333333, "elev_m": 32, "coord_source": 'Supplied by the user at minute precision (about 1.5 km); not geocoded; the geocoder matched 365 E Middlefield Rd about 2.5 km away, so the location is unreconciled', "status": 'unreconciled'},
+    {"symbol": 'MDB', "name": 'MongoDB', "ipo_date": '2017-10-19', "address": '229 W 43rd St, New York, NY 10036 (the former New York Times building)',
+     "lat": 40.75, "lon": -73.98333333333333, "elev_m": 16,
+     "coord_source": "Supplied by the user at minute precision (40°45'N 73°59'W, about 1.5 km); not geocoded, so the location is unreconciled. The address and the move to 1633 Broadway in Nov 2017 come from the user's other source and were not checked.",
+     "status": 'unreconciled'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
                "ipo_status": "user-confirmed",
                "time_note": "9:30 a.m. ET is the default you set. Listings before 1985 opened later on the NYSE (to my knowledge 10:00 a.m.); "
                             "the real first print is not known to this tool."})
+for _r in SYMBOLS:
+    if _r["symbol"] == "MDB":
+        _r.update({"first_trade_et": "10:53",
+                   "time_note": "10:53 a.m. ET is the first-trade time from the user's other source and is NOT verified: CNBC's article gives no time, "
+                                "and that source's opening price ($32) differs from CNBC's ($33). The Nasdaq opening bell was ringing at 9:30 a.m. per that source."})
 BY_SYMBOL = {r["symbol"]: r for r in SYMBOLS}
 
 # The pivot table supplied for MSFT, kept only to cross-check the computed pivots.
