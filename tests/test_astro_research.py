@@ -179,6 +179,7 @@ def test_wday_is_listed_with_user_confirmed_values():
 def test_astro_dropdown_lists_every_backend_symbol(monkeypatch):
     """The symbol dropdown in the Astro tab is a hard-coded list; it must match the backend table."""
     import sys, os
+    monkeypatch.setenv("SIGMALYTIC_ADMIN_EMAILS", "admin@example.com")
     monkeypatch.setenv("ASTRO_RESEARCH_EMAILS", "admin@example.com")
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend"))
     import app as dash_app
