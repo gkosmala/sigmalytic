@@ -28,6 +28,7 @@ PRICE_FAMILIES = {"Pivot", "Square of 9"}
 GROUPS = (("zone_price", "Zones made only of price-history methods (pivots, Square of 9)"),
           ("zone_planet", "Zones made only of planet methods"),
           ("zone_mixed", "Zones mixing price-history and planet methods"),
+          ("master", "Master confluence (geometric + astrological within 0.5%)"),
           ("band", "Mean/Cycle bands"))
 
 
@@ -41,6 +42,8 @@ def _levels(rep: Dict[str, Any], kinds=("zone", "band")) -> List[Dict[str, Any]]
     for z in rep.get("top_zones", []):
         if "zone" in kinds or _zone_group(z) in kinds:
             out.append({"kind": "zone", "lo": float(z["price"]), "hi": float(z["price"])})
+    if "master" in kinds:
+        out += [{"kind": "zone", "lo": float(z["price"]), "hi": float(z["price"])} for z in rep.get("master_zones", [])]
     if "band" in kinds:
         out += [{"kind": "band", "lo": float(b["low"]), "hi": float(b["high"])} for b in rep.get("top_bands", [])]
     return out
