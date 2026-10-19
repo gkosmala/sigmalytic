@@ -11116,7 +11116,7 @@ def handle_astro_level_test(n_all, n_bands, symbol, session):
     if _astro_lt is None:
         return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
     kinds = ["band"] if _ctx.triggered_id == "astro-ltb-btn" else ["zone", "band"]
-    data, err = _astro_call("POST", "level-test", session, {"symbol": symbol, "kinds": kinds, "days": 250})
+    data, err = _astro_call("POST", "level-test", session, {"symbol": symbol, "kinds": kinds, "days": 3500})
     return err or _astro_lt(data)
 
 
