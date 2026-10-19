@@ -435,3 +435,83 @@ def natal_base_levels(base: Dict[str, Any], ref_price: float, band: float) -> Li
             if abs(p / ref_price - 1) <= band:
                 lv.append({"price": p, "label": f"Natal base {kind} of the {w['window']} window ({w[kind + '_date']})"})
     return sorted(lv, key=lambda x: x["price"])
+
+
+# ── Gann Fan (owner text) ──
+# Angles are price units per time unit: a x b means a price units per b time units. Time unit: one calendar day.
+FAN_ANGLES = ((8, 1), (4, 1), (3, 1), (2, 1), (1, 1), (1, 2), (1, 3), (1, 4), (1, 8))
+WEEK52_BARS = 252
+
+
+def rule3_pivots(bars: List[Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]]:
+    """Latest confirmed trough and peak by the owner's Rule of 3, using only the bars given (no look-ahead).
+    Three consecutive bars each making a higher high and a higher low confirm a trough; three each making a lower high
+    and a lower low confirm a peak (peak side mirrored by the owner). The pivot is the lowest low (highest high) since the
+    previous opposite pivot, up to the bar before the three. A same-side pivot replaces the earlier one only when it is a
+    new extreme; otherwise it is ignored. Pivots alternate."""
+    rows = [b for b in bars if b.get("h") and b.get("l")]
+    h = [float(b["h"]) for b in rows]
+    lo = [float(b["l"]) for b in rows]
+    last: Optional[Dict[str, Any]] = None
+    trough: Optional[Dict[str, Any]] = None
+    peak: Optional[Dict[str, Any]] = None
+    for i in range(3, len(rows)):
+        up = all(h[k] > h[k - 1] and lo[k] > lo[k - 1] for k in (i - 2, i - 1, i))
+        dn = all(h[k] < h[k - 1] and lo[k] < lo[k - 1] for k in (i - 2, i - 1, i))
+        if not (up or dn):
+            continue
+        start = last["idx"] + 1 if last else 0
+        if i - 3 < start:
+            continue
+        if up:
+            j = min(range(start, i - 2), key=lambda x: lo[x])
+            if last is None or last["kind"] == "peak" or lo[j] < last["price"]:
+                last = trough = {"kind": "trough", "idx": j, "price": lo[j], "date": str(rows[j]["t"])[:10], "confirmed": str(rows[i]["t"])[:10]}
+        else:
+            j = max(range(start, i - 2), key=lambda x: h[x])
+            if last is None or last["kind"] == "trough" or h[j] > last["price"]:
+                last = peak = {"kind": "peak", "idx": j, "price": h[j], "date": str(rows[j]["t"])[:10], "confirmed": str(rows[i]["t"])[:10]}
+    return {"trough": trough, "peak": peak}
+
+
+def fan_anchors(bars: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Master anchors (highest high and lowest low of the history, and of the last 52 weeks) plus the most recent confirmed
+    Rule-of-3 trough and peak. `bars` are the daily bars before the report day."""
+    rows = [b for b in bars if b.get("h") and b.get("l")]
+    if len(rows) < 60:
+        return []
+    out = []
+    for key, sub, tag in (("hist", rows, "history"), ("w52", rows[-WEEK52_BARS:], "52 weeks")):
+        ih = max(range(len(sub)), key=lambda i: float(sub[i]["h"]))
+        il = min(range(len(sub)), key=lambda i: float(sub[i]["l"]))
+        out.append({"key": f"{key}_high", "label": f"Highest high of the {tag}", "kind": "high", "price": float(sub[ih]["h"]), "date": str(sub[ih]["t"])[:10]})
+        out.append({"key": f"{key}_low", "label": f"Lowest low of the {tag}", "kind": "low", "price": float(sub[il]["l"]), "date": str(sub[il]["t"])[:10]})
+    piv = rule3_pivots(rows)
+    if piv["trough"]:
+        out.append({"key": "recent_trough", "label": "Latest confirmed trough (Rule of 3)", "kind": "low", **{k: piv["trough"][k] for k in ("price", "date", "confirmed")}})
+    if piv["peak"]:
+        out.append({"key": "recent_peak", "label": "Latest confirmed peak (Rule of 3)", "kind": "high", **{k: piv["peak"][k] for k in ("price", "date", "confirmed")}})
+    return out
+
+
+def fan_price(anchor: Dict[str, Any], a: int, b: int, day: str, unit: float) -> Optional[float]:
+    """Value on `day` of the a x b ray from the anchor: up from a trough or low, down from a peak or high."""
+    e = (date.fromisoformat(day) - date.fromisoformat(anchor["date"])).days
+    if e <= 0:
+        return None
+    return anchor["price"] + (1 if anchor["kind"] == "low" else -1) * (a / b) * e * unit
+
+
+def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float, ref: float, band: float) -> Dict[str, Any]:
+    anchors = fan_anchors(bars)
+    lines, seen = [], set()
+    for an in anchors:
+        k = (an["kind"], an["date"])
+        if k in seen:
+            continue
+        seen.add(k)
+        for a, b in FAN_ANGLES:
+            p = fan_price(an, a, b, day, unit)
+            if p is not None and p > 0 and abs(p / ref - 1) <= band:
+                lines.append({"price": p, "angle": f"{a}x{b}", "label": f"{a}x{b} from {an['label']} ({an['date']}, ${an['price']:.2f})"})
+    return {"anchors": anchors, "lines": lines}

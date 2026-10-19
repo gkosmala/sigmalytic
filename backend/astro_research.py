@@ -622,6 +622,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     lo_a = next((a["price"] for a in anchors if a["label"].startswith("Lowest")), None)
     sq = gx.sq144(anchors, day, ref, unit, band, high_price=hi_a, low_price=lo_a)
     static += [{"price": x["price"], "family": "sq144", "label": x["label"]} for x in sq["levels"]]
+    fan = gx.gann_fan(before, day, unit, ref, band)
     nv = gx.natal_vibration(row["ipo_date"])
     num_levels = gx.numerology_levels(ref, unit, band, nv["vibration"])
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
@@ -729,13 +730,14 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
-              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb, "natal_base": nbase,
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb, "natal_base": nbase, "gann_fan": fan,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
         raw_levels["price_aspect"] = [round(x["price"], 4) for x in cosmo["price_wheel"]["levels"]]
         raw_levels["natal_breakout"] = [round(x["price"], 4) for x in nb["levels"]]
         raw_levels["natal_base"] = [round(x["price"], 4) for x in nbase["levels"]]
+        raw_levels["fan"] = [round(x["price"], 4) for x in fan["lines"]]
         result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
@@ -807,6 +809,13 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
             L.append("   No bar found for: " + ", ".join(nbase["missing"]))
         L.append("   In range today: " + (", ".join(f"${x['price']:.2f}" for x in nbase.get("levels", [])) or "none"))
         L.append("   Window rule of mine: a window on a non-trading day uses the next trading bar. Not weighted in the master confluence.")
+    L.append("")
+    gf = r.get("gann_fan") or {}
+    L.append("3e4. GANN FAN (owner text: 1x1 = one price unit per one calendar day; rays 8x1, 4x1, 3x1, 2x1, 1x1, 1x2, 1x3, 1x4, 1x8; up from lows, down from highs)")
+    for a in gf.get("anchors", []):
+        L.append(f"   Anchor: {a['label']} ${a['price']:.2f} on {a['date']}" + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""))
+    L.append("   Lines in range today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f} ({x['label'].split(' from ', 1)[1].split(' (')[0]})" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"))
+    L.append("   Price unit from the owner table. Rule of 3: three bars each with a higher high and higher low confirm a trough, and three with a lower high and lower low confirm a peak.")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):

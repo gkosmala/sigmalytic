@@ -145,7 +145,8 @@ FAMILIES = (("pivot", "Pivots (daily and weekly highs and lows)"), ("sq9", "Squa
             ("sq144", "Square of 144 levels and diagonals"), ("numerology", "Numerology levels (digit sum, multiples, ends in 9, 144)"),
             ("price_aspect", "Price-wheel levels (a planet aspecting the price degree)"),
             ("natal_breakout", "Natal breakout levels (only on natal-window days)"),
-            ("natal_base", "Natal base levels (highs and lows of the first-year natal windows)"))
+            ("natal_base", "Natal base levels (highs and lows of the first-year natal windows)"),
+            ("fan", "Gann Fan lines (1x1, 2x1, 3x1, 4x1, 8x1, 1x2, 1x3, 1x4, 1x8)"))
 
 
 def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400,
@@ -206,3 +207,89 @@ def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str,
                     "caveat": "Daily bars only. Every level of this family in range is tested on its own, with no confluence step. "
                               "A record of past days, not a forecast."})
     return {"groups": out}
+
+
+REACH_DAYS = (5, 10, 20, 60)
+PHASE_DAYS = (1, 5, 20)
+ANCHOR_NAMES = {"hist_low": "Lowest low of the history", "w52_low": "Lowest low of 52 weeks", "recent_trough": "Latest confirmed trough",
+                "hist_high": "Highest high of the history", "w52_high": "Highest high of 52 weeks", "recent_peak": "Latest confirmed peak"}
+
+
+def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 1) -> Dict[str, Any]:
+    """Two of the owner's Gann Fan rules on actual daily bars, with no horizon imposed (several are shown).
+    Rule of All Angles: when a close breaks through one angle, price goes on to test the next angle in the fan.
+    Reported as the share of breaks where the next angle was reached within each horizon. 1x1 phase: above the 1x1 is
+    bull, below is bear; reported as the mean percent move after the close over several horizons."""
+    from backend import astro_research as ar, astro_gann_extra as gx
+    n = len(bars)
+    first = max(MIN_HISTORY, n - max_days - 1)
+    days = list(range(first, n - 1, max(1, int(step))))
+    t = [str(b["t"])[:10] for b in bars]
+    c = [float(b["c"]) for b in bars]
+    hi = [float(b["h"]) for b in bars]
+    lo = [float(b["l"]) for b in bars]
+    reach = {}   # (anchor, direction) -> [breaks, {h: reached}]
+    phase = {}   # (anchor, phase) -> [days, {h: [sum, n]}]
+    used = []
+    for i in days:
+        before = bars[:i]
+        anchors = gx.fan_anchors(before)
+        if not anchors:
+            continue
+        used.append(i)
+        unit = ar.price_unit(c[i - 1])
+        for an in anchors:
+            vals_now = [(gx.fan_price(an, a, b, t[i], unit), a, b) for a, b in gx.FAN_ANGLES]
+            vals_prev = [gx.fan_price(an, a, b, t[i - 1], unit) for a, b in gx.FAN_ANGLES]
+            if any(v is None for v, _, _ in vals_now) or any(v is None for v in vals_prev):
+                continue
+            # 1x1 phase from today's close
+            k11 = gx.FAN_ANGLES.index((1, 1))
+            ph = "bull (above the 1x1)" if c[i] > vals_now[k11][0] else "bear (below the 1x1)"
+            row = phase.setdefault((an["key"], ph), [0, {h: [0.0, 0] for h in PHASE_DAYS}])
+            row[0] += 1
+            for h in PHASE_DAYS:
+                if i + h < n:
+                    row[1][h][0] += (c[i + h] / c[i] - 1) * 100
+                    row[1][h][1] += 1
+            # Rule of All Angles: a close through an angle, then the next angle in the fan
+            order = sorted(range(len(vals_now)), key=lambda k: vals_now[k][0])
+            for pos, k in enumerate(order):
+                line_now, line_prev = vals_now[k][0], vals_prev[k]
+                up = c[i - 1] <= line_prev and c[i] > line_now
+                dn = c[i - 1] >= line_prev and c[i] < line_now
+                if not (up or dn):
+                    continue
+                nxt = pos + 1 if up else pos - 1
+                if not 0 <= nxt < len(order):
+                    continue
+                a2, b2 = vals_now[order[nxt]][1], vals_now[order[nxt]][2]
+                row = reach.setdefault((an["key"], "up" if up else "down"), [0, {h: [0, 0] for h in REACH_DAYS}])
+                row[0] += 1
+                for h in REACH_DAYS:
+                    if i + h >= n:
+                        continue
+                    row[1][h][1] += 1
+                    for j in range(i + 1, i + h + 1):
+                        v = gx.fan_price(an, a2, b2, t[j], unit)
+                        if v is not None and ((up and hi[j] >= v) or (not up and lo[j] <= v)):
+                            row[1][h][0] += 1
+                            break
+    if not used:
+        return {"error": "No days could be tested."}
+    angles, phases = [], []
+    for key in ANCHOR_NAMES:
+        for d in ("up", "down"):
+            r = reach.get((key, d))
+            if r:
+                angles.append({"anchor": ANCHOR_NAMES[key], "direction": d, "breaks": r[0],
+                               **{f"reach_{h}": (round(100 * r[1][h][0] / r[1][h][1], 1) if r[1][h][1] else None) for h in REACH_DAYS}})
+        for ph in ("bull (above the 1x1)", "bear (below the 1x1)"):
+            r = phase.get((key, ph))
+            if r:
+                phases.append({"anchor": ANCHOR_NAMES[key], "phase": ph, "days": r[0],
+                               **{f"fwd_{h}": (round(r[1][h][0] / r[1][h][1], 2) if r[1][h][1] else None) for h in PHASE_DAYS}})
+    return {"days_tested": len(used), "step": max(1, int(step)), "first_day": t[used[0]], "last_day": t[used[-1]],
+            "angles": angles, "phase": phases, "horizons": list(PHASE_DAYS), "reach_horizons": list(REACH_DAYS),
+            "caveat": "Daily bars only. Calendar-day time unit, price unit from the owner table. Breaks on neighbouring days and from different anchors overlap. "
+                      "A record of past days, not a forecast."}
