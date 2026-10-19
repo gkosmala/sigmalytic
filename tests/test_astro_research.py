@@ -292,7 +292,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
-    assert len(res["groups"]) == 8 and all("metrics" in g or "error" in g for g in res["groups"])
+    assert len(res["groups"]) == 9 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)
     i = 1600
@@ -370,7 +370,7 @@ def test_report_includes_the_new_sections_and_the_natal_cycle_event_study():
         assert k in r
     for head in ("3c. SQUARE OF 144", "3d. NUMEROLOGY", "3e. NATAL CYCLE DATES", "3f. COSMOGRAM"):
         assert head in r["draft"]
-    assert "no natal breakout price formula" in r["draft"]
+    assert "3e2. NATAL BREAKOUT" in r["draft"] and "natal_breakout" in r
     idx = ar._event_days(bars, {"kind": "natal_cycle", "unit": "weeks", "n": 49}, "MDB")
     assert idx == sorted(set(idx))
 
@@ -431,3 +431,26 @@ def test_report_has_square_out_flags_and_master_confluence():
     r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     assert all("square_out" in p for p in r["cosmogram"]["price_wheel"]["pairs"])
     assert "master_zones" in r and "3h. MASTER CONFLUENCE" in r["draft"]
+
+
+def test_natal_matrix_once_and_repeating_readings():
+    from backend import astro_gann_extra as gx
+    m = {x["cycle"]: x for x in gx.natal_matrix("2020-01-01", "2020-02-19")}        # 49 days after listing
+    assert m["49 to 52 days"]["once"] and m["49 to 52 days"]["repeating"] and m["7 days"]["repeating"] and not m["7 days"]["once"]
+    assert m["45 days"]["once"] is False
+    far = {x["cycle"]: x for x in gx.natal_matrix("2020-01-01", "2020-07-01")}      # six months after listing
+    assert far["6-month anniversary"]["once"] and far["3-month anniversary"]["repeating"] and not far["3-month anniversary"]["once"]
+    assert far["12-month anniversary"]["repeating"] is False
+    assert {x["cycle"]: x for x in gx.natal_matrix("2020-01-01", "2020-04-05")}["90 to 98 days"]["once"]   # day 95
+
+
+def test_natal_breakout_formula_matches_the_owner_example_and_needs_a_window():
+    from backend import astro_gann_extra as gx
+    lv = gx.breakout_levels([{"label": "ref", "price": 100.0, "date": "x"}], 105.0, 0.12)
+    prices = {round(x["price"], 2) for x in lv}
+    assert 110.25 in prices and 95.06 in prices and 121.0 not in prices     # (10 + 0.5)^2 = 110.25 is the owner's $100 example; (10 - 0.25)^2 = 95.06; (10 + 1)^2 = 121 is out of range
+    bars = [{"t": f"2020-{1 + i // 28:02d}-{1 + i % 28:02d}", "o": 100, "h": 101 + (i % 7), "l": 99 - (i % 5), "c": 100.5} for i in range(120)]
+    out = gx.natal_breakout("2020-01-01", "2020-02-19", bars, 100.0, 0.12)
+    assert out["flag_once"] and out["levels"] and out["listing_bar_found"]
+    quiet = gx.natal_breakout("2020-01-01", "2020-02-13", bars, 100.0, 0.12)        # day 43: no cycle lands here
+    assert not quiet["flag_once"] and not quiet["flag_repeating"] and quiet["levels"] == []
