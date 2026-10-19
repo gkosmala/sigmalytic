@@ -149,10 +149,10 @@ def test_owner_gate(monkeypatch):
     assert ar.is_owner("c@d.com") and not ar.is_owner("greg.kosmala@gmail.com")
 
 
-def test_mdb_is_listed_with_unverified_flags():
+def test_mdb_is_listed_with_user_confirmed_values():
     from backend import astro_research as ar
     r = ar.BY_SYMBOL["MDB"]
-    assert r["ipo_date"] == "2017-10-19" and r["status"] == "unreconciled" and r["elev_m"] == 16
+    assert r["ipo_date"] == "2017-10-19" and r["status"] == "minute-only" and r["elev_m"] == 16
     assert abs(r["lat"] - 40.75) < 1e-9 and abs(r["lon"] + 73.98333333) < 1e-6
-    assert r["first_trade_et"] == "10:53" and "NOT verified" in r["time_note"]
+    assert r["first_trade_et"] == "10:53" and "confirmed by the user" in r["time_note"]
     assert ar.ipo_moment_utc(r).strftime("%Y-%m-%d %H:%M") == "2017-10-19 14:53"   # EDT = UTC-4
