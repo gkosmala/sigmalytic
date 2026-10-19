@@ -99,6 +99,10 @@ SYMBOLS: List[Dict[str, Any]] = [
      "lat": 40.75, "lon": -73.98333333333333, "elev_m": 16,
      "coord_source": "Supplied and confirmed by the user at minute precision (40°45'N 73°59'W, about 1.5 km); not geocoded.",
      "status": 'minute-only'},
+    {"symbol": 'HPE', "name": 'Hewlett Packard Enterprise', "ipo_date": '2015-10-19', "address": '3000 Hanover St, Palo Alto, CA 94304',
+     "lat": 37.4, "lon": -122.13333333333334, "elev_m": 85,
+     "coord_source": "Supplied and confirmed by the user at minute precision (37°24'N 122°08'W, about 1.5 km); not geocoded.",
+     "status": 'minute-only'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
@@ -106,6 +110,9 @@ for _r in SYMBOLS:
                "time_note": "9:30 a.m. ET is the default you set. Listings before 1985 opened later on the NYSE (to my knowledge 10:00 a.m.); "
                             "the real first print is not known to this tool."})
 for _r in SYMBOLS:
+    if _r["symbol"] == "HPE":
+        _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
+                   "time_note": "HPE listed by spin-off. 2015-10-19 is the when-issued debut date and 9:30 a.m. ET the time, both supplied and confirmed by the user."})
     if _r["symbol"] == "MDB":
         _r.update({"first_trade_et": "10:53", "ipo_status": "user-confirmed",
                    "time_note": "10:53 a.m. ET first-trade time supplied and confirmed by the user (the Nasdaq opening bell was at 9:30 a.m.)."})
