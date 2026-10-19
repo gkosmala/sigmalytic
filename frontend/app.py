@@ -5823,7 +5823,7 @@ def build_astro_tab(session: dict) -> html.Div:
                  "hourly tactical plan. Research drafts only. The second box is the date the pivot cycle starts.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
         html.Div([
-            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL', 'AVGO', 'JPM', 'BRK.B', 'LLY', 'XOM', 'WMT', 'ABBV', 'COST', 'PLTR', 'BAC', 'INTC']], value="MSFT", clearable=False,
+            dcc.Dropdown(id="astro-symbol", options=[{"label": x, "value": x} for x in ['MSFT', 'AAPL', 'AMD', 'NVDA', 'MU', 'AMZN', 'GOOGL', 'META', 'ORCL', 'IBM', 'TSLA', 'CSCO', 'DELL', 'AVGO', 'JPM', 'BRK.B', 'LLY', 'XOM', 'WMT', 'ABBV', 'COST', 'PLTR', 'BAC', 'INTC', 'MDB', 'HPE', 'WDAY']], value="MSFT", clearable=False,
                          style={"width": "130px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px",
                                 "color": "#0b0f14"}),
             dcc.Input(id="astro-start", type="text", placeholder="Date, e.g. 2026-10-14", debounce=False,
