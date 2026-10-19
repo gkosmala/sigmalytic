@@ -229,3 +229,18 @@ def test_mean_bands_pair_nearest_levels_and_dedupe():
     b = next(b for b in bands if b["low"] == 352.17)
     assert b["high"] == 361.16 and b["width_pct"] == 2.55 and any("Other" in s for s in b["inside"])
     assert [x["width_pct"] for x in bands] == sorted(x["width_pct"] for x in bands)
+
+
+def test_level_test_classifies_touches_and_runs(monkeypatch):
+    from backend import astro_research as ar, astro_level_test as lt
+    bar = {"o": 100, "h": 106, "l": 99, "c": 105}
+    assert lt.classify({"kind": "zone", "lo": 103, "hi": 103}, 100, bar, 110)["result"] == "through"
+    assert lt.classify({"kind": "zone", "lo": 107, "hi": 107}, 100, bar, 110) is None
+    assert lt.classify({"kind": "zone", "lo": 105.5, "hi": 105.5}, 100, bar, 110)["result"] == "reversal"
+    assert lt.classify({"kind": "band", "lo": 103, "hi": 108}, 100, bar, 99)["result"] == "stalled"
+    dn = {"o": 100, "h": 101, "l": 94, "c": 95}
+    r = lt.classify({"kind": "zone", "lo": 97, "hi": 97}, 100, dn, 90)
+    assert r["result"] == "through" and round(r["follow"], 2) == 5.26
+    bars = _bars(2100)
+    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=15, draws=25, kinds=("band",))
+    assert res["days_tested"] == 15 and len(res["metrics"]) == 4 and res["kinds"] == ["band"]

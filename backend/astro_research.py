@@ -544,14 +544,15 @@ def _fmt_et(t: datetime) -> str:
     return t.astimezone(ET).strftime("%I:%M %p ET").lstrip("0")
 
 
-def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Optional[float] = None, band: float = 0.12) -> Dict[str, Any]:
+def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Optional[float] = None, band: float = 0.12,
+           bars: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Ephemeris report + pivots + Gann levels + hourly tactical plan for one symbol and one date (all admin research)."""
     if symbol not in BY_SYMBOL:
         raise ValueError("Symbol is not in the Astro Research table.")
     d0 = date.fromisoformat(day)
     row = BY_SYMBOL[symbol]
     lat, lon_, elev = row["lat"], row["lon"], row["elev_m"]
-    bars = fetch_bars(symbol)
+    bars = bars if bars is not None else fetch_bars(symbol)
     before = [b for b in bars if str(b["t"])[:10] < day]
     same = [b for b in bars if str(b["t"])[:10] == day]
     if len(before) < 120:

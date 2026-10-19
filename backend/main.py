@@ -3122,6 +3122,27 @@ def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin))
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.post("/api/admin/astro-research/level-test")
+def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): do the report's zones and bands behave differently from random levels (Alpaca daily bars)?"""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
+    from backend import astro_research, astro_level_test
+    p = payload or {}
+    sym = str(p.get("symbol") or "").upper()
+    try:
+        if sym not in astro_research.BY_SYMBOL:
+            return {"ok": False, "error": "Symbol is not in the Astro Research table."}
+        kinds = tuple(k for k in (p.get("kinds") or ["zone", "band"]) if k in ("zone", "band")) or ("zone", "band")
+        bars = astro_research.fetch_bars(sym, 8)
+        res = astro_level_test.level_test(bars, lambda d: astro_research.report(sym, d, bars=bars),
+                                          max_days=max(60, min(int(p.get("days") or 300), 600)), draws=200, kinds=kinds)
+        return {"ok": "error" not in res, **res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/weis-radar/run-now")
 def weis_radar_run_now(_admin: str = Depends(require_admin)):
     """
