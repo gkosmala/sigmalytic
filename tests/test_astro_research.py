@@ -210,3 +210,22 @@ def test_empty_confluence_is_explained_and_nearest_levels_are_shown(monkeypatch)
     import astro_research_ui as ui
     assert "No confluence found" in ui._no_conf(r)
     assert ui._zones_cell(r["blocks"][0], "above", "near_above").startswith("nearest (not confluence)") or r["blocks"][0]["near_above"] == []
+
+
+def test_octagon_levels_known_mdb_case():
+    from backend import astro_research as ar
+    lv = ar.octagon_levels({"Mean of Five": 226.16, "Cycle of Eight": 217.17}, 337.57, 1, 0.12, "Natal")
+    got = {(x["body"], x["offset"]): round(x["price"], 2) for x in lv}
+    assert got[("Mean of Five", 90)] == 316.16 and got[("Mean of Five", 135)] == 361.16
+    assert got[("Cycle of Eight", 90)] == 307.17 and got[("Cycle of Eight", 135)] == 352.17
+    assert all(abs(x["price"] / 337.57 - 1) <= 0.12 for x in lv)
+
+
+def test_mean_bands_pair_nearest_levels_and_dedupe():
+    from backend import astro_research as ar
+    lv = ar.octagon_levels({"Mean of Five": 226.16, "Cycle of Eight": 217.17}, 337.57, 1, 0.12, "Natal")
+    bands = ar.mean_bands(lv, [{"price": 360.0, "label": "Other"}])
+    assert len({tuple(b["key"]) for b in bands}) == len(bands)
+    b = next(b for b in bands if b["low"] == 352.17)
+    assert b["high"] == 361.16 and b["width_pct"] == 2.55 and any("Other" in s for s in b["inside"])
+    assert [x["width_pct"] for x in bands] == sorted(x["width_pct"] for x in bands)
