@@ -244,14 +244,14 @@ def test_level_test_classifies_touches_and_runs(monkeypatch):
     r = lt.classify({"kind": "zone", "lo": 97, "hi": 97}, 100, dn, 90)
     assert r["result"] == "through" and round(r["follow"], 2) == 5.26
     bars = _bars(2100)
-    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=15, draws=25, kinds=("band",))
+    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=15, kinds=("band",))
     assert res["days_tested"] == 15 and len(res["metrics"]) == 4 and res["kinds"] == ["band"]
 
 
 def test_level_test_step_samples_days():
     from backend import astro_research as ar, astro_level_test as lt
     bars = _bars(2100)
-    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=40, draws=20, kinds=("band",), step=4)
+    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=40, kinds=("band",), step=4)
     assert res["step"] == 4 and res["days_tested"] == 10
 
 
@@ -270,7 +270,7 @@ def test_level_test_groups_split_zones_by_source():
     def fn(d):
         calls.append(d)
         return ar.report("MDB", d, bars=bars)
-    res = lt.level_test_groups(bars, fn, max_days=10, draws=20, step=2)
+    res = lt.level_test_groups(bars, fn, max_days=10, step=2)
     assert len(res["groups"]) == 5 and len(calls) == len(set(calls))
 
 
@@ -278,9 +278,9 @@ def test_level_test_render_handles_single_and_grouped():
     import sys
     sys.path.insert(0, "frontend")
     from astro_research_ui import render_level_test
-    m = [{"label": "x", "real": 1.0, "baseline": 2.0, "p_value": 0.5}]
+    m = [{"label": "x", "real": 1.0}]
     one = {"ok": True, "kinds": ["band"], "days_tested": 5, "step": 5, "first_day": "a", "last_day": "b", "touches_real": 3,
-           "touches_baseline_mean": 4, "metrics": m, "caveat": "c"}
+           "metrics": m, "caveat": "c"}
     assert render_level_test(one) is not None
     assert render_level_test({"ok": True, "groups": [{**one, "label": "G"}, {"label": "H", "error": "none"}]}) is not None
 
@@ -291,7 +291,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     bars = _bars(2100)
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
-    res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
+    res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, step=3)
     assert len(res["groups"]) == 10 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)

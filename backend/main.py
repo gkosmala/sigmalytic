@@ -3124,7 +3124,7 @@ def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin))
 
 @app.post("/api/admin/astro-research/level-test")
 def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin)):
-    """Astro Research (admin only): do the report's zones and bands behave differently from random levels (Alpaca daily bars)?"""
+    """Astro Research (admin only): what happened at the report's zones and bands on real past days (Alpaca daily bars)?"""
     from backend import astro_research as _ar_owner
     if not _ar_owner.is_owner(_admin):
         raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
@@ -3140,14 +3140,14 @@ def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin
         step = max(1, -(-max_days // 700))  # about 700 daily reports at most, so the request finishes in time
         if p.get("families"):
             res = astro_level_test.family_test(bars, lambda d: astro_research.report(sym, d, bars=bars, with_levels=True),
-                                               max_days=max_days, draws=200, step=step)
+                                               max_days=max_days, step=step)
             return {"ok": "error" not in res, **res}
         if p.get("groups"):
             res = astro_level_test.level_test_groups(bars, lambda d: astro_research.report(sym, d, bars=bars),
-                                                     max_days=max_days, draws=200, step=step)
+                                                     max_days=max_days, step=step)
             return {"ok": True, **res}
         res = astro_level_test.level_test(bars, lambda d: astro_research.report(sym, d, bars=bars),
-                                          max_days=max_days, draws=200, kinds=kinds, step=step)
+                                          max_days=max_days, kinds=kinds, step=step)
         return {"ok": "error" not in res, **res}
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:300]}

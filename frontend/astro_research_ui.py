@@ -127,12 +127,11 @@ def render_level_test(p: dict):
                          html.Div(f"{g['label']}: {g.get('error', 'no result')}", style={"color": MUTED, "fontSize": "11px", "marginTop": "8px"})
                          for g in p["groups"]])
     what = p.get("label") or " and ".join({"zone": "confluence zones", "band": "Mean/Cycle bands"}.get(k, k) for k in p.get("kinds", []))
-    rows = [[m["label"], "" if m["real"] is None else m["real"], "" if m["baseline"] is None else m["baseline"],
-             "" if m["p_value"] is None else m["p_value"]] for m in p["metrics"]]
+    rows = [[m["label"], "" if m["real"] is None else m["real"]] for m in p["metrics"]]
     return html.Div([
-        html.Div(f"Level test ({what}): {p['days_tested']} days ({'every day' if p.get('step', 1) == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}, {p['touches_real']} touches "
-                 f"(random levels average {p['touches_baseline_mean']})", style={"fontWeight": "800", "color": WHITE}),
-        _table(["Measure", "Report levels", "Random levels", "p-value"], rows),
+        html.Div(f"Level test ({what}): {p['days_tested']} days ({'every day' if p.get('step', 1) == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}, {p['touches_real']} touches",
+                 style={"fontWeight": "800", "color": WHITE}),
+        _table(["Measure", "Report levels"], rows),
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 

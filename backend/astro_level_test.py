@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Sigmalytic Quant Corporation. All rights reserved.
-"""Astro Research level test (owner only): do the report's price zones and bands behave differently from random levels?
+"""Astro Research level test (owner only): what happened on real past days at the report's levels? Historical bars only.
 
 Definitions are fixed before any run and are not tuned to results:
   * Each trading day D, the report is built from data before D only (no look-ahead).
@@ -11,13 +11,10 @@ Definitions are fixed before any run and are not tuned to results:
   * Follow-through: percent move from D's close to the close FOLLOW_DAYS later, in the approach direction.
   * `kinds` limits the test to confluence zones, bands, or both. Zones include price-history levels (pivots, Square of 9), so
     they are not random with respect to past prices; bands come from the planets alone and isolate the astro part.
-  * Baseline: for every real level, a random level at the same distance from the prior close (distances drawn from the real
-    pool, random side). Repeated `draws` times; the p-value is the share of baseline runs at least as far from the baseline
-    mean as the real result.
+  * No simulated or random levels are used. Every number comes from the actual daily bars.
 """
 from __future__ import annotations
 
-import random
 from typing import Any, Callable, Dict, List, Optional
 
 FOLLOW_DAYS = 5
@@ -83,12 +80,12 @@ def _stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], start_index: Optional[int] = None,
-               max_days: int = 400, draws: int = 300, seed: int = 11, kinds=("zone", "band"), step: int = 1) -> Dict[str, Any]:
+               max_days: int = 400, kinds=("zone", "band"), step: int = 1) -> Dict[str, Any]:
     n = len(bars)
     first = max(MIN_HISTORY, start_index if start_index is not None else n - max_days - FOLLOW_DAYS)
     days = list(range(first, n - FOLLOW_DAYS, max(1, int(step))))
     per_day = []
-    pool: List[float] = []
+    total = 0
     skipped = 0
     for i in days:
         try:
@@ -97,11 +94,9 @@ def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, 
             skipped += 1
             continue
         lvs = _levels(rep, kinds)
-        ref = float(bars[i - 1]["c"])
-        for lv in lvs:
-            pool.append(abs((lv["lo"] + lv["hi"]) / 2 / ref - 1))
-        per_day.append((i, ref, lvs))
-    if not pool:
+        total += len(lvs)
+        per_day.append((i, float(bars[i - 1]["c"]), lvs))
+    if not total:
         return {"error": "No levels were produced in the test window."}
     real = []
     for i, ref, lvs in per_day:
@@ -109,41 +104,23 @@ def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, 
             r = classify(lv, ref, bars[i], float(bars[i + FOLLOW_DAYS]["c"]))
             if r:
                 real.append(r)
-    rng = random.Random(seed)
-
-    def baseline_once() -> List[Dict[str, Any]]:
-        rows = []
-        for i, ref, lvs in per_day:
-            for lv in lvs:
-                d = rng.choice(pool) * rng.choice((-1, 1))
-                p = ref * (1 + d)
-                half = (lv["hi"] - lv["lo"]) / 2
-                r = classify({"kind": lv["kind"], "lo": p - half, "hi": p + half}, ref, bars[i], float(bars[i + FOLLOW_DAYS]["c"]))
-                if r:
-                    rows.append(r)
-        return rows
-
-    runs = [_stats(baseline_once()) for _ in range(draws)]
     rs = _stats(real)
-    out: Dict[str, Any] = {"days_tested": len(per_day), "days_skipped": skipped, "levels_total": len(pool),
+    out: Dict[str, Any] = {"days_tested": len(per_day), "days_skipped": skipped, "levels_total": total,
                            "first_day": str(bars[per_day[0][0]]["t"])[:10], "last_day": str(bars[per_day[-1][0]]["t"])[:10],
-                           "follow_days": FOLLOW_DAYS, "step": max(1, int(step)), "kinds": list(kinds), "real": rs, "draws": draws, "metrics": []}
+                           "follow_days": FOLLOW_DAYS, "step": max(1, int(step)), "kinds": list(kinds), "real": rs, "metrics": _metrics(rs)}
+    out["touches_real"] = rs["touches"]
+    out["caveat"] = ("Daily bars only: a touch and its outcome are judged on one day's open, range and close, so intraday detail is not "
+                     "seen. Thresholds were fixed before the run. Results are a record of past days, not a forecast.")
+    return out
+
+
+def _metrics(rs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = []
     for key, label in (("through_pct", "Closed through the level (% of touches)"), ("reversal_pct", "Reversed at the level (% of touches)"),
                        ("follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through, all touches (%)"),
                        ("through_follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through after a close through (%)")):
-        vals = [r[key] for r in runs if r.get(key) is not None]
-        if rs.get(key) is None or len(vals) < 20:
-            out["metrics"].append({"label": label, "real": None, "baseline": None, "p_value": None})
-            continue
-        mu = sum(vals) / len(vals)
-        p = (1 + sum(abs(v - mu) >= abs(rs[key] - mu) for v in vals)) / (1 + len(vals))
-        out["metrics"].append({"label": label, "real": round(rs[key], 2), "baseline": round(mu, 2), "p_value": round(p, 3)})
-    out["touches_real"] = rs["touches"]
-    out["touches_baseline_mean"] = round(sum(r["touches"] for r in runs) / len(runs), 1)
-    out["caveat"] = ("Daily bars only: a touch and its outcome are judged on one day's open, range and close, so intraday detail is not "
-                     "seen. Thresholds were fixed before the run. A result near the baseline means the levels add nothing measurable; "
-                     "a result that differs is a pattern in past data, not a forecast. Touches on neighbouring days overlap, so the p-value is optimistic.")
-    return out
+        rows.append({"label": label, "real": None if rs.get(key) is None else round(rs[key], 2)})
+    return rows
 
 
 def level_test_groups(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], **kw) -> Dict[str, Any]:
@@ -171,9 +148,9 @@ FAMILIES = (("pivot", "Pivots (daily and weekly highs and lows)"), ("sq9", "Squa
             ("natal_base", "Natal base levels (highs and lows of the first-year natal windows)"))
 
 
-def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400, draws: int = 200,
-                seed: int = 11, step: int = 1) -> Dict[str, Any]:
-    """Each level family on its own (every level in range, no confluence step) against random levels at the same distances.
+def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400,
+                step: int = 1) -> Dict[str, Any]:
+    """Each level family on its own (every level in range, no confluence step), on actual daily bars only.
     Planet-line families use the positions at the 9:30 open, which are known before the session."""
     import numpy as np
     n = len(bars)
@@ -196,7 +173,6 @@ def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str,
     if not used:
         return {"error": "No days could be tested."}
     refs, ob, hb, lb, cb, ca = (np.array(a) for a in (refs, ob, hb, lb, cb, ca))
-    rng = np.random.default_rng(seed)
 
     def outcome(day, price):
         r, o, h, l, c, a = refs[day], ob[day], hb[day], lb[day], cb[day], ca[day]
@@ -224,26 +200,9 @@ def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str,
             continue
         day = np.array([d for d, _ in lv]); price = np.array([p for _, p in lv])
         real = summarize(*outcome(day, price))
-        pool = np.abs(price / refs[day] - 1)
-        runs = []
-        for _ in range(draws):
-            d = rng.choice(pool, size=len(price)) * rng.choice((-1, 1), size=len(price))
-            runs.append(summarize(*outcome(day, refs[day] * (1 + d))))
-        metrics = []
-        for key, mlabel in (("through_pct", "Closed through the level (% of touches)"), ("reversal_pct", "Reversed at the level (% of touches)"),
-                            ("follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through, all touches (%)"),
-                            ("through_follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through after a close through (%)")):
-            vals = [r[key] for r in runs if r.get(key) is not None]
-            if real.get(key) is None or len(vals) < 20:
-                metrics.append({"label": mlabel, "real": None, "baseline": None, "p_value": None})
-                continue
-            mu = sum(vals) / len(vals)
-            pv = (1 + sum(abs(v - mu) >= abs(real[key] - mu) for v in vals)) / (1 + len(vals))
-            metrics.append({"label": mlabel, "real": round(real[key], 2), "baseline": round(mu, 2), "p_value": round(pv, 3)})
         out.append({"label": label, "kinds": [f], "days_tested": len(used), "step": max(1, int(step)),
                     "first_day": str(bars[used[0]]["t"])[:10], "last_day": str(bars[used[-1]]["t"])[:10],
-                    "touches_real": real["touches"], "touches_baseline_mean": round(sum(r["touches"] for r in runs) / len(runs), 1),
-                    "levels_total": len(lv), "metrics": metrics,
+                    "touches_real": real["touches"], "levels_total": len(lv), "metrics": _metrics(real),
                     "caveat": "Daily bars only. Every level of this family in range is tested on its own, with no confluence step. "
-                              "Touches on neighbouring days overlap, so the p-value is optimistic."})
+                              "A record of past days, not a forecast."})
     return {"groups": out}
