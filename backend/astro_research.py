@@ -784,8 +784,8 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
     L.append("3e2. NATAL BREAKOUT (owner-supplied method: date matrix from the listing date, then (sqrt(reference) +/- factor)^2 with factors 0.125 to 2.0)")
     hits = [m for m in nb.get("matrix", []) if m["once"] or m["repeating"]]
     L.append(f"   Days since listing: {nb['matrix'][0]['days_since_listing'] if nb.get('matrix') else '-'}. Cycles hit today: "
-             + ("; ".join(f"{m['cycle']} ({'counted once' if m['once'] else 'repeating only'})" for m in hits) or "none"))
-    L.append("   The text does not say whether the day counts repeat, so both readings are shown: 'counted once' = that count from the listing date a single time; 'repeating only' = it recurs (every 7 days, every 3 months...).")
+             + ("; ".join(f"{m['cycle']} ({'also the first time that count is reached' if m['once'] else 'repeating'})" for m in hits) or "none"))
+    L.append("   Reading confirmed by the owner: the cycles repeat from the listing date (every 7 days, every 49 days, every 3 months...).")
     if nb.get("levels"):
         L.append("   Reference prices: " + "; ".join(f"{x['label']} ${x['price']:.2f} ({x['date']})" for x in nb["references"])
                  + ("" if nb.get("listing_bar_found") else "  [the listing-day bar is not in the Alpaca history fetched]"))

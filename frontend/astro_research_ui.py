@@ -183,10 +183,10 @@ def gann_extra_components(p: dict) -> list:
     hits = [m for m in nb.get("matrix", []) if m["once"] or m["repeating"]]
     kids += [_h("3e2. Natal breakout (owner-supplied: date matrix from the listing date, then (sqrt(reference) +/- factor)^2, factors 0.125 to 2.0)"),
              html.Div(f"Days since listing: {nb['matrix'][0]['days_since_listing'] if nb.get('matrix') else '-'}. Cycles hit today: "
-                      + ("; ".join(f"{m['cycle']} ({'counted once' if m['once'] else 'repeating only'})" for m in hits) or "none"),
+                      + ("; ".join(f"{m['cycle']} ({'also the first time that count is reached' if m['once'] else 'repeating'})" for m in hits) or "none"),
                       style={"color": WHITE, "fontSize": "12px"}),
-             html.Div("The text does not say whether the day counts repeat, so both readings are shown: counted once = that count from the listing date a "
-                      "single time; repeating only = it recurs (every 7 days, every 3 months...).", style={"color": MUTED, "fontSize": "11px"})]
+             html.Div("Reading confirmed by the owner: the cycles repeat from the listing date (every 7 days, every 49 days, every 3 months...).",
+                      style={"color": MUTED, "fontSize": "11px"})]
     if nb.get("levels"):
         kids += [_table(["Reference", "Price", "Date"], [[x["label"], f"${x['price']:.2f}", x["date"]] for x in nb["references"]]),
                  html.Div("Breakout levels in range: " + ", ".join(f"${x['price']:.2f}" for x in nb["levels"]), style={"color": WHITE, "fontSize": "12px"})]
