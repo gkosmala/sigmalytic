@@ -157,3 +157,86 @@ def level_test_groups(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dic
         res = level_test(bars, cached, kinds=(key,), **kw)
         out.append({"group": key, "label": label, **res})
     return {"groups": out}
+
+
+FAMILIES = (("pivot", "Pivots (daily and weekly highs and lows)"), ("sq9", "Square of 9 levels from the pivots"),
+            ("natal", "Natal planet lines"), ("transit", "Transit planet lines at the open"),
+            ("mean", "Mean of Five / Cycle of Eight lines"))
+
+
+def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400, draws: int = 200,
+                seed: int = 11, step: int = 1) -> Dict[str, Any]:
+    """Each level family on its own (every level in range, no confluence step) against random levels at the same distances.
+    Planet-line families use the positions at the 9:30 open, which are known before the session."""
+    import numpy as np
+    n = len(bars)
+    first = max(MIN_HISTORY, n - max_days - FOLLOW_DAYS)
+    day_idx = list(range(first, n - FOLLOW_DAYS, max(1, int(step))))
+    rows = {f: [] for f, _ in FAMILIES}   # (day position, price)
+    refs, ob, hb, lb, cb, ca, used = [], [], [], [], [], [], []
+    for i in day_idx:
+        try:
+            rep = report_fn(str(bars[i]["t"])[:10])
+        except Exception:
+            continue
+        k = len(used)
+        used.append(i)
+        refs.append(float(bars[i - 1]["c"])); ob.append(float(bars[i]["o"])); hb.append(float(bars[i]["h"]))
+        lb.append(float(bars[i]["l"])); cb.append(float(bars[i]["c"])); ca.append(float(bars[i + FOLLOW_DAYS]["c"]))
+        for f, _ in FAMILIES:
+            for pr in rep.get("raw_levels", {}).get(f, []):
+                rows[f].append((k, pr))
+    if not used:
+        return {"error": "No days could be tested."}
+    refs, ob, hb, lb, cb, ca = (np.array(a) for a in (refs, ob, hb, lb, cb, ca))
+    rng = np.random.default_rng(seed)
+
+    def outcome(day, price):
+        r, o, h, l, c, a = refs[day], ob[day], hb[day], lb[day], cb[day], ca[day]
+        up = price > r
+        touch = np.where(up, (o < price) & (price <= h), (l <= price) & (price < o))
+        thru = np.where(up, c > price, c < price)
+        rev = np.where(up, c < price, c > price)
+        fol = (a / c - 1) * 100 * np.where(up, 1, -1)
+        return touch, thru, rev, fol
+
+    def summarize(touch, thru, rev, fol):
+        t = int(touch.sum())
+        if not t:
+            return {"touches": 0}
+        tt = touch & thru
+        return {"touches": t, "through_pct": 100 * tt.sum() / t, "reversal_pct": 100 * (touch & rev).sum() / t,
+                "follow_mean_pct": float(fol[touch].mean()),
+                "through_follow_mean_pct": float(fol[tt].mean()) if tt.any() else None}
+
+    out = []
+    for f, label in FAMILIES:
+        lv = rows[f]
+        if not lv:
+            out.append({"label": label, "error": "no levels in range"})
+            continue
+        day = np.array([d for d, _ in lv]); price = np.array([p for _, p in lv])
+        real = summarize(*outcome(day, price))
+        pool = np.abs(price / refs[day] - 1)
+        runs = []
+        for _ in range(draws):
+            d = rng.choice(pool, size=len(price)) * rng.choice((-1, 1), size=len(price))
+            runs.append(summarize(*outcome(day, refs[day] * (1 + d))))
+        metrics = []
+        for key, mlabel in (("through_pct", "Closed through the level (% of touches)"), ("reversal_pct", "Reversed at the level (% of touches)"),
+                            ("follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through, all touches (%)"),
+                            ("through_follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through after a close through (%)")):
+            vals = [r[key] for r in runs if r.get(key) is not None]
+            if real.get(key) is None or len(vals) < 20:
+                metrics.append({"label": mlabel, "real": None, "baseline": None, "p_value": None})
+                continue
+            mu = sum(vals) / len(vals)
+            pv = (1 + sum(abs(v - mu) >= abs(real[key] - mu) for v in vals)) / (1 + len(vals))
+            metrics.append({"label": mlabel, "real": round(real[key], 2), "baseline": round(mu, 2), "p_value": round(pv, 3)})
+        out.append({"label": label, "kinds": [f], "days_tested": len(used), "step": max(1, int(step)),
+                    "first_day": str(bars[used[0]]["t"])[:10], "last_day": str(bars[used[-1]]["t"])[:10],
+                    "touches_real": real["touches"], "touches_baseline_mean": round(sum(r["touches"] for r in runs) / len(runs), 1),
+                    "levels_total": len(lv), "metrics": metrics,
+                    "caveat": "Daily bars only. Every level of this family in range is tested on its own, with no confluence step. "
+                              "Touches on neighbouring days overlap, so the p-value is optimistic."})
+    return {"groups": out}

@@ -5844,6 +5844,7 @@ def build_astro_tab(session: dict) -> html.Div:
             html.Button("Level test", id="astro-lt-btn", n_clicks=0, style=_astro_btn),
             html.Button("Level test: bands only", id="astro-ltb-btn", n_clicks=0, style=_astro_btn),
             html.Button("Level test: split by source", id="astro-ltg-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Level test: each source alone", id="astro-ltf-btn", n_clicks=0, style=_astro_btn),
         ], style={"marginBottom": "14px"}),
         dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
         dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
@@ -11109,16 +11110,17 @@ def handle_astro_backtest(n, symbol, event, years, session):
 
 
 @app.callback(Output("astro-bt-result", "children", allow_duplicate=True),
-              Input("astro-lt-btn", "n_clicks"), Input("astro-ltb-btn", "n_clicks"), Input("astro-ltg-btn", "n_clicks"),
+              Input("astro-lt-btn", "n_clicks"), Input("astro-ltb-btn", "n_clicks"), Input("astro-ltg-btn", "n_clicks"), Input("astro-ltf-btn", "n_clicks"),
               State("astro-symbol", "value"), State("s-session", "data"), prevent_initial_call=True)
-def handle_astro_level_test(n_all, n_bands, n_groups, symbol, session):
+def handle_astro_level_test(n_all, n_bands, n_groups, n_fam, symbol, session):
     """Owner-only: do the report's zones and bands behave differently from random levels? (Alpaca daily bars)"""
     from dash import ctx as _ctx
     if _astro_lt is None:
         return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
     kinds = ["band"] if _ctx.triggered_id == "astro-ltb-btn" else ["zone", "band"]
     data, err = _astro_call("POST", "level-test", session, {"symbol": symbol, "kinds": kinds, "days": 3500,
-                                                            "groups": _ctx.triggered_id == "astro-ltg-btn"})
+                                                            "groups": _ctx.triggered_id == "astro-ltg-btn",
+                                                            "families": _ctx.triggered_id == "astro-ltf-btn"})
     return err or _astro_lt(data)
 
 

@@ -545,7 +545,7 @@ def _fmt_et(t: datetime) -> str:
 
 
 def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Optional[float] = None, band: float = 0.12,
-           bars: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+           bars: Optional[List[Dict[str, Any]]] = None, with_levels: bool = False) -> Dict[str, Any]:
     """Ephemeris report + pivots + Gann levels + hourly tactical plan for one symbol and one date (all admin research)."""
     if symbol not in BY_SYMBOL:
         raise ValueError("Symbol is not in the Astro Research table.")
@@ -595,6 +595,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     zones_all: List[Dict[str, Any]] = []
     diag_gap: Optional[Dict[str, Any]] = None
     diag_levels = 0
+    raw_levels: Dict[str, List[float]] = {}
     for hh, mm in SESSION_BLOCKS:
         t = datetime(d0.year, d0.month, d0.day, hh, mm, tzinfo=ET).astimezone(timezone.utc)
         t_next = t + timedelta(minutes=60 if (hh, mm) != (15, 30) else 30)
@@ -603,6 +604,9 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         dyn += planet_lines(mean_lons(pos), ref, unit, band, "mean", "Transit ")
         zones = confluence(static + dyn)
         lv_all = static + dyn
+        if with_levels and (hh, mm) == (9, 30):
+            for x in lv_all:
+                raw_levels.setdefault(x["family"], []).append(round(x["price"], 4))
         near_up = sorted([x for x in lv_all if x["price"] > ref], key=lambda x: x["price"])[:2]
         near_dn = sorted([x for x in lv_all if x["price"] <= ref], key=lambda x: -x["price"])[:2]
         others = [x for x in lv_all if x["family"] != "mean"]
@@ -651,6 +655,8 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
               "hourly": hourly_table(symbol, open_t, 7)}
+    if with_levels:
+        result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
 
