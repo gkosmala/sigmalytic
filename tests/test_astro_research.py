@@ -251,3 +251,33 @@ def test_level_test_step_samples_days():
     bars = _bars(2100)
     res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=40, draws=20, kinds=("band",), step=4)
     assert res["step"] == 4 and res["days_tested"] == 10
+
+
+def test_level_test_groups_split_zones_by_source():
+    from backend import astro_research as ar, astro_level_test as lt
+    assert lt._zone_group({"families": ["Pivot", "Square of 9"]}) == "zone_price"
+    assert lt._zone_group({"families": ["Planet line", "Natal planet line"]}) == "zone_planet"
+    assert lt._zone_group({"families": ["Pivot", "Planet line"]}) == "zone_mixed"
+    rep = {"top_zones": [{"price": 10, "families": ["Pivot", "Square of 9"]}, {"price": 11, "families": ["Pivot", "Planet line"]}],
+           "top_bands": [{"low": 12, "high": 13}]}
+    assert [x["lo"] for x in lt._levels(rep, ("zone_price",))] == [10.0]
+    assert [x["lo"] for x in lt._levels(rep, ("zone",))] == [10.0, 11.0]
+    calls = []
+    bars = _bars(2100)
+
+    def fn(d):
+        calls.append(d)
+        return ar.report("MDB", d, bars=bars)
+    res = lt.level_test_groups(bars, fn, max_days=10, draws=20, step=2)
+    assert len(res["groups"]) == 4 and len(calls) == len(set(calls))
+
+
+def test_level_test_render_handles_single_and_grouped():
+    import sys
+    sys.path.insert(0, "frontend")
+    from astro_research_ui import render_level_test
+    m = [{"label": "x", "real": 1.0, "baseline": 2.0, "p_value": 0.5}]
+    one = {"ok": True, "kinds": ["band"], "days_tested": 5, "step": 5, "first_day": "a", "last_day": "b", "touches_real": 3,
+           "touches_baseline_mean": 4, "metrics": m, "caveat": "c"}
+    assert render_level_test(one) is not None
+    assert render_level_test({"ok": True, "groups": [{**one, "label": "G"}, {"label": "H", "error": "none"}]}) is not None

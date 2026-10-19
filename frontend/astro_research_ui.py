@@ -120,7 +120,11 @@ def render_backtest(p: dict):
 def render_level_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
-    what = " and ".join({"zone": "confluence zones", "band": "Mean/Cycle bands"}.get(k, k) for k in p.get("kinds", []))
+    if p.get("groups"):
+        return html.Div([render_level_test({"ok": True, **g}) if "metrics" in g else
+                         html.Div(f"{g['label']}: {g.get('error', 'no result')}", style={"color": MUTED, "fontSize": "11px", "marginTop": "8px"})
+                         for g in p["groups"]])
+    what = p.get("label") or " and ".join({"zone": "confluence zones", "band": "Mean/Cycle bands"}.get(k, k) for k in p.get("kinds", []))
     rows = [[m["label"], "" if m["real"] is None else m["real"], "" if m["baseline"] is None else m["baseline"],
              "" if m["p_value"] is None else m["p_value"]] for m in p["metrics"]]
     return html.Div([

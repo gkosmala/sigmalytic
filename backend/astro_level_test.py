@@ -24,10 +24,23 @@ FOLLOW_DAYS = 5
 MIN_HISTORY = 130
 
 
+PRICE_FAMILIES = {"Pivot", "Square of 9"}
+GROUPS = (("zone_price", "Zones made only of price-history methods (pivots, Square of 9)"),
+          ("zone_planet", "Zones made only of planet methods"),
+          ("zone_mixed", "Zones mixing price-history and planet methods"),
+          ("band", "Mean/Cycle bands"))
+
+
+def _zone_group(z: Dict[str, Any]) -> str:
+    fams = set(z.get("families", []))
+    return "zone_price" if fams <= PRICE_FAMILIES else ("zone_mixed" if fams & PRICE_FAMILIES else "zone_planet")
+
+
 def _levels(rep: Dict[str, Any], kinds=("zone", "band")) -> List[Dict[str, Any]]:
     out = []
-    if "zone" in kinds:
-        out += [{"kind": "zone", "lo": float(z["price"]), "hi": float(z["price"])} for z in rep.get("top_zones", [])]
+    for z in rep.get("top_zones", []):
+        if "zone" in kinds or _zone_group(z) in kinds:
+            out.append({"kind": "zone", "lo": float(z["price"]), "hi": float(z["price"])})
     if "band" in kinds:
         out += [{"kind": "band", "lo": float(b["low"]), "hi": float(b["high"])} for b in rep.get("top_bands", [])]
     return out
@@ -128,3 +141,19 @@ def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, 
                      "seen. Thresholds were fixed before the run. A result near the baseline means the levels add nothing measurable; "
                      "a result that differs is a pattern in past data, not a forecast. Touches on neighbouring days overlap, so the p-value is optimistic.")
     return out
+
+
+def level_test_groups(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], **kw) -> Dict[str, Any]:
+    """The same test run separately for each source group, building each day's report once."""
+    cache: Dict[str, Dict[str, Any]] = {}
+
+    def cached(d: str) -> Dict[str, Any]:
+        if d not in cache:
+            cache[d] = report_fn(d)
+        return cache[d]
+
+    out = []
+    for key, label in GROUPS:
+        res = level_test(bars, cached, kinds=(key,), **kw)
+        out.append({"group": key, "label": label, **res})
+    return {"groups": out}
