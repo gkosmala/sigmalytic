@@ -11113,7 +11113,7 @@ def handle_astro_backtest(n, symbol, event, years, session):
               Input("astro-lt-btn", "n_clicks"), Input("astro-ltb-btn", "n_clicks"), Input("astro-ltg-btn", "n_clicks"), Input("astro-ltf-btn", "n_clicks"),
               State("astro-symbol", "value"), State("s-session", "data"), prevent_initial_call=True)
 def handle_astro_level_test(n_all, n_bands, n_groups, n_fam, symbol, session):
-    """Owner-only: do the report's zones and bands behave differently from random levels? (Alpaca daily bars)"""
+    """Owner-only: what happened at the report's zones and bands on real past days (Alpaca daily bars)"""
     from dash import ctx as _ctx
     if _astro_lt is None:
         return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
