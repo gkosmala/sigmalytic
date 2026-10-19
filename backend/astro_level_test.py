@@ -162,7 +162,8 @@ def level_test_groups(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dic
 FAMILIES = (("pivot", "Pivots (daily and weekly highs and lows)"), ("sq9", "Square of 9 levels from the pivots"),
             ("natal", "Natal planet lines"), ("transit", "Transit planet lines at the open"),
             ("mean", "Mean of Five / Cycle of Eight lines"),
-            ("sq144", "Square of 144 levels and diagonals"), ("numerology", "Numerology levels (digit sum, multiples, ends in 9, 144)"))
+            ("sq144", "Square of 144 levels and diagonals"), ("numerology", "Numerology levels (digit sum, multiples, ends in 9, 144)"),
+            ("price_aspect", "Price-wheel levels (a planet aspecting the price degree)"))
 
 
 def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400, draws: int = 200,

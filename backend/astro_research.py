@@ -619,7 +619,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
                   "cycles": gx.natal_cycle_dates(row["ipo_date"], nv["vibration"], day)}
     numerology["day_matches_natal"] = numerology["day_vibration"] == nv["vibration"]
-    cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS)
+    cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS, ref=ref, unit=unit, band=band)
 
     natal_oct = octagon_levels(nm, ref, unit, band, "Natal")
     blocks = []
@@ -694,6 +694,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
+        raw_levels["price_aspect"] = [round(x["price"], 4) for x in cosmo["price_wheel"]["levels"]]
         result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
@@ -742,9 +743,18 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
         L.append(f"   {c['cycle']}: " + ("TODAY is a cycle date. " if c["on_report_day"] else "") + f"previous {c['previous'] or 'none'}; next {nx}")
     L.append("   The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.")
     L.append("")
-    L.append("3f. COSMOGRAM (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance")
+    L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):
         L.append(f"   {p['kind']}: {p['a']} - {p['b']} {p['angle']} deg, nearest {p['aspect']} (off by {p['orb']} deg)")
+    pw = (r.get("cosmogram") or {}).get("price_wheel")
+    if pw:
+        L.append("")
+        L.append(f"3g. COSMOGRAM, PRICE WHEEL (owner-supplied method): reference ${pw['price']:.2f} at ${pw['unit']:g} per degree = {pw['degree']} deg. This is the WHERE view")
+        for p in pw["pairs"][:8]:
+            L.append(f"   {p['body']} {p['lon']} deg is {p['angle']} deg from the price degree, nearest {p['aspect']} (off by {p['orb']} deg)")
+        L.append("   Prices where a planet at the open would aspect the price degree (60, 90, 120, 180): "
+                 + (", ".join(f"${x['price']:.2f}" for x in pw["levels"]) or "none in range"))
+        L.append("   Not scored in the confluence list. The conjunction levels are the planet lines in section 3.")
     L.append("")
     return L
 
