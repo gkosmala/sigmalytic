@@ -187,3 +187,26 @@ def test_astro_dropdown_lists_every_backend_symbol(monkeypatch):
     tab = str(dash_app.build_astro_tab({"email": "admin@example.com"}))
     for sym in ar.BY_SYMBOL:
         assert f"'value': '{sym}'" in tab, sym
+
+
+def test_closest_cross_family_gap_ignores_same_method_pairs():
+    lv = [{"price": 100.0, "family": "a", "label": "A1"}, {"price": 100.05, "family": "a", "label": "A2"},
+          {"price": 101.0, "family": "b", "label": "B1"}]
+    g = ar.closest_cross_family_gap(lv)
+    assert g["a"].startswith("A2") and g["b"].startswith("B1") and abs(g["gap_pct"] - 0.945) < 0.01
+    assert ar.closest_cross_family_gap([{"price": 1.0, "family": "a", "label": "x"}]) is None
+
+
+def test_empty_confluence_is_explained_and_nearest_levels_are_shown(monkeypatch):
+    monkeypatch.setattr(ar, "fetch_bars", lambda s, y=8: _bars(2100))
+    monkeypatch.setattr(ar, "confluence", lambda levels, tol_pct=0.2: [])
+    r = ar.report("MDB", "2026-06-15")
+    assert r["top_zones"] == [] and r["confluence_diag"]["tolerance_pct"] == 0.2
+    t = r["draft"]
+    assert "No confluence found" in t and "Nearest single-method levels (NOT confluence)" in t
+    assert all("near_above" in b and "near_below" in b for b in r["blocks"])
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend"))
+    import astro_research_ui as ui
+    assert "No confluence found" in ui._no_conf(r)
+    assert ui._zones_cell(r["blocks"][0], "above", "near_above").startswith("nearest (not confluence)") or r["blocks"][0]["near_above"] == []

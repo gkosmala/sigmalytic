@@ -424,6 +424,21 @@ def confluence(levels: List[Dict[str, Any]], tol_pct: float = 0.2) -> List[Dict[
     return out
 
 
+def closest_cross_family_gap(levels: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The two nearest levels that come from different methods, so an empty confluence list can say how close it was."""
+    pts = sorted(levels, key=lambda x: x["price"])
+    best = None
+    for i, x in enumerate(pts):
+        for y in pts[i + 1:]:
+            gap = (y["price"] / x["price"] - 1) * 100.0
+            if best is not None and gap >= best["gap_pct"]:
+                break
+            if x["family"] != y["family"]:
+                best = {"gap_pct": round(gap, 3), "a": f"{x['label']} ${x['price']:.2f}", "b": f"{y['label']} ${y['price']:.2f}"}
+                break
+    return best
+
+
 def weekly_bars(bars: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     wk: Dict[Any, Dict[str, Any]] = {}
     for b in bars:
@@ -535,6 +550,8 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
 
     blocks = []
     zones_all: List[Dict[str, Any]] = []
+    diag_gap: Optional[Dict[str, Any]] = None
+    diag_levels = 0
     for hh, mm in SESSION_BLOCKS:
         t = datetime(d0.year, d0.month, d0.day, hh, mm, tzinfo=ET).astimezone(timezone.utc)
         t_next = t + timedelta(minutes=60 if (hh, mm) != (15, 30) else 30)
@@ -542,6 +559,13 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         dyn = planet_lines({n: pos[n]["lon"] for n in LINE_BODIES}, ref, unit, band, "transit", "Transit ")
         dyn += planet_lines(mean_lons(pos), ref, unit, band, "mean", "Transit ")
         zones = confluence(static + dyn)
+        lv_all = static + dyn
+        near_up = sorted([x for x in lv_all if x["price"] > ref], key=lambda x: x["price"])[:2]
+        near_dn = sorted([x for x in lv_all if x["price"] <= ref], key=lambda x: -x["price"])[:2]
+        gap = closest_cross_family_gap(lv_all)
+        if gap and (diag_gap is None or gap["gap_pct"] < diag_gap["gap_pct"]):
+            diag_gap = gap
+        diag_levels = max(diag_levels, len(lv_all))
         above = sorted([z for z in zones if z["price"] > ref], key=lambda z: z["price"])[:2]
         below = sorted([z for z in zones if z["price"] <= ref], key=lambda z: -z["price"])[:2]
         zones_all.extend(zones)
@@ -560,7 +584,9 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         blocks.append({"time_et": f"{t.astimezone(ET).strftime('%I:%M %p').lstrip('0')} - {_fmt_et(t_next)}", "time_utc": t.strftime("%H:%M"),
                        "phase": PHASE[(hh, mm)], "moon": pos["Moon"]["position"], "sun": pos["Sun"]["position"],
                        "events": [label(e) for e in evs], "marks": marks, "attention": "High" if hard or marks else "Normal",
-                       "above": above, "below": below})
+                       "above": above, "below": below,
+                       "near_above": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_up],
+                       "near_below": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_dn]})
     top = sorted({(z["price"], z["score"]): z for z in zones_all}.values(), key=lambda z: -z["score"])[:12]
     result = {"row": {**row, "ipo_utc": ipo_moment_utc(row).strftime("%Y-%m-%d %H:%M UTC")}, "day": day, "ref_price": round(ref, 2),
               "ref_date": str(before[-1]["t"])[:10], "unit": unit, "band_pct": band * 100, "notes": notes,
@@ -574,9 +600,20 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "windows": transit_windows(symbol, open_t, 7),
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "blocks": blocks,
+              "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
               "hourly": hourly_table(symbol, open_t, 7)}
     result["draft"] = report_text(result)
     return result
+
+
+def no_confluence_note(r: Dict[str, Any]) -> str:
+    """Why the confluence list is empty, in plain words."""
+    d = r.get("confluence_diag") or {}
+    cp = d.get("closest_pair")
+    base = f"No confluence found: no two different methods landed within {d.get('tolerance_pct', 0.2)}% of each other ({d.get('levels_found', 0)} levels were in range)."
+    if cp:
+        base += f" The closest pair was {cp['gap_pct']}% apart ({cp['a']} and {cp['b']})."
+    return base + " The nearest single-method levels are listed in the hourly plan; they are not confluence."
 
 
 def report_text(r: Dict[str, Any]) -> str:
@@ -600,6 +637,8 @@ def report_text(r: Dict[str, Any]) -> str:
     L.append("3. GANN CONFLUENCE ZONES (price levels where two or more methods agree within 0.2%)")
     for z in r["top_zones"]:
         L.append(f"   ${z['price']:.2f} (score {z['score']}): " + "; ".join(z["members"][:6]))
+    if not r["top_zones"]:
+        L.append("   " + no_confluence_note(r))
     L.append("")
     L.append("4. HOURLY TACTICAL PLAN (levels are references, not forecasts)")
     for b in r["blocks"]:
@@ -609,6 +648,10 @@ def report_text(r: Dict[str, Any]) -> str:
         up = ", ".join(f"${z['price']:.2f}" for z in b["above"]) or "none within range"
         dn = ", ".join(f"${z['price']:.2f}" for z in b["below"]) or "none within range"
         L.append(f"      Reversal-watch zones above ${r['ref_price']:.2f}: {up}   below: {dn}")
+        if not b["above"] and not b["below"]:
+            nu = ", ".join(f"${x['price']:.2f} ({x['label']})" for x in b.get("near_above", [])) or "none in range"
+            nd = ", ".join(f"${x['price']:.2f} ({x['label']})" for x in b.get("near_below", [])) or "none in range"
+            L.append(f"      Nearest single-method levels (NOT confluence): above: {nu}   below: {nd}")
     L.append("")
     L.append("   Rules from the source material: a reversal needs location (a zone above), structure and volume to agree; a candle alone does not count. "
              "Mid-range prices and conflicting signals are a no-trade area. Do not chase a move that is already extended into a zone.")
