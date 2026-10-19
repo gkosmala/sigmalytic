@@ -290,7 +290,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
-    assert len(res["groups"]) == 5 and all("metrics" in g or "error" in g for g in res["groups"])
+    assert len(res["groups"]) == 7 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)
     i = 1600
@@ -304,3 +304,70 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
         assert (sc is not None) == touch
         if sc and sc["result"] != "stalled":
             assert (sc["result"] == "through") == ((c > price) if up else (c < price))
+
+
+def test_numerology_matches_the_pdf_example_and_rules():
+    from backend import astro_gann_extra as gx
+    assert gx.reduce_digits(144) == 9 and gx.reduce_digits(160) == 7 and gx.reduce_digits(0) == 0
+    assert gx.natal_vibration("1994-05-15")["vibration"] == 7   # PDF p. 23 worked example
+    assert gx.day_vibration("2026-05-22") == 1
+    lv = {x["number"]: x["why"] for x in gx.numerology_levels(160.0, 1.0, 0.05, 7)}
+    assert any("digits" in w for w in lv[160]) and "ends in 9" in lv[159] and "multiple of 7" in lv[161]
+
+
+def test_natal_cycle_dates_by_days_weeks_months():
+    from backend import astro_gann_extra as gx
+    r = {c["cycle"]: c for c in gx.natal_cycle_dates("2020-01-01", 7, "2020-01-08", 2)}
+    assert r["7 days"]["on_report_day"] and r["7 days"]["next"][0]["date"] == "2020-01-08"
+    assert not r["7 weeks"]["on_report_day"] and r["7 weeks"]["next"][0]["date"] == "2020-02-19"
+    assert r["7 months"]["next"][0]["date"] == "2020-08-01"
+    assert "49 days (Jubilee 7 x 7)" in r
+
+
+def test_square_of_144_levels_time_marks_and_centres():
+    from backend import astro_gann_extra as gx
+    anchors = [{"label": "Low", "kind": "low", "price": 100.0, "date": "2024-01-01"},
+               {"label": "High", "kind": "high", "price": 180.0, "date": "2024-01-01"}]
+    out = gx.sq144(anchors, "2024-02-05", 137.0, 1.0, 0.12, high_price=180.0, low_price=100.0)
+    low, high = out["boxes"][0], out["boxes"][1]
+    assert [round(x["price"]) for x in low["levels"]] == [136, 148]       # 100 + 36, 100 + 48
+    assert sorted(round(x["price"]) for x in high["levels"]) == [132, 144]      # 180 - 48, 180 - 36
+    assert low["elapsed_days"] == 35
+    d = next(t for t in low["time_marks"] if t["unit"] == "days")
+    assert d["nearest_mark"] == 36 and d["days_away"] == 1
+    centre = [b for b in out["boxes"] if b["kind"] == "center"]
+    assert [b["price"] for b in centre] == [90.0, 140.0]
+
+
+def test_sq144_anchors_follow_the_owner_rule():
+    from backend import astro_gann_extra as gx
+    bars = _bars(2100)
+    a = gx.sq144_anchors(bars[:1500], [{"name": "Intermediate High", "price": 200.0, "date": "2023-01-01"}])
+    labels = [x["label"] for x in a]
+    assert labels[0].startswith("Highest") and labels[1].startswith("Lowest") and any("Minor high" in x for x in labels)
+    hi = max(float(b["h"]) for b in bars[:1500])
+    assert a[0]["price"] == hi
+
+
+def test_cosmogram_uses_only_the_pdf_bodies_and_ranks_by_distance():
+    from backend import astro_gann_extra as gx, astro_ephemeris as ae
+    pos = {"Sun": {"lon": 10.0}, "Moon": {"lon": 100.0}, "Galactic Center": {"lon": 10.5}, "Mars": {"lon": 190.5}}
+    nat = {"Sun": {"lon": 12.0}, "Mars": {"lon": 300.0}}
+    c = gx.cosmogram(pos, nat, ae.ASPECTS)
+    assert all("Galactic Center" not in (p["a"], p["b"]) for p in c["pairs"])
+    assert [p["orb"] for p in c["pairs"]] == sorted(p["orb"] for p in c["pairs"])
+    assert c["pairs"][0]["orb"] == 0.0 and c["pairs"][0]["aspect"] == "square"
+    assert any(p["orb"] == 0.5 and p["aspect"] == "opposition" for p in c["pairs"])
+
+
+def test_report_includes_the_new_sections_and_the_natal_cycle_event_study():
+    from backend import astro_research as ar
+    bars = _bars(2100)
+    r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
+    for k in ("square_of_144", "numerology", "cosmogram"):
+        assert k in r
+    for head in ("3c. SQUARE OF 144", "3d. NUMEROLOGY", "3e. NATAL CYCLE DATES", "3f. COSMOGRAM"):
+        assert head in r["draft"]
+    assert "no natal breakout price formula" in r["draft"]
+    idx = ar._event_days(bars, {"kind": "natal_cycle", "unit": "weeks", "n": 49}, "MDB")
+    assert idx == sorted(set(idx))

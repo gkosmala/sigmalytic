@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dash import dcc, html
+import plotly.graph_objects as go
 
 WHITE, MUTED, BORDER = "#f8fafc", "#94a3b8", "rgba(255,255,255,.08)"
 AMBER, GREEN = "#f59e0b", "#34d399"
@@ -74,6 +75,7 @@ def render_report(p: dict):
                     [[f"${z['low']:.2f} to ${z['high']:.2f}", f"{z['width_pct']}%", z["source"], z["mean_of_five"], z["cycle_of_eight"],
                       "; ".join(z["inside"][:4]) or "-"] for z in p.get("top_bands", [])])
              if p.get("top_bands") else html.Div("No Mean of Five / Cycle of Eight octagon levels fall within range.", style={"color": MUTED, "fontSize": "11px"})]
+    kids += gann_extra_components(p)
     kids += [_h("4. Hourly tactical plan"),
              _table(["Time (ET)", "Rule window", "Attention", "Moon", "Astro and time marks", "Zones above", "Zones below", "Mean/Cycle bands"],
                     [[b["time_et"], b["phase"], b["attention"], b["moon"], "; ".join(b["events"] + b["marks"]) or "-",
@@ -132,3 +134,53 @@ def render_level_test(p: dict):
                  f"(random levels average {p['touches_baseline_mean']})", style={"fontWeight": "800", "color": WHITE}),
         _table(["Measure", "Report levels", "Random levels", "p-value"], rows),
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
+
+
+def _wheel(c: dict):
+    sky, ipo = c.get("wheel", {}).get("sky", {}), c.get("wheel", {}).get("ipo", {})
+    fig = go.Figure()
+    for name, lons, r, color in (("Sky at the open", sky, 1.0, AMBER), ("IPO chart", ipo, 0.7, GREEN)):
+        fig.add_trace(go.Scatterpolar(theta=list(lons.values()), r=[r] * len(lons), mode="markers+text", text=[n[:3] for n in lons],
+                                      textposition="top center", name=name, marker={"color": color, "size": 8}, textfont={"size": 10, "color": WHITE}))
+    fig.update_layout(height=380, margin={"l": 30, "r": 30, "t": 20, "b": 20}, paper_bgcolor="rgba(0,0,0,0)", font={"color": WHITE},
+                      legend={"orientation": "h"},
+                      polar={"bgcolor": "rgba(0,0,0,.2)", "radialaxis": {"visible": False, "range": [0, 1.2]},
+                             "angularaxis": {"direction": "counterclockwise", "rotation": 180, "tickvals": list(range(0, 360, 30)),
+                                             "gridcolor": BORDER, "linecolor": BORDER}})
+    return dcc.Graph(figure=fig, config={"displayModeBar": False})
+
+
+def gann_extra_components(p: dict) -> list:
+    """Sections 3c to 3f: Square of 144, numerology, natal cycle dates, cosmogram."""
+    kids = [_h("3c. Square of 144 (PDF pp. 42-44; anchors per your rule; distances shown, no tolerance)")]
+    rows = []
+    for b in p.get("square_of_144", []):
+        if b["kind"] == "center":
+            rows.append([b["label"], f"${b['price']:.2f}", "price-only", ", ".join(f"${x['price']:.2f}" for x in b["levels"]) or "-", "-"])
+            continue
+        rows.append([b["label"], f"${b['price']:.2f}", b["date"], ", ".join(f"${x['price']:.2f}" for x in b["levels"]) or "-",
+                     "; ".join(f"{t['unit']} {t['elapsed']} (mark {t['nearest_mark']}, {t['days_away']:+d}d)" for t in b["time_marks"])])
+    kids.append(_table(["Anchor", "Price", "Date", "Levels in range", "Time vs the nearest mark"], rows))
+    kids.append(html.Div("Highest and lowest prices come from the Alpaca history fetched, which may not be the true all-time range.",
+                         style={"color": MUTED, "fontSize": "11px"}))
+    n = p.get("numerology") or {}
+    nv = n.get("natal", {})
+    kids += [_h("3d. Numerology (PDF pp. 22-24)"),
+             html.Div(f"Natal vibration of {nv.get('date')}: {nv.get('vibration')}. Vibration of {p['day']}: {n.get('day_vibration')}"
+                      + (" (matches)" if n.get("day_matches_natal") else "") + ".", style={"color": WHITE, "fontSize": "12px"})]
+    groups = {}
+    for x in n.get("levels", []):
+        for w in x["why"]:
+            groups.setdefault(w if not w.startswith("digits") else "digits reduce to the natal vibration", []).append(f"${x['price']:.2f}")
+    kids.append(_table(["Rule", "Prices in range"], [[k, ", ".join(v)] for k, v in groups.items()]))
+    kids.append(html.Div("Not scored in the confluence list because they are dense. Zones that land on one are marked in section 3.",
+                         style={"color": MUTED, "fontSize": "11px"}))
+    kids += [_h("3e. Natal cycle dates (PDF p. 24)"),
+             _table(["Cycle", "Today?", "Previous", "Next"], [[c["cycle"], "YES" if c["on_report_day"] else "", c["previous"] or "-",
+                                                              ", ".join(x["date"] for x in c["next"])] for c in n.get("cycles", [])]),
+             html.Div("The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.", style={"color": AMBER, "fontSize": "11px"})]
+    c = p.get("cosmogram") or {}
+    kids += [_h("3f. Cosmogram (PDF pp. 2, 108)"), _wheel(c),
+             _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
+                    [[x["kind"], f"{x['a']} - {x['b']}", f"{x['angle']} deg", x["aspect"], f"{x['orb']} deg"] for x in c.get("pairs", [])])]
+    return kids
