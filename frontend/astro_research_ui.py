@@ -68,11 +68,11 @@ def render_report(p: dict):
     kids += [_h("3. Gann confluence zones (two or more methods within 0.2%)"),
              _table(["Price", "Score", "Methods", "Members"], [[f"${z['price']:.2f}", z["score"], ", ".join(z["families"]), "; ".join(z["members"][:5])]
                                                                 for z in p["top_zones"]]) if p["top_zones"]
-             else html.Div("No confluence zones within range.", style={"color": MUTED, "fontSize": "11px"})]
+             else html.Div(_no_conf(p), style={"color": AMBER, "fontSize": "12px"})]
     kids += [_h("4. Hourly tactical plan"),
              _table(["Time (ET)", "Rule window", "Attention", "Moon", "Astro and time marks", "Zones above", "Zones below"],
                     [[b["time_et"], b["phase"], b["attention"], b["moon"], "; ".join(b["events"] + b["marks"]) or "-",
-                      ", ".join(f"${z['price']:.2f}" for z in b["above"]) or "-", ", ".join(f"${z['price']:.2f}" for z in b["below"]) or "-"]
+                      _zones_cell(b, "above", "near_above"), _zones_cell(b, "below", "near_below")]
                      for b in p["blocks"]]),
              html.Div("A reversal needs location, structure and volume to agree. Mid-range prices are a no-trade area. Zones are references, not forecasts.",
                       style={"color": AMBER, "fontSize": "11px"}),
@@ -81,6 +81,24 @@ def render_report(p: dict):
                                                            "fontSize": "12px", "color": WHITE, "fontFamily": "DM Mono, monospace"}),
              dcc.Clipboard(content=p["draft"], title="Copy report", style={"cursor": "pointer", "color": WHITE})]
     return html.Div(kids)
+
+
+def _no_conf(p: dict) -> str:
+    d = p.get("confluence_diag") or {}
+    cp = d.get("closest_pair")
+    txt = (f"No confluence found: no two different methods landed within {d.get('tolerance_pct', 0.2)}% of each other "
+           f"({d.get('levels_found', 0)} levels were in range).")
+    if cp:
+        txt += f" The closest pair was {cp['gap_pct']}% apart ({cp['a']} and {cp['b']})."
+    return txt + " The nearest single-method levels are in the hourly plan below; they are not confluence."
+
+
+def _zones_cell(b: dict, key: str, near_key: str) -> str:
+    z = b.get(key) or []
+    if z:
+        return ", ".join(f"${x['price']:.2f}" for x in z)
+    n = b.get(near_key) or []
+    return ("nearest (not confluence): " + ", ".join(f"${x['price']:.2f}" for x in n)) if n else "-"
 
 
 def render_backtest(p: dict):
