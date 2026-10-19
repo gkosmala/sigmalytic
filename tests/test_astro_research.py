@@ -244,3 +244,10 @@ def test_level_test_classifies_touches_and_runs(monkeypatch):
     bars = _bars(2100)
     res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=15, draws=25, kinds=("band",))
     assert res["days_tested"] == 15 and len(res["metrics"]) == 4 and res["kinds"] == ["band"]
+
+
+def test_level_test_step_samples_days():
+    from backend import astro_research as ar, astro_level_test as lt
+    bars = _bars(2100)
+    res = lt.level_test(bars, lambda d: ar.report("MDB", d, bars=bars), max_days=40, draws=20, kinds=("band",), step=4)
+    assert res["step"] == 4 and res["days_tested"] == 10

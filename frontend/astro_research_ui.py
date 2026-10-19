@@ -124,7 +124,7 @@ def render_level_test(p: dict):
     rows = [[m["label"], "" if m["real"] is None else m["real"], "" if m["baseline"] is None else m["baseline"],
              "" if m["p_value"] is None else m["p_value"]] for m in p["metrics"]]
     return html.Div([
-        html.Div(f"Level test ({what}): {p['days_tested']} days, {p['first_day']} to {p['last_day']}, {p['touches_real']} touches "
+        html.Div(f"Level test ({what}): {p['days_tested']} days ({'every day' if p.get('step', 1) == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}, {p['touches_real']} touches "
                  f"(random levels average {p['touches_baseline_mean']})", style={"fontWeight": "800", "color": WHITE}),
         _table(["Measure", "Report levels", "Random levels", "p-value"], rows),
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])

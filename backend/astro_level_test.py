@@ -67,10 +67,10 @@ def _stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], start_index: Optional[int] = None,
-               max_days: int = 400, draws: int = 300, seed: int = 11, kinds=("zone", "band")) -> Dict[str, Any]:
+               max_days: int = 400, draws: int = 300, seed: int = 11, kinds=("zone", "band"), step: int = 1) -> Dict[str, Any]:
     n = len(bars)
     first = max(MIN_HISTORY, start_index if start_index is not None else n - max_days - FOLLOW_DAYS)
-    days = list(range(first, n - FOLLOW_DAYS))
+    days = list(range(first, n - FOLLOW_DAYS, max(1, int(step))))
     per_day = []
     pool: List[float] = []
     skipped = 0
@@ -111,7 +111,7 @@ def level_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, 
     rs = _stats(real)
     out: Dict[str, Any] = {"days_tested": len(per_day), "days_skipped": skipped, "levels_total": len(pool),
                            "first_day": str(bars[per_day[0][0]]["t"])[:10], "last_day": str(bars[per_day[-1][0]]["t"])[:10],
-                           "follow_days": FOLLOW_DAYS, "kinds": list(kinds), "real": rs, "draws": draws, "metrics": []}
+                           "follow_days": FOLLOW_DAYS, "step": max(1, int(step)), "kinds": list(kinds), "real": rs, "draws": draws, "metrics": []}
     for key, label in (("through_pct", "Closed through the level (% of touches)"), ("reversal_pct", "Reversed at the level (% of touches)"),
                        ("follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through, all touches (%)"),
                        ("through_follow_mean_pct", f"Mean {FOLLOW_DAYS}-day follow-through after a close through (%)")):
