@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import ephem
 
 from backend import astro_ephemeris as ae
+from backend import astro_gann_extra as gx
 
 ET = ZoneInfo("America/New_York")
 import os
@@ -267,6 +268,25 @@ def _event_days(bars: List[Dict[str, Any]], event: Dict[str, Any], symbol: str) 
         for i in range(1, len(inside)):
             if inside[i] and not inside[i - 1]:
                 idx.append(i)
+    elif kind == "natal_cycle":
+        # PDF p. 24: turning points every N days / weeks / months from the listing date; N = natal vibration, or the 49 Jubilee.
+        ipo = BY_SYMBOL[symbol]["ipo_date"]
+        n = gx.natal_vibration(ipo)["vibration"] if event.get("n", "natal") == "natal" else int(event["n"])
+        unit = event.get("unit", "days")
+        d0 = date.fromisoformat(ipo)
+        days = [str(b["t"])[:10] for b in bars]
+        seen = set()
+        k = 1
+        while True:
+            dt = gx._add_months(d0, k * n) if unit == "months" else d0 + timedelta(days=k * n * (7 if unit == "weeks" else 1))
+            if dt.isoformat() > days[-1]:
+                break
+            if dt.isoformat() >= days[0]:
+                j = next((i for i, x in enumerate(days) if x >= dt.isoformat()), None)
+                if j is not None and j not in seen:
+                    seen.add(j)
+                    idx.append(j)
+            k += 1
     else:
         raise ValueError("Unknown event kind.")
     return idx
@@ -355,7 +375,7 @@ OUTER = ("Jupiter", "Saturn", "Uranus", "Neptune", "Pluto")
 COE_BODIES = OUTER + ("Sun", "Mercury", "Venus")
 LINE_BODIES = [n for n, _ in ae.PLANETS] + ["Moon's Node"]
 FAMILY_LABEL = {"transit": "Planet line", "natal": "Natal planet line", "mean": "Mean of Five / Cycle of Eight",
-                "sq9": "Square of 9", "pivot": "Pivot"}
+                "sq9": "Square of 9", "pivot": "Pivot", "sq144": "Square of 144"}
 SESSION_BLOCKS = [(9, 30), (10, 30), (11, 30), (12, 30), (13, 30), (14, 30), (15, 30)]
 PHASE = {(9, 30): "Opening drive; false-move risk", (10, 30): "True direction usually shows", (11, 30): "True direction usually shows (to 12:00)",
          (12, 30): "Midday", (13, 30): "Secondary move; trap risk", (14, 30): "Between rule windows",
@@ -589,6 +609,18 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     nm = mean_lons(natal)
     static += planet_lines(natal_lons, ref, unit, band, "natal", "Natal ") + planet_lines(nm, ref, unit, band, "mean", "Natal ")
 
+    anchors = gx.sq144_anchors(before, uniq)
+    hi_a = next((a["price"] for a in anchors if a["label"].startswith("Highest")), None)
+    lo_a = next((a["price"] for a in anchors if a["label"].startswith("Lowest")), None)
+    sq = gx.sq144(anchors, day, ref, unit, band, high_price=hi_a, low_price=lo_a)
+    static += [{"price": x["price"], "family": "sq144", "label": x["label"]} for x in sq["levels"]]
+    nv = gx.natal_vibration(row["ipo_date"])
+    num_levels = gx.numerology_levels(ref, unit, band, nv["vibration"])
+    numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
+                  "cycles": gx.natal_cycle_dates(row["ipo_date"], nv["vibration"], day)}
+    numerology["day_matches_natal"] = numerology["day_vibration"] == nv["vibration"]
+    cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS)
+
     natal_oct = octagon_levels(nm, ref, unit, band, "Natal")
     blocks = []
     bands_all: List[Dict[str, Any]] = []
@@ -640,6 +672,10 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
                        "near_above": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_up],
                        "near_below": [{"price": round(x["price"], 2), "label": x["label"]} for x in near_dn]})
     top = sorted({(z["price"], z["score"]): z for z in zones_all}.values(), key=lambda z: -z["score"])[:12]
+    for z in top:
+        k = int(round(z["price"] / unit))
+        z["numerology"] = [w for w in gx.numerology_levels(z["price"], unit, 0.0005, nv["vibration"]) if w["number"] == k]
+        z["numerology"] = z["numerology"][0]["why"] if z["numerology"] else []
     top_bands = sorted({tuple(z["key"]): z for z in bands_all}.values(), key=lambda z: z["width_pct"])[:8]
     result = {"row": {**row, "ipo_utc": ipo_moment_utc(row).strftime("%Y-%m-%d %H:%M UTC")}, "day": day, "ref_price": round(ref, 2),
               "ref_date": str(before[-1]["t"])[:10], "unit": unit, "band_pct": band * 100, "notes": notes,
@@ -654,8 +690,10 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
+        raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
         result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
@@ -669,6 +707,46 @@ def no_confluence_note(r: Dict[str, Any]) -> str:
     if cp:
         base += f" The closest pair was {cp['gap_pct']}% apart ({cp['a']} and {cp['b']})."
     return base + " The nearest single-method levels are listed in the hourly plan; they are not confluence."
+
+
+def gann_extra_text(r: Dict[str, Any]) -> List[str]:
+    """Sections 3c to 3f: Square of 144, numerology, natal cycle dates and the cosmogram table."""
+    L = ["3c. SQUARE OF 144 (PDF pp. 42-44; anchors per the owner's rule; no tolerance applied, distances are shown)"]
+    for b in r.get("square_of_144", []):
+        if b["kind"] == "center":
+            L.append(f"   {b['label']} ${b['price']:.2f} (price-only box): " + ("; ".join(f"${x['price']:.2f}" for x in b["levels"]) or "no division within range"))
+            continue
+        tm = "; ".join(f"{t['unit']}: {t['elapsed']} elapsed, nearest mark {t['nearest_mark']} ({t['days_away']:+d} days)" for t in b["time_marks"])
+        lv = ", ".join(f"${x['price']:.2f}" for x in b["levels"]) or "none in range"
+        dg = ", ".join(f"${x['price']:.2f}" for x in b["diagonals"])
+        L.append(f"   {b['label']}: {b['kind']} ${b['price']:.2f} on {b['date']}. Levels: {lv}" + (f". 1x1 diagonal: {dg}" if dg else ""))
+        L.append(f"      Time: {tm}")
+    L.append("   Note: the highest and lowest prices are from the Alpaca history fetched, which may not be the true all-time range.")
+    L.append("")
+    n = r.get("numerology") or {}
+    nv = n.get("natal", {})
+    L.append("3d. NUMEROLOGY (PDF pp. 22-24)")
+    L.append(f"   Natal vibration of the first-trade date {nv.get('date')}: {nv.get('vibration')} (month {nv.get('parts', {}).get('month')}, day {nv.get('parts', {}).get('day')}, year {nv.get('parts', {}).get('year')}).")
+    L.append(f"   Vibration of {r['day']} (all digits added and reduced): {n.get('day_vibration')}" + (" - matches the natal vibration" if n.get("day_matches_natal") else "") + ".")
+    groups = {}
+    for x in n.get("levels", []):
+        for w in x["why"]:
+            groups.setdefault(w if not w.startswith("digits") else "digits reduce to the natal vibration", []).append(x["price"])
+    for k, v in groups.items():
+        L.append(f"   {k}: " + ", ".join(f"${p:.2f}" for p in v[:24]) + (" ..." if len(v) > 24 else ""))
+    L.append("   These levels are dense, so they are not scored in the confluence list; zones that land on one are marked in section 3.")
+    L.append("")
+    L.append("3e. NATAL CYCLE DATES (PDF p. 24: every N days, weeks or months from the listing date; N = natal vibration, and 49)")
+    for c in n.get("cycles", []):
+        nx = ", ".join(x["date"] for x in c["next"])
+        L.append(f"   {c['cycle']}: " + ("TODAY is a cycle date. " if c["on_report_day"] else "") + f"previous {c['previous'] or 'none'}; next {nx}")
+    L.append("   The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.")
+    L.append("")
+    L.append("3f. COSMOGRAM (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance")
+    for p in (r.get("cosmogram") or {}).get("pairs", []):
+        L.append(f"   {p['kind']}: {p['a']} - {p['b']} {p['angle']} deg, nearest {p['aspect']} (off by {p['orb']} deg)")
+    L.append("")
+    return L
 
 
 def report_text(r: Dict[str, Any]) -> str:
@@ -691,7 +769,8 @@ def report_text(r: Dict[str, Any]) -> str:
     L.append("")
     L.append("3. GANN CONFLUENCE ZONES (price levels where two or more methods agree within 0.2%)")
     for z in r["top_zones"]:
-        L.append(f"   ${z['price']:.2f} (score {z['score']}): " + "; ".join(z["members"][:6]))
+        L.append(f"   ${z['price']:.2f} (score {z['score']}): " + "; ".join(z["members"][:6])
+                 + (f" [numerology: {', '.join(z['numerology'])}]" if z.get("numerology") else ""))
     if not r["top_zones"]:
         L.append("   " + no_confluence_note(r))
     L.append("")
@@ -702,6 +781,7 @@ def report_text(r: Dict[str, Any]) -> str:
     if not r.get("top_bands"):
         L.append("   No Mean of Five / Cycle of Eight octagon levels fall within range.")
     L.append("")
+    L += gann_extra_text(r)
     L.append("4. HOURLY TACTICAL PLAN (levels are references, not forecasts)")
     for b in r["blocks"]:
         L.append(f"   {b['time_et']}  [{b['phase']}]  Attention: {b['attention']}  Moon {b['moon']}")
