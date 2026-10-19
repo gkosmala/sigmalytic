@@ -180,7 +180,31 @@ def gann_extra_components(p: dict) -> list:
                                                               ", ".join(x["date"] for x in c["next"])] for c in n.get("cycles", [])]),
              html.Div("The PDF gives no natal breakout price formula (p. 2), so no breakout prices are shown.", style={"color": AMBER, "fontSize": "11px"})]
     c = p.get("cosmogram") or {}
-    kids += [_h("3f. Cosmogram (PDF pp. 2, 108)"), _wheel(c),
+    kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
                     [[x["kind"], f"{x['a']} - {x['b']}", f"{x['angle']} deg", x["aspect"], f"{x['orb']} deg"] for x in c.get("pairs", [])])]
+    pw = c.get("price_wheel")
+    if pw:
+        kids += [_h(f"3g. Cosmogram, price wheel: where (reference ${pw['price']:.2f} at ${pw['unit']:g} per degree = {pw['degree']} deg)"),
+                 _price_wheel(c, pw),
+                 _table(["Planet", "Longitude", "Angle to price", "Nearest aspect", "Off by"],
+                        [[x["body"], f"{x['lon']} deg", f"{x['angle']} deg", x["aspect"], f"{x['orb']} deg"] for x in pw["pairs"]]),
+                 html.Div("Prices where a planet at the open would aspect the price degree (60, 90, 120, 180): "
+                          + (", ".join(f"${x['price']:.2f}" for x in pw["levels"]) or "none in range"), style={"color": WHITE, "fontSize": "12px"}),
+                 html.Div("Owner-supplied method. Not scored in the confluence list.", style={"color": MUTED, "fontSize": "11px"})]
     return kids
+
+
+def _price_wheel(c: dict, pw: dict):
+    sky = c.get("wheel", {}).get("sky", {})
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(theta=list(sky.values()), r=[1.0] * len(sky), mode="markers+text", text=[n[:3] for n in sky],
+                                  textposition="top center", name="Sky at the open", marker={"color": AMBER, "size": 8}, textfont={"size": 10, "color": WHITE}))
+    fig.add_trace(go.Scatterpolar(theta=[pw["degree"]], r=[0.7], mode="markers+text", text=[f"${pw['price']:.2f}"], textposition="top center",
+                                  name="Price degree", marker={"color": GREEN, "size": 12, "symbol": "diamond"}, textfont={"size": 11, "color": WHITE}))
+    fig.update_layout(height=380, margin={"l": 30, "r": 30, "t": 20, "b": 20}, paper_bgcolor="rgba(0,0,0,0)", font={"color": WHITE},
+                      legend={"orientation": "h"},
+                      polar={"bgcolor": "rgba(0,0,0,.2)", "radialaxis": {"visible": False, "range": [0, 1.2]},
+                             "angularaxis": {"direction": "counterclockwise", "rotation": 180, "tickvals": list(range(0, 360, 30)),
+                                             "gridcolor": BORDER, "linecolor": BORDER}})
+    return dcc.Graph(figure=fig, config={"displayModeBar": False})

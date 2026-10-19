@@ -10,8 +10,9 @@ shown as Gann's. Nothing here applies a tolerance: distances are reported and th
     numbers ending in 9, 144).
   * Natal cycle dates: PDF p. 24 (turning points every N days, weeks or months from the listing date, N = natal vibration,
     and the 49-unit Jubilee). The PDF gives no natal breakout PRICE formula (p. 2), so none is built.
-  * Cosmogram: PDF pp. 2 and 108 (a circle of planet longitudes and the angles between them). No construction beyond that is
-    given, so this is a table of angles and the nearest aspect with its distance, not a forecast.
+  * Cosmogram: PDF pp. 2 and 108 (a circle of planet longitudes and the angles between them), built both ways per the owner's rule:
+    the raw wheel (sky against the IPO chart: when) and the price wheel (the price converted to a degree against the sky: where).
+    A table of angles with the nearest aspect and its distance, not a forecast.
 """
 from __future__ import annotations
 
@@ -198,7 +199,45 @@ def sq144(anchors: List[Dict[str, Any]], day: str, ref: float, unit: float, band
 
 
 # ── cosmogram ──
-def cosmogram(open_pos: Dict[str, Dict[str, Any]], natal: Dict[str, Dict[str, Any]], aspects: Dict[str, float], top: int = 14) -> Dict[str, Any]:
+PRICE_ASPECTS = (60.0, 90.0, 120.0, 180.0)
+
+
+def price_wheel(open_pos: Dict[str, Dict[str, Any]], aspects: Dict[str, float], ref: float, unit: float, band: float) -> Dict[str, Any]:
+    """Owner-supplied method: the price is converted to a degree (price / unit, minus whole turns of 360; $410 at 1 per degree is 50)
+    and placed against the planets. Rows give each planet's angle to the price degree, the nearest aspect and its distance.
+    Levels are the prices where a planet at the open would sit in a 60, 90, 120 or 180 degree aspect to the price degree
+    (the conjunction levels are the planet lines already in the report)."""
+    allowed = ("Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto", "Moon's Node")
+    deg = (ref / unit) % 360.0
+
+    def sep(a, b):
+        return abs((a - b + 180) % 360 - 180)
+    rows = []
+    for n in allowed:
+        if n not in open_pos:
+            continue
+        ang = sep(open_pos[n]["lon"], deg)
+        asp, tgt = min(aspects.items(), key=lambda kv: abs(ang - kv[1]))
+        rows.append({"body": n, "lon": round(open_pos[n]["lon"], 2), "angle": round(ang, 2), "aspect": asp, "orb": round(abs(ang - tgt), 2)})
+    rows.sort(key=lambda r: r["orb"])
+    levels = []
+    for n in allowed:
+        if n not in open_pos:
+            continue
+        lon = open_pos[n]["lon"]
+        for a in PRICE_ASPECTS:
+            for off in ({a, -a}):
+                k0 = round((ref / unit - lon - off) / 360.0)
+                for k in (k0 - 1, k0, k0 + 1):
+                    price = (lon + off + 360.0 * k) * unit
+                    if price > 0 and abs(price / ref - 1) <= band:
+                        levels.append({"price": price, "label": f"{n} {lon:.2f} deg {'+' if off > 0 else '-'} {a:g} deg"})
+    levels = sorted({round(x["price"], 4): x for x in levels}.values(), key=lambda x: x["price"])
+    return {"price": round(ref, 2), "unit": unit, "degree": round(deg, 2), "pairs": rows, "levels": levels}
+
+
+def cosmogram(open_pos: Dict[str, Dict[str, Any]], natal: Dict[str, Dict[str, Any]], aspects: Dict[str, float], top: int = 14,
+              ref: Optional[float] = None, unit: float = 1.0, band: float = 0.12) -> Dict[str, Any]:
     """Angles between the planets at the open and to the IPO chart, with the nearest aspect and its distance, tightest first."""
     def sep(a, b):
         return abs((a - b + 180) % 360 - 180)
@@ -215,6 +254,7 @@ def cosmogram(open_pos: Dict[str, Dict[str, Any]], natal: Dict[str, Dict[str, An
         asp, tgt = min(aspects.items(), key=lambda kv: abs(ang - kv[1]))
         out.append({"kind": kind, "a": a, "b": b, "angle": round(ang, 2), "aspect": asp, "orb": round(abs(ang - tgt), 2)})
     out.sort(key=lambda r: r["orb"])
-    return {"pairs": out[:top],
+    pw = price_wheel(open_pos, aspects, ref, unit, band) if ref else None
+    return {"pairs": out[:top], "price_wheel": pw,
             "wheel": {"sky": {n: round(open_pos[n]["lon"], 2) for n in names},
                       "ipo": {n: round(natal[n]["lon"], 2) for n in natal if n in allowed}}}

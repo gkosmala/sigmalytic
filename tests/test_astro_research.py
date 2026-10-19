@@ -290,7 +290,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, draws=25, step=3)
-    assert len(res["groups"]) == 7 and all("metrics" in g or "error" in g for g in res["groups"])
+    assert len(res["groups"]) == 8 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)
     i = 1600
@@ -371,3 +371,25 @@ def test_report_includes_the_new_sections_and_the_natal_cycle_event_study():
     assert "no natal breakout price formula" in r["draft"]
     idx = ar._event_days(bars, {"kind": "natal_cycle", "unit": "weeks", "n": 49}, "MDB")
     assert idx == sorted(set(idx))
+
+
+def test_price_wheel_converts_price_to_a_degree_and_finds_aspect_prices():
+    from backend import astro_gann_extra as gx, astro_ephemeris as ae
+    pos = {"Sun": {"lon": 50.0}, "Mars": {"lon": 140.0}, "Moon": {"lon": 111.0}}
+    c = gx.cosmogram(pos, {"Sun": {"lon": 1.0}}, ae.ASPECTS, ref=410.0, unit=1.0, band=0.12)
+    pw = c["price_wheel"]
+    assert pw["degree"] == 50.0                                  # $410 at 1 per degree: 410 - 360 = 50
+    by = {r["body"]: r for r in pw["pairs"]}
+    assert by["Sun"]["aspect"] == "conjunction" and by["Sun"]["orb"] == 0.0
+    assert by["Mars"]["aspect"] == "square" and by["Mars"]["orb"] == 0.0
+    prices = {round(x["price"], 2) for x in pw["levels"]}
+    assert 440.0 in prices                                       # Mars 140 deg - 60 deg + 360 = 440
+    assert gx.cosmogram(pos, {}, ae.ASPECTS)["price_wheel"] is None
+
+
+def test_report_has_the_price_wheel_section():
+    from backend import astro_research as ar
+    bars = _bars(2100)
+    r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
+    assert r["cosmogram"]["price_wheel"]["degree"] == round((r["ref_price"] / r["unit"]) % 360.0, 2)
+    assert "3g. COSMOGRAM, PRICE WHEEL" in r["draft"]
