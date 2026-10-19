@@ -226,7 +226,7 @@ def gann_extra_components(p: dict) -> list:
     kids += [_h("3e4. Gann Fan (1x1 = one price unit per calendar day; up from lows, down from highs)"),
              _table(["Anchor", "Price", "Date"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")]
                                                   for a in gf.get("anchors", [])]),
-             html.Div("Lines in range today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
+             html.Div("Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
                       style={"color": WHITE, "fontSize": "12px"})]
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),

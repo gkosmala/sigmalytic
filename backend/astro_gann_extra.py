@@ -502,7 +502,8 @@ def fan_price(anchor: Dict[str, Any], a: int, b: int, day: str, unit: float) -> 
     return anchor["price"] + (1 if anchor["kind"] == "low" else -1) * (a / b) * e * unit
 
 
-def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float, ref: float, band: float) -> Dict[str, Any]:
+def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float) -> Dict[str, Any]:
+    """Every ray of every anchor on `day`; no distance filter (a ray only drops out if its price is not above zero)."""
     anchors = fan_anchors(bars)
     lines, seen = [], set()
     for an in anchors:
@@ -512,6 +513,6 @@ def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float, ref: float, band
         seen.add(k)
         for a, b in FAN_ANGLES:
             p = fan_price(an, a, b, day, unit)
-            if p is not None and p > 0 and abs(p / ref - 1) <= band:
+            if p is not None and p > 0:
                 lines.append({"price": p, "angle": f"{a}x{b}", "label": f"{a}x{b} from {an['label']} ({an['date']}, ${an['price']:.2f})"})
     return {"anchors": anchors, "lines": lines}
