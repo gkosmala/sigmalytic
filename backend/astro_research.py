@@ -643,6 +643,8 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
         return best.astimezone(ET) if best else None
 
     nb = gx.natal_breakout(row["ipo_date"], day, before, ref, band)
+    nbase = gx.natal_base(row["ipo_date"], before)
+    nbase["levels"] = gx.natal_base_levels(nbase, ref, band)
     static_nb = [{"price": x["price"], "family": "natal_breakout", "label": x["label"]} for x in nb["levels"]]
     cosmo = gx.cosmogram(ae.positions(open_t, lat, lon_, elev), natal, ae.ASPECTS, ref=ref, unit=unit, band=band,
                          exact_fn=None if with_levels else exact_fn, day=day)
@@ -727,12 +729,13 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
-              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb,
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb, "natal_base": nbase,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
         raw_levels["price_aspect"] = [round(x["price"], 4) for x in cosmo["price_wheel"]["levels"]]
         raw_levels["natal_breakout"] = [round(x["price"], 4) for x in nb["levels"]]
+        raw_levels["natal_base"] = [round(x["price"], 4) for x in nbase["levels"]]
         result["raw_levels"] = raw_levels
     result["draft"] = report_text(result)
     return result
@@ -792,6 +795,18 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
         L.append("   Breakout levels in range: " + ", ".join(f"${x['price']:.2f}" for x in nb["levels"]))
     else:
         L.append("   No natal window today, so no breakout levels are computed." if not hits else "   No breakout level falls within range.")
+    L.append("")
+    nbase = r.get("natal_base") or {}
+    L.append("3e3. NATAL BASE (owner-supplied: highs and lows made inside the natal windows of the first year after listing, carried forward as support and resistance)")
+    if not nbase.get("history_starts_at_listing"):
+        L.append("   Not available: the Alpaca history fetched does not reach back to the listing date, so the first-year windows cannot be read.")
+    else:
+        for w in nbase.get("windows", []):
+            L.append(f"   {w['window']} ({w['from']}" + (f" to {w['to']}" if w['to'] != w['from'] else "") + f"): high ${w['high']:.2f} ({w['high_date']}), low ${w['low']:.2f} ({w['low_date']})")
+        if nbase.get("missing"):
+            L.append("   No bar found for: " + ", ".join(nbase["missing"]))
+        L.append("   In range today: " + (", ".join(f"${x['price']:.2f}" for x in nbase.get("levels", [])) or "none"))
+        L.append("   Window rule of mine: a window on a non-trading day uses the next trading bar. Not weighted in the master confluence.")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):

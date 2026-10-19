@@ -167,7 +167,8 @@ FAMILIES = (("pivot", "Pivots (daily and weekly highs and lows)"), ("sq9", "Squa
             ("mean", "Mean of Five / Cycle of Eight lines"),
             ("sq144", "Square of 144 levels and diagonals"), ("numerology", "Numerology levels (digit sum, multiples, ends in 9, 144)"),
             ("price_aspect", "Price-wheel levels (a planet aspecting the price degree)"),
-            ("natal_breakout", "Natal breakout levels (only on natal-window days)"))
+            ("natal_breakout", "Natal breakout levels (only on natal-window days)"),
+            ("natal_base", "Natal base levels (highs and lows of the first-year natal windows)"))
 
 
 def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str, Any]], max_days: int = 400, draws: int = 200,
