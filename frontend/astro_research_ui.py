@@ -115,3 +115,16 @@ def render_backtest(p: dict):
     return html.Div([html.Div(f"{p['events_found']} events, {p['first_bar']} to {p['last_bar']}", style={"fontWeight": "800", "color": WHITE}),
                      _table(["Horizon", "Events", "Mean %", "All-days mean %", "Hit rate %", "All-days hit rate %", "p-value"], rows),
                      html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
+
+
+def render_level_test(p: dict):
+    if not p.get("ok"):
+        return f"Could not run: {p.get('error', 'unknown error')}"
+    what = " and ".join({"zone": "confluence zones", "band": "Mean/Cycle bands"}.get(k, k) for k in p.get("kinds", []))
+    rows = [[m["label"], "" if m["real"] is None else m["real"], "" if m["baseline"] is None else m["baseline"],
+             "" if m["p_value"] is None else m["p_value"]] for m in p["metrics"]]
+    return html.Div([
+        html.Div(f"Level test ({what}): {p['days_tested']} days, {p['first_day']} to {p['last_day']}, {p['touches_real']} touches "
+                 f"(random levels average {p['touches_baseline_mean']})", style={"fontWeight": "800", "color": WHITE}),
+        _table(["Measure", "Report levels", "Random levels", "p-value"], rows),
+        html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])

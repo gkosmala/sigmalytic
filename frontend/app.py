@@ -70,10 +70,10 @@ except Exception:
 
 try:
     from content_hub_ui import render_package as _content_hub_render
-    from astro_research_ui import render_table as _astro_table, render_report as _astro_run, render_backtest as _astro_bt
+    from astro_research_ui import render_table as _astro_table, render_report as _astro_run, render_backtest as _astro_bt, render_level_test as _astro_lt
 except Exception:
     _content_hub_render = None
-    _astro_table = _astro_run = _astro_bt = None
+    _astro_table = _astro_run = _astro_bt = _astro_lt = None
 
 try:
     from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
@@ -5841,6 +5841,8 @@ def build_astro_tab(session: dict) -> html.Div:
                                 "color": "#0b0f14"}),
             dcc.Input(id="astro-years", type="number", value=8, min=2, max=15, style={**_astro_in, "width": "80px"}),
             html.Button("Backtest event", id="astro-bt-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Level test", id="astro-lt-btn", n_clicks=0, style=_astro_btn),
+            html.Button("Level test: bands only", id="astro-ltb-btn", n_clicks=0, style=_astro_btn),
         ], style={"marginBottom": "14px"}),
         dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
         dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
@@ -11103,6 +11105,19 @@ def handle_astro_backtest(n, symbol, event, years, session):
     import json as _json
     data, err = _astro_call("POST", "backtest", session, {"symbol": symbol, "event": _json.loads(event), "years": years or 8})
     return err or _astro_bt(data)
+
+
+@app.callback(Output("astro-bt-result", "children", allow_duplicate=True),
+              Input("astro-lt-btn", "n_clicks"), Input("astro-ltb-btn", "n_clicks"),
+              State("astro-symbol", "value"), State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_level_test(n_all, n_bands, symbol, session):
+    """Owner-only: do the report's zones and bands behave differently from random levels? (Alpaca daily bars)"""
+    from dash import ctx as _ctx
+    if _astro_lt is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    kinds = ["band"] if _ctx.triggered_id == "astro-ltb-btn" else ["zone", "band"]
+    data, err = _astro_call("POST", "level-test", session, {"symbol": symbol, "kinds": kinds, "days": 250})
+    return err or _astro_lt(data)
 
 
 @app.callback(Output("weis-state-tbody", "children"), Output("weis-state-sort-bars", "children"),
