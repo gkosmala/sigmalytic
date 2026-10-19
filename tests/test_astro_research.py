@@ -174,3 +174,15 @@ def test_wday_is_listed_with_user_confirmed_values():
     assert abs(r["lat"] - 37.683333333) < 1e-6 and abs(r["lon"] + 121.916666667) < 1e-6
     assert r["first_trade_et"] == "10:17" and "confirmed by the user" in r["time_note"]
     assert ar.ipo_moment_utc(r).strftime("%Y-%m-%d %H:%M") == "2012-10-12 14:17"   # EDT = UTC-4
+
+
+def test_astro_dropdown_lists_every_backend_symbol(monkeypatch):
+    """The symbol dropdown in the Astro tab is a hard-coded list; it must match the backend table."""
+    import sys, os
+    monkeypatch.setenv("ASTRO_RESEARCH_EMAILS", "admin@example.com")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend"))
+    import app as dash_app
+    from backend import astro_research as ar
+    tab = str(dash_app.build_astro_tab({"email": "admin@example.com"}))
+    for sym in ar.BY_SYMBOL:
+        assert f"'value': '{sym}'" in tab, sym
