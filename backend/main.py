@@ -3138,6 +3138,10 @@ def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin
         bars = astro_research.fetch_bars(sym, 12)
         max_days = max(60, min(int(p.get("days") or 300), 3500))
         step = max(1, -(-max_days // 700))  # about 700 daily reports at most, so the request finishes in time
+        if p.get("groups"):
+            res = astro_level_test.level_test_groups(bars, lambda d: astro_research.report(sym, d, bars=bars),
+                                                     max_days=max_days, draws=200, step=step)
+            return {"ok": True, **res}
         res = astro_level_test.level_test(bars, lambda d: astro_research.report(sym, d, bars=bars),
                                           max_days=max_days, draws=200, kinds=kinds, step=step)
         return {"ok": "error" not in res, **res}
