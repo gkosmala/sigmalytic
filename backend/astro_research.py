@@ -103,6 +103,10 @@ SYMBOLS: List[Dict[str, Any]] = [
      "lat": 37.4, "lon": -122.13333333333334, "elev_m": 85,
      "coord_source": "Supplied and confirmed by the user at minute precision (37°24'N 122°08'W, about 1.5 km); not geocoded.",
      "status": 'minute-only'},
+    {"symbol": 'WDAY', "name": 'Workday', "ipo_date": '2012-10-12', "address": '6230 Stoneridge Mall Rd, Pleasanton, CA 94588',
+     "lat": 37.68333333333333, "lon": -121.91666666666667, "elev_m": 104,
+     "coord_source": "Supplied and confirmed by the user at minute precision (37°41'N 121°55'W, about 1.5 km); not geocoded.",
+     "status": 'minute-only'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
@@ -110,6 +114,9 @@ for _r in SYMBOLS:
                "time_note": "9:30 a.m. ET is the default you set. Listings before 1985 opened later on the NYSE (to my knowledge 10:00 a.m.); "
                             "the real first print is not known to this tool."})
 for _r in SYMBOLS:
+    if _r["symbol"] == "WDAY":
+        _r.update({"first_trade_et": "10:17", "ipo_status": "user-confirmed",
+                   "time_note": "10:17 a.m. ET first-trade time supplied and confirmed by the user (the NYSE opening bell was at 9:30 a.m.)."})
     if _r["symbol"] == "HPE":
         _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
                    "time_note": "HPE listed by spin-off. 2015-10-19 is the when-issued debut date and 9:30 a.m. ET the time, both supplied and confirmed by the user."})

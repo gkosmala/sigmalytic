@@ -165,3 +165,12 @@ def test_hpe_is_listed_with_user_confirmed_values():
     assert abs(r["lat"] - 37.4) < 1e-9 and abs(r["lon"] + 122.13333333) < 1e-6
     assert r["first_trade_et"] == "09:30" and "confirmed by the user" in r["time_note"]
     assert ar.ipo_moment_utc(r).strftime("%Y-%m-%d %H:%M") == "2015-10-19 13:30"   # EDT = UTC-4
+
+
+def test_wday_is_listed_with_user_confirmed_values():
+    from backend import astro_research as ar
+    r = ar.BY_SYMBOL["WDAY"]
+    assert r["ipo_date"] == "2012-10-12" and r["status"] == "minute-only" and r["elev_m"] == 104
+    assert abs(r["lat"] - 37.683333333) < 1e-6 and abs(r["lon"] + 121.916666667) < 1e-6
+    assert r["first_trade_et"] == "10:17" and "confirmed by the user" in r["time_note"]
+    assert ar.ipo_moment_utc(r).strftime("%Y-%m-%d %H:%M") == "2012-10-12 14:17"   # EDT = UTC-4
