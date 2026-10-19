@@ -90,7 +90,7 @@ def test_time_counts_match_the_source_example():
 def test_price_unit():
     # owner-supplied table: under $5 x100, $5-$500 1:1, over $500-$3,000 /10, over $3,000 /100
     assert ar.price_unit(6400) == 100 and ar.price_unit(3000) == 10 and ar.price_unit(800) == 10
-    assert ar.price_unit(500) == 1 and ar.price_unit(305) == 1 and ar.price_unit(5) == 1 and ar.price_unit(4.99) == 0.01
+    assert ar.price_unit(500) == 1 and ar.price_unit(305) == 1 and ar.price_unit(5.01) == 1 and ar.price_unit(5) == 0.01 and ar.price_unit(4.99) == 0.01
 
 
 def test_confluence_needs_two_families():

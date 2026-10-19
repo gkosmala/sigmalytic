@@ -383,10 +383,10 @@ PHASE = {(9, 30): "Opening drive; false-move risk", (10, 30): "True direction us
 
 
 def price_unit(price: float) -> float:
-    """Price per degree for planetary lines (owner-supplied scaling table): under $5 = 0.01 (price x 100), $5 to $500 = 1,
+    """Price per degree for planetary lines (owner-supplied scaling table): up to $5 = 0.01 (price x 100), over $5 to $500 = 1,
     over $500 to $3,000 = 10 (price / 10), over $3,000 = 100 (price / 100). The table's tiers share their edge values; the
     lower tier owns $5, $500 and $3,000."""
-    return 0.01 if price < 5 else (1.0 if price <= 500 else (10.0 if price <= 3000 else 100.0))
+    return 0.01 if price <= 5 else (1.0 if price <= 500 else (10.0 if price <= 3000 else 100.0))
 
 
 def planet_lines(lons: Dict[str, float], ref: float, unit: float, band: float, family: str, tag: str = "") -> List[Dict[str, Any]]:
