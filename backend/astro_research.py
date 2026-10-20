@@ -127,7 +127,7 @@ for _r in SYMBOLS:
                    "time_note": "HPE listed by spin-off. 2015-10-19 is the when-issued debut date and 9:30 a.m. ET the time, both supplied and confirmed by the user."})
     if _r["symbol"] == "KEYS":
         _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
-                   "time_note": "KEYS listed by spin-off from Agilent. 2014-10-20 is the when-issued debut date supplied by the user (regular-way trading began 2014-11-03); no first-trade time was supplied, so the 9:30 a.m. ET default is used."})
+                   "time_note": "KEYS listed by spin-off from Agilent. 2014-10-20 is the when-issued debut date supplied by the user (regular-way trading began 2014-11-03). 9:30 a.m. ET first-trade time supplied and confirmed by the user."})
     if _r["symbol"] == "MDB":
         _r.update({"first_trade_et": "10:53", "ipo_status": "user-confirmed",
                    "time_note": "10:53 a.m. ET first-trade time supplied and confirmed by the user (the Nasdaq opening bell was at 9:30 a.m.)."})
