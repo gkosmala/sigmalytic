@@ -228,7 +228,16 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
     c = [float(b["c"]) for b in bars]
     hi = [float(b["h"]) for b in bars]
     lo = [float(b["l"]) for b in bars]
-    reach = {}   # (chart, anchor, direction) -> [breaks, {h: [reached, eligible]}]
+    import bisect
+    # Real-history yardstick: for every tested day, how far the highest high / lowest low of the next h days went from the close.
+    up_tab = {h: sorted((max(hi[i + 1:i + h + 1]) / c[i] - 1) for i in days if i + h < n) for h in REACH_DAYS}
+    dn_tab = {h: sorted((1 - min(lo[i + 1:i + h + 1]) / c[i]) for i in days if i + h < n) for h in REACH_DAYS}
+
+    def _plain(d_up: bool, dist: float, h: int) -> float:
+        """Share of all tested days on which price travelled at least `dist` (a fraction of the close) in that direction within h days."""
+        tab = up_tab[h] if d_up else dn_tab[h]
+        return (len(tab) - bisect.bisect_left(tab, dist)) / len(tab) if tab else 0.0
+    reach = {}   # (chart, anchor, direction) -> [breaks, {h: [reached, eligible]}, {h: plain-share sum}]
     phase = {}   # (chart, anchor, phase) -> [days, {h: [sum, n]}]
     used = []
     k11 = gx.FAN_ANGLES.index((1, 1))
@@ -260,12 +269,15 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
                     if not 0 <= nxt < len(order):
                         continue
                     a2, b2 = gx.FAN_ANGLES[order[nxt]]
-                    row = reach.setdefault((chart, an["label"], "up" if up else "down"), [0, {h: [0, 0] for h in REACH_DAYS}])
+                    row = reach.setdefault((chart, an["label"], "up" if up else "down"), [0, {h: [0, 0] for h in REACH_DAYS}, {h: 0.0 for h in REACH_DAYS}])
                     row[0] += 1
+                    v_next = now[order[nxt]]
+                    dist = (v_next - c[i]) / c[i] if up else (c[i] - v_next) / c[i]
                     for h in REACH_DAYS:
                         if i + h >= n:
                             continue
                         row[1][h][1] += 1
+                        row[2][h] += _plain(up, dist, h)
                         for j in range(i + 1, i + h + 1):
                             v = gx.fan_price(an, a2, b2, unit, gx.bars_elapsed(an, t[j], j))
                             if v is not None and ((up and hi[j] >= v) or (not up and lo[j] <= v)):
@@ -282,14 +294,20 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
                 r = reach.get((chart, name, d))
                 if r:
                     angles.append({"chart": chart, "anchor": name, "direction": d, "breaks": r[0],
-                                   **{f"reach_{h}": (round(100 * r[1][h][0] / r[1][h][1], 1) if r[1][h][1] else None) for h in REACH_DAYS}})
+                                   **{f"reach_{h}": (round(100 * r[1][h][0] / r[1][h][1], 1) if r[1][h][1] else None) for h in REACH_DAYS},
+                                   **{f"plain_{h}": (round(100 * r[2][h] / r[1][h][1], 1) if r[1][h][1] else None) for h in REACH_DAYS}})
             for ph in ("above the 1x1", "below the 1x1"):
                 r = phase.get((chart, name, ph))
                 if r:
                     phases.append({"chart": chart, "anchor": name, "phase": ph, "days": r[0],
                                    **{f"fwd_{h}": (round(r[1][h][0] / r[1][h][1], 2) if r[1][h][1] else None) for h in PHASE_DAYS}})
-    return {"days_tested": len(used), "step": max(1, int(step)), "first_day": t[used[0]], "last_day": t[used[-1]],
+    all_days = {"days": len(used)}
+    for h in PHASE_DAYS:
+        v = [(c[i + h] / c[i] - 1) * 100 for i in used if i + h < n]
+        all_days[f"fwd_{h}"] = round(sum(v) / len(v), 2) if v else None
+    return {"all_days": all_days, "days_tested": len(used), "step": max(1, int(step)), "first_day": t[used[0]], "last_day": t[used[-1]],
             "angles": angles, "phase": phases, "horizons": list(PHASE_DAYS), "reach_horizons": list(REACH_DAYS),
             "caveat": "Daily bars only. Time unit: a market day on the daily chart, a week on the weekly, a month on the monthly. The 1x1 moves one "
                       "price-per-degree-table unit per time unit. Breaks on neighbouring days and from different anchors overlap. "
-                      "A record of past days, not a forecast."}
+                      "'Same distance, any day' is the share of all tested days on which price moved as far as the next ray was from the close, in the "
+                      "same direction, within the horizon (a fixed level; the ray itself moves). A record of past days, not a forecast."}
