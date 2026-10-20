@@ -492,4 +492,4 @@ def test_keys_is_in_the_symbol_table_with_the_supplied_facts():
     assert round(r["lat"], 4) == round(38 + 28 / 60, 4) and round(r["lon"], 4) == round(-(122 + 42 / 60), 4)
     bars = _bars(2100)
     rep = ar.report("KEYS", bars[1500]["t"][:10], bars=bars)
-    assert rep["symbol"] == "KEYS" and "KEYS" in rep["draft"]
+    assert rep["row"]["symbol"] == "KEYS" and "REPORT: KEYS (Keysight Technologies)" in rep["draft"]
