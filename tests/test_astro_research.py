@@ -589,3 +589,22 @@ def test_fan_chart_data_and_figure_for_every_chart():
     r = fc.fan_chart_from_bars(bars, "daily")
     one = [ln for ln in r["lines"] if ln["angle"] == "1x1"][0]
     assert round(abs(one["y1"] - one["y0"]) / (one["x1"] - one["x0"]), 3) == r["unit"] or one["x0"] >= len(r["bars"])
+
+
+def test_fan_shows_rays_on_the_price_side_of_the_1x1():
+    from backend import astro_research as ar
+    bars = _bars(2100)
+    rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
+    gf = rep["gann_fan"]
+    for a in gf["anchors"]:
+        assert a["price_vs"] in ("above", "below")
+        key = a["label"] + " " + a["date"]
+        mine = [x for x in gf["lines"] if x["chart"] == a["chart"] and x["anchor"] == key]
+        shown = {x["angle"] for x in mine if x["shown"]}
+        assert ("1x1" in shown) == any(x["angle"] == "1x1" for x in mine)  # a ray at or below zero drops out
+        steep = {"2x1", "3x1", "4x1", "8x1"}
+        shallow = {"1x2", "1x3", "1x4", "1x8"}
+        # bottom with price above its 1x1 -> steep rays; top with price below its 1x1 -> steep rays; otherwise shallow
+        want_steep = (a["price_vs"] == "above") == (a["kind"] == "low")
+        assert (shown - {"1x1"}) <= (steep if want_steep else shallow)
+    assert "price is" in rep["draft"]

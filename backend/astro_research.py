@@ -579,6 +579,14 @@ def _fmt_et(t: datetime) -> str:
     return t.astimezone(ET).strftime("%I:%M %p ET").lstrip("0")
 
 
+def fan_side_text(a: dict, gf: dict) -> str:
+    """One starting point's rays that apply today (the 1x1 and the rays on the price's side of it)."""
+    if a.get("side") is None:
+        return ""
+    mine = sorted([x for x in gf.get("lines", []) if x["chart"] == a["chart"] and x.get("anchor") == a["label"] + " " + a["date"] and x.get("shown")],
+                  key=lambda y: y["price"])
+    return f" | price is {a['price_vs']} its 1x1: " + "; ".join(f"{x['angle']} ${x['price']:.2f}" for x in mine)
+
 def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Optional[float] = None, band: float = 0.12,
            bars: Optional[List[Dict[str, Any]]] = None, with_levels: bool = False) -> Dict[str, Any]:
     """Ephemeris report + pivots + Gann levels + hourly tactical plan for one symbol and one date (all admin research)."""
@@ -629,7 +637,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     lo_a = next((a["price"] for a in anchors if a["label"].startswith("Lowest")), None)
     sq = gx.sq144(anchors, day, ref, unit, band, high_price=hi_a, low_price=lo_a)
     static += [{"price": x["price"], "family": "sq144", "label": x["label"]} for x in sq["levels"]]
-    fan = gx.gann_fan(before, day, unit)
+    fan = gx.gann_fan(before, day, unit, ref)
     nv = gx.natal_vibration(row["ipo_date"])
     num_levels = gx.numerology_levels(ref, unit, band, nv["vibration"])
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
@@ -822,9 +830,9 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
     L.append(f"   The 1x1 moves ${gf.get('unit', 0):g} (owner's price-per-degree table) per time unit: a market day on the daily chart, a week on the weekly, a month on the monthly.")
     for ch in ("daily", "weekly", "monthly"):
         for a in [x for x in gf.get("anchors", []) if x["chart"] == ch]:
-            L.append(f"   {ch}: {a['label']} ${a['price']:.2f} on {a['date']}" + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""))
-        ls = sorted([x for x in gf.get("lines", []) if x["chart"] == ch], key=lambda y: y["price"])
-        L.append(f"   {ch} lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in ls) or "none"))
+            L.append(f"   {ch}: {a['label']} ${a['price']:.2f} on {a['date']}" + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")
+                     + fan_side_text(a, gf))
+    L.append("   Rays shown per starting point (course pp.124-125): the 1x1 and the rays on the side of it the price is on; the other side comes into use when price crosses the 1x1.")
     L.append("   Bottom: daily = 3-bar rally with higher lows and higher highs (p.124); weekly and monthly = 3-bar decline then a 2-bar rally (p.125). Top: 3 bars with lower lows and lower highs (p.126).")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")

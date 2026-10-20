@@ -272,9 +272,16 @@ def gann_extra_components(p: dict) -> list:
                                                                     for a in gf.get("anchors", [])]),
              html.Div(f"Price per time unit (owner's price-per-degree table): ${gf.get('unit', 0):g}. Time unit: a market day (daily), a week (weekly), a month (monthly).",
                       style={"color": MUTED, "fontSize": "11px"})]
-    for ch in ("daily", "weekly", "monthly"):
-        ls = sorted([x for x in gf.get("lines", []) if x["chart"] == ch], key=lambda y: y["price"])
-        kids.append(html.Div(f"{ch} lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in ls) or "none"), style={"color": WHITE, "fontSize": "12px"}))
+    kids.append(html.Div("Rays per starting point (course pp.124-125): the 1x1 and the rays on the side of it the price is on; the other side comes into use when price crosses the 1x1.",
+                         style={"color": MUTED, "fontSize": "11px"}))
+    rows = []
+    for a in gf.get("anchors", []):
+        key = a["label"] + " " + a["date"]
+        mine = sorted([x for x in gf.get("lines", []) if x["chart"] == a["chart"] and x.get("anchor") == key and x.get("shown", True)], key=lambda y: y["price"])
+        rows.append([a["chart"], a["label"], a["date"], f"${a['price']:.2f}",
+                     f"{a['price_vs']} the 1x1 (${a['one_by_one']:.2f})" if a.get("price_vs") else "",
+                     "; ".join(f"{x['angle']} ${x['price']:.2f}" for x in mine) or "none"])
+    kids.append(_table(["Chart", "Starting point", "Date", "Start price", "Price is", "Rays that apply today"], rows))
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
