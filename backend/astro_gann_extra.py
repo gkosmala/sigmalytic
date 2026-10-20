@@ -575,17 +575,29 @@ def fan_price(anchor: Dict[str, Any], a: int, b: int, unit: float, elapsed: int)
     return anchor["price"] + (1 if anchor["kind"] == "low" else -1) * (a / b) * unit * elapsed
 
 
-def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float) -> Dict[str, Any]:
+def gann_fan(bars: List[Dict[str, Any]], day: str, unit: float, ref: Optional[float] = None) -> Dict[str, Any]:
     """Every ray of every anchor of the daily, weekly and monthly charts on `day` (`bars` are the daily bars before it); no
-    distance filter (a ray only drops out if its price is not above zero)."""
+    distance filter (a ray only drops out if its price is not above zero). With `ref` (the price now) each anchor also gets
+    `side` and each ray `shown` (course pp.124-125: the 1x1 and the rays on the side of the 1x1 the price is on)."""
     anchors, lines = [], []
     for chart in CHARTS:
         for an in fan_anchors(bars, chart, day):
             anchors.append(an)
             e = bars_elapsed(an, day, len(bars))
+            one = fan_price(an, 1, 1, unit, e)
+            side = None
+            an["price_vs"] = None
+            if ref is not None and one is not None:
+                # rays on the price's side of the 1x1: steeper rays lie above a bottom's 1x1 and below a top's 1x1
+                above = ref >= one
+                an["price_vs"] = "above" if above else "below"
+                side = "steep" if above == (an["kind"] == "low") else "shallow"
+            an["side"] = side
+            an["one_by_one"] = one
             for a, b in FAN_ANGLES:
                 p = fan_price(an, a, b, unit, e)
                 if p is not None and p > 0:
-                    lines.append({"price": p, "angle": f"{a}x{b}", "chart": chart,
+                    shown = side is None or (a, b) == (1, 1) or ((a > b) == (side == "steep"))
+                    lines.append({"price": p, "angle": f"{a}x{b}", "chart": chart, "shown": shown, "anchor": an["label"] + " " + an["date"],
                                   "label": f"{chart} {a}x{b} from {an['label'].lower()} ({an['date']}, ${an['price']:.2f})"})
     return {"anchors": anchors, "lines": lines, "unit": unit}
