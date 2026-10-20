@@ -608,3 +608,14 @@ def test_fan_shows_rays_on_the_price_side_of_the_1x1():
         want_steep = (a["price_vs"] == "above") == (a["kind"] == "low")
         assert (shown - {"1x1"}) <= (steep if want_steep else shallow)
     assert "price is" in rep["draft"]
+
+
+def test_fan_rules_have_real_history_yardsticks():
+    from backend import astro_level_test as lt
+    res = lt.fan_rules_test(_bars(2100), max_days=120, step=3)
+    assert res["all_days"]["days"] == res["days_tested"] and res["all_days"]["fwd_5"] is not None
+    assert res["angles"] and all(0 <= r["plain_5"] <= 100 for r in res["angles"] if r.get("plain_5") is not None)
+    import sys
+    sys.path.insert(0, "frontend")
+    import astro_research_ui as ui
+    assert "any day" in str(ui.render_fan_test({"ok": True, **res}))

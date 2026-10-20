@@ -165,7 +165,11 @@ def render_fan_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
     ph = [[r["chart"], r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
-    ra = [[r["chart"], r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
+    ra = [[r["chart"], r["anchor"], r["direction"], r["breaks"]]
+          + [("" if r.get(f"reach_{h}") is None else f"{r[f'reach_{h}']}  (same distance, any day: {r.get(f'plain_{h}', '')})") for h in p["reach_horizons"]] for r in p["angles"]]
+    ad = p.get("all_days")
+    if ad:
+        ph.append(["all", "all tested days", "no ray condition", ad["days"]] + [("" if ad.get(f"fwd_{h}") is None else ad[f"fwd_{h}"]) for h in p["horizons"]])
     return html.Div([
         html.Div(f"Gann Fan rules: {p['days_tested']} days ({'every day' if p['step'] == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}", style={"fontWeight": "800", "color": WHITE}),
         html.Div("Rule of All Angles: after a close through one angle, % of breaks where price reached the next angle within N days", style={"color": WHITE, "marginTop": "8px"}),
