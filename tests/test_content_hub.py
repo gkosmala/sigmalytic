@@ -741,3 +741,20 @@ def test_instagram_draft_sits_after_x_and_passes_checks(facts):
     assert "4:5" in t["image_spec"]
     bad = ch.validate_teaser("instagram", {"text": "See https://example.com now"}, facts)
     assert any("Link is in the main text" in x for x in bad)
+
+
+def test_anthropic_400_shows_the_api_message(monkeypatch):
+    import requests
+    from backend import content_hub as ch
+
+    class R:
+        status_code = 400
+        headers = {}
+        def raise_for_status(self): raise requests.HTTPError("400 Client Error: Bad Request for url: x", response=self)
+        def json(self): return {"error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API."}}
+    monkeypatch.setattr(requests, "post", lambda *a, **k: R())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k"); monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("CONTENT_HUB_PROVIDER", raising=False)
+    with pytest.raises(requests.HTTPError) as e:
+        ch._ai_json("s", "u")
+    assert "credit balance is too low" in str(e.value) and str(e.value).startswith("400 from Anthropic")

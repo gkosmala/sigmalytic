@@ -912,6 +912,14 @@ def _ai_json(system: str, user: str, max_tokens: int = 2500, web_search: bool = 
                 time.sleep(wait)
                 continue
             break
+        if getattr(r, "status_code", 200) >= 400:
+            # raise_for_status() drops Anthropic's explanation (credit balance, bad model name, bad setting...); show it
+            try:
+                detail = str((r.json().get("error") or {}).get("message") or "")
+            except Exception:
+                detail = ""
+            if detail:
+                raise requests.HTTPError(f"{r.status_code} from Anthropic: {detail}", response=r)
         r.raise_for_status()
         body = r.json()
         u = body.get("usage") or {}
