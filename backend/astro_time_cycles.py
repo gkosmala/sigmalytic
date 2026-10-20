@@ -72,17 +72,18 @@ def anchor_cycles(anchor: Dict[str, Any], today: date) -> Dict[str, Any]:
 
 def square_of_range(anchors: List[Dict[str, Any]], unit: float, elapsed) -> List[Dict[str, Any]]:
     """Gann p.122: the range of a move (any low to any high) squares with time when as many bars have passed as the range has table units.
-    One row per consecutive low/high pair of starting points of a chart; `elapsed(anchor)` gives bars since that anchor."""
+    One row per low/high pair of a chart's starting points (any low to any high, each counted from the earlier one); `elapsed(anchor)` gives bars since that anchor."""
     out = []
     pts = sorted(anchors, key=lambda a: _d(a["date"]))
-    for a, b in zip(pts, pts[1:]):
-        if a["kind"] == b["kind"] or not unit:
-            continue
-        need = abs(b["price"] - a["price"]) / unit
-        e = elapsed(a)
-        out.append({"chart": a["chart"], "from": f"{a['label']} {a['date']} ${a['price']:.2f}", "to": f"{b['label']} {b['date']} ${b['price']:.2f}",
-                    "range": round(abs(b["price"] - a["price"]), 2), "bars_to_square": round(need, 1), "bars_elapsed": e,
-                    "bars_remaining": round(need - e, 1)})
+    for i, a in enumerate(pts):
+        for b in pts[i + 1:]:
+            if a["kind"] == b["kind"] or not unit:
+                continue
+            need = abs(b["price"] - a["price"]) / unit
+            e = elapsed(a)
+            out.append({"chart": a["chart"], "from": f"{a['label']} {a['date']} ${a['price']:.2f}", "to": f"{b['label']} {b['date']} ${b['price']:.2f}",
+                        "range": round(abs(b["price"] - a["price"]), 2), "bars_to_square": round(need, 1), "bars_elapsed": e,
+                        "bars_remaining": round(need - e, 1)})
     return out
 
 

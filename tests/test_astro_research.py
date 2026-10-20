@@ -658,3 +658,12 @@ def test_time_cycles_use_gann_counts_and_square_of_range():
     assert sq and sq[0]["bars_to_square"] == 28.0 and sq[0]["bars_remaining"] == 18.0
     rep = ar.report("MDB", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
     assert rep["time_cycles"]["anchors"] and "3e5. TIME CYCLES" in rep["draft"]
+
+
+def test_square_of_range_covers_every_low_high_pair():
+    from backend import astro_time_cycles as tc
+    mk = lambda d, k, p: {"date": d, "kind": k, "price": p, "chart": "daily", "label": k}
+    a = [mk("2020-01-01", "low", 100), mk("2020-02-01", "high", 150), mk("2020-03-01", "high", 160), mk("2020-04-01", "low", 120)]
+    sq = tc.square_of_range(a, 1.0, lambda an: 5)
+    pairs = {(x["from"].split()[1], x["to"].split()[1]) for x in sq}
+    assert pairs == {("2020-01-01", "2020-02-01"), ("2020-01-01", "2020-03-01"), ("2020-02-01", "2020-04-01"), ("2020-03-01", "2020-04-01")}
