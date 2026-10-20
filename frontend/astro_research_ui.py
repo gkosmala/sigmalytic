@@ -119,9 +119,25 @@ def render_backtest(p: dict):
                      html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 
+def render_fan_test(p: dict):
+    if not p.get("ok"):
+        return f"Could not run: {p.get('error', 'unknown error')}"
+    ph = [[r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
+    ra = [[r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
+    return html.Div([
+        html.Div(f"Gann Fan rules: {p['days_tested']} days ({'every day' if p['step'] == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}", style={"fontWeight": "800", "color": WHITE}),
+        html.Div("Rule of All Angles: after a close through one angle, % of breaks where price reached the next angle within N days", style={"color": WHITE, "marginTop": "8px"}),
+        _table(["Anchor", "Break", "Breaks"] + [f"Within {h} days (%)" for h in p["reach_horizons"]], ra),
+        html.Div("1x1 phase: mean % move after the close, by whether the close was above (bull) or below (bear) the 1x1", style={"color": WHITE, "marginTop": "8px"}),
+        _table(["Anchor", "Phase", "Days"] + [f"Next {h} day(s) (%)" for h in p["horizons"]], ph),
+        html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
+
+
 def render_level_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
+    if p.get("angles") is not None:
+        return render_fan_test(p)
     if p.get("groups"):
         return html.Div([render_level_test({"ok": True, **g}) if "metrics" in g else
                          html.Div(f"{g['label']}: {g.get('error', 'no result')}", style={"color": MUTED, "fontSize": "11px", "marginTop": "8px"})
@@ -206,6 +222,12 @@ def gann_extra_components(p: dict) -> list:
         kids.append(html.Div("In range today: " + (", ".join(f"${x['price']:.2f}" for x in nbase.get("levels", [])) or "none")
                              + ". A window on a non-trading day uses the next trading bar (my rule). Not weighted in the master confluence.",
                              style={"color": WHITE, "fontSize": "12px"}))
+    gf = p.get("gann_fan") or {}
+    kids += [_h("3e4. Gann Fan (1x1 = price change of the trend leg into the anchor per calendar day, fixed; up from lows, down from highs)"),
+             _table(["Anchor", "Price", "Date", "1x1 per day", "Leg from"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""),
+                                                                              f"${a['slope']:.3f}", f"{a['from_date']} ${a['from_price']:.2f}"] for a in gf.get("anchors", [])]),
+             html.Div("Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
+                      style={"color": WHITE, "fontSize": "12px"})]
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],

@@ -292,7 +292,7 @@ def test_family_test_runs_and_matches_scalar_classifier(monkeypatch):
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
     assert set(rep["raw_levels"]) >= {"pivot", "sq9", "natal"} and "raw_levels" not in ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     res = lt.family_test(bars, lambda d: ar.report("MDB", d, bars=bars, with_levels=True), max_days=30, step=3)
-    assert len(res["groups"]) == 10 and all("metrics" in g or "error" in g for g in res["groups"])
+    assert len(res["groups"]) == 11 and all("metrics" in g or "error" in g for g in res["groups"])
     # real-result touch counts agree with the scalar classifier
     rng = random.Random(3)
     i = 1600
@@ -483,6 +483,70 @@ def test_report_has_natal_base_section():
     bars = _bars(2100)
     r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     assert "natal_base" in r and "3e3. NATAL BASE" in r["draft"]
+
+
+def _hl(rows):
+    return [{"t": f"2024-01-{i + 1:02d}", "h": h, "l": l, "o": l, "c": h} for i, (h, l) in enumerate(rows)]
+
+
+def test_rule3_pivots_trough_peak_and_no_lookahead():
+    from backend import astro_gann_extra as gx
+    # down to a low of 8 on day 5, then three bars each with a higher high and higher low confirm the trough on day 8
+    down = [(20, 18), (19, 17), (18, 15), (16, 12), (14, 10), (12, 8)]
+    up = [(13, 9), (14, 10), (15, 11)]
+    p = gx.rule3_pivots(_hl(down + up))
+    assert p["trough"]["price"] == 8 and p["trough"]["date"] == "2024-01-06" and p["trough"]["confirmed"] == "2024-01-09"
+    assert p["peak"]["price"] == 20 and p["peak"]["confirmed"] == "2024-01-04"   # the opening fall already confirmed a peak
+    # only two up bars: nothing confirmed yet
+    assert gx.rule3_pivots(_hl(down + up[:2]))["trough"] is None
+    # three lower highs and lower lows after the rise confirm a peak at the highest high since the trough
+    dn = [(14, 10), (13, 9), (12, 8.5)]
+    p2 = gx.rule3_pivots(_hl(down + up + [(16, 12)] + dn))
+    assert p2["peak"]["price"] == 16 and p2["trough"]["price"] == 8
+    # a long run up does not create a new pivot on every bar
+    p3 = gx.rule3_pivots(_hl(down + [(13 + k, 9 + k) for k in range(30)]))
+    assert p3["trough"]["price"] == 8 and p3["peak"]["price"] == 20
+
+
+def test_fan_price_angles_and_directions():
+    from backend import astro_gann_extra as gx
+    low = {"kind": "low", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
+    high = {"kind": "high", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
+    assert gx.fan_price(low, 1, 1, "2024-01-11") == 120.0      # 1x1: the fixed slope per calendar day
+    assert gx.fan_price(low, 2, 1, "2024-01-11") == 140.0      # 2x1: twice the slope
+    assert gx.fan_price(low, 1, 2, "2024-01-11") == 110.0      # 1x2: half the slope
+    assert gx.fan_price(high, 1, 1, "2024-01-11") == 80.0      # down from a peak
+    assert gx.fan_price(low, 1, 1, "2024-01-01") is None       # not before the anchor
+    assert len(gx.FAN_ANGLES) == 9
+
+
+def test_rule3_needs_only_higher_lows_or_lower_highs_and_slope_comes_from_the_leg():
+    from backend import astro_gann_extra as gx
+    # higher lows but NOT higher highs still confirm the trough (owner: the higher-high requirement is struck)
+    rows = _hl([(20, 18), (19, 17), (18, 15), (17, 12), (16, 10), (15, 8), (14.5, 9), (14, 10), (13.5, 11)])
+    p = gx.rule3_pivots(rows)
+    assert p["trough"]["price"] == 8 and p["trough"]["confirmed"] == "2024-01-09"
+    # alternating list: the opening fall confirms the peak at 20 first, then the trough
+    assert [x["kind"] for x in p["seq"]] == ["peak", "trough"]
+    # the 1x1 slope for the trough anchor: |8 - 20| over the calendar days between the two pivots (5 days)
+    sl = gx.leg_slope({"kind": "low", "price": 8.0, "date": "2024-01-06"}, p["seq"])
+    assert sl["from_date"] == "2024-01-01" and round(sl["slope"], 4) == round(12 / 5, 4)
+    # no preceding opposite pivot: no slope
+    assert gx.leg_slope({"kind": "low", "price": 8.0, "date": "2023-12-01"}, p["seq"]) is None
+
+
+def test_fan_in_report_and_rules_test_run():
+    from backend import astro_research as ar, astro_level_test as lt
+    bars = _bars(2100)
+    rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
+    assert rep["gann_fan"]["anchors"] and "fan" in rep["raw_levels"] and "3e4. GANN FAN" in rep["draft"]
+    res = lt.fan_rules_test(bars, max_days=60, step=3)
+    assert res["days_tested"] > 0 and res["reach_horizons"] == [5, 10, 20, 60]
+    assert all(r["phase"].startswith(("bull", "bear")) for r in res["phase"])
+    import sys
+    sys.path.insert(0, "frontend")
+    from astro_research_ui import render_level_test
+    assert render_level_test({"ok": True, **res}) is not None
 
 
 def test_keys_is_in_the_symbol_table_with_the_supplied_facts():
