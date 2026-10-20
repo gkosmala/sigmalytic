@@ -3,16 +3,17 @@
 Owner's definitions (2026-10-20):
   - pivots are the Gann Fan's daily-chart pivots (course p.124 bottom: a 3-bar rally with higher lows and higher highs; p.126 top:
     3 bars with lower lows and lower highs), read on Alpaca split-adjusted daily bars;
-  - the pivot date must fall within 5 days before or after the date N months ago.
-Calendar days are used for the 5 days (my reading of "5 days"; market days would be a different window).
+  - the pivot must fall within 5 market days before or after the date N months ago (market days = daily bars; a date that is not a
+    trading day counts as the next trading day).
 """
 from __future__ import annotations
 
+import bisect
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 MONTHS = (6, 12, 18, 24, 30, 36, 42, 48, 54, 60)
-TOL_DAYS = 5
+TOL_DAYS = 5   # market days
 BENCHMARKS = ("SPY", "QQQ", "IWM", "GLD", "SMH")   # added by load_russell1000(); they are not Russell 1000 stocks
 HISTORY_YEARS = 7                                   # 60 months plus a lead-in so the pivot sequence has settled
 BATCH = 40
@@ -25,11 +26,13 @@ def scan_bars(symbol: str, bars: List[Dict[str, Any]], today: date) -> List[Dict
     if len(rows) < 60:
         return []
     out = []
+    dates = [str(r["t"])[:10] for r in rows]
     targets = {n: gx._add_months(today, -n) for n in MONTHS}
+    where = {n: bisect.bisect_left(dates, str(tgt)) for n, tgt in targets.items()}   # first bar on or after the date
     for p in gx.gann_pivots(rows, "daily"):
         pd = datetime.strptime(str(p["date"])[:10], "%Y-%m-%d").date()
         for n, tgt in targets.items():
-            if abs((pd - tgt).days) <= TOL_DAYS:
+            if abs(p["pos"] - where[n]) <= TOL_DAYS and where[n] < len(rows):
                 out.append({"symbol": symbol, "months": n, "kind": "pivot high" if p["kind"] == "high" else "pivot low",
                             "date": str(pd), "price": round(float(p["price"]), 2), "target": str(tgt), "confirmed": str(p["confirmed"])[:10]})
     return out
@@ -68,6 +71,6 @@ def pivot_scan(symbols: Optional[List[str]] = None, today: Optional[date] = None
     rows.sort(key=lambda x: (x["months"], x["kind"], x["symbol"]))
     return {"today": str(today), "months": list(MONTHS), "tolerance_days": TOL_DAYS, "universe": len(symbols), "with_bars": with_bars,
             "rows": rows,
-            "note": "Pivots by the Gann Fan's daily rules (course pp.124 and 126) on Alpaca split-adjusted daily bars; the pivot date is within "
-                    f"{TOL_DAYS} calendar days of the date N months before {today}. The universe is the platform's Russell 1000 list "
+            "note": "Pivots by the Gann Fan's daily rules (course pp.124 and 126) on Alpaca split-adjusted daily bars; the pivot is within "
+                    f"{TOL_DAYS} market days of the date N months before {today}. The universe is the platform's Russell 1000 list "
                     "(benchmark ETFs removed); it may not match the index exactly."}
