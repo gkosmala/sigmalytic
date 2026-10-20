@@ -122,14 +122,14 @@ def render_backtest(p: dict):
 def render_fan_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
-    ph = [[r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
-    ra = [[r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
+    ph = [[r["chart"], r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
+    ra = [[r["chart"], r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
     return html.Div([
         html.Div(f"Gann Fan rules: {p['days_tested']} days ({'every day' if p['step'] == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}", style={"fontWeight": "800", "color": WHITE}),
         html.Div("Rule of All Angles: after a close through one angle, % of breaks where price reached the next angle within N days", style={"color": WHITE, "marginTop": "8px"}),
-        _table(["Anchor", "Break", "Breaks"] + [f"Within {h} days (%)" for h in p["reach_horizons"]], ra),
-        html.Div("1x1 phase: mean % move after the close, by whether the close was above (bull) or below (bear) the 1x1", style={"color": WHITE, "marginTop": "8px"}),
-        _table(["Anchor", "Phase", "Days"] + [f"Next {h} day(s) (%)" for h in p["horizons"]], ph),
+        _table(["Chart", "Starting point", "Break", "Breaks"] + [f"Within {h} days (%)" for h in p["reach_horizons"]], ra),
+        html.Div("Position on the 1x1 (Gann: above is strong, below is weak): mean % move after the close", style={"color": WHITE, "marginTop": "8px"}),
+        _table(["Chart", "Starting point", "Position", "Days"] + [f"Next {h} day(s) (%)" for h in p["horizons"]], ph),
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 
@@ -223,11 +223,14 @@ def gann_extra_components(p: dict) -> list:
                              + ". A window on a non-trading day uses the next trading bar (my rule). Not weighted in the master confluence.",
                              style={"color": WHITE, "fontSize": "12px"}))
     gf = p.get("gann_fan") or {}
-    kids += [_h("3e4. Gann Fan (1x1 = price change of the trend leg into the anchor per calendar day, fixed; up from lows, down from highs)"),
-             _table(["Anchor", "Price", "Date", "1x1 per day", "Leg from"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""),
-                                                                              f"${a['slope']:.3f}", f"{a['from_date']} ${a['from_price']:.2f}"] for a in gf.get("anchors", [])]),
-             html.Div("Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
-                      style={"color": WHITE, "fontSize": "12px"})]
+    kids += [_h("3e4. Gann Fan (Gann's course, Chapter 4: up from bottoms, down from tops; the 1x1 moves one table unit per time unit)"),
+             _table(["Chart", "Starting point", "Price", "Date"], [[a["chart"], a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")]
+                                                                    for a in gf.get("anchors", [])]),
+             html.Div(f"Price per time unit (owner's price-per-degree table): ${gf.get('unit', 0):g}. Time unit: a market day (daily), a week (weekly), a month (monthly).",
+                      style={"color": MUTED, "fontSize": "11px"})]
+    for ch in ("daily", "weekly", "monthly"):
+        ls = sorted([x for x in gf.get("lines", []) if x["chart"] == ch], key=lambda y: y["price"])
+        kids.append(html.Div(f"{ch} lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in ls) or "none"), style={"color": WHITE, "fontSize": "12px"}))
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
