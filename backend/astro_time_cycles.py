@@ -96,4 +96,11 @@ def time_cycles(fan: Dict[str, Any], today: date, unit: float, elapsed) -> Dict[
     sq = []
     for ch in ("daily", "weekly", "monthly"):
         sq += square_of_range([a for a in anchors if a["chart"] == ch], unit, elapsed)
-    return {"anchors": per, "square": sq}
+    # Gann pp.122, 130-132: the price of a top or bottom, in table units, is that many bars counted from the date of the top or bottom
+    price_sq = []
+    for a in anchors:
+        if unit and a["price"]:
+            need, e = a["price"] / unit, elapsed(a)
+            price_sq.append({"chart": a["chart"], "label": a["label"], "date": str(a["date"])[:10], "price": a["price"],
+                             "bars_to_square": round(need, 1), "bars_elapsed": e, "bars_remaining": round(need - e, 1)})
+    return {"anchors": per, "square": sq, "price_square": price_sq}

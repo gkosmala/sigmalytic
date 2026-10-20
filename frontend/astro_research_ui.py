@@ -311,7 +311,12 @@ def gann_extra_components(p: dict) -> list:
                       style={"color": MUTED, "fontSize": "11px"}),
              _table(["Chart", "From", "To", "Range", "Bars to square", "Bars elapsed", "Remaining"],
                     [[q["chart"], q["from"], q["to"], f"${q['range']:.2f}", q["bars_to_square"], q["bars_elapsed"], f"{q['bars_remaining']:+g}"]
-                     for q in tcy.get("square", [])])]
+                     for q in tcy.get("square", [])]),
+             html.Div("Square of the price (pp.122, 130-132): a top or bottom priced N table units squares with time N bars after its date.",
+                      style={"color": MUTED, "fontSize": "11px"}),
+             _table(["Chart", "Starting point", "Date", "Price", "Bars to square", "Bars elapsed", "Remaining"],
+                    [[q["chart"], q["label"], q["date"], f"${q['price']:.2f}", q["bars_to_square"], q["bars_elapsed"], f"{q['bars_remaining']:+g}"]
+                     for q in tcy.get("price_square", [])])]
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
