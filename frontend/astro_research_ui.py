@@ -166,7 +166,7 @@ def render_fan_test(p: dict):
         return f"Could not run: {p.get('error', 'unknown error')}"
     ph = [[r["chart"], r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
     ra = [[r["chart"], r["anchor"], r["direction"], r["breaks"]]
-          + [("" if r.get(f"reach_{h}") is None else f"{r[f'reach_{h}']}  (same distance, any day: {r.get(f'plain_{h}', '')})") for h in p["reach_horizons"]] for r in p["angles"]]
+          + [("" if r.get(f"reach_{h}") is None else f"{r[f'reach_{h}']}  (same distance and slope, any day: {r.get(f'plain_{h}', '')})") for h in p["reach_horizons"]] for r in p["angles"]]
     ad = p.get("all_days")
     if ad:
         ph.append(["all", "all tested days", "no ray condition", ad["days"]] + [("" if ad.get(f"fwd_{h}") is None else ad[f"fwd_{h}"]) for h in p["horizons"]])

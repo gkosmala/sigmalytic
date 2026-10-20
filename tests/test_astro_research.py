@@ -618,4 +618,4 @@ def test_fan_rules_have_real_history_yardsticks():
     import sys
     sys.path.insert(0, "frontend")
     import astro_research_ui as ui
-    assert "any day" in str(ui.render_fan_test({"ok": True, **res}))
+    assert "same distance and slope" in str(ui.render_fan_test({"ok": True, **res}))

@@ -220,6 +220,7 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
     Rule of All Angles (course p.123): when a close breaks through one angle, price goes on to the next angle. Reported as the
     share of breaks where the next angle was reached within each horizon. 1x1 position (p.122): above the 1x1 is strong,
     below it weak; reported as the mean percent move after the close over several horizons."""
+    import numpy as np
     from backend import astro_research as ar, astro_gann_extra as gx
     n = len(bars)
     first = max(MIN_HISTORY, n - max_days - 1)
@@ -228,15 +229,33 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
     c = [float(b["c"]) for b in bars]
     hi = [float(b["h"]) for b in bars]
     lo = [float(b["l"]) for b in bars]
-    import bisect
-    # Real-history yardstick: for every tested day, how far the highest high / lowest low of the next h days went from the close.
-    up_tab = {h: sorted((max(hi[i + 1:i + h + 1]) / c[i] - 1) for i in days if i + h < n) for h in REACH_DAYS}
-    dn_tab = {h: sorted((1 - min(lo[i + 1:i + h + 1]) / c[i]) for i in days if i + h < n) for h in REACH_DAYS}
+    # Real-history yardstick with the SAME DISTANCE AND SAME SLOPE as the ray: for each break, the next ray's distance from the close
+    # (as a share of the close) and its movement over the following bars (as a share of that close) are laid on every other tested
+    # day's close, and we ask whether price reached that moving line within the horizon.
+    kmax = max(REACH_DAYS)
+    idx = np.array(days)
+    c_arr, hi_arr, lo_arr = np.array(c), np.array(hi), np.array(lo)
+    HI = np.full((len(days), kmax), np.nan)
+    LO = np.full((len(days), kmax), np.nan)
+    for k in range(1, kmax + 1):
+        pos = idx + k
+        okk = pos < n
+        HI[okk, k - 1] = hi_arr[pos[okk]]
+        LO[okk, k - 1] = lo_arr[pos[okk]]
+    c_idx = c_arr[idx][:, None]
 
-    def _plain(d_up: bool, dist: float, h: int) -> float:
-        """Share of all tested days on which price travelled at least `dist` (a fraction of the close) in that direction within h days."""
-        tab = up_tab[h] if d_up else dn_tab[h]
-        return (len(tab) - bisect.bisect_left(tab, dist)) / len(tab) if tab else 0.0
+    def _plain(d_up: bool, dist: float, offs: np.ndarray, base: float, h: int) -> float:
+        """Share of all tested days on which a line the same distance from the close and moving the same way as the ray was reached within h days."""
+        elig = idx + h < n
+        if not elig.any():
+            return 0.0
+        if d_up:
+            level = c_idx * (1 + dist + offs[None, :h] / base)
+            hit = (HI[:, :h] >= level).any(axis=1)
+        else:
+            level = c_idx * (1 - dist + offs[None, :h] / base)
+            hit = (LO[:, :h] <= level).any(axis=1)
+        return float(hit[elig].mean())
     reach = {}   # (chart, anchor, direction) -> [breaks, {h: [reached, eligible]}, {h: plain-share sum}]
     phase = {}   # (chart, anchor, phase) -> [days, {h: [sum, n]}]
     used = []
@@ -273,11 +292,18 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
                     row[0] += 1
                     v_next = now[order[nxt]]
                     dist = (v_next - c[i]) / c[i] if up else (c[i] - v_next) / c[i]
+                    a2, b2 = gx.FAN_ANGLES[order[nxt]]
+                    offs = np.full(kmax, np.nan)
+                    for kk in range(1, kmax + 1):
+                        if i + kk < n:
+                            vv = gx.fan_price(an, a2, b2, unit, gx.bars_elapsed(an, t[i + kk], i + kk))
+                            if vv is not None:
+                                offs[kk - 1] = vv - v_next
                     for h in REACH_DAYS:
                         if i + h >= n:
                             continue
                         row[1][h][1] += 1
-                        row[2][h] += _plain(up, dist, h)
+                        row[2][h] += _plain(up, dist, offs, c[i], h)
                         for j in range(i + 1, i + h + 1):
                             v = gx.fan_price(an, a2, b2, unit, gx.bars_elapsed(an, t[j], j))
                             if v is not None and ((up and hi[j] >= v) or (not up and lo[j] <= v)):
@@ -309,5 +335,5 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
             "angles": angles, "phase": phases, "horizons": list(PHASE_DAYS), "reach_horizons": list(REACH_DAYS),
             "caveat": "Daily bars only. Time unit: a market day on the daily chart, a week on the weekly, a month on the monthly. The 1x1 moves one "
                       "price-per-degree-table unit per time unit. Breaks on neighbouring days and from different anchors overlap. "
-                      "'Same distance, any day' is the share of all tested days on which price moved as far as the next ray was from the close, in the "
-                      "same direction, within the horizon (a fixed level; the ray itself moves). A record of past days, not a forecast."}
+                      "'Same distance and slope, any day' is the share of all tested days on which price reached a line as far from that day's close as the "
+                      "next ray was from the break close and moving the same way as the ray, within the horizon. A record of past days, not a forecast."}
