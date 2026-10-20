@@ -3122,6 +3122,24 @@ def astro_research_backtest(payload: dict, _admin: str = Depends(require_admin))
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.post("/api/admin/astro-research/fan-chart")
+def astro_research_fan_chart(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): the Gann Fan drawn over the price bars of one chart (daily, weekly, monthly, 4-hour or 2-hour)."""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
+    from backend import astro_research, astro_fan_chart
+    p = payload or {}
+    sym = str(p.get("symbol") or "").upper()
+    try:
+        if sym not in astro_research.BY_SYMBOL:
+            return {"ok": False, "error": "Symbol is not in the Astro Research table."}
+        res = astro_fan_chart.fan_chart(sym, str(p.get("chart") or "daily"))
+        return {"ok": "error" not in res, **res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/astro-research/level-test")
 def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin)):
     """Astro Research (admin only): what happened at the report's zones and bands on real past days (Alpaca daily bars)?"""

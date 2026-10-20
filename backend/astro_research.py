@@ -236,10 +236,10 @@ def check_pivots(symbol: str, computed: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def fetch_bars(symbol: str, years: int = 12) -> List[Dict[str, Any]]:
+def fetch_bars(symbol: str, years: int = 12, timeframe: str = "1Day") -> List[Dict[str, Any]]:
     from backend import broker_market_data as bmd
     end = datetime.now(timezone.utc)
-    return bmd.fetch_daily_bars([symbol], end - timedelta(days=int(365.25 * years) + 5), end).get(symbol) or []
+    return bmd.fetch_daily_bars([symbol], end - timedelta(days=int(365.25 * years) + 5), end, timeframe).get(symbol) or []
 
 
 # ── event study ──

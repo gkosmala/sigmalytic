@@ -75,8 +75,8 @@ def last_reading_reasons() -> Dict[Tuple[str, str], str]:
     return dict(_last_reasons)
 
 
-def fetch_daily_bars(symbols: List[str], start: datetime, end: datetime) -> Dict[str, List[dict]]:
-    """Daily bars (split-adjusted) for each symbol between start and end."""
+def fetch_daily_bars(symbols: List[str], start: datetime, end: datetime, timeframe: str = "1Day") -> Dict[str, List[dict]]:
+    """Bars (split-adjusted, daily unless `timeframe` says otherwise, e.g. "2Hour") for each symbol between start and end."""
     global _last_fetch_error
     out: Dict[str, List[dict]] = {s: [] for s in symbols}
     for i in range(0, len(symbols), 40):
@@ -84,7 +84,7 @@ def fetch_daily_bars(symbols: List[str], start: datetime, end: datetime) -> Dict
         token = None
         for _ in range(20):  # page guard
             params = {
-                "symbols": ",".join(batch), "timeframe": "1Day", "adjustment": "split",
+                "symbols": ",".join(batch), "timeframe": timeframe, "adjustment": "split",
                 "start": start.strftime("%Y-%m-%dT00:00:00Z"), "end": end.strftime("%Y-%m-%dT23:59:59Z"),
                 "feed": FEED, "limit": "10000", "sort": "asc",
             }

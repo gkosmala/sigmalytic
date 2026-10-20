@@ -444,6 +444,7 @@ def natal_base_levels(base: Dict[str, Any], ref_price: float, band: float) -> Li
 # daily chart, p.119; a week; a month).
 FAN_ANGLES = ((8, 1), (4, 1), (3, 1), (2, 1), (1, 1), (1, 2), (1, 3), (1, 4), (1, 8))
 CHARTS = ("daily", "weekly", "monthly")
+BAR_CHARTS = ("daily", "2h", "4h")   # one bar is one time unit; the 2-hour and 4-hour charts use the daily chart's rules
 _MONDAY = date(2000, 1, 3)
 
 
@@ -456,13 +457,16 @@ def _month_ord(d: date) -> int:
 
 
 def chart_bars(bars: List[Dict[str, Any]], chart: str, day: str) -> List[Dict[str, Any]]:
-    """Bars of the chart from the daily bars before `day`: daily as is (pos = index in the daily list); weekly and monthly are
-    high/low per completed week or month (the period holding `day` is left out, so nothing is partial)."""
+    """Bars of the chart from the bars before `day`: daily, 2-hour and 4-hour as given (pos = index in the list); weekly and
+    monthly are built from daily bars as high/low per completed week or month (the period holding `day` is left out, so
+    nothing is partial)."""
     rows = []
-    if chart == "daily":
+    if chart in BAR_CHARTS:
+        full = chart != "daily"
         for i, b in enumerate(bars):
             if b.get("h") and b.get("l"):
-                rows.append({"h": float(b["h"]), "l": float(b["l"]), "t": str(b["t"])[:10], "pos": i})
+                rows.append({"o": float(b.get("o") or b["c"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"]),
+                             "t": str(b["t"]) if full else str(b["t"])[:10], "pos": i})
         return rows
     key = _week_ord if chart == "weekly" else _month_ord
     cur = key(date.fromisoformat(day))
@@ -476,9 +480,11 @@ def chart_bars(bars: List[Dict[str, Any]], chart: str, day: str) -> List[Dict[st
         if rows and rows[-1]["pos"] == o:
             rows[-1]["h"] = max(rows[-1]["h"], float(b["h"]))
             rows[-1]["l"] = min(rows[-1]["l"], float(b["l"]))
+            rows[-1]["c"] = float(b["c"])
             rows[-1]["t"] = str(b["t"])[:10]
         else:
-            rows.append({"h": float(b["h"]), "l": float(b["l"]), "t": str(b["t"])[:10], "pos": o})
+            rows.append({"o": float(b.get("o") or b["c"]), "h": float(b["h"]), "l": float(b["l"]), "c": float(b["c"]),
+                         "t": str(b["t"])[:10], "pos": o})
     return rows
 
 
@@ -490,7 +496,7 @@ def gann_pivots(rows: List[Dict[str, Any]], chart: str) -> List[Dict[str, Any]]:
     by the owner's instruction). Top (p.126): 3 bars declining and breaking previous bottoms, read as 3 bars each with a lower
     low and a lower high; the top is the highest high since the previous bottom. A same-side pivot replaces the earlier one only
     when it is a new extreme."""
-    up_n = 3 if chart == "daily" else 2
+    up_n = 3 if chart in BAR_CHARTS else 2
     h = [r["h"] for r in rows]
     lo = [r["l"] for r in rows]
     seq: List[Dict[str, Any]] = []
@@ -506,7 +512,7 @@ def gann_pivots(rows: List[Dict[str, Any]], chart: str) -> List[Dict[str, Any]]:
             if base < start:
                 continue
             j = min(range(start, base + 1), key=lambda x: lo[x])
-            if chart != "daily" and not (j >= 3 and all(lo[k] < lo[k - 1] for k in (j - 2, j - 1, j))):
+            if chart not in BAR_CHARTS and not (j >= 3 and all(lo[k] < lo[k - 1] for k in (j - 2, j - 1, j))):
                 continue
             if last is None or last["kind"] == "high" or lo[j] < last["price"]:
                 new = {"kind": "low", "idx": j, "price": lo[j]}
@@ -533,7 +539,7 @@ def fan_anchors(bars: List[Dict[str, Any]], chart: str, day: str) -> List[Dict[s
     """Fan starting points for one chart: the extreme high and extreme low of the history, and the latest two confirmed bottoms
     and tops (Gann draws from higher bottoms and lower tops, and calls the second one very important, p.137)."""
     rows = chart_bars(bars, chart, day)
-    if len(rows) < (60 if chart == "daily" else 12):
+    if len(rows) < (60 if chart in BAR_CHARTS else 12):
         return []
     ih = max(range(len(rows)), key=lambda i: rows[i]["h"])
     il = min(range(len(rows)), key=lambda i: rows[i]["l"])
@@ -556,7 +562,7 @@ def fan_anchors(bars: List[Dict[str, Any]], chart: str, day: str) -> List[Dict[s
 
 def bars_elapsed(anchor: Dict[str, Any], day: str, day_index: int) -> int:
     """Time units from the anchor to `day`: market days (daily; `day_index` is the day's index in the daily list), weeks or months."""
-    if anchor["chart"] == "daily":
+    if anchor["chart"] in BAR_CHARTS:
         return day_index - anchor["pos"]
     d = date.fromisoformat(day)
     return (_week_ord(d) if anchor["chart"] == "weekly" else _month_ord(d)) - anchor["pos"]

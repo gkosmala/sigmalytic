@@ -138,7 +138,7 @@ def test_admin_page_builds_with_astro_section(monkeypatch):
         return out
 
     found = ids(dash_app.build_astro_tab({"email": "admin@example.com"}), [])
-    assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn"} <= set(found)
+    assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn", "astro-fan-btn", "astro-fan-chart", "astro-fanchart-btn"} <= set(found)
     assert dash_app.is_astro_owner({"email": "admin@example.com"})
     assert not dash_app.is_astro_owner({"email": "other@example.com"})
     assert "restricted" in dash_app.build_astro_tab({"email": "other@example.com"}).children
@@ -537,7 +537,7 @@ def test_fan_price_angles_directions_and_time_units():
 
 def test_chart_bars_weekly_leaves_out_the_current_week():
     from backend import astro_gann_extra as gx
-    bars = [{"t": f"2024-01-{d:02d}", "h": 10 + d, "l": 5 + d} for d in (1, 2, 3, 4, 5, 8, 9, 10)]
+    bars = [{"t": f"2024-01-{d:02d}", "o": 7 + d, "h": 10 + d, "l": 5 + d, "c": 8 + d} for d in (1, 2, 3, 4, 5, 8, 9, 10)]
     rows = gx.chart_bars(bars, "weekly", "2024-01-11")           # day 11 is in the week of the 8th: that week is not complete
     assert len(rows) == 1 and rows[0]["h"] == 15 and rows[0]["l"] == 6 and rows[0]["t"] == "2024-01-05"
     assert len(gx.chart_bars(bars, "daily", "2024-01-11")) == 8
@@ -566,3 +566,26 @@ def test_keys_is_in_the_symbol_table_with_the_supplied_facts():
     bars = _bars(2100)
     rep = ar.report("KEYS", bars[1500]["t"][:10], bars=bars)
     assert rep["row"]["symbol"] == "KEYS" and "REPORT: KEYS (Keysight Technologies)" in rep["draft"]
+
+
+def test_fan_chart_data_and_figure_for_every_chart():
+    import sys
+    sys.path.insert(0, "frontend")
+    from backend import astro_fan_chart as fc
+    from astro_research_ui import render_level_test
+    bars = _bars(2100)
+    for chart in ("daily", "weekly", "monthly", "4h", "2h"):
+        res = fc.fan_chart_from_bars(bars, chart)
+        assert "error" not in res and res["lines"] and res["anchors"]
+        assert len(res["labels"]) == res["bars_shown"] + fc.FUTURE_BARS
+        assert all(0 <= ln["x0"] <= ln["x1"] < len(res["labels"]) for ln in res["lines"])
+        assert render_level_test({"ok": True, **res}) is not None
+    # the daily chart shows 5 years, the hourly charts 3 years, weekly and monthly all the bars
+    assert fc.fan_chart_from_bars(bars, "daily")["bars_shown"] < len(bars)
+    assert fc.fan_chart_from_bars(bars, "weekly")["first"] <= fc.fan_chart_from_bars(bars, "daily")["first"]
+    assert fc.fan_chart_from_bars(bars[:20], "daily")["error"]
+    assert fc.fan_chart_from_bars(bars, "yearly")["error"]
+    # a straight line is returned as two points and moves one table unit per bar for the 1x1
+    r = fc.fan_chart_from_bars(bars, "daily")
+    one = [ln for ln in r["lines"] if ln["angle"] == "1x1"][0]
+    assert round(abs(one["y1"] - one["y0"]) / (one["x1"] - one["x0"]), 3) == r["unit"] or one["x0"] >= len(r["bars"])
