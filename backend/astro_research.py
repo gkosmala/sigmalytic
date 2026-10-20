@@ -638,6 +638,9 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     sq = gx.sq144(anchors, day, ref, unit, band, high_price=hi_a, low_price=lo_a)
     static += [{"price": x["price"], "family": "sq144", "label": x["label"]} for x in sq["levels"]]
     fan = gx.gann_fan(before, day, unit, ref)
+    from backend import astro_time_cycles as tc
+    cycles = tc.time_cycles(fan, datetime.strptime(day, "%Y-%m-%d").date(), unit,
+                            lambda an: gx.bars_elapsed(an, day, len(before)))
     nv = gx.natal_vibration(row["ipo_date"])
     num_levels = gx.numerology_levels(ref, unit, band, nv["vibration"])
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
@@ -745,7 +748,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
               "pivots_daily": dp, "pivots_weekly": wp, "pivot_rows": piv_rows, "pivot_check": check,
               "natal_mean": {k: round(v, 2) for k, v in nm.items()}, "top_zones": top, "top_bands": top_bands, "blocks": blocks,
               "confluence_diag": {"tolerance_pct": 0.2, "levels_found": diag_levels, "closest_pair": diag_gap},
-              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb, "natal_base": nbase, "gann_fan": fan,
+              "square_of_144": sq["boxes"], "numerology": numerology, "cosmogram": cosmo, "master_zones": master, "natal_breakout": nb, "natal_base": nbase, "gann_fan": fan, "time_cycles": cycles,
               "hourly": hourly_table(symbol, open_t, 7)}
     if with_levels:
         raw_levels["numerology"] = [round(x["price"], 4) for x in num_levels]
@@ -834,6 +837,20 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
                      + fan_side_text(a, gf))
     L.append("   Rays shown per starting point (course pp.124-125): the 1x1 and the rays on the side of it the price is on; the other side comes into use when price crosses the 1x1.")
     L.append("   Bottom: daily = 3-bar rally with higher lows and higher highs (p.124); weekly and monthly = 3-bar decline then a 2-bar rally (p.125). Top: 3 bars with lower lows and lower highs (p.126).")
+    L.append("")
+    tcy = r.get("time_cycles") or {}
+    L.append("3e5. TIME CYCLES (W.D. Gann Master Stock Market Course, pp.46-51, 119, 122, 279-282; counted from each fan starting point; calendar days, months, years as Gann states them)")
+    for a in tcy.get("anchors", []):
+        parts = [f"{a['chart']}: {a['label']} ${a['price']:.2f} on {a['date']} ({a['elapsed_days']} days ago)"]
+        parts.append("in effect today: " + ("; ".join(f"{x['text']} ({x['from']}" + (f" to {x['to']}" if x['to'] != x['from'] else "") + f", {x['page']})" for x in a['now']) or "none"))
+        if a.get("last"):
+            parts.append(f"latest passed: {a['last']['text']} ({a['last']['from']}" + (f" to {a['last']['to']}" if a['last']['to'] != a['last']['from'] else "") + f", {a['last']['page']})")
+        if a.get("next"):
+            parts.append(f"next: {a['next']['text']} ({a['next']['from']}" + (f" to {a['next']['to']}" if a['next']['to'] != a['next']['from'] else "") + f", {a['next']['page']})")
+        L.append("   " + " | ".join(parts))
+    L.append("   Square of the range (p.122: a range of N table units squares with time after N bars; bars are days on the daily chart, weeks on the weekly, months on the monthly):")
+    for q in tcy.get("square", []):
+        L.append(f"   {q['chart']}: {q['from']} to {q['to']}: range ${q['range']:.2f} = {q['bars_to_square']} bars; {q['bars_elapsed']} elapsed since the start, {q['bars_remaining']:+g} remaining")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):

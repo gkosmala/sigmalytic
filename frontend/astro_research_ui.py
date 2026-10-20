@@ -299,6 +299,19 @@ def gann_extra_components(p: dict) -> list:
                      f"{a['price_vs']} the 1x1 (${a['one_by_one']:.2f})" if a.get("price_vs") else "",
                      "; ".join(f"{x['angle']} ${x['price']:.2f}" for x in mine) or "none"])
     kids.append(_table(["Chart", "Starting point", "Date", "Start price", "Price is", "Rays that apply today"], rows))
+    tcy = p.get("time_cycles") or {}
+
+    def _w(x):
+        return f"{x['text']} ({x['from']}" + (f" to {x['to']}" if x["to"] != x["from"] else "") + f", {x['page']})"
+    kids += [_h("3e5. Time cycles (Gann's course pp.46-51, 119, 122, 279-282; counted from each fan starting point)"),
+             _table(["Chart", "Starting point", "Date", "Price", "Days ago", "In effect today", "Latest passed", "Next"],
+                    [[a["chart"], a["label"], a["date"], f"${a['price']:.2f}", a["elapsed_days"], "; ".join(_w(x) for x in a["now"]) or "none",
+                      _w(a["last"]) if a.get("last") else "", _w(a["next"]) if a.get("next") else ""] for a in tcy.get("anchors", [])]),
+             html.Div("Square of the range (p.122): a range of N price-per-degree table units squares with time after N bars (days, weeks or months by chart).",
+                      style={"color": MUTED, "fontSize": "11px"}),
+             _table(["Chart", "From", "To", "Range", "Bars to square", "Bars elapsed", "Remaining"],
+                    [[q["chart"], q["from"], q["to"], f"${q['range']:.2f}", q["bars_to_square"], q["bars_elapsed"], f"{q['bars_remaining']:+g}"]
+                     for q in tcy.get("square", [])])]
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],
