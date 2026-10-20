@@ -629,7 +629,7 @@ def report(symbol: str, day: str, pivots_since: str = "2020-01-01", unit: Option
     lo_a = next((a["price"] for a in anchors if a["label"].startswith("Lowest")), None)
     sq = gx.sq144(anchors, day, ref, unit, band, high_price=hi_a, low_price=lo_a)
     static += [{"price": x["price"], "family": "sq144", "label": x["label"]} for x in sq["levels"]]
-    fan = gx.gann_fan(before, day, unit)
+    fan = gx.gann_fan(before, day)
     nv = gx.natal_vibration(row["ipo_date"])
     num_levels = gx.numerology_levels(ref, unit, band, nv["vibration"])
     numerology = {"natal": nv, "day_vibration": gx.day_vibration(day), "levels": num_levels,
@@ -818,11 +818,12 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
         L.append("   Window rule of mine: a window on a non-trading day uses the next trading bar. Not weighted in the master confluence.")
     L.append("")
     gf = r.get("gann_fan") or {}
-    L.append("3e4. GANN FAN (owner text: 1x1 = one price unit per one calendar day; rays 8x1, 4x1, 3x1, 2x1, 1x1, 1x2, 1x3, 1x4, 1x8; up from lows, down from highs)")
+    L.append("3e4. GANN FAN (owner text: rays 8x1, 4x1, 3x1, 2x1, 1x1, 1x2, 1x3, 1x4, 1x8; up from lows, down from highs; 1x1 = price change of the trend leg into the anchor per calendar day, fixed)")
     for a in gf.get("anchors", []):
-        L.append(f"   Anchor: {a['label']} ${a['price']:.2f} on {a['date']}" + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""))
+        L.append(f"   Anchor: {a['label']} ${a['price']:.2f} on {a['date']}" + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")
+                 + f"; 1x1 = ${a['slope']:.3f} per calendar day (leg from {a['from_date']} ${a['from_price']:.2f})")
     L.append("   Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f} ({x['label'].split(' from ', 1)[1].split(' (')[0]})" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"))
-    L.append("   Price unit from the owner table. Rule of 3: three bars each with a higher high and higher low confirm a trough, and three with a lower high and lower low confirm a peak.")
+    L.append("   Rule of 3: three consecutive bars each with a higher low confirm a trough, and three each with a lower high confirm a peak. The owner's price table is not used by the fan.")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):

@@ -510,14 +510,29 @@ def test_rule3_pivots_trough_peak_and_no_lookahead():
 
 def test_fan_price_angles_and_directions():
     from backend import astro_gann_extra as gx
-    low = {"kind": "low", "price": 100.0, "date": "2024-01-01"}
-    high = {"kind": "high", "price": 100.0, "date": "2024-01-01"}
-    assert gx.fan_price(low, 1, 1, "2024-01-11", 1.0) == 110.0      # 1x1: one unit per day
-    assert gx.fan_price(low, 2, 1, "2024-01-11", 1.0) == 120.0      # 2x1: two units per day
-    assert gx.fan_price(low, 1, 2, "2024-01-11", 1.0) == 105.0      # 1x2: one unit per two days
-    assert gx.fan_price(high, 1, 1, "2024-01-11", 1.0) == 90.0      # down from a peak
-    assert gx.fan_price(low, 1, 1, "2024-01-01", 1.0) is None       # not before the anchor
+    low = {"kind": "low", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
+    high = {"kind": "high", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
+    assert gx.fan_price(low, 1, 1, "2024-01-11") == 120.0      # 1x1: the fixed slope per calendar day
+    assert gx.fan_price(low, 2, 1, "2024-01-11") == 140.0      # 2x1: twice the slope
+    assert gx.fan_price(low, 1, 2, "2024-01-11") == 110.0      # 1x2: half the slope
+    assert gx.fan_price(high, 1, 1, "2024-01-11") == 80.0      # down from a peak
+    assert gx.fan_price(low, 1, 1, "2024-01-01") is None       # not before the anchor
     assert len(gx.FAN_ANGLES) == 9
+
+
+def test_rule3_needs_only_higher_lows_or_lower_highs_and_slope_comes_from_the_leg():
+    from backend import astro_gann_extra as gx
+    # higher lows but NOT higher highs still confirm the trough (owner: the higher-high requirement is struck)
+    rows = _hl([(20, 18), (19, 17), (18, 15), (17, 12), (16, 10), (15, 8), (14.5, 9), (14, 10), (13.5, 11)])
+    p = gx.rule3_pivots(rows)
+    assert p["trough"]["price"] == 8 and p["trough"]["confirmed"] == "2024-01-09"
+    # alternating list: the opening fall confirms the peak at 20 first, then the trough
+    assert [x["kind"] for x in p["seq"]] == ["peak", "trough"]
+    # the 1x1 slope for the trough anchor: |8 - 20| over the calendar days between the two pivots (5 days)
+    sl = gx.leg_slope({"kind": "low", "price": 8.0, "date": "2024-01-06"}, p["seq"])
+    assert sl["from_date"] == "2024-01-01" and round(sl["slope"], 4) == round(12 / 5, 4)
+    # no preceding opposite pivot: no slope
+    assert gx.leg_slope({"kind": "low", "price": 8.0, "date": "2023-12-01"}, p["seq"]) is None
 
 
 def test_fan_in_report_and_rules_test_run():

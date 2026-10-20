@@ -223,9 +223,9 @@ def gann_extra_components(p: dict) -> list:
                              + ". A window on a non-trading day uses the next trading bar (my rule). Not weighted in the master confluence.",
                              style={"color": WHITE, "fontSize": "12px"}))
     gf = p.get("gann_fan") or {}
-    kids += [_h("3e4. Gann Fan (1x1 = one price unit per calendar day; up from lows, down from highs)"),
-             _table(["Anchor", "Price", "Date"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")]
-                                                  for a in gf.get("anchors", [])]),
+    kids += [_h("3e4. Gann Fan (1x1 = price change of the trend leg into the anchor per calendar day, fixed; up from lows, down from highs)"),
+             _table(["Anchor", "Price", "Date", "1x1 per day", "Leg from"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""),
+                                                                              f"${a['slope']:.3f}", f"{a['from_date']} ${a['from_price']:.2f}"] for a in gf.get("anchors", [])]),
              html.Div("Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
                       style={"color": WHITE, "fontSize": "12px"})]
     c = p.get("cosmogram") or {}

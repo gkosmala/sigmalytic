@@ -211,8 +211,8 @@ def family_test(bars: List[Dict[str, Any]], report_fn: Callable[[str], Dict[str,
 
 REACH_DAYS = (5, 10, 20, 60)
 PHASE_DAYS = (1, 5, 20)
-ANCHOR_NAMES = {"hist_low": "Lowest low of the history", "w52_low": "Lowest low of 52 weeks", "recent_trough": "Latest confirmed trough",
-                "hist_high": "Highest high of the history", "w52_high": "Highest high of 52 weeks", "recent_peak": "Latest confirmed peak"}
+ANCHOR_NAMES = {"w52_low": "Lowest low of 52 weeks", "recent_trough": "Latest confirmed trough",
+                "w52_high": "Highest high of 52 weeks", "recent_peak": "Latest confirmed peak"}
 
 
 def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 1) -> Dict[str, Any]:
@@ -220,7 +220,7 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
     Rule of All Angles: when a close breaks through one angle, price goes on to test the next angle in the fan.
     Reported as the share of breaks where the next angle was reached within each horizon. 1x1 phase: above the 1x1 is
     bull, below is bear; reported as the mean percent move after the close over several horizons."""
-    from backend import astro_research as ar, astro_gann_extra as gx
+    from backend import astro_gann_extra as gx
     n = len(bars)
     first = max(MIN_HISTORY, n - max_days - 1)
     days = list(range(first, n - 1, max(1, int(step))))
@@ -237,10 +237,9 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
         if not anchors:
             continue
         used.append(i)
-        unit = ar.price_unit(c[i - 1])
         for an in anchors:
-            vals_now = [(gx.fan_price(an, a, b, t[i], unit), a, b) for a, b in gx.FAN_ANGLES]
-            vals_prev = [gx.fan_price(an, a, b, t[i - 1], unit) for a, b in gx.FAN_ANGLES]
+            vals_now = [(gx.fan_price(an, a, b, t[i]), a, b) for a, b in gx.FAN_ANGLES]
+            vals_prev = [gx.fan_price(an, a, b, t[i - 1]) for a, b in gx.FAN_ANGLES]
             if any(v is None for v, _, _ in vals_now) or any(v is None for v in vals_prev):
                 continue
             # 1x1 phase from today's close
@@ -271,7 +270,7 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
                         continue
                     row[1][h][1] += 1
                     for j in range(i + 1, i + h + 1):
-                        v = gx.fan_price(an, a2, b2, t[j], unit)
+                        v = gx.fan_price(an, a2, b2, t[j])
                         if v is not None and ((up and hi[j] >= v) or (not up and lo[j] <= v)):
                             row[1][h][0] += 1
                             break
@@ -291,5 +290,5 @@ def fan_rules_test(bars: List[Dict[str, Any]], max_days: int = 400, step: int = 
                                **{f"fwd_{h}": (round(r[1][h][0] / r[1][h][1], 2) if r[1][h][1] else None) for h in PHASE_DAYS}})
     return {"days_tested": len(used), "step": max(1, int(step)), "first_day": t[used[0]], "last_day": t[used[-1]],
             "angles": angles, "phase": phases, "horizons": list(PHASE_DAYS), "reach_horizons": list(REACH_DAYS),
-            "caveat": "Daily bars only. Calendar-day time unit, price unit from the owner table. Breaks on neighbouring days and from different anchors overlap. "
+            "caveat": "Daily bars only. Calendar-day time unit; the 1x1 slope comes from the trend leg into each anchor. Breaks on neighbouring days and from different anchors overlap. "
                       "A record of past days, not a forecast."}
