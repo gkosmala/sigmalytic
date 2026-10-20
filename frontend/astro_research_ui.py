@@ -179,9 +179,22 @@ def render_fan_test(p: dict):
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 
+def render_pivot_scan(p: dict):
+    rows = p.get("rows", [])
+    by = {n: sum(1 for r in rows if r["months"] == n) for n in p.get("months", [])}
+    return html.Div([
+        html.Div(f"Pivot scan, {p['today']}: {len(rows)} pivots in {p['with_bars']} of {p['universe']} symbols with price history", style={"fontWeight": "800", "color": WHITE}),
+        html.Div("Count by months ago: " + ", ".join(f"{n}: {c}" for n, c in by.items()), style={"color": WHITE, "fontSize": "12px"}),
+        _table(["Months ago", "Symbol", "Pivot", "Pivot date", "Pivot price", "Date N months ago", "Confirmed"],
+               [[r["months"], r["symbol"], r["kind"], r["date"], f"${r['price']:.2f}", r["target"], r["confirmed"]] for r in rows]),
+        html.Div(p.get("note", ""), style={"color": AMBER, "fontSize": "11px"})])
+
+
 def render_level_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
+    if p.get("rows") is not None and p.get("months") is not None:
+        return render_pivot_scan(p)
     if p.get("angles") is not None:
         return render_fan_test(p)
     if p.get("lines") is not None:
