@@ -483,3 +483,13 @@ def test_report_has_natal_base_section():
     bars = _bars(2100)
     r = ar.report("MDB", bars[1500]["t"][:10], bars=bars)
     assert "natal_base" in r and "3e3. NATAL BASE" in r["draft"]
+
+
+def test_keys_is_in_the_symbol_table_with_the_supplied_facts():
+    from backend import astro_research as ar
+    r = ar.BY_SYMBOL["KEYS"]
+    assert r["ipo_date"] == "2014-10-20" and r["elev_m"] == 150 and r["first_trade_et"] == "09:30"
+    assert round(r["lat"], 4) == round(38 + 28 / 60, 4) and round(r["lon"], 4) == round(-(122 + 42 / 60), 4)
+    bars = _bars(2100)
+    rep = ar.report("KEYS", bars[1500]["t"][:10], bars=bars)
+    assert rep["row"]["symbol"] == "KEYS" and "REPORT: KEYS (Keysight Technologies)" in rep["draft"]
