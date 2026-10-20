@@ -641,3 +641,20 @@ def test_pivot_scan_finds_pivots_n_months_back_within_five_market_days():
     sys.path.insert(0, "frontend")
     import astro_research_ui as ui
     assert "Pivot scan" in str(ui.render_level_test({"ok": True, **res}))
+
+
+def test_time_cycles_use_gann_counts_and_square_of_range():
+    from datetime import date
+    from backend import astro_time_cycles as tc
+    a = {"date": "2020-03-23", "kind": "low", "price": 100.0, "chart": "daily", "label": "Extreme low"}
+    r = tc.anchor_cycles(a, date(2020, 5, 22))      # 60 days after the low
+    assert any(x["text"].startswith("60 days") and x["page"] == "p.50" for x in r["now"])
+    assert r["next"]["from"] > "2020-05-22" and r["last"]["to"] < "2020-05-22"
+    assert tc.count_window(date(2020, 1, 31), "m", 7.5, 7.5)[0] > date(2020, 9, 1)
+    assert tc.count_window(date(2020, 3, 23), "y", 10, 10)[0] == date(2030, 3, 23)
+    assert any(x["text"].startswith("7 years") for x in tc.anchor_cycles(a, date(2027, 3, 23))["now"])
+    hi = {"date": "2020-06-01", "kind": "high", "price": 128.0, "chart": "daily", "label": "Extreme high"}
+    sq = tc.square_of_range([a, hi], 1.0, lambda an: 10)
+    assert sq and sq[0]["bars_to_square"] == 28.0 and sq[0]["bars_remaining"] == 18.0
+    rep = ar.report("MDB", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
+    assert rep["time_cycles"]["anchors"] and "3e5. TIME CYCLES" in rep["draft"]
