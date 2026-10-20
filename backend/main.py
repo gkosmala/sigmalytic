@@ -3140,6 +3140,20 @@ def astro_research_fan_chart(payload: dict, _admin: str = Depends(require_admin)
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.post("/api/admin/astro-research/pivot-scan")
+def astro_research_pivot_scan(payload: dict, _admin: str = Depends(require_admin)):
+    """Astro Research (admin only): Russell 1000 stocks with a Gann Fan daily pivot 6, 12, ... 60 months ago (+/- 5 days)."""
+    from backend import astro_research as _ar_owner
+    if not _ar_owner.is_owner(_admin):
+        raise HTTPException(status_code=403, detail="Astro Research is restricted to its owner.")
+    from backend import astro_pivot_scan
+    try:
+        res = astro_pivot_scan.pivot_scan()
+        return {"ok": True, **res}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+
+
 @app.post("/api/admin/astro-research/level-test")
 def astro_research_level_test(payload: dict, _admin: str = Depends(require_admin)):
     """Astro Research (admin only): what happened at the report's zones and bands on real past days (Alpaca daily bars)?"""

@@ -619,3 +619,22 @@ def test_fan_rules_have_real_history_yardsticks():
     sys.path.insert(0, "frontend")
     import astro_research_ui as ui
     assert "any day" in str(ui.render_fan_test({"ok": True, **res}))
+
+
+def test_pivot_scan_finds_pivots_n_months_back_within_five_days():
+    from datetime import datetime as _dt
+    from backend import astro_gann_extra as gx, astro_pivot_scan as ps
+    bars = _bars(1700)
+    seq = gx.gann_pivots(gx.chart_bars(bars, "daily", "2100-01-01"), "daily")
+    p = seq[len(seq) // 2]
+    pd = _dt.strptime(p["date"][:10], "%Y-%m-%d").date()
+    for shift, expect in ((0, True), (4, True), (9, False)):
+        today = gx._add_months(pd, 18) + __import__("datetime").timedelta(days=shift)
+        hits = [r for r in ps.scan_bars("TST", bars, today) if r["date"] == p["date"][:10] and r["months"] == 18]
+        assert bool(hits) == expect, (shift, hits)
+    res = ps.pivot_scan(["AAA", "BBB"], gx._add_months(pd, 18), fetch=lambda syms, s, e: {x: bars for x in syms})
+    assert res["universe"] == 2 and res["with_bars"] == 2 and any(r["months"] == 18 for r in res["rows"])
+    import sys
+    sys.path.insert(0, "frontend")
+    import astro_research_ui as ui
+    assert "Pivot scan" in str(ui.render_level_test({"ok": True, **res}))
