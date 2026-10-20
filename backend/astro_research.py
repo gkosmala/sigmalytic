@@ -108,6 +108,10 @@ SYMBOLS: List[Dict[str, Any]] = [
      "lat": 37.68333333333333, "lon": -121.91666666666667, "elev_m": 104,
      "coord_source": "Supplied and confirmed by the user at minute precision (37°41'N 121°55'W, about 1.5 km); not geocoded.",
      "status": 'minute-only'},
+    {"symbol": 'KEYS', "name": 'Keysight Technologies', "ipo_date": '2014-10-20', "address": '1400 Fountaingrove Pkwy, Santa Rosa, CA 95403',
+     "lat": 38.46666666666667, "lon": -122.7, "elev_m": 150,
+     "coord_source": "Supplied by the user at minute precision (38°28'N 122°42'W); the user said no verification is needed; not geocoded.",
+     "status": 'minute-only'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
@@ -121,6 +125,9 @@ for _r in SYMBOLS:
     if _r["symbol"] == "HPE":
         _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
                    "time_note": "HPE listed by spin-off. 2015-10-19 is the when-issued debut date and 9:30 a.m. ET the time, both supplied and confirmed by the user."})
+    if _r["symbol"] == "KEYS":
+        _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
+                   "time_note": "KEYS listed by spin-off from Agilent. 2014-10-20 is the when-issued debut date supplied by the user (regular-way trading began 2014-11-03); no first-trade time was supplied, so the 9:30 a.m. ET default is used."})
     if _r["symbol"] == "MDB":
         _r.update({"first_trade_et": "10:53", "ipo_status": "user-confirmed",
                    "time_note": "10:53 a.m. ET first-trade time supplied and confirmed by the user (the Nasdaq opening bell was at 9:30 a.m.)."})
