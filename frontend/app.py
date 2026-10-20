@@ -5846,6 +5846,11 @@ def build_astro_tab(session: dict) -> html.Div:
             html.Button("Level test: split by source", id="astro-ltg-btn", n_clicks=0, style=_astro_btn),
             html.Button("Level test: each source alone", id="astro-ltf-btn", n_clicks=0, style=_astro_btn),
             html.Button("Gann Fan rules", id="astro-fan-btn", n_clicks=0, style=_astro_btn),
+            dcc.Dropdown(id="astro-fan-chart", options=[{"label": "Daily (5 years)", "value": "daily"}, {"label": "Weekly (all history)", "value": "weekly"},
+                                                        {"label": "Monthly (all history)", "value": "monthly"}, {"label": "4-hour (3 years)", "value": "4h"},
+                                                        {"label": "2-hour (3 years)", "value": "2h"}], value="daily", clearable=False,
+                         style={"width": "190px", "display": "inline-block", "verticalAlign": "middle", "marginRight": "8px", "color": "#0b0f14"}),
+            html.Button("Show fan chart", id="astro-fanchart-btn", n_clicks=0, style=_astro_btn),
         ], style={"marginBottom": "14px"}),
         dcc.Loading(html.Div(id="astro-table-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
         dcc.Loading(html.Div(id="astro-bt-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
@@ -11123,6 +11128,17 @@ def handle_astro_level_test(n_all, n_bands, n_groups, n_fam, n_fan, symbol, sess
                                                             "groups": _ctx.triggered_id == "astro-ltg-btn",
                                                             "families": _ctx.triggered_id == "astro-ltf-btn",
                                                             "fan": _ctx.triggered_id == "astro-fan-btn"})
+    return err or _astro_lt(data)
+
+
+@app.callback(Output("astro-bt-result", "children", allow_duplicate=True),
+              Input("astro-fanchart-btn", "n_clicks"), State("astro-symbol", "value"), State("astro-fan-chart", "value"),
+              State("s-session", "data"), prevent_initial_call=True)
+def handle_astro_fan_chart(n, symbol, chart, session):
+    """Owner-only: the Gann Fan drawn over the price bars of the chosen chart"""
+    if _astro_lt is None:
+        return "Astro Research display module did not import. Check frontend/astro_research_ui.py."
+    data, err = _astro_call("POST", "fan-chart", session, {"symbol": symbol, "chart": chart})
     return err or _astro_lt(data)
 
 

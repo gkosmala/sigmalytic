@@ -119,17 +119,59 @@ def render_backtest(p: dict):
                      html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 
+ANGLE_COLORS = {"8x1": "#ef4444", "4x1": "#f97316", "3x1": "#f59e0b", "2x1": "#eab308", "1x1": "#f8fafc",
+                "1x2": "#34d399", "1x3": "#2dd4bf", "1x4": "#38bdf8", "1x8": "#a78bfa"}
+SHORT_ANCHOR = {"Extreme low": "Low", "Extreme high": "High", "Latest confirmed bottom": "Bottom", "Second latest confirmed bottom": "Bottom 2",
+                "Latest confirmed top": "Top", "Second latest confirmed top": "Top 2"}
+CHART_NAMES = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "4h": "4-hour", "2h": "2-hour"}
+
+
+def render_fan_chart(p: dict):
+    """The Gann Fan over the price bars (a category axis, so there are no gaps for weekends or overnight)."""
+    if not p.get("ok"):
+        return f"Could not draw the fan: {p.get('error', 'unknown error')}"
+    bars, labels = p["bars"], p["labels"]
+    fig = go.Figure(go.Candlestick(x=labels[:len(bars)], open=[b["o"] for b in bars], high=[b["h"] for b in bars], low=[b["l"] for b in bars],
+                                   close=[b["c"] for b in bars], name="Price", increasing_line_color=GREEN, decreasing_line_color="#ef4444"))
+    seen = set()
+    for ln in sorted(p["lines"], key=lambda x: x["kind"] != "low"):   # rising lines first so each legend entry shows a solid line
+        a = ln["angle"]
+        fig.add_trace(go.Scatter(x=[labels[ln["x0"]], labels[ln["x1"]]], y=[ln["y0"], ln["y1"]], mode="lines", name=a, legendgroup=a,
+                                 showlegend=a not in seen, hovertemplate=f"{a} from {ln['from'].lower()}<br>%{{y:.2f}}<extra></extra>",
+                                 line={"color": ANGLE_COLORS.get(a, MUTED), "width": 2.4 if a == "1x1" else 1.1,
+                                       "dash": "solid" if ln["kind"] == "low" else "dot"}))
+        seen.add(a)
+    if p["anchors"]:
+        fig.add_trace(go.Scatter(x=[labels[x["x"]] for x in p["anchors"]], y=[x["y"] for x in p["anchors"]], mode="markers+text", name="Starting points",
+                                 text=[SHORT_ANCHOR.get(x["label"], x["label"]) for x in p["anchors"]], textposition="top center",
+                                 marker={"color": AMBER, "size": 9, "symbol": "diamond"}, textfont={"size": 10, "color": WHITE}))
+    lo = min(b["l"] for b in bars)
+    hi = max(b["h"] for b in bars)
+    pad = (hi - lo) * 0.06
+    fig.update_layout(height=620, margin={"l": 50, "r": 20, "t": 30, "b": 40}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,.2)",
+                      font={"color": WHITE}, xaxis={"type": "category", "nticks": 12, "rangeslider": {"visible": False}, "gridcolor": BORDER},
+                      yaxis={"range": [lo - pad, hi + pad], "gridcolor": BORDER, "side": "right"}, legend={"orientation": "h", "y": 1.06},
+                      hovermode="x unified")
+    note = (f"{p.get('symbol', '')} {CHART_NAMES.get(p['chart'], p['chart'])} chart: {p['bars_shown']} bars, {p['first']} to {p['last']}. "
+            f"The 1x1 moves ${p['unit']:g} (your price-per-degree table) per bar. Solid lines rise from bottoms, dotted lines fall from tops. "
+            f"Lines run {p['future_bars']} bars past the last bar. ")
+    if p["chart"] in ("2h", "4h"):
+        note += ("Hourly bars are as Alpaca returns them. Gann's course has no rule for hourly bars, so the daily chart's pivot rules are used "
+                 "and the 1x1 moves the same table unit per hourly bar.")
+    return html.Div([html.Div(note, style={"color": MUTED, "fontSize": "11px"}), dcc.Graph(figure=fig, config={"displaylogo": False})])
+
+
 def render_fan_test(p: dict):
     if not p.get("ok"):
         return f"Could not run: {p.get('error', 'unknown error')}"
-    ph = [[r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
-    ra = [[r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
+    ph = [[r["chart"], r["anchor"], r["phase"], r["days"]] + [("" if r.get(f"fwd_{h}") is None else r[f"fwd_{h}"]) for h in p["horizons"]] for r in p["phase"]]
+    ra = [[r["chart"], r["anchor"], r["direction"], r["breaks"]] + [("" if r.get(f"reach_{h}") is None else r[f"reach_{h}"]) for h in p["reach_horizons"]] for r in p["angles"]]
     return html.Div([
         html.Div(f"Gann Fan rules: {p['days_tested']} days ({'every day' if p['step'] == 1 else 'every ' + str(p['step']) + 'th day'}), {p['first_day']} to {p['last_day']}", style={"fontWeight": "800", "color": WHITE}),
         html.Div("Rule of All Angles: after a close through one angle, % of breaks where price reached the next angle within N days", style={"color": WHITE, "marginTop": "8px"}),
-        _table(["Anchor", "Break", "Breaks"] + [f"Within {h} days (%)" for h in p["reach_horizons"]], ra),
-        html.Div("1x1 phase: mean % move after the close, by whether the close was above (bull) or below (bear) the 1x1", style={"color": WHITE, "marginTop": "8px"}),
-        _table(["Anchor", "Phase", "Days"] + [f"Next {h} day(s) (%)" for h in p["horizons"]], ph),
+        _table(["Chart", "Starting point", "Break", "Breaks"] + [f"Within {h} days (%)" for h in p["reach_horizons"]], ra),
+        html.Div("Position on the 1x1 (Gann: above is strong, below is weak): mean % move after the close", style={"color": WHITE, "marginTop": "8px"}),
+        _table(["Chart", "Starting point", "Position", "Days"] + [f"Next {h} day(s) (%)" for h in p["horizons"]], ph),
         html.Div(p["caveat"], style={"color": AMBER, "fontSize": "11px"})])
 
 
@@ -138,6 +180,8 @@ def render_level_test(p: dict):
         return f"Could not run: {p.get('error', 'unknown error')}"
     if p.get("angles") is not None:
         return render_fan_test(p)
+    if p.get("lines") is not None:
+        return render_fan_chart(p)
     if p.get("groups"):
         return html.Div([render_level_test({"ok": True, **g}) if "metrics" in g else
                          html.Div(f"{g['label']}: {g.get('error', 'no result')}", style={"color": MUTED, "fontSize": "11px", "marginTop": "8px"})
@@ -223,11 +267,14 @@ def gann_extra_components(p: dict) -> list:
                              + ". A window on a non-trading day uses the next trading bar (my rule). Not weighted in the master confluence.",
                              style={"color": WHITE, "fontSize": "12px"}))
     gf = p.get("gann_fan") or {}
-    kids += [_h("3e4. Gann Fan (1x1 = price change of the trend leg into the anchor per calendar day, fixed; up from lows, down from highs)"),
-             _table(["Anchor", "Price", "Date", "1x1 per day", "Leg from"], [[a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else ""),
-                                                                              f"${a['slope']:.3f}", f"{a['from_date']} ${a['from_price']:.2f}"] for a in gf.get("anchors", [])]),
-             html.Div("Lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in sorted(gf.get("lines", []), key=lambda y: y["price"])) or "none"),
-                      style={"color": WHITE, "fontSize": "12px"})]
+    kids += [_h("3e4. Gann Fan (Gann's course, Chapter 4: up from bottoms, down from tops; the 1x1 moves one table unit per time unit)"),
+             _table(["Chart", "Starting point", "Price", "Date"], [[a["chart"], a["label"], f"${a['price']:.2f}", a["date"] + (f" (confirmed {a['confirmed']})" if a.get("confirmed") else "")]
+                                                                    for a in gf.get("anchors", [])]),
+             html.Div(f"Price per time unit (owner's price-per-degree table): ${gf.get('unit', 0):g}. Time unit: a market day (daily), a week (weekly), a month (monthly).",
+                      style={"color": MUTED, "fontSize": "11px"})]
+    for ch in ("daily", "weekly", "monthly"):
+        ls = sorted([x for x in gf.get("lines", []) if x["chart"] == ch], key=lambda y: y["price"])
+        kids.append(html.Div(f"{ch} lines today: " + ("; ".join(f"{x['angle']} ${x['price']:.2f}" for x in ls) or "none"), style={"color": WHITE, "fontSize": "12px"}))
     c = p.get("cosmogram") or {}
     kids += [_h("3f. Cosmogram, raw wheel: when (PDF pp. 2, 108)"), _wheel(c),
              _table(["Pair", "Bodies", "Angle", "Nearest aspect", "Off by"],

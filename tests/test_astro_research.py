@@ -138,7 +138,7 @@ def test_admin_page_builds_with_astro_section(monkeypatch):
         return out
 
     found = ids(dash_app.build_astro_tab({"email": "admin@example.com"}), [])
-    assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn"} <= set(found)
+    assert {"astro-symbol", "astro-start", "astro-since", "astro-run-btn", "astro-bt-btn", "astro-fan-btn", "astro-fan-chart", "astro-fanchart-btn"} <= set(found)
     assert dash_app.is_astro_owner({"email": "admin@example.com"})
     assert not dash_app.is_astro_owner({"email": "other@example.com"})
     assert "restricted" in dash_app.build_astro_tab({"email": "other@example.com"}).children
@@ -489,60 +489,69 @@ def _hl(rows):
     return [{"t": f"2024-01-{i + 1:02d}", "h": h, "l": l, "o": l, "c": h} for i, (h, l) in enumerate(rows)]
 
 
-def test_rule3_pivots_trough_peak_and_no_lookahead():
+def _rows(pairs):
+    return [{"h": h, "l": l, "t": f"2024-01-{k + 1:02d}", "pos": k} for k, (h, l) in enumerate(pairs)]
+
+
+_DOWN = [(20, 18), (19, 17), (18, 15), (16, 12), (14, 10), (12, 8)]
+
+
+def test_gann_pivots_daily_bottom_needs_higher_lows_and_higher_highs():
     from backend import astro_gann_extra as gx
-    # down to a low of 8 on day 5, then three bars each with a higher high and higher low confirm the trough on day 8
-    down = [(20, 18), (19, 17), (18, 15), (16, 12), (14, 10), (12, 8)]
-    up = [(13, 9), (14, 10), (15, 11)]
-    p = gx.rule3_pivots(_hl(down + up))
-    assert p["trough"]["price"] == 8 and p["trough"]["date"] == "2024-01-06" and p["trough"]["confirmed"] == "2024-01-09"
-    assert p["peak"]["price"] == 20 and p["peak"]["confirmed"] == "2024-01-04"   # the opening fall already confirmed a peak
-    # only two up bars: nothing confirmed yet
-    assert gx.rule3_pivots(_hl(down + up[:2]))["trough"] is None
-    # three lower highs and lower lows after the rise confirm a peak at the highest high since the trough
-    dn = [(14, 10), (13, 9), (12, 8.5)]
-    p2 = gx.rule3_pivots(_hl(down + up + [(16, 12)] + dn))
-    assert p2["peak"]["price"] == 16 and p2["trough"]["price"] == 8
+    ok = gx.gann_pivots(_rows(_DOWN + [(13, 9), (14, 10), (15, 11)]), "daily")
+    assert [(x["kind"], x["price"]) for x in ok] == [("high", 20), ("low", 8)] and ok[1]["confirmed"] == "2024-01-09"
+    # third bar has a higher low but a lower high: not a Gann rally, no bottom yet
+    assert [x["kind"] for x in gx.gann_pivots(_rows(_DOWN + [(13, 9), (14, 10), (13.5, 11)]), "daily")] == ["high"]
+    # only two bars of rally on a daily chart: not confirmed
+    assert [x["kind"] for x in gx.gann_pivots(_rows(_DOWN + [(13, 9), (14, 10)]), "daily")] == ["high"]
+    # weekly and monthly: a decline of 3 bars into the low, then a 2-bar rally confirms the bottom
+    assert [x["kind"] for x in gx.gann_pivots(_rows(_DOWN + [(13, 9), (14, 10)]), "weekly")] == ["high", "low"]
     # a long run up does not create a new pivot on every bar
-    p3 = gx.rule3_pivots(_hl(down + [(13 + k, 9 + k) for k in range(30)]))
-    assert p3["trough"]["price"] == 8 and p3["peak"]["price"] == 20
+    run = gx.gann_pivots(_rows(_DOWN + [(13 + k, 9 + k) for k in range(30)]), "daily")
+    assert [(x["kind"], x["price"]) for x in run] == [("high", 20), ("low", 8)]
 
 
-def test_fan_price_angles_and_directions():
+def test_gann_top_and_alternation():
     from backend import astro_gann_extra as gx
-    low = {"kind": "low", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
-    high = {"kind": "high", "price": 100.0, "date": "2024-01-01", "slope": 2.0}
-    assert gx.fan_price(low, 1, 1, "2024-01-11") == 120.0      # 1x1: the fixed slope per calendar day
-    assert gx.fan_price(low, 2, 1, "2024-01-11") == 140.0      # 2x1: twice the slope
-    assert gx.fan_price(low, 1, 2, "2024-01-11") == 110.0      # 1x2: half the slope
-    assert gx.fan_price(high, 1, 1, "2024-01-11") == 80.0      # down from a peak
-    assert gx.fan_price(low, 1, 1, "2024-01-01") is None       # not before the anchor
+    pairs = _DOWN + [(13, 9), (14, 10), (15, 11), (16, 12), (15, 11.5), (14, 11), (13, 10.5)]
+    seq = gx.gann_pivots(_rows(pairs), "daily")
+    assert [(x["kind"], x["price"]) for x in seq] == [("high", 20), ("low", 8), ("high", 16)]
+
+
+def test_fan_price_angles_directions_and_time_units():
+    from datetime import date
+    from backend import astro_gann_extra as gx
+    low = {"kind": "low", "price": 100.0, "chart": "daily", "pos": 10}
+    high = {"kind": "high", "price": 100.0, "chart": "weekly", "pos": gx._week_ord(date(2024, 1, 1))}
+    assert gx.fan_price(low, 1, 1, 2.0, 5) == 110.0     # 1x1: one table unit per time unit
+    assert gx.fan_price(low, 2, 1, 2.0, 5) == 120.0     # 2x1: twice as fast
+    assert gx.fan_price(low, 1, 2, 2.0, 5) == 105.0     # 1x2: half as fast
+    assert gx.fan_price(high, 1, 1, 2.0, 5) == 90.0     # down from a top
+    assert gx.fan_price(low, 1, 1, 2.0, 0) is None
+    assert gx.bars_elapsed(low, "2024-03-01", 25) == 15                       # daily: market days
+    assert gx.bars_elapsed(high, "2024-01-23", 99) == 3                       # weekly: weeks
+    mo = {"kind": "low", "price": 1.0, "chart": "monthly", "pos": gx._month_ord(date(2024, 1, 15))}
+    assert gx.bars_elapsed(mo, "2024-04-02", 99) == 3                         # monthly: months
     assert len(gx.FAN_ANGLES) == 9
 
 
-def test_rule3_needs_only_higher_lows_or_lower_highs_and_slope_comes_from_the_leg():
+def test_chart_bars_weekly_leaves_out_the_current_week():
     from backend import astro_gann_extra as gx
-    # higher lows but NOT higher highs still confirm the trough (owner: the higher-high requirement is struck)
-    rows = _hl([(20, 18), (19, 17), (18, 15), (17, 12), (16, 10), (15, 8), (14.5, 9), (14, 10), (13.5, 11)])
-    p = gx.rule3_pivots(rows)
-    assert p["trough"]["price"] == 8 and p["trough"]["confirmed"] == "2024-01-09"
-    # alternating list: the opening fall confirms the peak at 20 first, then the trough
-    assert [x["kind"] for x in p["seq"]] == ["peak", "trough"]
-    # the 1x1 slope for the trough anchor: |8 - 20| over the calendar days between the two pivots (5 days)
-    sl = gx.leg_slope({"kind": "low", "price": 8.0, "date": "2024-01-06"}, p["seq"])
-    assert sl["from_date"] == "2024-01-01" and round(sl["slope"], 4) == round(12 / 5, 4)
-    # no preceding opposite pivot: no slope
-    assert gx.leg_slope({"kind": "low", "price": 8.0, "date": "2023-12-01"}, p["seq"]) is None
+    bars = [{"t": f"2024-01-{d:02d}", "o": 7 + d, "h": 10 + d, "l": 5 + d, "c": 8 + d} for d in (1, 2, 3, 4, 5, 8, 9, 10)]
+    rows = gx.chart_bars(bars, "weekly", "2024-01-11")           # day 11 is in the week of the 8th: that week is not complete
+    assert len(rows) == 1 and rows[0]["h"] == 15 and rows[0]["l"] == 6 and rows[0]["t"] == "2024-01-05"
+    assert len(gx.chart_bars(bars, "daily", "2024-01-11")) == 8
 
 
 def test_fan_in_report_and_rules_test_run():
     from backend import astro_research as ar, astro_level_test as lt
     bars = _bars(2100)
     rep = ar.report("MDB", bars[1500]["t"][:10], bars=bars, with_levels=True)
-    assert rep["gann_fan"]["anchors"] and "fan" in rep["raw_levels"] and "3e4. GANN FAN" in rep["draft"]
+    gf = rep["gann_fan"]
+    assert {a["chart"] for a in gf["anchors"]} == {"daily", "weekly", "monthly"} and "fan" in rep["raw_levels"] and "3e4. GANN FAN" in rep["draft"]
     res = lt.fan_rules_test(bars, max_days=60, step=3)
     assert res["days_tested"] > 0 and res["reach_horizons"] == [5, 10, 20, 60]
-    assert all(r["phase"].startswith(("bull", "bear")) for r in res["phase"])
+    assert all(r["phase"] in ("above the 1x1", "below the 1x1") and r["chart"] in ("daily", "weekly", "monthly") for r in res["phase"])
     import sys
     sys.path.insert(0, "frontend")
     from astro_research_ui import render_level_test
@@ -557,3 +566,26 @@ def test_keys_is_in_the_symbol_table_with_the_supplied_facts():
     bars = _bars(2100)
     rep = ar.report("KEYS", bars[1500]["t"][:10], bars=bars)
     assert rep["row"]["symbol"] == "KEYS" and "REPORT: KEYS (Keysight Technologies)" in rep["draft"]
+
+
+def test_fan_chart_data_and_figure_for_every_chart():
+    import sys
+    sys.path.insert(0, "frontend")
+    from backend import astro_fan_chart as fc
+    from astro_research_ui import render_level_test
+    bars = _bars(2100)
+    for chart in ("daily", "weekly", "monthly", "4h", "2h"):
+        res = fc.fan_chart_from_bars(bars, chart)
+        assert "error" not in res and res["lines"] and res["anchors"]
+        assert len(res["labels"]) == res["bars_shown"] + fc.FUTURE_BARS
+        assert all(0 <= ln["x0"] <= ln["x1"] < len(res["labels"]) for ln in res["lines"])
+        assert render_level_test({"ok": True, **res}) is not None
+    # the daily chart shows 5 years, the hourly charts 3 years, weekly and monthly all the bars
+    assert fc.fan_chart_from_bars(bars, "daily")["bars_shown"] < len(bars)
+    assert fc.fan_chart_from_bars(bars, "weekly")["first"] <= fc.fan_chart_from_bars(bars, "daily")["first"]
+    assert fc.fan_chart_from_bars(bars[:20], "daily")["error"]
+    assert fc.fan_chart_from_bars(bars, "yearly")["error"]
+    # a straight line is returned as two points and moves one table unit per bar for the 1x1
+    r = fc.fan_chart_from_bars(bars, "daily")
+    one = [ln for ln in r["lines"] if ln["angle"] == "1x1"][0]
+    assert round(abs(one["y1"] - one["y0"]) / (one["x1"] - one["x0"]), 3) == r["unit"] or one["x0"] >= len(r["bars"])
