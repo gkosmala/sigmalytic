@@ -667,3 +667,14 @@ def test_square_of_range_covers_every_low_high_pair():
     sq = tc.square_of_range(a, 1.0, lambda an: 5)
     pairs = {(x["from"].split()[1], x["to"].split()[1]) for x in sq}
     assert pairs == {("2020-01-01", "2020-02-01"), ("2020-01-01", "2020-03-01"), ("2020-02-01", "2020-04-01"), ("2020-03-01", "2020-04-01")}
+
+
+def test_square_of_price_counts_price_over_unit_from_the_date():
+    from datetime import date
+    from backend import astro_time_cycles as tc
+    a = {"date": "2020-03-23", "kind": "low", "price": 280.0, "chart": "daily", "label": "Extreme low"}
+    out = tc.time_cycles({"anchors": [a]}, date(2020, 6, 1), 10.0, lambda an: 50)
+    q = out["price_square"][0]
+    assert q["bars_to_square"] == 28.0 and q["bars_elapsed"] == 50 and q["bars_remaining"] == -22.0
+    rep = ar.report("MDB", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
+    assert rep["time_cycles"]["price_square"] and "Square of the price" in rep["draft"]

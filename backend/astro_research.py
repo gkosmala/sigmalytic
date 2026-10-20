@@ -851,6 +851,9 @@ def gann_extra_text(r: Dict[str, Any]) -> List[str]:
     L.append("   Square of the range (p.122: a range of N table units squares with time after N bars; bars are days on the daily chart, weeks on the weekly, months on the monthly):")
     for q in tcy.get("square", []):
         L.append(f"   {q['chart']}: {q['from']} to {q['to']}: range ${q['range']:.2f} = {q['bars_to_square']} bars; {q['bars_elapsed']} elapsed since the start, {q['bars_remaining']:+g} remaining")
+    L.append("   Square of the price (pp.122, 130-132: a top or bottom priced N table units squares with time N bars after its date):")
+    for q in tcy.get("price_square", []):
+        L.append(f"   {q['chart']}: {q['label']} {q['date']} ${q['price']:.2f} = {q['bars_to_square']} bars; {q['bars_elapsed']} elapsed, {q['bars_remaining']:+g} remaining")
     L.append("")
     L.append("3f. COSMOGRAM, RAW WHEEL (PDF pp. 2, 108): angles between the planets at the open and to the IPO chart, tightest first; the nearest aspect and its distance. This is the WHEN view")
     for p in (r.get("cosmogram") or {}).get("pairs", []):
