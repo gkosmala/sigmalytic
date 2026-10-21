@@ -678,3 +678,10 @@ def test_square_of_price_counts_price_over_unit_from_the_date():
     assert q["bars_to_square"] == 28.0 and q["bars_elapsed"] == 50 and q["bars_remaining"] == -22.0
     rep = ar.report("MDB", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
     assert rep["time_cycles"]["price_square"] and "Square of the price" in rep["draft"]
+
+
+def test_ge_entry_and_report():
+    r = ar.BY_SYMBOL["GE"]
+    assert r["ipo_date"] == "1892-06-23" and abs(r["lat"] - 42.81167) < 1e-4 and abs(r["lon"] + 73.92667) < 1e-4 and r["elev_m"] == 68
+    rep = ar.report("GE", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
+    assert "REPORT: GE (General Electric" in rep["draft"] and "1892-06-23 15:00 UTC" in rep["draft"] and r["first_trade_et"] == "10:00"

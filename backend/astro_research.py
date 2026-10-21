@@ -112,6 +112,10 @@ SYMBOLS: List[Dict[str, Any]] = [
      "lat": 38.46666666666667, "lon": -122.7, "elev_m": 150,
      "coord_source": "Supplied by the user at minute precision (38°28'N 122°42'W); the user said no verification is needed; not geocoded.",
      "status": 'minute-only'},
+    {"symbol": 'GE', "name": 'General Electric (GE Aerospace)', "ipo_date": '1892-06-23', "address": '1 River Rd, Schenectady, NY 12345 (Schenectady Works, GE headquarters at its 1892 debut)',
+     "lat": 42 + 48.7 / 60, "lon": -(73 + 55.6 / 60), "elev_m": 68,
+     "coord_source": "Supplied by the user at minute precision (42°48.7'N 73°55.6'W); the user gave the elevation as 67 to 70 m and 68 m is the middle of that range; not geocoded.",
+     "status": 'minute-only'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
@@ -128,6 +132,9 @@ for _r in SYMBOLS:
     if _r["symbol"] == "KEYS":
         _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
                    "time_note": "KEYS listed by spin-off from Agilent. 2014-10-20 is the when-issued debut date supplied by the user (regular-way trading began 2014-11-03). 9:30 a.m. ET first-trade time supplied and confirmed by the user."})
+    if _r["symbol"] == "GE":
+        _r.update({"first_trade_et": "10:00", "ipo_status": "user-confirmed",
+                   "time_note": "10:00 a.m. ET is the time the NYSE floor opened in 1892 and the time of the first block, 50 shares at $108.00; date and time supplied and confirmed by the user."})
     if _r["symbol"] == "MDB":
         _r.update({"first_trade_et": "10:53", "ipo_status": "user-confirmed",
                    "time_note": "10:53 a.m. ET first-trade time supplied and confirmed by the user (the Nasdaq opening bell was at 9:30 a.m.)."})
