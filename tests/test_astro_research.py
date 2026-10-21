@@ -684,4 +684,4 @@ def test_ge_entry_and_report():
     r = ar.BY_SYMBOL["GE"]
     assert r["ipo_date"] == "1892-06-23" and abs(r["lat"] - 42.81167) < 1e-4 and abs(r["lon"] + 73.92667) < 1e-4 and r["elev_m"] == 68
     rep = ar.report("GE", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
-    assert "REPORT: GE (General Electric" in rep["draft"] and "1892-06-23" in rep["draft"]
+    assert "REPORT: GE (General Electric" in rep["draft"] and "1892-06-23 15:00 UTC" in rep["draft"] and r["first_trade_et"] == "10:00"
