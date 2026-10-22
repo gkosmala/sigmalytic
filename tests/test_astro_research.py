@@ -685,3 +685,10 @@ def test_ge_entry_and_report():
     assert r["ipo_date"] == "1892-06-23" and abs(r["lat"] - 42.81167) < 1e-4 and abs(r["lon"] + 73.92667) < 1e-4 and r["elev_m"] == 68
     rep = ar.report("GE", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
     assert "REPORT: GE (General Electric" in rep["draft"] and "1892-06-23 15:00 UTC" in rep["draft"] and r["first_trade_et"] == "10:00"
+
+
+def test_iwm_entry_and_report():
+    r = ar.BY_SYMBOL["IWM"]
+    assert r["ipo_date"] == "2000-05-22" and abs(r["lat"] - (41 + 52 / 60 + 5 / 3600)) < 1e-6 and abs(r["lon"] + (87 + 39 / 60 + 54 / 3600)) < 1e-6 and r["elev_m"] == 181
+    rep = ar.report("IWM", _bars(2100)[1500]["t"][:10], bars=_bars(2100), with_levels=True)
+    assert "REPORT: IWM (iShares Russell 2000 ETF" in rep["draft"] and "2000-05-22 13:30 UTC" in rep["draft"]
