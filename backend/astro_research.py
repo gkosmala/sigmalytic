@@ -116,6 +116,11 @@ SYMBOLS: List[Dict[str, Any]] = [
      "lat": 42 + 48.7 / 60, "lon": -(73 + 55.6 / 60), "elev_m": 68,
      "coord_source": "Supplied by the user at minute precision (42°48.7'N 73°55.6'W); the user gave the elevation as 67 to 70 m and 68 m is the middle of that range; not geocoded.",
      "status": 'minute-only'},
+    {"symbol": 'IWM', "name": 'iShares Russell 2000 ETF', "ipo_date": '2000-05-22',
+     "address": 'NYSE Arca, Chicago, IL (the debut venue named in the natal sheet you supplied)',
+     "lat": 41 + 52 / 60 + 5 / 3600, "lon": -(87 + 39 / 60 + 54 / 3600), "elev_m": 181,
+     "coord_source": "Supplied by the user as degrees, minutes and seconds (41°52'05\"N 87°39'54\"W), elevation 181 m (594 ft), from the natal sheet; not geocoded.",
+     "status": 'address-user'},
 ]
 for _r in SYMBOLS:
     _r.update({"first_trade_et": "09:30", "elev_status": "user-supplied, approximate",
@@ -135,6 +140,9 @@ for _r in SYMBOLS:
     if _r["symbol"] == "GE":
         _r.update({"first_trade_et": "10:00", "ipo_status": "user-confirmed",
                    "time_note": "10:00 a.m. ET is the time the NYSE floor opened in 1892 and the time of the first block, 50 shares at $108.00; date and time supplied and confirmed by the user."})
+    if _r["symbol"] == "IWM":
+        _r.update({"first_trade_et": "09:30", "ipo_status": "user-confirmed",
+                   "time_note": "First trade 2000-05-22 per the natal sheet you supplied, which gives no time; 9:30 a.m. ET is the default, not a known first print."})
     if _r["symbol"] == "MDB":
         _r.update({"first_trade_et": "10:53", "ipo_status": "user-confirmed",
                    "time_note": "10:53 a.m. ET first-trade time supplied and confirmed by the user (the Nasdaq opening bell was at 9:30 a.m.)."})
