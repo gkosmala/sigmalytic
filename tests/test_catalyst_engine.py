@@ -112,3 +112,35 @@ def test_ui_renders_payload():
         comp = render(json.loads(json.dumps(out)))      # round-trip through JSON like the real API call
         assert isinstance(comp, Component)
         assert "Reversal rate" in json.dumps(comp.to_plotly_json(), default=lambda o: o.to_plotly_json())
+
+
+def test_sec_acceptance_time_is_utc():
+    block = {"form": ["8-K"], "acceptanceDateTime": ["2026-10-22T00:41:12.000Z"], "accessionNumber": ["0001-26-1"],
+             "primaryDocument": ["a.htm"], "items": ["2.02,9.01"]}
+    row = ce._rows_from_block(block, 1318605)[0]
+    assert row["accepted"].strftime("%Y-%m-%d %H:%M") == "2026-10-21 20:41"   # 00:41 UTC = 8:41 PM EDT the day before
+    assert ce.timing_label(row["accepted"]) == "after close"
+
+
+def test_split_results_treats_early_2_02_as_pre_announcement():
+    fs = [_filing("2026-07-02", "13:04", ["2.02"]), _filing("2026-07-22", "20:35", ["2.02", "9.01"]),
+          _filing("2026-10-02", "13:04", ["2.02"]), _filing("2026-10-21", "20:41", ["2.02", "9.01"])]
+    earn, pre = ce.split_results(fs)
+    assert [f["accepted"].date().isoformat() for f in earn] == ["2026-07-22", "2026-10-21"]
+    assert [f["accepted"].date().isoformat() for f in pre] == ["2026-07-02", "2026-10-02"]
+
+
+def test_analyze_uses_pre_announcement_filing_and_company_headlines():
+    i_e1, i_pre, i_e2, i_cat = 100, 145, 160, 120
+    moves = {DATES[i_e1]: 6.0, DATES[i_pre]: 5.0, DATES[i_e2]: -9.0, DATES[i_cat]: -7.0}
+    bars, bench = _bars(DATES, moves), _bars(DATES, {})
+    filings = sorted([_filing(DATES[i_e1 - 1], "16:05", ["2.02"]), _filing(DATES[i_pre], "09:00", ["2.02"]),
+                      _filing(DATES[i_e2 - 1], "16:05", ["2.02"])], key=lambda f: f["accepted"])
+    news = {i_cat: [{"headline": "Mark Cuban talks politics", "symbols": ["X"]},
+                    {"headline": "Acme recalls 10,000 vehicles", "symbols": ["X"], "url": "u"}]}
+    out = ce.analyze("X", bars, bench, filings, lambda idxs: {i: news.get(i, []) for i in idxs}, company="Acme")
+    assert out["summary"]["quarters"] == 1                  # the pre-announcement filing is not counted as earnings
+    row = out["rows"][0]
+    assert row["pre"]["date"] == DATES[i_pre] and row["pre"]["source"] == "8-K results filing"
+    assert row["lead_source"] == "pre-announcement" and row["status"] == "Reversal"
+    assert [h["headline"] for h in row["catalyst"]["headlines"]] == ["Acme recalls 10,000 vehicles"]

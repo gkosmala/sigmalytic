@@ -47,6 +47,7 @@ ITEM_LABELS = {
 
 _cache: Dict[Tuple[str, int, str], Tuple[float, Dict[str, Any]]] = {}
 _cik_map: Dict[str, int] = {}
+_names: Dict[str, str] = {}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -88,12 +89,21 @@ def cik_for(symbol: str) -> int:
     if not _cik_map:
         data = _sec_get("https://www.sec.gov/files/company_tickers.json")
         for row in (data or {}).values():
-            _cik_map[str(row.get("ticker", "")).upper()] = int(row.get("cik_str"))
+            t = str(row.get("ticker", "")).upper()
+            _cik_map[t] = int(row.get("cik_str"))
+            _names[t] = str(row.get("title", ""))
     key = symbol.upper().replace(".", "-")
     if key not in _cik_map:
         raise ValueError(f"{symbol} is not in SEC EDGAR's ticker list. The engine covers U.S. SEC filers only "
                          f"(foreign companies that file 6-K reports and ETFs are not supported).")
     return _cik_map[key]
+
+
+def short_name(symbol: str) -> str:
+    """First word of the SEC company title ("Tesla, Inc." -> "Tesla"), used to spot company-specific headlines."""
+    title = _names.get(symbol.upper().replace(".", "-"), "")
+    word = title.split()[0].strip(",.").strip() if title.split() else ""
+    return word if len(word) >= 3 else ""
 
 
 def _rows_from_block(block: Dict[str, Any], cik: int) -> List[Dict[str, Any]]:
@@ -102,8 +112,9 @@ def _rows_from_block(block: Dict[str, Any], cik: int) -> List[Dict[str, Any]]:
     for i, form in enumerate(forms):
         acc_time = (block.get("acceptanceDateTime") or [""] * len(forms))[i]
         try:
-            # EDGAR acceptance times are Eastern time even though the string ends in "Z".
-            accepted = datetime.strptime(acc_time[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=ET)
+            # EDGAR acceptanceDateTime is UTC (e.g. Tesla's 4:05 PM ET earnings 8-K shows as 00:41Z next day).
+            accepted = (datetime.strptime(acc_time[:19], "%Y-%m-%dT%H:%M:%S")
+                        .replace(tzinfo=timezone.utc).astimezone(ET))
         except (TypeError, ValueError):
             continue
         acc = (block.get("accessionNumber") or [""] * len(forms))[i]
@@ -126,8 +137,8 @@ def sec_8k_filings(symbol: str, since: datetime) -> List[Dict[str, Any]]:
     return sorted((r for r in rows if r["form"] == "8-K" and r["accepted"] >= since_et), key=lambda r: r["accepted"])
 
 
-def earnings_events(filings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """8-K Item 2.02 filings, one per print (a second 2.02 within 7 days is treated as the same print)."""
+def _results_filings(filings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """8-K Item 2.02 filings, one per release (a second 2.02 within 7 days is treated as the same release)."""
     out: List[Dict[str, Any]] = []
     for f in filings:
         if "2.02" not in f["items"]:
@@ -136,6 +147,23 @@ def earnings_events(filings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         out.append(f)
     return out
+
+
+def split_results(filings: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    (earnings, pre_announcements). Some companies file Item 2.02 for preliminary numbers too -- Tesla files its
+    quarterly delivery report that way. Earnings prints are about 90 days apart, so a 2.02 release followed by another
+    within 60 days is the preliminary one (a pre-announcement), not the earnings report.
+    """
+    res = _results_filings(filings)
+    pre = [f for k, f in enumerate(res[:-1]) if res[k + 1]["accepted"] - f["accepted"] <= timedelta(days=60)]
+    pre_ids = {id(f) for f in pre}
+    return [f for f in res if id(f) not in pre_ids], pre
+
+
+def earnings_events(filings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """8-K Item 2.02 earnings releases only (pre-announcements filed under 2.02 are excluded)."""
+    return split_results(filings)[0]
 
 
 # ── Alpaca ───────────────────────────────────────────────────────────────────
@@ -192,7 +220,7 @@ def _best_headlines(news: List[Dict[str, Any]], n: int = 3) -> List[Dict[str, st
 
 # ── engine ───────────────────────────────────────────────────────────────────
 def analyze(symbol: str, bars: List[dict], bench: List[dict], filings: List[Dict[str, Any]],
-            news_lookup, keyword: str = "") -> Dict[str, Any]:
+            news_lookup, keyword: str = "", company: str = "") -> Dict[str, Any]:
     """Pure computation, so it can be tested without the network. `news_lookup(i)` returns headlines for bar i."""
     bars = sorted(bars, key=lambda b: str(b["t"]))
     dates = [str(b["t"])[:10] for b in bars]
@@ -220,6 +248,13 @@ def analyze(symbol: str, bars: List[dict], bench: List[dict], filings: List[Dict
 
     kw = keyword.strip().lower()
     item_filings = [(reaction_index(dates, f["accepted"]), f) for f in filings if "2.02" not in f["items"]]
+    pre_filings = [(reaction_index(dates, f["accepted"]), f) for f in split_results(filings)[1]]
+    name = (company or "").lower()
+
+    def relevant(items):
+        """Headlines that name the company or ticker -- drops market recaps and unrelated stories tagged with it."""
+        keys = [k for k in (name, symbol.lower()) if k]
+        return [x for x in items if any(k in str(x.get("headline", "")).lower() for k in keys)]
 
     # First pass: windows and candidate days (news is looked up in bulk afterwards).
     plans = []
@@ -230,28 +265,38 @@ def analyze(symbol: str, bars: List[dict], bench: List[dict], filings: List[Dict
         if len(window) < 3:
             continue
         cands = sorted(window, key=lambda i: abs(abn[i] or 0), reverse=True)[:CANDIDATE_DAYS]
-        plans.append((p, r, f, window, cands))
+        pf = next(((ri, ff) for ri, ff in pre_filings if ri is not None and p < ri < r), None)
+        if pf and pf[0] not in cands:
+            cands.append(pf[0])
+        plans.append((p, r, f, window, cands, pf))
 
-    need = sorted({i for *_, cands in plans for i in cands})
+    need = sorted({i for *_, cands, _pf in plans for i in cands})
     news = news_lookup(need) if need else {}
 
     rows = []
-    for p, r, f, window, cands in plans:
+    for p, r, f, window, cands, pf in plans:
         sig_slice = [abn[i] for i in range(max(1, r - SIGMA_LOOKBACK), r) if abn[i] is not None]
         sigma = statistics.pstdev(sig_slice) if len(sig_slice) > 10 else None
 
         pre = None
-        if kw:
+        if pf:
+            i, ff = pf
+            heads = _best_headlines(relevant(news.get(i, [])), 2)
+            pre = {"date": dates[i], "move": ret[i], "abn": abn[i], "headlines": heads, "source": "8-K results filing",
+                   "filing_url": ff["url"], "timing": timing_label(ff["accepted"])}
+        elif kw:
             hits = [i for i in cands if any(kw in str(x.get("headline", "")).lower() for x in news.get(i, []))]
             if hits:
                 i = max(hits, key=lambda j: abs(abn[j] or 0))
                 match = [x for x in news.get(i, []) if kw in str(x.get("headline", "")).lower()]
-                pre = {"date": dates[i], "move": ret[i], "abn": abn[i], "headlines": _best_headlines(match, 2)}
+                pre = {"date": dates[i], "move": ret[i], "abn": abn[i], "headlines": _best_headlines(match, 2),
+                       "source": f"headline keyword \"{keyword.strip()}\""}
 
-        cat_i = next((i for i in cands if not pre or dates[i] != pre["date"]), None)
+        cat_i = next((i for i in sorted(cands, key=lambda j: abs(abn[j] or 0), reverse=True)
+                      if not pre or dates[i] != pre["date"]), None)
         catalyst = None
         if cat_i is not None:
-            heads = _best_headlines(news.get(cat_i, []))
+            heads = _best_headlines(relevant(news.get(cat_i, [])))
             docs = [{"label": ", ".join(ITEM_LABELS.get(it, f"Item {it}") for it in ff["items"] if it != "9.01")
                      or "8-K filing", "url": ff["url"]} for ri, ff in item_filings if ri == cat_i]
             catalyst = {"date": dates[cat_i], "move": ret[cat_i], "abn": abn[cat_i], "headlines": heads,
@@ -323,19 +368,21 @@ def build(symbol: str, years: int = 4, keyword: str = "") -> Dict[str, Any]:
         with ThreadPoolExecutor(max_workers=6) as pool:
             return dict(pool.map(one, idxs))
 
-    out = analyze(symbol, bars, bars_map.get(BENCHMARK) or [], filings, lookup, keyword)
+    out = analyze(symbol, bars, bars_map.get(BENCHMARK) or [], filings, lookup, keyword, short_name(symbol))
     out["years"] = years
     out["notes"] = [
         "Earnings dates and timing come from the SEC acceptance time of each 8-K Item 2.02 filing. Companies that "
         "publish results well before filing the 8-K can show a later reaction day than the market actually traded.",
+        "A 2.02 filing followed by another within 60 days (e.g. Tesla's delivery report) is treated as a "
+        "pre-announcement for the next earnings report, not as an earnings report.",
         "Moves are close-to-close on the first trading day that could react. \"vs SPY\" subtracts SPY's move that day.",
         "σ multiple = market-adjusted earnings move divided by the stock's typical daily move over the prior 60 trading days.",
         "Catalyst = the biggest market-adjusted move between two earnings reactions. Headlines are Alpaca (Benzinga) "
         "stories tagged with the symbol from the prior 4 PM close to that day's close; 8-K filings are listed when "
-        "they landed on that day. \"Unexplained\" means neither was found.",
-        ("Pre-announcement = the biggest-move day in the window whose headlines contain \"" + keyword.strip() + "\". "
-         "Alignment compares it with the earnings move.") if keyword.strip() else
-        "No pre-announcement keyword was given, so alignment compares the run-up between prints with the earnings move.",
+        "they landed on that day. Only headlines that name the company or ticker count. \"Unexplained\" means neither was found.",
+        "Pre-announcement = a preliminary 8-K results filing in the window; if there is none and a keyword was given, the "
+        "biggest-move day whose headlines contain it. Alignment compares the pre-announcement move with the earnings "
+        "move, or the run-up between prints when there is no pre-announcement.",
         "Follow-through = the 5 trading days after the reaction day moved in the same direction as the reaction.",
     ]
     _cache[key] = (time.time(), out)
