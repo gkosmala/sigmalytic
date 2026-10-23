@@ -76,6 +76,11 @@ except Exception:
     _astro_table = _astro_run = _astro_bt = _astro_lt = None
 
 try:
+    from catalyst_engine_ui import render as _catalyst_render
+except Exception:
+    _catalyst_render = None
+
+try:
     from broker_bi_tab import build_broker_bi_tab, register_broker_bi_callbacks
 except Exception:
     build_broker_bi_tab = None
@@ -5939,6 +5944,32 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
+    # ── Multi-Catalyst Alignment Engine -- earnings reactions, pre-earnings catalysts and an optional
+    # keyword pre-announcement for any symbol (research only). Backend: /api/admin/catalyst-engine/run.
+    _ce_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+              "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
+    catalyst_engine_block = _admin_card([
+        html.Div("MULTI-CATALYST ALIGNMENT ENGINE", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                                         "marginBottom": "6px"}),
+        html.Div("Enter any symbol. The engine finds every earnings report in SEC filings, measures the reaction, "
+                 "finds the biggest move between reports and matches it to news headlines and 8-K filings, and "
+                 "checks whether the run-up (or a pre-announcement you name by keyword, e.g. \"deliveries\" for TSLA) "
+                 "lined up with the earnings move. Research output only. Takes up to a minute.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Input(id="catalyst-symbol", type="text", placeholder="Symbol (e.g. TSLA)", debounce=False,
+                      style={**_ce_in, "width": "150px"}),
+            dcc.Input(id="catalyst-years", type="number", value=4, min=2, max=8,
+                      style={**_ce_in, "width": "70px"}),
+            dcc.Input(id="catalyst-keyword", type="text", placeholder="Pre-announcement keyword (optional)",
+                      debounce=False, style={**_ce_in, "width": "250px"}),
+            html.Button("Run engine", id="catalyst-run-btn", n_clicks=0,
+                        style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                               "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="catalyst-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # Astro Research: its own collapsed entry inside Admin; the builder itself re-checks admin access.
     astro_research_block = html.Details([
         html.Summary("ASTRO RESEARCH (admin only)", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
@@ -6238,6 +6269,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             content_hub_block,
+            catalyst_engine_block,
             astro_research_block,
             setup_deployment_block,
             journal_correction_block,
@@ -6501,6 +6533,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         content_hub_block,
+        catalyst_engine_block,
         astro_research_block,
         weis_state_block,
         radar_bars_block,
@@ -11186,6 +11219,37 @@ def handle_content_hub_generate(n_clicks, symbol, session):
         if not payload.get("ok"):
             return f"Could not generate: {payload.get('error', 'unknown error')}"
         return _content_hub_render(payload)
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+
+
+@app.callback(Output("catalyst-result", "children"),
+              Input("catalyst-run-btn", "n_clicks"),
+              State("catalyst-symbol", "value"),
+              State("catalyst-years", "value"),
+              State("catalyst-keyword", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_catalyst_engine(n_clicks, symbol, years, keyword, session):
+    """Admin-only: runs the Multi-Catalyst Alignment Engine for one symbol. Research output only."""
+    if not symbol or not symbol.strip():
+        return "Please enter a symbol."
+    if _catalyst_render is None:
+        return "Catalyst engine display module did not import. Check frontend/catalyst_engine_ui.py."
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/catalyst-engine/run",
+                     json={"symbol": symbol.strip().upper(), "years": years or 4, "keyword": (keyword or "").strip()},
+                     headers=_auth_headers(session), timeout=170)
+        if r.status_code == 401:
+            return "Not signed in, or session expired. Please sign in again."
+        if r.status_code == 403:
+            return "Admin access only."
+        if not r.ok:
+            return f"Could not run the engine (error {r.status_code}): {r.text[:200]}"
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Could not run the engine: {payload.get('error', 'unknown error')}"
+        return _catalyst_render(payload)
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
 
