@@ -63,12 +63,16 @@ def _row(r, has_kw):
     cells = [html.Td([html.Div(r["reaction_date"], style={"fontWeight": "800"}),
                       _small(f"Window {r['window_start']} → {r['window_end']}")], style=TD)]
     if has_kw:
-        cells.append(html.Td([_small(pre["date"]), _move(pre["move"], pre["abn"])] + _links(pre["headlines"])
+        src = None
+        if pre:
+            src = (html.A(pre["source"], href=pre.get("filing_url"), target="_blank", rel="noopener",
+                          style={"fontSize": "11px", "color": MUTED}) if pre.get("filing_url") else _small(pre.get("source", "")))
+        cells.append(html.Td([_small(pre["date"]), _move(pre["move"], pre["abn"]), src] + _links(pre["headlines"])
                              if pre else [_small("Not found")], style=TD))
     if cat:
         detail = _links(cat["headlines"]) + _links(cat["filings"], key="label")
         if not cat["explained"]:
-            detail = [_small("Unexplained: no matching headline or 8-K")]
+            detail = [_small("Unexplained: no company-specific headline or 8-K")]
         cells.append(html.Td([_small(cat["date"]), _move(cat["move"], cat["abn"])] + detail, style={**TD, "maxWidth": "380px"}))
     else:
         cells.append(html.Td(_small("—"), style=TD))
@@ -86,7 +90,8 @@ def _row(r, has_kw):
 def render(payload: dict):
     s = payload.get("summary") or {}
     rows = payload.get("rows") or []
-    has_kw = bool(payload.get("keyword"))
+    has_kw = any(r.get("pre") for r in rows) or bool(payload.get("keyword"))
+    kw_label = payload.get("keyword") or "pre-announcement"
     q = s.get("quarters") or 0
 
     def pct(v):
@@ -103,12 +108,12 @@ def render(payload: dict):
         _tile("Avg catalyst move", avg(s.get("avg_abs_catalyst")), f"{s.get('catalysts_explained', 0)} of {q} matched to news/8-K"),
     ]
     if has_kw:
-        tiles.append(_tile(f"Avg \"{payload['keyword']}\" move", avg(s.get("avg_abs_pre")), f"Found in {s.get('pre_found', 0)} of {q}"))
+        tiles.append(_tile(f"Avg {kw_label} move", avg(s.get("avg_abs_pre")), f"Found in {s.get('pre_found', 0)} of {q}"))
     else:
         tiles.append(_tile("Avg run-up between prints", avg(s.get("avg_abs_runup"))))
     tiles += [
         _tile("Reversal rate", pct(s.get("reversal_rate")),
-              f"{'Pre-announcement' if has_kw else 'Run-up'} vs earnings, opposite sign", color=AMBER),
+              f"{'Pre-announcement (or run-up)' if has_kw else 'Run-up'} vs earnings, opposite sign", color=AMBER),
         _tile("5-day follow-through", pct(s.get("follow_through_rate")), "Kept the reaction's direction"),
     ]
 
