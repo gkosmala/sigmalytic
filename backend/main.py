@@ -3074,6 +3074,32 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
         return {"ok": False, "error": str(exc)[:300]}
 
 
+@app.post("/api/admin/catalyst-engine/run")
+def catalyst_engine_run(payload: dict, _admin: str = Depends(require_admin)):
+    """
+    Multi-Catalyst Alignment Engine (admin only): quarter-by-quarter earnings reactions, pre-earnings catalysts and an
+    optional keyword pre-announcement for any SEC-filing symbol. Research output only. See backend/catalyst_engine.py.
+    """
+    import re
+    from backend import catalyst_engine
+
+    p = payload or {}
+    symbol = str(p.get("symbol") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", symbol):
+        return {"ok": False, "error": "Enter a valid stock symbol."}
+    keyword = str(p.get("keyword") or "").strip()[:40]
+    try:
+        years = int(p.get("years") or 4)
+    except (TypeError, ValueError):
+        years = 4
+    try:
+        return {"ok": True, **catalyst_engine.build(symbol, years, keyword)}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)[:400]}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+
+
 @app.get("/api/admin/astro-research/symbols")
 def astro_research_symbols(_admin: str = Depends(require_admin)):
     """Astro Research (admin only): the per-symbol IPO date, location and elevation table, with source and status."""
