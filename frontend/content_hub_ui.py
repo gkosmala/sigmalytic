@@ -119,8 +119,8 @@ def _private_card(p):
                               html.Span(names[k] + ": ", style={"color": WHITE, "fontSize": "12px"}),
                               html.Span(v.get("reasoning") or "", style={"color": MUTED, "fontSize": "11px"})],
                              style={"marginBottom": "3px"}))
-    sel = p.get("selected")
-    rows.append(html.Div("Strongest supported idea: " + (f"Option {sel}" if sel in ("A", "B", "C") else "none (no idea is sufficiently supported)"),
+    sel = [k for k in ("A", "B", "C") if (p.get(k) or {}).get("supported")]
+    rows.append(html.Div("Supported ideas: " + (", ".join(f"Option {k}" for k in sel) if sel else "none (no idea meets its rule)"),
                          style={"color": WHITE, "fontSize": "12px", "marginTop": "4px"}))
     rows.append(html.Div(p.get("data_limits") or "", style={"color": MUTED, "fontSize": "11px", "marginTop": "2px"}))
     return html.Div(rows, style={"border": f"1px dashed {AMBER}", "borderRadius": "10px", "padding": "10px", "marginTop": "14px"})

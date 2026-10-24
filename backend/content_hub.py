@@ -545,9 +545,8 @@ OPTION_TITLES = {
     "B": "{s} Trend Geometry Facing Immediate Strain as Short-Duration Selling Overwhelms Order Book",
     "C": "{s} Liquidity Mapping Signals Imminent Volatility Squeeze at Key Volume-Weighted Pivot",
 }
-DATA_LIMITS = ("Evidence available to this tool: daily price and volume bars, pattern flags, and option-level references. "
-               "There is no order-book, tape, block-trade or dark-pool feed, so Options A, B and C can only be "
-               "supported by sourced online findings or by what the daily bars alone show.")
+DATA_LIMITS = ("Trading ideas A, B and C are assessed from measured Alpaca data (tape, intraday and daily bars, option "
+               "levels) by fixed rules in backend/trade_evidence.py.")
 NEWS_HEADINGS = {"us": "U.S. Market and Economic Developments", "international": "International Developments",
                  "geopolitical": "Geopolitical Developments", "company": "{s} Company and Industry News",
                  "institutional": "Institutional and Liquidity Evidence"}
@@ -1024,11 +1023,6 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "INSTITUTIONAL: set news.institutional only if a search result explicitly reports block orders, dark-pool prints, "
         "institutional accumulation or distribution, or unusual liquidity for this symbol. Never infer institutional "
         "activity from price and volume. If nothing is found, set it to null.\n"
-        "TRADING-IDEA ASSESSMENT (private, never published, and unrelated to the headline). Decide whether each trading idea is supported by the evidence:\n"
-        f'A: "{OPTION_TITLES["A"].format(s=s)}" (idea; needs sourced evidence of institutional or dark-pool accumulation)\n'
-        f'B: "{OPTION_TITLES["B"].format(s=s)}" (idea; needs evidence of distribution or exhaustion risk, and of short-duration selling)\n'
-        f'C: "{OPTION_TITLES["C"].format(s=s)}" (idea; needs evidence of a high-volatility squeeze setup)\n'
-        'Be strict. If none is sufficiently supported, selected is "none". Never use these idea texts as the headline. '
         f"The \"title\" is always your own accurate headline of at most {HEADLINE_MAX} characters (GoDaddy's limit; count them) that contains the symbol.\n"
         "Return JSON: {\"title\": str, \"meta_description\": str (110-155 chars, contains the symbol), "
         "\"sections\": [{\"heading\": str, \"body\": str}] (the seven sections above, 700-1000 words in total, "
@@ -1037,9 +1031,8 @@ def ai_blog(f: Dict[str, Any], web_search: Optional[bool] = None) -> Dict[str, A
         "\"company\": ..., \"institutional\": ...}, "
         "\"summary\": {\"condition\": str, \"risk\": str, \"strengthen\": str, \"weaken\": str, \"monitor\": str}, "
         "\"image\": {\"view\": str (1-2 sentences, at most 200 characters, the day's overall read), \"volume\": str "
-        "(1-2 sentences, at most 200 characters, what volume says about confirmation)}, "
-        "\"private\": {\"A\": {\"supported\": bool, \"reasoning\": str}, \"B\": {...}, \"C\": {...}, "
-        "\"selected\": \"A\"|\"B\"|\"C\"|\"none\"}}\n\nFACTS:\n" + json.dumps(f, indent=1))
+        "(1-2 sentences, at most 200 characters, what volume says about confirmation)}}\n\nFACTS:\n"
+        + json.dumps(f, indent=1))
     try:
         out = _ai_json(_BLOG_STYLE, user, max_tokens=16000, web_search=use_search)
     except Exception as e:
@@ -1274,11 +1267,7 @@ def generate_blog(f: Dict[str, Any], use_ai: bool = True) -> Dict[str, Any]:
             guarded = _guarded_text(cand["title"], cand["meta_description"], cand["sections"], {**summary, **{"i" + k: v for k, v in img.items()}})
             bad, banned = numbers_trace_to_facts(guarded, f), find_banned_phrases(guarded)
             news, sources, dropped = _vet_news(cand.get("news"), cand.get("_search_results") or {})
-            private = _norm_private(cand.get("private"))
-            sel = private["selected"]
-            if sel == "A" and "institutional" not in news:
-                sel = private["selected"] = "none"
-                private["A"]["reasoning"] += " (Marked not supported by the tool: no sourced institutional finding was returned.)"
+            private = _norm_private({})     # replaced by the measured-evidence assessment in _build_package
             title = cand["title"]            # A/B/C are private trading-idea assessments; they never set the published headline
             cand.update({"title": title, "news": news, "sources": sources, "private": private, "guarded_text": guarded})
             cand.pop("_search_results", None)
@@ -1455,8 +1444,22 @@ def build_package(symbol: str, use_ai: bool = True, facts: Optional[Dict[str, An
 def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], log: List[Dict[str, Any]]) -> Dict[str, Any]:
     f = facts or build_facts(symbol)
     chart_bars = f.pop("_chart_bars", None)
+    # The three private trading ideas are judged from measured Alpaca data (backend/trade_evidence.py), not by the AI.
+    # It runs alongside the AI calls, so it adds little or no time.
+    from concurrent.futures import ThreadPoolExecutor
+    from backend import trade_evidence
+    ev_pool = ThreadPoolExecutor(max_workers=1)
+    ev_future = ev_pool.submit(trade_evidence.build, f["symbol"], chart_bars, dict(f)) if chart_bars else None
     blog = generate_blog(f, use_ai=use_ai)
     teasers = generate_teasers(f, blog, use_ai=use_ai)
+    evidence: Dict[str, Any] = {}
+    if ev_future is not None:
+        try:
+            evidence = ev_future.result(timeout=120)
+        except Exception as e:  # the assessment is private and optional; it must never break the drafts
+            evidence = {k: {"assessed": False, "reason": f"{type(e).__name__}"} for k in ("institutional", "selling", "squeeze")}
+    ev_pool.shutdown(wait=False)
+    blog["private"] = trade_evidence.private_from_evidence(evidence)
     notes = [n for n in (blog.get("note"), (teasers.pop("_note", {}) or {}).get("note")) if n]
     blog_issues = (["Numbers not in the data: " + ", ".join(numbers_trace_to_facts(_blog_text(blog), f))]
                    if numbers_trace_to_facts(_blog_text(blog), f) else []) + \
@@ -1473,6 +1476,6 @@ def _build_package(symbol: str, use_ai: bool, facts: Optional[Dict[str, Any]], l
                            "filename": f"{f['symbol'].lower()}-{f['as_of']}-share-image.png", "width": IMG_W, "height": IMG_H}
         except Exception as e:  # the image is a convenience; it must never break the report
             notes.append(f"Share image could not be drawn: {str(e)[:120]}.")
-    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "daily_bars": chart_bars or [], "share_image": share_image, "blog": blog,
+    return {"symbol": f["symbol"], "as_of": f["as_of"], "facts": f, "evidence": evidence, "daily_bars": chart_bars or [], "share_image": share_image, "blog": blog,
             "blog_issues": blog_issues,
             "teasers": teasers, "ai_used": bool(blog.get("ai")), "ai_configured": ai_available(), "ai_provider": ai_provider(), "usage": summarize_usage(log), "notes": notes}
