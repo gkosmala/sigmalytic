@@ -552,6 +552,10 @@ def _weis_verdict_table_html(rows: List[Dict[str, Any]], title: str, note: str =
     """
 
 
+# Breakouts and Breakdowns are listed in full (up to this many each) rather than capped at 20 like other sections.
+BREAKOUT_LIST_LIMIT = int(os.getenv("REPORT_BREAKOUT_LIST_LIMIT", "100") or 100)
+
+
 def _opportunity_table(items: List[Dict[str, Any]], title: str, note: str, limit: int = 12) -> str:
     entries = sorted(items, key=lambda item: (item.get("priority", 0), item.get("symbol", "")))[:limit]
     body = "".join(
@@ -668,6 +672,10 @@ def build_report_html(report_date_str: str) -> str:
                                           f"{_fmt(detail.get('current_progress'), 2)} vs "
                                           f"prior {_fmt(detail.get('prior_progress'), 2)}"))
 
+    # Breakouts and breakdowns get their own full lists; springs and upthrusts keep the shared section.
+    breakouts = [i for i in confirmed if i["label"] == "Breakout"]
+    breakdowns = [i for i in confirmed if i["label"] == "Breakdown"]
+    reversals = [i for i in confirmed if i["label"] not in ("Breakout", "Breakdown")]
     movers_html = _movers_table(_market_movers_from_scanned_rows(rows))
     html_doc = f"""<!doctype html>
 <html>
@@ -705,7 +713,9 @@ def build_report_html(report_date_str: str) -> str:
     </section>
     {_sector_heatmap_html(rows)}
     {_opportunity_table(setups, "Setting Up: Near Tested Levels", "Close is within 2% of a multi-touch support or resistance level without a confirmed crossing. A watch condition, not a trade trigger.", 15)}
-    {_opportunity_table(confirmed, "Observed Springs, Upthrusts and Crossings", "Detector rules met on completed daily bars. Breakout/breakdown crossings occurred within the last three sessions and held to the latest close; this does not validate subsequent performance.", 20)}
+    {_opportunity_table(breakouts, "Breakouts", "Closed above a multi-touch resistance level within the last three sessions and held above it through the latest close. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
+    {_opportunity_table(breakdowns, "Breakdowns", "Closed below a multi-touch support level within the last three sessions and held below it through the latest close. Sorted most recent crossing first. An observed crossing, not a forecast.", BREAKOUT_LIST_LIMIT)}
+    {_opportunity_table(reversals, "Observed Springs and Upthrusts", "Detector rules met on completed daily bars: a spring dips below support and recovers; an upthrust pushes above resistance and fails. This does not validate subsequent performance.", 20)}
     {_opportunity_table(exhaustion, "Buying and Selling Exhaustion", "Renko-Weis screening rule: shrinking volume on comparable waves after three progressively shorter thrusts. Approximate volume is apportioned across Renko bricks.", 15)}
     {_opportunity_table(climaxes, "Buying and Selling Climaxes", "Existing daily time-bar Weis Radar rule: current wave volume > 2x previous wave, while its price progress < half the previous wave. Rules describe observed volume and price, not a future move.", 15)}
     {movers_html}
