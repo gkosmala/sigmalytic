@@ -5949,7 +5949,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
     report_hub_block = _admin_card([
         html.Div("DAILY REPORT \u2192 CONTENT HUB", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
                                                           "marginBottom": "6px"}),
-        html.Div("Load a daily report, then tap any symbol in it. You get the same output as Content Hub: the blog "
+        html.Div("The latest daily report's symbols load automatically; pick another date to switch. Tap any symbol. You get the same output as Content Hub: the blog "
                  "draft for the Research & Intelligence page, the share image and the checked teasers for every "
                  "platform. A symbol already drafted today opens instantly at no extra AI cost; use Regenerate for a "
                  "fresh draft. Nothing is posted anywhere.",
@@ -5958,7 +5958,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             dcc.Dropdown(id="report-hub-date", options=[], value=None, placeholder="Latest report", clearable=True,
                          style={"width": "190px", "display": "inline-block", "verticalAlign": "middle",
                                 "marginRight": "8px", "color": "#0b0f14"}),
-            html.Button("Load symbols", id="report-hub-load-btn", n_clicks=0,
+            html.Button("Reload", id="report-hub-load-btn", n_clicks=0,
                         style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
                                "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
                                "marginRight": "8px"}),
@@ -11272,13 +11272,15 @@ def _report_hub_chips(sections):
 
 @app.callback(Output("report-hub-symbols", "children"),
               Output("report-hub-date", "options"),
-              Output("report-hub-date", "value"),
+              Output("report-hub-date", "placeholder"),
               Input("report-hub-load-btn", "n_clicks"),
-              State("report-hub-date", "value"),
-              State("s-session", "data"),
-              prevent_initial_call=True)
+              Input("report-hub-date", "value"),
+              State("s-session", "data"))
 def handle_report_hub_load(n_clicks, date, session):
-    """Admin-only: lists the symbols in a stored daily report as tappable chips, grouped by report section."""
+    """
+    Admin-only: lists the symbols in a stored daily report as tappable chips, grouped by report section.
+    Runs when the Admin page opens (latest report), when a date is picked, and on "Reload".
+    """
     try:
         r = req.get(f"{BACKEND_HTTP}/api/admin/report-symbols", params={"date": date or ""},
                     headers=_auth_headers(session), timeout=40)
@@ -11290,12 +11292,14 @@ def handle_report_hub_load(n_clicks, date, session):
     except Exception as exc:
         return f"Could not reach the backend: {exc}", no_update, no_update
     opts = [{"label": x, "value": x} for x in d.get("dates") or []]
+    latest = (d.get("dates") or [None])[0]
+    placeholder = f"Latest report ({latest})" if latest else "No reports found"
     if not d.get("ok"):
-        return d.get("error", "Could not load the report."), opts, no_update
+        return d.get("error", "Could not load the report."), opts, placeholder
     n = sum(len(s.get("symbols") or []) for s in d.get("sections") or [])
     head = html.Div(f"Report {d['date']}: {n} symbol listings. Tap one to build its Content Hub package.",
                     style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"})
-    return [head] + _report_hub_chips(d.get("sections")), opts, d["date"]
+    return [head] + _report_hub_chips(d.get("sections")), opts, placeholder
 
 
 @app.callback(Output("report-hub-result", "children"),
