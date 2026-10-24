@@ -50,3 +50,22 @@ def test_endpoints_and_same_day_reuse(monkeypatch):
         assert calls == ["AAPL", "AAPL", "AAPL"]
     finally:
         main.app.dependency_overrides.clear()
+
+
+def test_report_lists_breakouts_and_breakdowns_separately(monkeypatch):
+    import backend.heatmap_engine as hm
+    def row(sym, events):
+        return {"symbol": sym, "price": 100.0, "last_bar_date": "2026-10-23", "events": events, "setups": [],
+                "climaxes": [], "volume_exhaustion": 0, "buying_exhaustion": 0, "change_pct": 1.0}
+    rows = [row("UPP", [{"type": "BREAKOUT", "level": 98, "pct_beyond": 2.0, "days_back": 1, "date": "2026-10-22"}]),
+            row("DWN", [{"type": "BREAKDOWN", "level": 102, "pct_beyond": -2.0, "days_back": 0}]),
+            row("SPR", [{"type": "SPRING", "level": 95, "score": 80}])]
+    rows += [row(f"B{i:02d}", [{"type": "BREAKOUT", "level": 90, "pct_beyond": 1.0, "days_back": 2}]) for i in range(25)]
+    monkeypatch.setattr(re_, "_run_full_universe_renko_weis_scan", lambda: rows)
+    monkeypatch.setattr(hm, "_load_sector_lookup", lambda: {r["symbol"]: {"sector": "Tech"} for r in rows})
+    html_doc = re_.build_report_html("2026-10-23")
+    secs = {s["title"]: [x["symbol"] for x in s["symbols"]] for s in re_.symbols_from_report_html(html_doc)}
+    assert secs["Breakouts (26)"][0] == "UPP" and len(secs["Breakouts (26)"]) == 26     # full list, newest first
+    assert secs["Breakdowns (1)"] == ["DWN"]
+    assert secs["Observed Springs and Upthrusts (1)"] == ["SPR"]
+    assert "Upthrusts and Crossings" not in html_doc
