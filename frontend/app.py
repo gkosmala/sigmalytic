@@ -5944,6 +5944,35 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
+    # ── Daily Report -> Content Hub: tap a symbol from a stored daily report to get the full Content Hub package
+    # (blog draft, share image, platform teasers). Same backend as Content Hub; drafts only, nothing posts.
+    report_hub_block = _admin_card([
+        html.Div("DAILY REPORT \u2192 CONTENT HUB", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                                          "marginBottom": "6px"}),
+        html.Div("Load a daily report, then tap any symbol in it. You get the same output as Content Hub: the blog "
+                 "draft for the Research & Intelligence page, the share image and the checked teasers for every "
+                 "platform. A symbol already drafted today opens instantly at no extra AI cost; use Regenerate for a "
+                 "fresh draft. Nothing is posted anywhere.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Dropdown(id="report-hub-date", options=[], value=None, placeholder="Latest report", clearable=True,
+                         style={"width": "190px", "display": "inline-block", "verticalAlign": "middle",
+                                "marginRight": "8px", "color": "#0b0f14"}),
+            html.Button("Load symbols", id="report-hub-load-btn", n_clicks=0,
+                        style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                               "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                               "marginRight": "8px"}),
+            html.Button("Regenerate last symbol", id="report-hub-regen-btn", n_clicks=0,
+                        style={"background": "transparent", "color": WHITE, "border": f"1px solid {BORDER}",
+                               "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px",
+                               "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "12px"}),
+        dcc.Store(id="report-hub-last"),
+        dcc.Loading(html.Div(id="report-hub-symbols", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+        dcc.Loading(html.Div(id="report-hub-result", style={"fontSize": "12px", "color": WHITE, "marginTop": "14px"}),
+                    type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # ── Multi-Catalyst Alignment Engine -- earnings reactions, pre-earnings catalysts and an optional
     # keyword pre-announcement for any symbol (research only). Backend: /api/admin/catalyst-engine/run.
     _ce_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
@@ -6269,6 +6298,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
             content_hub_block,
+            report_hub_block,
             catalyst_engine_block,
             astro_research_block,
             setup_deployment_block,
@@ -6533,6 +6563,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         ], style={"marginBottom":"0"}),
 
         content_hub_block,
+        report_hub_block,
         catalyst_engine_block,
         astro_research_block,
         weis_state_block,
@@ -11221,6 +11252,90 @@ def handle_content_hub_generate(n_clicks, symbol, session):
         return _content_hub_render(payload)
     except Exception as exc:
         return f"Could not reach the backend: {exc}"
+
+
+def _report_hub_chips(sections):
+    chip = {"background": "rgba(0,0,0,.35)", "color": WHITE, "border": f"1px solid {BORDER}", "borderRadius": "14px",
+            "padding": "5px 12px", "fontSize": "12px", "fontWeight": "700", "cursor": "pointer",
+            "margin": "0 6px 6px 0"}
+    out = []
+    for si, sec in enumerate(sections or []):
+        out.append(html.Div(sec.get("title", ""), style={"fontSize": "10px", "fontWeight": "800", "color": MUTED,
+                                                         "letterSpacing": ".1em", "textTransform": "uppercase",
+                                                         "margin": "10px 0 6px"}))
+        out.append(html.Div([
+            html.Button(x["symbol"], id={"type": "report-hub-sym", "key": f"{si}-{x['symbol']}"}, n_clicks=0,
+                        title=" \u00b7 ".join(v for v in (x.get("detail"), x.get("price")) if v), style=chip)
+            for x in sec.get("symbols") or []]))
+    return out
+
+
+@app.callback(Output("report-hub-symbols", "children"),
+              Output("report-hub-date", "options"),
+              Output("report-hub-date", "value"),
+              Input("report-hub-load-btn", "n_clicks"),
+              State("report-hub-date", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_report_hub_load(n_clicks, date, session):
+    """Admin-only: lists the symbols in a stored daily report as tappable chips, grouped by report section."""
+    try:
+        r = req.get(f"{BACKEND_HTTP}/api/admin/report-symbols", params={"date": date or ""},
+                    headers=_auth_headers(session), timeout=40)
+        if r.status_code in (401, 403):
+            return "Admin access only. Sign in again if your session expired.", no_update, no_update
+        if not r.ok:
+            return f"Could not load the report (error {r.status_code}): {r.text[:200]}", no_update, no_update
+        d = r.json()
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}", no_update, no_update
+    opts = [{"label": x, "value": x} for x in d.get("dates") or []]
+    if not d.get("ok"):
+        return d.get("error", "Could not load the report."), opts, no_update
+    n = sum(len(s.get("symbols") or []) for s in d.get("sections") or [])
+    head = html.Div(f"Report {d['date']}: {n} symbol listings. Tap one to build its Content Hub package.",
+                    style={"fontSize": "12px", "color": WHITE, "marginBottom": "4px"})
+    return [head] + _report_hub_chips(d.get("sections")), opts, d["date"]
+
+
+@app.callback(Output("report-hub-result", "children"),
+              Output("report-hub-last", "data"),
+              Input({"type": "report-hub-sym", "key": ALL}, "n_clicks"),
+              Input("report-hub-regen-btn", "n_clicks"),
+              State("report-hub-last", "data"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_report_hub_symbol(chip_clicks, regen_clicks, last, session):
+    """Admin-only: a tapped report symbol gets the same package as the Content Hub card. Drafts only."""
+    trig = callback_context.triggered_id
+    if not callback_context.triggered or not (callback_context.triggered[0].get("value") or 0):
+        return no_update, no_update          # chips were just drawn, nothing was tapped
+    regen = trig == "report-hub-regen-btn"
+    symbol = (last or "") if regen else str((trig or {}).get("key", "")).split("-", 1)[-1]
+    if not symbol:
+        return "Tap a symbol first.", no_update
+    if _content_hub_render is None:
+        return "Content Hub display module did not import. Check frontend/content_hub_ui.py.", symbol
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/content-hub/generate",
+                     json={"symbol": symbol, "use_ai": True, "reuse": not regen},
+                     headers=_auth_headers(session), timeout=200)
+        if r.status_code in (401, 403):
+            return "Admin access only. Sign in again if your session expired.", symbol
+        if not r.ok:
+            return f"Could not generate {symbol} (error {r.status_code}): {r.text[:200]}", symbol
+        payload = r.json()
+        if not payload.get("ok"):
+            return f"Could not generate {symbol}: {payload.get('error', 'unknown error')}", symbol
+        note = "Today's earlier draft (no new AI cost). Use Regenerate for a fresh one." if payload.get("reused") \
+            else "Fresh draft."
+        return html.Div([
+            html.Div(f"{symbol} \u00b7 {note}", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                                       "marginBottom": "8px"}),
+            _content_hub_render(payload),
+        ]), symbol
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}", symbol
 
 
 @app.callback(Output("catalyst-result", "children"),

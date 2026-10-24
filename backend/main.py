@@ -3056,22 +3056,52 @@ def weis_radar_chart_data(symbol: str, timeframe: str = "1Day", limit: int = 252
         return {"ok": False, "error": str(e)[:300]}
 
 
+# Content Hub packages made today, reused when the Daily Report -> Content Hub panel asks for the same symbol again,
+# so a second tap does not pay for another AI run. Keyed by (symbol, Eastern date); lost on restart, which is fine.
+_CONTENT_HUB_REUSE: dict = {}
+
+
 @app.post("/api/admin/content-hub/generate")
 def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     """
     Content Hub (admin only): builds a blog draft and one teaser draft per social platform for a symbol,
     from live platform data. Drafts only -- nothing is posted anywhere. See backend/content_hub.py.
+    With "reuse": true, returns today's earlier package for the symbol if there is one.
     """
     import re
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _ZI
     from backend import content_hub
 
-    symbol = str((payload or {}).get("symbol") or "").strip().upper()
+    p = payload or {}
+    symbol = str(p.get("symbol") or "").strip().upper()
     if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", symbol):
         return {"ok": False, "error": "Enter a valid stock symbol."}
+    key = (symbol, _dt.now(_ZI("America/New_York")).date().isoformat())
+    if p.get("reuse") and key in _CONTENT_HUB_REUSE:
+        return {**_CONTENT_HUB_REUSE[key], "reused": True}
     try:
-        return {"ok": True, **content_hub.build_package(symbol, use_ai=bool((payload or {}).get("use_ai", True)))}
+        out = {"ok": True, **content_hub.build_package(symbol, use_ai=bool(p.get("use_ai", True)))}
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:300]}
+    if len(_CONTENT_HUB_REUSE) > 60:
+        _CONTENT_HUB_REUSE.clear()
+    _CONTENT_HUB_REUSE[key] = out
+    return out
+
+
+@app.get("/api/admin/report-symbols")
+def admin_report_symbols(date: str = "", _admin: str = Depends(require_admin)):
+    """Daily Report -> Content Hub (admin only): the symbols listed in a stored daily report, by report section."""
+    import re
+    from backend import reports_engine
+
+    if date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        return {"ok": False, "error": "Date must look like 2026-10-23."}
+    try:
+        return reports_engine.report_symbols(date or None)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
 
 
 @app.post("/api/admin/catalyst-engine/run")

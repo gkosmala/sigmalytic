@@ -13,9 +13,11 @@ results and the radar cache are not report data sources.
 
 from __future__ import annotations
 
+import html
 import json
 import math
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -1227,3 +1229,47 @@ def delete_report(report_date_str: str) -> Dict[str, Any]:
         return {"ok": True, "date": report_date_str, "existed": bool(existed)}
     except Exception as e:
         return {"ok": False, "error": str(e), "date": report_date_str}
+
+
+# ── Daily report -> Content Hub (Admin) ─────────────────────────────────────
+_SECTION_RE = re.compile(r"<h2>(.*?)</h2>(.*?)(?=<h2>|</body>)", re.S)
+_ROW_RE = re.compile(r"<tr>\s*<td><strong>([^<]+)</strong></td>(.*?)</tr>", re.S)
+_CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.S)
+
+
+def symbols_from_report_html(html_doc: str) -> List[Dict[str, Any]]:
+    """
+    Sections of a stored daily report that list symbols, in report order:
+    [{"title": "...", "symbols": [{"symbol": "AAPL", "detail": "Selling exhaustion", "price": "231.40"}]}].
+    Reads the saved HTML, so it works for every archived report without regenerating it.
+    """
+    out: List[Dict[str, Any]] = []
+    for title, body in _SECTION_RE.findall(html_doc or ""):
+        seen, syms = set(), []
+        for sym, rest in _ROW_RE.findall(body):
+            sym = html.unescape(sym).strip().upper()
+            if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", sym) or sym in seen:
+                continue
+            seen.add(sym)
+            cells = [html.unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in _CELL_RE.findall(rest)]
+            if cells and re.fullmatch(r"[-\d.,]+|—", cells[0]):        # movers table: price, change %
+                detail, price = (cells[1] if len(cells) > 1 else ""), cells[0]
+            else:                                                     # opportunity tables: observation, close
+                detail, price = (cells[0] if cells else ""), (cells[1] if len(cells) > 1 else "")
+            syms.append({"symbol": sym, "detail": detail, "price": price})
+        if syms:
+            out.append({"title": html.unescape(re.sub(r"<[^>]+>", "", title)).strip(), "symbols": syms})
+    return out
+
+
+def report_symbols(report_date_str: Optional[str] = None) -> Dict[str, Any]:
+    """Symbols in one stored report (the newest when no date is given), plus recent report dates for a picker."""
+    catalog = report_catalog()
+    dates = catalog.get("dates") or []
+    date = report_date_str or (dates[0] if dates else None)
+    if not date:
+        return {"ok": False, "error": catalog.get("error") or "No stored daily reports found.", "dates": []}
+    html_doc = get_report_html(date)
+    if not html_doc:
+        return {"ok": False, "error": f"No stored report for {date}.", "dates": dates[:60]}
+    return {"ok": True, "date": date, "dates": dates[:60], "sections": symbols_from_report_html(html_doc)}
