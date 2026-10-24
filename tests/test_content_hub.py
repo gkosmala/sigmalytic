@@ -248,14 +248,16 @@ def test_news_needs_real_search_source_and_option_a_needs_institutional(facts, m
     assert "Geopolitical" in blog["note"]
 
 
-def test_option_b_is_private_idea_and_never_the_headline(facts, monkeypatch):
+def test_trading_ideas_are_never_judged_by_the_ai_or_used_as_headline(facts, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     cand = _ai_cand(facts, private={"A": {"supported": False}, "B": {"supported": True, "reasoning": "r"},
                                     "C": {"supported": False}, "selected": "B"})
     monkeypatch.setattr(ch, "ai_blog", lambda f: cand)
     blog = ch.generate_blog(facts, use_ai=True)
     assert blog["title"] == "TEST Holds Its Trend"                # the model's own headline, not the option text
-    assert blog["private"]["selected"] == "B" and "Option B" not in blog["html"] and "reasoning" not in blog["html"]
+    # An AI claim of support is ignored; measured evidence decides (backend/trade_evidence.py).
+    assert blog["private"]["selected"] == "none" and not blog["private"]["B"]["supported"]
+    assert "Option B" not in blog["html"] and "reasoning" not in blog["html"]
 
 
 def test_web_search_request_pause_and_usage(monkeypatch):
