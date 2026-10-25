@@ -81,3 +81,16 @@ def test_endpoint(monkeypatch):
         assert not c.post("/api/admin/ma-study/run", json={"symbol": "??"}).json()["ok"]
     finally:
         main.app.dependency_overrides.clear()
+
+
+def test_admin_page_builds_with_every_card():
+    """Regression: the Admin page must build (a card once used a style defined later and broke the whole tab)."""
+    import os, sys, json
+    os.environ["SIGMALYTIC_ADMIN_EMAILS"] = "owner@example.com"
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "frontend"))
+    import app as A
+    A.req.get = lambda *a, **k: type("R", (), {"ok": False, "status_code": 500, "json": lambda s: {}})()
+    tab = A.build_admin_tab({"email": "owner@example.com", "access_token": "t"}, "http://x")
+    s = json.dumps(tab.to_plotly_json(), default=lambda o: o.to_plotly_json())
+    for cid in ("ma-study-run-btn", "catalyst-run-btn", "report-hub-load-btn", "content-hub-run-btn"):
+        assert cid in s, cid
