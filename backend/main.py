@@ -3104,6 +3104,24 @@ def admin_report_symbols(date: str = "", _admin: str = Depends(require_admin)):
         return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
 
 
+@app.post("/api/admin/ma-study/run")
+def ma_study_run(payload: dict, _admin: str = Depends(require_admin)):
+    """Moving Average Study (admin only): crossings, run lengths, volume and follow-through around one MA. See backend/ma_study.py."""
+    import re
+    from backend import ma_study
+
+    p = payload or {}
+    symbol = str(p.get("symbol") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", symbol):
+        return {"ok": False, "error": "Enter a valid stock symbol."}
+    try:
+        return {"ok": True, **ma_study.build(symbol, int(p.get("length") or 20), int(p.get("years") or 10))}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)[:300]}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+
+
 @app.post("/api/admin/catalyst-engine/run")
 def catalyst_engine_run(payload: dict, _admin: str = Depends(require_admin)):
     """
