@@ -760,3 +760,15 @@ def test_anthropic_400_shows_the_api_message(monkeypatch):
     with pytest.raises(requests.HTTPError) as e:
         ch._ai_json("s", "u")
     assert "credit balance is too low" in str(e.value) and str(e.value).startswith("400 from Anthropic")
+
+
+def test_summary_wording_follows_side_of_20_day_average():
+    above = ch.facts_from_chart_data("UP", _chart(drift=0.3))
+    below = ch.facts_from_chart_data("DN", _chart(drift=-0.3))
+    assert above["vs_sma20_pct"] > 0 and below["vs_sma20_pct"] < 0
+    sa, sb = ch._template_summary(above), ch._template_summary(below)
+    assert "failure to hold the 20-day average" in sa["risk"]
+    assert "hold the 20-day average" not in sb["risk"] and "trading below its 20-day average" in sb["risk"]
+    assert "first sign of repair" in sb["strengthen"] and "first sign of repair" not in sa["strengthen"]
+    for summary, f in ((sa, above), (sb, below)):       # every number still traces to the facts
+        assert ch.numbers_trace_to_facts(" ".join(summary.values()), f) == []
