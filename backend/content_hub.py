@@ -572,13 +572,21 @@ def _long_date(d: str) -> str:
 
 def _template_summary(f: Dict[str, Any]) -> Dict[str, str]:
     s, trend = f["symbol"], _trend_word(f)
+    below = (f.get("vs_sma20_pct") or 0) < 0
     return {
         "condition": (f"{s} {_verb(f)} {_usd(f['last_close'])} on {f['as_of']}, {trend} its 20-day average of "
                       f"{_usd(f['sma20'])}, with a {_sgn(f['change_20d_pct'])} move over twenty sessions."),
+        # Above the 20-day average the risk is losing it; below it, there is nothing to "hold" -- the risk is the slide
+        # continuing, and reclaiming the average is the first sign of repair.
         "risk": (f"The principal risk is a failure to hold the 20-day average at {_usd(f['sma20'])}, which would bring the "
-                 f"recent low near {_usd(f.get('low_20d'))} back into view."),
+                 f"recent low near {_usd(f.get('low_20d'))} back into view.") if not below else
+                (f"{s} is trading below its 20-day average of {_usd(f['sma20'])}, so the principal risk is a continued slide "
+                 f"toward the recent low near {_usd(f.get('low_20d'))}; a close below it would extend the decline."),
         "strengthen": (f"A sustained close above the 20-day high near {_usd(f.get('high_20d'))}, supported by volume above "
-                       "its 20-day average, would strengthen the bullish case."),
+                       "its 20-day average, would strengthen the bullish case.") if not below else
+                      (f"A close back above the 20-day average at {_usd(f['sma20'])}, supported by volume above its 20-day "
+                       f"average, would be the first sign of repair; a sustained close above the 20-day high near "
+                       f"{_usd(f.get('high_20d'))} would strengthen the bullish case."),
         "weaken": (f"A close below the 20-day low near {_usd(f.get('low_20d'))}, particularly on heavier volume, would "
                    "weaken it."),
         "monitor": (f"Traders should monitor the 20-day average at {_usd(f['sma20'])}, the 60-day range from "
