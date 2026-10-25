@@ -5973,6 +5973,26 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
+    # ── Moving Average Study: crossings, time spent above/below, run lengths, volume and follow-through around one
+    # simple moving average, from Alpaca daily bars. Backend: /api/admin/ma-study/run. Research only.
+    ma_study_block = _admin_card([
+        html.Div("MOVING AVERAGE STUDY", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
+        html.Div("Enter a symbol and an average length (default 20 days). Shows how often price crossed the average, how long "
+                 "it stayed on each side, whether heavy-volume crossings lasted longer, what happened 5/10/20 days after each "
+                 "cross, the average's own trend, and where the current run stands. Use Copy to paste the full result.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        html.Div([
+            dcc.Input(id="ma-study-symbol", type="text", placeholder="Symbol (e.g. APP)", debounce=False,
+                      style={**_ce_in, "width": "150px"}),
+            dcc.Input(id="ma-study-length", type="number", value=20, min=5, max=200, style={**_ce_in, "width": "80px"}),
+            dcc.Input(id="ma-study-years", type="number", value=10, min=1, max=20, style={**_ce_in, "width": "80px"}),
+            html.Button("Run study", id="ma-study-run-btn", n_clicks=0,
+                        style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                               "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
+        ], style={"marginBottom": "14px"}),
+        dcc.Loading(html.Div(id="ma-study-result", style={"fontSize": "12px", "color": WHITE}), type="dot", color=TEAL),
+    ], sx={"marginBottom": "16px"})
+
     # ── Multi-Catalyst Alignment Engine -- earnings reactions, pre-earnings catalysts and an optional
     # keyword pre-announcement for any symbol (research only). Backend: /api/admin/catalyst-engine/run.
     _ce_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
@@ -6300,6 +6320,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             content_hub_block,
             report_hub_block,
             catalyst_engine_block,
+            ma_study_block,
             astro_research_block,
             setup_deployment_block,
             journal_correction_block,
@@ -6565,6 +6586,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
         content_hub_block,
         report_hub_block,
         catalyst_engine_block,
+        ma_study_block,
         astro_research_block,
         weis_state_block,
         radar_bars_block,
@@ -11340,6 +11362,64 @@ def handle_report_hub_symbol(chip_clicks, regen_clicks, last, session):
         ]), symbol
     except Exception as exc:
         return f"Could not reach the backend: {exc}", symbol
+
+
+@app.callback(Output("ma-study-result", "children"),
+              Input("ma-study-run-btn", "n_clicks"),
+              State("ma-study-symbol", "value"),
+              State("ma-study-length", "value"),
+              State("ma-study-years", "value"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_ma_study(n_clicks, symbol, length, years, session):
+    """Admin-only: runs the Moving Average Study and shows the summary with a copy button."""
+    if not symbol or not symbol.strip():
+        return "Please enter a symbol."
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/ma-study/run",
+                     json={"symbol": symbol.strip().upper(), "length": length or 20, "years": years or 10},
+                     headers=_auth_headers(session), timeout=90)
+        if r.status_code in (401, 403):
+            return "Admin access only. Sign in again if your session expired."
+        if not r.ok:
+            return f"Could not run the study (error {r.status_code}): {r.text[:200]}"
+        d = r.json()
+    except Exception as exc:
+        return f"Could not reach the backend: {exc}"
+    if not d.get("ok"):
+        return f"Could not run the study: {d.get('error', 'unknown error')}"
+    cur, t, sd = d["current"], d["trend"], d["sides"]
+
+    def tile(label, value, sub=""):
+        return html.Div([html.Div(label, style={"fontSize": "10px", "fontWeight": "800", "color": MUTED,
+                                                "textTransform": "uppercase", "letterSpacing": ".1em"}),
+                         html.Div(value, style={"fontSize": "20px", "fontWeight": "800", "color": WHITE, "marginTop": "4px"}),
+                         html.Div(sub, style={"fontSize": "11px", "color": MUTED})],
+                        style={"flex": "1 1 160px", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                               "borderRadius": "10px", "padding": "12px"})
+
+    def med(x):
+        v = (x.get("run_days") or {}).get("median")
+        return "n/a" if v is None else f"{v:g} days"
+    tiles = html.Div([
+        tile("Crossings", str(d["crossings"]), f"{d['first_date']} to {d['last_date']}"),
+        tile("Median run above", med(sd["above"]), f"{sd['above']['days_total']} days above in total"),
+        tile("Median run below", med(sd["below"]), f"{sd['below']['days_total']} days below in total"),
+        tile("Now", f"{cur['side'].title()}, day {cur['days']}",
+             f"since {cur['since']}; {t['close_vs_ma_pct']:+.2f}% from the average"),
+        tile(f"{d['length']}-day average trend", f"{t['ma_20d_change_pct']:+.2f}%" if t.get("ma_20d_change_pct") is not None else "n/a",
+             f"20-day change; rising {t['ma_rising_days_last_60']} of last 60 days"),
+    ], style={"display": "flex", "flexWrap": "wrap", "gap": "10px", "marginBottom": "12px"})
+    text = d.get("text", "")
+    return html.Div([
+        tiles,
+        html.Div([html.Span("Full result", style={"fontSize": "11px", "fontWeight": "800", "color": MUTED}),
+                  dcc.Clipboard(content=text, title="Copy", style={"display": "inline-block", "marginLeft": "8px",
+                                                                   "cursor": "pointer", "color": WHITE})]),
+        html.Pre(text, style={"whiteSpace": "pre-wrap", "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}",
+                              "borderRadius": "8px", "padding": "10px", "fontSize": "12px", "color": WHITE,
+                              "fontFamily": "DM Mono, monospace"}),
+    ])
 
 
 @app.callback(Output("catalyst-result", "children"),
