@@ -5975,6 +5975,8 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
 
     # ── Moving Average Study: crossings, time spent above/below, run lengths, volume and follow-through around one
     # simple moving average, from Alpaca daily bars. Backend: /api/admin/ma-study/run. Research only.
+    _ma_in = {"background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+              "padding": "8px 12px", "color": WHITE, "fontSize": "13px", "marginRight": "8px"}
     ma_study_block = _admin_card([
         html.Div("MOVING AVERAGE STUDY", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE, "marginBottom": "6px"}),
         html.Div("Enter a symbol and an average length (default 20 days). Shows how often price crossed the average, how long "
@@ -5983,9 +5985,9 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
         html.Div([
             dcc.Input(id="ma-study-symbol", type="text", placeholder="Symbol (e.g. APP)", debounce=False,
-                      style={**_ce_in, "width": "150px"}),
-            dcc.Input(id="ma-study-length", type="number", value=20, min=5, max=200, style={**_ce_in, "width": "80px"}),
-            dcc.Input(id="ma-study-years", type="number", value=10, min=1, max=20, style={**_ce_in, "width": "80px"}),
+                      style={**_ma_in, "width": "150px"}),
+            dcc.Input(id="ma-study-length", type="number", value=20, min=5, max=200, style={**_ma_in, "width": "80px"}),
+            dcc.Input(id="ma-study-years", type="number", value=10, min=1, max=20, style={**_ma_in, "width": "80px"}),
             html.Button("Run study", id="ma-study-run-btn", n_clicks=0,
                         style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
                                "padding": "10px 16px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer"}),
