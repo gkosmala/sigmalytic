@@ -443,7 +443,16 @@ def build_pdf(out_path: str, as_of: str, report_date: str, sigs: List[dict], met
             canvas.drawCentredString(0, 0, "SAMPLE · SYNTHETIC DATA")
         canvas.restoreState()
 
-    doc = SimpleDocTemplate(out_path, pagesize=letter, leftMargin=margin, rightMargin=margin,
+    class _Doc(SimpleDocTemplate):
+        """Adds a PDF bookmark for every flowable tagged with _outline, so a long report can be navigated."""
+        def afterFlowable(self, fl):
+            tag = getattr(fl, "_outline", None)
+            if tag:
+                title, level, key = tag
+                self.canv.bookmarkPage(key)
+                self.canv.addOutlineEntry(title, key, level=level, closed=level == 0)
+
+    doc = _Doc(out_path, pagesize=letter, leftMargin=margin, rightMargin=margin,
                             topMargin=header_h + 0.35 * inch, bottomMargin=0.8 * inch,
                             title=f"Sigmalytic {REPORT_TITLE} — {long_date(as_of)}",
                             author="Sigmalytic Quant Corporation")
@@ -530,10 +539,17 @@ def build_pdf(out_path: str, as_of: str, report_date: str, sigs: List[dict], met
             story.append(P(f"Sigmalytic's scan flagged no {label.lower()} for the {long_date(as_of)} session."))
         story.append(Spacer(1, 6))
 
-    # ── one page per symbol ──
-    for f in sigs:
+    # ── one page per symbol: breakouts first, then breakdowns, freshest first within each ──
+    summary_mark = Spacer(1, 0)
+    summary_mark._outline = ("Summary", 0, "summary")
+    story.insert(0, summary_mark)
+    for f in bos + bds:
         is_bo = f["kind"] == "BREAKOUT"
         story.append(PageBreak())
+        if f is (bos[0] if bos else None) or f is (bds[0] if bds else None):
+            group = Spacer(1, 0)
+            group._outline = ("Breakouts" if is_bo else "Breakdowns", 0, f"group-{f['kind']}")
+            story.append(group)
         tag_col = UP if is_bo else DOWN
         title = Table([[P(f"<font color='{NAVY}'>{f['symbol']}</font>", "h1", check=False),
                         P(f"<font color='{tag_col}'><b>{'BREAKOUT' if is_bo else 'BREAKDOWN'}</b></font>"
@@ -541,6 +557,7 @@ def build_pdf(out_path: str, as_of: str, report_date: str, sigs: List[dict], met
                           f" &nbsp;·&nbsp; {held_text(f) if f['days_back'] else 'New this session'}</font>",
                           "body", check=False)]],
                       colWidths=[1.2 * inch, frame_w - 1.2 * inch])
+        title._outline = (f"{f['symbol']} · {held_text(f)}", 1, f"sym-{f['kind']}-{f['symbol']}")
         title.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                    ("LEFTPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
         story.append(title)
@@ -584,6 +601,9 @@ def build_pdf(out_path: str, as_of: str, report_date: str, sigs: List[dict], met
 
     # ── attribution, once, at the end ──
     story.append(PageBreak())
+    attr_mark = Spacer(1, 0)
+    attr_mark._outline = ("Market Data and Attribution", 0, "attribution")
+    story.append(attr_mark)
     for kind, text in ATTRIBUTION:
         if kind == "h":
             story.append(P(text, "h1", check=False))
@@ -607,6 +627,7 @@ def main() -> int:
     ap.add_argument("--backend", default=DEFAULT_BACKEND, help="Backend base URL.")
     ap.add_argument("--results-file", help="Use a saved /api/weis-radar/results JSON instead of fetching it.")
     ap.add_argument("--out", default="reports", help="Output folder.")
+    ap.add_argument("--cache-dir", help="Save each symbol's chart data here and reuse it on reruns.")
     ap.add_argument("--no-options", action="store_true", help="Skip call/put walls (faster).")
     ap.add_argument("--demo", action="store_true", help="Synthetic data, watermarked SAMPLE, to check the layout.")
     a = ap.parse_args()
@@ -652,10 +673,19 @@ def main() -> int:
             if a.demo:
                 chart = demo_charts[sym]
             else:
-                chart = get_json(session, f"{a.backend}/api/weis-radar/chart/{sym}",
-                                 params={"timeframe": "1Day", "limit": 300,
-                                         "include_options": "false" if a.no_options else "true"})
-                time.sleep(0.4)  # be gentle with the single-worker backend
+                cache = os.path.join(a.cache_dir, f"{sym}.json") if a.cache_dir else None
+                if cache and os.path.isfile(cache):
+                    with open(cache, encoding="utf-8") as fh:
+                        chart = json.load(fh)
+                else:
+                    chart = get_json(session, f"{a.backend}/api/weis-radar/chart/{sym}",
+                                     params={"timeframe": "1Day", "limit": 300,
+                                             "include_options": "false" if a.no_options else "true"})
+                    time.sleep(0.4)  # be gentle with the single-worker backend
+                    if cache and chart.get("ok"):
+                        os.makedirs(a.cache_dir, exist_ok=True)
+                        with open(cache, "w", encoding="utf-8") as fh:
+                            json.dump(chart, fh)
             if not chart.get("ok"):
                 raise RuntimeError(chart.get("error") or "no data")
             bars = trim_bars(chart, as_of)
