@@ -3090,6 +3090,27 @@ def content_hub_generate(payload: dict, _admin: str = Depends(require_admin)):
     return out
 
 
+@app.post("/api/admin/assistant/ask")
+def assistant_ask(payload: dict, admin: str = Depends(require_admin)):
+    """
+    Sigmalytic Assistant (admin only): a plain-English question answered by ChatGPT using only Sigmalytic's own
+    data (latest scan, symbol facts, setup state, stored daily reports). Read-only; every answer is checked before
+    it is returned and logged. See backend/assistant.py.
+    """
+    from backend import assistant
+
+    p = payload or {}
+    return assistant.ask(p.get("question"), p.get("history"), admin=admin)
+
+
+@app.get("/api/admin/assistant/log")
+def assistant_log(limit: int = 50, _admin: str = Depends(require_admin)):
+    """Sigmalytic Assistant (admin only): recent questions and answers, plus today's spending."""
+    from backend import assistant
+
+    return assistant.recent_log(limit)
+
+
 @app.get("/api/admin/report-symbols")
 def admin_report_symbols(date: str = "", _admin: str = Depends(require_admin)):
     """Daily Report -> Content Hub (admin only): the symbols listed in a stored daily report, by report section."""
