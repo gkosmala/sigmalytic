@@ -5944,6 +5944,34 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
+    # ── Sigmalytic Assistant -- plain-English questions answered by ChatGPT from Sigmalytic's own data only. ──
+    assistant_block = _admin_card([
+        html.Div("SIGMALYTIC ASSISTANT", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+                                               "marginBottom": "6px"}),
+        html.Div("Ask a question in plain English. The assistant looks up Sigmalytic's latest scan, symbol levels, "
+                 "setup states and stored daily reports, then answers. Every number is checked against the data before "
+                 "it is shown, and every question is logged. Read-only: nothing is traded, changed or posted.",
+                 style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
+        dcc.Store(id="assistant-history", storage_type="session", data=[]),
+        dcc.Loading(html.Div(id="assistant-thread", style={"fontSize": "13px", "color": WHITE}),
+                    type="dot", color=TEAL),
+        dcc.Textarea(id="assistant-question", value="",
+                     placeholder="e.g. Which semiconductor stocks broke down in the last 3 sessions?",
+                     style={"width": "100%", "minHeight": "70px", "boxSizing": "border-box", "marginTop": "10px",
+                            "background": "rgba(0,0,0,.3)", "border": f"1px solid {BORDER}", "borderRadius": "8px",
+                            "padding": "10px 12px", "color": WHITE, "fontSize": "13px", "resize": "vertical"}),
+        html.Div([
+            html.Button("Ask", id="assistant-ask-btn", n_clicks=0,
+                        style={"background": TEAL, "color": WHITE, "border": "none", "borderRadius": "8px",
+                               "padding": "10px 20px", "fontSize": "13px", "fontWeight": "700", "cursor": "pointer",
+                               "marginRight": "8px"}),
+            html.Button("New conversation", id="assistant-clear-btn", n_clicks=0,
+                        style={"background": "transparent", "color": WHITE, "border": f"1px solid {BORDER}",
+                               "borderRadius": "8px", "padding": "10px 16px", "fontSize": "13px",
+                               "cursor": "pointer"}),
+        ], style={"marginTop": "10px"}),
+    ], sx={"marginBottom": "16px"})
+
     # ── Daily Report -> Content Hub: tap a symbol from a stored daily report to get the full Content Hub package
     # (blog draft, share image, platform teasers). Same backend as Content Hub; drafts only, nothing posts.
     report_hub_block = _admin_card([
@@ -6319,6 +6347,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                 html.Div("Backend may be initializing. Refresh in 30 seconds.",
                          style={"color":WHITE,"fontSize":"12px","marginTop":"8px"}),
             ], sx={"marginBottom": "16px"}),
+            assistant_block,
             content_hub_block,
             report_hub_block,
             catalyst_engine_block,
@@ -6585,6 +6614,7 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
             html.Div(anomaly_block, style={"flex":"1","minWidth":"0"}),
         ], style={"marginBottom":"0"}),
 
+        assistant_block,
         content_hub_block,
         report_hub_block,
         catalyst_engine_block,
@@ -11247,6 +11277,88 @@ def sort_weis_state_by_bars_ago(n_clicks, rows):
     """First click sorts Bars ago ascending, the next descending, and so on."""
     asc = (n_clicks or 0) % 2 == 1
     return _weis_state_rows(rows, "asc" if asc else "desc"), ("Bars ago \u25B2" if asc else "Bars ago \u25BC")
+
+
+@app.callback(Output("assistant-history", "data"),
+              Output("assistant-question", "value"),
+              Input("assistant-ask-btn", "n_clicks"),
+              Input("assistant-clear-btn", "n_clicks"),
+              State("assistant-question", "value"),
+              State("assistant-history", "data"),
+              State("s-session", "data"),
+              prevent_initial_call=True)
+def handle_assistant_ask(ask_clicks, clear_clicks, question, history, session):
+    """Admin-only: sends the question and the last few turns to the backend assistant; keeps the thread in the
+    browser session. Error turns are shown but never sent back to the model."""
+    if callback_context.triggered_id == "assistant-clear-btn":
+        return [], ""
+    q = (question or "").strip()
+    if not q:
+        return no_update, no_update
+    history = list(history or [])
+    convo = [{"role": m["role"], "content": m["content"]} for m in history
+             if m.get("role") in ("user", "assistant")][-8:]
+    history.append({"role": "user", "content": q})
+    try:
+        r = req.post(f"{BACKEND_HTTP}/api/admin/assistant/ask", json={"question": q, "history": convo},
+                     headers=_auth_headers(session), timeout=150)
+        if r.status_code == 401:
+            reply = {"role": "error", "content": "Not signed in, or session expired. Please sign in again."}
+        elif r.status_code == 403:
+            reply = {"role": "error", "content": "Admin access only."}
+        elif not r.ok:
+            reply = {"role": "error", "content": f"The assistant failed (error {r.status_code}): {r.text[:200]}"}
+        else:
+            d = r.json()
+            meta = {"lookups": d.get("lookups") or [], "usage": d.get("usage") or {}}
+            if d.get("ok"):
+                reply = {"role": "assistant", "content": d.get("answer") or "", "meta": meta,
+                         "disclaimer": d.get("disclaimer") or ""}
+            else:
+                reply = {"role": "error", "content": d.get("error") or "No answer.", "meta": meta}
+    except Exception as exc:
+        reply = {"role": "error", "content": f"Could not reach the assistant: {str(exc)[:200]}"}
+    history.append(reply)
+    return history[-30:], ""
+
+
+def _assistant_meta_line(meta):
+    meta = meta or {}
+    u = meta.get("usage") or {}
+    bits = []
+    if meta.get("lookups"):
+        bits.append("Looked up: " + "; ".join(meta["lookups"]))
+    if u.get("model"):
+        cost = u.get("cost_usd")
+        bits.append(f"{u['model']} · " + (f"${cost:.4f}" if isinstance(cost, (int, float)) else "cost n/a")
+                    + (f" · {u['seconds']}s" if u.get("seconds") is not None else ""))
+    return html.Div(" · ".join(bits), style={"fontSize": "10.5px", "color": MUTED, "marginTop": "6px",
+                                             "lineHeight": "1.5"}) if bits else None
+
+
+@app.callback(Output("assistant-thread", "children"), Input("assistant-history", "data"))
+def render_assistant_thread(history):
+    """Draws the conversation: questions, answers (markdown, no raw HTML), what was looked up and what it cost."""
+    if not history:
+        return html.Div("No questions yet.", style={"color": MUTED, "fontSize": "12px"})
+    out = []
+    for m in history:
+        role = m.get("role")
+        if role == "user":
+            out.append(html.Div(m.get("content", ""), style={
+                "alignSelf": "flex-end", "maxWidth": "85%", "background": "rgba(255,255,255,.08)",
+                "border": f"1px solid {BORDER}", "borderRadius": "10px", "padding": "8px 12px",
+                "whiteSpace": "pre-wrap"}))
+        elif role == "assistant":
+            out.append(html.Div([dcc.Markdown(m.get("content", ""), style={"lineHeight": "1.55"}),
+                                 _assistant_meta_line(m.get("meta")),
+                                 html.Div(m.get("disclaimer", ""), style={"fontSize": "10.5px", "color": MUTED,
+                                                                          "marginTop": "4px"})],
+                                style={"maxWidth": "95%"}))
+        else:
+            out.append(html.Div([html.Div(m.get("content", ""), style={"color": YELLOW_DIM}),
+                                 _assistant_meta_line(m.get("meta"))], style={"maxWidth": "95%"}))
+    return html.Div(out, style={"display": "flex", "flexDirection": "column", "gap": "12px"})
 
 
 @app.callback(Output("content-hub-result", "children"),
