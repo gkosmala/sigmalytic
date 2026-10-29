@@ -5944,11 +5944,11 @@ def build_admin_tab(session: dict, backend_url: str) -> html.Div:
                     type="dot", color=TEAL),
     ], sx={"marginBottom": "16px"})
 
-    # ── Sigmalytic Assistant -- plain-English questions answered by ChatGPT from Sigmalytic's own data only. ──
+    # ── AI Sigmalytic Assistant -- plain-English questions answered by Claude from Sigmalytic's own data only. ──
     assistant_block = _admin_card([
-        html.Div("SIGMALYTIC ASSISTANT", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
+        html.Div("AI SIGMALYTIC ASSISTANT", style={"fontSize": "12px", "fontWeight": "800", "color": WHITE,
                                                "marginBottom": "6px"}),
-        html.Div("Ask a question in plain English. The assistant looks up Sigmalytic's latest scan, symbol levels, "
+        html.Div("Ask a question in plain English. The AI assistant looks up Sigmalytic's latest scan, symbol levels, "
                  "setup states and stored daily reports, then answers. Every number is checked against the data before "
                  "it is shown, and every question is logged. Read-only: nothing is traded, changed or posted.",
                  style={"fontSize": "11px", "color": MUTED, "marginBottom": "14px", "lineHeight": "1.6"}),
