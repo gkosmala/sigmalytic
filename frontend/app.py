@@ -11403,8 +11403,10 @@ def _assistant_meta_line(meta):
         bits.append("Looked up: " + "; ".join(meta["lookups"]))
     if u.get("model"):
         cost = u.get("cost_usd")
+        cached = u.get("cached_input_tokens") or 0
         bits.append(f"{u['model']} · " + (f"${cost:.4f}" if isinstance(cost, (int, float)) else "cost n/a")
-                    + (f" · {u['seconds']}s" if u.get("seconds") is not None else ""))
+                    + (f" · {u['seconds']}s" if u.get("seconds") is not None else "")
+                    + (f" · {cached:,} tokens from cache" if cached else ""))
     return html.Div(" · ".join(bits), style={"fontSize": "10.5px", "color": MUTED, "marginTop": "6px",
                                              "lineHeight": "1.5"}) if bits else None
 

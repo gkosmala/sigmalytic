@@ -501,3 +501,29 @@ def test_cut_off_answer_with_text_is_shown_with_a_notice(monkeypatch):
     monkeypatch.setattr(a, "_call_model", call)
     out = a.ask("Holdings?")
     assert out["ok"] and "length limit" in out["notice"]
+
+
+# ── setup state with direction, file limits ──
+
+def test_setup_state_always_carries_its_direction():
+    assert a._setup_label({"weis_state": "Armed", "weis_direction": "long"}) == "Armed long"
+    assert a._setup_label({"weis_state": "Avoid", "weis_direction": "short"}) == "Avoid short"
+    assert a._setup_label({}) == "No setup"
+    out = a.tool_search_scan(symbols=["JPM"])
+    assert all(r["setup_state"] == "No setup" for r in out["rows"]) and "separate reading" in out["setup_state_note"]
+
+
+def test_large_positions_file_keeps_every_ticker():
+    tickers = [chr(65 + i // 26) + chr(65 + i % 26) + "Q" for i in range(520)]
+    csv = "Symbol,Qty\n" + "\n".join(f"{t},1" for t in tickers)
+    found, src = a.file_tickers(csv)
+    assert src == "symbol column" and len(found) == 520 and found[-1] == tickers[-1]
+    f = a.prepare_attachment(_att("big.csv", (csv + "\n" + "x" * 70000).encode()))
+    assert not f["truncated"] and len(f["tickers"]) == 520
+
+
+def test_share_class_tickers_match_the_universe(monkeypatch):
+    monkeypatch.setattr(a, "_COMPANIES", {**a.companies(), "BRKB": {"company": "Berkshire Hathaway",
+                                                                     "sector": "Financials", "industry": "x"}})
+    out = a.tool_search_scan(symbols=["BRK.B", "BRK/B", "MOG.A"])
+    assert out["not_flagged"] == ["BRKB"] and out["not_in_universe"] == ["MOG.A"]

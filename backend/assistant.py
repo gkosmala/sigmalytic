@@ -65,8 +65,12 @@ DEADLINE_SECONDS = 135      # the admin tab waits 150 seconds for a reply
 MAX_HISTORY_MESSAGES = 8
 MAX_QUESTION_CHARS = 2000
 MAX_TOOL_RESULT_CHARS = 40000
-MAX_SYMBOL_ROWS = 400          # a holdings check returns every match for the named tickers, up to this many
-MAX_FILE_TICKERS = 400
+MAX_SYMBOL_ROWS = 600          # a holdings check returns every match for the named tickers, up to this many
+MAX_FILE_TICKERS = 1500
+SETUP_NOTE = ("setup_state is a separate reading from the platform's setup engine (the same as the Radar Status), "
+              "with its direction: Armed, Setting Up, Watching or Avoid, each long or short. It can point the other "
+              "way from the signal (a Breakdown can be 'Armed long' after closing back inside). 'No setup' means the "
+              "engine found no setup now.")
 SECTOR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "russell1000_sector_industry.csv")
 
 DISCLAIMER = ch.SHORT_DISCLAIMER
@@ -192,6 +196,27 @@ def _sym(v: Any) -> str:
     return s
 
 
+def _universe_symbol(raw: Any, scan: Dict[str, Any]) -> str:
+    """A ticker as Sigmalytic's universe writes it. Brokers write share classes with a dot, dash or slash (BRK.B,
+    BF-B, BRK/B); the universe writes them without (BRKB, BFB)."""
+    t = str(raw or "").strip().upper()
+    known = set(companies()) | {str(r.get("symbol") or "").upper() for r in scan.get("results") or []}
+    if t in known:
+        return t
+    squashed = re.sub(r"[.\-/ ]", "", t)
+    return squashed if squashed in known else t
+
+
+def _setup_label(r: Dict[str, Any]) -> str:
+    """The platform's setup state for a scan row, always with its direction ("Armed long"), or "No setup". The setup
+    state comes from a separate engine (the Radar Status) and can point the other way from the row's signal."""
+    state = r.get("weis_state")
+    if not state:
+        return "No setup"
+    direction = r.get("weis_direction")
+    return f"{state} {direction}" if direction in ("long", "short") else str(state)
+
+
 def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List[str]] = None,
                      sector: Optional[str] = None, max_sessions_held: Optional[int] = None,
                      new_only: bool = False, sort_by: str = "newest", limit: int = 25) -> Dict[str, Any]:
@@ -199,7 +224,7 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
     if scan.get("ok") is False:
         return {"ok": False, "error": f"Scan results unavailable: {scan.get('error')}"}
     want = {str(s).lower() for s in (signals or []) if s}
-    syms = {str(s).strip().upper() for s in (symbols or []) if s}
+    syms = {_universe_symbol(s, scan) for s in (symbols or []) if s}
     sec = (sector or "").strip().lower()
     co = companies()
     rows: List[Dict[str, Any]] = []
@@ -223,7 +248,7 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
                    "industry": info.get("industry"), "signal": label, "close": h.get("price"),
                    "level": h.get("level") if h.get("level") is not None else h.get("structure_level"),
                    "first_crossed": str(h.get("date") or "")[:10] or None, "sessions_held": held,
-                   "pct_beyond_level": h.get("pct_beyond"), "setup_state": r.get("weis_state"),
+                   "pct_beyond_level": h.get("pct_beyond"), "setup_state": _setup_label(r),
                    "last_bar_date": str(r.get("last_bar_time") or "")[:10] or None}
             for k in ("entry_trigger", "invalidation"):
                 if h.get(k) is not None:
@@ -243,7 +268,8 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
                            "symbols_scanned": scan.get("scanned"),
                            "latest_bar_date": max(bar_dates) if bar_dates else None, "total_matched": len(rows),
                            "counts_by_signal": counts,
-                           "note": "Only the latest scan is stored; earlier days are only in stored daily reports."}
+                           "note": "Only the latest scan is stored; earlier days are only in stored daily reports.",
+                           "setup_state_note": SETUP_NOTE}
     if syms:
         # A holdings / watchlist check: every match for the named tickers comes back in one call (compact rows),
         # plus the tickers with no flag and the tickers Sigmalytic does not scan, so the answer can be complete.
@@ -259,6 +285,7 @@ def tool_search_scan(signals: Optional[List[str]] = None, symbols: Optional[List
         out["not_in_universe"] = sorted(t for t in syms if t not in universe)
         out["universe_note"] = ("not_flagged: scanned, but no signal matched the filters. not_in_universe: not in "
                                 "the Russell 1000 universe Sigmalytic scans (often ETFs, funds, cash or small caps).")
+        out["setup_state_note"] = SETUP_NOTE
         return out
     limit = max(1, min(int(limit or 25), 60))
     out["returned"] = min(limit, len(rows))
@@ -453,7 +480,12 @@ SYSTEM_PROMPT = (
     "most relevant rows, and offer to narrow it (by sector, sessions held, holdings or signal).\n"
     "10. For a holdings check, show the flagged holdings in one table (symbol, signal, close, level, % beyond, first "
     "crossed). For not_flagged and not_in_universe give the counts, and list the tickers only when there are 30 or "
-    "fewer or when asked. Keep explanations short."
+    "fewer or when asked. Keep explanations short.\n"
+    "11. Whenever you show setup_state, show it exactly as given, with its direction (for example 'Armed long'). It "
+    "is a separate reading from the signal and can point the other way; say so in one line when a table mixes them. "
+    "'No setup' means the setup engine found no setup now.\n"
+    "12. The tickers line for an uploaded file lists every ticker code read from it; check them all in one "
+    "search_scan call, never split them."
 )
 
 
@@ -554,7 +586,7 @@ ATTACH_TYPES: Dict[str, Tuple[str, str, int]] = {
     "docx": ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 5 * MB),
 }
 ACCEPT = ",".join("." + e for e in ATTACH_TYPES)
-MAX_FILE_TEXT = 60000
+MAX_FILE_TEXT = 150000        # about 40,000 tokens; the file is cached, so later rounds reread it at 0.1x
 MAX_PDF_PAGES = 100
 
 
